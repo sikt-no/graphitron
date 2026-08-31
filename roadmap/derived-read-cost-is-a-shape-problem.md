@@ -2019,8 +2019,8 @@ against the 106, 84 and 38 slice 16 measured: the path segment list read a handf
 than a hundred, the pair table in the low single digits, and the occurrence-path step relation
 likewise once the correspondence has a name. Behind those, the by-name arm gone from both readers
 that spell it and the correlated anti-join probing a keyed relation instead of inlining a rule.
-Slice 15 holds the before figures for the timings. **Measured in slice 29: two of the three met, the
-pair table missed at twelve.**
+Slice 15 holds the before figures for the timings. **Measured in slice 29 on a fresh capture: two of
+the three met, the pair table missed at fourteen.**
 
 **The two sides of an argMapping resolve against different families, and only one of them has been
 modelled.** An argMapping has a left side and a right side. The left names a parameter and resolves
@@ -2495,9 +2495,10 @@ relations the kept capture predates, so the arm needs its backfill extended agai
 trusted. The plan-instantiation counts are the honest measure here and they are the next thing to
 take.
 
-**Taken in slice 29, and the caveat above turned out not to reach them.** A plan is not made of
-rows, so the counts need neither the bench nor its backfill. The three relations slice 16 named come
-out at 2, 12 and 0.
+**Taken in slice 29, and the caveat above turned out to be the smaller of two problems.** The bench
+could not be extended, because the kept capture had fallen too far behind the shipping DDL to copy
+from at all. The measurement moved to a fresh capture instead, and the three relations slice 16 named
+come out at 2, 14 and 0.
 
 ### Slice 23: the scope widens to how facts are gathered, and the reason is mechanical
 
@@ -2827,83 +2828,78 @@ The alternative was minting SDL coordinates for types the SDL does not declare, 
 graphitron gatherer back inside a relation the SDL crawler owns and buy the constraint at the price
 of the property the whole slice is for.
 
-### Slice 29: the criterion slice 16 set, measured
+### Slice 29: the criterion slice 16 set, measured on a fresh capture
 
 Slice 16 stated what would show its line of work had landed, as three instantiation counts in one
 plan of `intent_node_id_decode` against the 106, 84 and 38 it had just taken. Slice 22 closed by
 saying those counts were the honest measure and the next thing to take. Six slices went past without
-taking them. This one does.
+taking them. This one does, and it takes them the only way that is now sound.
 
-**The instrument, and why it costs nothing.** An empty in-memory store on the shipping DDL, one
-`EXPLAIN SELECT COUNT(*) FROM intent_node_id_decode`, and a count of `PUBLIC.<name>` references in
-the returned plan text per relation. No kept store, no consumer capture, no backfill. That is not a
-convenience, it is the claim slice 17 made when it called these numbers properties of the schema
-rather than of a run, and it is why slice 22's caveat about a starved arm never applied to this
-measurement: an arm can starve of rows, and a plan is not made of rows.
+**The instrument is a fresh capture, because the copy bench stopped being one.** The section on what
+this item does not do records why: the kept store predates five of the base tables the shipping DDL
+declares and disagrees with a sixth column for column, so an arm copied from it can no longer be
+built. What replaces it is the thing that item's own rule always said a slice like this owes. The
+consumer schema is 26 818 lines with 218 `@asConnection` applications, against the 33 the reactor's
+own example carries, so the capture exercises the last six slices considerably harder than any
+fixture does.
 
-**Which is a claim this slice was able to check rather than repeat.** The same probe was run against
-two earlier states of the tree, each in a detached worktree, and compared to what those states
-published at the time.
+**The capture itself is the first result, and it is not the one this slice set out to take.** The
+same capture on the same schema cost four hours and nineteen minutes of materialization refresh on
+2026-08-27. It now completes in **one minute and eight seconds**. Nothing in this item's slices did
+that, and the item has said so from the start; what is new is that the figure has now been observed
+end to end on a consumer schema rather than reconstructed from a refresh pass on a copy.
 
-[cols="4,2,2,2"]
+**The move of slices 23 through 28 holds up on a real schema, and the arithmetic is exact.** 218
+`@asConnection` applications produce 218 `graphitron_connection` rows and 218 field rewrites in
+`graphitron_field_synthesis`; 434 minted types across 436 sites carry 1302 minted fields.
+`intent_expanded_type` returns 2345, which is 1911 authored plus 434 minted. `intent_expanded_field`
+returns 8408, which is 7106 plus 1302. `graphitron_field_navigation` returns 8408, one row per
+expanded field and no more. Every union is the sum of its arms and the navigation rule covers its
+population exactly once, at a scale where an off-by-one would show.
+
+**The counts, against the criterion.**
+
+[cols="4,2,2"]
 |===
-| relation | slice 16 published | probe at that commit | probe at slice 17's commit
+| relation | slice 16 | fresh capture
 
-| `graphitron_argument_path_segment` | 106 | 104 | 34, published as 34
-| `graphitron_arg_mapping_pair` | 84 | 82 |
-| `intent_input_occurrence_path_step` | 38 | 36 |
-| `sql_node_metadata` | 26 | 26 |
-| `graphql_argument` | 26 | 26 |
-| `sql_routine_parameter` | 4 | 4 |
-| `jvm_method_parameter` | 4 | 4 |
-|===
-
-Four figures exact, three low by two, and slice 17's single published number reproduced to the digit.
-The constant offset of two on exactly the relations that carry an outermost reference is a difference
-in what the two counts admit, not a disagreement about the plan. The instrument is sound and the
-figures below are on the same footing as the ones they are compared against.
-
-**The counts today.**
-
-[cols="4,2,2,2"]
-|===
-| relation | slice 16 | slice 17 | today
-
-| `graphitron_argument_path_segment` | 104 | 34 | **2**
-| `graphitron_arg_mapping_pair` | 82 | 92 | **12**
-| `intent_input_occurrence_path_step` | 36 | 40 | **0**
-| `intent_argmapping_pair` | 80 | | 10
-| `graphql_argument` | 26 | 26 | 0
-| `sql_node_metadata` | 26 | 26 | 9
-| `sql_routine_parameter` | 4 | 4 | 4
-| `jvm_method_parameter` | 4 | 4 | 4
-| total relation references, this method | 473 | 419 | 128
-| plan text, characters | 623 413 | 511 237 | 139 755
+| `graphitron_argument_path_segment` | 106 | **2**
+| `graphitron_arg_mapping_pair` | 84 | **14**
+| `intent_input_occurrence_path_step` | 38 | **0**
+| `graphql_argument` | 26 | 0
+| `sql_node_metadata` | 26 | 9
+| `sql_routine_parameter` | 4 | 4
+| `jvm_method_parameter` | 4 | 4
 |===
 
-**Against the criterion: two met and one missed, and the miss is worth stating as a miss.** The
-segment list was to be read a handful of times rather than a hundred, and it is read twice. The
-occurrence-path step relation was to fall once the correspondence had a name, and it is gone from the
-plan entirely, as is `graphql_argument`. The pair table was to be in the low single digits and it is
-at twelve. That is a fall of eighty-five percent and it is not what the criterion said.
+Two of the three criteria are met and one is missed. The segment list was to be read a handful of
+times rather than a hundred, and it is read twice. The occurrence-path step relation was to fall once
+the correspondence had a name, and it is gone from the plan entirely, as is `graphql_argument`. The
+pair table was to be in the low single digits and it is at fourteen. That is a fall of eighty-three
+percent and it is not what the criterion said, so the criterion is recorded as missed rather than
+rounded to met.
 
-**And the trajectory says something slice 17 did not report about itself.** Between slice 16 and
-slice 17 the segment list fell from 104 to 34, which is the number slice 17 published, while the pair
-table rose from 82 to 92 and the occurrence-path step relation from 36 to 40. The head column moved
-instantiations rather than removing them, and slice 17's own conclusion, that the change bought no
-time because the nodes it removed were index probes into a 202-row table, reads better for knowing
-the count went up somewhere else at the same time. What removed them was the candidate tree of slices
-18 through 22, which is where the three named relations fall to 2, 12 and 0.
+**One relation this slice did not set out to measure came back at zero.** `intent_argmapping_segment_binding`
+is instantiated six times in the plan on the older populated arm and not at all here, which is
+evidence toward the census R896 asks for rather than a substitute for it.
+
+**An empty store is a good approximation of this measurement and not an exact one, which is worth
+recording because it is the cheap way to take it.** The same probe on an empty in-memory store built
+from the shipping DDL, no capture and no consumer schema involved, returns 2, **12** and 0 against
+the 2, 14 and 0 above. Identical on two of the three relations and two low on the third. So a plan
+count is very nearly a property of the schema, as slice 17 claimed, but not exactly one, and a figure
+quoted from an empty store should say so.
 
 **The totals are internally consistent and not comparable to the pair slice 17 quoted.** That slice
-reported the plan's total relation references falling from 818 to 674, and this method counts 473 at
-the same commit, so the two methods admit different things. The 473 to 128 fall stands on its own
-arm; the 818 and 674 stand on theirs; neither should be quoted against the other.
+reported the plan's total relation references falling from 818 to 674. This method counts references
+of the form `PUBLIC.<name>` for names in the store's own information schema, and gives 128 on the
+fresh capture against 427 on the older populated arm. The two methods admit different things and
+neither total should be quoted against the other.
 
 **What this does not measure.** Not time. Slice 17 already established at this exact relation that a
 smaller statement and a faster one are different achievements, and slice 4's census said the
 expansion count predicts plannability and nothing else. What 128 relation references and a plan of a
-hundred and forty thousand characters buy is a statement the planner can hold, which is the
+hundred and thirty-nine thousand characters buy is a statement the planner can hold, which is the
 precondition for costing it, not a reading of what it costs.
 
 ### Deferred: the registration precondition
@@ -2945,6 +2941,19 @@ shipping DDL declares exactly one base table the kept store predates, every othe
 column for column, and every registered target reproduces its row count. That bound is what licenses
 the figures; it is not a substitute for a capture, and a slice that changes what capture writes owes
 one.
+
+**That bound has since expired, and the slices of this item are what expired it.** Checked against
+the kept store's own information schema rather than inferred: `graphitron_arg_mapping_pair`,
+`graphitron_argmapping_candidate` and the three minted-type relations are absent from it, and
+`graphitron_field_synthesis` holds `macro` and `authored_type_sdl` where the shipping DDL declares
+five different columns. So it is no longer one new base table against a schema that otherwise matches
+column for column; it is several, plus one relation whose payload was replaced. The copy bench cannot
+be pointed at the shipping DDL any more, which retires it as an instrument rather than qualifying it.
+
+**Which turns the owing clause above from a caveat into a debt this item incurred.** Slices 16
+through 28 changed what capture writes, repeatedly, and the clause says plainly what that costs. Any
+arm taken on the copy bench after the argMapping work began rests on a bound that had already gone,
+and the figures that matter are the ones taken since on a fresh capture.
 
 The recipe for taking that capture, inherited from the payload-verification item, is worth keeping
 written down either way: `mvn -X` for the per-registration tier, a pinned store directory, and the

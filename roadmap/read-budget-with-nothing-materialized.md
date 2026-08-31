@@ -52,7 +52,15 @@ on `intent_resolved_type_binding`.
 reads it. That question presumes registrations, and on this target it dissolves rather than being
 answered. It is worth writing as the rule for whatever survives, once the survivors are known.
 
-Measuring any of this needs a captured consumer store, which is not in this repository and must not
-be. Refreshing and reading an already-captured one needs no consumer machine, which is what every
-figure above rests on.
+**The instrument needs rebuilding before any of this can be re-measured, and that is the first
+slice.** The figures above were taken on a bench that builds a store from the DDL and copies a real
+consumer's captured facts into it. That copy no longer works: the kept capture predates five of the
+base tables the shipping DDL declares and disagrees with a sixth column for column, so there is
+nothing to copy into. What replaces it is a fresh capture, which is now cheap in a way it was not
+when the bench was built. The same consumer schema captured in four hours and nineteen minutes on
+2026-08-27 and in one minute and eight seconds on 2026-08-31, so the reason the bench existed, that a
+capture was too expensive to repeat, has gone.
+
+A captured consumer store is not in this repository and must not be. Taking one needs the consumer's
+sources, its catalog and its build, all of which exist outside it.
 
