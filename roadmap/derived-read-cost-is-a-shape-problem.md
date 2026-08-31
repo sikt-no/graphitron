@@ -2746,6 +2746,52 @@ declaration gate being explicit that a new relation owes a declaration. Their gr
 `expanded-type` and `expanded-field`, and their owner is the derivation gatherer, which is what a
 relation whose arms will span two families is.
 
+### Slice 28: the expansion leaves the transcription
+
+`graphql_type`, `graphql_type_declaration` and `graphql_field` now hold what the author declared and
+nothing else. What `@asConnection` mints is `graphitron_minted_type`, its per-carrier
+`graphitron_minted_type_site` and `graphitron_minted_field`; what it rewrites is
+`graphitron_field_synthesis`, which flips direction and holds the macro's replacement where it used
+to stash the authored expression the transcription had overwritten. The two union views the previous
+slice put the expanded-population readers on become real unions, so no reader moved twice.
+
+**The expansion also changed hands.** It was a component of `SdlFactCapture`, called from inside the
+walk with the parse in hand. It is now a stage of the graphitron gatherer, driven by the decode's own
+`graphitron_connection` rows joined to the carrier's transcribed field. Everything it used to need
+from the walk is a column: the element type and its nullability come from the carrier's authored type
+expression, the position from the application's own row with the field's as fallback, and the
+author-declared-name rule, which used to be a lookup in the registry the walk happened to be holding,
+is a query against the type coordinates. The gatherer now has three stages that read each other
+through the store, decode then expansion then navigation, which is the whole architecture in one
+class.
+
+**What the defect inversion buys, stated concretely.** `MacroCapture`'s own comment used to record
+that for the field type the expansion rewrites, "the expression the field was written with survives
+only in that relation's own text column, and no anti-join recovers it". Both readings are now plain
+rows at the same coordinate: `graphql_field` for what the author wrote, `graphitron_field_synthesis`
+for what the generator reads, `intent_expanded_field` for the two resolved. `MacroCaptureTest` asserts
+all three on one fixture, which was not a thing that could be asserted before.
+
+**The navigation rule collapsed with it, as slice 27 predicted.** Its top rung is gone, and with it
+the last reason that rule had to be computed where the parse was. It is now two rungs stated as one
+statement over the union inside the gatherer, and `SdlFactCapture` loses both the rule and the
+connection-shape reading it maintained for it, about a hundred and thirty lines.
+
+**Four readers wanted the union rather than the transcription, and the suite found every one.** The
+classification domain's own materialisation, which selected its members out of `graphql_type` and so
+silently stopped admitting minted shapes; the mutation seat's connection-return arm, which asks
+whether a field's named type is a connection; the demand sweep's coverage gate, which counts the
+domain's field coordinates; and the seeded-store harness, which turned out to carry a second spelling
+of the navigation rule, string surgery over the authored expression and all. That last one is the
+"five spellings" hazard this schema warns about, found by the change rather than by a census.
+
+**One key was lost and it is worth naming.** `intent_type_domain` referenced
+`graphql_type_coordinate`, which was exact while the transcription held every name in the graph. Its
+population is now the union, and a view is no key's target, so the relation keeps only its graph key.
+The alternative was minting SDL coordinates for types the SDL does not declare, which would put the
+graphitron gatherer back inside a relation the SDL crawler owns and buy the constraint at the price
+of the property the whole slice is for.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
