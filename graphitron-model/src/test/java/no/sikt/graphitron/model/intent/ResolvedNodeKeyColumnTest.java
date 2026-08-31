@@ -77,6 +77,7 @@ class ResolvedNodeKeyColumnTest {
     @Test
     void theStatedMetadataOutranksThePrimaryKey() {
         withNodeOverInventory(dsl -> {
+            seedImplements(dsl, GRAPH, "Inventory", "Node");
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "film_id");
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");
@@ -98,17 +99,24 @@ class ResolvedNodeKeyColumnTest {
     }
 
     /**
-     * The metadata tier does not require an {@code @node}: a type bound only by {@code @table} over
-     * a metadata-carrying table resolves, which is exactly the population the generator's middle arm
-     * exists for and the one a two-tier reading would answer differently for.
+     * The metadata tier does not require an {@code @node} and does require nodehood. Implementing
+     * {@code Node} is what makes a type one, and the generated constants are looked for only then,
+     * so a type bound by {@code @table} over a metadata-carrying table and implementing nothing
+     * draws no row. The tier used to answer for it, which on a real capture meant key columns for
+     * hundreds of types that are no node at all.
      */
     @Test
-    void theMetadataTierAnswersForATableOnlyTypeWithNoNodeDirective() {
+    void theMetadataTierNeedsNodehoodRatherThanAnAtNode() {
         withInventoryCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
+            assertThat(keyColumns(dsl, "Inventory"))
+                .as("a table binding is not nodehood")
+                .isEmpty();
+
+            seedImplements(dsl, GRAPH, "Inventory", "Node");
             assertThat(tierOf(dsl, "Inventory")).isEqualTo("JOOQ_METADATA");
             assertThat(keyColumns(dsl, "Inventory")).containsExactly("inventory_id");
         });
@@ -258,6 +266,7 @@ class ResolvedNodeKeyColumnTest {
     @Test
     void aMetadataEntrySpelledTheGeneratedWayIsWellFormed() {
         withNodeOverInventory(dsl -> {
+            seedImplements(dsl, GRAPH, "Inventory", "Node");
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventoryId");
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");

@@ -4396,23 +4396,15 @@ SELECT graph_name, type_name, position, column_name, tier
                        k.column_ref AS column_name, 'SDL_PINNED' AS tier, 0 AS precedence
                   FROM graphitron_node_key_column k
                 UNION ALL
-                SELECT b.graph_name, b.type_name, k.position, k.column_name, 'JOOQ_METADATA', 1
-                  FROM intent_resolved_type_binding b
-                  JOIN sql_node_metadata m
-                    ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
-                   AND m.table_name = b.table_name
+                SELECT i.graph_name, i.type_name, k.position, k.column_name, 'JOOQ_METADATA', 1
+                  FROM intent_inferred_node_type i
                   JOIN sql_node_key_column k
-                    ON k.source_name = m.source_name AND k.table_schema = m.table_schema
-                   AND k.table_name = m.table_name
-                 WHERE b.candidates = 1
-                   AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
-                                    WHERE d.source_name = m.source_name
-                                      AND d.table_schema = m.table_schema
-                                      AND d.table_name = m.table_name)
+                    ON k.source_name = i.table_source_name AND k.table_schema = i.table_schema
+                   AND k.table_name = i.table_name
                 UNION ALL
-                SELECT b.graph_name, b.type_name, cc.position, cc.column_name,
+                SELECT n.graph_name, n.type_name, cc.position, cc.column_name,
                        'CATALOG_PRIMARY_KEY', 2
-                  FROM intent_node_type n
+                  FROM graphitron_node n
                   JOIN intent_resolved_type_binding b
                     ON b.graph_name = n.graph_name AND b.type_name = n.type_name
                   JOIN sql_primary_key pk
@@ -4424,7 +4416,7 @@ SELECT graph_name, type_name, position, column_name, tier
                    AND cc.constraint_name = pk.constraint_name
                  WHERE b.candidates = 1) arms) picked
  WHERE tier_rank = 1;
-COMMENT ON VIEW intent_resolved_node_key_column IS 'The ordered key columns a graph''s type encodes a node id from: what a @nodeId(typeName:) decode projects values into, and what an editor offers as completions after a node id opens. A reduction over the three populations that can answer, in first-tier-wins precedence, which is the resolution BuildContext.resolveTargetKeys makes with a live catalog in hand; naming it as a relation is what lets a second reader take the same answer instead of re-deriving it, the editor being that reader and the reason the view earns its place independently of any one consumer. The tiers carry ordered lists rather than independent facts per position, so the pick is by type and never by the (type, position) coordinate: one tier wins for a type and its whole list is taken. Splicing one tier''s column into another tier''s order is the transposition the resolution''s own reasoning warns about, an @node(keyColumns:) pinning an order the metadata does not share projecting columns against the order the decode returns values in, and a per-position pick is exactly how it would arrive. The pick is therefore DENSE_RANK over the tiers rather than intent_field_column_table''s ROW_NUMBER, which is the same window mechanism reading a tier rather than a row: ROW_NUMBER partitioned by the type would keep position zero and discard the rest of the winning list. An ambiguous binding resolves no key columns on the lower two tiers both. Each reaches a table through intent_resolved_type_binding, which carries candidates and declines to pick between a @table and a routine return that name different tables, and two candidate tables are two different key tuples: picking one would encode ids against a table the author never named. Only the pinned-SDL tier survives it, graphitron_node_key_column being keyed by graph and type and needing no table to answer. A type whose binding is ambiguous and whose keyColumns are unpinned therefore has no row, and naming that ambiguity is the detection stratum''s job rather than this relation''s. Absence means no tier answered, which is what the resolution reports as an error rather than a default. Whether a resolved name is a column the table actually has is deliberately not asked here: the pinned tier answers without a table at all, so a name that resolves against nothing is a row here and a detection elsewhere, on intent_node_metadata_defect''s terms for the tier it reads. The JOOQ_METADATA tier''s sibling spelling is intent_inferred_node_type, which asks the same well-formed-stated-metadata question on a different stand, the @table binding alone rather than this reduction, for the reason that view''s comment gives; the two carry the conjunction twice and name each other so a reader who finds one finds the pair, and extracting it into a relation on sql_table''s own key is the follow-on neither performs unilaterally.';
+COMMENT ON VIEW intent_resolved_node_key_column IS 'Which columns a node type''s wire id encodes, in the order it encodes them: one row per key position of one node type. A type is a node by implementing Node, and what it is a node by is what names its key columns. An author''s @node names them on the type, or omits them, in which case the manual documents the bound table''s primary key in declaration order as the default, which is the third arm here and is a default under a claim rather than a source of its own. The jOOQ generator''s node metadata names them on a table, and a type reaches them by being bound to that table and implementing Node, which is the inferred nodehood relation''s own rule and is read here rather than restated. That arm used to drive off any bound table carrying the constants, so it answered for hundreds of types that are no node at all; the primary-key arm is scoped to an @node for the same reason, a node inferred from the constants taking its key columns from the constants that inferred it. Where more than one arm speaks the earlier wins, which on the capture this was measured against never changed an answer: the one type with both an @node and metadata stated the same two columns in the same order. That makes the precedence a tie-break between witnesses rather than a cascade, and a disagreement between them is a defect nothing here records, which is a relation this schema still owes.';
 COMMENT ON COLUMN intent_resolved_node_key_column.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
 COMMENT ON COLUMN intent_resolved_node_key_column.type_name IS 'the graph type whose node key this row is one column of';
 COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position within the key, dense from zero, in the order the winning tier states; the order the encoded identity depends on, which is why the pick keeps a tier''s list whole';
