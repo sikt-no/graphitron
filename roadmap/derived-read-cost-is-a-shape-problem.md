@@ -2700,6 +2700,52 @@ jump to it lands somewhere defensible, while offering the author a completion fo
 wrote is harder to argue for. Purification decides it by construction instead, which is the argument
 for it that has nothing to do with gatherers.
 
+### Slice 27: the navigation rung that is already redundant, and the seam the union goes through
+
+The sequencing this item announced was to lift `graphitron_field_navigation` out of the SDL walk
+first, as the free step, and take the expansion after. Measuring the relation inverted that, and the
+measurement is worth keeping because it is also the clearest evidence for what purifying the
+transcription buys.
+
+**The navigation relation resolves three rungs in precedence.** The expression the author wrote where
+a macro rewrote the field's type, read out of `graphitron_field_synthesis`; below it the structural
+connection, `intent_connection_element_type` keyed by the field's current named type; below that the
+field's own named type. The relation's comment says the upper two agree wherever both fire and keeps
+the precedence anyway, "because the authored expression is the more direct evidence and because a
+macro that expanded to something other than a connection would need it".
+
+**Measured on the sakila example schema, the top rung is already carrying nothing.** 959 navigation
+rows, of which 20 answer `AUTHORED_EXPRESSION`, 6 `CONNECTION_ELEMENT` and 933 `NAMED_TYPE`. Every
+one of the 959, the 20 included, is reproduced exactly by
+`coalesce(connection_element(named_type), named_type)`. Zero disagreements. So the rung that forces
+this relation to be written where the parse is, and therefore forces a writer to sit inside the SDL
+walk, is a defence against a hypothetical second macro rather than a rule any schema exercises.
+
+**Which is why the expansion has to move first.** The two rungs that remain both turn on the
+connection-shape rule, and that rule has to run over the population the generator emits, authored
+connections and minted ones alike. Once the minted types leave `graphql_type`, that population is a
+union, so the shape rule crosses two families and the navigation rule sits on top of it. There is no
+version of the navigation lift that is stable before the union exists; doing it first would be work
+thrown away. What the measurement does buy is that the lift, when it comes, is a two-arm rule over
+one relation rather than a three-rung resolution needing a stored SDL expression parsed in Java.
+
+**The seam, which is what this slice actually lands.** `intent_expanded_type` and
+`intent_expanded_field` are the names a reader uses for the population the generator works with:
+authored plus minted for types, and for fields the same plus the macro's rewrite at a coordinate both
+populations hold. Today both are exact projections of `graphql_type` and `graphql_field`, because the
+expansion still writes into those relations, so this slice changes no answer anywhere: 4117 tests
+pass unchanged. What it does is put the seven direct readers that want the expanded population onto
+the union name, so the arms can move underneath them without a reader diff. The seven are
+`intent_connection_element_type`, `intent_field_column_scope_live`, `intent_field_exemption_rule`,
+`intent_field_payload_producer`, `intent_field_scope_table_live`, `intent_resolved_field_demand` and
+`intent_type_demand`; the other four of the census's eleven reach the expansion through one of these
+rather than naming the base relations themselves.
+
+Both union views are declared in `meta_relation` rather than added to the undeclared roster, the
+declaration gate being explicit that a new relation owes a declaration. Their grain rows are
+`expanded-type` and `expanded-field`, and their owner is the derivation gatherer, which is what a
+relation whose arms will span two families is.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and
