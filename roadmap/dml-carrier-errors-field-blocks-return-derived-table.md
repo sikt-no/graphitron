@@ -1,13 +1,13 @@
 ---
 id: R687
 title: "A DML carrier payload with an errors field loses its return-derived write target"
-status: Spec
+status: Ready
 bucket: structural
 priority: 5
 theme: mutation-write
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-08-25
+last-updated: 2026-08-31
 ---
 
 # A DML carrier payload with an errors field loses its return-derived write target
@@ -254,8 +254,9 @@ published recognizer fact should hand its consumers neither a graphql-java handl
 nor the scan's own result vocabulary, which stays the recognizer's gathering detail.
 
 Mint the arm only when the DML scan admitted. `carrierBinding` runs the scans in DML → routine
-→ `@service` order and its DML arm already binds the `Admit` it tests, so carrying that
-pattern variable to the fall-through construction is a bind, not a new derivation. A payload
+→ `@service` order and its DML arm tests the `Admit` without binding it (only the `@service`
+arm binds today), so add the pattern variable and carry it to the fall-through construction:
+a bind, not a new derivation. A payload
 only the routine or `@service` scan admits stays the plain arm, which keeps the generic
 write-target message at the DML seat, the behaviour that seat wants anyway (its precondition is
 a non-`Reject` DML scan). This is also what keeps the arm out of R725's way: a first-wins
