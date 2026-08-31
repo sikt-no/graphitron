@@ -1,8 +1,57 @@
 ---
-next-id: R883
+next-id: R884
 ---
 
 # Rewrite Changelog
+
+- R873 (`f074dfe` the binding, the partition and the sibling validator rule, `cae5163` the execution
+  fixtures, `d62e514` the error union wrap, `d2a58be` the list-arm order pin, `6e20f53` the rework;
+  filed `d9e85aa`, spec drafted `87bf4d0`, Spec -> Ready `00f0ebd`, Ready -> In Progress `ea3d597`,
+  In Progress -> In Review `7b2a97a`, In Review -> Ready `1bba05f`, Ready -> In Progress `ea86a98`,
+  In Progress -> In Review `13c831c`; Done gate in this commit): a payload type carrying an errors
+  field on the `WrapperArm` transport can hold polymorphic child fields, and they resolve on both
+  arms. Such a payload hands its children an `Outcome` as `env.getSource()`; the multi-table
+  polymorphic emitters read the parent off that source unconditionally, so every polymorphic child
+  of such a payload threw `ClassCastException` on every request, on both arms
+  (sikt-no/graphitron#526). The fix names the thing that was splittable: the narrowing prelude and
+  the source expression are now one sealed value, `ParentSourceBinding` (`TableRow` / `DirectRecord`
+  / `OutcomeRecord`), minted by one producer from the parent's source shape and
+  `FetcherEmitter.hasWrapperArmErrors`, and consumed by `buildScalarPerParentFetcher`, both batched
+  polymorphic fetchers, the monomorphic `buildBatchedDataFetcher` that used to mint the pair inline,
+  and `bind`'s inline arm-switch. Deleting the source-defaulting `buildRecordParentKeyExtraction`
+  overload makes the compiler the enforcer for the first bucket: an emitter that has not obtained a
+  binding has no source expression to write. A second leaf partition over the same vocabulary
+  (binding-seam / no-parent-source / wrapper-inadmissible) is pinned exhaustive and disjoint by
+  `GeneratorCoverageTest`, so a new field leaf fails the build until its author answers the outcome
+  question, and `validateWrapperArmSiblingPosture` turns the third bucket from folklore into a
+  build-time rejection, which is where the child `@service` leaves land: they carry the same defect
+  and routing them through the seam is named as follow-up rather than done here.
+  Independent-session In Review -> Done review, the reviewer sharing no session with any of the five
+  implementation commits: full reactor green under `mvn install -Plocal-db` (`BUILD SUCCESS`, all
+  fourteen modules, zero test failures). Completeness was checked against the spec's own evidence
+  and then against the artifact rather than against the build: `OutcomePolymorphicChildExecutionTest`
+  covers both parent backings on both arms over real fixture rows, and the generated
+  `OccupantsWithErrorsPayloadFetchers` / `AddressOccupantsRecordPayloadFetchers` were read directly,
+  where all four polymorphic children now narrow `Outcome.Success` and every remaining
+  `env.getSource()` in those two classes is the narrowing test itself. The two lines the spec quoted
+  as the defect are corrected in the emitted output, the accessor read now
+  `((OccupantsWithErrorsPayload) success.value()).address()` and the key projection now
+  `DSL.row(((Record) success.value()).get(Tables.ADDRESS.ADDRESS_ID))`. Round 1's single blocking
+  finding is satisfied rather than worked around: the pipeline test's `DirectRecord` prelude is
+  obtained from the production producer over the subject and escape the batched list fetcher hands
+  it, rendered through javapoet's own `MethodSpec` renderer so the indentation is generated, with a
+  non-blank assertion keeping the containment from going vacuous, so no delivered test asserts a
+  code string against a generated method body. The retirement sweep holds on both declared terms:
+  the defaulting overload is gone with all three callers stating their source, and `SOURCE_FROM_ENV`
+  survives only in its table-parent role under javadoc saying it is deliberately not a default on
+  the record-parent extraction; the `sourceIsOutcome` parameter threading is gone, the surviving
+  occurrences being the live local at the producer's mint site and prose pointing at it.
+  User-facing-doc check: the only `docs/` change is one contributor-facing line in
+  `dispatch-axes.adoc`, clean of roadmap-internal markers. Two things recorded and not blocking: the
+  `parentTable != null ? Table : Record` splice ahead of the single producer is written at both mint
+  sites, which it was before this change too, and five prose sites still name the type-level
+  derivation `sourceIsOutcome` now that it has a proper name, filed as R883 rather than held against
+  this gate.
 
 - R878 (`364ec15` the delivery, `707975d` the rework; filed `8e3bc2f`, Backlog -> Spec `124f046`, a
   fourth witness added to the Spec `ef13de0`, Spec -> Ready `a565567`, Ready -> In Progress
