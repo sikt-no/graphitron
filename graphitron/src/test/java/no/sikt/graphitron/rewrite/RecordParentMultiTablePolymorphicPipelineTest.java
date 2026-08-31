@@ -1,5 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -10,6 +14,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +41,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @PipelineTier
 class RecordParentMultiTablePolymorphicPipelineTest {
+
+    private static final ClassName COMPLETABLE_FUTURE = ClassName.get(CompletableFuture.class);
+
+    /**
+     * The given code as javapoet renders it inside a method body: emitted through the same
+     * {@link MethodSpec} renderer a fetcher goes through, then stripped of the signature line and
+     * the closing brace. Deriving the indented form is what lets a caller compare a producer's
+     * output against an emitted method without transcribing either.
+     */
+    private static String asRenderedMethodBody(CodeBlock code) {
+        var rendered = MethodSpec.methodBuilder("body").addCode(code).build().toString().lines().toList();
+        return String.join("\n", rendered.subList(1, rendered.size() - 1)) + "\n";
+    }
 
     /**
      * Two single-PK participants that both FK to {@code film}. Uniform single-column PK arity
@@ -120,11 +138,17 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .filter(m -> m.name().equals("referrers")).findFirst().orElseThrow();
         var tableReferrers = tableSpec.methodSpecs().stream()
             .filter(m -> m.name().equals("referrers")).findFirst().orElseThrow();
-        String nullSourceGuard = """
-                if (env.getSource() == null) {
-                  return java.util.concurrent.CompletableFuture.completedFuture(null);
-                }
-                """.indent(2);
+        // Derived from the production producer rather than transcribed: the batched list fetcher
+        // asks the same DirectRecord arm for a prelude over the same subject and escape, so this
+        // compares two generated artifacts. A source literal here would instead pin javapoet's
+        // rendering choices (indent width, qualified-vs-imported type name, statement form), none
+        // of which is what this test claims.
+        String nullSourceGuard = asRenderedMethodBody(new ParentSourceBinding.DirectRecord()
+            .prelude(CodeBlock.of("env.getSource()"),
+                     CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
+        assertThat(nullSourceGuard)
+            .as("the DirectRecord arm mints a guard, so the containment below is not vacuous")
+            .isNotBlank();
         assertThat(recordReferrers.toString())
             .as("the record parent's fetcher carries the DirectRecord null-source guard")
             .contains(nullSourceGuard);
