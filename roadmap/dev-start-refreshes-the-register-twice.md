@@ -622,42 +622,41 @@ The sibling logging item R855 would have made this visible without reading the s
 both sessions that found it found it instead; it has now landed, and the section above says what this
 item builds on and what it owes it.
 
-`depends-on` names R864, R865 and R872, and in every case the reason is a correctness interaction
-rather than a merge conflict. R855's shape is in the tree and nothing is owed there any more; what is
-owed is to the two items that change who decides the refresh cadence, and to the one that makes the
-premise true.
+> **R864 was dissolved into R865 on 2026-08-31**, its module move and the store-ownership inversion
+> having been two specs against one defect. This section is updated to match. The reviewer rounds at
+> the end of this file cite R864 by id where they were written; those are dated records and are left
+> as they stand.
 
-**R872 is the hard one of the three.** R864 and R865 are ordering preferences: this item is sound
-either way round and only the reconciliation work moves. R872 is different, because the first
-assertion of the gate is red until it lands and the premise it enforces is false until it lands. So
-this item can be specified, and its rule reviewed, ahead of R872; it cannot be marked Done ahead of
-it. The premise section carries the argument for taking it as a dependency instead of as a fourth
-accepted loss.
+`depends-on` names R865 and R872, and in both cases the reason is a correctness interaction rather
+than a merge conflict. R855's shape is in the tree and nothing is owed there any more; what is owed
+is to the item that changes who owns the store, and to the one that makes the premise true.
 
-**This item and R864 agree, which is why the sequencing is worth getting right.** The rule below
-already draws the line R864 states as an API constraint: a writer never consults a claim, because a
+**R872 is the hard one of the two.** R865 is an ordering preference: this item is sound either way
+round and only the reconciliation work moves. R872 is different, because the first assertion of the
+gate is red until it lands and the premise it enforces is false until it lands. So this item can be
+specified, and its rule reviewed, ahead of R872; it cannot be marked Done ahead of it. The premise
+section carries the argument for taking it as a dependency instead of as a fourth accepted loss.
+
+**This item and R865 agree, which is why the sequencing is worth getting right.** The rule below
+already draws the line R865 states as an API constraint: a writer never consults a claim, because a
 writer that has just rewritten a partition's inputs knows they changed, and only a reader has a
-question. R864 says the same thing from the other end, that a consumer needing current targets asks
-and a consumer that does not pays nothing, and makes the cadence belong to whoever opened the store
-rather than to capture. Two statements of one rule, so the risk between them is not disagreement.
+question. R865 says the same thing from the other end, that a consumer needing current targets asks
+and a consumer that does not pays nothing, and makes the store, and with it the cadence, belong to
+whoever opened it rather than to capture. Two statements of one rule, so the risk between them is
+not disagreement.
 
-**The risk is R865, and it is specific.** That item makes `Materializations.refresh` declinable, so
-a capture can commit having refilled nothing. This item's rule says the capture-cadence entry point
-stays unconditional and records a claim per partition it refills. Those two sentences are compatible
-only if a capture that declined the refresh records no claims: otherwise it commits rows claiming
-partitions it never refilled, the reader-side pass believes them, and the dev session serves stale
-targets with a claim vouching for them. That is the one failure this item's whole design exists to
-prevent, arriving through a door that did not exist when the rule was written.
+**The risk this section used to carry is withdrawn, because R865 no longer ships the door it came
+through.** An earlier draft of that item made `Materializations.refresh` declinable, which would have
+let a capture commit having refilled nothing, and this item's rule says the capture-cadence entry
+point stays unconditional and records a claim per partition it refills. The two were compatible only
+if a capture that declined recorded no claims. R865 has since dropped every declinable path, on
+R876's ground that a refresh worth skipping is a registration worth retiring, so the rule below stays
+true as written and no reconciliation is owed either way round.
 
-**The direction is this way round because the reverse is already safe.** A capture that recorded no
-claims leaves partitions with no claim, which the reader-side pass refills; that is the cold-store
-case the rule handles by construction. So R865 landing first costs this item nothing. This item
-landing first leaves a rule stating that refresh records unconditionally, for R865's implementer to
-find and reconcile without the context that produced it.
-
-R864 adds a second, weaker reason: it moves capture and every caller of `Materializations` across a
-module boundary, and this item adds a relation and two writers in exactly that area. Writing them
-against the final module shape costs nothing; writing them against today's costs a migration.
+What is left is the weaker reason, and it is still a reason: R865 moves capture and every caller of
+`Materializations` across a module boundary, and this item adds a relation and two writers in exactly
+that area. Writing them against the final module shape costs nothing; writing them against today's
+costs a migration.
 
 R848 asks whether the register needs to be this large at all, and it is not a dependency. R859 was
 the double capture; it has shipped, so what this item's fix leaves in place is one capture per dev

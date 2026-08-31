@@ -423,3 +423,9 @@ Two **pre-existing, non-blocking** hygiene notes, unchanged this window:
 
 _Review date: 2026-08-31._
 
+_Addendum, same date, after the review above was written: `capture-moves-below-the-generator` (R864)
+was dissolved into `capture-without-the-materialization-refresh` (R865) and its file deleted, the two
+having been separate specs against one defect. The section D edge count reads `dev-start-refreshes-the-register-twice`
+-> three targets; it now names two, the deleted slug having been dropped from that item's
+`depends-on`. Everything else in section D stands._
+

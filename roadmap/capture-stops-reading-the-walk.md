@@ -140,16 +140,16 @@ that test's cleanup.
 
 ## Relation to the items around it
 
-**R864** named this deletion as the edge its module move must cut first. It is split out because it
-needs none of that move: no module changes, no dependency changes, and the deletion stands on its
-own reasoning rather than on where capture ends up living. It is also the piece of R864 that closes
-the defect R864 is named after, since a module boundary constrains import direction and this is a
-write.
+**R865** names this deletion as the edge its module move must cut first, and depends on it. This item
+is split out because it needs none of that move: no module changes, no dependency changes, and the
+deletion stands on its own reasoning rather than on where capture ends up living. It also closes the
+write-direction half of the defect R865 is named after, which the module boundary itself cannot,
+since a boundary constrains import direction and this is a write.
 
-**R865** planned a seam separating `TypeBackingClassRows.write` from the detections inside `detect`,
-so a capture-only run could have the write without the detections. That seam disappears here rather
-than changing: with the write gone, `detect` is detections-only and there is nothing to separate.
-R865 should check this item's state before starting that seam.
+The capture-only goal R865 adds is the other reason the order matters. That item would otherwise owe
+a seam separating `TypeBackingClassRows.write` from the detections inside `detect`, so a
+capture-only run could have the write without the detections. The seam disappears here rather than
+changing: with the write gone, `detect` is detections-only and there is nothing to separate.
 
 **R740** reaches the same conclusion from the other end, and owns what is left of
 `TypeBackingShadowTest` afterwards: the rename away from "shadow" and the symmetric assertion. This
