@@ -4,6 +4,40 @@ next-id: R887
 
 # Rewrite Changelog
 
+- R883 (`89c8506` the scrub; filed and Backlog -> Spec `793090a`, Spec -> Ready `292c6a7`, Ready ->
+  In Review `89c8506`; Done gate in this commit): five prose sites named the per-type parent-source
+  derivation by `sourceIsOutcome`, the boolean local that feeds it, so a reader following any of
+  them landed on an input to the mechanism rather than on `ParentSourceBinding`, the sealed value
+  that holds the prelude/source pairing and the three-arm fork. Two remedies rather than one applied
+  five times, split on what the `verify`-phase javadoc reference gate can actually see: the two
+  model leaves (`ChildField.SingleRecordIdField`, `KeyLift.ProducedRecords`) are public records
+  inside the gate's element set and repoint at `ParentSourceBinding` with the fully-qualified
+  `{@link}` `SourceEnvelope` already uses across the model-to-generators direction, while the three
+  `FieldBuilder` sites (a private method's javadoc and two `//` comments in a package-private class)
+  sit outside the gate entirely, where a fresh `{@code}` name would rot by the same mechanism, so
+  the parenthetical gloss is deleted and each sentence keeps its whole load-bearing claim without
+  naming a symbol. A sixth instance in `ParentSourceBinding`'s own javadoc, unchecked because it sat
+  in `{@code}`, located the predicate at `generateForType`, which merely delegates and undercounts
+  the entry points; repointed at `{@link TypeFetcherGenerator#generateTypeSpec}`. No behaviour
+  change, no new test and no new guard: every edit is prose. Independent-session In Review -> Done
+  review: full reactor green under `mvn install -Plocal-db`, 14/14 modules; reviewer rule verified
+  by session trailer on the single implementation commit; no test file touched, so the code-string
+  ban is vacuous; user-facing-doc check skipped (no `docs/` changes) and the retirement sweep skipped
+  (the item deliberately retires nothing, on the grounds that installing a
+  `RetiredVocabularyGuardTest.REGISTRY` entry in the same commit as the scrub would make the
+  registry's demonstrated-recurrence bar permanently unobservable for this term). Both halves of the
+  gate-coverage split were reproduced at the Done gate over a cleared
+  `graphitron/target/reports/apidocs`, which the item's own body records as necessary because the
+  plugin's up-to-date skip is logged at debug only and a probe over populated output returns green
+  whatever the probe says: dangling probes at `KeyLift.ProducedRecords` and at the corrected
+  `TypeFetcherGenerator#generateTypeSpec` member link both fail the build, so both repointed sites
+  are genuinely build-enforced, while a dangling probe in `FieldBuilder`'s private-method javadoc is
+  accepted silently. `sourceIsOutcome` now appears in Java only as the live local and its single use
+  at `TypeFetcherGenerator.generateTypeSpec`. Recorded and not blocking: the corrected sentence's
+  "computed once per emitted type" is scoped to the type-fetcher entry points and does not mention
+  `FetcherRegistrationsEmitter`'s own call to `FetcherEmitter.hasWrapperArmErrors`, which the prior
+  text elided identically and which R886 is filed to collapse.
+
 - R834 (`d1abd12` Phase 1, the keyless-return-table rejection landing alone and inert, `4a2d3e8` the
   cutover plus its proof and prose, `c07e7e5` the rework round; Ready -> In Progress `f74fffa`,
   In Progress -> In Review `a856f68`, Done-gate round 1 withhold `4709dd8`, In Review -> Ready
