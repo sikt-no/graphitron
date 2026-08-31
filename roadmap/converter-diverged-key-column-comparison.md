@@ -74,7 +74,16 @@ The reported break is one of several. `ColumnRef` already carries the per-column
 (`columnType()`, decided once at the catalog boundary from `Field.getType()`), so every site below
 has the information it needs and simply does not consult it. This list is read off the source, not
 observed: iteration 1 below exists to replace it with the set a real diverged fixture actually
-reaches, and the item should shrink where a site turns out unreachable from authored SDL.
+reaches, and it may move in either direction. The item should shrink where a site turns out
+unreachable from authored SDL, and grow where the inventory finds a site this reading missed.
+
+The test that put a site on this list is mechanical, and worth stating so a later reader can re-run
+it: the receiver's Java type and the argument's Java type are supplied by **two different**
+`ColumnRef`s. Every emitted equality that takes both from the *same* `ColumnRef` is immune however
+the converter is configured, because there is one type and it cannot disagree with itself. That
+disposes of `ReentryRowsFragments.valuesJoinOn`, `TypeFetcherGenerator`'s bulk-update lookup
+`WHERE`, `SelectMethodBody`'s dispatcher `ON`, `ProjectionUnitRenderer`'s lookup-input `ON`, and
+`ServiceRowsFragments`'s projection-input `ON`, none of which appear below.
 
 * `JoinFragments.emitCorrelationWhere` writes `firstAlias.<target>.eq(parentAlias.<source>)` for the
   step-0 correlation of a reach path. This is the shape the issue reports. Note that it emits an
@@ -93,14 +102,27 @@ reaches, and the item should shrink where a site turns out unreachable from auth
 * The `VALUES` row machinery in `ValuesJoinRowBuilder` types each row cell from one side's
   `ColumnRef.columnType()` while `cellsCode` binds the value with the other side's `getDataType()`.
   Under divergence the two disagree, so this needs checking on the batched and lookup paths.
+* `MultiTablePolymorphicEmitter.parentInputSlotPredicate` writes
+  `<firstAlias>.<slot.targetSide()>.eq(parentInput.field("<slot.sourceSide().sqlName()>",
+  <owner>.<sourceSide>.getDataType()))`. This is the `BatchedRowsFragments` shape above, spelled a
+  second time in a second class, and it is the reason the mint exists rather than a patch at the
+  first site: the same three-line rule was already due to be written twice before anyone wrote it
+  once.
+* `MultiTablePolymorphicEmitter.valueBoundParentWhere` writes
+  `<firstAlias>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"),
+  <sourceSide.columnType()>.class))`. The receiver is a column and the right operand is a **value**
+  read out of a `Record`, not a `Field`, which is a shape the other seven do not have. It needs its
+  own sentence in *The rule* below and it gets one.
 
 ## Design
 
-### One mint, not six patches
+### One mint, not eight patches
 
-The six sites above are six spellings of one question: *given two catalog columns, write the Java
+The eight sites above are eight spellings of one question: *given two catalog columns, write the Java
 that compares them.* Patching each site with its own type check would leave the same three-line
-rule copied six times, with no structural reason a seventh site would pick it up. The tree already
+rule copied eight times, with no structural reason a ninth site would pick it up. That risk is not
+hypothetical: two of the eight are the same shape in two classes, and the inventory found the second
+one only after the first had been written up as a one-off. The tree already
 answers this class of problem by funnelling a shape through a single producer: `ValuesJoinRowBuilder`
 states that "all routes go through `cellsCode`, so every VALUES cell in the generator binds as
 `DSL.val(value, col.getDataType())`"; `DiscriminatedTableFragments` mints the discriminator
@@ -110,17 +132,23 @@ and the bind typing with the assembly's other two comparison sites."
 
 So: a single minting surface for a column-to-column equality, and every site above calls it. The
 proposed home is a new `ColumnComparison` in `no.sikt.graphitron.render`, sitting at the same
-below-narrowing layer `JoinFragments` describes itself as occupying. Two entry points cover every
-caller found:
+below-narrowing layer `JoinFragments` describes itself as occupying. Three entry points cover every
+caller found, one per shape the right operand can take:
 
 * `equality(leftAlias, leftColumn, rightAlias, rightColumn)` for the five sites where both operands
   are aliased table columns.
 * `equalityAgainstField(alias, column, otherColumnForTyping, fieldExpression)` for the
-  `BatchedRowsFragments` shape, where the right operand is a `parentInput.field(...)` lookup rather
-  than a table column but is *typed by* a known catalog column.
+  `BatchedRowsFragments` and `MultiTablePolymorphicEmitter.parentInputSlotPredicate` shape, where the
+  right operand is a `parentInput.field(...)` lookup rather than a table column but is *typed by* a
+  known catalog column.
+* `equalityAgainstValue(alias, column, valueColumn, valueOwnerTable, valueExpression)` for
+  `MultiTablePolymorphicEmitter.valueBoundParentWhere`, where the right operand is a bare Java value
+  rather than any kind of `Field`. `valueColumn` is the column the value was read from and
+  `valueOwnerTable` its owner, which together spell the `DataType` the value binds at.
 
-Both return a `CodeBlock` and both apply the same rule. Callers keep their own AND-chaining, their
-own alias resolution, and their own surrounding syntax; only the equality itself moves.
+All three return a `CodeBlock` and all three apply the same rule. Callers keep their own
+AND-chaining, their own alias resolution, and their own surrounding syntax; only the equality itself
+moves.
 
 ### The rule
 
@@ -147,6 +175,44 @@ it), which is what the `converter_org` / `converter_campus` split-query coverage
 coercion is only about the Java types lining up afterwards. Getting these backwards is how the
 original converter bug in that fixture arose, so the two are worth naming separately in the mint's
 javadoc.
+
+#### The value operand
+
+`valueBoundParentWhere` is the one site where the right operand is a bare Java value, so
+`.coerce(...)` has nothing to attach to: there is no `Field` yet. The answer is not a third rule. It
+is the two rules above applied in order, which is why this shape needs an entry point but not a new
+policy:
+
+1. Bind the value at the `DataType` of the column it was read from, the companion rule verbatim. That
+   is `DSL.val(<value>, <valueOwnerTable>.<valueColumn>.getDataType())`, the same mint
+   `ValuesJoinRowBuilder.cellsCode` uses for every `VALUES` cell and
+   `DiscriminatedTableFragments.discriminatorValue` for every discriminator literal. The value now
+   *is* a `Field`, typed at the source column and rendering through the source column's converter.
+2. Coerce that field onto the receiver, the equality rule verbatim.
+
+So the diverged emission is
+`left.eq(DSL.val(<value>, <owner>.<valueColumn>.getDataType()).coerce(left))`, and the two guards are
+unchanged: null or equal types emit `left.eq(<value>)` exactly as today, which keeps this site's
+approved output byte-identical along with everyone else's.
+
+Reading the value at the *receiver's* type instead, by passing `targetSide().columnType()` as the
+`Class` argument to `parentRecord.get(Name, Class)`, also compiles and is shorter. It is rejected: it
+routes the value through `Convert.convert` between two user types, which happens to work for the
+`Long`/`String` pair in the fixture and is not guaranteed for an arbitrary converter's user type. The
+bind-then-coerce form asks jOOQ only for conversions a registered `Converter` already declares.
+
+Both halves of the claim were checked against jOOQ 3.20.11 by rendering the predicate rather than by
+reading the javadoc. A `String` value bound at a `BIGINT`-with-`Converter` `DataType` and coerced
+onto a `Field<Long>` renders `"c"."org_code" = 186` with inlined parameters and `"c"."org_code" = ?`
+with a single bind, in both cases identical to the undiverged `child.eq(186L)`. The column-to-column
+form renders `"c"."org_code" = "p"."org_code"`, identical to the undiverged comparison. That is the
+same no-SQL-change property the design rests on, now measured at both operand shapes.
+
+One plumbing note, since the section below claims the mint needs none. `valueBoundParentWhere` takes
+only `(String firstAlias, List<JoinSlot.FkSlot> slots)` and so has no owner `TableRef` for step 1.
+Its sole caller `singleBranchCorrelationWhere` does not either, but *that* method's caller already
+holds `parentKeyOwnerTable` as a parameter, so this is one argument threaded down two frames from a
+value already in scope. No new model field and nothing new resolved.
 
 ### Alternative considered: jOOQ's implicit path join
 
@@ -192,7 +258,10 @@ So this is a road not taken by design, not a mechanism the rewrite dropped by ac
 `BuildContext.resolveFkColumnRefs` resolves both ends of every FK through `catalog.findColumn` and
 carries the catalog-decoded `columnType()` onto each side of every `JoinSlot.FkSlot`. So both
 operands of every affected comparison already hold a live, real type, and the mint needs no new
-plumbing and no new model field. Divergence is a derived property of a slot, read where the
+plumbing and no new model field. The single exception is the owner `TableRef` that
+`valueBoundParentWhere` needs in order to spell a `DataType`, threaded down two frames from a value
+its caller's caller already holds; see *The value operand* above. Divergence is a derived property
+of a slot, read where the
 comparison is written; it is deliberately **not** lifted to a `boolean diverged()` on `FkSlot`,
 because the non-FK callers (the name-matched arms, the batched field lookup) compare `ColumnRef`s
 that never form a slot, and a slot-level flag would serve only some of them.
@@ -240,11 +309,20 @@ unambiguous FK. That combination is what reaches `emitCorrelationWhere`, and it 
 
 **Iteration 1: fixture and inventory, no fix.** Add the diverged table to `init.sql` and the
 minimum schema fixtures, and record what actually breaks. This is the iteration that converts the
-six-site list above from a reading of the source into a fact. It is expected to fail the
+eight-site list above from a reading of the source into a fact. It is expected to fail the
 compilation tier, deliberately and visibly, and its deliverable is the recorded `javac` error list
-plus a decision on which of the six sites a diverged key can actually reach from authored SDL. Some
+plus a decision on which of the eight sites a diverged key can actually reach from authored SDL. Some
 may turn out unreachable, and the item should shrink rather than emit dead handling for them. Also
 confirm here whether the store-sourced path sees the divergence.
+
+The inventory may also grow, and one topology is known in advance to need more than the reported
+shape to reach it. The two `MultiTablePolymorphicEmitter` sites serve `@referenceFor` paths under a
+multi-table polymorphic interface or union, which the plain single-cardinality reference above does
+not exercise, so a `javac` list from that fixture alone cannot speak to them either way. Either
+extend the fixture with a diverged key under a polymorphic parent, or record explicitly that those
+two sites were moved onto the mint without a fixture reaching them and say why that was the right
+trade. Silence about them is the one outcome this iteration must not produce, because a site absent
+from the inventory is a site iterations 2 and 3 will not look for.
 
 **Iteration 2: the mint, and the sites the inventory proved reachable.** Introduce
 `ColumnComparison`, move the reachable sites onto it, and get the fixture compiling. Existing
@@ -267,9 +345,15 @@ Per the tier rubric in `docs/architecture/how-to/testing.adoc`, top-down:
   which is the whole safety claim of the design. One test per topology the inventory found
   reachable, not one per emission site.
 * **Unit tier**, a renderer arm test on `ColumnComparison`: the three rule branches (either type
-  null, types equal, types diverged) asserted directly on record literals. The tier guide names
-  renderer arm tests as the preferred home for per-arm structural assertions on command-driven
-  emission, and this mint is a total function over a small input, so it fits exactly.
+  null, types equal, types diverged) asserted directly on record literals, across all three entry
+  points, since the value operand's diverged branch emits a different shape from the other two and
+  its undiverged branch must stay byte-identical. The tier guide names renderer arm tests as the
+  preferred home for per-arm structural assertions on command-driven emission, and this mint is a
+  total function over a small input, so it fits exactly.
+* **Execution tier, second test**, if and only if iteration 1 gets a diverged key under a polymorphic
+  parent: the same resolves-and-returns-the-right-rows assertion for that topology. The value-operand
+  emission is the one arm whose SQL neutrality rests on a bind rather than on a column reference, so
+  it is the arm most worth proving against a real database rather than only in a render assertion.
 * **Pipeline tier**: nothing owed. The classification of a diverged reference is identical to a
   non-diverged one, which is the point; a pipeline case asserting that would pin a non-difference.
 
@@ -322,11 +406,8 @@ neither is on the list:
 * `valueBoundParentWhere` (around line 1456) emits
   `<firstAlias>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"),
   <slot.sourceSide().columnType()>.class))`. This is a third shape, and the design does not reach it.
-  The right operand is a *value*, not a `Field`, so `.coerce(...)` has nothing to attach to. The
-  available answer is to read the value at the receiver's type, passing `targetSide().columnType()`
-  as the `Class`, and that is the direct opposite of the spec's companion rule that "a value binds at
-  the `DataType` of the column it was read from". At this site the two rules the *Design* section
-  presents as complementary genuinely conflict, and the spec should say which wins here and why.
+  The right operand is a *value*, not a `Field`, so `.coerce(...)` has nothing to attach to, and the
+  spec needs to say what governs it.
 
 The omission is specific, not a general audit failure, and worth recording so the revision is
 cheap: every other emitted equality I looked at supplies both the receiver and the argument's type
@@ -345,8 +426,8 @@ one non-polymorphic single-cardinality reference, so its `javac` list can only s
 topology reaches; a polymorphic site cannot appear in it, and nothing in the charter invites the
 implementer to look wider. Followed exactly, the plan ships the mint plus five of eight callers, with
 the polymorphic arms still non-compiling under divergence and no record that they were considered.
-That is precisely the "no structural reason a seventh site would pick it up" failure the *One mint,
-not six patches* argument exists to prevent, which is why it lands on question 2 rather than on
+That is precisely the "no structural reason a further site would pick it up" failure the *One mint*
+argument exists to prevent, which is why it lands on question 2 rather than on
 scope.
 
 **What would satisfy it**
@@ -370,3 +451,44 @@ scope.
   to-one navigation, which that flag leaves generated. The other two counts (name-matched pairs have
   no `ForeignKey` to navigate, and a correlated `WHERE`, a `VALUES` batch and a pivot multiset have no
   path spelling) each carry the rejection on their own, so nothing needs to change here.
+
+### Round 2, revisions applied by the reviewer session at the user's direction
+
+The user directed the reviewer session that raised round 1 to apply the round-1 revisions itself
+rather than hand them back. Recorded here because it has a bookkeeping consequence: the session that
+wrote the round-1 findings has now also written plan-body prose, so it is an author on this file and
+cannot take the Spec → Ready gate. That gate needs a third session, reviewing the plan as it now
+stands rather than re-reading round 1.
+
+What changed, against the three asks:
+
+* Both `MultiTablePolymorphicEmitter` sites are named under *Emission sites*, which is now eight
+  sites rather than six, and the counts in *One mint* and *Iterations* follow. *Emission sites* also
+  states the mechanical test that put a site on the list (receiver type and argument type come from
+  two different `ColumnRef`s) and names the five same-column sites that test excludes, so a later
+  reader can re-run the inventory rather than trusting it.
+* The value-operand rule is settled in a new *The value operand* subsection. The round-1 finding
+  framed this as a conflict between the coerce rule and the bind-at-source rule. That diagnosis was
+  wrong, and the correction is the substance of the resolution: the two rules compose in order.
+  Bind the value at the source column's `DataType`, which turns it into a `Field`, then coerce that
+  field onto the receiver. No new policy, one new entry point. Reading the value at the receiver's
+  type is the shorter alternative and is rejected in the subsection, because it leans on
+  `Convert.convert` bridging two user types, which the fixture's `Long`/`String` pair happens to
+  satisfy and an arbitrary converter's user type does not.
+* Iteration 1's charter is two-directional, and it now names the polymorphic topology as the one
+  case known in advance to sit outside the reported fixture's reach, with an explicit either/or:
+  extend the fixture, or record why those two sites went onto the mint unreached. Silence is ruled
+  out.
+
+Two claims in the new prose were measured rather than reasoned, since the design's whole safety
+argument is that the emitted SQL does not move. Rendering the predicate under jOOQ 3.20.11: a
+`String` bound at a `BIGINT`-with-`Converter` `DataType` and coerced onto a `Field<Long>` renders
+`"c"."org_code" = 186` inlined and `"c"."org_code" = ?` with one bind, both identical to the
+undiverged `child.eq(186L)`; the column-to-column form renders `"c"."org_code" = "p"."org_code"`,
+identical to the undiverged comparison. The figures are in *The value operand*.
+
+The owner-`TableRef` plumbing note is the one place the revision qualifies an existing claim rather
+than extending it. *Where divergence is decided* said the mint needs no new plumbing;
+`valueBoundParentWhere` needs an owner `TableRef` to spell a `DataType`, and while it is threaded
+from a value already in scope two frames up, that is still an argument the site does not have today.
+Both sections now say so.
