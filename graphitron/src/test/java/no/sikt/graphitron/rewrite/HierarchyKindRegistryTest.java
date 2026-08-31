@@ -244,6 +244,11 @@ class HierarchyKindRegistryTest {
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),
+        // When an authored predicate contributes its conjunct. A decision about the emit, taken
+        // where the wrapper it gates is minted, not a fact the schema states: the same SDL field
+        // yields no guard where the author's method is the whole predicate and a field-presence
+        // guard where graphitron wraps that method in a correlated EXISTS.
+        Map.entry(no.sikt.graphitron.command.PresenceGuard.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.ProjectionCommand.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Contribution.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.CallWrap.class, HierarchyKind.COMMAND),

@@ -7,6 +7,7 @@ import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.MatchKind;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.PresenceGuard;
 import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
@@ -166,8 +167,7 @@ public final class ConditionGlueRenderer {
                     }
                 }
                 case Predicate.Authored authored ->
-                    builder.addStatement("condition = condition.and($L)",
-                        authoredExpr(authored, aliasesByReach));
+                    appendAuthoredAnd(builder, authored, liftLocals, aliasesByReach);
             }
         }
         builder.addStatement("return condition");
@@ -377,6 +377,53 @@ public final class ConditionGlueRenderer {
                 + " and never lowers to a pruning branch filter");
         }
         return CodeBlock.of("args.get($S)", param.name());
+    }
+
+    /**
+     * ANDs an authored predicate's call into the {@code condition} local under the guard the
+     * producer put on the row. {@link PresenceGuard.Always} emits the bare statement: nothing of
+     * ours sits between the method's return value and the WHERE clause, so the author owns the
+     * semantics. {@link PresenceGuard.FieldPresent} wraps the statement in a wire-presence test on
+     * the field that owns the correlated {@code EXISTS}, so an omitted filter contributes no
+     * conjunct and the method is not called.
+     *
+     * <p>The read is a presence test, never a second decode: the same args-map descent the binding
+     * locals take, stopped one step short of decoding, which is why a value-less authored signature
+     * guards exactly as well as one that binds the value.
+     */
+    private static void appendAuthoredAnd(MethodSpec.Builder builder, Predicate.Authored authored,
+            Map<String, String> liftLocals, Map<ReachPath, List<String>> aliasesByReach) {
+        var expr = authoredExpr(authored, aliasesByReach);
+        switch (authored.presence()) {
+            case PresenceGuard.Always ignored -> builder.addStatement("condition = condition.and($L)", expr);
+            case PresenceGuard.FieldPresent guard -> {
+                // The read parenthesises: it is a conditional expression, and both `!=` and
+                // `instanceof` bind tighter than `?:`, so an unparenthesised read would parse as a
+                // test on the descent's null arm.
+                var read = fieldPresenceRead(guard, liftLocals);
+                if (guard.list()) {
+                    builder.addStatement(
+                        "if (($L) instanceof $T<?> presentList && !presentList.isEmpty()) condition = condition.and($L)",
+                        read, LIST, expr);
+                } else {
+                    builder.addStatement("if (($L) != null) condition = condition.and($L)", read, expr);
+                }
+            }
+        }
+    }
+
+    /**
+     * The undecoded wire read at a filter field's address: the nested-map descent from the owning
+     * argument down to the field, riding the argument's lifted local when the method has one. The
+     * top-level shape is the read {@link #pruningPresenceRead} emits, one segment deeper.
+     */
+    private static CodeBlock fieldPresenceRead(PresenceGuard.FieldPresent guard,
+            Map<String, String> liftLocals) {
+        String lifted = liftLocals.get(guard.outerArgName());
+        CodeBlock root = lifted != null
+            ? CodeBlock.of("$L", lifted)
+            : CodeBlock.of("args.get($S)", guard.outerArgName());
+        return WireMapChain.of(root, guard.path(), null, lifted);
     }
 
     private static CodeBlock authoredExpr(Predicate.Authored authored, Map<ReachPath, List<String>> aliasesByReach) {

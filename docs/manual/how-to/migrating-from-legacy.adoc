@@ -224,9 +224,11 @@ The rewrite intentionally diverges from the legacy generator on one semantic poi
 
 *Legacy reading.* `@condition(override: true)` on an outer field meant "outer owns everything": all inner explicit `@condition` annotations on the input's fields were *dropped*, and the outer method's predicates ran alone.
 
-*Rewrite reading.* `@condition(override: true)` suppresses only the implicit `column = ?` predicates the rewrite would have emitted on its own. Inner explicit `@condition` annotations *still fire*: every `@condition` you write produces SQL.
+*Rewrite reading.* `@condition(override: true)` suppresses only the implicit `column = ?` predicates the rewrite would have emitted on its own. Inner explicit `@condition` annotations *still fire*: no `@condition` you write is silently dropped by an annotation above it.
 
-The rewrite's reading is the intended one. Under legacy semantics, an inner `@condition` was meaningless once any ancestor used `override: true`, which made schema review brittle (an outer override silently inert-ified inner annotations). The rewrite's reading is composable: each `@condition` always fires; only the rewrite's own implicit predicates are negotiable.
+The rewrite's reading is the intended one. Under legacy semantics, an inner `@condition` was meaningless once any ancestor used `override: true`, which made schema review brittle (an outer override silently inert-ified inner annotations). The rewrite's reading is composable: each `@condition` always fires; the rewrite's own implicit predicates are negotiable, and so is the wrapper it mints around a condition of yours.
+
+That second negotiable thing is the correlated `EXISTS` the rewrite wraps around an FK-target `@condition`, an input field carrying both `@nodeId(typeName: "X")` and `@condition`. The subquery is a semi-join the rewrite writes rather than SQL you wrote, and it obeys the same absent-value rule every implicit predicate obeys: with no value on the field, no predicate is contributed and your method is not called. Your method's body is unaffected wherever it does run.
 
 Schemas that relied on the legacy "outer owns everything" silently dropping inner conditions will produce different SQL under the rewrite. The migration is to rewrite the schema so the inner `@condition` annotations describe what should fire (instead of relying on them being ignored), or to remove them if their absence is the intent.
 

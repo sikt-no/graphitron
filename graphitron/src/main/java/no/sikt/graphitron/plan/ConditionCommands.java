@@ -9,6 +9,7 @@ import no.sikt.graphitron.command.FacetFragment;
 import no.sikt.graphitron.command.MatchKind;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.PresenceGuard;
 import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -28,6 +29,7 @@ import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
+import no.sikt.graphitron.rewrite.model.WireAddress;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -166,15 +168,31 @@ public final class ConditionCommands {
     private static Predicate predicateOf(WhereFilter filter, LocalNames localNames, String fieldName) {
         return switch (filter) {
             case GeneratedConditionFilter gcf -> new Predicate.Generated(termsOf(gcf, localNames, fieldName));
+            // Same-table: nothing of ours sits between the method's return value and the WHERE
+            // clause, so the author's null-mapping convention is the whole story and the call
+            // always fires.
             case ConditionFilter cf ->
-                new Predicate.Authored(authoredRef(cf), bindingsFor(cf.callParams(), localNames), ReachPath.none());
+                new Predicate.Authored(authoredRef(cf), bindingsFor(cf.callParams(), localNames),
+                    ReachPath.none(), PresenceGuard.always());
             // The FK-target @nodeId + @condition reach keeps its FK-only guarantee upstream, at
             // the validator's deferral of a non-FK path for that carrier, not through this type.
+            // Its correlated EXISTS is ours, so it applies under the owning field's presence.
             case FkTargetConditionFilter fk ->
                 new Predicate.Authored(authoredRef(fk.delegate()), bindingsFor(fk.callParams(), localNames),
                     ReachPath.narrow(fk.joinPath(),
-                        fieldName + "'s FK-target @condition '" + fk.methodName() + "'"));
+                        fieldName + "'s FK-target @condition '" + fk.methodName() + "'"),
+                    presenceOf(fk.field()));
         };
+    }
+
+    /**
+     * Narrows the owning field's model-side wire address onto the row's presence guard, the same
+     * produce-time narrowing {@link ReachPath#narrow} performs for the join path: the row carries
+     * the address as three plain components, so the renderer spells a traversal without reading
+     * the classified model.
+     */
+    private static PresenceGuard presenceOf(WireAddress field) {
+        return new PresenceGuard.FieldPresent(field.outerArgName(), field.path(), field.list());
     }
 
     /**

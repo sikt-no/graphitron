@@ -35,6 +35,13 @@ import java.util.Objects;
  *       goes through the same correlated {@code EXISTS} this filter's authored call does, so there is
  *       no own-table tuple and none is invented.</li>
  *   <li>{@link #keyColumns()}: {@code X}'s key columns the decoded NodeId maps to.</li>
+ *   <li>{@link #field()}: where the owning input field's value sits on the wire. The correlated
+ *       {@code EXISTS} is a semi-join, so applying it drops every row with no far-side relation;
+ *       it is generator-minted structure the author cannot neutralise from inside their method
+ *       (returning {@code noCondition()} still leaves the wrapper), so it obeys the rule every
+ *       implicit conjunct obeys and applies only when this field carries a value. The address is
+ *       the field's own, not the callee's signature: one field, one presence fact, any
+ *       signature.</li>
  * </ul>
  *
  * <p>Composite-key FK targets ({@code keyColumns().size() > 1}) are supported: the
@@ -48,13 +55,15 @@ public record FkTargetConditionFilter(
     TableRef targetTable,
     List<JoinStep> joinPath,
     FilterBinding binding,
-    List<ColumnRef> keyColumns
+    List<ColumnRef> keyColumns,
+    WireAddress field
 ) implements WhereFilter {
 
     public FkTargetConditionFilter {
         joinPath = List.copyOf(joinPath);
         Objects.requireNonNull(binding, "binding");
         keyColumns = List.copyOf(keyColumns);
+        Objects.requireNonNull(field, "field");
     }
 
     /** The delegate's method name, for producer-side diagnostics. */

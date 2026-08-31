@@ -155,9 +155,11 @@ class ConnectionSharedResultKeyProjectionTest {
         // The diverging bucket is Film's `summary` NestingField inside the restrictTo-filtered
         // selection: edges asks for summary.title, nodes for summary.releaseYear (all seed films
         // are 2006). The restrictTo view preserves full occurrence lists per key, so one fix at
-        // the $project loop covers this path too.
+        // the $project loop covers this path too. The page is wide enough to hold both branches
+        // whatever the film and actor tables hold; a page sized to the seed drops rows the moment
+        // either table grows.
         Map<String, Object> data = execute("""
-            { searchConnection(first: 8) {
+            { searchConnection(first: 100) {
                 edges { node { __typename ... on Film { summary { title } } } }
                 nodes { __typename ... on Film { summary { releaseYear } } }
             } }
@@ -169,14 +171,14 @@ class ConnectionSharedResultKeyProjectionTest {
             .filter(n -> n.get("__typename").equals("Film"))
             .map(n -> (Map<String, Object>) n.get("summary"))
             .toList();
-        assertThat(edgeFilmSummaries).hasSize(5)
+        assertThat(edgeFilmSummaries).hasSizeGreaterThanOrEqualTo(5)
             .allSatisfy(s -> assertThat(s.get("title")).isNotNull());
 
         var nodeFilmSummaries = ((List<Map<String, Object>>) conn.get("nodes")).stream()
             .filter(n -> n.get("__typename").equals("Film"))
             .map(n -> (Map<String, Object>) n.get("summary"))
             .toList();
-        assertThat(nodeFilmSummaries).hasSize(5)
+        assertThat(nodeFilmSummaries).hasSizeGreaterThanOrEqualTo(5)
             .allSatisfy(s -> assertThat(s.get("releaseYear")).isEqualTo(2006));
     }
 

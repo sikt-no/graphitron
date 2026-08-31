@@ -103,7 +103,8 @@ class RoutineFieldExecutionTest {
         // The child-positioned @routine (single-node chain, implicit head). pActorId is fed
         // from each parent Actor row's actor_id (columnMapping), pMinLength from the GraphQL
         // argument (argMapping). Seeded casts: PENELOPE(1) -> films 1,2,3; NICK(2) -> 1,4;
-        // ED(3) -> 2,5. With minLength: 0 every cast film comes back, correlated per parent.
+        // ED(3) -> 2,5; JOAN(4) is cast in nothing, so her correlated child is empty rather
+        // than absent. With minLength: 0 every cast film comes back, correlated per parent.
         var data = execute("""
             { allActors {
                 firstName
@@ -112,10 +113,11 @@ class RoutineFieldExecutionTest {
             """);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
-        assertThat(actors).hasSize(3);
+        assertThat(actors).hasSize(4);
         assertThat(filmIdsOf(actors, "PENELOPE")).containsExactly(1, 2, 3);
         assertThat(filmIdsOf(actors, "NICK")).containsExactly(1, 4);
         assertThat(filmIdsOf(actors, "ED")).containsExactly(2, 5);
+        assertThat(filmIdsOf(actors, "JOAN")).isEmpty();
     }
 
     @Test

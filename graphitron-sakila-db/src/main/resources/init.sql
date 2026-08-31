@@ -332,10 +332,15 @@ CREATE TABLE party_company (
 -- Seed data
 -- ===========================
 
+-- Actor 4 is deliberately cast in no film. A filter that reaches film through film_actor is a
+-- semi-join, so a coordinate that applies it with no value supplied silently drops exactly this
+-- row; without an uncast actor in the pool, "an omitted filter returns the whole collection"
+-- cannot be told apart from "an omitted filter returns everything that has the relation".
 INSERT INTO actor (first_name, last_name) VALUES
     ('PENELOPE', 'GUINESS'),
     ('NICK',     'WAHLBERG'),
-    ('ED',       'CHASE');
+    ('ED',       'CHASE'),
+    ('JOAN',     'ORWELL');
 
 INSERT INTO language (name) VALUES ('English'), ('Italian'), ('Japanese');
 
@@ -406,7 +411,8 @@ INSERT INTO film_category (film_id, category_id) VALUES
 INSERT INTO category_label (category_id, label) VALUES
     (1, 'genre-label'), (4, 'comedy-label');
 
--- Cast each film with actors from the seeded actor pool (1=PENELOPE, 2=NICK, 3=ED).
+-- Cast each film with actors from the seeded actor pool (1=PENELOPE, 2=NICK, 3=ED; 4=JOAN is
+-- cast in nothing and appears in no row below).
 -- Used by argres Phase 2a execution tests (Film.actors inline @lookupKey via film_actor).
 --   film 1 (ACADEMY DINOSAUR) → PENELOPE, NICK
 --   film 2 (ACE GOLDFINGER)   → PENELOPE, ED

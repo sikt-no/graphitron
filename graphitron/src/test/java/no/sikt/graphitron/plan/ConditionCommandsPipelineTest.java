@@ -1,17 +1,23 @@
 package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.AuthoredMethodRef;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.MatchKind;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
+import no.sikt.graphitron.command.PresenceGuard;
+import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
+import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -31,6 +37,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ConditionCommandsPipelineTest {
 
     private static final String STUB = "no.sikt.graphitron.rewrite.TestConditionStub";
+
+    /**
+     * The {@code nodeidfixture} catalog, where {@code bar} carries a single-column FK to {@code baz}:
+     * the FK-target shape an authored {@code @condition} reaches through a correlated EXISTS.
+     */
+    private static final RewriteContext NODE_ID_FIXTURE_CTX = new RewriteContext(
+        List.of(), Path.of(""), "ConditionCommandsPipelineTest", Path.of(""),
+        DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture");
 
     @Test
     void filteredRootCoordinate_producesOneRowCarryingBothArms() {
@@ -64,6 +78,9 @@ class ConditionCommandsPipelineTest {
         assertThat(authored.method().methodName()).isEqualTo("argCondition");
         assertThat(authored.reach().hops()).isEmpty();
         assertThat(authored.bindings()).extracting(b -> b.localName()).containsExactly("cityNames");
+        // Same-table: the author's return value reaches the WHERE clause with nothing of ours
+        // between, so the call always fires and their null-mapping convention owns the semantics.
+        assertThat(authored.presence()).isEqualTo(PresenceGuard.always());
 
         // Glue is total and minted from the naming vocabulary; the relation's landing addresses
         // are the distinct glue owners.
@@ -334,6 +351,95 @@ class ConditionCommandsPipelineTest {
                 .flatMap(t -> t.columns().stream())
                 .map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName))
             .containsExactly("email");
+    }
+
+    // ===== Presence gating: when a conjunct is contributed at all =====
+    //
+    // The rule both arms follow is that an absent value contributes no conjunct. On the generated
+    // arm it is per-term data the renderer spells as a null/empty guard. On the authored arm it is
+    // per-predicate data, because what needs gating there is not the developer's method but the
+    // correlated EXISTS graphitron wraps around it: that wrapper is a semi-join, so firing it for a
+    // value nobody supplied silently drops every row with no far-side relation, and the author
+    // cannot neutralise it from inside their method. The two arms are pinned from both sides here,
+    // as data, which is the boundary that decides where the guard lands.
+
+    @Test
+    void junctionFilterCoordinate_generatedTermCarriesThePresenceGatingFact() {
+        // The reported shape: an optional list filter field reaching a node type through a junction
+        // table. The row's own data says how the guard is spelled — the binding is list-shaped and
+        // the term is not proven non-null — which is what makes the renderer's null-and-non-empty
+        // guard a derivation rather than a decision.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+            input ActorByFilmFilter {
+                filmIds: [ID!] @nodeId(typeName: "Film") @reference(path: [
+                    {key: "film_actor_actor_id_fkey"},
+                    {key: "film_actor_film_id_fkey"}
+                ])
+            }
+            type Query { actors(filter: ActorByFilmFilter): [Actor!]! }
+            """);
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(relation.rows()).hasSize(1);
+        var generated = (Predicate.Generated) relation.rows().get(0).predicates().get(0);
+        assertThat(generated.terms()).hasSize(1);
+        var term = generated.terms().get(0);
+
+        assertThat(term.reach().hops())
+            .as("the reach is what makes the conjunct a semi-join rather than a column comparison")
+            .hasSize(2);
+        assertThat(term.nonNull())
+            .as("an optional field is not proven non-null, so the guard is not elided")
+            .isFalse();
+        assertThat(term.binding().param().list())
+            .as("list-shaped, so an empty list is guarded alongside an absent value")
+            .isTrue();
+    }
+
+    @Test
+    void fkTargetAuthoredPredicate_carriesTheOwningFieldsWireAddressAsItsGuard() {
+        // The authored twin. The condition method is reached through a correlated EXISTS over the
+        // FK, so the row carries the address of the field that owns that wrapper: the argument it
+        // roots at, the path down to the leaf, and its shape. The grain is the field, never the
+        // method's parameter list, so a method that ignores its value guards exactly like one that
+        // binds it.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node { id: ID! name: String }
+            type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
+            input BarFilter {
+                bazId: ID! @nodeId(typeName: "Baz")
+                    @condition(condition: {className: "%s", method: "argConditionTypeUnique"}, override: true)
+            }
+            type Query { bars(filter: BarFilter): [Bar!]! }
+            """.formatted(STUB), NODE_ID_FIXTURE_CTX);
+
+        var relation = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(relation.rows()).hasSize(1);
+        var authored = (Predicate.Authored) relation.rows().get(0).predicates().get(0);
+
+        assertThat(authored.reach().hops()).hasSize(1);
+        assertThat(authored.presence())
+            .isEqualTo(new PresenceGuard.FieldPresent("filter", List.of("bazId"), false));
+    }
+
+    @Test
+    void authoredReachWithoutAGuard_isUnconstructable() {
+        // The invariant that makes the boundary structural rather than a convention a producer has
+        // to remember: a wrapper of ours cannot exist with nothing gating it.
+        var actorId = TestFixtures.col("actor_id", "ACTOR_ID", "java.lang.Integer");
+        var filmActor = TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of(actorId));
+        var actor = TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of(actorId));
+        var reach = new ReachPath(List.of(TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_actor_actor_id_fkey"),
+            filmActor, List.of(actorId), actor, List.of(actorId), null, "actors_0")));
+
+        assertThatThrownBy(() -> new Predicate.Authored(
+                new AuthoredMethodRef(STUB, "argConditionTypeUnique"), List.of(),
+                reach, PresenceGuard.always()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("no field-presence guard");
     }
 
     private static List<String> generatedTermLocals(List<Predicate> predicates) {

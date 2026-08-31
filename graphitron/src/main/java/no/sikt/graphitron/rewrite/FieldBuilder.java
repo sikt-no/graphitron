@@ -106,6 +106,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FkTargetConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
+import no.sikt.graphitron.rewrite.model.WireAddress;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -2892,14 +2893,21 @@ class FieldBuilder {
                     // is genuinely correct and the plain ConditionFilter stands. Composite-key
                     // FK-target @nodeId + @condition is the common consumer shape (composite
                     // NodeType keys are the norm); the correlated EXISTS ANDs every composite-FK
-                    // slot (JoinPathEmitter.emitCorrelationWhere). The wrap is arity-uniform.
+                    // slot (JoinPathEmitter.emitCorrelationWhere). The wrap is arity-uniform, and
+                    // it applies under this field's own presence guard: the EXISTS is a semi-join
+                    // and dropping the rows with no far-side relation is not something an omitted
+                    // filter may do, so the field's wire address rides along for the emitter to
+                    // gate on. An empty joinPath needs no guard because it mints no wrapper: the
+                    // author's method is the whole predicate and their null-mapping convention
+                    // controls it.
                     rf.condition().ifPresent(c -> {
                         var rewrapped = conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath);
                         out.add(rf.joinPath().isEmpty()
                             ? rewrapped
                             : new FkTargetConditionFilter(rewrapped,
                                 ((JoinStep.HasTargetTable) rf.joinPath().get(rf.joinPath().size() - 1)).targetTable(),
-                                rf.joinPath(), rf.binding(), rf.columns()));
+                                rf.joinPath(), rf.binding(), rf.columns(),
+                                new WireAddress(outerArgName, leafPath, rf.list())));
                     });
                     if (!enclosingOverride
                             && rf.condition().isEmpty()

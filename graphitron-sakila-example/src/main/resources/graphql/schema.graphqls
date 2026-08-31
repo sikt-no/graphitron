@@ -517,6 +517,11 @@ type Query {
         {key: "film_actor_film_id_fkey"}
     ])): [Actor!]!
     actorsByFilmFilter(filter: ActorByFilmFilter): [Actor!]!
+    # The connection form of the same optional filter. An EXISTS applied with no value supplied
+    # would narrow the collection to the actors that have the relation at all, and totalCount is
+    # where a consumer notices that first, so the count path is pinned beside the page.
+    actorsByFilmFilterConnection(filter: ActorByFilmFilter): [Actor!]!
+        @asConnection(defaultFirstValue: 10) @defaultOrder(primaryKey: true)
     # A single reverse hop: the foreign key sits on the node type's own table, so reaching Customer
     # from address traverses it backwards and address holds no customer_id. Same remote binding as
     # the junction, one hop instead of two, and non-unique the same way, two customers being able

@@ -53,6 +53,15 @@ class ConditionSqlBaselineTest {
     static GraphQL graphql;
     static final java.util.List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+    /**
+     * An Address node id for the FK-target pins. The developer methods behind them are
+     * {@code override: true} and ignore their value, so the id decides nothing about the rendered
+     * string; what it decides is that the wrapper is rendered at all, the wrapper being ours and
+     * gated on the filter field's presence.
+     */
+    static final String ALBERTA_ADDRESS =
+        no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 1);
+
     @BeforeAll
     static void startDatabase() {
         var localUrl = System.getProperty("test.db.url");
@@ -112,11 +121,14 @@ class ConditionSqlBaselineTest {
 
     @Test
     void liftedOuterCoordinate_generatedConjunctsThenAuthoredExists() {
-        execute("{ customersByMultiFieldFilter(filter: { firstName: \"Mary\", activebool: true }) { lastName } }");
+        execute("{ customersByMultiFieldFilter(filter: { firstName: \"Mary\", activebool: true,"
+            + " addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } }");
         assertThat(SQL_LOG)
             .as("lifted-outer coordinate: the implicit siblings read through the one lifted "
                 + "filter map and render first, in filter order, then the authored FK-target "
-                + "EXISTS; the EXISTS alias is runtime-prefixed on the base table")
+                + "EXISTS; the EXISTS alias is runtime-prefixed on the base table. Every field "
+                + "carries a value, which is what puts all three conjuncts in one statement and "
+                + "makes the order visible")
             .containsExactly(
                 "select \"public\".\"customer\".\"last_name\" from \"public\".\"customer\" "
                     + "where (\"public\".\"customer\".\"first_name\" = ? "
@@ -129,7 +141,7 @@ class ConditionSqlBaselineTest {
 
     @Test
     void fkTargetCoordinate_correlatedExistsOverTheFkHop() {
-        execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
+        execute("{ customersByAddressDistrict(filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } }");
         assertThat(SQL_LOG)
             .as("FK-target coordinate: the developer method receives the aliased FK-target table "
                 + "inside a correlated EXISTS, correlation on the FK columns")
@@ -142,8 +154,24 @@ class ConditionSqlBaselineTest {
     }
 
     @Test
+    void fkTargetCoordinate_omittedFilterValue_rendersNoExistsAtAll() {
+        // The other arm of the same rule, beside its pin rather than in place of it. The EXISTS is
+        // structure graphitron mints around the developer method, and a semi-join applied for a
+        // value nobody supplied narrows the collection to the rows that have the relation. So the
+        // absent field contributes no conjunct and the statement carries no subquery: the whole
+        // difference between the two cases is one supplied id.
+        execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
+        assertThat(SQL_LOG)
+            .as("no filter value, no wrapper: the bare statement over the row's own table")
+            .containsExactly(
+                "select \"public\".\"customer\".\"last_name\" from \"public\".\"customer\" "
+                    + "order by \"public\".\"customer\".\"customer_id\" asc");
+    }
+
+    @Test
     void filteredChildCoordinate_batchedStatementCarriesTheInlineFold() {
-        execute("{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit(filter: {}) { lastName } } }");
+        execute("{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit("
+            + "filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } } }");
         assertThat(SQL_LOG)
             .as("filtered split child: the parent lookup runs its VALUES join, the child batch "
                 + "carries the condition content composed inline today; this is the string the "

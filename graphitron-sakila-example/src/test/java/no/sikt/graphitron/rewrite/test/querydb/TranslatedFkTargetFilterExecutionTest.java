@@ -235,7 +235,8 @@ class TranslatedFkTargetFilterExecutionTest {
     // argument about SQL and becomes a row count only PostgreSQL can settle.
     //
     // Seed data (init.sql): film_actor casts film 1 as (PENELOPE, NICK), film 2 as (PENELOPE, ED),
-    // film 3 as (PENELOPE), film 4 as (NICK), film 5 as (ED). Customers 1 and 4 share address 1,
+    // film 3 as (PENELOPE), film 4 as (NICK), film 5 as (ED). Actor 4 (JOAN) is cast in nothing,
+    // which is the row a semi-join applied without a value drops. Customers 1 and 4 share address 1,
     // customers 2 and 5 share address 2, customer 3 has address 3, and address 4 has no occupant.
 
     @SuppressWarnings("unchecked")
@@ -284,6 +285,7 @@ class TranslatedFkTargetFilterExecutionTest {
                 NodeIdEncoder.encode("Film", 2)));
 
         assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .as("actor 4 is cast in nothing, so a supplied filter excludes it")
             .containsExactlyInAnyOrder(1, 2, 3);
     }
 
@@ -293,7 +295,84 @@ class TranslatedFkTargetFilterExecutionTest {
 
         assertThat(ints(data, "actorsByFilmIds", "actorId"))
             .as("an empty id list narrows by nothing")
-            .containsExactlyInAnyOrder(1, 2, 3);
+            .containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    // ===== The absent filter value =====
+    //
+    // The reported field defect, at the coordinate it was reported against. A @reference path on an
+    // optional filter field lowers to a correlated EXISTS, which is a semi-join: applied while the
+    // field carries no value, the query stops meaning "the whole collection" and starts meaning
+    // "the part of the collection that has the relation at all", with no error and no warning.
+    // Actor 4 is cast in no film, so it is exactly the row that disappears; each case below asserts
+    // it comes back. Three spellings of "no value" because a client can send any of them and they
+    // mean the same thing: the argument omitted, an empty input object, and an explicit null leaf.
+
+    @Test
+    void junctionChain_inputFieldForm_omittedArgument_contributesNoConjunct() {
+        Map<String, Object> data = execute("{ actorsByFilmFilter { actorId } }");
+
+        assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .as("an omitted filter returns the whole collection, the uncast actor included")
+            .containsExactlyInAnyOrder(1, 2, 3, 4);
+        assertThat(SQL_LOG)
+            .as("no value, no conjunct: the semi-join is not in the statement at all")
+            .noneMatch(s -> s.contains("exists"));
+    }
+
+    @Test
+    void junctionChain_inputFieldForm_emptyFilterObject_contributesNoConjunct() {
+        Map<String, Object> data = execute("{ actorsByFilmFilter(filter: {}) { actorId } }");
+
+        assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
+    void junctionChain_inputFieldForm_explicitNullLeaf_contributesNoConjunct() {
+        Map<String, Object> data = execute("{ actorsByFilmFilter(filter: { filmIds: null }) { actorId } }");
+
+        assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
+    void junctionChain_inputFieldForm_emptyLeafList_contributesNoConjunct() {
+        Map<String, Object> data = execute("{ actorsByFilmFilter(filter: { filmIds: [] }) { actorId } }");
+
+        assertThat(ints(data, "actorsByFilmFilter", "actorId"))
+            .as("an empty list is no value, the same as the argument form's empty list")
+            .containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
+    void junctionChain_connectionForm_omittedFilter_countsTheWholeCollection() {
+        // The report measured the drift on totalCount, which is the count path composing the same
+        // condition: a semi-join applied there under-reports the collection's size, and a consumer
+        // paging through the result sees a number that does not match what is there.
+        Map<String, Object> data = execute(
+            "{ actorsByFilmFilterConnection { totalCount nodes { actorId } } }");
+
+        @SuppressWarnings("unchecked")
+        var connection = (Map<String, Object>) data.get("actorsByFilmFilterConnection");
+        assertThat(connection.get("totalCount"))
+            .as("every actor counts, including the one cast in no film")
+            .isEqualTo(4);
+        assertThat(ints(connection, "nodes", "actorId")).containsExactlyInAnyOrder(1, 2, 3, 4);
+    }
+
+    @Test
+    void junctionChain_connectionForm_suppliedFilter_countsTheNarrowedCollection() {
+        Map<String, Object> data = execute("""
+            { actorsByFilmFilterConnection(filter: { filmIds: ["%s"] }) { totalCount nodes { actorId } } }
+            """.formatted(NodeIdEncoder.encode("Film", 4)));
+
+        @SuppressWarnings("unchecked")
+        var connection = (Map<String, Object>) data.get("actorsByFilmFilterConnection");
+        assertThat(connection.get("totalCount"))
+            .as("with a value the filter narrows, and the count follows the page")
+            .isEqualTo(1);
+        assertThat(ints(connection, "nodes", "actorId")).containsExactly(2);
     }
 
     @Test

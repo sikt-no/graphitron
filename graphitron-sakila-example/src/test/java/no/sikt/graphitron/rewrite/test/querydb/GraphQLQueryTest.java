@@ -266,19 +266,45 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Mary", "Patricia", "Linda");
     }
 
+    // ===== FK-target @nodeId + @condition: the alias-binding family =====
+    //
+    // Every case below proves one thing about where the developer method's table parameter comes
+    // from: graphitron wraps the call in a correlated EXISTS over the FK and hands the method an
+    // alias for the FK-target table, never the row's own. Each supplies a real node id, which the
+    // methods ignore (they are override: true and filter on a fixed value), because the wrapper is
+    // ours and applies only when the filter field carries a value. The omitted-value sibling of
+    // each case is the other half of that rule: no value, no conjunct, the whole collection back.
+
+    private static final String ALBERTA_ADDRESS =
+        no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 1);
+    private static final String ATLAS_PROJECT =
+        no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Project", 1, 100);
+
     @Test
     void customersByAddressDistrict_fkTargetNodeIdOverrideCondition_filtersByForeignTable() {
         // CustomerAddressNodeFilter.addressId carries @nodeId(typeName: "Address") +
         // @condition(override: true). customer reaches address via customer_address_id_fkey, so the
         // condition method (addressDistrictAlberta) must receive the FK-target Address alias, not
         // the customer table, emitted as a correlated EXISTS. Seed: addresses 1 and 3 are 'Alberta',
-        // held by customers Smith (addr 1), Williams (addr 3), and Jones (addr 1). The empty filter
-        // exercises the override path: the decoded-id predicate is dropped and the method owns the
-        // WHERE entirely.
-        Map<String, Object> data = execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
+        // held by customers Smith (addr 1), Williams (addr 3), and Jones (addr 1). The supplied id
+        // is what puts the wrapper in the statement; override: true still drops the decoded-id
+        // predicate, so the method owns the WHERE entirely and the rows follow only from it.
+        Map<String, Object> data = execute(
+            "{ customersByAddressDistrict(filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } }");
         assertThat(data).extractingByKey("customersByAddressDistrict", as(list(Map.class)))
             .extracting(c -> c.get("lastName"))
             .containsExactlyInAnyOrder("Smith", "Williams", "Jones");
+    }
+
+    @Test
+    void customersByAddressDistrict_omittedFilterValue_returnsTheWholeCollection() {
+        // The EXISTS is a semi-join, so applying it for a value nobody supplied would silently
+        // narrow the query to the customers that have an Alberta address. An absent field
+        // contributes no conjunct, exactly as an absent implicit filter field does.
+        Map<String, Object> data = execute("{ customersByAddressDistrict(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByAddressDistrict", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Johnson", "Williams", "Jones", "Brown");
     }
 
     @Test
@@ -287,12 +313,23 @@ class GraphQLQueryTest {
         // siblings (firstName, activebool) produce a GeneratedConditionFilter and lift the `filter`
         // arg to a `filterMap` local, ALONGSIDE a non-null ID! FK-target @nodeId @condition(override).
         // The FK-target term must still emit a correlated EXISTS handing addressDistrictAlberta an
-        // aliased Address. Empty filter: the implicit siblings are null (no-op) and the override owns
-        // the predicate, so this returns the Alberta customers.
-        Map<String, Object> data = execute("{ customersByMultiFieldFilter(filter: {}) { lastName } }");
+        // aliased Address. The implicit siblings are absent (no-op) and the override owns the
+        // predicate, so this returns the Alberta customers.
+        Map<String, Object> data = execute(
+            "{ customersByMultiFieldFilter(filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } }");
         assertThat(data).extractingByKey("customersByMultiFieldFilter", as(list(Map.class)))
             .extracting(c -> c.get("lastName"))
             .containsExactlyInAnyOrder("Smith", "Williams", "Jones");
+    }
+
+    @Test
+    void customersByMultiFieldFilter_omittedFilterValue_returnsTheWholeCollection() {
+        // Absent alongside absent implicit siblings: every conjunct in the row is guarded on its
+        // own field, so an empty filter object narrows by nothing at all.
+        Map<String, Object> data = execute("{ customersByMultiFieldFilter(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByMultiFieldFilter", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Johnson", "Williams", "Jones", "Brown");
     }
 
     @Test
@@ -302,10 +339,20 @@ class GraphQLQueryTest {
         // (org_id, project_id); projectNameAtlas receives an aliased Project inside a correlated
         // EXISTS whose correlation ANDs both composite-FK slots. Seed: project (1,100) is 'Atlas'
         // with notes Atlas-N1..N3; (1,101)=Beacon and (2,100)=Cipher are filtered out.
-        Map<String, Object> data = execute("{ projectNotesByProject(filter: {}) { body } }");
+        Map<String, Object> data = execute(
+            "{ projectNotesByProject(filter: { projectId: \"" + ATLAS_PROJECT + "\" }) { body } }");
         assertThat(data).extractingByKey("projectNotesByProject", as(list(Map.class)))
             .extracting(c -> c.get("body"))
             .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+    }
+
+    @Test
+    void projectNotesByProject_omittedFilterValue_returnsTheWholeCollection() {
+        Map<String, Object> data = execute("{ projectNotesByProject(filter: {}) { body } }");
+        assertThat(data).extractingByKey("projectNotesByProject", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3",
+                "Beacon-N1", "Beacon-N2", "Cipher-N1");
     }
 
     @Test
@@ -319,10 +366,20 @@ class GraphQLQueryTest {
         // (org_id, project_id) FK. Input fields are classified per consuming field rather than in a
         // registry type walk, so the execution tier is where a broken call surfaces as something
         // other than the consumer's javac.
-        Map<String, Object> data = execute("{ projectNotesByPlainFilter(filter: {}) { body } }");
+        Map<String, Object> data = execute(
+            "{ projectNotesByPlainFilter(filter: { projectId: \"" + ATLAS_PROJECT + "\" }) { body } }");
         assertThat(data).extractingByKey("projectNotesByPlainFilter", as(list(Map.class)))
             .extracting(c -> c.get("body"))
             .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+    }
+
+    @Test
+    void projectNotesByPlainFilter_omittedFilterValue_returnsTheWholeCollection() {
+        Map<String, Object> data = execute("{ projectNotesByPlainFilter(filter: {}) { body } }");
+        assertThat(data).extractingByKey("projectNotesByPlainFilter", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3",
+                "Beacon-N1", "Beacon-N2", "Cipher-N1");
     }
 
     @Test
@@ -331,11 +388,29 @@ class GraphQLQueryTest {
         // mirroring soknadsmangeltyper(...): [Soknadsmangeltype!] @asConnection. The shim feeds the
         // same composite EXISTS into the connection fetcher.
         Map<String, Object> data = execute(
-            "{ projectNotesByPlainFilterConnection(filter: {}) { nodes { body } } }");
-        assertThat(data).extractingByKey("projectNotesByPlainFilterConnection", as(map(String.class, Object.class)))
-            .extractingByKey("nodes", as(list(Map.class)))
+            "{ projectNotesByPlainFilterConnection(filter: { projectId: \"" + ATLAS_PROJECT + "\" })"
+            + " { totalCount nodes { body } } }");
+        var conn = assertThat(data)
+            .extractingByKey("projectNotesByPlainFilterConnection", as(map(String.class, Object.class)));
+        conn.extractingByKey("nodes", as(list(Map.class)))
             .extracting(c -> c.get("body"))
             .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+        conn.extractingByKey("totalCount", as(INTEGER)).isEqualTo(3);
+    }
+
+    @Test
+    void projectNotesByPlainFilterConnection_omittedFilterValue_countsTheWholeCollection() {
+        // The connection host is where the field report first noticed the drift: totalCount
+        // composes the same condition, so an unguarded semi-join under-reports the collection.
+        Map<String, Object> data = execute(
+            "{ projectNotesByPlainFilterConnection(filter: {}) { totalCount nodes { body } } }");
+        var conn = assertThat(data)
+            .extractingByKey("projectNotesByPlainFilterConnection", as(map(String.class, Object.class)));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .extracting(c -> c.get("body"))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3",
+                "Beacon-N1", "Beacon-N2", "Cipher-N1");
+        conn.extractingByKey("totalCount", as(INTEGER)).isEqualTo(6);
     }
 
     @Test
@@ -346,7 +421,8 @@ class GraphQLQueryTest {
         // never the customer alias (a method declaring Address cannot take it). Seed: store 1 holds
         // Smith + Jones (address 1, Alberta), store 2 holds Williams (address 3, Alberta).
         Map<String, Object> data = execute(
-            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrict(filter: {}) { lastName } } }");
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrict("
+            + "filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } } }");
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(1);
@@ -361,11 +437,33 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void store_customersByAddressDistrict_omittedFilterValue_returnsEachStoresWholeCollection() {
+        // The inline host's guard is the same field-presence read; the parent correlation is
+        // untouched by it, so each store keeps its own customers and loses only the district
+        // narrowing.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrict(filter: {}) { lastName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrict"))
+                    .extracting(c -> c.get("lastName"))
+                    .containsExactlyInAnyOrder("Smith", "Johnson", "Jones");
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrict"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Williams", "Brown");
+            });
+    }
+
+    @Test
     void store_customersByAddressDistrictSplit_splitFkTargetOverride_filtersByForeignTable() {
         // @splitQuery child path (SplitRowsMethodEmitter, the third WHERE-emitting site). Same
         // FK-target EXISTS as the inline sibling, embedded in the batched rows-method instead.
         Map<String, Object> data = execute(
-            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit(filter: {}) { lastName } } }");
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit("
+            + "filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } } }");
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(1);
@@ -376,6 +474,26 @@ class GraphQLQueryTest {
                 assertThat(s.get("storeId")).isEqualTo(2);
                 assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrictSplit"))
                     .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Williams");
+            });
+    }
+
+    @Test
+    void store_customersByAddressDistrictSplit_omittedFilterValue_returnsEachStoresWholeCollection() {
+        // The batched host's guard reads the same wire address; the VALUES-join correlation that
+        // routes rows back to their parent is unaffected.
+        Map<String, Object> data = execute(
+            "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit(filter: {}) { lastName } } }");
+        assertThat(data).extractingByKey("storeById", as(list(Map.class)))
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(1);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrictSplit"))
+                    .extracting(c -> c.get("lastName"))
+                    .containsExactlyInAnyOrder("Smith", "Johnson", "Jones");
+            })
+            .anySatisfy(s -> {
+                assertThat(s.get("storeId")).isEqualTo(2);
+                assertThat((List<Map<String, Object>>) s.get("customersByAddressDistrictSplit"))
+                    .extracting(c -> c.get("lastName")).containsExactlyInAnyOrder("Williams", "Brown");
             });
     }
 
@@ -491,10 +609,25 @@ class GraphQLQueryTest {
         // (addressDistrictAlberta, against an aliased Address via EXISTS). The QueryConditions shim ANDs
         // both terms. Alberta customers are Smith, Williams, Jones; Jones is inactive, so the active
         // term drops it. Guards the multi-filter accumulation.
-        Map<String, Object> data = execute("{ customersByAddressDistrictActive(filter: {}) { lastName } }");
+        Map<String, Object> data = execute(
+            "{ customersByAddressDistrictActive(filter: { addressId: \"" + ALBERTA_ADDRESS + "\" })"
+            + " { lastName } }");
         assertThat(data).extractingByKey("customersByAddressDistrictActive", as(list(Map.class)))
             .extracting(c -> c.get("lastName"))
             .containsExactlyInAnyOrder("Smith", "Williams");
+    }
+
+    @Test
+    void customersByAddressDistrictActive_omittedFilterValue_keepsOnlyTheFieldLevelTerm() {
+        // The composition pin for the doctrine boundary, both arms in one statement. The
+        // field-level @condition is a same-table predicate: nothing of ours sits between its
+        // return value and the WHERE clause, so it fires and the inactive customers stay out.
+        // The FK-target term's EXISTS is ours and its field carries no value, so it contributes
+        // nothing. Active customers are Smith, Johnson and Williams, regardless of district.
+        Map<String, Object> data = execute("{ customersByAddressDistrictActive(filter: {}) { lastName } }");
+        assertThat(data).extractingByKey("customersByAddressDistrictActive", as(list(Map.class)))
+            .extracting(c -> c.get("lastName"))
+            .containsExactlyInAnyOrder("Smith", "Johnson", "Williams");
     }
 
     // ===== films query =====
@@ -5527,7 +5660,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void search_returnsAllParticipantTypes() {
-        // init.sql seeds 5 films + 3 actors. The search fetcher returns 5 Film rows and 3
+        // init.sql seeds 5 films + 4 actors. The search fetcher returns 5 Film rows and 4
         // Actor rows under the Searchable interface contract; __typename resolves per row.
         Map<String, Object> data = execute("{ search { __typename name } }");
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
@@ -5537,7 +5670,7 @@ class GraphQLQueryTest {
         // exact because nothing in this module writes `actor`; the film count is a floor because
         // eleven classes write `film`.
         assertThat(films).isGreaterThanOrEqualTo(5);
-        assertThat(actors).isEqualTo(3);
+        assertThat(actors).isEqualTo(4);
     }
 
     @Test
@@ -5562,7 +5695,7 @@ class GraphQLQueryTest {
             .filter(i -> "Actor".equals(i.get("__typename")))
             .toList();
         assertThat(filmRows).hasSizeGreaterThanOrEqualTo(5);
-        assertThat(actorRows).hasSize(3);
+        assertThat(actorRows).hasSize(4);
         assertThat(filmRows).allSatisfy(i -> {
             assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
             assertThat(i.get("title")).as("Film.title").isNotNull();
@@ -5619,8 +5752,8 @@ class GraphQLQueryTest {
     void search_orderedBySortKey_acrossParticipants() {
         // Stage 1's ORDER BY runs database-side on the synthetic __sort__ column. Single-PK
         // participants project their PK directly, so the result interleaves Film and Actor
-        // rows by their PK values. With Film PKs 1..5 and Actor PKs 1..3, the leading rows
-        // (sort key 1..3) carry both types; trailing rows (sort key 4..5) are Films only.
+        // rows by their PK values. Actor PKs cap at 4 while the film table reaches past it, so
+        // the leading rows carry both types and the highest sort key belongs to a Film.
         Map<String, Object> data = execute("""
             { search {
                 __typename
@@ -5629,9 +5762,9 @@ class GraphQLQueryTest {
             } }
             """);
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("search");
-        assertThat(items.subList(items.size() - 2, items.size()))
-            .as("trailing rows carry the highest sort keys (Film 4 and 5; Actor PKs cap at 3)")
-            .allSatisfy(i -> assertThat(i.get("__typename")).isEqualTo("Film"));
+        assertThat(items.get(items.size() - 1))
+            .as("the trailing row carries the highest sort key, which no actor can reach")
+            .extracting(i -> i.get("__typename")).isEqualTo("Film");
     }
 
     // ===== Multi-table polymorphic Connection =====
@@ -5754,7 +5887,7 @@ class GraphQLQueryTest {
         var filmRows = nodes.stream().filter(i -> "Film".equals(i.get("__typename"))).toList();
         var actorRows = nodes.stream().filter(i -> "Actor".equals(i.get("__typename"))).toList();
         assertThat(filmRows).hasSizeGreaterThanOrEqualTo(5);
-        assertThat(actorRows).hasSize(3);
+        assertThat(actorRows).hasSize(4);
         assertThat(filmRows).allSatisfy(i -> {
             assertThat(i.get("filmId")).as("Film.filmId").isNotNull();
             assertThat(i.get("title")).as("Film.title").isNotNull();

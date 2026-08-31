@@ -8,8 +8,10 @@ import java.util.List;
  * {@link Authored} predicate is an opaque call into developer code with no terms of ours at all.
  * That one axis manifests three ways downstream (the renderer renders terms versus a call, the
  * edge view records an external callee only for authored rows, and override suppression reaps
- * only generated rows), which is what an arm split has to show; presence-gating is per-term data
- * on the generated arm, not an arm.
+ * only generated rows), which is what an arm split has to show; presence-gating is data on both
+ * arms rather than an arm of its own, at the grain where each arm's wrapper sits: per-term on the
+ * generated arm, whose guard wraps one comparison, and per-predicate on the authored arm, whose
+ * guard wraps the whole call.
  *
  * <p>Naming heads-up: this shadows the model's {@code On.Predicate}; the two never meet in one
  * expression, and the name is the natural one here.
@@ -38,14 +40,28 @@ public sealed interface Predicate {
      * reflected reference: an authored predicate's whole render is
      * {@code Class.method(table, locals...)}, and the signature facts the reflected reference
      * also carries are read at classification time and by nothing downstream of this row.
+     *
+     * <p>{@link #presence} says when the conjunct is contributed. A non-empty reach always carries
+     * a {@link PresenceGuard.FieldPresent}: the {@code EXISTS} is a semi-join graphitron mints
+     * around the call, so firing it for a value nobody supplied would silently drop every row with
+     * no far-side relation, and the invariant here makes that shape unconstructable rather than a
+     * renderer-side assertion.
      */
-    record Authored(AuthoredMethodRef method, List<ArgBinding> bindings, ReachPath reach) implements Predicate {
+    record Authored(AuthoredMethodRef method, List<ArgBinding> bindings, ReachPath reach,
+            PresenceGuard presence) implements Predicate {
         public Authored {
             if (method == null) {
                 throw new IllegalArgumentException("an authored predicate names the developer method it calls");
             }
             bindings = bindings == null ? List.of() : List.copyOf(bindings);
             reach = reach == null ? ReachPath.none() : reach;
+            presence = presence == null ? PresenceGuard.always() : presence;
+            if (!reach.isEmpty() && !(presence instanceof PresenceGuard.FieldPresent)) {
+                throw new IllegalArgumentException(
+                    "authored predicate calling '" + method.methodName() + "' reaches through "
+                    + reach.size() + " hop(s) with no field-presence guard; the correlated EXISTS is a "
+                    + "semi-join graphitron mints, and an absent filter value contributes no conjunct");
+            }
         }
     }
 }
