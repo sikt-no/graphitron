@@ -104,8 +104,9 @@ rule copied six times, with no structural reason a seventh site would pick it up
 answers this class of problem by funnelling a shape through a single producer: `ValuesJoinRowBuilder`
 states that "all routes go through `cellsCode`, so every VALUES cell in the generator binds as
 `DSL.val(value, col.getDataType())`"; `DiscriminatedTableFragments` mints the discriminator
-reference and the discriminator operand once each so the three comparison sites that need them
-"share the qualification argument and the bind typing rather than restating either."
+reference and the discriminator operand once each, and `PathFragments.parentColumnEquals` records
+why the third site calls them rather than restating either: it "shares the qualification argument
+and the bind typing with the assembly's other two comparison sites."
 
 So: a single minting surface for a column-to-column equality, and every site above calls it. The
 proposed home is a new `ColumnComparison` in `no.sikt.graphitron.render`, sitting at the same
@@ -285,3 +286,87 @@ Per the tier rubric in `docs/architecture/how-to/testing.adoc`, top-down:
   operands. A converter that diverges two columns compared somewhere else entirely is the same class
   of fault, but there is no reported instance and no fixture for one; the mint is the place a future
   instance would land.
+
+## Reviewer findings
+
+### Round 1, Spec → Ready: revisions requested
+
+**Question 1 (goal and viability) passes.** What changes for a consumer is stated without needing
+the phase list: a consumer whose jOOQ codegen attaches a converter to one end of a foreign key can
+keep the schema field instead of deleting it, because the generated module compiles again, and the
+SQL that module issues is unchanged. Every claim I could check held. `Field.coerce` has exactly the
+three overloads quoted, in the pinned jOOQ 3.20.11 jar. `ColumnRef.columnType()` is carried from the
+catalog boundary and is documented nullable for the placeholder refs the null guard names.
+`BuildContext.resolveFkColumnRefs` does resolve through `catalog.findColumn` and does put
+`ce.columnType()` on both sides of every `JoinSlot.FkSlot`, so the mint needs no new plumbing. The
+`sql_column.binding_type` comment reads as quoted. The `graphitron-sakila-db/pom.xml` claims are
+verbatim, `implicitJoinPathsToMany` included. The converter fixture is `@splitQuery` in both
+directions plus a `@sourceRow` lifter with an explicit `@reference(path:)`, so the plain
+no-directive single-cardinality gap is real. I re-ran the fixture probe against the live database and
+got the same answer, `1 | UiT`, so the one-new-table fixture is viable as described.
+
+**Question 2 (architectural fit) fails: the emission inventory is short by two divergence-vulnerable
+sites, one of them needing a rule the two entry points cannot spell, and iteration 1's charter is
+written so the miss cannot be discovered.**
+
+`MultiTablePolymorphicEmitter` carries two column-to-column comparisons over
+`List<JoinSlot.FkSlot>`, both live (called from lines 1438 and 1440, and from 2019 and 2021), and
+neither is on the list:
+
+* `parentInputSlotPredicate` (around line 2041) emits
+  `<firstAlias>.<slot.targetSide()>.eq(parentInput.field("<slot.sourceSide().sqlName()>",
+  <owner>.<sourceSide>.getDataType()))`. That is the `BatchedRowsFragments` shape from the list,
+  spelled a second time in a second class: receiver typed by the child column, argument typed by the
+  parent column, mismatching under divergence for the same reason. `equalityAgainstField` covers it
+  as designed; it is simply not named.
+* `valueBoundParentWhere` (around line 1456) emits
+  `<firstAlias>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"),
+  <slot.sourceSide().columnType()>.class))`. This is a third shape, and the design does not reach it.
+  The right operand is a *value*, not a `Field`, so `.coerce(...)` has nothing to attach to. The
+  available answer is to read the value at the receiver's type, passing `targetSide().columnType()`
+  as the `Class`, and that is the direct opposite of the spec's companion rule that "a value binds at
+  the `DataType` of the column it was read from". At this site the two rules the *Design* section
+  presents as complementary genuinely conflict, and the spec should say which wins here and why.
+
+The omission is specific, not a general audit failure, and worth recording so the revision is
+cheap: every other emitted equality I looked at supplies both the receiver and the argument's type
+from the *same* `ColumnRef`, and is therefore immune. That covers
+`ReentryRowsFragments.valuesJoinOn`, `TypeFetcherGenerator`'s bulk-update lookup `WHERE`,
+`SelectMethodBody`'s dispatcher `ON`, `ProjectionUnitRenderer`'s lookup-input `ON`,
+`ServiceRowsFragments`'s projection-input `ON`, and `MultiTablePolymorphicEmitter`'s own
+`parentSourceKey` arms at lines 1485 and 2069. `ConditionGlueRenderer.columnCompare` is a bind
+against the receiving column's own type, which is the companion rule already, not a new site. So the
+inventory is eight sites, not six.
+
+The charter direction is the half that makes this blocking rather than a note. Iteration 1's stated
+deliverable is "a decision on which of the six sites a diverged key can actually reach", and it says
+"the item should shrink where a site turns out unreachable". The fixture driving that inventory is
+one non-polymorphic single-cardinality reference, so its `javac` list can only surface sites that one
+topology reaches; a polymorphic site cannot appear in it, and nothing in the charter invites the
+implementer to look wider. Followed exactly, the plan ships the mint plus five of eight callers, with
+the polymorphic arms still non-compiling under divergence and no record that they were considered.
+That is precisely the "no structural reason a seventh site would pick it up" failure the *One mint,
+not six patches* argument exists to prevent, which is why it lands on question 2 rather than on
+scope.
+
+**What would satisfy it**
+
+* Name both `MultiTablePolymorphicEmitter` sites under *Emission sites*.
+* In *The rule*, state the answer for the `parentRecord.get(Name, Class)` shape, whether as a third
+  entry point or as an explicit precedence between the coerce rule and the bind-at-source rule. This
+  is the one part that is design, not bookkeeping, and it is the author's to settle.
+* Make iteration 1's charter two-directional, so the inventory may grow as well as shrink. It is the
+  iteration whose whole purpose is to replace a read-off-source list with an observed one, and it
+  currently forbids half of that.
+
+**Non-blocking**
+
+* Corrected in this commit: the *One mint* section attributed the quoted phrase about sharing "the
+  qualification argument and the bind typing" to `DiscriminatedTableFragments`. The phrase is in
+  `PathFragments.parentColumnEquals`; `DiscriminatedTableFragments` holds the mints it refers to. The
+  precedent the section cites is real either way.
+* The first of the three counts against adopting jOOQ's path-join mechanism is the weakest of the
+  three: `implicitJoinPathsToMany` is off in the fixture, but 9.3.2's `institusjon.land()` is a
+  to-one navigation, which that flag leaves generated. The other two counts (name-matched pairs have
+  no `ForeignKey` to navigate, and a correlated `WHERE`, a `VALUES` batch and a pivot multiset have no
+  path spelling) each carry the rejection on their own, so nothing needs to change here.
