@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
@@ -178,6 +179,14 @@ public final class SeededStore {
      */
     public static void derive(DSLContext dsl) {
         transcribeSupertypes(dsl);
+        // The candidate tree, by the same call capture makes. Stated here rather than seeded row by
+        // row because the rule is pure SQL over rows a case has already seeded, so running it is
+        // both cheaper than a per-case seeder and one fewer place for a fixture to hold its own
+        // idea of the descent.
+        for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
+                .fetch(STORE_GRAPH.GRAPH_NAME)) {
+            ArgMappingCandidates.derive(dsl, graph);
+        }
         Materializations.refreshAll(dsl);
     }
 
@@ -1458,6 +1467,11 @@ public final class SeededStore {
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.ARGUMENT_PATH, argumentPath)
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.POSITION, position)
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.SEGMENT_NAME, segments[position])
+                // Derived as capture derives it: the segments after the head up to this one, which
+                // is the path a candidate under this pair's origin would be keyed by.
+                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.CANDIDATE_PATH,
+                    String.join(".", java.util.Arrays.asList(segments)
+                        .subList(1, position + 1)))
                 .onDuplicateKeyIgnore()
                 .execute();
         }

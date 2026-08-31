@@ -15,7 +15,7 @@ import no.sikt.graphitron.rewrite.derive.ReferenceForParticipantDefects;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
-import no.sikt.graphitron.rewrite.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.TypeBackingRows;
 import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;

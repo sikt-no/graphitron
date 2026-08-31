@@ -1,7 +1,6 @@
 build_warning_no_rule
 diagnostic
 graphitron_arg_mapping_pair
-graphitron_argmapping_candidate
 graphitron_argument_binding
 graphitron_argument_condition
 graphitron_argument_condition_context_arg

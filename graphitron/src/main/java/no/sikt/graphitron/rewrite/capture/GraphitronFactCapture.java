@@ -990,6 +990,10 @@ final class GraphitronFactCapture {
             row.setArgumentPath(path);
             row.setPosition(position);
             row.setSegmentName(entry.segments().get(position));
+            // What this segment completes below the head, spelled as the candidate tree spells it,
+            // so a reader asks how far a written path resolves with an equality rather than a
+            // prefix test. Empty at the head, which is the tree's own root.
+            row.setCandidatePath(String.join(".", entry.segments().subList(1, position + 1)));
             sink.add(row);
         }
         return path;

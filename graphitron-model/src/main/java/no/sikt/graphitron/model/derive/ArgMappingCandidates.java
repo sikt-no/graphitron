@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
@@ -11,7 +11,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import no.sikt.graphitron.model.tables.GraphitronArgmappingCandidate;
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Record13;
+import org.jooq.Record14;
 import org.jooq.SelectJoinStep;
 
 import static org.jooq.impl.DSL.concat;
@@ -24,8 +24,8 @@ import static org.jooq.impl.DSL.when;
  * The capture-cadence writer of {@code graphitron_argmapping_candidate}: everything an argMapping
  * right-hand side may name under a field, as a tree. Runs inside capture's own transaction after
  * the flush, clears the run's graph partition first, and re-derives. Stored rather than stated as
- * a view for {@link InputOccurrencePaths}'s reason: the descent is recursive and a view has no
- * safe recursive form over it.
+ * a view because the descent is recursive and a view has no safe recursive form over it, which is
+ * the reason the input occurrence surface is stored too.
  *
  * <p>Two kinds of origin and one relation. A path written in a directive on a field is rooted at
  * that field and its head names an argument; a path written on an input field is relative to that
@@ -113,13 +113,13 @@ public final class ArgMappingCandidates {
     private static void seedArgumentOrigins(DSLContext dsl, String graphName) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
         dsl.insertInto(c, c.GRAPH_NAME, c.ORIGIN, c.ORIGIN_KIND, c.TYPE_NAME, c.FIELD_NAME,
-                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.IS_LIST,
-                c.DEPTH, c.CLOSES_CYCLE)
+                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.CONTAINER_TYPE_NAME,
+                c.NAMED_TYPE, c.IS_LIST, c.DEPTH, c.CLOSES_CYCLE)
             .select(dsl.select(GRAPHQL_ARGUMENT.GRAPH_NAME, argumentOrigin(), val("ARGUMENT"),
                     GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
                     GRAPHQL_ARGUMENT.ARGUMENT_NAME, val(""), inline((String) null),
-                    GRAPHQL_ARGUMENT.ARGUMENT_NAME, GRAPHQL_ARGUMENT.NAMED_TYPE,
-                    GRAPHQL_ARGUMENT.IS_LIST, val(0), val(false))
+                    GRAPHQL_ARGUMENT.ARGUMENT_NAME, inline((String) null),
+                    GRAPHQL_ARGUMENT.NAMED_TYPE, GRAPHQL_ARGUMENT.IS_LIST, val(0), val(false))
                 .from(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)))
             .execute();
@@ -132,13 +132,13 @@ public final class ArgMappingCandidates {
     private static void seedInputFieldOrigins(DSLContext dsl, String graphName) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
         dsl.insertInto(c, c.GRAPH_NAME, c.ORIGIN, c.ORIGIN_KIND, c.TYPE_NAME, c.FIELD_NAME,
-                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.IS_LIST,
-                c.DEPTH, c.CLOSES_CYCLE)
+                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.CONTAINER_TYPE_NAME,
+                c.NAMED_TYPE, c.IS_LIST, c.DEPTH, c.CLOSES_CYCLE)
             .select(dsl.select(GRAPHQL_FIELD.GRAPH_NAME, inputFieldOrigin(), val("INPUT_FIELD"),
                     GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, inline((String) null),
                     val(""), inline((String) null),
-                    GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.NAMED_TYPE, GRAPHQL_FIELD.IS_LIST,
-                    val(0), val(false))
+                    GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.NAMED_TYPE,
+                    GRAPHQL_FIELD.IS_LIST, val(0), val(false))
                 .from(GRAPHQL_FIELD)
                 .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD.GRAPH_NAME)
                     .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME))
@@ -171,13 +171,13 @@ public final class ArgMappingCandidates {
             closesCycle = closesCycle.or(GRAPHQL_FIELD.NAMED_TYPE.eq(ancestor.NAMED_TYPE));
         }
 
-        SelectJoinStep<Record13<String, String, String, String, String, String, String, String,
-            String, String, Boolean, Integer, Boolean>> from = dsl.select(
+        SelectJoinStep<Record14<String, String, String, String, String, String, String, String,
+            String, String, String, Boolean, Integer, Boolean>> from = dsl.select(
                 c.GRAPH_NAME, c.ORIGIN, c.ORIGIN_KIND, c.TYPE_NAME, c.FIELD_NAME, c.ARGUMENT_NAME,
                 when(c.DEPTH.eq(0), GRAPHQL_FIELD.FIELD_NAME)
                     .otherwise(concat(c.PATH, val("."), GRAPHQL_FIELD.FIELD_NAME)),
-                c.PATH, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.NAMED_TYPE, GRAPHQL_FIELD.IS_LIST,
-                val(depth + 1), field(closesCycle))
+                c.PATH, GRAPHQL_FIELD.FIELD_NAME, c.NAMED_TYPE, GRAPHQL_FIELD.NAMED_TYPE,
+                GRAPHQL_FIELD.IS_LIST, val(depth + 1), field(closesCycle))
             .from(c)
             .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.GRAPH_NAME.eq(c.GRAPH_NAME)
                 .and(GRAPHQL_TYPE.TYPE_NAME.eq(c.NAMED_TYPE))
@@ -194,8 +194,8 @@ public final class ArgMappingCandidates {
         }
 
         return dsl.insertInto(c, c.GRAPH_NAME, c.ORIGIN, c.ORIGIN_KIND, c.TYPE_NAME, c.FIELD_NAME,
-                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.NAMED_TYPE, c.IS_LIST,
-                c.DEPTH, c.CLOSES_CYCLE)
+                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.CONTAINER_TYPE_NAME,
+                c.NAMED_TYPE, c.IS_LIST, c.DEPTH, c.CLOSES_CYCLE)
             .select(from.where(c.GRAPH_NAME.eq(graphName)).and(c.DEPTH.eq(depth))
                 .and(c.CLOSES_CYCLE.isFalse()))
             .execute();

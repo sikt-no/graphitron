@@ -630,15 +630,17 @@ final class FactWrites {
                          t.FIELD_NAME,
                          t.ARGUMENT_PATH,
                          t.POSITION,
-                         t.SEGMENT_NAME)
-                .values(markers(6)));
+                         t.SEGMENT_NAME,
+                         t.CANDIDATE_PATH)
+                .values(markers(7)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
                                row.get(t.FIELD_NAME),
                                row.get(t.ARGUMENT_PATH),
                                row.get(t.POSITION),
-                               row.get(t.SEGMENT_NAME));
+                               row.get(t.SEGMENT_NAME),
+                               row.get(t.CANDIDATE_PATH));
         }
         batch.execute();
     }

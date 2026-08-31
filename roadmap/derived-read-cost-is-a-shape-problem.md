@@ -2414,6 +2414,56 @@ would fail if the fan-out crept back in.
 question: `intent_argmapping_binding_leaf` becomes a probe of this relation from the pair's two new
 columns, and `intent_argmapping_segment_binding`, which nothing else reads, retires with it.
 
+### Slice 22: the resolution reads the tree, and the first relation is declared
+
+`intent_argmapping_binding_leaf` no longer walks. It joins the pair to the authored path's segments
+and probes `graphitron_argmapping_candidate` on the origin and the prefix each segment completes,
+then takes the deepest match by rank. Two enabling columns made that an equality rather than string
+surgery: the candidate carries `container_type_name`, so naming what a path bound needs no step to
+the parent, and the authored segment carries `candidate_path`, the prefix it completes, spelled
+exactly as the tree spells its own paths.
+
+**What that deletes.** The three-arm `headed` union that resolved the head. The alignment of two
+decompositions of one descent, an anti-join inside an anti-join, matching authored segment positions
+against occurrence-path ordinals. The correlated `COUNT(*)` over segments for the trailing count,
+now arithmetic over a window already in the statement. The two `LEFT JOIN`s to `graphql_argument`
+and `graphql_field` for the leaf's type and arity, now columns on the candidate.
+`intent_argmapping_segment_binding`, which nothing else reads, is left with no reader.
+
+**Two behaviours the old rule had that the new one had to be told.** The four reference-step sites
+bind nothing whatever they spell, which the old three-arm union encoded by not admitting them and a
+permissive `ELSE` let through; it is a closed list now and says so. And an argument-level condition
+may name only its own argument, an input-field-level one only its own field, while the field-rooted
+sites may name any argument, which is the origin's existence and needs no test.
+
+**One behaviour deliberately changed, and it is the fan-out removal arriving as a row.** A path
+written on an input type that no argument reaches used to stop at the head with the rest counted as
+trailing. Not because anything was wrong with it: resolution descended through the occurrence
+surface, an orphan type has no occurrence rows, and the walk ran out of relation to follow. That made
+a correctly spelled path on an unreachable type indistinguishable from a misspelled one on a
+reachable type, which is the distinction the trailing count exists to carry. Candidates are keyed by
+the coordinate a path is written from and do not ask who reaches it, so the path now resolves and the
+orphan is a defect of its own. The test that pinned the old answer states the new one.
+
+**The writer moved into the model module.** The model tier seeds stores row by row and cannot call
+into the generator, so a rule reading a writer-populated table could only have been tested there
+against a second, hand-written copy of the descent, which is the drift this whole line of work
+exists to remove. The rule reads only rows the store already holds and needs no schema document, so
+it sits beside the other model-side derivations; capture calls it, and the fixtures call it too.
+
+**And the relation is declared, which is the first row of the declaration model to exist.** R877
+slice 1 landed `meta_grain` and `meta_relation` with the roster of undeclared relations frozen and
+only ever shrinking, so a relation arriving after it cannot be undeclared. Declaring this one costs
+what the model intends it to cost: the table comment is now its grain sentence and its example
+verbatim, both gated against the declaration, and the reasoning that used to sit inline moved into
+`rationale` under a fifteen-hundred character bound. The frozen roster falls from 283 to 282.
+
+**Still unmeasured.** Every figure this slice could produce would be taken on the same bench that
+has now twice reported a starved arm as a result, and the two enabling columns are `NOT NULL` on
+relations the kept capture predates, so the arm needs its backfill extended again before it can be
+trusted. The plan-instantiation counts are the honest measure here and they are the next thing to
+take.
+
 ### Deferred: the registration precondition
 
 Whether a rule earns a `meta_materialize` row before anything reads it. No other item holds it, and

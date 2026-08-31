@@ -278,12 +278,25 @@ class ArgmappingBindingLeafTest {
     }
 
     /**
-     * An input type no argument reaches has no occurrence path to descend, so a dotted head there
-     * stops at the head and counts the rest as trailing. A bare head at the same coordinate binds
-     * regardless, which is the pair of facts this case states together.
+     * Whether a path is spelled correctly and whether anything reaches the type it is spelled on
+     * are two facts, and this case is the one that used to conflate them. The input type here is an
+     * orphan: no argument anywhere reaches it, so no query can ever arrive at this condition. The
+     * path is still correct, {@code inner} is typed {@code Inner} and {@code inventoryId} is a field
+     * of it, and the resolution says so.
+     *
+     * <p>It used to stop at the head with one segment trailing, and not because anything was wrong
+     * with what the author wrote: resolution descended through the occurrence surface, an orphan
+     * type has no occurrence rows, and the walk therefore ran out of relation to follow. That made a
+     * correctly spelled path on an unreachable type indistinguishable from a misspelled one on a
+     * reachable type, which is the reading the trailing count exists to keep apart.
+     *
+     * <p>Candidates are keyed by the coordinate a path is written from and do not ask who reaches
+     * it, which is the same property that keeps an input field one origin rather than one per
+     * occurrence. The orphan is a defect of its own and one this relation does not claim to
+     * diagnose; a reader wanting reachability asks the relation that holds it.
      */
     @Test
-    void aDottedHeadOnAnUnreachedInputTypeStopsAtTheHead() {
+    void aDottedHeadOnAnUnreachedInputTypeStillResolves() {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "Orphan", "INPUT_OBJECT");
             seedField(dsl, GRAPH, "Orphan", "inner", "Inner", false);
@@ -295,12 +308,17 @@ class ArgmappingBindingLeafTest {
             seedArgumentPathSegments(dsl, GRAPH, "Orphan", "inner", "inner.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isZero();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME)).isEqualTo("inner");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION))
+                .as("the path resolved both segments")
+                .isEqualTo(1);
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME)).isEqualTo("Inner");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+                .isEqualTo("inventoryId");
             assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED))
-                .as("the @nodeId below was never reached")
-                .isFalse();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+                .as("the @nodeId is on what the path bound, so it is declared")
+                .isTrue();
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isEqualTo("Inventory");
+            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
         });
     }
 
