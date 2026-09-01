@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 1
 theme: model-cleanup
-depends-on: [capture-stops-reading-the-walk]
+depends-on: []
 created: 2026-08-27
 last-updated: 2026-08-31
 ---
@@ -277,11 +277,10 @@ it was needed, which is not the same thing as removing it.
 
 ## Sequencing
 
-**R870's code has landed; the item is back at Ready for a rework round.** Capture used to write one
-table, `walk_type_backing_class`, from the schema walk above it, and that call could not have
-survived the module move. R870 deleted the table and the write on its own merits, and its Done gate
-sent it back over a gate-ordinal detail rather than over the deletion. So the edge is gone from the
-tree, and the dependency stays listed until that item is Done.
+**R870 is done, and the dependency is discharged.** Capture used to write one table,
+`walk_type_backing_class`, from the schema walk above it, and that call could not have survived the
+module move. R870 deleted the table and the write on its own merits, so the edge is gone from the
+tree and `depends-on` is empty. Nothing here waits on it any more.
 
 **R876's work should land before the move.** It is adding code to the very packages this relocates.
 Nothing actually clashes, since this move does not change what any file does, but the two will
