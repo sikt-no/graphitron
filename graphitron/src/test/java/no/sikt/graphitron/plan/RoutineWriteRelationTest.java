@@ -290,9 +290,10 @@ class RoutineWriteRelationTest {
     /**
      * The reason this relation carries no method-name census, pinned rather than asserted in prose:
      * the entry point's name is the field's own, so two coordinates that differ only in a letter's
-     * case mint two distinct and perfectly legal Java methods. A case-folded census, which the
-     * sibling relations need because their upper-camelling formula is not injective, would reject
-     * this pair.
+     * case mint two distinct and perfectly legal Java methods. The launcher relation's census,
+     * which its upper-camelling formula does need, compares the minted method exactly and would
+     * admit this pair too; only a case-folded census would reject it, which is why neither
+     * relation has one.
      */
     @Test
     void coordinatesDifferingOnlyInCaseMintDistinctMethodsAndAreBothAdmitted() {

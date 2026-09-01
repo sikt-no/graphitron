@@ -172,12 +172,19 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Validator mirror of the launcher relation's case-folded method-name census
+     * Validator mirror of the launcher relation's method-name census
      * ({@code LauncherCommands.methodCollisions}): the {@code rows} / {@code load} /
      * {@code lookup} formulas upper-camel a field name, which is not injective, so two covered
      * coordinates on one type can mint one emitted method. The relation constructor's hard
      * failure is the backstop; this rejection is what an author sees, located at the colliding
-     * declarations.
+     * declarations. The census compares the minted method exactly, so the name this rejection
+     * quotes is the one the generator would emit; it is spelled at the owning class's simple name
+     * because the census mints its refs with no output package, and an author-facing message should
+     * not quote a package prefix that no build would produce.
+     *
+     * <p>Deferred, not an author error: the colliding schema is legal and meaningful, and an
+     * injective naming formula would emit it. The rejection says the generator's formula cannot,
+     * which is why its own remedy is a rename.
      */
     private void validateLauncherMethodNames(GraphitronSchema schema, List<ValidationError> errors) {
         for (var collision : no.sikt.graphitron.plan.LauncherCommands.methodCollisions(schema)) {
@@ -187,9 +194,10 @@ public class GraphitronSchemaValidator {
                 .collect(java.util.stream.Collectors.joining(", "));
             errors.add(new ValidationError(
                 origins.get(0).description(),
-                Rejection.invalidSchema(
+                Rejection.deferred(
                     origins.get(0).description() + " mints the generated launcher method '"
-                        + collision.foldedKey() + "' (case-folded), which " + others
+                        + collision.method().owner().simpleName() + "#"
+                        + collision.method().methodName() + "', which " + others
                         + " also mints; rename one of the colliding fields so every launcher"
                         + " method has a distinct name"),
                 origins.get(0).location() == null

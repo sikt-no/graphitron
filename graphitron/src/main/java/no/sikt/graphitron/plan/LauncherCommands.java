@@ -1147,18 +1147,21 @@ public final class LauncherCommands {
     }
 
     /**
-     * The validator's mirror of the relation's case-folded method-name census: every launcher
-     * method the schema's covered coordinates mint, grouped case-folded by
-     * {@code (owner, method)}, with the groups that collide across distinct coordinates
-     * returned for rejection (the projection producer's address-census division: the relation
-     * constructor's hard failure is the backstop, this is what an author sees, located at the
-     * colliding declarations). The verdict-to-scheme mapping reads the same launch verdict the
-     * production reads, at name grain only; a drift produces a census that misses or
-     * over-reports, caught by the constructor backstop either way.
+     * The validator's mirror of the relation's method-name census: every launcher method the
+     * schema's covered coordinates mint, grouped by the minted
+     * {@link no.sikt.graphitron.command.UnitMethodRef} value, with the groups that collide across
+     * distinct coordinates returned for rejection (the relation constructor's hard failure is the
+     * backstop, this is what an author sees, located at the colliding declarations). Both sides of
+     * the ref are names this generator minted onto one owning class, so exact value equality is
+     * the whole comparison: two coordinates that mint one method carry the identical ref, and a
+     * case fold would additionally reject pairs whose emitted methods are distinct and legal. The
+     * verdict-to-scheme mapping reads the same launch verdict the production reads, at name grain
+     * only; a drift produces a census that misses or over-reports, caught by the constructor
+     * backstop either way.
      */
     public static List<MethodCollision> methodCollisions(GraphitronSchema schema) {
         var units = new GeneratedUnits("");
-        var origins = new java.util.LinkedHashMap<String,
+        var origins = new java.util.LinkedHashMap<no.sikt.graphitron.command.UnitMethodRef,
             java.util.LinkedHashMap<String, graphql.language.SourceLocation>>();
         for (var type : schema.types().values()) {
             for (var field : schema.fieldsOf(type.name())) {
@@ -1166,9 +1169,7 @@ public final class LauncherCommands {
                 if (ref == null) {
                     continue;
                 }
-                var key = (ref.owner().fqcn() + "#" + ref.methodName())
-                    .toLowerCase(java.util.Locale.ROOT);
-                origins.computeIfAbsent(key, k -> new java.util.LinkedHashMap<>())
+                origins.computeIfAbsent(ref, k -> new java.util.LinkedHashMap<>())
                     .putIfAbsent("field '" + field.qualifiedName() + "'", field.location());
             }
         }
@@ -1181,8 +1182,9 @@ public final class LauncherCommands {
             .toList();
     }
 
-    /** One case-folded launcher-method collision: the folded {@code owner#method} key and its origins. */
-    public record MethodCollision(String foldedKey, List<MethodOrigin> origins) {}
+    /** One launcher-method collision: the minted method every origin in the group claims. */
+    public record MethodCollision(no.sikt.graphitron.command.UnitMethodRef method,
+            List<MethodOrigin> origins) {}
 
     /** One colliding coordinate: its description and source location, for the located rejection. */
     public record MethodOrigin(String description,

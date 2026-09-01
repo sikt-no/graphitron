@@ -18,14 +18,16 @@ import java.util.Optional;
  * migration dial: the producer's membership is the classifier's two leaves and nothing narrower.
  * A coordinate absent from these rows is a coordinate that does not write through a routine.
  *
- * <p><b>No method-name census, deliberately.</b> Its sibling relations fold {@code (owner, method)}
- * case-insensitively and reject a collision, because their names come out of an upper-camelling
- * formula that is not injective: two field names differing only in their first letter's case mint
- * one {@code rows<Field>}. Here the emitted name is the field's own, verbatim, on a fetchers class
+ * <p><b>No method-name census, deliberately.</b> The launcher relation carries an exact
+ * {@code (owner, method)} census because its names come out of an upper-camelling formula that is
+ * not injective: two field names differing only in their first letter's case mint one
+ * {@code rows<Field>}. Here the emitted name is the field's own, verbatim, on a fetchers class
  * named after the parent type, so distinct coordinates always mint distinct methods and a census
- * would be provably vacuous. A <em>folded</em> one would be worse than vacuous: it would reject
- * {@code rentFilm} beside {@code rentfilm}, which emit two perfectly legal Java methods. Do not
- * add either by analogy; the coordinate key is the whole invariant.
+ * would be provably vacuous. A <em>case-folded</em> one would be worse than vacuous, here and on
+ * the launcher side alike: it would reject {@code rentFilm} beside {@code rentfilm}, which emit two
+ * perfectly legal Java methods. A fold belongs only where a minted name crosses into a second
+ * namespace, which a method name never does. Do not add either by analogy; the coordinate key is
+ * the whole invariant.
  *
  * <p>{@link #tenancy} is the run's acquisition axis (see {@link TenantRouting}), carried here
  * rather than on every row because whether a build routes per tenant at all is a run-grain fact.

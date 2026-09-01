@@ -102,6 +102,37 @@ class LauncherCommandsPipelineTest {
         assertThat(row.result()).isInstanceOf(ResultShape.SingleRecord.class);
     }
 
+    /**
+     * Two sibling roots whose names differ only in the case of a letter after the first mint two
+     * distinct launcher methods, so both are admitted. {@code GeneratedUnits.upperCamel} upper-cases
+     * the first character and nothing else, which is why {@code rowsUndervisningStartterminIPeriode}
+     * and {@code rowsUndervisningStartterminIperiode} are two perfectly legal Java methods rather
+     * than a collision; the census that guards launcher-method uniqueness compares the minted method
+     * exactly, so nothing here is folded into one key. {@code produce} constructs the relation, so
+     * this case also pins the constructor's admission of the pair.
+     */
+    @Test
+    void siblingRootsDifferingInCaseAfterTheFirstLetter_mintTwoMethodsAndAreBothAdmitted() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type Query {
+                undervisningStartterminIPeriode: [Language!]!
+                undervisningStartterminIperiode: [Language!]!
+            }
+            """);
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+
+        assertThat(relation.rows()).hasSize(2);
+        assertThat(relation.rows())
+            .as("case-distinct field names are two rows, not a collision")
+            .extracting(row -> row.unit().methodName())
+            .containsExactlyInAnyOrder(
+                "rowsUndervisningStartterminIPeriode",
+                "rowsUndervisningStartterminIperiode");
+    }
+
     @Test
     void argumentOrderedRoot_helperArmCarriesTheMintedRefs() {
         var schema = TestSchemaHelper.buildSchema("""

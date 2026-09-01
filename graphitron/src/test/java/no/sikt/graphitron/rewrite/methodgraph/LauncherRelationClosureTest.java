@@ -46,7 +46,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       actually declared (a row with no method behind it is production that bypassed the
  *       render);</li>
  *   <li><b>exactly-one</b>: no two rows claim the same emitted method (enforced by the
- *       relation constructor's case-folded census; pinned here at the run level).</li>
+ *       relation constructor's census over the minted method ref; pinned here at the run
+ *       level, on the same unfolded {@code fqcn#method} key).</li>
  * </ul>
  *
  * <p>The covered families are the producer's minting arms, read off the producer's declared

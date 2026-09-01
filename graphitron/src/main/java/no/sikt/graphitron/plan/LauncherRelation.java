@@ -3,6 +3,7 @@ package no.sikt.graphitron.plan;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.LauncherCommand;
+import no.sikt.graphitron.command.UnitMethodRef;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,12 +33,22 @@ import java.util.Optional;
  *
  * <p><b>Method-name census.</b> Coordinate uniqueness does not imply method-name uniqueness:
  * the {@code rows} / {@code load} / {@code lookup} formulas upper-camel a field name, which is
- * not injective, and several naming schemes mint onto one fetchers class. Every relation
- * therefore also passes a case-folded {@code (owner, method)} census, failing construction when
- * two rows mint one emitted method (the projection producer's address-census precedent, and the
- * invariant the retired method-command registry's commit throw used to carry). The validator's
- * launcher-method census is the authored-schema mirror, so an authored collision fails
- * validation with a located error before production runs.
+ * not injective, and several naming schemes mint onto one fetchers class. This relation
+ * therefore also passes a {@code (owner, method)} census, keyed on the minted
+ * {@link UnitMethodRef} value itself, failing construction when two rows mint one emitted
+ * method (the invariant the retired method-command registry's commit throw used to carry). The
+ * validator's launcher-method census is the authored-schema mirror, so an authored collision
+ * fails validation with a located error before production runs.
+ *
+ * <p>The comparison is exact, and complete for being exact: both sides of the key are names this
+ * generator minted onto one owning class, so two rows that mint one method carry the identical
+ * ref. A case fold belongs only where two namespaces meet, which a method name never does (it is
+ * never a file name; {@link no.sikt.graphitron.rewrite.model.Rejection.InvalidSchema.CaseFoldCollision}
+ * carries the filesystem rationale for the population that does). Folding here would reject pairs
+ * whose emitted methods are distinct and legal, which is by definition not a collision. The owner
+ * half needs no fold of its own either: {@code GraphitronSchemaBuilder}'s type-name-stem census
+ * already rejects two case-equivalent stems upstream, so two fetchers owners cannot differ only in
+ * case by the time a producer runs.
  */
 public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDsl carrierDsl) {
 
@@ -49,15 +60,13 @@ public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDs
     public LauncherRelation {
         Objects.requireNonNull(index, "index");
         Objects.requireNonNull(carrierDsl, "carrierDsl");
-        var byFoldedMethod = new LinkedHashMap<String, LauncherCommand>();
+        var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
-            var key = (row.unit().owner().fqcn() + "#" + row.unit().methodName())
-                .toLowerCase(java.util.Locale.ROOT);
-            var existing = byFoldedMethod.putIfAbsent(key, row);
+            var existing = byMethod.putIfAbsent(row.unit(), row);
             if (existing != null) {
                 throw new IllegalArgumentException(
                     "launcher method '" + row.unit().owner().fqcn() + "#"
-                    + row.unit().methodName() + "' minted twice (case-folded): coordinates "
+                    + row.unit().methodName() + "' minted twice: coordinates "
                     + existing.coordinate() + " and " + row.coordinate()
                     + "; every emitted method is exactly one row's output, and the validator's"
                     + " launcher-method census must reject this before production");
