@@ -44,8 +44,9 @@ is about, which is what makes it unindexable, which is what left materialization
 anybody could reach. So the question the item had been asking each registration, whether it is
 necessary, was asking too late: a registration is what a relation with no grain gets given.
 
-**R899's target is not reachable, and this item is where that got measured.** That target is a
-test: no relation in the consumer read set refuses a five-second budget with nothing materialized.
+**The target this item was pointed at is not reachable, and this item is where that got measured.**
+The target, R899's as filed, is a test: no relation in the consumer read set refuses a five-second
+budget with nothing materialized.
 On a fresh capture the unregistered arm does not finish. Sixteen relations pass a 120-second budget
 and the planner then exhausts its heap, against a registered arm that reads
 all 114 relations in 88.2 s with none over budget. The gap widened in both directions while this item
@@ -61,7 +62,9 @@ by registering it: 25.53 s to 2.73 s with the register untouched and every row u
 **So what this item hands on is not a smaller register but an owned one.** A materialization nobody
 owns is a materialization nobody maintains, which is how twenty of them came to stand over rules
 whose shape had never been priced, several of them over rules that return nothing at all on a real
-consumer. The order of that work is in "What is not done".
+consumer. The register itself turns out to be aimed correctly, every target sampled reading between
+two and five families; what is misplaced is a family-local rule outside its family, carrying the
+largest read cost in the store. The order of that work is in "What is not done".
 
 **The refresh is not the cost and this item does not claim it.** The pass was 43 s when this item
 opened and is 7.6 s now.
@@ -238,17 +241,39 @@ still registered and reading every `intent_` relation once.
 | one registration dropped, `intent_node_id_instruction` | 8.9 s | 495 s, three relations over budget
 |===
 
-Emptying the register is therefore not reachable from here, which contradicts the target R899 was
-filed against; that item needs its premise corrected rather than its figures refreshed. The
-register's own recorded prices are stale in both directions: the registration whose reason calls its
-removal the steepest figure in the register, at ninety-five minutes of refresh, now refreshes in
-7.2 s without it.
+Emptying the register is therefore not reachable, which retired the target R899 was filed against;
+that item has since been respecified around counting a registration's alternative from the schema
+instead. The register's own recorded prices are stale in both directions: the registration whose
+reason calls its removal the steepest figure in the register, at ninety-five minutes of refresh, now
+refreshes in 7.2 s without it.
 
 **The register is ownerless.** `meta_relation` declares six relations, all six created by this item.
 Two hundred and eighty-one relations sit on the frozen undeclared roster, and none of the twenty
 registered targets has an owner. The materializer runs as one anonymous pass at the end of capture
 because there is no gatherer to attribute it to. Thirteen of the twenty targets hold no rows at all
 on the consumer capture measured.
+
+**How many families each rule reads**, walked from each rule's view body down to the base facts,
+ignoring `store_`. This is the test of whether a rule belongs to a family or to the gatherer that runs
+last.
+
+[cols="4,2,3"]
+|===
+| rule | families | placement under the rule
+
+| `intent_jvm_ancestor` | 1, `jvm_` | belongs to the `jvm_` family; needs no registration
+| `intent_spelled_table` | 2 | crossing
+| `intent_expanded_type`, `intent_expanded_field` | 2 | crossing
+| `intent_condition_table_parameter` | 3 | crossing
+| `intent_field_reference_step_hop` | 3 | crossing
+| `intent_resolved_type_binding` | 4 | crossing
+| `intent_field_column_scope` | 4 | crossing
+| `intent_node_id_instruction`, `intent_carrier_data_field` | 5 | crossing
+| `intent_field_scope_table`, `intent_argument_scope_table` | 5 | crossing
+|===
+
+Every registered target sampled crosses. The one family-local rule in the sample is the one carrying
+the largest read cost in the store, and it is not registered and not declared.
 
 ## What is not done
 
@@ -260,11 +285,16 @@ carry a new registration, because carrying one is not anybody's job. Adding a ro
 see, which is exactly why the first lever has been the last one.
 
 The mechanism for fixing this is R877's, not this item's. That item is already declaring grains and
-owners family by family, it has reached `sql_` and `jvm_`, and it states the end state directly: the
-derivation gatherer owns the `intent_` relations and owns materializing them, so `meta_materialize`
-stops being a mechanism standing outside the ownership rule and becomes one owner's refresh plan.
-What this item contributes is the evidence for why that matters, and one requirement to carry into
-it.
+owners family by family and has reached `sql_` and `jvm_`, and the fact model states the end state
+directly: a derivation that reads one family's facts moves into that family, where its owner keeps it
+by whatever means it likes and needs no `meta_materialize` row, because the register exists to
+schedule refreshes for rules with no owner to schedule them. A rule that moves into a family is not
+converted into anything; it leaves the register's question. What stays registered is the rules that
+cross families, which are the last gatherer's refresh plan rather than a mechanism of their own.
+
+Measured against that rule, the register is not aimed wrong. Every one of the registered targets
+sampled reads between two and five families, so all of them are correctly the crossing gatherer's
+business. What is misplaced is elsewhere, and it is the largest single read cost in the store.
 
 The evidence is that an unowned register rots in ways nothing surfaces. A registration's recorded
 price can be wrong by three orders of magnitude, thirteen of twenty targets can hold no rows on a real
@@ -272,20 +302,36 @@ consumer, and a twenty-first can look like a twenty-seven percent win, with noth
 those cases. R877's own finding, that the twenty unkeyed tables are exactly the twenty registered
 targets, is the same observation reached from the modelling side.
 
-The requirement is that a registration be priced where it is added. Declaring an owner makes a
-materialization somebody's work; it does not by itself make the alternative visible at the moment
-somebody reaches for one. A `meta_materialize` reason is unchecked prose today and several are
-provably stale. What a reason should have to carry is what the rule costs unregistered, so that
-"registered rather than reshaped" is legible in review instead of being discoverable only by
-rebuilding the store in a scratch directory.
+The requirement is that a registration be priced where it is added, and R899 now carries it. Declaring
+an owner makes a materialization somebody's work; it does not by itself make the alternative visible
+at the moment somebody reaches for one, and a `meta_materialize` reason is unchecked prose today with
+several provably stale. R899's answer is to count the alternative from the schema rather than from a
+store, which is the half of the question that does not need a capture and therefore can live in the
+repository.
 
-**`@node`'s defaulted key columns stay a view, and the reason is now clear.** The attempt to capture
-them failed on reading `intent_resolved_type_binding` at capture cadence. Ownership does not fix
-that: the derivation gatherer owns every `intent_` relation and runs after every corpus gatherer, so
-the binding is filled after the gatherer that decodes `@node` has run, under per-owner refresh
-exactly as under one global pass. A capture-cadence writer would need the binding owned earlier, and
-nothing argues it should be. With the defaulted arm returning no rows on the schema measured and the
-relation reading in 0.03 s, there is no case for moving it at all.
+**`intent_jvm_ancestor` is a family-local rule sitting outside its family, and it costs more than
+anything else in the store.** Its inputs are `jvm_class_supertype` and `jvm_declared_type_ref` and
+nothing else, so under the rule it belongs to the `jvm_` family, whose owner is the catalog gatherer:
+the one that runs first. It is not registered and not declared, and it is read through a correlated
+existence test that re-climbs the whole class hierarchy per driving row, which is 25.53 s of an 88.2 s
+workload. Both fixes are available to its owner without a register row. Restating the reader's rule
+takes it to 2.73 s, and storing the closure, which its owner may simply choose to do, takes it to
+0.02 s for 2284 rows and 0.2 s of refresh. Registering it would have been the wrong mechanism for a
+rule that never had to cross a family at all. The naming is part of the defect: an `intent_` prefix
+on a relation whose facts are one family's is what let it be read as the crossing gatherer's problem.
+
+**`@node`'s defaulted key columns stay a view.** The attempt to capture them failed on reading
+`intent_resolved_type_binding` at capture cadence, and moving derivations into families does not
+reach this one: that binding reads four families, so it is a crossing rule, filled by the gatherer
+that runs last and therefore after the gatherer that decodes `@node`. The conclusion is unchanged and
+independent of it anyway, the defaulted arm returning no rows on the schema measured and the relation
+reading in 0.03 s.
+
+**The prerequisite for any of this is per-gatherer transaction control**, which the fact model already
+names and the store does not have. `FactCapture` runs every gatherer inside one transaction, so no
+gatherer can commit its family and then refresh its own relations against statistics reflecting what
+it just wrote. The empty-store path is the one exception already carved out, and the rule needs it
+promoted to the normal shape.
 
 **The other two plan defects are unfixed.** One rule was rewritten and measured, above. The demand
 and exemption family names the expansion union nine to twelve times per plan inside sixteen
@@ -427,11 +473,10 @@ row is added, never for the pass.
 Threads this item opened and did not close, each filed on its own terms rather than carried here.
 None of them is a precondition for anything left in this item.
 
-- **R899**, filed as the target itself: no relation a consumer reads refuses a five-second budget
-  with nothing materialized. That target is now measured unreachable, so the item needs its premise
-  rewritten before it is picked up, and the ownership order in "What is not done" is what should
-  replace it. What it still inherits is real: the four confirmed supertype omissions, and the two
-  plan defects found on the fresh capture whose rules were never examined.
+- **R899**, filed as the target itself and since respecified: this item's arms retired that target,
+  and the item now makes a registration's alternative countable from the schema so the last lever
+  stops being the first reached for. What it still inherits is the four confirmed supertype
+  omissions, and the two plan defects found on the fresh capture whose rules were never examined.
 - **R900**, the argMapping relations spelling their own subject three ways, and the two names the
   schema already admits are inaccurate.
 - **R901**, what `trailing_segments` is a count of. The proposal to collapse it to a boolean is
