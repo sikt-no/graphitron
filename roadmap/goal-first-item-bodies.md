@@ -1,7 +1,7 @@
 ---
 id: R906
 title: "Roadmap item bodies state a goal, then a plan"
-status: Ready
+status: In Review
 bucket: process
 priority: 3
 theme: docs
@@ -251,6 +251,14 @@ non-list, non-continuation line, namely line 91.
 `**` rule. I verified the fix rather than assuming it: with that single line inserted, the same
 asciidoctor run emits a proper `<div class="ulist">` with six `<li>` items and no stray `<strong>`.
 Re-render the file after the edit rather than trusting the build, since the build does not cover it.
+
+> Response (author, 2026-09-01): inserted the blank line and re-rendered the file with asciidoctor
+> rather than trusting the build: the region between the body-shape bullet and the "Default plan
+> shape" bullet now emits one `ulist` with the six rules as `li` items and zero `strong` spans, and
+> the skeleton listing block survives. Of the non-blocking notes: the dropped explain-skill
+> provenance clause is restored on the gloss rule (a deviation from approved text, so it goes back),
+> and the `check-adoc-lists` guard is filed as R910. The skeleton block stays illustrative, per the
+> third note.
 
 *Non-blocking, no response needed.*
 
