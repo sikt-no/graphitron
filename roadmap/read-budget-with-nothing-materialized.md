@@ -1,7 +1,7 @@
 ---
 id: R899
 title: "A registration's alternative is counted from the schema, so the last lever stops being the first one reached for"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -418,3 +418,47 @@ this is a note and not a finding: the metric lands and prints either way. What d
 file's "the metric is what stops the next twenty registrations arriving unpriced", which that item
 delivers rather than this one, so the sentence currently describes a hand-off with no destination.
 Filing the item is Backlog work any session can do.
+
+### Round 3 (2026-09-01, Ready -> Spec reopen, session 01D6nTadyDFtGpxbjF2SBzdR)
+
+Verdict: reopen. This is not a finding against the plan as reviewed. Round 2 signed off correctly on
+what it could see; the foundation the plan prices moved afterwards, and the change is large enough
+that the existing approval no longer covers the shape of the work.
+
+Disclosure: this session is R876's author, and R876 is the item whose finding triggers the reopen.
+`Ready -> Spec` is unguarded by design, but the next `Spec -> Ready` sign-off should come from a
+session with no stake in R876.
+
+**The unit of account is under active revision.** This item prices one `meta_materialize` row at a
+time: a registration against the `_live` view that states its rule, twenty of them, with the
+population and the naming taken from the register as it ships. R876 has since walked all 114
+`intent_` rules down to the base relations they bottom out at, and found that the derivation gatherer
+has no input the graphitron gatherer lacks. No rule in the family reads the configuration corpus,
+Java sources or the compiler, which are three of the six dependencies that gatherer declares. Its
+conclusion is that `intent_` collapses into `graphitron`, and that `meta_materialize` then loses its
+subject rather than its justification: the register exists to schedule refreshes for relations whose
+owner runs too late to schedule them itself, and under one derivation gatherer there is no such
+relation.
+
+**What that does and does not do to this item.** The instrument survives. "How large a statement does
+the planner build for this rule as a view" is a question about a rule, not about a register, and it
+stays worth answering from the DDL whether the answer feeds a registration decision or an owner's
+choice to store, index or leave alone. What does not survive unexamined is the framing. The unit is a
+`meta_materialize` row, the population is "the twenty", the counterfactual arm is named after `_live`
+views, and the stated outcome is that "the metric is what stops the next twenty registrations
+arriving unpriced". With no register there is no twenty-first registration to stop, and that sentence
+needs a different subject.
+
+**This sharpens Round 2's open note rather than leaving it.** That round recorded that "the ownership
+item" is named three times as a recipient with no roadmap item behind it, and judged it a note
+because the metric lands either way. The recipient is R876, which is In Progress and still revising
+its own conclusions. That is the more precise version of the same problem: the hand-off has a
+destination and the destination is not settled.
+
+**What the revision owes.** Not a rewrite. Three decisions. Whether the arm is specified per
+registration or per rule, which is the difference between a metric that dies with the register and
+one that outlives it. What the population is, once "the twenty" is not a stable set. And whether this
+item waits on R876 reaching In Review, or ships the rule-level metric first on the grounds that it is
+the instrument either way. The third is a real fork and the answer is not obvious: the metric is
+arguably worth more before the collapse than after, because it is what would let an owner price the
+choice the collapse hands them.

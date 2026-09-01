@@ -583,6 +583,10 @@ None of them is a precondition for anything left in this item.
   and the item now makes a registration's alternative countable from the schema so the last lever
   stops being the first reached for. What it still inherits is the four confirmed supertype
   omissions, and the two plan defects found on the fresh capture whose rules were never examined.
+  **Reopened from Ready to Spec on 2026-09-01, blocked on this item.** It prices one
+  `meta_materialize` row at a time, and the collapse above takes the register away as the unit of
+  account. The instrument survives the collapse and the framing does not, so it waits rather than
+  ships against a foundation still moving. Its Round 3 states what the revision owes.
 - **R900**, the argMapping relations spelling their own subject three ways, and the two names the
   schema already admits are inaccurate.
 - **R901**, what `trailing_segments` is a count of. The proposal to collapse it to a boolean is

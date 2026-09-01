@@ -14,9 +14,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-09-01 <sub>created 2026-08-28</sub> | [plan](capture-stops-reading-the-walk.md) |
 | `R865` | The generator owns the fact tier it should merely read <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-31 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
-| `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R884` | An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot | In Review | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](inferred-key-projection-decodes-the-wrong-slot.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
@@ -614,7 +614,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R899` [**A registration's alternative is counted from the schema, so the last lever stops being the first one reached for**](read-budget-with-nothing-materialized.md) — Ready, architecture
+- `R899` [**A registration's alternative is counted from the schema, so the last lever stops being the first one reached for**](read-budget-with-nothing-materialized.md) — Spec, architecture
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
 - `R870` [**The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy**](capture-stops-reading-the-walk.md) — Spec, architecture
 - `R865` [**The generator owns the fact tier it should merely read**](capture-without-the-materialization-refresh.md) — Spec, architecture, blocked by [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)
