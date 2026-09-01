@@ -1,6 +1,6 @@
 ---
 id: R876
-title: "Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last"
+title: "Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject"
 status: In Progress
 bucket: architecture
 priority: 1
@@ -10,7 +10,7 @@ created: 2026-08-28
 last-updated: 2026-08-31
 ---
 
-# Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last
+# Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
 
 Every performance decision the fact model has taken has asked one question: should this rule be
 stored or recomputed. That framing admits two answers, and `meta_materialize` is the record of
@@ -42,6 +42,17 @@ same thing every other gatherer holds for its own family. So the register does n
 defensible core and does not get retired row by row. It stops being a mechanism, by necessity, the
 moment ownership is total.
 
+**And the crossing rules do not keep it alive either, because the gatherer they would wait for is not
+earned.** Walking every `intent_` rule down
+to the base relations it bottoms out at reaches nothing the graphitron gatherer lacks. No rule in the
+family reads the configuration corpus, Java sources or the compiler, which are three of the six
+dependencies the derivation gatherer declares. That gatherer was created to run last and nothing it
+owns needed it to, so `intent_` collapses into `graphitron` and the two families become one owner's
+relations, differing only in whether the rows were written by Java or stated in SQL. `meta_materialize`
+then loses its subject rather than its justification: it schedules refreshes for relations whose owner
+runs too late to schedule them itself, and under one derivation gatherer there is no such relation.
+The counts are under "What the evidence is" and the target under "What is not done".
+
 **The register is a diagnostic, not the deliverable.** Every defect this item fixed was found by
 asking why a relation had been registered, and not one of the fixes was a retirement. What ships is
 in "What landed" below: a fact model that states more about itself, and a capture that can read what
@@ -67,16 +78,15 @@ became 88.2 s.
 The one relation that refused a budget with every registration in place is fixed by a stored key and
 an index, which no registration could have done, because no registration can index an expression. On
 the fresh capture the worst reader remaining is fixed the same way, by restating its rule rather than
-by registering it: 25.53 s to 2.73 s with the register untouched and every row unchanged.
+by registering it, with the register untouched and every row unchanged. "The lever order" carries the
+figures.
 
 **So what this item hands on is not a smaller register but the end of one.** A materialization nobody
 owns is a materialization nobody maintains, which is how twenty of them came to stand over rules
 whose shape had never been priced, several over rules returning nothing at all on a real consumer.
-The twenty are not wrongly chosen: every target sampled reads between two and five families, so each
-is genuinely the last gatherer's to refresh, and that is exactly why the register dissolves into that
-gatherer's plan rather than being argued down one row at a time. What is misplaced is a family-local
-rule sitting outside its family and carrying the largest read cost in the store. The order of that
-work is in "What is not done".
+What is misplaced is not which rules were registered but where they were put: a family-local rule
+sitting outside its family, carrying the largest read cost in the store. The order of that work is in
+"What is not done".
 
 **The refresh is not the cost and this item does not claim it.** The pass was 43 s when this item
 opened and is 7.6 s now.
@@ -159,13 +169,16 @@ positions from 464.5 s and 82.3 s to 0.2 s and 1.3 s.
 
 Rung 3 was measured against rung 4 on the workload's worst reader, which is the case the order was
 always asserting without evidence. `intent_condition_table_parameter` cost 25.53 s of an 88.2 s
-workload because it asks `EXISTS (closure) OR EXISTS (catalog)`, and an OR of two correlated
-subqueries admits no semi-join, so a recursive climb of the class hierarchy runs once per candidate
-parameter. Restating the two tests as one union joined to the driving rows took it to 2.73 s with
-the register untouched and every relation returning identical rows. Registering the closure instead
-took it to 0.02 s. The rewrite is nine tenths of the win, and the registration would have bought the
-last tenth by burying the defect: nothing downstream would ever again show that the rule asks its
-question in a form no planner can answer.
+workload because it asks `EXISTS (closure) OR EXISTS (catalog)`, where the closure is
+`intent_jvm_ancestor`. An OR of two correlated subqueries admits no semi-join, so a recursive climb
+of the class hierarchy runs once per candidate parameter. Restating the two tests as one union joined
+to the driving rows took it to 2.73 s, with the register untouched and every relation returning
+identical rows. Registering `intent_jvm_ancestor` instead took it to 0.02 s for 2284 rows and 0.2 s
+of refresh. The rewrite is nine tenths of the win, and the registration would have bought the last
+tenth by burying the defect: nothing downstream would ever again show that the rule asks its question
+in a form no planner can answer. This is the item's one side-by-side of the two rungs, and the two
+relations are one finding rather than two; later sections refer to these figures rather than restate
+them.
 
 
 ## What landed
@@ -294,28 +307,19 @@ relation.
 | `intent_` | 25 | 89 | 134 into `graphitron_`, 67 `graphql_`, 47 `sql_`, 26 `jvm_`, 12 `store_`
 |===
 
-So there are two derivation gatherers already, and the boundary between them is mechanism:
-`graphitron_` is what is derived in Java and written early, `intent_` is what is derived in SQL and
-written late. Neither prefix records what a relation reads. A family that does not encode dependence
-cannot be used to decide order, so order is decided by whichever mechanism the author happened to
-use, which is the machinery that makes placement a default.
+So there are two derivation gatherers already, and the boundary between them is mechanism rather
+than dependence: `graphitron_` is derived in Java and written early, `intent_` is stated in SQL and
+written late, and neither prefix records what a relation reads.
 
-**And on dependence the second gatherer is not earned.** Walking all 114 `intent_` rules to the base
-relations they bottom out at gives 41 in `graphitron_`, 11 in `sql_`, 8 in `graphql_`, 6 in `jvm_`,
+**What the second gatherer actually reads.** Walking all 114 `intent_` rules to the base relations
+they bottom out at gives 41 in `graphitron_`, 11 in `sql_`, 8 in `graphql_`, 6 in `jvm_`,
 `store_graph_source`, and 6 hand-written `intent_` tables. Nothing reaches `java_`, `javac_`, the
 configuration corpus, `lint_`, `walk_`, `rejection_` or `diagnostic`: zero rules, not few. The
 derivation gatherer declares six dependencies and three of them, `configuration`, `java-source` and
 `compile`, are used by nothing it owns. Its real inputs are the SDL transcription, the catalog and
-classpath transcriptions, and `graphitron_`, which is precisely what the graphitron gatherer has once
-it has written its own facts: that gatherer already depends on `sdl` and on `catalog`, and `catalog`
-carries the classpath corpus that `@service` and `@condition` need.
-
-**So the `intent_` family collapses into `graphitron`.** There is no input the derivation gatherer has
-and the graphitron gatherer lacks, so nothing about dependence puts a second derivation layer after
-the first. What separates them is that one writes tables from Java and the other states rules in SQL,
-and that is a choice inside one owner rather than a boundary between two. Read the other way, this is
-why the register exists at all: a gatherer invented to run last needs a mechanism to schedule the
-refreshes of relations that never had to wait for it.
+classpath transcriptions, and `graphitron_`, which is what the graphitron gatherer has once it has
+written its own facts: that gatherer already depends on `sdl` and on `catalog`, and `catalog` carries
+the classpath corpus that `@service` and `@condition` need. This is the count the collapse rests on.
 
 **How many families each rule reads**, walked from each rule's view body down to the base facts,
 ignoring `store_`. This is the test of whether a rule belongs to a family or to the gatherer that runs
@@ -339,14 +343,11 @@ last.
 Every registered target sampled crosses. Walked over all 114 `intent_` relations the same way, twelve
 read exactly one corpus family: four `sql_`, four `graphitron_`, two `jvm_` and two `graphql_`. A
 further six bottom out at hand-written derivations the walk cannot see through and are unresolved
-rather than local. The remaining ninety-six cross two to five families. So the register holds
-crossing rules correctly, and what went unreasoned is the placement: a rule reading one family's
-facts was put with the derivation gatherer anyway, which is how a purely `jvm_` rule came to be owned
-by the gatherer that runs last while carrying the largest read cost in the store.
+rather than local. The remaining ninety-six cross two to five families.
 
 ## What is not done
 
-**The register is ownerless, and that is what this item hands on.** A materialization is work
+**An unowned register is the mechanism behind every stale figure above.** A materialization is work
 somebody has to keep true, and none of the twenty has anybody. That is the mechanism behind every
 stale figure recorded above: nobody re-checked a price, noticed an empty target, or had to agree to
 carry a new registration, because carrying one is not anybody's job. Adding a row to
@@ -359,9 +360,9 @@ directly: a derivation that reads one family's facts moves into that family, whe
 by whatever means it likes and needs no `meta_materialize` row, because the register exists to
 schedule refreshes for rules with no owner to schedule them. A rule that moves into a family is not
 converted into anything; it leaves the register's question. The rules that cross families do not stay
-registered either: their owner is the gatherer that runs last, and once that is declared,
-`meta_materialize` is that gatherer's refresh plan rather than a register at all. Nothing is retired
-and nothing is argued down row by row. The mechanism is left with no work.
+registered either, and the target below says why: once the collapse lands there is no gatherer
+running after `graphitron` for a crossing rule to wait for. Nothing is retired and nothing is argued
+down row by row. The mechanism is left with no work.
 
 Measured against that rule, the twenty are not wrongly chosen. Every registered target sampled reads
 between two and five families, so each is genuinely the last gatherer's to refresh. What is misplaced
@@ -373,12 +374,9 @@ consumer, and a twenty-first can look like a twenty-seven percent win, with noth
 those cases. R877's own finding, that the twenty unkeyed tables are exactly the twenty registered
 targets, is the same observation reached from the modelling side.
 
-The requirement is that a registration be priced where it is added, and R899 now carries it. Declaring
-an owner makes a materialization somebody's work; it does not by itself make the alternative visible
-at the moment somebody reaches for one, and a `meta_materialize` reason is unchecked prose today with
-several provably stale. R899's answer is to count the alternative from the schema rather than from a
-store, which is the half of the question that does not need a capture and therefore can live in the
-repository.
+Declaring an owner makes a materialization somebody's work; it does not by itself make the
+alternative visible at the moment somebody reaches for one, and a `meta_materialize` reason is
+unchecked prose today with several provably stale. That half is R899's, filed below.
 
 **`intent_` is owned, and putting a relation there has stopped being a decision.** The family belongs
 to the derivation gatherer, which is a real owner with a real reason to exist: it runs after every
@@ -392,24 +390,19 @@ left is a registration. The same rule placed in the family whose facts it actual
 a gatherer that has already run, and its owner can store it, index it or leave it a view, at the
 point where the facts are complete and nothing downstream has started.
 
-Twelve of the 114 `intent_` relations read exactly one corpus family: four `sql_`, four
-`graphitron_`, two `jvm_`, two `graphql_`. Each was a reasoned placement nobody made. Two of them are
-relations this item created, which is worth saying plainly: `intent_argmapping_pair` and
+The twelve family-local relations counted above were each a reasoned placement nobody made. Two of
+them are relations this item created, which is worth saying plainly: `intent_argmapping_pair` and
 `intent_field_navigated_type` read only `graphitron_` facts, so this item took the default twice
 while arguing against it.
 
 **The target the chart points at: there is one derivation gatherer, and `intent_` is its.** The
-derivation gatherer was created to run last, but nothing it owns reads anything only available after
-`graphitron` has run, so there is no dependence to justify a second layer. `intent_` moves to
-`graphitron`, which already reads the SDL transcription and the catalog and classpath transcriptions,
-and the two families become one owner's relations differing only in whether the rows were written by
-Java or stated in SQL. That difference is an implementation choice inside an owner, made where the
-cost is visible and changeable without anyone else being told.
-
-`meta_materialize` then has no subject. It exists to schedule refreshes for relations whose owner
-runs too late to schedule them itself, and under one derivation gatherer there is no such relation.
-The register is not retired, argued down or shrunk to a defensible core; the gatherer it was
-compensating for stops existing.
+collapse is stated at the top of this item and counted under "What the evidence is"; what belongs
+here is what taking it costs. `intent_` moves to `graphitron`, and the difference between writing a
+row from Java and stating it in SQL becomes an implementation choice inside one owner, made where the
+cost is visible and changeable without anyone else being told. The register is not retired, argued
+down or shrunk to a defensible core; the gatherer it was compensating for stops existing. Read the
+other way, this is why the register exists at all: a gatherer invented to run last needs a mechanism
+to schedule the refreshes of relations that never had to wait for it.
 
 **The rule that keeps it from coming back is that an owner is computed, not chosen.** A relation's
 owner is the latest, in gatherer dependency order, of the owners of the relations it reads. That is a
@@ -436,18 +429,11 @@ different finding from this one and is not evidence that they are unnecessary.
 `jvm_class_supertype` and `jvm_declared_type_ref` and nothing else, so it belongs to the `jvm_`
 family, whose owner is the catalog gatherer: the one that runs first. Placed with the derivation
 gatherer instead, it is settled last, and it is read through a correlated existence test that
-re-climbs the whole class hierarchy per driving row, which is 25.53 s of an 88.2 s workload. Under
-the owner it should have had, both fixes are available and neither needs a register row: restating
-the reader's rule takes it to 2.73 s, and storing the closure, which an owner may simply decide to
-do, takes it to 0.02 s for 2284 rows and 0.2 s of refresh. Proposing to register it was reaching for
-the last lever on a rule whose real problem was that nobody chose where it lived.
-
-**`@node`'s defaulted key columns stay a view.** The attempt to capture them failed on reading
-`intent_resolved_type_binding` at capture cadence, and moving derivations into families does not
-reach this one: that binding reads four families, so it is a crossing rule, filled by the gatherer
-that runs last and therefore after the gatherer that decodes `@node`. The conclusion is unchanged and
-independent of it anyway, the defaulted arm returning no rows on the schema measured and the relation
-reading in 0.03 s.
+re-climbs the whole class hierarchy per driving row, which is the largest single read cost in the
+store and is the case measured under "The lever order". Under the owner it should have had, both
+fixes there are available and neither needs a register row: an owner may restate its reader's rule or
+simply decide to store the closure. Proposing to register it was reaching for the last lever on a
+rule whose real problem was that nobody chose where it lived.
 
 **The prerequisite for any of this is per-gatherer transaction control**, which the fact model already
 names and the store does not have. `FactCapture` runs every gatherer inside one transaction, so no
@@ -571,12 +557,10 @@ moment their readers land. The question is when a registration is earned, not wh
 belong.
 
 It does not reopen the two payload registrations that landed 2026-08-28, and the case for leaving
-them alone is now measured rather than deferential: without them the pass on this store is 588.2
-seconds and with them it is 43.2, all of the difference landing on the two positions that dominated
-the old capture. That is the largest single measured improvement anywhere in this subject and it was
-a registration, which this item's own lever ordering puts last. The ordering is a claim about what
-should be tried first, not a claim that a registration is never the answer, and nothing here proposes
-undoing a pair that took two positions from 464.5 and 82.3 seconds to 0.2 and 1.3.
+them alone is now measured rather than deferential; the figures are under "Superseded items", where
+the judgement they correct was recorded. That pair is the largest single measured improvement
+anywhere in this subject and it was a registration, which this item's own lever ordering puts last.
+"The lever order" states why that is not a contradiction, and nothing here proposes undoing it.
 
 It does not build a consumer-scale fixture. Nothing in this repository captures a schema of that
 size, and a fixture that did would be a wall-clock gate, which the build-guardrail item owns.
@@ -675,22 +659,27 @@ guardrail is independent.
 Five places where this plan is weakest, named so the gate does not have to find them.
 
 **This item's thesis has been measured against, and it is confirmed in shape while refuted in
-scope.** Emptying the register does not work: on a fresh capture the unregistered arm does not
-finish. What survives is the claim about which lever to reach for first, and that now has a direct
+scope.** Emptying the register does not work; the arms are tabled above. What survives is the claim
+about which lever to reach for first, and that now has a direct
 measurement rather than an argument. The workload's worst reader was fixed by restating its rule,
-25.53 s to 2.73 s, with the register untouched and every relation returning identical rows;
-registering the same rule instead reached 0.02 s and would have buried the defect. A reviewer should
+with the register untouched and every relation returning identical rows, and registering the same
+rule instead would have bought the last tenth by burying the defect; the figures are under "The lever
+order". A reviewer should
 press on whether one rewritten rule entitles this item to a general claim. It does not: two further
 plan defects were found on the same capture and neither has had its rule examined, only its storage
 form tested, which is the very substitution this item exists to name.
 
-**The exit claim is new, was found late, and should be pressed hardest.** The item ends by saying the
-register is ownerless and that ownership is the fix. The first half is a count: six relations
-declared, two hundred and eighty-one on the undeclared roster, and none of the twenty registered
-targets owned. The second half, that refreshing per owner is what makes maintenance somebody's work,
-is an argument rather than a measurement, and it commits the successor to changing when the refresh
-runs. It is also R877's mechanism rather than this item's, so the press is on whether the evidence
-here is stated well enough for that item to act on without re-measuring.
+**The exit claim changed late, and should be pressed hardest.** The item now ends on the collapse:
+the derivation gatherer has no input the graphitron gatherer lacks, so `intent_` is `graphitron` and
+`meta_materialize` has no subject. That is a stronger claim than the ownership argument it replaced
+and it rests on less: one static walk of the shipped view definitions, by one investigator, with six
+of the 114 rules unresolved because the walk cannot see through hand-written derivations. The press
+is on the walk rather than on the conclusion. Whether six unresolved rules can overturn it. Whether
+"reads nothing the other gatherer lacks" is the right test at all, given that it says nothing about
+what a gatherer writes, and nothing about what orders two rules under one owner. The item names that
+second gap and does not close it. What survives either way is the count that no rule in the family
+reads the configuration corpus, Java sources or the compiler, which is three declared dependencies
+that nothing uses.
 
 **The read workload is a proxy, biased upward.** Every read figure here is `SELECT count(*)` over one
 of the 39 relations a consumer names. That is the right set of relations and the wrong set of queries:
