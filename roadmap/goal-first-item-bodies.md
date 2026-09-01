@@ -1,7 +1,7 @@
 ---
 id: R906
 title: "Roadmap item bodies state a goal, then a plan"
-status: In Review
+status: Ready
 bucket: process
 priority: 3
 theme: docs
@@ -190,3 +190,78 @@ question.
   surface today" half of the same sentence and would rewrite it, and `workflow.adoc` already cites
   item ids elsewhere. Dropping the id and saying "a separate Backlog item covers extending it to
   active items" would carry the same scope boundary with nothing to go stale.
+
+### Round 3 (2026-09-01, In Review -> Ready, reviewer session 019wtBfMU8GzWypLW7cVrn2R)
+
+Verdict: withhold. One blocking finding on question three. Question four is otherwise answerable, and
+the retirement sweep is clean.
+
+*What was checked and holds.* The implementation commit touches exactly the four edit sites the plan
+named and nothing else. All four carry what was approved. `workflow.adoc` gains the body-shape bullet
+with the section order, the skeleton, and the six rules; the "Default plan shape" bullet now leads
+with `## Goal`; "What each gate decides" gains the clause pointing the first `Spec → Ready` question
+at the `## Goal` section. `CLAUDE.md` replaces the two retired sentences with the one-clause pointer,
+word for word what the plan specified, and does not define the shape a second time. The roadmap
+skill's `add` section names the stamped skeleton and defers to workflow.adoc. The `create` template
+emits `# <title>`, a blank line, `## Goal`, a blank line, then the placeholder.
+
+The template half is demonstrated rather than read. Running `create` against a scratch copy of
+`roadmap/` produced a stub whose body is `## Goal` plus the placeholder paragraph, and the
+regenerated roll-up rendered that paragraph as the item's one-line description. So the round-2 note
+about keeping a blank line after the heading was honoured, and the template's self-referential claim
+that the paragraph "doubles as the item's one-line description in the roll-up" is true as emitted.
+
+The retirement sweep is clean. None of the three retired phrasings ("top-down writing approach",
+"Don't use complex jargon without defining it first", "single-paragraph TODO body", and the old
+"One-paragraph problem statement" template line) survives anywhere in the tree outside this item's own
+body, which dies with the file. A sweep of `.claude/`, `docs/` and `CLAUDE.md` for surfaces that
+describe item body shape returns only the roadmap skill, `CLAUDE.md` and `workflow.adoc` itself, all
+three now pointing at the one definition, so the goal's "every other surface points there instead of
+paraphrasing" holds. `.claude/skills/srp/SKILL.md` needed no edit: it already states that
+`workflow.adoc` owns the gate questions and that its templates paraphrase rather than quote.
+
+The full verification build (`mvnd install -Plocal-db`) is green across all fourteen modules.
+
+**Finding 1 (question three: the implementation is not the change the spec approved, because the
+central deliverable does not render). The six rules under the body-shape bullet collapse into one
+2333-character paragraph with three spurious bold runs.**
+
+`roadmap/workflow.adoc:91-96` starts the six sub-rules with `**` markers, but the line immediately
+above them, `The rules that make the shape work:`, is a `+`-attached continuation paragraph with no
+blank line between it and the first `**`. AsciiDoc therefore reads those lines as continuation lines
+of that paragraph rather than as a level-two list, and pairs the `**` markers off as bold delimiters.
+Rendering the file with asciidoctor 2.0.26 (no warnings, which is why nothing flagged it) produces a
+single `<p>` of 2333 characters containing the whole rule set, with `<strong>` spans running from
+rule one into rule two, rule three into rule four, and rule five into rule six. A reader gets the
+convention as a wall of prose with three arbitrary phrases emphasised.
+
+This is not a formatting preference, which the gate excludes. `workflow.adoc` is the artifact this
+item produces, and the six rules are the substance of the convention it exists to define. The item's
+own goal is that "the shape is defined in one place"; a reader opening that place gets it undefined.
+The failure mode is the one `CLAUDE.md` already calls out for markdown tables in `.adoc` files:
+structure that silently renders as paragraph text.
+
+Two things bound the blast radius. `roadmap/workflow.adoc` is not staged or rendered by the docs
+build, so neither the asciidoctor conversion nor `check-adoc-xrefs` ever sees it, which is why a
+green full build coexists with this. And the pattern is unique to this change: a scan of every
+non-generated `.adoc` under `docs/` and `roadmap/` finds exactly one line where a `**` item follows a
+non-list, non-continuation line, namely line 91.
+
+*What would satisfy it.* One blank line between `The rules that make the shape work:` and the first
+`**` rule. I verified the fix rather than assuming it: with that single line inserted, the same
+asciidoctor run emits a proper `<div class="ulist">` with six `<li>` items and no stray `<strong>`.
+Re-render the file after the edit rather than trusting the build, since the build does not cover it.
+
+*Non-blocking, no response needed.*
+
+* Nothing in the build would have caught this, and the repo already has the sibling check for the
+  analogous markdown-table failure. A `check-adoc-lists` step failing on a `**` line whose
+  predecessor is neither a list item nor a block delimiter would be cheap and would have caught
+  exactly this. That is a separate Backlog item, not this one's scope.
+* The plan's bullet content included a clause noting that the two lifted rules come from the `explain`
+  skill, which stays the after-the-fact translator for pre-convention bodies. The implementation drops
+  it. No authoring rule is lost, so this is provenance prose rather than substance, but it is a
+  deviation from the approved text worth knowing about.
+* The skeleton block shows four headings and omits `## Retired vocabulary` and `## Provenance`, both
+  of which the surrounding prose does place in the order. The block reads as illustrative rather than
+  exhaustive, so this is fine as it stands.
