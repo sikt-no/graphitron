@@ -60,7 +60,7 @@ run a generator.
 
 This item removes that reason, and both modules drop the dependency completely. Step 1 counts what
 each module actually uses, because two earlier drafts of this plan guessed and both guessed wrong.
-The remainder is a handful of tests whose subject is two tiers agreeing with each other; step 7
+The remainder is a handful of tests whose subject is two tiers agreeing with each other; step 8
 moves those somewhere they can see both.
 
 **You cannot get a store without generating code.** Anyone who wants to look at the facts, or
@@ -98,7 +98,7 @@ that the session and the run stop disagreeing about who owns the store.
 what their tests use moves down with the fact tier (`FactCapture`, `JooqCatalog`, `ClasspathScanner`,
 `CompletionData`, `CompileFacts`, `CompileDiagnostic`, `CompileRound`, `LintConfig`, the rejection
 vocabulary, and the `CapturedStore` / `FactWriters` test helpers). What is left is seven tests that
-check two tiers against each other, and step 7 relocates them, along with `BuiltStore`, the one
+check two tiers against each other, and step 8 relocates them, along with `BuiltStore`, the one
 helper that cannot follow the others down because a build is what it runs.
 
 `graphitron-mcp`'s guard test `StoreClientBoundaryTest` widens from checking shipped code to checking
@@ -106,7 +106,9 @@ tests as well, and `graphitron-lsp` gets the same guard, which its pom asks for 
 
 ## How we get there
 
-The order matters, because each step makes the next one smaller.
+The order matters, because each step makes the next one smaller. (Round 2's findings below cite the
+step numbers as they stood before step 2 was inserted; the census they refer to is still step 1, and
+everything they call step 6 or step 7 is now one higher.)
 
 **1. List what moves, and settle the unclear cases.** Most of it is clear. Everything capture uses to
 read the three sources moves with it, and so do the plain data types it copies into the store. Three
@@ -145,14 +147,20 @@ remaining upward edge lands on something already moving down.** The three:
 * **`rewrite/model` is not a package that moves or stays as a unit.** The rejection vocabulary and the
   refs go down; the walked model stays. The line inside it is not new, it is just never stated: what
   capture and derive read from `rewrite/model` is exactly the half that is plain data.
+* **`rewrite/session` splits, and only `SessionStateConfig` moves.** It is the authored settings, it
+  imports nothing at all, and it is what `ConfigurationFactCapture` writes to `store_graph_session_mount`
+  from. `SessionHooks` is the reflected signature that the same DDL comment says is never stored back,
+  and every one of its readers is above the line, so it stays there with `SessionStateWarnings`. This
+  is the exclusion that keeps `MethodRef` and its generic `TypeName` out of the move set, which is
+  what makes step 2 tractable.
 
 The four types the earlier draft flagged for confirmation come back below the line, as it guessed but
 did not check. `ValidationError` and `Rejection` are read by six `derive` files and by
 `rewrite/diagnostics`; the sealed interface and its ten arm files import nothing from the tree, so
 that is a move rather than a split, and `rejection_validation_error` is already a table with the
 language server reading the `diagnostic` view over it. `TableRef` and `ColumnRef` are read by
-`JooqCatalog` and two `derive` files. They are not quite "plain data", which the javapoet decision
-below settles.
+`JooqCatalog` and two `derive` files. They are not quite "plain data" yet, because they carry javapoet
+types; step 2 makes them so before anything moves.
 
 **`rewrite/diagnostics` moves down whole, and that is a correction to this plan rather than a
 detail.** `FactCapture` reaches `derive/AuthoredClaimRejectionRows`, which calls
@@ -169,7 +177,7 @@ The rest of the census is bookkeeping and is listed so the implementer does not 
 `RewriteContext` moves down rather than staying: it already imports `FactCapture.OutputCoordinates`,
 `LintConfig`, `SchemaInput`, `SchemaRecipe`, `SessionStateConfig` and `DependencyVersions`, all of
 which move, and it is a parameter of both `CatalogBuilder` methods that move. That also settles the
-loose end step 7 leaves open about `FixtureCatalogTest`. Eight plain root-level types come down with
+loose end step 8 leaves open about `FixtureCatalogTest`. Eight plain root-level types come down with
 no imports of their own to worry about: `NodeDeclaration`, `ArgMappingSigil`, `RejectionKind`,
 `ClasspathEntry`, `ValidationFailedException`, `SchemaParseException`,
 `rewrite.dependency.DependencyVersions` and `rewrite.model.ConnectionNaming`. `BuildWarning`,
@@ -207,16 +215,50 @@ so this is only about their tests. Counted rather than guessed, because two earl
 
 So after the moves above, seven test files still need both tiers: four in `graphitron-mcp`, and
 three in `graphitron-lsp` (the parity test, plus `R157PipelineTest` and `FixtureCatalogTest`, which
-are discussed in step 7 because their case is different). Those seven are the whole of what stands
+are discussed in step 8 because their case is different). Those seven are the whole of what stands
 between this item and a clean detachment of both modules.
 
-**2. Add a temporary import rule, so the layering holds until the move happens.** Give
+**2. Take javapoet out of the fact tier's data, so it does not cross the line.** The refs capture
+produces carry javapoet types: `ColumnRef` holds a `TypeName` beside its `String columnClass`,
+`TableRef` holds three `ClassName`s, `ForeignKeyRef` holds one. `JooqCatalog` mints them from live
+jOOQ reflection and `derive/StoreNodeTables` mints them from stored strings. Those five files are
+the whole of it. Left alone, they would hand `graphitron-model` a compile dependency on the module
+that writes Java source, and `roadmap-tool` would inherit it.
+
+**The store already holds these as strings.** Every `class_name` in the DDL is a `VARCHAR`, and the
+decoder from that form exists and is already in use: `ColumnRef.decodeBindingType` rebuilds a
+`TypeName` from the stored spelling, handling the array descriptor that `ClassName.bestGuess`
+rejects. `StoreNodeTables` is the proof by construction, since it reads store rows and mints refs
+from them today.
+
+**Nothing below the line reads these values.** Thirty-eight files read the javapoet-typed accessors.
+Exactly one of them, `JooqCatalog`, is in the move set, and it is the producer. So the typed
+components come off the two records, the strings stay, and the thirty-seven consumers above the
+line decode at their own read sites. Where a consumer decodes the same value repeatedly, the decode
+belongs at one site above the line, not back on the record: the point is that deciding the Java
+type is the emitter's job, and the fact tier's job is to write down the spelling it read.
+
+**The two carriers that would have made this hard are not in the move set, and the census is what
+shows it.** `MethodRef.returnType` is a generic `TypeName` from `getGenericReturnType()`, carrying
+the parameterised shape (`List<Film>`) that no string in this tree round-trips today, and
+`SessionHooks.Handled.handleType` is the same. Neither crosses: capture reaches `rewrite/session`
+only through `SessionStateConfig`, which imports nothing at all and is the authored strings the
+store holds. So `rewrite/session` splits, `SessionHooks` and `SessionStateWarnings` stay above with
+the rest of the reflected model, and `MethodRef` never comes down. `store_graph_session_mount`'s own
+DDL comment already draws that line: only the authored string lands there, and the reflected
+signature is a build-time model fact never stored back.
+
+This lands before the module move rather than inside it. It is an API change to two records with
+thirty-seven read sites, and step 7 promises that the move changes no behaviour; folding the two
+together would hide the real change inside the one that is supposed to be mechanical.
+
+**3. Add a temporary import rule, so the layering holds until the move happens.** Give
 `PackageImportDirectionTest` a `capture` rule, written like the `facts` rule it already has: capture
 may import nothing else from the tree, with its one allowance for graphql-java written as an
 allowance rather than a list of exceptions. This is a stand-in for the module boundary, not a rival
-to it, and step 6 deletes it.
+to it, and step 7 deletes it.
 
-**3. Take store creation out of capture.** `FactCapture.runInternal` today opens the store, reports
+**4. Take store creation out of capture.** `FactCapture.runInternal` today opens the store, reports
 what the cleanup sweep deleted, checks whether this project may write under its graph name, retries
 once if the write fails, and falls back to a temporary in-memory store with a warning. All of that
 becomes its own entry point that returns one of two answers: `Shared(handle)`, meaning the run got
@@ -228,12 +270,12 @@ The ownership check stays in the fact tier rather than moving up to the Maven go
 `ownsGraph` already gives in its own javadoc: it needs the store open and the row readable, and the
 goal never reads the store. The retry logic moves with it, for the same reason.
 
-**4. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
+**5. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
 point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
 directory, because the Maven goals still need it as a setting. What goes away is the generator
 running with no store at all: that stops being possible.
 
-**5. Add the command.** `CaptureMojo` copies the shape `ValidateMojo` already has: 34 lines whose
+**6. Add the command.** `CaptureMojo` copies the shape `ValidateMojo` already has: 34 lines whose
 body is a single `runGenerator` call, with `AbstractRewriteMojo.runGenerator` doing the setup. Like
 `validate`, it does not require the output and jOOQ package settings (`packagesRequired()` returns
 `false`). When it falls back to a placeholder package, it warns, because such a run writes no `sql_`
@@ -247,7 +289,7 @@ the one exception, since it runs before the capture today, so the projection nee
 Validation needs no switch, because it runs after the capture and the projection simply returns
 first.
 
-**6. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
+**7. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
 changes, no query answers differently. Keep moves and behaviour changes in separate commits. The
 test schemas in `graphitron/src/test/resources/corpus` move with capture and are shared back up as a
 test-jar, for the planner and emitter tests that use them. `CapturedStore` and `FactWriters` move the
@@ -258,12 +300,12 @@ fixture after every other reason had gone.
 `BuiltStore` is the exception, and an earlier draft had it wrong: it runs
 `GraphQLRewriteGenerator.buildOutput()`, so it cannot live below the generator any more than the
 generator can. It stays in `graphitron`'s test-jar, where the build is. That is not a leak, because a
-store filled by a build is a two-tier object and belongs with the two-tier tests; step 7 is where its
+store filled by a build is a two-tier object and belongs with the two-tier tests; step 8 is where its
 users end up.
 `FactCaptureAgreementTest` stays where it is: it compares capture's output against the old walk, and
 a test comparing two layers belongs in the upper one.
 
-**7. Rehome the tests that need both tiers.** Seven files, in two kinds.
+**8. Rehome the tests that need both tiers.** Seven files, in two kinds.
 
 *Five that check the build and a client agree.* `LintSuppressionDiagnosticsParityTest` exists twice,
 once in each client, and asks the same question: if you switch a lint rule off in your build
@@ -321,20 +363,19 @@ the three things capture reads, so a module that defines what a schema fact is c
 unable to parse a schema. Its description changes from "the fact database and its bootstrap" to what
 it will be: the whole fact tier.
 
-**`graphitron-model` also gains `graphitron-javapoet`, and that is correct for the same reason.**
-`ColumnRef` carries a `TypeName`, and `TableRef`, `ForeignKeyRef`, `MethodRef`, `JooqCatalog` and
-`derive/StoreNodeTables` carry `ClassName`, so the fact tier takes a compile dependency on the
-type-name library. Nothing cycles: `graphitron-javapoet` is vendored in this tree and depends on
-nothing in it. The name invites the wrong reading, so state what the dependency is. Javapoet is two
-things, a model of Java type names and a writer of Java source, and the fact tier uses only the
-first. `ColumnRef.columnType` is a `TypeName` because the live `Class` exists only at the catalog
-boundary and the fact has to be decided there, which is the fact tier's whole job: read the source
-once, write down what you found. Re-encoding the refs without javapoet would mean minting a second
-type-name model for the emitters to convert back out of, and every emit site re-parsing a string
-`ClassName.bestGuess` already rejects for array columns. That is a worse tree and a larger item.
+**`graphitron-javapoet` does not follow the fact tier down, and step 2 is what makes that true.**
+The parser is one thing and a code writer is another. The fact tier reads a consumer's sources and
+writes down what it found, so it needs to parse a schema; it does not need to model Java syntax, and
+a module named for writing Java source has no business under a fact database. The store agrees:
+every class name in the DDL is a `VARCHAR`.
 
-The alternative was considered and is not free to leave for later: the refs cannot cross the module
-line in a form the emitters cannot use, so this is decided here or the move does not happen.
+What made this a decision rather than an observation is that five files in the move set carry
+javapoet types today, so the dependency would come down with them unless something stops it. Step 2
+stops it, and the count is what makes it cheap: nothing below the line reads those values, thirty-
+seven of the thirty-eight readers are above it, and the decoder from the stored string already
+exists. The alternative was to carry the dependency and file the strip as a follow-up, which was
+rejected: a follow-up that removes a dependency the spec has just finished justifying is a
+follow-up that does not happen.
 
 ## What is out of scope
 
@@ -348,7 +389,7 @@ whom, and this item does not answer it. Any documentation that lands with the mo
 compiler-enforced rule is about imports.
 
 **`roadmap-tool`'s dependencies.** It depends on `graphitron-model` only, and will pick up
-graphql-java, slf4j, the javac Tree API and `graphitron-javapoet` when that module grows. That is a build-time cost on a
+graphql-java, slf4j and the javac Tree API when that module grows. That is a build-time cost on a
 build tool, and we accept it. Untangling it is a separate problem and should not shape where this
 line goes.
 
@@ -385,6 +426,8 @@ above it.
   that every table capture writes holds the same rows, pre-computed tables included.
 * **`graphitron-model` compiles with the fact tier in it and no dependency on `graphitron`.** The
   build proves this by itself: a circular dependency between modules does not build.
+* **`graphitron-model` declares no dependency on `graphitron-javapoet`**, and no file under it
+  imports one. The pom is the check, and it is the whole of what step 2 is for.
 * **`GraphQLRewriteGenerator` no longer imports `FactCapture`**, and nothing in `graphitron`'s
   shipped code opens a store. Both are tests, not something a reviewer has to check. Keep the second
   test scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store
@@ -625,6 +668,27 @@ cannot: it runs `GraphQLRewriteGenerator.buildOutput()`. It stays in `graphitron
 `graphitron-maven-plugin` already consumes at test scope, so step 7's home takes it for free. Both
 "What changes when this lands" and step 6 are corrected. This is the same class of mistake the
 finding caught, in the one part of the move list that had not been counted either.
+
+*Author's response, second pass: the javapoet decision above is reversed.* The finding was right
+that the plan owed a decision here, and the first answer to it was wrong. Carrying the dependency
+rested on the claim that `ColumnRef.columnType` has to be a `TypeName` because the live `Class`
+exists only at the catalog boundary. That does not hold: `ColumnRef.decodeBindingType` rebuilds the
+`TypeName` from the stored string, arrays included, and `StoreNodeTables` already reads store rows
+and mints refs from them. The string round-trips, so the boundary argument was decoration on a
+convenience.
+
+With that gone the count decides it. Thirty-eight files read the javapoet-typed accessors and
+exactly one, the producer, is below the line, so the fact tier mints these values purely for the
+layer above. **Javapoet does not go into `graphitron-model`**, "Decisions this spec makes" now says
+so, the `roadmap-tool` inheritance list drops it again, and a delivery criterion checks the pom.
+Stripping it is step 2, inside this item rather than a follow-up.
+
+Two things the strip census turned up that are now in step 1. `rewrite/session` splits: only
+`SessionStateConfig` moves, `SessionHooks` stays above with the reflected model, and the DDL comment
+on `store_graph_session_mount` had already drawn that line. That exclusion is what keeps `MethodRef`
+out of the move set, and with it the one genuinely hard case, a generic `TypeName` carrying
+`List<Film>` that no string in this tree round-trips today. Had `MethodRef` come down, this decision
+would have been a real fork rather than a miscount.
 
 *Non-blocking, question two, for step 7.* Both parity tests lean on a `StoreFixture` helper that
 is private to its own module's test sources, and neither `graphitron-lsp` nor `graphitron-mcp`
