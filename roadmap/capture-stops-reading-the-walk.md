@@ -1,7 +1,7 @@
 ---
 id: R870
 title: "Capture stops reading the classification walk"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -44,8 +44,8 @@ copy, never the check.
 
 ## Plan
 
-Shipped at `9f50502`. All six steps landed in one commit; what each did, and the one thing the
-plan did not foresee:
+Shipped at `9f50502`, with review round 1's fixes at `126ba33`. All six steps landed; what each
+did, and the one thing the plan did not foresee:
 
 1. **The DDL.** `walk_type_backing_class`, its four `COMMENT ON` statements and the family header
    block are gone, with the `walk_` row in `meta_family`, the relation's `meta_family_headline`
