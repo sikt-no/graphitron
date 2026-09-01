@@ -60,7 +60,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R894` | Emitter-tier pin: the @reference-carrying input-field @nodeId form emits its decode in the rendered glue | In Review | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](reference-input-field-decode-glue-pin.md) |
 
 ---
 
@@ -475,7 +474,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R893` [**A decoding @nodeId instruction with no installed decode fails the build**](nodeid-decode-membership-guard.md) — Spec, validation
-- `R894` [**Emitter-tier pin: the @reference-carrying input-field @nodeId form emits its decode in the rendered glue**](reference-input-field-decode-glue-pin.md) — In Review, testing
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
 - `R420` [**Support list-valued @nodeId+@reference on INSERT inputs (row fan-out)**](list-nodeid-reference-insert-fanout.md) — Backlog, feature
 
