@@ -103,7 +103,7 @@ class DerivedReadCostTest {
     private static final int UNITS = 12;
 
     /** Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration. */
-    private static final int READERS_IN_SCHEMA = 117;
+    private static final int READERS_IN_SCHEMA = 116;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 65;
@@ -145,7 +145,7 @@ class DerivedReadCostTest {
      * it adds. Both reader figures moved by one beside it, which is what a new view looks like when
      * it registers nothing.
      *
-     * <p>Retiring {@code intent_argmapping_pair}'s registration took it from 171 to 162, the first
+     * <p>Retiring the argMapping pair projection's registration took it from 171 to 162, the first
      * fall here a registration leaving rather than arriving has produced. Nine cells go because a
      * registration takes its whole column out of the matrix, one cell per relation that reached it.
      * The two reader figures behave differently from each other and neither the way an arrival
@@ -460,7 +460,7 @@ class DerivedReadCostTest {
      * something true.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        // intent_argmapping_pair|intent_argmapping_bound_parameter_type stood here on the pruning an
+        // graphitron_arg_mapping_pair|intent_argmapping_bound_parameter_type stood here on the pruning an
         // inlined body offered and a table cannot. It left with the registration itself: the rule
         // had become a projection of one captured table, so materializing it copied rows into rows,
         // and the index that came with it was that table's primary key spelled again. A pair also

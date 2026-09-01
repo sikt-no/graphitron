@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStepArgMappingPair;
@@ -24,17 +24,15 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argmapping_pair} returns: every {@code argMapping} pair any directive spells,
- * normalised onto one projection with a {@code site} literal naming which of the seven relations a
- * row came from. Eight site values over seven relations, the field-condition relation being a shared
- * coordinate its owning type's kind splits in two.
+ * What {@code graphitron_arg_mapping_pair} holds: every {@code argMapping} pair any directive
+ * spells, in one relation with a {@code site} literal naming which kind of site spelled a row.
  *
- * <p>The relation exists so the widening is written once, so what these cases pin is mostly the
- * union's own correctness: that every arm contributes, that each carries the extra key columns its
- * own relation has and NULL where it has none, and that the serialized use-site key tells two
- * applications of one repeatable directive apart. A typo in one of eight hand-written arms is the
- * failure this class is for, so the coverage case asserting all eight values are reachable is not
- * bookkeeping: an arm no case reaches is an arm nothing checks.
+ * <p>These cases once pinned a union's correctness, the relation having been a widening over eight
+ * per-site tables. Those are gone and capture writes the widened shape directly, so what is left to
+ * pin is what survived the collapse and is still a rule rather than a projection: that every site
+ * value is reachable, that each row carries the extra key columns its own kind has and NULL where
+ * it has none, and that the serialized use-site key tells two applications of one repeatable
+ * directive apart. A site no case reaches is a site nothing checks.
  *
  * <p>The last case pins the property every later reader depends on. A consumer holding
  * {@code (site, use_site, position)} can join back and recover the arm's own components, which is
@@ -59,13 +57,13 @@ class ArgmappingPairTest {
                 "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("ROUTINE");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).isEqualTo("Mutation.rentFilm#0");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ORDINAL)).isZero();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.STEP_POSITION)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.PARAM_NAME)).isEqualTo("pInventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_PATH)).isEqualTo("input.inventoryId");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ROUTINE");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Mutation.rentFilm#0");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isZero();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.PARAM_NAME)).isEqualTo("pInventoryId");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_PATH)).isEqualTo("input.inventoryId");
         });
     }
 
@@ -77,13 +75,13 @@ class ArgmappingPairTest {
             seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 0, "id", "filmId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("SERVICE");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).isEqualTo("Query.film");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ORDINAL))
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("SERVICE");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Query.film");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL))
                 .as("@service is not repeatable, so there is no ordinal to carry")
                 .isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.STEP_POSITION)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
         });
     }
 
@@ -96,11 +94,11 @@ class ArgmappingPairTest {
                 "pattern", "titleLike");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_CONDITION");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE))
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE))
                 .isEqualTo("Query.films(titleLike)");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("titleLike");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ORDINAL)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("titleLike");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isNull();
         });
     }
 
@@ -113,15 +111,15 @@ class ArgmappingPairTest {
                 "cutoff", "since");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("FIELD_REFERENCE_STEP");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors#1[2]");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ORDINAL)).isEqualTo(1);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.STEP_POSITION)).isEqualTo(2);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("FIELD_REFERENCE_STEP");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors#1[2]");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
         });
     }
 
-    /** The widest arm of the seven: an argument, an ordinal and a step, all three in the key. */
+    /** The widest kind: an argument, an ordinal and a step, all three in the key. */
     @Test
     void anArgumentReferenceStepPairCarriesAllThreeExtras() {
         withSeededStore(GRAPH, dsl -> {
@@ -130,12 +128,12 @@ class ArgmappingPairTest {
                 "actorId", "byActor");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_REFERENCE_STEP");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE))
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_REFERENCE_STEP");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE))
                 .isEqualTo("Query.films(byActor)#0[1]");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("byActor");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.ORDINAL)).isZero();
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.STEP_POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("byActor");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isZero();
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isEqualTo(1);
         });
     }
 
@@ -155,10 +153,10 @@ class ArgmappingPairTest {
 
             var rows = rows(dsl);
             assertThat(rows).hasSize(2);
-            assertThat(rows.stream().map(r -> r.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).distinct())
+            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).distinct())
                 .as("the two arms serialize one coordinate the same way")
                 .containsExactly("Film.actors#0[0]");
-            assertThat(rows.stream().map(r -> r.get(INTENT_ARGMAPPING_PAIR.SITE)))
+            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)))
                 .containsExactlyInAnyOrder("FIELD_REFERENCE_STEP", "REFERENCE_FOR_STEP");
         });
     }
@@ -177,8 +175,8 @@ class ArgmappingPairTest {
             seedFieldConditionArgMappingPair(dsl, GRAPH, "Film", "actors", 0, "p", "since");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("FIELD_CONDITION");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("FIELD_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors");
         });
     }
 
@@ -196,8 +194,8 @@ class ArgmappingPairTest {
                 "p", "titleLike");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.SITE)).isEqualTo("INPUT_FIELD_CONDITION");
-            assertThat(row.get(INTENT_ARGMAPPING_PAIR.USE_SITE)).isEqualTo("FilmFilter.titleLike");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("INPUT_FIELD_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("FilmFilter.titleLike");
         });
     }
 
@@ -215,7 +213,7 @@ class ArgmappingPairTest {
             seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, 0, "p", "one");
             seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 1, 0, "p", "two");
 
-            assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_PAIR.USE_SITE)))
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });
     }
@@ -233,7 +231,7 @@ class ArgmappingPairTest {
             seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 1, "id", "two");
 
             assertThat(rows(dsl)).hasSize(2);
-            assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_PAIR.POSITION)))
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.POSITION)))
                 .containsExactlyInAnyOrder(0, 1);
         });
     }
@@ -253,14 +251,14 @@ class ArgmappingPairTest {
     // ===== Coverage, and the property every reader depends on =====
 
     /**
-     * All eight site values are reachable from one fixture. The union's arms are hand-written over
+     * All site values are reachable from one fixture. The site vocabulary is closed over
      * relations of differing key arity, so an arm no case reaches is an arm nothing checks; this is
      * the case that makes the vocabulary's closure a claim rather than a comment.
      */
     @Test
     void everySiteValueIsReachable() {
         withEveryArm(dsl ->
-            assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_PAIR.SITE)).distinct())
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).distinct())
                 .containsExactlyInAnyOrderElementsOf(EVERY_SITE));
     }
 
@@ -275,20 +273,20 @@ class ArgmappingPairTest {
         withEveryArm(dsl -> {
             var rows = rows(dsl);
             assertThat(rows.stream()
-                .map(r -> List.of(r.get(INTENT_ARGMAPPING_PAIR.SITE),
-                    r.get(INTENT_ARGMAPPING_PAIR.USE_SITE),
-                    r.get(INTENT_ARGMAPPING_PAIR.POSITION)))
+                .map(r -> List.of(r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE),
+                    r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE),
+                    r.get(GRAPHITRON_ARG_MAPPING_PAIR.POSITION)))
                 .distinct())
                 .as("the grain is site plus the use-site key plus the position within the list")
                 .hasSize(rows.size());
 
-            var recovered = dsl.select(INTENT_ARGMAPPING_PAIR.ORDINAL,
-                    INTENT_ARGMAPPING_PAIR.STEP_POSITION, INTENT_ARGMAPPING_PAIR.ARGUMENT_NAME)
-                .from(INTENT_ARGMAPPING_PAIR)
-                .where(INTENT_ARGMAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_ARGMAPPING_PAIR.SITE.eq("ARGUMENT_REFERENCE_STEP"))
-                .and(INTENT_ARGMAPPING_PAIR.USE_SITE.eq("Query.films(byActor)#0[1]"))
-                .and(INTENT_ARGMAPPING_PAIR.POSITION.eq(0))
+            var recovered = dsl.select(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL,
+                    GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION, GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)
+                .from(GRAPHITRON_ARG_MAPPING_PAIR)
+                .where(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_ARG_MAPPING_PAIR.SITE.eq("ARGUMENT_REFERENCE_STEP"))
+                .and(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE.eq("Query.films(byActor)#0[1]"))
+                .and(GRAPHITRON_ARG_MAPPING_PAIR.POSITION.eq(0))
                 .fetchSingle();
             assertThat(recovered.value1()).isZero();
             assertThat(recovered.value2()).isEqualTo(1);
@@ -298,7 +296,7 @@ class ArgmappingPairTest {
 
     // ===== Fixtures =====
 
-    /** One pair at each of the eight sites, which is the fixture the coverage cases read. */
+    /** One pair at each site, which is the fixture the coverage cases read. */
     private static void withEveryArm(Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "Film", "OBJECT");
@@ -329,9 +327,9 @@ class ArgmappingPairTest {
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_ARGMAPPING_PAIR.fields())
-            .from(INTENT_ARGMAPPING_PAIR)
-            .where(INTENT_ARGMAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(GRAPHITRON_ARG_MAPPING_PAIR.fields())
+            .from(GRAPHITRON_ARG_MAPPING_PAIR)
+            .where(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
             .fetch()
             .stream()
             .map(Record.class::cast)

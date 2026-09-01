@@ -105,7 +105,7 @@ class FactSchemaGateTest {
     /**
      * The slice the materialization gate needs, which is a different slice: a table spelling for
      * {@code intent_spelled_table} to resolve against the catalog, a {@code @routine} application
-     * carrying an {@code argMapping} so {@code intent_argmapping_pair} has an arm that fires, and a
+     * carrying an {@code argMapping} so {@code graphitron_arg_mapping_pair} has an arm that fires, and a
      * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
      * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
      * of declaration sites, and this one wants every registered target to be non-empty.
@@ -842,7 +842,7 @@ class FactSchemaGateTest {
      * A capture that populates every registered target, which is a property of the fixture SDL and
      * the fixture catalog together and has to be maintained as registrations are added. The catalog
      * is what {@code intent_spelled_table} resolves its table spellings against; the
-     * {@code @routine} application is what gives {@code intent_argmapping_pair} an arm that fires;
+     * {@code @routine} application is what gives {@code graphitron_arg_mapping_pair} an arm that fires;
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
      * {@code intent_node_id_instruction}; the {@code updatedSince} argument, whose
      * {@code @field(name:)} spells a column of the table its field's return type binds, is what puts

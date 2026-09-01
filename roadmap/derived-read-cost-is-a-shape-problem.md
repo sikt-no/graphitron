@@ -223,6 +223,16 @@ no anti-join could recover.
 **Two registrations retired**, one on a structural argument and one on the blindfold argument: a
 registration standing over a rule hides what the rule costs.
 
+**The argMapping alias dissolved.** `intent_argmapping_pair` selected all eighteen columns of
+`graphitron_arg_mapping_pair` and did nothing else: no filter, no join, no union. It existed to widen
+eight per-site relations, those eight are gone, and its own comment says so. Its five reader views,
+`ArgmappingProjectionDefects` and its test now name the table. It was hiding a drift worth recording,
+because the drift is what an alias buys: six downstream comments described the site vocabulary as
+that relation's "closed vocabulary of eight" where the relation underneath states nine and
+enumerates nine. A count restated in six comments about a relation that restates another relation is
+the failure mode, not an accident. 287 relations to 286, with the frozen undeclared roster and the
+stated view count following.
+
 ## What the evidence is
 
 **Plan instantiations, on a fresh capture of a 26 818-line consumer schema.** The criterion this item
