@@ -225,13 +225,6 @@ java_field_declaration
 java_file
 java_method_declaration
 javac_diagnostic
-jvm_class
-jvm_class_supertype
-jvm_declared_type_ref
-jvm_method
-jvm_method_parameter
-jvm_record_component
-jvm_scalar_type_field
 lint_finding
 lint_finding_fix
 lint_finding_fix_edit

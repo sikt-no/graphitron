@@ -2831,7 +2831,7 @@ CREATE TABLE jvm_class (
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
 );
-COMMENT ON TABLE jvm_class IS 'A class exists on the declared compile classpath: the module''s own output, its reactor siblings, and the dependencies the module declares itself. Filtered: public, non-synthetic, top-level (a simple name containing $ is skipped, so nested classes are absent), outside the generated jOOQ package, and not from a transitive-only dependency (a jar no declared coordinate carries is never opened). A resolution detection over this relation reads those filters as absence, so they are stated rather than implied; in particular the codegen loader resolves transitive and nested classes this relation deliberately omits, and the build-side nameability check is what polices naming them.';
+COMMENT ON TABLE jvm_class IS 'One class the declared compile classpath carries. For example org.jooq.Result, an INTERFACE read from the jOOQ jar''s entry.';
 COMMENT ON COLUMN jvm_class.source_name IS 'the classpath entry it was read from; the partition this row belongs to and the key''s leading dimension. Within one run a class present under more than one entry is captured once, at the entry that comes first in classpath order, which is where a classloader would resolve it; store-wide, two runs'' entries are two partitions that coexist by design, so one class name may legitimately appear under several sources';
 COMMENT ON COLUMN jvm_class.class_name IS 'fully qualified binary name';
 COMMENT ON COLUMN jvm_class.class_kind IS 'the classfile''s declared form; the domain is closed over classfile shapes, so a violation is a capture bug';
@@ -2845,10 +2845,10 @@ CREATE TABLE jvm_class_supertype (
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name),
   CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
 );
-COMMENT ON TABLE jvm_class_supertype IS 'A supertype a class in the census declares: its extends clause and its implements list, as the classfile spells them. These are the edges an assignability closure is taken over, and assignability is the one rule a walk over accessor and return types could not state without a live loader; the classfile declares its own supertypes and the scan simply was not reading them. Nothing closes over them today, which is the census''s ordinary posture rather than an orphaned relation: a captured fact is recorded ahead of the derivation that will read it. The closure that was here answered every pair as a view and cost seconds on a real census, for an answer no consumer had asked for. Two constraints hold for whatever reinstates one, both of them measured rather than reasoned: recurse over the pairs these rows denote and never over the rows themselves, two entries declaring one class name being duplicate rows that double the frontier at every hop under UNION ALL; and seed the recursion from the names a consumer asks about rather than closing every pair, the census growing sideways in unrelated classes and not upward through java.util.List. java.lang.Object is deliberately absent, on the same terms the census states its other filters: the JVM writes it as the superclass of every class that declared no extends clause and of every interface, so a row would assert a declaration the source never made, and the closure would gain an edge every reference type already has. A supertype name outside the census is still a row, and at the end of a chain that is the ordinary case: the scan drops nested classes and the generated jOOQ package, and nothing ships the JDK as a classpath entry, while what a closure needs is the name a classfile declares. The chain terminates at such a name, so a derivation reads a missing hop as not-known-to-be-assignable rather than as not-assignable; org.jooq.Result reaching java.util.List is one hop within the census and resolves, a method declared to return java.util.ArrayList does not. Declaration order of the implements list is not carried, no consumer asking which interface came first.';
+COMMENT ON TABLE jvm_class_supertype IS 'One supertype a class in the census declares, through its extends clause or its implements list. For example org.jooq.Result declaring java.util.List, a name with no census row of its own, which is where such a chain ordinarily ends.';
 COMMENT ON COLUMN jvm_class_supertype.source_name IS 'the declaring class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_class_supertype.class_name IS 'the fully-qualified binary name of the declaring class';
-COMMENT ON COLUMN jvm_class_supertype.supertype_name IS 'the fully-qualified binary name the classfile declares as the supertype, a nested one spelled with the $ the JVM uses. Deliberately not a foreign key and frequently not a census row at all; see this relation''s comment';
+COMMENT ON COLUMN jvm_class_supertype.supertype_name IS 'the fully-qualified binary name the classfile declares as the supertype, a nested one spelled with the $ the JVM uses. Deliberately not a foreign key and frequently not a census row at all, which at the end of a chain is the ordinary case: the scan drops nested classes and the generated jOOQ package and nothing ships the JDK as a classpath entry, while what a closure needs is the name a classfile declares. A chain terminating at such a name is read as not-known-to-be-assignable rather than as not-assignable; org.jooq.Result reaching java.util.List is one hop within the census and resolves, a method declared to return java.util.ArrayList does not. java.lang.Object is deliberately absent: the JVM writes it as the superclass of every class that declared no extends clause and of every interface, so a row would assert a declaration the source never made';
 COMMENT ON COLUMN jvm_class_supertype.declared_via IS 'EXTENDS or IMPLEMENTS: which clause of the source declaration the name came from, which is a different question from what the supertype''s own declared form is. Read from the declaring class''s kind rather than from which classfile slot held the name, the JVM storing an interface''s super-interfaces in the same array as a class''s implements list while the source writes them after extends. Carried rather than derived because it is not recoverable: reading it off the supertype''s class_kind needs the supertype to have a census row, and the names that do not are exactly the ones this relation exists to record';
 
 CREATE TABLE jvm_method (
@@ -2871,7 +2871,7 @@ CREATE TABLE jvm_method (
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
 );
 CREATE INDEX jvm_method_bean_property_ix ON jvm_method (source_name, bean_property);
-COMMENT ON TABLE jvm_method IS 'A public method exists on a class in the census. Filtered: public and non-synthetic, constructors and class initializers excluded. The method''s types are carried in both forms, erased and declared, because neither is a function of the other: erasure maps a type variable to its bound, which the declared form does not name, and the declared form names a container''s element type, which the erasure does not. A surface testing a type''s identity reads the erasure and one spelling a signature for an author reads the declared form.';
+COMMENT ON TABLE jvm_method IS 'One public method of a class in the census, its descriptor telling an overload apart from its siblings. For example a service class''s getFilm method, beside an overload of the same name that is a row of its own.';
 COMMENT ON COLUMN jvm_method.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_method.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_method.method_name IS 'the method name; not a key on its own, overloads share it';
@@ -2900,7 +2900,7 @@ CREATE TABLE jvm_declared_type_ref (
 );
 CREATE INDEX jvm_declared_type_ref_class_ix
   ON jvm_declared_type_ref (source_name, referenced_class);
-COMMENT ON TABLE jvm_declared_type_ref IS 'The classes a declared type names, one row per position in the type, for every kind of thing in the census that has a declared type. Three kinds of owner have one, a method''s return, a method''s parameter and a record component, and each states the identical fact about it: which class is named at which position, under which wildcard bound. This is that fact with a uniform key over the three, and it is one relation rather than three because the three carried nothing that differed except the key saying which owner the row belongs to. What made them three was the shape of a classfile, and a reader''s question is not about classfiles: it is about a declared type, which all three have. The relation this replaces was written as a view unioning the three, and its own comment read as a specification for the table that should have existed, a discriminator over a closed set, a uniform key, and arm-determined key parts it was at pains to call key shape rather than facts withheld. Those are the columns below, and the one thing the table does differently is spell those parts as values instead of as NULLs, for the reason owner_descriptor states. Two readers were paying for that union, and the second is the one that mattered: the reflexive closure over supertypes seeds itself from every class any declared type names, so the union sat under a recursive CTE and was re-derived at the most expensive position in the schema. This relation is where a declared type becomes resolvable, and resolvable is the point of it. The census''s other type columns are display forms with the package dropped, which is what they were added for and what makes them unusable for identity: a walk following a return type has to tell org.jooq.Result from another package''s Result, and that is the collision jvm_method.descriptor exists to avoid at the method level. It decomposes rather than qualifies because a declared type is a tree and not a name: Map<String, List<Film>> names four classes at four positions, and a single qualified column could answer for the outermost only, leaving the element type, which is the position a walk is actually after, still unresolvable. Rows are read off the classfile Signature attribute where one is present and off the descriptor where it is not, which is the same rule the declared display columns follow; a non-generic method carries no Signature attribute, so the descriptor reading is the common case rather than a fallback. What the collapse cost and what it kept is worth stating plainly, the three relations having had a foreign key each into the owner that held their rows. All three edges are gone, because a foreign key cannot span three parents chosen by a column and the one arrangement that would have kept two of them, leaving the descriptor nullable so the reference is skipped on the record arm, costs the primary key: a key column cannot be null. That was the trade and uniqueness won it. A census is machine-written from classfiles, so the plausible fault here is a duplicate row rather than a dangling reference, and a duplicate silently doubles every join over the largest relation in the store where a dangling row is visible the moment anything reads it. So the key is total, the arm-determined parts spelled as values rather than as NULLs and held to that by the check constraints below, and the reference to the owner is checked where every collapsed reference in this schema is, by capture writing the row inside the walk that just wrote its owner and by a test scanning a captured store for orphans.';
+COMMENT ON TABLE jvm_declared_type_ref IS 'One class named at one position of one declared type, under the wildcard bound it was written with. For example a method returning Map<String, List<Film>> names Film at type path 1.0, and three further classes at three further positions.';
 COMMENT ON COLUMN jvm_declared_type_ref.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_declared_type_ref.class_name IS 'the fully-qualified Java class name declaring the owner';
 COMMENT ON COLUMN jvm_declared_type_ref.owner_kind IS 'METHOD_RETURN, RECORD_COMPONENT or METHOD_PARAMETER: which kind of thing declares the type this row is a position in, and the whole of what says how to read the three columns beside it. A closed vocabulary, one value per kind of declared type a classfile carries, and there is no fourth';
@@ -2925,7 +2925,7 @@ CREATE TABLE jvm_method_parameter (
   FOREIGN KEY (source_name, class_name, method_name, descriptor)
     REFERENCES jvm_method (source_name, class_name, method_name, descriptor)
 );
-COMMENT ON TABLE jvm_method_parameter IS 'An ordered parameter of a captured method. Deliberately no parameter-source column: which ParamSource a parameter binds to is decided per directive application, not per method, so it is a derived relation keyed by the application coordinate and lands with its first consumer.';
+COMMENT ON TABLE jvm_method_parameter IS 'One position in a captured method''s parameter list. For example position 0 of a service method, named filmId where the consumer compiled with -parameters and unnamed where they did not.';
 COMMENT ON COLUMN jvm_method_parameter.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_method_parameter.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_method_parameter.method_name IS 'the owning method name';
@@ -2946,7 +2946,7 @@ CREATE TABLE jvm_record_component (
   PRIMARY KEY (source_name, class_name, component_name),
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
 );
-COMMENT ON TABLE jvm_record_component IS 'A record component of a record class in the census, read from the classfile RecordAttribute rather than from any bytecode; backs record-mapping facts.';
+COMMENT ON TABLE jvm_record_component IS 'One component of a record class in the census, as the classfile''s record attribute declares it. For example the filmId component at position 0 of a record an author names in @record.';
 COMMENT ON COLUMN jvm_record_component.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_record_component.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_record_component.component_name IS 'the record component name';
@@ -2962,7 +2962,7 @@ CREATE TABLE jvm_scalar_type_field (
   PRIMARY KEY (source_name, class_name, field_name),
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
 );
-COMMENT ON TABLE jvm_scalar_type_field IS 'A public static field whose declared type is exactly graphql.schema.GraphQLScalarType (backs @scalarType resolution). Filtered by that descriptor, which is why the selector is in the name: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.';
+COMMENT ON TABLE jvm_scalar_type_field IS 'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType. For example a DATE_TIME field an author names in @scalarType.';
 COMMENT ON COLUMN jvm_scalar_type_field.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_scalar_type_field.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_scalar_type_field.field_name IS 'the field name, matched on the exact GraphQLScalarType descriptor';
@@ -10231,7 +10231,28 @@ INSERT INTO meta_grain VALUES
    'source_name, table_schema, routine_name, position', 'catalog'),
   ('node-key-column',
    'one position in one table''s stated node key-columns array',
-   'source_name, table_schema, table_name, position', 'catalog');
+   'source_name, table_schema, table_name, position', 'catalog'),
+  ('classpath-class',
+   'one class of one classpath entry',
+   'source_name, class_name', 'classpath'),
+  ('class-supertype',
+   'one supertype one class declares',
+   'source_name, class_name, supertype_name', 'classpath'),
+  ('class-method',
+   'one method of one class, overloads told apart by descriptor',
+   'source_name, class_name, method_name, descriptor', 'classpath'),
+  ('declared-type-position',
+   'one position within one declared type',
+   'source_name, class_name, owner_kind, owner_name, owner_descriptor, owner_position, type_path', 'classpath'),
+  ('method-parameter',
+   'one position in one method''s parameter list',
+   'source_name, class_name, method_name, descriptor, position', 'classpath'),
+  ('record-component',
+   'one component of one record class',
+   'source_name, class_name, component_name', 'classpath'),
+  ('scalar-type-field',
+   'one static field of one class holding a GraphQL scalar type',
+   'source_name, class_name, field_name', 'classpath');
 
 INSERT INTO meta_relation VALUES
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
@@ -10313,7 +10334,35 @@ INSERT INTO meta_relation VALUES
   ('sql_node_key_column', 'node-key-column', 'catalog',
    'One position in one table''s stated node key-columns array, naming what the entry states.',
    'For example position 0 of a film table class''s array, naming film_id.',
-   'The array is ordered and the encoded identity depends on that order, so a reader recovering the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. No foreign key to sql_column deliberately, the constant being free to spell a column the table does not have, which is exactly the state worth recording; whether an entry resolves is intent_node_metadata_defect''s question.');
+   'The array is ordered and the encoded identity depends on that order, so a reader recovering the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. No foreign key to sql_column deliberately, the constant being free to spell a column the table does not have, which is exactly the state worth recording; whether an entry resolves is intent_node_metadata_defect''s question.'),
+  ('jvm_class', 'classpath-class', 'catalog',
+   'One class the declared compile classpath carries.',
+   'For example org.jooq.Result, an INTERFACE read from the jOOQ jar''s entry.',
+   'A class an author may name in @record, @service, @enum or @scalarType has to be resolvable without a live loader, and this is the population that makes it so. The filters are part of the fact rather than housekeeping, because a detection over this relation reads them as absence: public, non-synthetic and top-level only, outside the generated jOOQ package, and nothing from a transitive-only dependency. The codegen loader resolves the nested and transitive classes this relation omits, so the build-side nameability check is what polices naming them.'),
+  ('jvm_class_supertype', 'class-supertype', 'catalog',
+   'One supertype a class in the census declares, through its extends clause or its implements list.',
+   'For example org.jooq.Result declaring java.util.List, a name with no census row of its own, which is where such a chain ordinarily ends.',
+   'These are the edges an assignability closure is taken over, and assignability is the one rule a walk over accessor and return types could not state without a live loader: the classfile declares its own supertypes and the scan simply was not reading them. Captured ahead of the derivation that will read them, which is the census''s ordinary posture. Why the closure that was here is not, and the two measured rules binding whatever reinstates one, are on the fact model page under derived reads.'),
+  ('jvm_method', 'class-method', 'catalog',
+   'One public method of a class in the census, its descriptor telling an overload apart from its siblings.',
+   'For example a service class''s getFilm method, beside an overload of the same name that is a row of its own.',
+   'A method is what an author''s @service or @record binding is resolved against, and the descriptor is in the key because a method name is not one: overloads share it. Filtered to public and non-synthetic, constructors and class initializers excluded. Both type forms are carried because neither is a function of the other, an argument the two columns own in their own comments and the fact model page states in general.'),
+  ('jvm_declared_type_ref', 'declared-type-position', 'catalog',
+   'One class named at one position of one declared type, under the wildcard bound it was written with.',
+   'For example a method returning Map<String, List<Film>> names Film at type path 1.0, and three further classes at three further positions.',
+   'This is where a declared type becomes resolvable, which the census''s other type columns cannot do: they drop the package for display, so a walk cannot tell org.jooq.Result from another package''s Result. It decomposes rather than qualifies because a declared type is a tree and not a name, and the element type a walk is actually after is a position inside it. One relation rather than one per owner kind because a method return, a method parameter and a record component state the identical fact about their declared type and differed only in the key saying which owner a row belongs to, which was the shape of a classfile rather than of anyone''s question. Rows are read off the Signature attribute where a classfile carries one and off the descriptor where it does not, the latter being the common case.'),
+  ('jvm_method_parameter', 'method-parameter', 'catalog',
+   'One position in a captured method''s parameter list.',
+   'For example position 0 of a service method, named filmId where the consumer compiled with -parameters and unnamed where they did not.',
+   'A parameter list is ordered and is a repeating group, so it is its own relation keyed by position rather than columns on the method. Deliberately no parameter-source column: which ParamSource a parameter binds to is decided per directive application rather than per method, so it is a derived relation keyed by the application coordinate and lands with its first consumer.'),
+  ('jvm_record_component', 'record-component', 'catalog',
+   'One component of a record class in the census, as the classfile''s record attribute declares it.',
+   'For example the filmId component at position 0 of a record an author names in @record.',
+   'Record mapping needs the components in their header order, and the header is what a constructor call has to match. Read from the record attribute rather than from the accessor methods the record generates, the component being where the declaration is and the accessor being a consequence of it.'),
+  ('jvm_scalar_type_field', 'scalar-type-field', 'catalog',
+   'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType.',
+   'For example a DATE_TIME field an author names in @scalarType.',
+   '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

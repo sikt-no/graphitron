@@ -421,7 +421,7 @@ slice's decision, not the first one's.
 | family | tables | views | unkeyed | why here in the order
 
 | `sql_` | 14 | 0 | 0 | one corpus, one gatherer, every relation keyed: proves the model end to end at the smallest scale
-| `jvm_` | 7 | 0 | 0 | the same shape one corpus over, and the second owner
+| `jvm_` | 7 | 0 | 0 | the same shape one corpus over. Expected to introduce the second owner and did not: the classpath is the catalog gatherer's second corpus, so this family proves the corpus junction instead
 | `java_`, `javac_`, `lint_`, `walk_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
 | `graphql_` | 27 | 1 | 0 | the first large family, and the one whose grains the key shapes already state most clearly
 | `graphitron_` | 61 | 0 | 0 | the largest table family, same gatherer as `graphql_`, so the owner is already settled by the time it starts
@@ -621,3 +621,36 @@ slice declared underneath it. It deletes the store's own `meta_relation` and `me
 seeding, so a subject the case wants to state something false about stays available however far the
 migration gets. The alternative, moving the case onto whichever relation is still undeclared, buys
 one slice of quiet and breaks again at the next.
+
+### The `jvm_` family, the second family slice (2026-09-01)
+
+Seven relations at seven grains, all owned by the `catalog` gatherer, roster 267 to 260. Rationales
+total 3273 characters for the family, which is the standard the `sql_` correction set rather than a
+coincidence: the pass that writes them now asks only why the relation exists.
+
+**The expected second owner is not there, and the corpus junction is why.** The family table above
+put `jvm_` second because it looked like the second gatherer. It is not: `CatalogFactCapture` writes
+the classpath census as well as the catalog one, which is exactly the two-row case
+`meta_gatherer_corpus` was introduced for, against a scalar corpus column that could not have stated
+it. So the slice proves the junction rather than a second owner, and the first genuinely new owner
+arrives with `graphql_`. The family-table cell is corrected above rather than left to mislead the
+next reader.
+
+**Both transcripts in this family were already relocated, which is a check rather than a move.** The
+plan says measurements and rejected shapes go to `docs/architecture/`, and for these two they were
+there already. `jvm_class_supertype`'s comment argued the retired assignability closure, its
+seventeen seconds and its two measured constraints; the fact model page states all of it under
+derived reads, as the general rule rather than as this relation's anecdote. `jvm_declared_type_ref`'s
+comment argued the not-applicable-as-value key trade at length, and its own `owner_descriptor` and
+`owner_position` columns already carry that argument where a reader of those columns will meet it.
+Cutting a comment tail is therefore two different acts: relocating what has no home, and deleting
+what turns out to be the third copy. This slice was the second, both times, and the check that
+distinguishes them is grepping for the fact before cutting it, not judging the prose.
+
+**Two facts had no other home and moved onto the column they are about.** `java.lang.Object` being
+deliberately absent from the supertype edges, and a chain ending at a name outside the census reading
+as not-known-to-be-assignable rather than as not-assignable, are both about what `supertype_name`
+holds. They are on that column now, which also repairs the pointer this slice would otherwise have
+stranded: it read "see this relation''s comment", and the relation's comment no longer argues
+anything. That is the second time the echo rewrite has stranded such a pointer, so the check is now
+part of the per-family loop rather than a lesson.
