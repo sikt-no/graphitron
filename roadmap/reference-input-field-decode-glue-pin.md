@@ -1,7 +1,7 @@
 ---
 id: R894
 title: "Emitter-tier pin: the @reference-carrying input-field @nodeId form emits its decode in the rendered glue"
-status: Ready
+status: In Progress
 bucket: testing
 theme: nodeid
 depends-on: []
