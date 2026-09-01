@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-09-01 <sub>created 2026-08-28</sub> | [plan](capture-stops-reading-the-walk.md) |
 | `R865` | The generator owns the fact tier it should merely read <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-31 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
-| `R884` | An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](inferred-key-projection-decodes-the-wrong-slot.md) |
+| `R884` | An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot | In Progress | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](inferred-key-projection-decodes-the-wrong-slot.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -465,7 +465,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R884` [**An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot**](inferred-key-projection-decodes-the-wrong-slot.md) — Ready, bug
+- `R884` [**An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot**](inferred-key-projection-decodes-the-wrong-slot.md) — In Progress, bug
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
