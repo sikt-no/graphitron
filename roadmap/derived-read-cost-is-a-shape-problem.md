@@ -300,6 +300,23 @@ written late. Neither prefix records what a relation reads. A family that does n
 cannot be used to decide order, so order is decided by whichever mechanism the author happened to
 use, which is the machinery that makes placement a default.
 
+**And on dependence the second gatherer is not earned.** Walking all 114 `intent_` rules to the base
+relations they bottom out at gives 41 in `graphitron_`, 11 in `sql_`, 8 in `graphql_`, 6 in `jvm_`,
+`store_graph_source`, and 6 hand-written `intent_` tables. Nothing reaches `java_`, `javac_`, the
+configuration corpus, `lint_`, `walk_`, `rejection_` or `diagnostic`: zero rules, not few. The
+derivation gatherer declares six dependencies and three of them, `configuration`, `java-source` and
+`compile`, are used by nothing it owns. Its real inputs are the SDL transcription, the catalog and
+classpath transcriptions, and `graphitron_`, which is precisely what the graphitron gatherer has once
+it has written its own facts: that gatherer already depends on `sdl` and on `catalog`, and `catalog`
+carries the classpath corpus that `@service` and `@condition` need.
+
+**So the `intent_` family collapses into `graphitron`.** There is no input the derivation gatherer has
+and the graphitron gatherer lacks, so nothing about dependence puts a second derivation layer after
+the first. What separates them is that one writes tables from Java and the other states rules in SQL,
+and that is a choice inside one owner rather than a boundary between two. Read the other way, this is
+why the register exists at all: a gatherer invented to run last needs a mechanism to schedule the
+refreshes of relations that never had to wait for it.
+
 **How many families each rule reads**, walked from each rule's view body down to the base facts,
 ignoring `store_`. This is the test of whether a rule belongs to a family or to the gatherer that runs
 last.
@@ -381,26 +398,39 @@ relations this item created, which is worth saying plainly: `intent_argmapping_p
 `intent_field_navigated_type` read only `graphitron_` facts, so this item took the default twice
 while arguing against it.
 
-**The target the chart points at: an owner is computed, not chosen.** A relation's owner is the
-latest, in gatherer dependency order, of the owners of the relations it reads. That is a function of
-the schema, so a gate can check it, and it makes the default impossible to take: a rule reading only
-`jvm_` facts cannot be owned by the gatherer that runs last, because nothing it reads is owned there.
-Mechanism then stops being a family boundary. Whether a relation is a Java-written table, a view, or
-a stored table its owner refreshes becomes the owner's private choice, made where the cost is visible
-and changeable without anyone else being told, and `graphitron_` and `intent_` differ by owner rather
-than by how the rows got there.
+**The target the chart points at: there is one derivation gatherer, and `intent_` is its.** The
+derivation gatherer was created to run last, but nothing it owns reads anything only available after
+`graphitron` has run, so there is no dependence to justify a second layer. `intent_` moves to
+`graphitron`, which already reads the SDL transcription and the catalog and classpath transcriptions,
+and the two families become one owner's relations differing only in whether the rows were written by
+Java or stated in SQL. That difference is an implementation choice inside an owner, made where the
+cost is visible and changeable without anyone else being told.
+
+`meta_materialize` then has no subject. It exists to schedule refreshes for relations whose owner
+runs too late to schedule them itself, and under one derivation gatherer there is no such relation.
+The register is not retired, argued down or shrunk to a defensible core; the gatherer it was
+compensating for stops existing.
+
+**The rule that keeps it from coming back is that an owner is computed, not chosen.** A relation's
+owner is the latest, in gatherer dependency order, of the owners of the relations it reads. That is a
+function of the schema, so a gate can check it, and it makes the default impossible to take: a rule
+reading only `jvm_` facts cannot be owned by a gatherer that runs after `catalog`, because nothing it
+reads is owned there. The same rule is what says the derivation gatherer is unearned, so the gate and
+the collapse are one check rather than two changes.
 
 Two things have to be true first, and neither is this item's. R877's declarations, at 27 of 287
 relations with 260 still on the frozen roster, because computed ownership cannot be checked over
-undeclared relations. And per-gatherer transaction control, named above.
+undeclared relations. And per-gatherer transaction control, named above, which the collapse makes
+easier rather than harder: one derivation gatherer needs one boundary, not two.
 
-Three questions the chart raises and does not answer. Whether the prefix moves with the owner or only
-the ownership, given that `sql_` and `jvm_` are both owned by `catalog` today so prefix already is
-not owner; the cheaper reading is that a relation keeps its name and changes owner, which breaks the
-sentence "the derivation gatherer owns the `intent_` relations" and that may be the right sentence to
-break. What orders two relations owned by the same gatherer, which `meta_materialize_dependency`
-derives today for registrations only. And whether the six unresolved relations are family-local,
-which depends on what the hand-written derivations they bottom out at read.
+Questions the chart raises and does not answer. Whether `intent_` survives as a prefix once its
+owner is `graphitron`, given that `sql_` and `jvm_` already share the `catalog` owner so a prefix has
+never been an owner; keeping the names and moving the ownership is the cheaper reading. What orders
+two relations under one owner, which `meta_materialize_dependency` derives today for registrations
+only and would have to derive for all of them. Whether the six unresolved relations change the
+picture, which depends on what the hand-written derivations they bottom out at read. And what becomes
+of the `java-source` and `compile` gatherers, whose output no derivation reads at all, which is a
+different finding from this one and is not evidence that they are unnecessary.
 
 **One of the twelve costs more than anything else in the store.** `intent_jvm_ancestor` reads
 `jvm_class_supertype` and `jvm_declared_type_ref` and nothing else, so it belongs to the `jvm_`
