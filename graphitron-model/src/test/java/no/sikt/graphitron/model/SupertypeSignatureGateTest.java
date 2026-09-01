@@ -102,13 +102,10 @@ class SupertypeSignatureGateTest {
      * in all of them: an argument-site relation unioned with its field-site twin, because the
      * author may write the same directive at either coordinate and no relation says so once.
      *
-     * <p>The context-argument row is the one whose set has a third member the reconstruction does
-     * not union, {@code graphitron_service_context_arg}, which is the omitted-arm failure this gate
-     * names rather than an oversight: a condition parameter's roles are a different rule from a
-     * service parameter's, so the reader wants the two condition spellings and would have to
-     * exclude the third if it read a supertype. That is an argument for writing the supertype at
-     * capture, where the site key is uniform and a reader filters on it, and not for a fourth
-     * spelling of the union in a derived view.
+     * <p>The context-argument row's set has a third member the reconstruction deliberately does not
+     * union, {@code graphitron_service_context_arg}: a condition parameter's roles are a different
+     * rule from a service parameter's. Its supertype therefore belongs at capture, keyed on the site
+     * a reader filters by, rather than as a union in a derived view.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
         "intent_argument_filter_role|graphitron_argument_condition,graphitron_field_condition",

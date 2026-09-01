@@ -3617,107 +3617,50 @@ name-based descent, with a reachability search behind two of them that reads inp
 against the scalar fixed point. That is a larger population than anything the condition arm has
 needed so far and it should be scoped on its own terms rather than folded in for symmetry.
 
-### Conditions, twenty-fifth increment: the role's second arm, and the key the tree had already settled
+### Conditions, twenty-fifth increment: the context role
 
-**The key shape the last increment left open was decided before it was written.** That increment
-closed by saying the site key had to be settled first, four site shapes with four different key
-widths, and that both remaining role arms and the eventual producer hang off it. The tree answers it:
-`graphitron_method_reference` is keyed on its site and its own `use_site`, one string per site in
-that site's own grammar, and every relation in the argMapping family already joins on exactly that
-pair. So the four widths are one two-column key, this increment spends nothing on choosing it, and
-what it adds is the completion the method-keyed arm beside it already takes, the descriptor and the
-position. The prediction that was wrong was about work, not about shape: the thing to settle first
-was not the key.
+**Shipped.** `intent_condition_context_parameter`, keyed on the site (`graph_name, site, use_site,
+descriptor, position`): which of a condition method's parameters take a request-context value at one
+application of the directive. The site key the previous increment left open was already settled by
+the tree, so this increment spent nothing on it: `graphitron_method_reference` carries site plus its
+own `use_site`, and every relation in the argMapping family already joins on that pair, so the four
+site widths are one two-column key.
 
-**The context arm is one join and its rule is not.** The relation reads as a name match, a declared
-context key naming a parameter of the signature, and two exclusions are what make it more than one.
-A parameter that receives the source table receives it whatever it is called, so a table position is
-out before any name is compared, which is also what makes the roles disjoint at a position rather
-than merely ordered. And an argument binding beats a context key, because the generator asks the
-binding map first. That second exclusion is the one the plan under-read as trivial: the binding map
-is two things, an authored `argMapping` pair naming the parameter and a GraphQL slot in scope sharing
-its name, the latter being the identity entry the map fills for every slot no pair has claimed. What
-is in scope is the site's own rule and it is three rules for three spellings, every argument of the
-field at a field condition, the input field itself at an input-field condition, and the argument
-itself at an argument condition. Nothing new had to be decided there either: that is the scope
-`intent_argmapping_segment_binding` already states per site for the head of a path, and reading it
-off that relation is what kept a fourth spelling of the scope rule out of the schema.
+**The rule.** A declared context key names a parameter of the signature, minus two exclusions. A
+parameter that receives the source table is out before any name is compared, which keeps the roles
+disjoint at a position rather than merely ordered. And an argument binding wins, the generator
+asking the binding map first; that map is an authored `argMapping` pair naming the parameter plus an
+identity entry for every in-scope slot no pair has claimed, so a pair claiming a slot lets a same-
+named parameter fall through to the context key it also is. What is in scope at each spelling is
+read off `intent_argmapping_segment_binding` rather than spelled a fourth time.
 
-**The case that reads as a contradiction is the rule working.** A pair claiming a slot takes that
-slot's identity entry away, so a parameter named after the claimed slot is no longer bound as an
-argument and falls through to the context key it also is. Both the exclusion and its exception are
-one predicate, and the seeded tier states them as one case each, because a relation that had lost
-either would answer with more positions and not with none.
+**Two things deliberately not taken here.** The read cost is entirely the table exclusion, and the
+lever is a materialization of `intent_condition_table_parameter` rather than of the recursive
+closure beneath it; the register's own reader test declines the registration until something reads
+this relation, and the general form went to `docs/architecture/explanation/fact-model.adoc`.
+Separately, the two capture relations this view unions owe a supertype, now on the reconstruction
+roster: it belongs at capture with the uniform site key, its set having a third member in the
+service site whose parameter roles are a different rule.
 
-**This arm does not wait on the argument arm, and that is a property rather than a convenience.** An
-unbound parameter can still be bound by arity or by type, and that inference skips context keys by
-its own rule, so no branch of it can claim a name this relation reads. The converse does not hold and
-the relation's comment says so: a parameter absent here is not therefore bound.
+**The read-cost obligation, corrected for the declaration regime.** A relation authored now is a
+declared relation: `meta_relation` carries its grain, owner, one grain sentence and one example, and
+a gate holds the comment equal to the last two. So the measurement goes to the architecture docs and
+the shaping reasoning to `rationale`, which is where that column's own comment puts them. Every
+remaining increment of this item inherits that split.
 
-**Read cost was measured, and the finding is a general form the doctrine page did not have yet.**
-The whole of the cost is the table exclusion, and the read grows linearly in the applications while
-every child stays flat. Five spellings of that exclusion were measured against one capture and all
-five agree within a few percent: the correlated `NOT EXISTS` that ships, a `LEFT JOIN` with an
-`IS NULL` test, an `EXCEPT` against the same candidate rows, and the two forms the page's existing
-rule prescribes, which put the deep derivation first in the `FROM` clause. They agree because an
-anti-join has no drivable side, so the excluded derivation is probed per candidate however the
-statement is written, and that is the sentence the page was missing: its rule about correlating a
-view carrying a recursive term reads as advice about spelling, and here no spelling helps. Both
-materialization depths were then priced with snapshot controls and they disagree in the direction
-that matters: snapshotting the recursive closure beneath the exclusion leaves the read an order of
-magnitude above the floor, because the view around it is still expanded per row, while snapshotting
-`intent_condition_table_parameter` itself puts the read at the floor exactly. So the lever is a
-registration of that relation rather than of the closure beneath it, and this increment declines to
-take it on the register's own reader test: nothing reads this relation yet, so a refresh added now
-would be paid by every capture and bought by nobody, and the registration belongs to the increment
-that gives the relation its first exercised reader.
+**Coverage: sixteen seeded cases, one over a real capture, four mutations.** The seeded tier carries
+the rule, both exclusions, the claimed-slot exception, the three scope rules, the site grain against
+two applications of one signature, the overload split and the partition. The capture case asserts
+the whole position list, because only there do the three readings meet: the context key from the
+directive text, the parameter name from the classpath census, the competing slot from the GraphQL
+document. Dropping either exclusion, the exception or the `DISTINCT` fails exactly the cases that
+name it.
 
-The measurement went to `docs/architecture/explanation/fact-model.adoc` rather than to the
-relation's comment, and that is a correction to this item's own read-cost obligation rather than a
-deviation from it. A relation authored today is a *declared* relation: `meta_relation` carries its
-grain, its owner, one sentence saying what a row is and one example, and a gate holds the relation's
-comment equal to those two joined. So the comment is now a bounded surface with no room for a
-measurement, and the declaration's `rationale` column says in its own terms that measurements belong
-in the architecture docs. The obligation therefore reads: an increment that authors a derived
-relation puts it through the read-cost gate before it ships and records what it measured where the
-schema's own regime puts it, which is the doctrine page for a general form and this item for the
-increment's own accounting. Every remaining increment of this item inherits that, and it is worth
-naming as a cost rather than only as a rule: a relation now lands with a short gated comment plus a
-declaration, and the reasoning that used to sit in the comment splits between the declaration's
-rationale and the pages.
-
-**The schema's own gates found one more thing, and it is recorded rather than fixed here.** The
-context keys are captured at two relations, one per coordinate the directive may sit on, so reading
-them at a uniform site key means unioning them, and that union is a reconstruction of a subtype set
-the schema already tracks as a supertype it owes. The gate holding that roster is what surfaced it,
-and the roster gains this relation's row. Writing the supertype is not this increment's: the set has
-a third member, the service site's own context keys, and a condition parameter's roles are a
-different rule from a service parameter's, so a reader of a supertype would filter that arm back out.
-That is an argument for the supertype being written at capture, with the uniform site key the method
-reference already carries, and against a fourth spelling of the union in a derived view.
-
-**Coverage is sixteen seeded cases, one over a real capture, and four mutations.** The seeded tier
-carries the rule, both exclusions, the claimed-slot exception, the three scope rules, the site grain
-against two applications of one signature, the overload split and the partition. The capture case
-exists because the seeded tier cannot say whether the three real readings meet: the context key comes
-from the directive text, the parameter name from the classpath census and the competing slot from the
-GraphQL document, and any two of them disagreeing on a spelling would look exactly like a key naming
-no parameter. It asserts the whole list rather than a membership, one real signature carrying all
-three answers at its three positions. The four load-bearing predicates were mutation-checked rather
-than taken on report: dropping the table exclusion, the pair exclusion, the slot exclusion, the
-claimed-slot exception or the `DISTINCT` each fails exactly the cases that name it and nothing else.
-
-**The next increment is the argument arm, and it is the one to scope on its own terms.** Four
-branches have to be stated: identity by name, the `argMapping` overrides the pair family already
-decodes, the arity-unique and type-unique pairings, and the depth-1 name-based descent, with a
-reachability search behind two of them that reads input-object structure against the scalar fixed
-point. Two of those four are already relations in all but name, the pair family carrying the
-overrides and the slot scope this increment read being the identity half, so the increment's real
-subject is the inference: which of a signature's unbound parameters the arity and type pairings
-claim, and the descent behind them. It is a larger population than anything the condition arm has
-needed so far, and the producer needs all three arms before it converts, so the sequence to the
-`ConditionCommands` conversion is that arm, then the refusal the three arms leave over, then the
-producer.
+**Next: the argument arm.** Four branches: identity by name, the `argMapping` overrides the pair
+family already decodes, the arity-unique and type-unique pairings, and the depth-1 name-based
+descent, with a reachability search behind two of them over input-object structure against the
+scalar fixed point. Two are relations in all but name already, so the increment's subject is the
+inference. Then the refusal the three arms leave over, then the `ConditionCommands` conversion.
 
 ### Emitter half: family by family
 
