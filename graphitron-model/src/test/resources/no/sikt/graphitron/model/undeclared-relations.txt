@@ -251,4 +251,3 @@ store_graph_supergraph
 store_graph_tenant_column
 store_source
 store_stamp
-walk_type_backing_class

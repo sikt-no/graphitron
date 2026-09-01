@@ -81,12 +81,11 @@ public final class CatalogBuilder {
      * offers a member name is a fact about the class, which its consumers read from the store's
      * member-slot relation, so no member list is projected here and the bean rule has one home.
      *
-     * <p>Public because its only reader is elsewhere: the walk's backing-class transcription
-     * ({@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses}) reduces this projection to
-     * the class each shape names, and writes it as the shadow the store-native backing derivation
-     * differs against. The snapshot carried this map to the language server until every surface
-     * that read it asked the store instead; what the walk decided is still worth stating once, so
-     * the switch survives its shipping channel.
+     * <p>Public because its only readers are elsewhere, and now only in tests: the backing
+     * differential reduces this projection to the class each shape names, and compares the walk's
+     * answer against the store-native derivation's. The snapshot carried this map to the language
+     * server until every surface that read it asked the store instead; what the walk decided is
+     * still worth stating once, so the switch survives its shipping channel.
      */
     public static Map<String, TypeBackingShape> projectTypesByName(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, TypeBackingShape>();

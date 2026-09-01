@@ -18,7 +18,6 @@ import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.rewrite.derive.InputOccurrencePaths;
 import no.sikt.graphitron.rewrite.derive.TypeBackingRows;
-import no.sikt.graphitron.rewrite.derive.TypeBackingClassRows;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
@@ -384,11 +383,10 @@ public final class FactCapture {
 
     /**
      * The detection pass over a freshly captured store, dispatched on whether the run has a
-     * classified model at all: {@link ClassifiedRun.Absent} is {@link #run}'s no-detection arm,
-     * which also writes no {@code walk_} rows. The walk-side backing rows land first, because the
-     * same pass is that family's one writer and its cadence, whether or not a detection reads them.
+     * classified model at all: {@link ClassifiedRun.Absent} is {@link #run}'s no-detection arm.
+     * The pass writes nothing; every arm reads captured facts and yields detections.
      *
-     * <p>Nothing the detections read is gated on the walk any more. The authored-claim conflict
+     * <p>Nothing the detections read is gated on the classification walk. The authored-claim conflict
      * rule reads a relation that is total over the authored claims and applies the population its
      * own question needs (the classification domain, derived from captured SDL facts at capture
      * cadence), so its accept line is a fact of the store rather than of the walk's reach.
@@ -408,7 +406,6 @@ public final class FactCapture {
         return switch (classified) {
             case ClassifiedRun.Absent ignored -> StoreDetections.empty();
             case ClassifiedRun.Present present -> {
-                TypeBackingClassRows.write(dsl, graph.name(), present.backingClasses());
                 yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
                     ArgmappingProjectionDefects.detect(dsl, graph.name()),
                     NodeIdDecodeDefects.detect(dsl, graph.name()),

@@ -13,17 +13,17 @@ import org.junit.jupiter.api.io.TempDir;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.BiConsumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
-import static no.sikt.graphitron.model.Tables.WALK_TYPE_BACKING_CLASS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The differential the walk-shadow family exists for, run: the same schema over the same classes,
- * answered once by the reflective walk and once by the store's derivation, compared as two
- * relations in one store.
+ * The backing differential, run: the same schema over the same classes, answered once by the
+ * reflective walk and once by the store's derivation, compared in this JVM. The walk's answer is
+ * projected here rather than stored, the comparison holding it in hand for the length of a case.
  *
  * <p>This is not an agreement test and the walk is not the specification. What it pins is that the
  * derivation reproduces the walk where the two are meant to agree, and that where they part the
@@ -68,10 +68,10 @@ class TypeBackingShadowTest {
             type Actor { name: String }
             """.formatted(SERVICE);
 
-        withBothSides(sdl, dsl -> {
-            assertThat(walk(dsl)).as("the walk answered something").isNotEmpty();
+        withBothSides(sdl, (dsl, walk) -> {
+            assertThat(walk).as("the walk answered something").isNotEmpty();
             assertThat(derived(dsl)).as("the derivation answered something").isNotEmpty();
-            assertThat(derived(dsl)).containsExactlyInAnyOrderElementsOf(walk(dsl));
+            assertThat(derived(dsl)).containsExactlyInAnyOrderElementsOf(walk);
             assertThat(derived(dsl)).contains(
                 "Film=" + PKG + "TestBackingFilm",
                 "Language=" + PKG + "TestBackingLanguage",
@@ -97,8 +97,8 @@ class TypeBackingShadowTest {
             type Film { title: String }
             """.formatted(SERVICE, SERVICE);
 
-        withBothSides(sdl, dsl -> {
-            assertThat(walk(dsl)).doesNotContain(
+        withBothSides(sdl, (dsl, walk) -> {
+            assertThat(walk).doesNotContain(
                 "Film=" + PKG + "TestBackingFilm", "Film=" + PKG + "TestBackingOther");
             assertThat(derived(dsl)).containsExactlyInAnyOrder(
                 "Film=" + PKG + "TestBackingFilm", "Film=" + PKG + "TestBackingOther");
@@ -123,9 +123,9 @@ class TypeBackingShadowTest {
             input FilmFilter { code: String }
             """.formatted(SERVICE);
 
-        withBothSides(sdl, dsl -> {
-            assertThat(walk(dsl)).as("the walk answered something").isNotEmpty();
-            assertThat(derived(dsl)).containsExactlyInAnyOrderElementsOf(walk(dsl));
+        withBothSides(sdl, (dsl, walk) -> {
+            assertThat(walk).as("the walk answered something").isNotEmpty();
+            assertThat(derived(dsl)).containsExactlyInAnyOrderElementsOf(walk);
             assertThat(derived(dsl)).contains(
                 "FilmFilter=" + PKG + "TestBackingFilter",
                 "Film=" + PKG + "TestBackingFilm");
@@ -153,8 +153,8 @@ class TypeBackingShadowTest {
             type Language { name: String }
             """.formatted(SERVICE, SERVICE);
 
-        withBothSides(sdl, dsl -> {
-            assertThat(walk(dsl)).contains("Language=" + PKG + "TestBackingOther");
+        withBothSides(sdl, (dsl, walk) -> {
+            assertThat(walk).contains("Language=" + PKG + "TestBackingOther");
             assertThat(derived(dsl))
                 .as("the closure carries the hop's answer too, and does not choose")
                 .contains("Language=" + PKG + "TestBackingOther",
@@ -173,17 +173,25 @@ class TypeBackingShadowTest {
     private static final String SERVICE = PKG + "TestBackingService";
 
     /**
-     * Capture writes the derivation; the walk's own row is written beside it from a bundle built
-     * over the same text, which is how the walk-reach family is written in production too.
+     * Capture writes the derivation; the walk's answer is projected beside it from a bundle built
+     * over the same text, and handed to the body as the second argument. Both sides are computed
+     * for real, so an empty answer on either fails the case that asserts against it rather than
+     * passing vacuously.
      */
-    private void withBothSides(String sdl, java.util.function.Consumer<DSLContext> body) {
+    private void withBothSides(String sdl, BiConsumer<DSLContext, List<String>> body) {
         var ctx = testContext();
         try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
                 new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census())) {
             var bundle = TestSchemaHelper.buildBundle(sdl);
-            TypeBackingClassRows.write(store.dsl(), GRAPH, TypeBackingClasses.of(bundle.model()));
-            body.accept(store.dsl());
+            body.accept(store.dsl(), walk(bundle.model()));
         }
+    }
+
+    /** The walk's answer in the same {@code Type=Class} spelling the derivation is read into. */
+    private static List<String> walk(no.sikt.graphitron.rewrite.GraphitronSchema model) {
+        return TypeBackingClasses.of(model).byTypeName().entrySet().stream()
+            .map(binding -> binding.getKey() + "=" + binding.getValue())
+            .toList();
     }
 
     /**
@@ -201,13 +209,6 @@ class TypeBackingShadowTest {
         } catch (URISyntaxException e) {
             throw new IllegalStateException("the test classes are not on a file path", e);
         }
-    }
-
-    private static List<String> walk(DSLContext dsl) {
-        return dsl.select(WALK_TYPE_BACKING_CLASS.TYPE_NAME, WALK_TYPE_BACKING_CLASS.CLASS_NAME)
-            .from(WALK_TYPE_BACKING_CLASS)
-            .where(WALK_TYPE_BACKING_CLASS.GRAPH_NAME.eq(GRAPH))
-            .fetch(r -> r.value1() + "=" + r.value2());
     }
 
     private static List<String> derived(DSLContext dsl) {

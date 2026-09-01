@@ -434,8 +434,8 @@ public class GraphQLRewriteGenerator {
      * Three families read the store here.
      * The authored-claim conflict rule reports from the claim views over the classification
      * domain, a captured-fact population rather than anything the walk reached; what the walked
-     * model still contributes is the {@link ClassifiedRun} discriminator and the backing classes
-     * it carries. The two {@code @nodeId} rules
+     * model still contributes is the {@link ClassifiedRun} discriminator alone. The two
+     * {@code @nodeId} rules
      * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} for a node id an
      * {@code argMapping} entry binds, {@link no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects}
      * for one a producer parameter's name receives) report from the captured corpora alone and are
@@ -466,7 +466,7 @@ public class GraphQLRewriteGenerator {
             SchemaInputAttribution.build(ctx.schemaInputs()),
             jooq,
             extensions,
-            ClassifiedRun.of(schema),
+            ClassifiedRun.present(),
             after);
     }
 

@@ -9,18 +9,15 @@ import java.util.Map;
 
 /**
  * What the classification walk bound each type's backing to: the SDL type name to the binary name
- * of the class the walk resolved for it. The unreified form of {@code walk_type_backing_class},
- * written from this value by {@link TypeBackingClassRows} at capture cadence.
- *
- * <p>It exists so the store-native backing derivation has a differential inside the store rather
- * than a total-agreement test in Java. Two relations in one store diff over any corpus a run
- * touches, can be compared while the derivation is half built, and drain themselves when the
- * generator reads the derived relation instead. The relation's comment carries the rest of the
- * argument, the populations it deliberately omits, and the removal criterion.
+ * of the class the walk resolved for it. Test-source only, and deliberately: nothing the generator
+ * emits reads this, and the one thing that does is {@link TypeBackingShadowTest}, which projects
+ * the walk's side of the backing differential and compares it against the derivation's query in
+ * this JVM.
  *
  * <p>Fidelity to the walk is evidence, not the specification: where the two disagree, each case is
  * adjudicated on its own, and the outcome is either a fix to the derivation or a recorded
- * behaviour change.
+ * behaviour change. The comparison keeps that shape by naming its fixtures and asserting each
+ * departure's direction, never by asserting the two are equal over a corpus.
  */
 public record TypeBackingClasses(Map<String, String> byTypeName) {
 

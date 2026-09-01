@@ -87,13 +87,6 @@ class StoreClientBoundaryTest {
     private static final List<String> CLASSIFICATION_TAXONOMIES = List.of(
         "FieldClassification", "TypeClassification", "TypeBackingShape");
 
-    /**
-     * The classification walk's own relations. Ordinary tables on {@code graphitron-model}, a
-     * dependency this module keeps, so nothing but a guard stops a reader reaching for them. The
-     * family drains on the walk's own clock and a consumer of it does not.
-     */
-    private static final List<String> WALK_RELATIONS = List.of("WALK_TYPE_BACKING_CLASS");
-
     /** Floors on the scanned-file counts: a walk that reached nothing would otherwise pass. */
     private static final int MIN_MAIN_FILES = 20;
     private static final int MIN_TEST_FILES = 20;
@@ -145,19 +138,6 @@ class StoreClientBoundaryTest {
                 + "ninety exhaustive arms of it answered questions the store answers directly. The "
                 + "fixture drives the pipeline to produce a capture; it does not read the taxonomy "
                 + "back out, or the taxonomy returns through the tests.")
-            .isEmpty();
-    }
-
-    @Test
-    void noWalkRelationIsRead() throws IOException {
-        var findings = new ArrayList<String>();
-        findings.addAll(scan(mainSources(), WALK_RELATIONS, path -> false));
-        findings.addAll(scan(testSources(), WALK_RELATIONS, path -> isSelf(path)));
-
-        assertThat(findings)
-            .as("the walk_ family is the classification walk's own scaffolding and it drains on that "
-                + "walk's clock; a consumer of it does not. Where a walk relation looks like the "
-                + "answer, the intent_ relation keyed the same way is the one to read.")
             .isEmpty();
     }
 

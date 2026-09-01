@@ -89,7 +89,6 @@ import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTI
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
-import static no.sikt.graphitron.model.Tables.WALK_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
@@ -294,8 +293,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       agreement over the same producer so the detection's silence is asserted and not assumed;
  *       with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
- *       differential against {@code walk_type_backing_class} on both axes, over public fixture
- *       classes both sides can see;
+ *       differential against the classification walk's own answer on both axes, projected in that
+ *       test's JVM, over public fixture classes both sides can see;
  *       {@code no.sikt.graphitron.rewrite.capture.ClassificationDomainTest} states
  *       {@code intent_type_domain}'s membership as hand-written expectations over a real capture,
  *       whole sets where the schema is small enough to write one out, with the two node-seed
@@ -600,7 +599,6 @@ class FactCaptureAgreementTest {
         registrations.put("meta_grain", Arm.DERIVED);
         registrations.put("meta_relation", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
-        registrations.put("walk_type_backing_class", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
         registrations.put("rejection_validation_error_directive", Arm.ORACLE);
         registrations.put("lint_finding", Arm.ORACLE);
@@ -2248,83 +2246,6 @@ class FactCaptureAgreementTest {
     }
 
     /**
-     * The {@code walk_} family's lifecycle anchor, on the same terms as the javac one: seeded rows
-     * under two graphs, and a warm capture empties exactly its own partition. The writer here is
-     * the capture-and-detect pass rather than a post-capture round, which is the cadence widening
-     * the {@code ORACLE} arm's javadoc states. The binding grain is the family's only remaining
-     * relation, so it is the whole partition this asserts over.
-     */
-    @Test
-    @DisplayName("a capture empties its own graph's walk-binding partition and no other's")
-    void oracleLifecycleClearsTheOwnedWalkBindingPartitionOnly(@TempDir Path tmp) throws java.io.IOException {
-        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
-        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
-        try (var store = GraphitronModelStore.open()) {
-            var own = new FactCapture.GraphIdentity("own", ownDir);
-            var sibling = new FactCapture.GraphIdentity("sibling", siblingDir);
-            FactCapture.capture(store.dsl(), own, FactCapture.SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir));
-            FactCapture.capture(store.dsl(), sibling, FactCapture.SubjectConfig.none(),
-                CapturedStore.registryOf(siblingDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(siblingDir));
-            assertThat(walkBindingPartition(store, "own")).isEmpty();
-
-            var backing = new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(
-                Map.of("Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"));
-            no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), "own", backing);
-            no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), "sibling", backing);
-            assertThat(walkBindingPartition(store, "own")).isNotEmpty();
-            var siblingBefore = walkBindingPartition(store, "sibling");
-            assertThat(siblingBefore).isNotEmpty();
-
-            FactCapture.capture(store.dsl(), true, own, FactCapture.SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir),
-                null, List.of());
-            assertThat(walkBindingPartition(store, "own"))
-                .as("the captured graph's walk-binding partition, after its own warm capture")
-                .isEmpty();
-            assertThat(walkBindingPartition(store, "sibling"))
-                .as("the sibling graph's walk-binding partition, after another graph's capture")
-                .isEqualTo(siblingBefore);
-        }
-    }
-
-    /**
-     * The {@code walk_} family's content anchor: the same value reduced two ways, once by the
-     * writer's rows and once by re-reading the
-     * {@link no.sikt.graphitron.rewrite.derive.TypeBackingClasses} it transcribed. A rewrite
-     * replaces the partition rather than accreting, which is what makes the second write's smaller
-     * map an assertion and not a subset check. The projection itself is pinned against a walked
-     * model by {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassesTest}; what is pinned
-     * here is that the writer lands exactly what it was handed.
-     */
-    @Test
-    @DisplayName("the walk-binding relation's rows equal the transcribed bindings")
-    void oracleContentEqualsTheTranscribedBindings(@TempDir Path tmp) {
-        try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, "type Query { ping: String }"),
-                CapturedStore.attributionOf(tmp));
-            var backing = new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(Map.of(
-                "Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord",
-                "Language", "no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord"));
-            no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), graph(tmp).name(), backing);
-
-            assertThat(store.dsl().select(WALK_TYPE_BACKING_CLASS.TYPE_NAME, WALK_TYPE_BACKING_CLASS.CLASS_NAME)
-                .from(WALK_TYPE_BACKING_CLASS)
-                .fetchMap(r -> r.value1(), r -> r.value2()))
-                .isEqualTo(backing.byTypeName());
-
-            no.sikt.graphitron.rewrite.derive.TypeBackingClassRows.write(store.dsl(), graph(tmp).name(),
-                new no.sikt.graphitron.rewrite.derive.TypeBackingClasses(Map.of(
-                    "Film", "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord")));
-            assertThat(store.dsl().fetchCount(WALK_TYPE_BACKING_CLASS)).isEqualTo(1);
-        }
-    }
-
-    /**
      * The loaded diagnostics arms' lifecycle anchor, on the same terms as the javac one: seeded
      * rows under two graphs, and a warm capture empties exactly its own partition. One anchor
      * covers all three relations (and the residue's directive child), because they share one
@@ -2542,16 +2463,6 @@ class FactCaptureAgreementTest {
             .where(BUILD_WARNING_NO_RULE.GRAPH_NAME.eq(graphName))
             .orderBy(BUILD_WARNING_NO_RULE.ORDINAL)
             .forEach(row -> rows.add("advisory|" + row.getOrdinal() + "|" + row.getMessage()));
-        return rows;
-    }
-
-    /** The graph's walk-binding rows, rendered stably for before/after comparison. */
-    private static List<String> walkBindingPartition(GraphitronModelStore store, String graphName) {
-        var rows = new ArrayList<String>();
-        store.dsl().selectFrom(WALK_TYPE_BACKING_CLASS)
-            .where(WALK_TYPE_BACKING_CLASS.GRAPH_NAME.eq(graphName))
-            .orderBy(WALK_TYPE_BACKING_CLASS.TYPE_NAME)
-            .forEach(row -> rows.add("backing|" + row.getTypeName() + "=" + row.getClassName()));
         return rows;
     }
 
