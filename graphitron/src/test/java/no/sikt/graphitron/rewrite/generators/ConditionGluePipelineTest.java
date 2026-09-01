@@ -21,9 +21,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code decode<T>RowsOrThrow} private static helper on the {@code QueryConditions} class (authored
  * filters throw on a bad id), and both condition methods reference it.
  *
+ * <p>The class also covers a second shape: a remotely-bound {@code @nodeId} carrier whose
+ * predicate lives inside a correlated {@code EXISTS} rather than on a lifted local tuple, at
+ * both key arities. There the claim is that a decode arm fired at all, read off the helper set
+ * the class carries.
+ *
  * <p>Uses the {@code nodeidfixture} jOOQ catalog so the composite-key {@code Bar} NodeType
  * (PK {@code (id_1, id_2)}) is available; sakila has no composite-key NodeType usable from
- * SDL alone.
+ * SDL alone. The junction-chain test below is the exception and runs against sakila, because
+ * that is where a junction table lives.
  */
 @PipelineTier
 class ConditionGluePipelineTest {
@@ -136,6 +142,112 @@ class ConditionGluePipelineTest {
             .filter(n -> n.startsWith("decodeBar"))
             .toList();
         assertThat(helperNames).containsExactlyInAnyOrder("decodeBarRowOrThrow", "decodeBarRowsOrThrow");
+    }
+
+    // ===== Remotely-bound carriers: the decode arm fires inside the correlated EXISTS =====
+    //
+    // Both tests below assert which decode helpers the rendered class carries, and nothing about
+    // any method body. That is a total statement about which renderer arm ran, because helper
+    // emission is call-driven: CompositeDecodeHelperRegistry.register is reached from one site in
+    // ConditionGlueRenderer (its decodeCall helper), itself reached only from the two
+    // NodeIdDecodeKeys arms, and the drain adds nothing else. So for a fixture whose only
+    // @nodeId carrier is the coordinate under test, the class carries a decode helper if and only
+    // if a decode arm fired for that binding. The arm's alternative, the fall-through that casts
+    // the raw wire traversal to the binding's local type, registers nothing and is therefore
+    // visible here as an empty helper set rather than as a per-request ClassCastException
+    // (https://github.com/sikt-no/graphitron/issues/536).
+    //
+    // Asserting the whole decode set rather than mere presence is what keeps that biconditional
+    // honest: a fixture that grew a second carrier would fail here rather than quietly weaken the
+    // claim. The helper's returnType() pins the type the local is declared against, which is the
+    // axis (Keys vs Rows, list vs scalar) CompositeDecodeHelperRegistry.helperName reads.
+
+    @Test
+    void junctionChainInputField_bindingRemotely_emitsItsDecodeInTheGlue() {
+        // The input-field twin of the junction chain: film -> film_category -> category, whose
+        // classification NodeIdPipelineTest.junctionChain_inputField_bindsRemotelyOverTwoHops pins
+        // over the same SDL, and whose end-to-end read
+        // TranslatedFkTargetFilterExecutionTest.junctionChain_inputFieldForm_returnsTheSameRows
+        // runs against PostgreSQL. This is the tier between them: the glue the renderer emits.
+        //
+        // Runs against the sakila catalog rather than nodeidfixture, because that is where the
+        // junction table lives: film_category is the child of both film and category.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Category implements Node @table(name: "category") @node { id: ID! }
+            type Film @table(name: "film") { title: String! }
+            input FilmFilterInput {
+                categoryIds: [ID!] @nodeId(typeName: "Category") @reference(path: [
+                    {key: "film_category_film_id_fkey"},
+                    {key: "film_category_category_id_fkey"}
+                ])
+            }
+            type Query { films(in: FilmFilterInput): [Film!] }
+            """);
+
+        assertThat(schema.diagnostics()).isEmpty();
+        var queryConditions = renderQueryConditions(schema);
+
+        assertThat(queryConditions.methodSpecs()).extracting(MethodSpec::name)
+            .as("the coordinate's own glue method")
+            .contains("filmsCondition");
+        assertDecodeHelper(queryConditions, "decodeCategoryKeysOrThrow", "java.util.List<java.lang.Integer>");
+    }
+
+    @Test
+    void multiHopTranslatingChainInputField_bindingRemotely_emitsItsCompositeDecodeInTheGlue() {
+        // The composite-key arity of the same shape, and the input-field twin of the arg-side
+        // resolution NodeIdLeafResolverTest.multiHopTranslatingChain_bindsRemotely pins: the
+        // lift_fail_c -> lift_fail_b -> lift_fail_a chain lands no key position on lift_fail_c,
+        // so LiftFailA's two-column key (k1, k2) binds inside a correlated EXISTS with a Row2 in
+        // place of a scalar IN.
+        var schema = TestSchemaHelper.buildSchema("""
+            type LiftFailA implements Node @table(name: "lift_fail_a") @node { id: ID! }
+            type LiftFailC @table(name: "lift_fail_c") {
+                cId: String! @field(name: "c_id")
+            }
+            input LiftFailCFilter {
+                aIds: [ID!] @nodeId(typeName: "LiftFailA") @reference(path: [
+                    {key: "lift_fail_c_b_fk"},
+                    {key: "lift_fail_b_a_fk"}
+                ])
+            }
+            type Query { liftFailCs(in: LiftFailCFilter): [LiftFailC!] }
+            """, FIXTURE_CTX);
+
+        assertThat(schema.diagnostics()).isEmpty();
+        var queryConditions = renderQueryConditions(schema);
+
+        assertThat(queryConditions.methodSpecs()).extracting(MethodSpec::name)
+            .as("the coordinate's own glue method")
+            .contains("liftFailCsCondition");
+        assertDecodeHelper(queryConditions, "decodeLiftFailARowsOrThrow",
+            "java.util.List<org.jooq.Row2<java.lang.String, java.lang.String>>");
+    }
+
+    /**
+     * Asserts that the rendered class carries exactly one {@code decode}-prefixed helper, that it
+     * is the expected one, and that it has the drain contract's modifiers and the decoded return
+     * type the local is declared against.
+     */
+    private static void assertDecodeHelper(TypeSpec queryConditions, String expectedName, String expectedReturnType) {
+        var decodeHelpers = queryConditions.methodSpecs().stream()
+            .filter(m -> m.name().startsWith("decode"))
+            .toList();
+        assertThat(decodeHelpers).extracting(MethodSpec::name)
+            .as("a decode arm fired for the carrier, and nothing else registered a helper")
+            .containsExactly(expectedName);
+        assertThat(decodeHelpers.get(0).modifiers())
+            .as("the drain contract")
+            .contains(javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC);
+        assertThat(decodeHelpers.get(0).returnType().toString())
+            .as("the decoded type, the axis the helper name is derived from")
+            .isEqualTo(expectedReturnType);
+    }
+
+    private static TypeSpec renderQueryConditions(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
+        return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
+            .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
     }
 
     private static String bodyOf(TypeSpec spec, String methodName) {
