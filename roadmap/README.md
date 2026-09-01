@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R876` | Expensive derived reads are a modelling defect: capture writes the subtypes and omits the supertype, and materialization has been the first lever reached for instead of the last | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
-| `R889` | The launcher-method census folds case, rejecting a valid deprecated-alias field pair | Spec | 2026-08-31 | [plan](launcher-method-census-folds-case.md) |
+| `R889` | The launcher-method census folds case, rejecting a valid deprecated-alias field pair | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](launcher-method-census-folds-case.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R888` | An optional filter field's @reference join must not constrain the query when the value is absent | In Review | 2026-08-31 | [plan](optional-filter-reference-join-omitted-value.md) |
 | `R890` | A structural guard gives case-folded name comparison one legitimate home <sub>blocked by: [launcher-method-census-folds-case](launcher-method-census-folds-case.md)</sub> | Spec | 2026-08-31 | [plan](name-case-fold-guard.md) |
@@ -420,7 +420,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### diagnostics
 
-- `R889` [**The launcher-method census folds case, rejecting a valid deprecated-alias field pair**](launcher-method-census-folds-case.md) — Spec, bug
+- `R889` [**The launcher-method census folds case, rejecting a valid deprecated-alias field pair**](launcher-method-census-folds-case.md) — Ready, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
 - `R890` [**A structural guard gives case-folded name comparison one legitimate home**](name-case-fold-guard.md) — Spec, testing, blocked by [launcher-method-census-folds-case](launcher-method-census-folds-case.md)
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug

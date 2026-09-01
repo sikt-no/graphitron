@@ -1,13 +1,13 @@
 ---
 id: R889
 title: "The launcher-method census folds case, rejecting a valid deprecated-alias field pair"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: diagnostics
 depends-on: []
 created: 2026-08-31
-last-updated: 2026-08-31
+last-updated: 2026-09-01
 ---
 
 # The launcher-method census folds case, rejecting a valid deprecated-alias field pair
@@ -135,3 +135,34 @@ both bodies derive the name from the execution path, never from a launcher metho
 raised them, at the user's direction, rather than by a separate author session. The reviewer rule is
 unaffected in substance: that session is now the artifact's last committer, so it is disqualified
 from the next `Spec -> Ready` pass and a third session signs off.
+
+### Round 2 (2026-09-01, Spec -> Ready, reviewer session 016KbtCNGhEdgEA9hNXHiBuz)
+
+Verdict: sign off. Both round-1 architecture findings and the round-1 completeness finding are
+closed, and the revised claims hold against the tree.
+
+Question one. What changes for a consumer: a schema whose two sibling covered coordinates differ
+only in the case of a letter after the first generates instead of being refused, and the refusal
+that remains (a genuine `fooBar` / `FooBar` pair) names the method the generator actually mints
+rather than a fully lowercased string that exists nowhere, under a `Deferred:` label instead of
+`Invalid schema:`. Reachable: `GeneratedUnits.upperCamel` touches the first character only, so the
+folded census's extra rejections are exactly the pairs the item describes.
+
+Question two. The fix removes a mechanism and replaces a hand-spelled key with the record's own
+value equality; `UnitMethodRef` and `UnitRef` are both records over their components, so the key
+change is structural rather than a new comparison. Step 3's arm is now decided and its blast radius
+is checked at each named surface: `RejectionKind.messageLabel` and `displayName` (whose javadoc
+carries the summary-line form), `WatchErrorFormatter`'s per-error tag and summary, the residue's
+`kind` column, `GraphQLRewriteGenerator`'s kind-blind abort on a non-empty error list, the
+diagnostics view's "every rejection arm is an error, including the deferred one", and
+`RejectionSeverityCoverageTest`'s permit-keyed round trip. `methodCollisions` has no test caller
+today, so "first coverage at all" holds and nothing pins the current arm or text.
+
+The step 4 sweep is now exhaustive: every launcher-fold mention in the tree falls under a step.
+`GraphitronSchemaValidator`'s own `validateLauncherMethodNames` javadoc is the one launcher site not
+on the step 4 list, and it is the site step 3 already rewrites. The two remaining `case-folded`
+mentions in that file belong to the projection address census, which keeps its fold.
+
+Finding 3's owner-half argument closes tighter than the text claims. `EmitsPerTypeFile` is
+implemented by every `GraphitronType` arm except `ScalarType` and `UnclassifiedType`, neither of
+which hosts a launcher coordinate, so the skip leaves no residual for launcher owners.
