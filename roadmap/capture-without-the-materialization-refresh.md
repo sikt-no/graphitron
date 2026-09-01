@@ -55,13 +55,13 @@ different modules, the compiler refuses it and nobody has to watch for it.
 **Two side modules depend on the generator when they should not.** The language server
 (`graphitron-lsp`) and the MCP server (`graphitron-mcp`) both read the store. Neither one's shipped
 code touches the generator, and both poms say they want to keep it that way. But both depend on the
-generator in their tests, for one reason: the only way to build a store to test against is to run a
-generator.
+generator in their tests, for one reason: the only way to build a store to test against today is to
+run a generator.
 
-This item removes that reason. For `graphitron-mcp` it is the whole reason, so that module can drop
-the dependency completely. For `graphitron-lsp` it is most of it but not all, because some of its
-tests also exercise the lint rules and the old schema walk, and both of those stay where they are.
-Step 1 lists exactly what is left.
+This item removes that reason, and both modules drop the dependency completely. Step 1 counts what
+each module actually uses, because two earlier drafts of this plan guessed and both guessed wrong.
+The remainder is a handful of tests whose subject is two tiers agreeing with each other; step 7
+moves those somewhere they can see both.
 
 **You cannot get a store without generating code.** Anyone who wants to look at the facts, or
 measure a query against a realistic store, has to keep a file left behind by some earlier run. That
@@ -94,17 +94,14 @@ session opens a second connection to it, because nothing can hand the generator 
 store. This is not a saving in disk or memory (H2 gives one process one database per file); it is
 that the session and the run stop disagreeing about who owns the store.
 
-**`graphitron-mcp` drops its dependency on the generator completely.** Its tests currently use
-`FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
-`CompileDiagnostic`, `CompileRound`, `LintConfig`, `Rejection` and `ValidationError`, all of which
-move down with the fact tier, plus `GraphQLRewriteGenerator`, `RewriteContext` and the
-`BuiltStore` / `CapturedStore` / `FactWriters` test helpers, which exist only to run a generator in
-order to get a store. Both reasons go away, so its guard test `StoreClientBoundaryTest` can widen
-from checking shipped code to checking the tests too.
+**Both `graphitron-lsp` and `graphitron-mcp` stop depending on `graphitron` at any scope.** Most of
+what their tests use moves down with the fact tier (`FactCapture`, `JooqCatalog`, `ClasspathScanner`,
+`CompletionData`, `CompileFacts`, `CompileDiagnostic`, `CompileRound`, `LintConfig`, the rejection
+vocabulary, and the `BuiltStore` / `CapturedStore` / `FactWriters` test helpers). What is left is
+seven tests that check two tiers against each other, and step 7 relocates them.
 
-**`graphitron-lsp` keeps a smaller dependency, in its tests only.** Step 1 lists what is left. In
-exchange it gets the guard `graphitron-mcp` already has: the rule that its shipped code names no
-generator type is a comment in its pom today, and this item makes it a test.
+`graphitron-mcp`'s guard test `StoreClientBoundaryTest` widens from checking shipped code to checking
+tests as well, and `graphitron-lsp` gets the same guard, which its pom asks for in a comment today.
 
 ## How we get there
 
@@ -121,8 +118,10 @@ things have to be split instead of moved:
   not mean delete them now.
 * `rewrite/lint`. `LintConfig` is just settings, so it moves down. The rules themselves stay: they
   analyse a schema, which is a job for the layer above.
-* The third split is capture's one write that reads the walk. R870 deletes it, and this item depends
-  on R870, so there is nothing here to split.
+* The third split was capture's one write that read the walk. R870 has deleted it (shipped at
+  `9f50502`; that item is back at Ready for a rework round on an unrelated gate detail), so
+  `FactCapture.detect` writes nothing and there is nothing here to split. The dependency stays
+  listed until R870 reaches Done.
 
 **One thing to confirm before starting.** Six files in `rewrite/derive` use `ValidationError` and
 `Rejection`, and two use `TableRef` and `ColumnRef`, all of which currently sit above the line. The
@@ -130,27 +129,40 @@ likely answer is that they belong below it: rejections are already a table in th
 the language server reads them, and `TableRef` and `ColumnRef` are plain data that both sides use.
 Check this rather than assume it, because it decides whether `rewrite/derive` moves in one piece.
 
-**What the two side modules use, and what is left after the move.** Neither module's shipped code
-uses the generator at all, so this is only about their tests.
+**What the two side modules actually use.** Neither module's shipped code uses the generator at all,
+so this is only about their tests. Counted rather than guessed, because two earlier drafts guessed:
 
-`graphitron-mcp` comes out clean. Everything its tests use either moves down with capture
-(`FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
-`CompileDiagnostic`, `CompileRound`, `LintConfig`), is settled by the check above (`Rejection`,
-`ValidationError`), or is a test helper that moves along with what it drives (`BuiltStore`,
-`CapturedStore`, `FactWriters`).
+* **The fixture packages are not in `graphitron`.** The lsp tests use `rewrite.test.jooq`,
+  `rewrite.test.services`, `rewrite.test.conditions` and `multischemafixture`, which read like
+  generator packages and are not: they are generated or written in `graphitron-sakila-db` and
+  `graphitron-sakila-service`. They cost nothing here.
+* **The lint types the tests use are values, not the rule engine.** No lsp test runs a lint rule.
+  They build findings and seed them into a store fixture, using `LintRule` (an enum of rule ids),
+  `LintFix` (a record) and `BuildWarning` (a sealed interface of two arms). The same is true of
+  `ValidationError`, `ValidationReport` and the rejection vocabulary: constructed, never executed.
+  These belong with the diagnostics they describe, which is at or below the store, since
+  `rejection_validation_error` is already a table and the language server reads the `diagnostic`
+  view over it.
+* **`DeprecationRecognizer` is a reader, not a rule.** `SdlDeprecations` uses it to read the
+  deprecation markers out of the shipped `directives.graphqls`. It parses a `TypeDefinitionRegistry`
+  and touches neither the walk nor the store, so by this plan's own rule it moves down with the
+  other source readers. It sits in the `lint` package by naming accident.
+* **`CatalogBuilder.build` is the method the splits above forgot.** `CatalogBuilder` has three public
+  methods, not two: `buildExternalReferences` (down), `projectTypesByName` (stays), and `build`,
+  which projects `CompletionData`. `CompletionData` moves down, so `build` goes with it, and
+  `FixtureCatalogTest`'s use of it stops being a generator dependency.
+* **Exactly one lsp test runs a real generator.** `StoreFixture.ofBuild` is the helper that calls
+  `GraphQLRewriteGenerator.buildOutput()`, and across 67 lsp test files it has one caller,
+  `LintSuppressionDiagnosticsParityTest`. Every other test builds its store through `CapturedStore`,
+  which moves down.
+* **`graphitron-mcp` is the harder of the two, not the easier one.** Its own build-driven fixture,
+  `StoreBackedBuild`, has four users: `GraphitronMcpServerTest`, `DiagnosticsAggregateTest`,
+  `ServerInstructionsTest` and its own `LintSuppressionDiagnosticsParityTest`.
 
-`graphitron-lsp` does not, and the reason is the splits above. Its tests use the lint rules
-(`LintRule`, `LintFix`, `DeprecationRecognizer`), the half of `rewrite/catalog` that stays
-(`CatalogBuilder`, `TypeBackingShape`), the schema walk itself (`GraphitronSchemaBuilder`), and three
-values that belong to the generator (`ValidationReport`, `BuildWarning`, `GraphitronType`). None of
-that has anything to do with building a store, so moving capture down does not reach it.
-
-**So `graphitron-lsp` keeps a test-only dependency on the generator, and this item says so instead
-of promising otherwise.** Two things limit it. What is left are tests of the lint rules and the
-walk, which is a fair reason for a test dependency. And most of it goes away on its own: the walk,
-`CatalogBuilder`'s remaining half and `TypeBackingShape` all disappear under R682. What is left after
-that is the lint rules, and whether they belong above or below the line is a separate question this
-item does not open.
+So after the moves above, seven test files still need both tiers: four in `graphitron-mcp`, and
+three in `graphitron-lsp` (the parity test, plus `R157PipelineTest` and `FixtureCatalogTest`, which
+are discussed in step 7 because their case is different). Those seven are the whole of what stands
+between this item and a clean detachment of both modules.
 
 **2. Add a temporary import rule, so the layering holds until the move happens.** Give
 `PackageImportDirectionTest` a `capture` rule, written like the `facts` rule it already has: capture
@@ -199,6 +211,34 @@ how a test gets a filled store, which is the thing being moved. Leaving them beh
 `FactCaptureAgreementTest` stays where it is: it compares capture's output against the old walk, and
 a test comparing two layers belongs in the upper one.
 
+**7. Rehome the tests that need both tiers.** Seven files, in two kinds.
+
+*Five that check the build and a client agree.* `LintSuppressionDiagnosticsParityTest` exists twice,
+once in each client, and asks the same question: if you switch a lint rule off in your build
+settings, does the editor stop squiggling it, and does a rule you did not switch off still show?
+Three more mcp tests use the same build-backed fixture (`GraphitronMcpServerTest`,
+`DiagnosticsAggregateTest`, `ServerInstructionsTest`) to check what the server reports against real
+build output. None of them can be faked from either side: a lint finding only exists once a build
+has run the rules, and the squiggle only exists once the client has read it back. These tests are
+worth keeping for as long as there is a build and an editor.
+
+They need a home that can see the generator and the client at once. `graphitron-maven-plugin` is
+one, today, for free: it already depends on `graphitron`, `graphitron-lsp` and `graphitron-mcp`,
+because `DevMojo` is what wires them together, which is also the thing these tests are really about.
+The alternative is a new module that exists only for cross-tier tests, which is cleaner and is scope
+of its own. **This spec picks the maven plugin, and a reviewer who prefers the new module should say
+so.** Either way the rule is the same and worth stating once: a test whose subject is two tiers
+agreeing belongs above both of them, never inside one of them reaching up.
+
+*Two that are about the retiring walk.* `R157PipelineTest` runs a real schema through the real
+classifier and then checks the editor's completions, hovers and diagnostics against what the
+classifier decided, so that a classifier that quietly widened would be caught by an editor
+assertion. `FixtureCatalogTest` does the catalog half. Both depend on machinery R682 removes, so
+they have an end date the parity tests do not. Move them by the same rule as the five, and expect
+them to shrink rather than to be maintained: once `CatalogBuilder.build` is below the line,
+`FixtureCatalogTest`'s remaining tie is `RewriteContext`, which is worth settling as part of that
+move rather than separately.
+
 ## Decisions this spec makes
 
 **One module, not two.** The alternative is a new `graphitron-capture` module between the store and
@@ -237,10 +277,11 @@ it was needed, which is not the same thing as removing it.
 
 ## Sequencing
 
-**R870 must land first.** Capture writes one table, `walk_type_backing_class`, using the schema walk
-that lives above it. That call cannot survive the module move. R870 deletes the table and the write
-on its own merits, without waiting for anything here, which is why it is a dependency rather than a
-step.
+**R870's code has landed; the item is back at Ready for a rework round.** Capture used to write one
+table, `walk_type_backing_class`, from the schema walk above it, and that call could not have
+survived the module move. R870 deleted the table and the write on its own merits, and its Done gate
+sent it back over a gate-ordinal detail rather than over the deletion. So the edge is gone from the
+tree, and the dependency stays listed until that item is Done.
 
 **R876's work should land before the move.** It is adding code to the very packages this relocates.
 Nothing actually clashes, since this move does not change what any file does, but the two will
@@ -269,13 +310,14 @@ above it.
   shipped code opens a store. Both are tests, not something a reviewer has to check. Keep the second
   test scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store
   that this item does not touch, `ModelCodegenDriver` and the store's own startup code.
-* **`graphitron-mcp` has no dependency on `graphitron` at all**, and its guard test
-  `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` now checks its tests too.
-* **`graphitron-lsp`'s remaining dependency is test-only, and is exactly what step 1 lists.** Its
-  shipped code uses no generator type, which is already true and becomes a test rather than a comment
-  in its pom. Its tests may use the lint rules, the schema walk, `CatalogBuilder` with
-  `TypeBackingShape`, and three generator values. A test using anything that moved down is a test
-  somebody forgot to update.
+* **Neither `graphitron-lsp` nor `graphitron-mcp` declares a dependency on `graphitron`, at any
+  scope.** Both poms lose it entirely. `graphitron-mcp`'s guard test
+  `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` widens to cover tests, and
+  `graphitron-lsp` gains the same guard.
+* **The seven cross-tier tests still run, still prove the same things, and live above both tiers.**
+  In particular both `LintSuppressionDiagnosticsParityTest` cases still fail if a build-suppressed
+  lint rule reaches the editor or the MCP diagnostics tool. Relocating a test must not quietly weaken
+  it: if a test cannot be moved without dropping an assertion, that is a finding, not a detail.
 * **A generation runs against a store its caller opened**, and the fallback case is tested too:
   pointed at a store another project owns, the run gets the temporary store with a stated reason,
   finishes normally, and leaves the shared file untouched.
