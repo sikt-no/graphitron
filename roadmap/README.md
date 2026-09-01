@@ -25,10 +25,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
-| `R906` | Roadmap item bodies state a goal, then a plan | Spec | 2026-09-01 | [plan](goal-first-item-bodies.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R890` | A structural guard gives case-folded name comparison one legitimate home | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](name-case-fold-guard.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R906` | Roadmap item bodies state a goal, then a plan | Ready | 2026-09-01 | [plan](goal-first-item-bodies.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -657,7 +657,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R604` [**LeafCoverageReport carries a private escapeAdocCell duplicating Main's**](roadmap-tool-adoc-cell-escape-dedup.md) — Backlog, cleanup
 - `R348` [**Regenerate and guard the generated supported-schema-shapes migration doc against drift**](supported-schema-shapes-regen-guard.md) — Backlog, tech-debt
 - `R600` [**Retire the roadmap markdown-to-AsciiDoc translator by authoring plans in AsciiDoc**](roadmap-plans-authored-as-asciidoc.md) — Backlog, cleanup
-- `R906` [**Roadmap item bodies state a goal, then a plan**](goal-first-item-bodies.md) — Spec, process
+- `R906` [**Roadmap item bodies state a goal, then a plan**](goal-first-item-bodies.md) — Ready, process
 - `R836` [**The fact schema's prose is written for its author, not its reader**](fact-schema-prose-plain-language.md) — Spec, dx
 - `R842` [**Refused patterns gather in one section instead of a residue in every table**](refused-patterns-gather-in-one-section.md) — Spec, architecture
 - `R758` [**The fact model page never learns the materialization registry**](fact-model-page-learns-the-registry.md) — Backlog, dx

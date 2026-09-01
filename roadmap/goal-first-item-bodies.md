@@ -1,7 +1,7 @@
 ---
 id: R906
 title: "Roadmap item bodies state a goal, then a plan"
-status: Spec
+status: Ready
 bucket: process
 priority: 3
 theme: docs
@@ -148,3 +148,45 @@ either gate question.
   section-order bullet codifies it for the first time rather than restating an existing convention.
   Worth knowing while writing the bullet, since it is the one section in the order list with no
   existing definition to point at.
+
+### Round 2 (2026-09-01, Spec -> Ready, reviewer session 019wtBfMU8GzWypLW7cVrn2R)
+
+Verdict: sign off. The round-1 finding is resolved, and both gate questions are answered.
+
+The revision took the first branch and did not lose the second. The standalone rule now rests on the
+gate, which holds at every status, and the roll-up sentence states exactly what the tool does:
+Backlog items get the description, items past Backlog reach no roll-up surface today. I re-checked
+that against the tree rather than against my own round-1 note. `firstNonHeadingParagraph` still has
+exactly three occurrences in `Main.java`, the definition plus the two Backlog-only call sites, so no
+active-item render path has appeared since. The template bullet's new justification is also correct
+on both halves: `runCreate` writes `status: Backlog`, and `firstNonHeadingParagraph` splits on
+`\n\n+` and skips every `#`-leading paragraph, so the placeholder under `## Goal` is what the
+roll-up picks up.
+
+The second branch became R907 (`active-items-render-goal-paragraph`), filed as Backlog/dx, and its
+body states the mechanism accurately, down to the five-column table and the adoc expectations moving
+with it. Filing it rather than folding it in is the right call: it keeps this item's scope honest
+while preserving the one genuinely user-visible improvement the finding surfaced. Both round-1
+non-blocking notes were absorbed into the plan body as well, the `## Provenance` clause and the
+no-test-pins-the-template clause.
+
+Question one: a reader can say what changes without reconstructing it from the plan. Item bodies
+lead with a goal stated in the reader's terms, the shape is defined once in `workflow.adoc`, and the
+`create` template puts every new item in shape so the corpus converges as items are deleted at Done.
+Question two: the plan extends shapes already in the tree, the `== Item file conventions` bullet
+list, the CLAUDE.md-points-at-workflow.adoc split, and the existing `create` template, rather than
+standing anything parallel beside them. I would hand it to an implementer as-is.
+
+*Non-blocking, no response needed.* Two notes for whoever implements, neither bearing on either gate
+question.
+
+* When writing the `create` template, keep a blank line between the `## Goal` heading and the
+  placeholder. `firstNonHeadingParagraph` splits on `\n\n+`, so a heading and placeholder joined by a
+  single newline form one paragraph that starts with `#` and gets skipped, and the stub would render
+  with no description at all. The existing template already separates `# <title>` from its paragraph
+  this way, so the natural edit is the correct one.
+* The bullet's closing clause names R907 inside `workflow.adoc`, a permanent document, and item files
+  are deleted at Done. The rot is self-limiting, since R907 landing also falsifies the "no roll-up
+  surface today" half of the same sentence and would rewrite it, and `workflow.adoc` already cites
+  item ids elsewhere. Dropping the id and saying "a separate Backlog item covers extending it to
+  active items" would carry the same scope boundary with nothing to go stale.
