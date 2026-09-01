@@ -220,3 +220,71 @@ quantity from the one the reason records and does not replace it.
 
 Both get an answer the next time somebody takes a capture, and the metric this item lands is what
 tells them which relations to time.
+
+## Reviewer findings
+
+### Round 1 (2026-09-01, Spec -> Ready, reviewer session 01Cvmoe2Dzwtbfbc8YcPgYJb)
+
+Verdict: withhold. One blocking finding on question two, which also undercuts the outcome
+question one asks about. The rest of the plan checks out against the tree, including every
+figure it quotes off the DDL.
+
+**Blocking: the per-registration delta, as this file defines it, reads zero for fifteen of the
+twenty registrations, and the five it does not read zero for are not the five that matter most.**
+
+The definition under "The report gains a per-registration delta" is a difference of global
+maxima: "the largest statement any relation reaches with it registered against the largest with
+it demoted and every other registration left as it ships." Demoting one registration moves that
+number only when it lifts the single reigning relation, which is
+`intent_argmapping_projection_defect` at 368, or lifts something past it. For most registrations
+it does not, so the statistic is 0 even though the demotion makes real relations much heavier.
+Implementing the arm exactly as specified and running it on the current schema gives a non-zero
+delta for `intent_resolved_type_binding` (+375), `intent_node_id_instruction` (+328),
+`intent_carrier_data_field` (+246), `intent_spelled_table` (+30) and
+`intent_input_field_filter_role` (+20), and exactly 0 for the other fifteen. Those zeros are not
+findings about the registrations. Demoting `intent_argument_column_scope` alone takes
+`intent_argument_column_match_live` from 6 to 90, and its reported delta is still 0.
+
+The cause is structural rather than a matter of picking a better threshold, and it is the same
+compounding this item is built to expose. Registrations truncate each other's trees, so their
+effects compose multiplicatively rather than adding: with every registration demoted the largest
+statement is 2792329, while the one-at-a-time effects on the global maximum sum to under a
+thousand. A registration sitting beneath another one buys nothing on its own, because the one
+above it already truncates the tree at its own name; its worth only appears once its neighbour
+goes too. A marginal one-at-a-time delta measured against a global maximum is blind to exactly
+that effect.
+
+Both use cases this file names for the figure invert under it. "The figure an author adding a
+registration is claiming" would show fifteen zeros and read as a register that buys nothing.
+"The figure a reviewer of a retirement needs" would show 0 against
+`intent_mutation_write_destination`, whose own `_live` stands at 1396159 in the fully demoted
+arm. A metric that under-reports in the retirement direction is worse for this item's purpose
+than no metric, because the ownership item this file hands the number to is the one deciding
+fates.
+
+What would satisfy the finding is a defined statistic that is non-zero whenever a registration
+measurably changes plan size for some relation. Which one is the author's call, and the arms are
+not equivalent: a per-relation delta (the largest rise any single relation takes, rather than the
+rise in the largest relation), an aggregate restricted to the readers that actually reach the
+target, which `MaterializeDependencies.registrationsReachedByView` already computes and
+`DerivedReadCostTest` already uses as an axis, or a marginal figure reported alongside something
+that shows the compositional term. Whichever it is, the plan should say what the number means when
+two registrations are only worth anything jointly, since that is the schema's normal case rather
+than an edge one.
+
+**Non-blocking, but it rests on a false premise and is an instruction to the implementer, so it is
+yours rather than mine to correct.** Under "`InlineMultiplicityCheck` in `roadmap-tool` gains the
+demoted arm": "Counts in the demoted arm exceed the range of an `int`, so the accumulator is a
+`long` on both arms." The fully demoted maximum is 2792329, three orders of magnitude below
+`Integer.MAX_VALUE`, and single-registration demotions are bounded above by it. This file quotes
+2739455 for the same quantity two sections earlier, which also fits in an `int`, so the claim
+contradicts its own figure. A `long` is harmless in itself; the stated reason for it is what is
+wrong, and an implementer would encode a false belief about the schema's size.
+
+Two things noticed in passing, neither a gate matter. `fact-model.adoc` says "twenty-two
+registrations" in the refresh-statistics paragraph while the register holds twenty; that is a
+different staleness from the two statement-size figures this item already plans to replace on
+that page, and it is adjacent to the edit. And the claim that each of the three budget javadocs
+says the target is a query that would otherwise never return holds for
+`INTERACTIVE_READ_BUDGET` only; the other two state their own rationale. The argument the section
+builds survives on the one javadoc, so this changes nothing but the count.
