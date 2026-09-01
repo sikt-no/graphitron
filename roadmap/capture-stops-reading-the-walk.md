@@ -1,7 +1,7 @@
 ---
 id: R870
 title: "Capture stops reading the classification walk"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: model-cleanup
