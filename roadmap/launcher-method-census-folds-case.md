@@ -1,7 +1,7 @@
 ---
 id: R889
 title: "The launcher-method census folds case, rejecting a valid deprecated-alias field pair"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: diagnostics
