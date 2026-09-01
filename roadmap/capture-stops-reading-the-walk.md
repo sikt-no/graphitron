@@ -1,6 +1,6 @@
 ---
 id: R870
-title: "The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy"
+title: "Capture stops reading the classification walk, and its backing differential compares in memory"
 status: Spec
 bucket: architecture
 priority: 1
@@ -10,7 +10,7 @@ created: 2026-08-28
 last-updated: 2026-09-01
 ---
 
-# The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy
+# Capture stops reading the classification walk, and its backing differential compares in memory
 
 ## Goal
 
