@@ -1,13 +1,13 @@
 ---
 id: R663
 title: "@defaultOrder on a @splitQuery child list is dropped at emit"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-13
-last-updated: 2026-08-31
+last-updated: 2026-09-01
 ---
 
 # @defaultOrder on a @splitQuery child list is dropped at emit
@@ -361,3 +361,88 @@ this item is one entry there and should not restate it. What stays here is the l
 consequence: closing this coordinate removes one leak site and leaves the invariant unenforced,
 so the sketch above is worth landing on its own terms and is not a step toward the invariant.
 
+
+## Reviewer findings
+
+### Round 1 (2026-09-01, In Review -> Done, reviewer session 016r4si4JkqLgswbafZcLiyw)
+
+Verdict: withhold; status back to `Ready`. One blocking finding on the third gate question (is the
+implementation correct *and* the change the spec approved), plus two observations that are not
+blocking.
+
+The delivery is the change this plan approved, and the parts it names are right. `batchedResultOf`
+and `batchedLookupRow` project the coordinate's ordering where they passed `null`;
+`BatchedRowsFragments.body` declares the sort view and appends `.orderBy(orderBy)`, with the
+declaration emitted before the `TenantStrategy.Fanned` fork so one declaration serves both tenancy
+shapes by closure, exactly as "Implementation" specified. The single-record-per-key arm stays
+unordered. The command-tier assertion pins both list arms; the keyless-target execution fixture is
+seeded so an unfixed emission returns `ZETA, ALFA, MIKE` and the assertion rejects it; the fanned
+assertion's seed distinguishes storage order, a global re-sort and the published contract, which is
+what makes it a proof of the contract rather than a restatement. Six SQL baseline strings moved
+deliberately with the reason written into `BatchedChildSqlBaselineTest`'s own javadoc. Both
+departures under "Delivery notes" are sound: the sequencing was the user's call and the plan's
+reopen trigger genuinely did not fire (both arms were still reading the leaf at pickup), and a
+keyless *table* reproduces the reported population exactly, since the missing primary key is what
+compels the directive, not the view-ness. A full `mvn install -Plocal-db` is green on the delivered
+tree; I ran it.
+
+**Finding 1 (blocking). The projection is total over `OrderBySpec`, but the helper emission is
+not, so an `@orderBy` argument on a batched child list now emits a call to a method that is never
+generated.**
+
+`orderingOf` maps `OrderBySpec.Fixed` to `Ordering.Columns` and `OrderBySpec.Argument` to
+`Ordering.Helper`. `OrderingBlock.declareSortView` is total over both arms, which is what "Out of
+scope" means by the render layer taking argument-driven ordering "for free": the fragment renders
+`List<SortField<?>> orderBy = <field>OrderBy(env, <alias>).sortFields();`. But
+`TypeFetcherGenerator` emits that helper for a `ChildField.BatchedTableField` only when the
+wrapper is `FieldWrapper.Connection`. The list-shaped arms this item just wired have no such
+emission, and nothing rejects the directive there: `validateBatchedTableField` guards only the
+Connection-shaped empty-ordering case and the lookup-connection verdict, and the leaf's ctor bars
+`Argument` only on routine-node paths. The generated fetchers class therefore does not compile.
+
+Verified rather than reasoned. A schema with
+`actorsOrdered(order: [ActorOrderBy] @orderBy): [Actor!]! @splitQuery @defaultOrder(primaryKey:
+true) @reference(...)` generates a `FilmFetchers` whose `rowsActorsOrdered` calls
+`actorsOrderedOrderBy(env, a1)` while the class holds no method of that name; the `@lookupKey`
+sibling behaves identically. Against `LauncherCommands` as it stood before this delivery, the same
+schema emitted no `orderBy` at all. So this is a new failure mode introduced here, not a
+pre-existing one surfaced.
+
+The "Out of scope" bullet does not cover it. It defers *whether the classifier admits the
+directive*, having already asserted the render layer takes it for free. The classifier does admit
+it, which is what makes the free-ness claim false: the render layer takes it for free only where
+the helper exists. The combination is not an exotic one either. `orderBy.adoc` places no
+restriction on which fields may carry the argument, `defaultOrder.adoc` publishes the
+`@defaultOrder`-plus-`@orderBy` coexistence on the same field, and `splitQuery.adoc` pairs
+`@splitQuery` with `@defaultOrder` in its own worked example.
+
+The tree already treats this exact situation as a defect to close rather than a gap to record. The
+comment beside the interface-root arm in the same loop says a prior state of the code "spelled the
+call inline while nothing emitted the helper, so an `@orderBy` argument on this coordinate produced
+uncompilable output. Emitting it here closes that gap." The batched discriminated child's arm
+below it was added for the same reason.
+
+What would satisfy this: drop the `wrapper() instanceof FieldWrapper.Connection` conjunct from that
+`else if`, so a `BatchedTableField` carrying an `Argument` ordering gets its helper whatever its
+wrapper. I confirmed the one-conjunct removal makes both helpers appear for the schema above. Then
+add a fixture carrying the combination to the example schema, because the compilation tier is what
+should have caught this and no coordinate in the tree pairs `@splitQuery` with an `@orderBy`
+argument at list cardinality: every existing `@orderBy` on a split child sits on a connection.
+Rejecting the combination with a located validator verdict is the other coherent arm, but it costs
+more than the widening and takes away a combination the manual currently permits.
+
+**Observation 1 (not blocking). The fan-out fixture reshaping cost one axis of the routing
+proof.** Moving `T2 Gamma` to language 901 leaves `FanOutLangB` with no films at all, so the test
+that once showed two distinct parents each receiving rows from a distinct database now shows one
+populated parent and one empty bucket. Mis-routing is still caught (a stray row makes `LangB`
+non-empty), so this is a weakening rather than a hole, and the interleave the tenant-blocking
+assertion needs is real. Seeding one additional tenant-2 film under 902 would restore the
+two-populated-parents discrimination without disturbing the interleave.
+
+**Observation 2 (not blocking), for the changelog entry at Done.** Because
+`OrderByResolver.resolveDefaultOrderSpec` falls back to the primary key, this change adds an
+`ORDER BY` to *every* list-shaped batched child statement in every consumer build, not only to
+coordinates that authored a directive; the two `ConditionSqlBaselineTest` strings that moved are
+that population, not authored ones. "Diagnosis" names the population, so this is the approved
+change and not a scope question, but the SQL that consumers see changes more widely than the
+item's title suggests and the entry should say so.
