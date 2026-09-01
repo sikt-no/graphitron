@@ -979,8 +979,9 @@ public class TypeFetcherGenerator {
         }
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
-        // QueryTableField (root connection + list fetchers) and BatchedTableField+Connection
-        // (per-parent paginated rows method; Table-sourced only, by ctor invariant). The method
+        // QueryTableField (root connection + list fetchers) and every list-payload
+        // BatchedTableField arm (the per-parent paginated rows method and the plain and
+        // lookup-keyed batched lists). The method
         // name derives through the naming vocabulary, the same formula the launcher producer
         // mints onto Ordering.Helper refs, so the helper and its command-side callers cannot
         // disagree (the unmigrated fetcher bodies still spell the call inline through
@@ -1016,8 +1017,16 @@ public class TypeFetcherGenerator {
                     namingVocabulary.orderByHelperMethod(typeName, btif.name()).methodName(),
                     arg, names, tableRef, outputPackage));
             } else if (field instanceof ChildField.BatchedTableField btf
-                    && btf.returnType().wrapper() instanceof FieldWrapper.Connection
+                    && !btf.emitsSingleRecordPerKey()
                     && btf.orderBy() instanceof OrderBySpec.Argument arg) {
+                // Gated on the predicate the launcher itself forks on, not on the wrapper. Every
+                // batched arm whose payload is a list — the connection one and the plain and
+                // lookup-keyed list ones alike — projects the coordinate's ordering into its
+                // command row, and OrderingBlock.declareSortView spells the helper call for both
+                // Ordering arms, so a wrapper gate would leave a batched list carrying an
+                // @orderBy argument calling a method this class never wrote. The
+                // one-record-per-key arm carries no ordering, so it needs no helper, and reading
+                // the same predicate keeps the two sites from disagreeing about which arm it is.
                 var tableRef = btf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, btf.returnType().returnTypeName(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(

@@ -108,14 +108,19 @@ class TenantFanOutExecutionTest {
             t1.execute("alter sequence session_handle_seq restart with 1000");
         }
         try (var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
-            t2.execute("insert into film values (20, 'T2 Gamma', 901)");
+            // 20 shares language 901 with tenant 1's films, which is what makes the ordering
+            // contract observable; 40 sits alone under 902 so a second untenanted parent draws
+            // its rows from a database the first parent's rows cannot come from, and a
+            // mis-routed batch shows up as a row under the wrong language.
+            t2.execute("insert into film values (20, 'T2 Gamma', 901), (40, 'T2 Delta', 902)");
             t2.execute("insert into inventory (film_id, store_id) values (20, 7)");
             t2.execute("insert into film_actor values (200, 20)");
             t2.execute("alter sequence session_handle_seq restart with 2000");
         }
         // The batched form's untenanted parents, in the default database's sakila language table.
-        dsl.execute("delete from language where language_id in (901, 902)");
-        dsl.execute("insert into language (language_id, name) values (901, 'FanOutLangA'), (902, 'FanOutLangB')");
+        dsl.execute("delete from language where language_id in (901, 902, 903)");
+        dsl.execute("insert into language (language_id, name) values"
+            + " (901, 'FanOutLangA'), (902, 'FanOutLangB'), (903, 'FanOutLangC')");
 
         // Ordered: the fan-out domain (and so the union's concatenation order) follows the
         // tenant map's configured key order, which the runtime preserves via LinkedHashMap.
@@ -129,7 +134,7 @@ class TenantFanOutExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
-            dsl.execute("delete from language where language_id in (901, 902)");
+            dsl.execute("delete from language where language_id in (901, 902, 903)");
             dsl.execute("drop database if exists fanout_t1 with (force)");
             dsl.execute("drop database if exists fanout_t2 with (force)");
         }
@@ -184,7 +189,7 @@ class TenantFanOutExecutionTest {
         assertThat(films).extracting(f -> f.get("title"))
             .as("tenants concatenate in the tenant map's configured order; within a tenant the"
                 + " field's ORDER BY (default: primary key) applies; no global re-sort")
-            .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma");
+            .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma", "T2 Delta");
     }
 
     @Test
@@ -265,8 +270,14 @@ class TenantFanOutExecutionTest {
         assertThat(filmsOf(languages, "FanOutLangA"))
             .as("tenant 1's block sorted, then tenant 2's block sorted; no global re-sort")
             .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma");
+        // The routing half, which the ordering seed above cannot show on its own: a second
+        // populated parent whose only rows live in tenant 2's database. A batch that reached
+        // the wrong source would put T2 Delta under FanOutLangA, or nothing under FanOutLangB.
+        assertThat(filmsOf(languages, "FanOutLangB"))
+            .as("a parent whose rows come from one tenant only")
+            .containsExactly("T2 Delta");
         // A parent with rows in no tenant still gets its bucket, empty.
-        assertThat(filmsOf(languages, "FanOutLangB")).isEmpty();
+        assertThat(filmsOf(languages, "FanOutLangC")).isEmpty();
     }
 
     @Test

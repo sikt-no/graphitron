@@ -2365,6 +2365,26 @@ type Film implements Node & Searchable @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ]) @defaultOrder(primaryKey: true)
+    # The list-cardinality twin of actorsOrderedConnection above: a dynamic @orderBy argument on
+    # a @splitQuery child that is a plain list rather than a connection. The batched list arm
+    # carries the coordinate's ordering into its command row, so the rows method calls the same
+    # `<field>OrderBy(env, <alias>)` helper the paginated twin calls; the fixture exists because
+    # nothing else in the schema pairs @splitQuery with an @orderBy argument at list
+    # cardinality, and a helper emitted only for connections leaves this coordinate calling a
+    # method the fetchers class never wrote.
+    actorsOrderedBySplit(order: [ActorOrderBy] @orderBy): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
+    # The lookup-keyed sibling of actorsOrderedBySplit, covering the second batched arm that
+    # projects ordering (the keyed-lookup rows method) rather than only the plain one.
+    actorsOrderedBySplitLookup(
+        actor_id: [Int!] @lookupKey,
+        order: [ActorOrderBy] @orderBy
+    ): [Actor!]! @splitQuery @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ]) @defaultOrder(primaryKey: true)
     # stub-interface-union-fetchers.md Track A: ChildField.TableInterfaceField fixture.
     # content.film_id FK links a Content entry back to its Film. The generator emits a
     # per-parent fetcher that conditions on the FK and projects the discriminator column.

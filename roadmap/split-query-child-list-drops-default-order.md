@@ -162,9 +162,14 @@ The work is the same pair of edits one arm over.
   single-tenant and fanned forms alike, and the fanned form's per-tenant statement picks it up by
   closure.
 
-`OrderingBlock.declareSortView` is total over both `Ordering` arms, so an argument-driven
-`@orderBy` renders for free at this layer. Whether the classifier admits one on a batched child is
-a separate question and not this item's.
+`OrderingBlock.declareSortView` is total over both `Ordering` arms, so the render half needs no
+extra work for an argument-driven `@orderBy`: it spells the call to the coordinate's
+`<field>OrderBy` helper. That is not the same as the whole layer taking it for free, and an
+earlier draft of this paragraph said it was. `TypeFetcherGenerator` is what *writes* that helper,
+and it wrote one only for the connection-wrapped batched child, so a batched list carrying the
+argument would call a method the fetchers class never emitted. Wiring the list arms therefore
+carries a third edit, in `TypeFetcherGenerator`'s helper loop, and the classifier admits the
+combination today, so it is reachable rather than hypothetical. See "Delivery notes".
 
 Two arms of one fragment family disagreeing on this is itself the evidence that the drop is an
 oversight rather than a design.
@@ -323,11 +328,51 @@ before the fix was restored, which is what the plan's "the execution assertion m
 fail" trap asks for. The fanned one fails on the within-tenant sort, the two keyless-target ones
 on the declared sort, and the three baseline strings on the added `ORDER BY`.
 
+### Round 2, after review round 1
+
+**The helper emission now follows the projection instead of the wrapper.** Round 1's blocking
+finding was that this item's projection is total over `OrderBySpec` while the helper emission was
+not: `TypeFetcherGenerator` wrote a coordinate's `<field>OrderBy` helper for a
+`ChildField.BatchedTableField` only when the wrapper was a connection, so a batched *list*
+carrying an `@orderBy` argument emitted a call to a method the fetchers class never wrote. The
+gate is now `emitsSingleRecordPerKey()`, the predicate the launcher itself forks on. Every batched
+arm whose payload is a list gets its helper, the connection one and the plain and lookup-keyed
+list ones alike; the one-record-per-key arm, which carries no ordering, still gets none. Dropping
+the wrapper conjunct outright, which is what the finding proposed, would also have emitted a
+helper nothing calls on that last arm, and reading the predicate the two sites already share is
+what keeps them from disagreeing about which arm it is.
+
+**The combination has fixtures now, which is what lets the compilation tier catch it.**
+`Film.actorsOrderedBySplit` and `Film.actorsOrderedBySplitLookup` pair `@splitQuery` with an
+`@orderBy` argument at list cardinality, one per batched arm that carries an ordering slot. No
+coordinate in the tree did before: every `@orderBy` on a split child sat on a connection, which is
+why the gap survived the first delivery's green build. Execution assertions over both sort by
+`last_name` descending, which inverts the primary-key default on film 1, so an ignored argument
+fails the assertion rather than passing on the fallback.
+
+**The fan-out fixture's routing proof is back to two populated parents.** Round 1's observation 1
+noted that moving `T2 Gamma` under language 901 left `FanOutLangB` with no rows, so a test that
+once showed two parents each drawing from a distinct database showed one populated parent and one
+empty bucket. Tenant 2 now also holds `T2 Delta` under 902, and a third language `FanOutLangC`
+carries the empty-bucket assertion that would otherwise have been spent. The interleave the
+tenant-blocking assertion needs is untouched: 901 still holds tenant 1's films 10 and 30 against
+tenant 2's film 20.
+
+Round 1's observation 2 is an instruction for the changelog entry at Done, not a code change, and
+stands as written under "Reviewer findings".
+
+The round-1 discipline held here too. With the wrapper gate restored and the two fixtures in
+place, `graphitron-sakila-example` fails to compile its own generated sources: `FilmFetchers`
+calls `actorsOrderedBySplitOrderBy` and `actorsOrderedBySplitLookupOrderBy`, and the class holds
+neither. That is the compilation tier catching the finding, which is the tier that should have
+caught it the first time and had no coordinate to catch it on.
+
 ## Out of scope
 
-* **Argument-driven `@orderBy` on a batched child.** The render layer takes it for free (see the
-  `declareSortView` note above), but whether the classifier admits the directive there is a
-  separate question with its own rejection surface.
+* **Rejecting argument-driven `@orderBy` on a batched child.** The delivery makes the combination
+  work rather than rejecting it, which is the arm that costs less and takes nothing away from a
+  schema the manual already permits. A located validator verdict against it stays available and
+  is nobody's rider.
 * **Pagination and windowing at child lookup grain**, and **the inline `LookupMultiset` projection
   arm's dropped ordering**: both R567's, and neither shares a seam with the two edits here.
 * **The one-record-per-key batched lookup production throw.** R567 proposes promoting it to a

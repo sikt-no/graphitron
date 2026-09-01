@@ -3935,6 +3935,50 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void splitQueryList_dynamicOrderByArg_sortsEachParentsRowsByNamedField() {
+        // The list-cardinality twin of the connection case above: the same dynamic @orderBy
+        // argument on a @splitQuery child that is a plain list. The batched list arm projects
+        // the coordinate's ordering into its command row, so the rows method calls the same
+        // per-field OrderBy helper; a helper emitted only for connections would leave this
+        // coordinate calling a method the fetchers class never wrote.
+        // Descending last_name inverts the primary-key default on film 1, so the assertion
+        // fails if the argument is ignored and the @defaultOrder fallback runs instead.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedBySplit("
+                + "order: [{field: LAST_NAME, direction: DESC}]) { actorId lastName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) f.get("actorsOrderedBySplit")));
+        assertThat(byId.get(1)).extracting(a -> a.get("lastName"))
+            .as("film 1's actors by last name descending, not by the primary-key default")
+            .containsExactly("WAHLBERG", "GUINESS");
+        assertThat(byId.get(2)).extracting(a -> a.get("lastName"))
+            .containsExactly("GUINESS", "CHASE");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitQueryLookupList_dynamicOrderByArg_sortsEachParentsRowsByNamedField() {
+        // The second batched arm that carries an ordering slot: the keyed-lookup rows method.
+        // Same argument, same inversion of the primary-key default, one call site over.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsOrderedBySplitLookup("
+                + "actor_id: [1, 2, 3], order: [{field: LAST_NAME, direction: DESC}]) "
+                + "{ actorId lastName } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) f.get("actorsOrderedBySplitLookup")));
+        assertThat(byId.get(1)).extracting(a -> a.get("lastName"))
+            .as("the lookup key narrows the rows; the argument still orders what survives")
+            .containsExactly("WAHLBERG", "GUINESS");
+        assertThat(byId.get(2)).extracting(a -> a.get("lastName"))
+            .containsExactly("GUINESS", "CHASE");
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void splitQueryConnection_backwardPagination_returnsLastNAscending() {
         // last: 1 with no cursor: the CTE inverts the ORDER BY (actor_id DESC) so ROW_NUMBER()
         // picks the largest actor_id per partition, then ConnectionResult.trimmedResult()
