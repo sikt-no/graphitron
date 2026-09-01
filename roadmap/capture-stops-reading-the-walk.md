@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-08-28
+last-updated: 2026-09-01
 ---
 
 # The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy
@@ -35,7 +35,10 @@ predecessor's half of one such differential.
 **It has no production reader.** No view selects from it. Nothing in any module's main sources reads
 it. Its whole consumer set is three tests: `TypeBackingShadowTest`, which is the differential; two
 cases in `FactCaptureAgreementTest` that pin the writer and its partition lifecycle, and so exist
-only because the writer does; and a guard list in `graphitron-mcp`'s `StoreClientBoundaryTest`.
+only because the writer does; and a guard list in `graphitron-mcp`'s `StoreClientBoundaryTest`. A
+fourth test, `TypeBackingClassesTest`, is a consumer of the *value* rather than of the relation: it
+pins the projection off the walked model and never opens a store. That distinction is what decides
+its fate below, and it is why the count here is three rather than four.
 
 **The differential already computes both sides in the test's own JVM.**
 `TypeBackingShadowTest.withBothSides` builds the walk's answer as `TypeBackingClasses.of(bundle.model())`,
@@ -71,8 +74,10 @@ scale that would make it informative is storage, not an instrument.
 Worth stating, because it is the tempting reason to believe this is safe and it is the wrong one.
 Execution-tier tests cover the **walk's** answer, because the generator still emits from
 `RecordBindingResolver`. The generator reads neither `intent_type_backing_class` nor the views over
-it; the only main-source reader of the derivation is `graphitron-lsp`. So execution coverage says
-nothing about the derivation and nothing about whether the two agree.
+it. Its main-source readers are the two tool modules, `graphitron-lsp` and `graphitron-mcp`, the
+latter through `intent_type_backing` in `SchemaQueries`; neither is on the path any execution-tier
+test exercises. So execution coverage says nothing about the derivation and nothing about whether
+the two agree.
 
 That is what the differential is for, and it is why this item rewrites the comparison instead of
 dropping it. Agreement between the class an editor names and the class the generated code uses is a
@@ -81,10 +86,20 @@ difference a user can see, and after this item exactly one test still pins it.
 ## What is deleted
 
 * `walk_type_backing_class`, its four `COMMENT ON` statements, its `meta_family_headline` row, and
-  its `meta_relation_family` sample row.
+  its line on the frozen undeclared roster,
+  `graphitron-model/src/test/resources/no/sikt/graphitron/model/undeclared-relations.txt`. That
+  roster postdates the first draft of this item: it arrives with the per-relation declaration
+  machinery, and `MetaDeclarationGateTest` closes it against the observed relations in both
+  directions, so a retired relation whose line is left standing fails the gate with "an extra entry
+  is a declared or retired relation whose line must be removed". Nothing is owed to
+  `meta_relation_family`, which an earlier draft of this list named: that census derives its rows
+  from the engine's catalog by prefix match, so it loses the relation the moment the table goes.
 * The `walk_` family itself, its `meta_family` row included. R743 drained the family's other
   relations, so this is its last resident and the family has no referent once it goes.
-* `TypeBackingClassRows`, the writer, and `TypeBackingClasses`, the value it reifies.
+* `TypeBackingClassRows`, the writer, and `TypeBackingClasses`, the value it reifies, **from main
+  sources**. The writer dies outright, having nothing left to write. The value's projection does
+  not; it is what the surviving comparison builds the walk's side with, and where it goes is under
+  "What is deliberately not deleted" below.
 * `ClassifiedRun.of(GraphitronSchema)`, the factory, and the `backingClasses` component of
   `ClassifiedRun.Present`.
 * `FactCaptureAgreementTest`'s two walk-binding cases and their helper, plus the relation's row in
@@ -106,9 +121,25 @@ decision this item makes.
 and retire with it under R682, but they have live callers in `TypeBackingProjectionTest` and in
 `graphitron-lsp`'s `R157PipelineTest`, and nothing in this item touches them.
 
+**The walk-answer projection survives, in test sources, and so does its test.** Deleting
+`TypeBackingClasses` from main sources is not deleting the reduction inside it. That reduction over
+`projectTypesByName`, the one that keeps the class arms and drops the table and unbacked arms, is
+exactly what `withBothSides` calls to build the walk's side of the comparison, and the comparison
+survives, so the reduction has to survive with it. It moves to test sources beside its one remaining
+caller. Whether that is a private helper on the comparison or a small test-source class is an
+implementation call, as is whether it keeps the name.
+
+`TypeBackingClassesTest` moves with it rather than being deleted, and this is not tidiness. That
+test pins the projection's reach against a walked model, and its own javadoc names the reason: a
+silent emptiness there "would make every future differential pass vacuously". The rewritten
+comparison leans on the projection harder than the stored version did, since nothing downstream
+would notice an empty map any more. Dropping the guard in the same change that removes the store
+round-trip is the item's central risk wearing a different hat.
+
 ## The retirement sweep this owes
 
-The relation is cited as an exemplar in two places that would otherwise be left naming a dead thing.
+The relation is cited as an exemplar in three places that would otherwise be left naming a dead
+thing.
 
 **`fact-model.adoc` names `walk_` as the shipped case of the sanctioned oracle shape,** in the
 corollary that says fidelity to a predecessor is evidence rather than specification, "with its
@@ -122,7 +153,14 @@ charter of `rejection_` already ties its own lifetime to the clock `walk_` keeps
 that clock does not exist. Both the page and `rejection_`'s own DDL charter need repointing at the
 walk itself, which is what the clock was always about.
 
-**Both edits share a file with R876's slice 5,** which has landed: it amended the same page's lever
+**`build_warning_`'s own charter argues against the name `walk_`,** in the `meta_family` roster: the
+advisory arm is "not `walk_`, because a family may not be named for its producer and both of the
+arm's producers outlive the walk." A charter that defends a name by contrast with a family the
+roster no longer holds is arguing with nobody, and a reader who goes looking for the loser of that
+comparison finds nothing. The clause names the walk rather than the family, the same repointing the
+`rejection_` charter needs, or it goes; deciding which is this item's, not a follow-up's.
+
+**The two `fact-model.adoc` edits share a file with R876's slice 5,** which has landed: it amended the same page's lever
 order and restated its top rung. The paragraphs do not overlap, R876 having worked the lever
 hierarchy where this item works the oracle corollary and the strata buckets, but read the landed edit
 before writing this one rather than assuming a clean merge. The reason the note was here still
@@ -133,10 +171,12 @@ to make.
 
 ## Retired vocabulary
 
-`walk_type_backing_class`, the `walk_` family, `TypeBackingClasses`, `TypeBackingClassRows`, and the
-phrase "walk-side write" for the edge they formed. The words "shadow" and "oracle" are *not* retired
-here: the differential survives, and R740 owns the rename of `TypeBackingShadowTest` and the rest of
-that test's cleanup.
+`walk_type_backing_class`, the `walk_` family, `TypeBackingClassRows`, and the phrase "walk-side
+write" for the edge they formed. `TypeBackingClasses` is *not* retired vocabulary: the reduction it
+names survives in test sources and may keep the name there, so the sweep would fire on a live symbol
+if this list claimed it. What retires with the writer is the value's role as a thing capture stores,
+not the word. The words "shadow" and "oracle" are *not* retired here: the differential survives, and
+R740 owns the rename of `TypeBackingShadowTest` and the rest of that test's cleanup.
 
 ## Relation to the items around it
 
@@ -167,8 +207,11 @@ item takes only what the back-edge forces and does not wait on it.
 * The comparison is still four cases and still asserts two deliberate disagreements. A diff showing
   the fixtures collapsed into one corpus-wide equality assertion is the failure mode the DDL header
   warned about, and it fails this item whether or not it is green.
-* `FactSchemaGateTest` and the family roster gates pass with the `walk_` family absent, which is
-  what says the DDL, the two `meta_` rosters and the generated reference page came out together.
-* `fact-model.adoc` cites no retired family, and `rejection_`'s charter names the walk rather than a
-  family that no longer exists.
+* `FactSchemaGateTest`, `MetaDeclarationGateTest` and the family roster gates pass with the `walk_`
+  family absent, which is what says the DDL, the `meta_family` and `meta_family_headline` rosters,
+  the frozen undeclared roster and the generated reference page came out together.
+* `fact-model.adoc` cites no retired family, and neither the `rejection_` charter nor the
+  `build_warning_` charter names a family that no longer exists.
+* The projection's guard is still running. `TypeBackingClassesTest`'s cases pass from test sources,
+  against the same walked models, with no case dropped in the move.
 * The full verification build is green with no generated-output diff in `graphitron-sakila-example`.

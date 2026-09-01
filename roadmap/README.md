@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-08-28 | [plan](capture-stops-reading-the-walk.md) |
+| `R870` | The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy | Spec | 2026-09-01 <sub>created 2026-08-28</sub> | [plan](capture-stops-reading-the-walk.md) |
 | `R865` | The generator owns the fact tier it should merely read <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-31 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R884` | An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](inferred-key-projection-decodes-the-wrong-slot.md) |
