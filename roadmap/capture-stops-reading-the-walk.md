@@ -1,7 +1,7 @@
 ---
 id: R870
 title: "Capture stops reading the classification walk"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -160,3 +160,74 @@ a difference a user can see, and after this item exactly one test pins it.
 **Replace the differential with a total-agreement test in Java.** Refused, and the family header
 names the reason: it would make the walk normative and pin whatever bugs it has as invariants. Step 3
 keeps the pinned-departure shape precisely so this stays refused.
+
+## Reviewer findings
+
+### Round 1 (2026-09-01, In Review -> Ready, reviewer session 015YkjhNko9dYGwmU7bnhZ6R)
+
+The change is the change the spec approved, and the goal is delivered. All six steps landed; the
+differential kept its shape exactly (four fixtures, two departures pinned by direction, no collapse
+into a corpus-wide equality assertion); the docs sweep took the harder of the two branches step 6
+offered and rewrote the oracle corollary rather than hunting a replacement exemplar, separating the
+shape it recommends from the second question of where the predecessor's answer lives. Full reactor
+green under `mvn install -Plocal-db`, with no generated-output diff.
+
+Completeness was measured rather than read off that build. The item's own central risk is that a
+comparison can be deleted by accident while looking like it was rewritten, so both mutations were
+re-run independently of the ones the delivery records: dropping `Film` from the walk's projected
+answer reddens `theDerivationReproducesTheWalkWhereTheyAgree` and `theInputAxisAgreesWithTheWalk`,
+and adding a binding the walk refuses to make reddens
+`aDisagreementIsTwoRowsHereAndSilenceInTheWalk`. Both directions are live. The first delivery
+criterion was checked by grep: no main source in any module names the three retired symbols, and
+nothing in `graphitron`'s main sources projects a `GraphitronSchema` into the capture package. The
+retirement sweep is clean on every code and documentation surface, zero hits across `.java`, `.adoc`
+and the DDL. The user-facing-doc check on `fact-model.adoc` is clean.
+
+What withholds sign-off is one wrong claim in the delivery record, one piece of the edge that is
+still standing, and the swept surface the sweep did not reach.
+
+**Finding 1 (question three). The family-ordinal renumbering is recorded as forced by a gate that
+does not exist.** Step 1's delivery note says removing the family "left a hole at ordinal 7, and
+`FamilyRosterGateTest` closes the ordinals against `0..n-1`", and the commit message says the same.
+That test never selects `META_FAMILY.ORDINAL`. Its five cases cover introductions, headline
+resolution, headline ordinals dense within each family (`META_FAMILY_HEADLINE.ORDINAL`, a different
+relation), every family having a headline, and bridge resolution. The tree's one reader of
+`META_FAMILY.ORDINAL` is `FactSchemaGateTest.theFamilyRosterIsWellFormed`, which asserts
+`doesNotHaveDuplicates()` and nothing else, and the DDL's own column comment, left untouched by this
+change, still reads "0-based; unique by gate" beside the sibling comment that spells out why the
+headline ordinal is the one gated dense. So a gap at 7 would have passed, and renumbering `intent_`
+through `meta_` was five rows of `meta_family` changed outside the plan's scope on a false premise.
+
+The edit is inert, which is why the build cannot catch this: ordinals with a gap order the reference
+pages identically. The defect is in the record. This is the last gate, after which the item file is
+deleted and the changelog entry is all that survives, so a claim about a gate that does not say what
+it is cited as saying becomes permanent and unfindable, and the next contributor retiring a family
+reads it and renumbers for the same non-reason. Either restore the ordinals the plan did not scope
+and drop the note, or keep the renumbering on a reason that is true (a deliberate tidy, stated as
+one) and correct the sentence in the body and the DDL comment it contradicts. Which of those, and
+whether the renumbering is worth keeping at all, is the author's call.
+
+**Finding 2 (question three). `GraphQLRewriteGenerator.captureAndRead` still takes the
+`GraphitronSchema` it no longer uses.** The body now calls `ClassifiedRun.present()`, so the
+`schema` parameter is dead. It is a private method with one caller, so removing it and the argument
+at the call site is a two-line change. The stated criterion passes on a technicality, since nothing
+flows from the parameter into capture any more, but this is the item's own subject: the signature
+that hands a walked schema toward the capture seam is the last visible inch of the edge the item
+exists to cut, and a reader of that method still sees it.
+
+**Finding 3 (the retirement sweep, a named precondition of this gate). The sweep did not reach
+roadmap bodies.** `roadmap/workflow.adoc` lists them among the surfaces the sweep greps, and seven
+items still name the retired vocabulary. Most are incidental or read naturally as past tense, but
+one is not: **R865** declares `depends-on` this item and its body still says, in the present tense,
+"**R870 must land first.** Capture writes one table, `walk_type_backing_class`, using the schema
+walk that lives above it. That call cannot survive the module move." R865 is in Spec, so the next
+author or reviewer to pick it up reads a precondition that is already met as work still owed.
+**R740** is the other one worth a look: its body still describes this deletion as pending work it
+might do, which is what its "Relation to the items around it" entry above anticipated. The rest
+(R682, R877, and the passing mentions in `derive-package-names-three-jobs`,
+`corpus-directives-to-expect-equals`, `trace-writer-disabled-for-rest-of-fork` and
+`derived-read-cost-is-a-shape-problem`) are the author's to read and leave or repoint.
+
+None of the three needs code to move beyond the two lines in finding 2. The verification above does
+not need redoing: what a next pass owes is the ordinal decision, the dead parameter, the roadmap
+sweep, and a build covering whatever those touch.

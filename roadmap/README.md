@@ -17,8 +17,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R865` | The generator owns the fact tier it should merely read <sub>blocked by: [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)</sub> | Spec | 2026-08-31 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
 | `R884` | An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](inferred-key-projection-decodes-the-wrong-slot.md) |
+| `R870` | Capture stops reading the classification walk | Ready | 2026-09-01 <sub>created 2026-08-28</sub> | [plan](capture-stops-reading-the-walk.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R870` | Capture stops reading the classification walk | In Review | 2026-09-01 <sub>created 2026-08-28</sub> | [plan](capture-stops-reading-the-walk.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
@@ -617,7 +617,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R899` [**A registration's alternative is counted from the schema, so the last lever stops being the first one reached for**](read-budget-with-nothing-materialized.md) — Spec, architecture
-- `R870` [**Capture stops reading the classification walk**](capture-stops-reading-the-walk.md) — In Review, architecture
+- `R870` [**Capture stops reading the classification walk**](capture-stops-reading-the-walk.md) — Ready, architecture
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
 - `R865` [**The generator owns the fact tier it should merely read**](capture-without-the-materialization-refresh.md) — Spec, architecture, blocked by [capture-stops-reading-the-walk](capture-stops-reading-the-walk.md)
 - `R877` [**The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation**](graphitron-model-house-cleaning.md) — In Progress, cleanup
