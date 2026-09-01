@@ -59,9 +59,10 @@ one the file makes.
 **The five-second number is not a budget this tree installs, and `ReadBudget` refuses to mean what
 the target asked of it.** `DevMojo` installs three: `INTERACTIVE_READ_BUDGET` at 3 s for every
 keystroke-grain read, `SESSION_READ_BUDGET` at 30 s for the diagnostics drain, and
-`MCP_READ_BUDGET` at 60 s for an agent's turn. Each javadoc says the same thing about what the
+`MCP_READ_BUDGET` at 60 s for an agent's turn. The interactive budget's javadoc states what the
 number is for, that the target is a query which would otherwise never return and that a threshold
-tight enough to police slowness would start refusing correct answers on a loaded machine. A target
+tight enough to police slowness would start refusing correct answers on a loaded machine; the other
+two state their own rationales, and the argument here needs only the one. A target
 phrased as a `ReadBudget` therefore asks the shipped mechanism to be a latency policy, which its own
 documentation declines to be. A threshold for research belongs to the instrument that measures, not
 to the guard that ships.
@@ -77,9 +78,10 @@ subject.
 the dimension where the answer is not a matter of taste.** `report-inline-multiplicity` already
 counts relation instantiations per read from the DDL alone, needing no database and no profiler, and
 prints a ranking on every roadmap-tool run. It counts one arm: the schema as it ships, where every
-registered target is a table. It gains the second arm, the same count with every registration
-demoted to the `_live` view that states its rule, and the per-registration delta between them. The
-delta is what a registration is worth in plan size, per registration, with no store and no timing.
+registered target is a table. It gains demotion arms, the same count with a chosen set of
+registrations demoted to the `_live` view that states each rule, and off those arms two figures per
+registration, defined under "The report prices each registration twice" below. The figures are what
+a registration is worth in plan size, with no store and no timing.
 
 **Two rules that were only ever tested in their storage form get their rules examined**, which is
 the mistake the predecessor item exists to name and did not finish clearing. Details under
@@ -112,9 +114,10 @@ rather than a convention nobody can check.
 **Two figures already in the tree say the metric needs the arm and needs to be a tool rather than a
 measurement.** The fact-model page records the shipping schema's largest statement as 963 and the
 fully demoted schema's as 2739455. Running `report-inline-multiplicity` on the tree today reports
-`intent_argmapping_projection_defect` at 368 as the heaviest, so the first of those two figures has
-rotted. It rotted for a good reason, the supertype captures having collapsed unions the count was
-compounding, which is precisely why the number wants to be a reported metric that moves with the
+`intent_argmapping_projection_defect` at 368 as the heaviest, and the demoted arm as specified here
+puts the fully demoted maximum at 2792329 on `intent_mutation_write_agreement`, so both figures have
+rotted. They rotted for a good reason, the supertype captures having collapsed unions the count was
+compounding, which is precisely why the numbers want to be a reported metric that moves with the
 schema instead of prose in a document.
 
 ## The two rules nobody has examined
@@ -141,17 +144,55 @@ fixture and on the sakila example. Neither is held by a duration.
 
 ## Implementation
 
-**`InlineMultiplicityCheck` in `roadmap-tool` gains the demoted arm.** It parses the DDL today,
+**`InlineMultiplicityCheck` in `roadmap-tool` gains demotion arms.** It parses the DDL today,
 distinguishes `CREATE VIEW` from `CREATE TABLE`, and treats a registered target as a table by
-construction because that is what the schema says it is. The demoted arm reads the
-`INSERT INTO meta_materialize` seed rows for the target-to-source-view pairs, rewrites every
-reference to a target into a reference to its `_live` view, and runs the same multiplication. Counts
-in the demoted arm exceed the range of an `int`, so the accumulator is a `long` on both arms.
+construction because that is what the schema says it is. A demotion arm takes a set of registrations
+to demote, read as target-to-source-view pairs off the `INSERT INTO meta_materialize` seed rows,
+rewrites every reference to a demoted target into a reference to its `_live` view, and runs the same
+multiplication. The figures below need the fully demoted arm and the twenty single-registration
+arms at each end, forty-two multiplications counting the shipped arm, and each is one memoized walk
+over the view graph, so cost is not a consideration. No arm outgrows an `int`: the largest count any
+arm reaches on today's schema is the fully demoted maximum of 2792329, three orders of magnitude
+inside the boundary. The accumulator stays an `int` and the arithmetic goes through
+`Math.multiplyExact` and `Math.addExact`, so a schema that someday does cross the boundary fails the
+build loudly instead of wrapping.
 
-**The report gains a per-registration delta.** For each of the twenty registrations, the largest
-statement any relation reaches with it registered against the largest with it demoted and every
-other registration left as it ships. That is the figure an author adding a registration is claiming,
-and the figure a reviewer of a retirement needs.
+**The report prices each registration twice, and neither figure is a difference of global maxima.**
+Round 1 implemented the statistic this file used to specify, the rise in the largest statement any
+relation reaches when one registration is demoted, and found it reads zero for fifteen of the twenty
+registrations, because demoting one registration moves the global maximum only when it lifts the
+single reigning relation or lifts something past it. The zeros were not findings about the
+registrations, so the statistic is replaced by a pair, each a maximum over relations rather than
+the change in the schema's one maximum:
+
+- *The marginal figure.* Demote this registration alone, everything else as it ships, and report
+  the largest rise any single relation's count takes, naming the relation that takes it. A demotion
+  turns a leaf into a subtree, so no count falls, and the maximum is zero exactly when no relation's
+  plan changes at all, which is the definedness the round-1 finding asked for. On today's schema it
+  is non-zero for all twenty, from 8 (`intent_argument_scope_table`, taken on
+  `intent_node_id_instruction_live`) to 657 (`intent_node_id_instruction`, taken on
+  `intent_condition_param_decode`). This is the figure a reviewer of a retirement needs: what gets
+  heavier, and by how much, if this row goes today with the rest of the register standing.
+- *The sole figure.* Register this registration alone into the otherwise fully demoted schema, and
+  report the largest drop any single relation's count takes against the fully demoted arm, naming
+  the relation. Also non-zero for all twenty, from 736 (`intent_field_column_scope`, taken on
+  `intent_field_column_table`) to 2792316 (`intent_mutation_write_destination`, taken on
+  `intent_mutation_write_agreement`). This is the figure an author adding the first registration
+  over a subtree is claiming: what the truncation buys when no neighbour shields it.
+
+The gap between the two is the compositional term the retired statistic was blind to, and it is the
+register's normal case rather than an edge one: registrations truncate each other's trees, so worth
+is held jointly. `intent_mutation_write_destination` marginally buys 52, its neighbours already
+truncating nearly everything above it, and alone buys 2792316. The two ends bracket the
+registration's worth in every intermediate state of the register, a demotion only ever growing the
+trees a registration truncates, so per relation the drop from registering it is smallest with
+everything else registered and largest with nothing else registered. What the pair means is stated
+on the report itself: the marginal figure prices one retirement against the register as it ships and
+does not sum, so retiring a second row means re-running the report after the first, which the tool
+makes a command rather than a project; the sole figure is the ceiling on what the row can be worth,
+and a row small on both ends is the honest signal a registration never paid its way. A row small
+marginally and large alone is worth what its neighbours leave it, which is a fact about the register
+rather than a defect in the metric.
 
 **The two rules above are restated where restating them is what the shape asks for**, and left alone
 where the examination concludes the rule is already in the form the planner wants. An examination
@@ -160,19 +201,30 @@ defect.
 
 **The fact-model page's two stale statement-size figures are replaced by a pointer to the metric.**
 A figure in prose that the schema moves under is what rotted; the page states the mechanism and the
-lever order, and the numbers come off the tool.
+lever order, and the numbers come off the tool. The same edit takes the page's refresh-statistics
+passage, which says "twenty-two registrations" three times where the register holds twenty. Those
+counts date the measurements they describe, taken when the register held twenty-two, so the fix is
+to mark them as counts at measurement time or rephrase them off the live register size, not to swap
+numerals under measured claims.
 
 ## Tests
 
-- `InlineMultiplicityCheck`'s two arms get a test in `roadmap-tool` over a stated miniature schema
+- `InlineMultiplicityCheck`'s arms get a test in `roadmap-tool` over a stated miniature schema
   rather than over the shipping DDL: a base table, a rule naming it twice, a registration over that
-  rule, and a reader above the registration. Four relations are enough to make both arms' arithmetic
-  visible in the lines that produced it, and a case over the shipping schema would pin a figure that
+  rule, a second rule naming the first registration's target twice, a registration over that, and a
+  reader above both. Six relations are the smallest schema where the round-1 failure is visible:
+  demoting the lower registration alone moves nothing above the upper one, so its marginal figure is
+  small while its sole figure carries the product, and both ends of the bracket are checkable by
+  hand in the lines that produced them. A case over the shipping schema would pin a figure that
   moves whenever a view is added.
-- The demoted arm's register parse is held against the booted store rather than against its own
+- The demotion arms' register parse is held against the booted store rather than against its own
   regex: the pairs it reads out of the DDL text must equal `Materializations.registrations` as the
   store reports them. That is the assertion that catches the seed-row format changing, and it is the
   reason this half of the work is worth a test at all.
+- In the same habitat, the reach each figure claims is held against the AST walk the refresh order
+  is already built on: every relation whose count moves in a single-registration arm must be one
+  `MaterializeDependencies.registrationsReachedByView` reports as reaching that registration. That
+  catches the textual rewrite counting a name the parser does not read.
 - Row identity on any relation the two examinations restate, on the fixture and on the sakila
   example, at the counts already recorded for them.
 - `DerivedReadCostTest`'s directional claim covers any restatement automatically, and its
@@ -190,8 +242,8 @@ cannot run in CI, cannot be pointed at anything this repository contains, and ha
 research apparatus that took the predecessor item's figures is correctly outside the tree and stays
 there; what comes into the tree is the half whose input is the schema.
 
-**It does not take a position on any registration's fate.** The delta is a number, and reading it as
-a retirement is the ownership item's decision to make with an owner attached. Thirteen of the twenty
+**It does not take a position on any registration's fate.** The figures are numbers, and reading
+them as a retirement is the ownership item's decision to make with an owner attached. Thirteen of the twenty
 targets hold no rows at all on the consumer capture measured, which is a stronger argument about
 several of them than plan size is, and it is not this item's argument to make.
 
@@ -215,8 +267,8 @@ half again as dear without it, and no re-measurement since the grain landed.
 
 The planner degradation observed on `intent_resolved_type_binding`. Its reason records removing it
 alone taking the refresh from about a second to forty-seven minutes and a reader past a sixty-second
-budget. The demoted arm will say what that registration is worth in plan size, which is a different
-quantity from the one the reason records and does not replace it.
+budget. The marginal and sole figures will say what that registration is worth in plan size, which
+is a different quantity from the one the reason records and does not replace it.
 
 Both get an answer the next time somebody takes a capture, and the metric this item lands is what
 tells them which relations to time.
@@ -288,3 +340,33 @@ that page, and it is adjacent to the edit. And the claim that each of the three 
 says the target is a query that would otherwise never return holds for
 `INTERACTIVE_READ_BUDGET` only; the other two state their own rationale. The argument the section
 builds survives on the one javadoc, so this changes nothing but the count.
+
+### Author response to round 1 (2026-09-01)
+
+All four findings taken; the blocking one by replacing the statistic rather than defending it.
+
+**The difference of global maxima is gone.** The section now titled "The report prices each
+registration twice" defines a pair of per-relation maxima: the marginal figure (demote one, largest
+rise any single relation takes) and the sole figure (register one into the fully demoted schema,
+largest drop against that arm). Reproduced independently this session from the DDL: both figures are
+non-zero for all twenty registrations, the marginal ranging 8 to 657 and the sole 736 to 2792316,
+and every figure the review quotes reproduces exactly, the shipped maximum of 368, the fully demoted
+maximum of 2792329, the five non-zero global-max deltas and the fifteen zeros,
+`intent_argument_column_match_live` going 6 to 90 under `intent_argument_column_scope`'s demotion,
+and `intent_mutation_write_destination_live` at 1396159 fully demoted. The finding's closing ask,
+what the number means when two registrations are only worth anything jointly, is answered in the
+section: demotion only grows the trees a registration truncates, so the two figures are the ends of
+a bracket over every intermediate register state, the gap between them is the jointly held worth,
+and the marginal figure does not sum, so a second retirement re-runs the report. The miniature test
+schema grew to two stacked registrations so exactly that case is pinned by hand-checkable
+arithmetic, and a new assertion ties the relations a figure moves on to
+`MaterializeDependencies.registrationsReachedByView`, the reach axis the review pointed at.
+
+**The `long` justification was false and is replaced by the truth.** The largest count any arm
+reaches today is 2792329, well inside `int`; the accumulator stays `int` with `Math.multiplyExact`
+and `Math.addExact` so an overflow on a future schema fails loudly instead of wrapping.
+
+**Both passing notes are folded in.** The budget paragraph now attributes the never-returns
+rationale to the interactive budget's javadoc alone, and the "twenty-two registrations" staleness
+joins the fact-model page edit this item already owes, with the caution that those counts sit under
+measured claims and want dating or rephrasing rather than a numeral swap.
