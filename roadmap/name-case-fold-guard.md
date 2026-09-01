@@ -5,7 +5,7 @@ status: Ready
 bucket: testing
 priority: 3
 theme: diagnostics
-depends-on: [launcher-method-census-folds-case]
+depends-on: []
 created: 2026-08-31
 last-updated: 2026-09-01
 ---
