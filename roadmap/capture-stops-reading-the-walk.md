@@ -1,6 +1,6 @@
 ---
 id: R870
-title: "Capture stops reading the classification walk, and its backing differential compares in memory"
+title: "Capture stops reading the classification walk"
 status: Spec
 bucket: architecture
 priority: 1
@@ -10,7 +10,7 @@ created: 2026-08-28
 last-updated: 2026-09-01
 ---
 
-# Capture stops reading the classification walk, and its backing differential compares in memory
+# Capture stops reading the classification walk
 
 ## Goal
 
@@ -105,36 +105,6 @@ with it under R682, but they have live callers in `TypeBackingProjectionTest` an
 **`TypeBackingShadowTest`'s name and its asymmetric assertions.** R740 owns the rename away from
 "shadow" and the rest of that test's cleanup. This item takes only what cutting the back-edge forces.
 
-## Other solutions we have considered
-
-**Invert the edge instead of deleting it: have the derivation or a store-native pass write the
-relation, so capture no longer reads upward.** Rejected because it preserves storage nothing needs.
-The relation has no production reader: no view selects from it, and no main source in any module
-reads it. Its only consumers are the differential, two `FactCaptureAgreementTest` cases that exist
-because the writer does, and one `graphitron-mcp` guard list.
-
-**Keep the relation for its reach: two stored relations diff over any corpus a run touches, which an
-in-memory comparison cannot.** This is the `walk_` family header's own argument and it is the
-strongest one available. It fails on exercise rather than on principle. `TypeBackingShadowTest` is
-four hand-written schemas, and no other test and no view compares the pair. The capability has had
-its opportunity: a consumer-scale capture exists and is the instrument the 2026-08-28
-derived-read-cost audit works from, and no walk-against-derivation diff has been run over it. A
-differential nobody runs at the one scale that would make it informative is storage, not an
-instrument.
-
-**Delete the comparison along with the relation, on the grounds that execution tests already cover
-this.** They do not, and this is the tempting wrong reason to believe the deletion is safe.
-Execution-tier tests cover the *walk's* answer, because the generator still emits from
-`RecordBindingResolver`. The generator reads neither `intent_type_backing_class` nor the views over
-it; its main-source readers are the two tool modules, `graphitron-lsp` and `graphitron-mcp`, the
-latter through `intent_type_backing` in `SchemaQueries`, and neither sits on a path an execution-tier
-test exercises. Agreement between the class an editor names and the class the generated code uses is
-a difference a user can see, and after this item exactly one test pins it.
-
-**Replace the differential with a total-agreement test in Java.** Refused, and the family header
-names the reason: it would make the walk normative and pin whatever bugs it has as invariants. Step 3
-keeps the pinned-departure shape precisely so this stays refused.
-
 ## How we will know it is delivered
 
 * No main source in any module names `walk_type_backing_class`, `TypeBackingClasses` or
@@ -180,3 +150,33 @@ the write gone, `detect` is detections-only and there is nothing to separate.
 
 **R877** is working `undeclared-relations.txt` family by family. If it reaches the `walk_` family
 first, step 1 collides with it on that file.
+
+## Other solutions we've considered
+
+**Invert the edge instead of deleting it: have the derivation or a store-native pass write the
+relation, so capture no longer reads upward.** Rejected because it preserves storage nothing needs.
+The relation has no production reader: no view selects from it, and no main source in any module
+reads it. Its only consumers are the differential, two `FactCaptureAgreementTest` cases that exist
+because the writer does, and one `graphitron-mcp` guard list.
+
+**Keep the relation for its reach: two stored relations diff over any corpus a run touches, which an
+in-memory comparison cannot.** This is the `walk_` family header's own argument and it is the
+strongest one available. It fails on exercise rather than on principle. `TypeBackingShadowTest` is
+four hand-written schemas, and no other test and no view compares the pair. The capability has had
+its opportunity: a consumer-scale capture exists and is the instrument the 2026-08-28
+derived-read-cost audit works from, and no walk-against-derivation diff has been run over it. A
+differential nobody runs at the one scale that would make it informative is storage, not an
+instrument.
+
+**Delete the comparison along with the relation, on the grounds that execution tests already cover
+this.** They do not, and this is the tempting wrong reason to believe the deletion is safe.
+Execution-tier tests cover the *walk's* answer, because the generator still emits from
+`RecordBindingResolver`. The generator reads neither `intent_type_backing_class` nor the views over
+it; its main-source readers are the two tool modules, `graphitron-lsp` and `graphitron-mcp`, the
+latter through `intent_type_backing` in `SchemaQueries`, and neither sits on a path an execution-tier
+test exercises. Agreement between the class an editor names and the class the generated code uses is
+a difference a user can see, and after this item exactly one test pins it.
+
+**Replace the differential with a total-agreement test in Java.** Refused, and the family header
+names the reason: it would make the walk normative and pin whatever bugs it has as invariants. Step 3
+keeps the pinned-departure shape precisely so this stays refused.
