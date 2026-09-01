@@ -1,7 +1,7 @@
 ---
 id: R884
 title: "An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: nodeid
@@ -188,6 +188,52 @@ test that reads the rendered method is the tier where they can fail.
   paragraph once the emitter matches it, since it is currently the promise this item makes true.
 * `ConditionResolver.installNodeIdDecode`: drop the paragraph describing the uncovered shape and
   replace it with the precedence rule, which is the fact a reader of that method now needs.
+
+## Implementation notes
+
+What the delivery did beyond what the plan spelled out, disclosed here rather than left in the diff.
+
+**The precedence rule became a named predicate, `ProjectedKeyReads.installRailOwns`.** The plan said
+the check is local and available at both render sites. It is, but written twice it would have been the
+same two-spellings-of-one-assumption shape this item exists to remove, so the rule is stated once as a
+static on the sink and asked at both sites. It is asked of the binding's own extraction, which is where
+the install left its mark: at an argument the decode is the extraction itself, and at an input field
+`ConditionResolver.rewrapForNested` carries it as the leaf of the descent.
+
+**Where the precedence is actually reachable, stated rather than assumed.** At the `@condition` site
+the install rail and the projection sink do not meet on any SDL today, and the reason is not the
+arity refusal the plan named: the store keys an input-field `@condition`'s projection at the input
+type's own coordinate while the glue that rewrap produces looks the projection up by the consuming
+field's, so the lookup misses. The check is therefore a stated rule rather than a fix for a live
+defect, and its test spells the racing row at the glue's own key deliberately, so the rule is asserted
+where it can be made to fail rather than where it currently cannot. The test's javadoc says so.
+
+**Two execution-tier cases, not one.** The plan asked for one, an inferred binding sent a real
+encoded id end to end. The dotted-inferred shape got that. The bare shape got its own, because it is
+the one that shipped the base64 string to the database rather than merely failing, and it fails
+differently: an integer routine parameter rejects the wire form at the call, so a green round trip is
+the decode working. Two mutations in the example schema, `rentFilmPayloadInferred` and
+`rentFilmPayloadBareNodeId`, beside the authored `rentFilmPayloadProjected` already there.
+
+**`KeyProjection` refuses a blank trailing segment.** Null and non-null are the two readings an
+emitter derives a leaf path from, and blank is neither. The carrier already refuses a blank
+`argumentPath` and a blank `typeId` for the same reason, so this is that rule applied to the component
+whose absence now carries meaning.
+
+**`ProjectedKeyReads` lost its `PathExpr` overload and its own wire read.** The plan's rule that the
+supplier stays with the caller left the sink with two ways to be asked and one of them composing a
+wire read it should not own. Collapsing to a single `readFor(writtenSegments, wireRead)` also removed
+the third spelling of the args-descent, the routine site's two arms now sharing
+`RoutineCallEmitter.descentRead`.
+
+**`routine.adoc` gained one clarifying sentence** where the plan said no factual change. The closed
+form now holds wherever the `@nodeId` sits, an argument of the field as much as an input field below
+one, and that is the half a reader of the "leave the leaf closed" paragraph could otherwise doubt.
+
+**`TypeSpecAssertions` gained descent assertions asked without naming the root.** The condition glue
+reaches an argument either as `args.get("x")` or through a lifted `xMap` local depending on whether
+the row lifts it, which is a separate decision from which slot the decode descends to, so the two new
+helpers ask about the slot alone.
 
 ## Retired vocabulary
 
