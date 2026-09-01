@@ -662,10 +662,34 @@ the `java-source` corpus and `javac_` by the `compile` gatherer over the `javac`
 rostered, so this half needed no roster change and is what the family order calls settling the model
 one corpus over.
 
-**The other four families in this group have no owner on the roster, and that is the slice's real
-question.** `walk_`, `rejection_`, `lint_` and `build_warning_` are written by `TypeBackingClassRows`
-(inside capture's detect pass, standing on the walked model) and by `RejectionFacts` and
-`BuildWarningFacts` (from the dev loop, out of the assembled build report). None of those is one of
-the seven rostered gatherers, and none of the seven runs them, so the four cannot be declared without
-deciding what a producer of this kind is. That is the question the family table parked here, and it
-is left open in the tree rather than answered by whichever attribution would have made the gate pass.
+**The other four families in this group have no owner on the roster, and the answer is to wait rather
+than to invent one.** `walk_`, `rejection_`, `lint_` and `build_warning_` are written by
+`TypeBackingClassRows`, `RejectionFacts` and `BuildWarningFacts`, none of which is a rostered
+gatherer and none of which any rostered gatherer runs. The tempting reading is the one both writers'
+javadocs invite, that their cadence is `CompileFacts`'s and so they are its siblings: two gatherers
+reading a corpus the run produced, on the precedent the `javac` corpus sets. Tracing what they
+actually depend on refutes it twice, and both refutations are worth keeping because the tempting
+reading is the one a reader arrives at from the writers' own account of themselves.
+
+**A build report is a product, not a corpus.** `GraphQLRewriteGenerator.withLintFindings` fuses four
+producers into the warning list: the classifier's own advisories from the walk, the lint engine over
+the parsed registry, the session-state advisories from configuration, and the dependency-currency
+nudge. A corpus is an input that exists outside the store and independently of the other inputs, and
+the fused report is neither: three of those four read facts the store already captures, so naming
+their output a corpus would have made those gatherers crawlers over their own product, and the
+corpus-agreement gate would have passed while stating something false. The fourth producer is the
+exception that proves the point rather than a counter-example, and it is filed as R908: the
+dependency-currency advisory reads resolved dependency versions no relation holds, where its three
+siblings all read captured facts.
+
+**All four families draw on the walk, which is being dissolved as this is written.** `rejection_` is
+`GraphitronSchemaValidator` over the walk's own model. `build_warning_no_rule`'s only two producers
+are `GraphitronSchemaBuilder` and `EntityResolutionBuilder`. `lint_finding` takes rows from
+`TypeBuilder` and `FieldBuilder` as well as from the lint engine. So the ownership question is not
+merely open, it is not answerable from the current tree: the producers are moving. R870 knows it, its
+delivery criteria naming the `rejection_` and `build_warning_` charters directly. The four stay on
+the frozen roster, which costs nothing, the ratchet forbidding only that a relation arrive
+undeclared. Whoever picks this up after R870 should re-trace before declaring: if the advisory
+minting leaves the walk for store-native detections, these producers read captured rows, which makes
+them corpus-less gatherers on the pattern the graphitron and derivation gatherers already set, with
+no new corpus at all.
