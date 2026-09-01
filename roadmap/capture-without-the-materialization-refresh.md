@@ -97,8 +97,9 @@ that the session and the run stop disagreeing about who owns the store.
 **Both `graphitron-lsp` and `graphitron-mcp` stop depending on `graphitron` at any scope.** Most of
 what their tests use moves down with the fact tier (`FactCapture`, `JooqCatalog`, `ClasspathScanner`,
 `CompletionData`, `CompileFacts`, `CompileDiagnostic`, `CompileRound`, `LintConfig`, the rejection
-vocabulary, and the `BuiltStore` / `CapturedStore` / `FactWriters` test helpers). What is left is
-seven tests that check two tiers against each other, and step 7 relocates them.
+vocabulary, and the `CapturedStore` / `FactWriters` test helpers). What is left is seven tests that
+check two tiers against each other, and step 7 relocates them, along with `BuiltStore`, the one
+helper that cannot follow the others down because a build is what it runs.
 
 `graphitron-mcp`'s guard test `StoreClientBoundaryTest` widens from checking shipped code to checking
 tests as well, and `graphitron-lsp` gets the same guard, which its pom asks for in a comment today.
@@ -122,11 +123,57 @@ things have to be split instead of moved:
   `9f50502`, and that item passed its Done gate at `dd8b5e7`), so `FactCapture.detect` writes
   nothing and there is nothing here to split.
 
-**One thing to confirm before starting.** Six files in `rewrite/derive` use `ValidationError` and
-`Rejection`, and two use `TableRef` and `ColumnRef`, all of which currently sit above the line. The
-likely answer is that they belong below it: rejections are already a table in the store's schema and
-the language server reads them, and `TableRef` and `ColumnRef` are plain data that both sides use.
-Check this rather than assume it, because it decides whether `rewrite/derive` moves in one piece.
+**What the move set reads from the code that stays.** This is the census that decides whether the
+move compiles, and it is the one an earlier draft replaced with a guess. Every import from the move
+set (`rewrite/capture`, `rewrite/derive`, `rewrite/session`, `rewrite/selection`, `rewrite/schema`,
+`rewrite/diagnostics`, the named `catalog`, `lint` and `compile` classes, `JooqCatalog` and
+`RewriteContext`) that lands in code above the line was counted. **Exclude three files and every
+remaining upward edge lands on something already moving down.** The three:
+
+* **`derive/ClaimDomain` and `derive/DemandResidue` stay above, so `rewrite/derive` does not move in
+  one piece.** Both read `GraphitronSchema` and switch over `GraphitronType` arms, which is the walk.
+  Both are main-source values whose only callers are three tests that stay above
+  (`DemandShadowTest`, `TypeBackingClassesTest`, `FactCaptureAgreementTest`), and both say in their
+  own javadoc that they retire with the shadow that reads them. Leave them where they are; R682 takes
+  them.
+* **`schema/federation/EntityResolutionBuilder` stays above, so `rewrite/schema` splits too.** It is
+  the one file in `rewrite/schema` that reads the walked model (`TypeRegistry`, `GraphitronType` and
+  eight of its arms, `ChildField`, `GraphitronField`, `EntityResolution`, `KeyAlternative`,
+  `CallSiteCompaction`), and its one caller is `GraphitronSchemaBuilder`, which is the walk. The other
+  three federation files move down: `KeyNodeSynthesiser` reads `NodeDeclaration` and
+  `FederationLinkApplier`, and `FederationSpec` is read from below by `schema/input/TagLinkSynthesiser`.
+* **`rewrite/model` is not a package that moves or stays as a unit.** The rejection vocabulary and the
+  refs go down; the walked model stays. The line inside it is not new, it is just never stated: what
+  capture and derive read from `rewrite/model` is exactly the half that is plain data.
+
+The four types the earlier draft flagged for confirmation come back below the line, as it guessed but
+did not check. `ValidationError` and `Rejection` are read by six `derive` files and by
+`rewrite/diagnostics`; the sealed interface and its ten arm files import nothing from the tree, so
+that is a move rather than a split, and `rejection_validation_error` is already a table with the
+language server reading the `diagnostic` view over it. `TableRef` and `ColumnRef` are read by
+`JooqCatalog` and two `derive` files. They are not quite "plain data", which the javapoet decision
+below settles.
+
+**`rewrite/diagnostics` moves down whole, and that is a correction to this plan rather than a
+detail.** `FactCapture` reaches `derive/AuthoredClaimRejectionRows`, which calls
+`RejectionFacts.classSpelling`, and "What is out of scope" below used to place `RejectionFacts`
+above the line while "Sequencing" said R870 removed the last edge of exactly that kind. The
+placement is what was wrong. All three files in the package (`RejectionFacts`, `BuildWarningFacts`,
+`OwnedGraphPartition`) import only `FactCapture`, the rejection and warning vocabulary, and
+`LintFix`, every one of which moves down; none reads the walk. They are fact writers, so they belong
+in the fact tier, and `classSpelling` stays the one site that spells a rejection family. Their
+callers stay where they are: `DevMojo` reaches them from `graphitron-maven-plugin` and
+`FactCaptureAgreementTest` from `graphitron`, both downward.
+
+The rest of the census is bookkeeping and is listed so the implementer does not rediscover it.
+`RewriteContext` moves down rather than staying: it already imports `FactCapture.OutputCoordinates`,
+`LintConfig`, `SchemaInput`, `SchemaRecipe`, `SessionStateConfig` and `DependencyVersions`, all of
+which move, and it is a parameter of both `CatalogBuilder` methods that move. That also settles the
+loose end step 7 leaves open about `FixtureCatalogTest`. Eight plain root-level types come down with
+no imports of their own to worry about: `NodeDeclaration`, `ArgMappingSigil`, `RejectionKind`,
+`ClasspathEntry`, `ValidationFailedException`, `SchemaParseException`,
+`rewrite.dependency.DependencyVersions` and `rewrite.model.ConnectionNaming`. `BuildWarning`,
+`LintRule` and `LintFix` come down as the values the round-1 census found them to be.
 
 **What the two side modules actually use.** Neither module's shipped code uses the generator at all,
 so this is only about their tests. Counted rather than guessed, because two earlier drafts guessed:
@@ -203,10 +250,16 @@ first.
 **6. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
 changes, no query answers differently. Keep moves and behaviour changes in separate commits. The
 test schemas in `graphitron/src/test/resources/corpus` move with capture and are shared back up as a
-test-jar, for the planner and emitter tests that use them. The store-building test helpers
-(`BuiltStore`, `CapturedStore`, `FactWriters`) move the same way, and for a stronger reason: they are
-how a test gets a filled store, which is the thing being moved. Leaving them behind would keep
-`graphitron-mcp` depending on the generator for a test fixture after every other reason had gone.
+test-jar, for the planner and emitter tests that use them. `CapturedStore` and `FactWriters` move the
+same way, and for a stronger reason: they are how a test gets a filled store, which is the thing
+being moved. Leaving them behind would keep `graphitron-mcp` depending on the generator for a test
+fixture after every other reason had gone.
+
+`BuiltStore` is the exception, and an earlier draft had it wrong: it runs
+`GraphQLRewriteGenerator.buildOutput()`, so it cannot live below the generator any more than the
+generator can. It stays in `graphitron`'s test-jar, where the build is. That is not a leak, because a
+store filled by a build is a two-tier object and belongs with the two-tier tests; step 7 is where its
+users end up.
 `FactCaptureAgreementTest` stays where it is: it compares capture's output against the old walk, and
 a test comparing two layers belongs in the upper one.
 
@@ -229,14 +282,26 @@ of its own. **This spec picks the maven plugin, and a reviewer who prefers the n
 so.** Either way the rule is the same and worth stating once: a test whose subject is two tiers
 agreeing belongs above both of them, never inside one of them reaching up.
 
+**What travels with them.** Each of these tests sits on a fixture that is private to its own module's
+test sources, and neither client publishes a test-jar today. Split each fixture at the seam it
+already has rather than publishing two new test-jars: the build-driving half moves to the plugin
+(`StoreFixture.ofBuild` and `StoreBackedBuild`, both of which are already a `BuiltStore` run behind a
+client-shaped front), and the store-only half stays behind, serving the tests that are not moving.
+`StoreFixture` is built for this: it holds `captured` and `built` as two fields rather than one
+flagged field, precisely because a build-filled store and a capture-filled one are different objects.
+The client-side support a relocated test still needs (`WorkspaceFileTestSupport` is the one on the
+lsp side) travels with it. Publishing a client test-jar would work too and is the implementer's call
+if the split turns out to cost more than it saves; what must not happen is a client keeping a
+generator edge alive to serve a test that no longer lives there.
+
 *Two that are about the retiring walk.* `R157PipelineTest` runs a real schema through the real
 classifier and then checks the editor's completions, hovers and diagnostics against what the
 classifier decided, so that a classifier that quietly widened would be caught by an editor
 assertion. `FixtureCatalogTest` does the catalog half. Both depend on machinery R682 removes, so
 they have an end date the parity tests do not. Move them by the same rule as the five, and expect
 them to shrink rather than to be maintained: once `CatalogBuilder.build` is below the line,
-`FixtureCatalogTest`'s remaining tie is `RewriteContext`, which is worth settling as part of that
-move rather than separately.
+`FixtureCatalogTest`'s remaining tie is `RewriteContext`, and step 1's census settles that one by
+moving `RewriteContext` down too, so the test may not need rehoming at all.
 
 ## Decisions this spec makes
 
@@ -256,18 +321,34 @@ the three things capture reads, so a module that defines what a schema fact is c
 unable to parse a schema. Its description changes from "the fact database and its bootstrap" to what
 it will be: the whole fact tier.
 
+**`graphitron-model` also gains `graphitron-javapoet`, and that is correct for the same reason.**
+`ColumnRef` carries a `TypeName`, and `TableRef`, `ForeignKeyRef`, `MethodRef`, `JooqCatalog` and
+`derive/StoreNodeTables` carry `ClassName`, so the fact tier takes a compile dependency on the
+type-name library. Nothing cycles: `graphitron-javapoet` is vendored in this tree and depends on
+nothing in it. The name invites the wrong reading, so state what the dependency is. Javapoet is two
+things, a model of Java type names and a writer of Java source, and the fact tier uses only the
+first. `ColumnRef.columnType` is a `TypeName` because the live `Class` exists only at the catalog
+boundary and the fact has to be decided there, which is the fact tier's whole job: read the source
+once, write down what you found. Re-encoding the refs without javapoet would mean minting a second
+type-name model for the emitters to convert back out of, and every emit site re-parsing a string
+`ClassName.bestGuess` already rejects for array columns. That is a worse tree and a larger item.
+
+The alternative was considered and is not free to leave for later: the refs cannot cross the module
+line in a form the emitters cannot use, so this is decided here or the move does not happen.
+
 ## What is out of scope
 
 **Writes from above.** The module boundary stops the upper layer from *reading* the lower one's code.
-It does not stop the upper layer from *writing* to the store: `CompileFacts`, `RejectionFacts`,
-`BuildWarningFacts` and `OwnedGraphPartition` all write tables during a dev session, through the
-same generated jOOQ code `graphitron-model` publishes to everyone. That stays possible afterwards.
+It does not stop the upper layer from *calling down* to write to the store: `DevMojo` drives
+`CompileFacts`, `RejectionFacts`, `BuildWarningFacts` and `OwnedGraphPartition` during a dev session,
+and those four writers move into the fact tier with everything else that writes a table. What stays
+possible afterwards is the call, which is downward and so is not what the boundary is about.
 Whether a given write is fine or a mistake is a question about when it runs, not about who imports
 whom, and this item does not answer it. Any documentation that lands with the move should say the
 compiler-enforced rule is about imports.
 
 **`roadmap-tool`'s dependencies.** It depends on `graphitron-model` only, and will pick up
-graphql-java, slf4j and the javac Tree API when that module grows. That is a build-time cost on a
+graphql-java, slf4j, the javac Tree API and `graphitron-javapoet` when that module grows. That is a build-time cost on a
 build tool, and we accept it. Untangling it is a separate problem and should not shape where this
 line goes.
 
@@ -516,6 +597,35 @@ the `roadmap-tool` sentence to match), place `RejectionFacts` on one side of the
 files that stay. None of this changes the shape of the plan; it changes what step 1 hands to step
 6, which is the part an implementer cannot decide alone.
 
+*Author's response.* Accepted in full, and the census was run over the whole move set rather than
+over the three cases the finding names. It is now in step 1 under "What the move set reads from the
+code that stays", and it closes: **exclude three files and every remaining upward edge lands on
+something the plan already moves down.** The three are the two the finding names (`ClaimDomain` and
+`DemandResidue`, which stay, so `rewrite/derive` does not move in one piece) and
+`schema/federation/EntityResolutionBuilder`, which the finding recorded as detail and which is the
+same kind of case: it is the one file in `rewrite/schema` that reads the walked model, and its one
+caller is the walk. The three decisions the finding asked for are made rather than deferred.
+
+Javapoet: the fact tier carries it, argued in "Decisions this spec makes" beside the graphql-java
+decision, and the `roadmap-tool` sentence now lists it. The argument is the one the finding expected
+plus the reason it is not merely acceptable: javapoet here is a model of type names and not a writer
+of source, and `ColumnRef.columnType` is a `TypeName` because the live `Class` exists only at the
+catalog boundary, which is the fact tier deciding a fact where it can be decided. Re-encoding would
+mint a second type-name model for the emitters to convert back out of.
+
+`RejectionFacts`: it moves down, and so does the rest of `rewrite/diagnostics`, which is a better
+answer than placing one class. All three files in the package import only `FactCapture`, the
+rejection and warning vocabulary and `LintFix`, all of which move; none reads the walk; all three
+write tables. "Writes from above" is rewritten to agree: the writers live in the fact tier and
+`DevMojo` calls down to them, which is a downward call and not what the boundary is about.
+
+*Found while running the census, and it is this plan's own error rather than the finding's.*
+`BuiltStore` was listed among the three store-building test helpers that move down with capture. It
+cannot: it runs `GraphQLRewriteGenerator.buildOutput()`. It stays in `graphitron`'s test-jar, which
+`graphitron-maven-plugin` already consumes at test scope, so step 7's home takes it for free. Both
+"What changes when this lands" and step 6 are corrected. This is the same class of mistake the
+finding caught, in the one part of the move list that had not been counted either.
+
 *Non-blocking, question two, for step 7.* Both parity tests lean on a `StoreFixture` helper that
 is private to its own module's test sources, and neither `graphitron-lsp` nor `graphitron-mcp`
 publishes a test-jar today. Relocating the tests means either those two modules start publishing
@@ -523,3 +633,10 @@ test-jars for the plugin to consume, or the build-driving halves (`StoreFixture.
 `StoreBackedBuild`) move with the tests and the store-only halves stay. The second keeps the
 detachment honest and is what I would expect the implementer to do; a sentence in step 7 saying so
 would save them the fork.
+
+*Author's response.* Taken, and step 7 says so under "What travels with them", with the seam named:
+`StoreFixture` already holds `captured` and `built` as two fields rather than one flagged field,
+so the build-driving half has a place to be cut. The `BuiltStore` correction above is what makes the
+recommendation cheap, since the plugin already has the build-level helper on its test classpath. The
+test-jar route stays available as the implementer's fallback, with the one thing that must not happen
+stated instead of the one thing they must do.
