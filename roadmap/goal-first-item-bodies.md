@@ -1,7 +1,7 @@
 ---
 id: R906
 title: "Roadmap item bodies state a goal, then a plan"
-status: Ready
+status: In Progress
 bucket: process
 priority: 3
 theme: docs
