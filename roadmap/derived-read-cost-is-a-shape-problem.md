@@ -71,19 +71,12 @@ by registering it: 25.53 s to 2.73 s with the register untouched and every row u
 
 **So what this item hands on is not a smaller register but the end of one.** A materialization nobody
 owns is a materialization nobody maintains, which is how twenty of them came to stand over rules
-<<<<<<< HEAD
-whose shape had never been priced, several of them over rules that return nothing at all on a real
-consumer. The register itself turns out to be aimed correctly, every target sampled reading between
-two and five families; what is misplaced is a family-local rule outside its family, carrying the
-largest read cost in the store. The order of that work is in "What is not done".
-=======
 whose shape had never been priced, several over rules returning nothing at all on a real consumer.
 The twenty are not wrongly chosen: every target sampled reads between two and five families, so each
 is genuinely the last gatherer's to refresh, and that is exactly why the register dissolves into that
 gatherer's plan rather than being argued down one row at a time. What is misplaced is a family-local
 rule sitting outside its family and carrying the largest read cost in the store. The order of that
 work is in "What is not done".
->>>>>>> 77e53242b (R876: every rule gets an owner and meta_materialize dissolves)
 
 **The refresh is not the cost and this item does not claim it.** The pass was 43 s when this item
 opened and is 7.6 s now.
@@ -272,6 +265,41 @@ registered targets has an owner. The materializer runs as one anonymous pass at 
 because there is no gatherer to attribute it to. Thirteen of the twenty targets hold no rows at all
 on the consumer capture measured.
 
+**The gatherer chart.** A crawler is a gatherer with at least one corpus. Two gatherers have none.
+
+[cols="2,3,3"]
+|===
+| gatherer | corpora | depends on
+
+| `configuration` | configuration | nothing
+| `sdl` | sdl | nothing
+| `catalog` | catalog, classpath | nothing
+| `java-source` | java-source | nothing
+| `compile` | javac | nothing
+| `graphitron` | none | `sdl`, `catalog`
+| `derivation` | none | all five crawlers, and `graphitron`
+|===
+
+**What each family holds.** Only the two gatherers with no corpus write anything that reads another
+relation.
+
+[cols="2,2,2,4"]
+|===
+| family | base tables | views | outgoing reads
+
+| `sql_` | 14 | 0 | none, a corpus transcription
+| `jvm_` | 7 | 0 | none, a corpus transcription
+| `graphql_` | 27 | 1 | none, a corpus transcription
+| `graphitron_` | 64 | 0 | none in SQL; every row written by Java that read `graphql_` and `sql_`
+| `intent_` | 25 | 89 | 134 into `graphitron_`, 67 `graphql_`, 47 `sql_`, 26 `jvm_`, 12 `store_`
+|===
+
+So there are two derivation gatherers already, and the boundary between them is mechanism:
+`graphitron_` is what is derived in Java and written early, `intent_` is what is derived in SQL and
+written late. Neither prefix records what a relation reads. A family that does not encode dependence
+cannot be used to decide order, so order is decided by whichever mechanism the author happened to
+use, which is the machinery that makes placement a default.
+
 **How many families each rule reads**, walked from each rule's view body down to the base facts,
 ignoring `store_`. This is the test of whether a rule belongs to a family or to the gatherer that runs
 last.
@@ -291,10 +319,6 @@ last.
 | `intent_field_scope_table`, `intent_argument_scope_table` | 5 | crossing
 |===
 
-<<<<<<< HEAD
-Every registered target sampled crosses. The one family-local rule in the sample is the one carrying
-the largest read cost in the store, and it is not registered and not declared.
-=======
 Every registered target sampled crosses. Walked over all 114 `intent_` relations the same way, twelve
 read exactly one corpus family: four `sql_`, four `graphitron_`, two `jvm_` and two `graphql_`. A
 further six bottom out at hand-written derivations the walk cannot see through and are unresolved
@@ -302,7 +326,6 @@ rather than local. The remaining ninety-six cross two to five families. So the r
 crossing rules correctly, and what went unreasoned is the placement: a rule reading one family's
 facts was put with the derivation gatherer anyway, which is how a purely `jvm_` rule came to be owned
 by the gatherer that runs last while carrying the largest read cost in the store.
->>>>>>> 77e53242b (R876: every rule gets an owner and meta_materialize dissolves)
 
 ## What is not done
 
@@ -318,14 +341,6 @@ owners family by family and has reached `sql_` and `jvm_`, and the fact model st
 directly: a derivation that reads one family's facts moves into that family, where its owner keeps it
 by whatever means it likes and needs no `meta_materialize` row, because the register exists to
 schedule refreshes for rules with no owner to schedule them. A rule that moves into a family is not
-<<<<<<< HEAD
-converted into anything; it leaves the register's question. What stays registered is the rules that
-cross families, which are the last gatherer's refresh plan rather than a mechanism of their own.
-
-Measured against that rule, the register is not aimed wrong. Every one of the registered targets
-sampled reads between two and five families, so all of them are correctly the crossing gatherer's
-business. What is misplaced is elsewhere, and it is the largest single read cost in the store.
-=======
 converted into anything; it leaves the register's question. The rules that cross families do not stay
 registered either: their owner is the gatherer that runs last, and once that is declared,
 `meta_materialize` is that gatherer's refresh plan rather than a register at all. Nothing is retired
@@ -334,7 +349,6 @@ and nothing is argued down row by row. The mechanism is left with no work.
 Measured against that rule, the twenty are not wrongly chosen. Every registered target sampled reads
 between two and five families, so each is genuinely the last gatherer's to refresh. What is misplaced
 sits in the prefix rather than in the register.
->>>>>>> 77e53242b (R876: every rule gets an owner and meta_materialize dissolves)
 
 The evidence is that an unowned register rots in ways nothing surfaces. A registration's recorded
 price can be wrong by three orders of magnitude, thirteen of twenty targets can hold no rows on a real
@@ -349,18 +363,6 @@ several provably stale. R899's answer is to count the alternative from the schem
 store, which is the half of the question that does not need a capture and therefore can live in the
 repository.
 
-<<<<<<< HEAD
-**`intent_jvm_ancestor` is a family-local rule sitting outside its family, and it costs more than
-anything else in the store.** Its inputs are `jvm_class_supertype` and `jvm_declared_type_ref` and
-nothing else, so under the rule it belongs to the `jvm_` family, whose owner is the catalog gatherer:
-the one that runs first. It is not registered and not declared, and it is read through a correlated
-existence test that re-climbs the whole class hierarchy per driving row, which is 25.53 s of an 88.2 s
-workload. Both fixes are available to its owner without a register row. Restating the reader's rule
-takes it to 2.73 s, and storing the closure, which its owner may simply choose to do, takes it to
-0.02 s for 2284 rows and 0.2 s of refresh. Registering it would have been the wrong mechanism for a
-rule that never had to cross a family at all. The naming is part of the defect: an `intent_` prefix
-on a relation whose facts are one family's is what let it be read as the crossing gatherer's problem.
-=======
 **`intent_` is owned, and putting a relation there has stopped being a decision.** The family belongs
 to the derivation gatherer, which is a real owner with a real reason to exist: it runs after every
 corpus gatherer, which is the earliest point a rule crossing families has all its inputs. The defect
@@ -379,6 +381,27 @@ relations this item created, which is worth saying plainly: `intent_argmapping_p
 `intent_field_navigated_type` read only `graphitron_` facts, so this item took the default twice
 while arguing against it.
 
+**The target the chart points at: an owner is computed, not chosen.** A relation's owner is the
+latest, in gatherer dependency order, of the owners of the relations it reads. That is a function of
+the schema, so a gate can check it, and it makes the default impossible to take: a rule reading only
+`jvm_` facts cannot be owned by the gatherer that runs last, because nothing it reads is owned there.
+Mechanism then stops being a family boundary. Whether a relation is a Java-written table, a view, or
+a stored table its owner refreshes becomes the owner's private choice, made where the cost is visible
+and changeable without anyone else being told, and `graphitron_` and `intent_` differ by owner rather
+than by how the rows got there.
+
+Two things have to be true first, and neither is this item's. R877's declarations, at 27 of 287
+relations with 260 still on the frozen roster, because computed ownership cannot be checked over
+undeclared relations. And per-gatherer transaction control, named above.
+
+Three questions the chart raises and does not answer. Whether the prefix moves with the owner or only
+the ownership, given that `sql_` and `jvm_` are both owned by `catalog` today so prefix already is
+not owner; the cheaper reading is that a relation keeps its name and changes owner, which breaks the
+sentence "the derivation gatherer owns the `intent_` relations" and that may be the right sentence to
+break. What orders two relations owned by the same gatherer, which `meta_materialize_dependency`
+derives today for registrations only. And whether the six unresolved relations are family-local,
+which depends on what the hand-written derivations they bottom out at read.
+
 **One of the twelve costs more than anything else in the store.** `intent_jvm_ancestor` reads
 `jvm_class_supertype` and `jvm_declared_type_ref` and nothing else, so it belongs to the `jvm_`
 family, whose owner is the catalog gatherer: the one that runs first. Placed with the derivation
@@ -388,7 +411,6 @@ the owner it should have had, both fixes are available and neither needs a regis
 the reader's rule takes it to 2.73 s, and storing the closure, which an owner may simply decide to
 do, takes it to 0.02 s for 2284 rows and 0.2 s of refresh. Proposing to register it was reaching for
 the last lever on a rule whose real problem was that nobody chose where it lived.
->>>>>>> 77e53242b (R876: every rule gets an owner and meta_materialize dissolves)
 
 **`@node`'s defaulted key columns stay a view.** The attempt to capture them failed on reading
 `intent_resolved_type_binding` at capture cadence, and moving derivations into families does not
