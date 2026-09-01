@@ -16,6 +16,14 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  * unconstructable: the store resolved <em>which</em> column, and what rides here is the column
  * itself.
  *
+ * <p>{@link #trailingSegmentName} is the one component whose absence carries meaning, and it is a
+ * captured fact rather than half an emission decision: it is what the author spelled, and the path
+ * the wire id is read along is what an emitter derives from it. Null is the inferred resolution, an
+ * author who stopped on the node id against a node type whose key is one column, where the wire id
+ * sits at the whole of {@link #argumentPath}; non-null is the authored one, where it sits at that path
+ * minus this segment. Nothing about the path's own shape tells the two apart, both being dotted paths
+ * of the same arity at a nested leaf, which is why the fact rides here rather than being recomputed.
+ *
  * <p>Every component is a captured fact. The row carries no reference to a generated method and no
  * encoder class, which is what keeps it a fact carrier rather than half an emission decision: the
  * decode this projection's read performs is {@code NodeIdEncoder.decodeValues(typeId, wire)}, whose
@@ -30,6 +38,10 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  *
  * @param coordinate    the {@code argMapping}'s owning coordinate, {@code Type.field}
  * @param argumentPath  the path as the author wrote it, this projection's key within the coordinate
+ * @param trailingSegmentName
+ *                      the segment the author spelled past the node id to name the column, as
+ *                      written, or {@code null} where they spelled none and the key's arity inferred
+ *                      it: where in {@link #argumentPath} the wire id sits
  * @param nodeTypeName  the node type the {@code @nodeId} named, carried for messages and locals
  * @param typeId        the wire type id the encoded node id carries, which the decode matches
  * @param nodeTable     the node type's own table: the record the decode materialises, and the
@@ -37,8 +49,9 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  * @param keyColumns    that node type's key columns in key order, the shape the decode loads
  * @param column        the projected key column, one of {@link #keyColumns}
  */
-public record KeyProjection(FieldCoordinates coordinate, String argumentPath, String nodeTypeName,
-                            String typeId, TableRef nodeTable, java.util.List<ColumnRef> keyColumns,
+public record KeyProjection(FieldCoordinates coordinate, String argumentPath,
+                            String trailingSegmentName, String nodeTypeName, String typeId,
+                            TableRef nodeTable, java.util.List<ColumnRef> keyColumns,
                             ColumnRef column) {
 
     public KeyProjection {
@@ -49,6 +62,11 @@ public record KeyProjection(FieldCoordinates coordinate, String argumentPath, St
         if (argumentPath == null || argumentPath.isBlank()) {
             throw new IllegalArgumentException("a key projection is keyed by the path the author"
                 + " wrote, which is never blank");
+        }
+        if (trailingSegmentName != null && trailingSegmentName.isBlank()) {
+            throw new IllegalArgumentException("a key projection's trailing segment is the author's"
+                + " own spelling of a key column or absent entirely; blank is neither, and a blank"
+                + " one would make the authored resolution indistinguishable from the inferred");
         }
         if (typeId == null || typeId.isBlank()) {
             throw new IllegalArgumentException("a key projection carries the wire type id its decode"

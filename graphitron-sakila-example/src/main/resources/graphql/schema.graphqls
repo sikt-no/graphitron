@@ -4087,6 +4087,25 @@ type Mutation {
             argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId.customer_id"
         )
 
+    # The same write with the column left unspelled: the path stops on the node id, and Customer's
+    # key is one column, so there is nothing else the binding could mean and the build resolves
+    # customer_id without the author naming it. The parameter gets the key exactly as the spelled-out
+    # sibling above does, which is the promise the manual makes for the closed form.
+    rentFilmPayloadInferred(input: RentFilmProjectedInput!): RentFilmPayload
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: input.inventoryId, pCustomerId: input.customerId"
+        )
+
+    # The closed form with the node id at the field's own argument rather than inside an input
+    # object, so the binding has one segment and no descent to compose. The same resolution applies:
+    # a one-column key names itself, and the routine parameter receives the key.
+    rentFilmPayloadBareNodeId(inventoryId: Int!, customerId: ID! @nodeId(typeName: "Customer")): RentFilmPayload
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+
     # The routine carrier's RLS outcome: create_secure_note is SECURITY DEFINER, so the write
     # runs as the function owner and commits regardless of the caller's visibility; the
     # caller's post-commit re-read runs under its own mounted identity and the secure_note

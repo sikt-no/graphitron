@@ -4,9 +4,10 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.PathExpr;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -86,45 +87,58 @@ public final class ProjectedKeyReads {
 
     /**
      * The read for one {@code argMapping} binding, or empty when the binding is an ordinary one.
-     * Present means the path's last segment named a key column: the value is the projection of that
-     * column off a decoded record, and the decode's declaration has been recorded for
-     * {@link #declarations()}.
+     * Present means the path opens a {@code @nodeId} and names one of its key columns: the value is
+     * the projection of that column off a decoded record, and the decode's declaration has been
+     * recorded for {@link #declarations()}.
      *
-     * @param path       the binding's resolved path, whose rendered form is this projection's key
-     * @param argSource  where the wire value is read, the env-vs-SelectedField fork
-     * @param argHelpers collects the descent a dotted leaf path needs, as an ordinary read would
+     * <p>This is the one site that turns a written path into the path the wire id sits at, which is
+     * why the caller hands in a function of that path rather than a finished expression. The
+     * derivation is not a shape test the caller could make for itself: an author who named the column
+     * ({@code "p: input.inventoryId.inventory_id"}) and one who let the key's arity name it
+     * ({@code "p: input.inventoryId"}) write paths of the same shape, and only the row says which
+     * segment the node id is. How a site <em>reaches</em> that path stays with the caller, an args-map
+     * descent and an {@code env} read being different expressions for one path.
+     *
+     * @param writtenSegments the {@code argMapping} right-hand side as the author wrote it, split on
+     *                        the dot, outermost first; joined back to form this projection's key
+     * @param wireRead        given the path the encoded node id sits at, the expression yielding it.
+     *                        Called only where a projection is present and only on the first read of
+     *                        one node id, so a caller composing an expensive descent pays nothing for
+     *                        an ordinary binding and nothing twice for a shared decode
      */
-    public Optional<CodeBlock> readFor(PathExpr path, ArgumentValueSource argSource,
-            ArgPathHelperRegistry argHelpers) {
-        if (path.isHead()) {
-            // A projection names a key column past a node id, so it has at least two segments. Asked
-            // before the leaf is derived rather than after: deriving it from a one-segment path is the
-            // invariant violation leafOf reports, and an ordinary bare-slot binding must not trip it.
-            return Optional.empty();
-        }
-        var leafPath = leafOf(path);
-        return readFor(path.asString(), leafPath.asString(),
-            () -> wireRead(leafPath, argSource, argHelpers));
+    public Optional<CodeBlock> readFor(List<String> writtenSegments,
+            Function<List<String>, CodeBlock> wireRead) {
+        String written = String.join(".", writtenSegments);
+        return projections
+            .projectionFor(coordinate.getTypeName(), coordinate.getFieldName(), written)
+            .map(projection -> {
+                var leaf = leafOf(writtenSegments, projection);
+                return read(projection, String.join(".", leaf), () -> wireRead.apply(leaf));
+            });
     }
 
     /**
-     * The site-agnostic form, for a caller whose wire read is not the routine emitter's. Three
-     * arguments because three questions have three owners: {@code writtenPath} is the relation's key
-     * and the author's own spelling, {@code leafPath} is what two parameters off one node id have in
-     * common and so what the materialisation is deduped and named by, and {@code wireRead} is how
-     * <em>this</em> site reaches the base64 value, which differs per site and is the one part no sink
-     * could know. Evaluated only when a projection is present, so a caller composing an expensive read
-     * pays nothing for an ordinary binding.
+     * Whether the whole-slot install rail already owns this binding, in which case this sink stands
+     * aside and the caller renders that rail's decode.
      *
-     * @param writtenPath the {@code argMapping} right-hand side as the author wrote it
-     * @param leafPath    that path without its trailing key-column segment
-     * @param wireRead    the expression yielding the encoded node id at {@code leafPath}
+     * <p>The precedence, stated once for both render sites. A bare binding at a {@code @condition}
+     * ({@code argMapping: "p: filmId"}) has two claimants: {@code ConditionResolver}'s whole-slot rule
+     * has installed a decode on the parameter, and the projection relation also resolves it wherever
+     * the node type's key is one column. The install rail wins. It is stated at the slot, it is uniform
+     * across key arity (the key column's own type at arity one, a jOOQ {@code Row} above it), and the
+     * user manual documents it as the contract a whole-slot binding gets; a projection is per-column by
+     * construction and could not spell the composite half of that contract. The two used to be kept
+     * apart by this sink refusing single-segment paths outright, which was also what kept an inferred
+     * projection from ever being emitted, so the refusal became a rule instead of an accident.
+     *
+     * <p>Asked of the binding's own extraction, which is where the install left its mark: at an
+     * argument the decode is the extraction itself, and at an input field
+     * {@code ConditionResolver.rewrapForNested} carries it as the leaf of the descent.
      */
-    public Optional<CodeBlock> readFor(String writtenPath, String leafPath,
-            java.util.function.Supplier<CodeBlock> wireRead) {
-        return projections
-            .projectionFor(coordinate.getTypeName(), coordinate.getFieldName(), writtenPath)
-            .map(projection -> read(projection, leafPath, wireRead));
+    public static boolean installRailOwns(CallSiteExtraction extraction) {
+        return extraction instanceof CallSiteExtraction.NodeIdDecodeKeys
+            || (extraction instanceof CallSiteExtraction.NestedInputField nif
+                && nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys);
     }
 
     /**
@@ -160,42 +174,36 @@ public final class ProjectedKeyReads {
     }
 
     /**
-     * The path the {@code @nodeId} itself sits on: this binding's path without its trailing key-column
-     * segment. Derived from the path rather than carried beside it, the projection's own existence
-     * being what says the last segment is a column name.
+     * The path the {@code @nodeId} itself sits on: the written path minus the trailing segment the
+     * author spelled to name a key column, and the whole written path where they spelled none and the
+     * key's arity named it for them.
+     *
+     * <p>Read off the row rather than derived from the path, because the path cannot say. Both
+     * resolutions produce a dotted path whose last segment is a name the SDL does not have at that
+     * depth, so an arithmetic that always dropped one segment aimed the decode at the slot
+     * <em>above</em> the node id on every inferred binding, and the emitted code could not work at all.
+     * The trailing segment is the store's own record of which resolution answered.
      */
-    private static PathExpr leafOf(PathExpr path) {
-        if (path instanceof PathExpr.Step step) {
-            return step.parent();
+    private static List<String> leafOf(List<String> written, KeyProjection projection) {
+        if (projection.trailingSegmentName() == null) {
+            return written;
         }
-        throw new IllegalStateException(
-            "a projected binding's path spells a key column past its @nodeId, so it has at least two"
-            + " segments; '" + path.asString() + "' has one");
-    }
-
-    /**
-     * Where the base64 wire value is read: the outer slot directly when the {@code @nodeId} is the
-     * argument itself, otherwise through the same registered descent an ordinary dotted binding uses.
-     * Untyped ({@code Object}) at the read, the decode helper guarding the wire shape itself, so a
-     * value that is not a string is a null decode rather than a cast failure.
-     */
-    private static CodeBlock wireRead(PathExpr leafPath, ArgumentValueSource argSource,
-            ArgPathHelperRegistry argHelpers) {
-        CodeBlock root = switch (argSource) {
-            case ArgumentValueSource.Env ignored ->
-                CodeBlock.of("env.getArgument($S)", leafPath.headName());
-            case ArgumentValueSource.FromSelectedField sf ->
-                CodeBlock.of("$L.getArguments().get($S)", sf.sfLocal(), leafPath.headName());
-        };
-        if (leafPath.isHead()) {
-            return root;
+        if (written.size() < 2) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (key projection): '" + String.join(".", written)
+                + "' at " + projection.coordinate() + " carries a trailing segment '"
+                + projection.trailingSegmentName() + "' spelled past its @nodeId, so the path has at"
+                + " least two segments, but it has one");
         }
-        var segments = leafPath.segments();
-        var tail = segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList();
-        return CodeBlock.of("$L($L)",
-            argHelpers.register(leafPath.headName(), tail,
-                no.sikt.graphitron.javapoet.TypeName.get(Object.class)),
-            root);
+        if (!written.getLast().equalsIgnoreCase(projection.trailingSegmentName())) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (key projection): '" + String.join(".", written)
+                + "' at " + projection.coordinate() + " ends on '" + written.getLast()
+                + "' but its projection names '" + projection.trailingSegmentName() + "' as the"
+                + " segment spelled past the @nodeId; the relation is keyed by the written path, so"
+                + " the row and the path have drifted and the wire id would be read one segment off");
+        }
+        return written.subList(0, written.size() - 1);
     }
 
     /** {@code key<Head><Segment>...}, named from the dotted path the node id sits on. */

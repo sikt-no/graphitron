@@ -19,7 +19,10 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
  * has to name the use site that is asking; an emitter needs none of that, because what it looks a
  * projection up by is the binding in its hand: the coordinate the {@code argMapping} sits on and the
  * path as written. So the projection is a function of {@code (type, field, argument_path)} and this
- * reads it at that grain, distinct.
+ * reads it at that grain, distinct. The trailing segment rides along without widening that grain: the
+ * view's two arms are disjoint on the path's own trailing-segment count, so one written path carries
+ * one value for it, and a path that somehow carried two would collide on
+ * {@link no.sikt.graphitron.command.KeyProjectionRelation}'s key rather than doubling the read.
  *
  * <p>Dropping {@code site} from the key is sound rather than convenient, and it is worth stating why
  * because a reader would otherwise suspect a collapse. Within one {@code (type, field)} coordinate
@@ -42,9 +45,16 @@ public final class ResolvedKeyProjections {
 
     /**
      * One projected binding, carrying everything its emission needs and nothing a walk holds: the
-     * {@code argMapping} coordinate and path that named it, the node type the wire id decodes
-     * against, that node type's wire id and table, the ordered key list the decode loads, and the one
-     * column to read off the decoded record.
+     * {@code argMapping} coordinate and path that named it, the trailing segment the author spelled
+     * past the node id where they spelled one, the node type the wire id decodes against, that node
+     * type's wire id and table, the ordered key list the decode loads, and the one column to read off
+     * the decoded record.
+     *
+     * <p>{@code trailingSegmentName} is null where the author named no column and the key's arity
+     * inferred it, and that null is the only thing telling the two resolutions apart. An emitter needs
+     * it because the wire id it decodes sits at the written path minus that segment where one was
+     * spelled and at the whole written path where none was; the two spellings are dotted paths of the
+     * same arity at a nested leaf, so nothing about the path itself says which is which.
      *
      * <p>The key list rides beside the projected column rather than being derivable from it, because
      * the decode is positional: a {@code fromArray} load names every key field in key order and the
@@ -52,8 +62,8 @@ public final class ResolvedKeyProjections {
      * unable to write the load at all.
      */
     public record Projection(String typeName, String fieldName, String argumentPath,
-                             String nodeTypeName, String typeId, TableRef nodeTable,
-                             List<ColumnRef> keyColumns, ColumnRef column) {
+                             String trailingSegmentName, String nodeTypeName, String typeId,
+                             TableRef nodeTable, List<ColumnRef> keyColumns, ColumnRef column) {
 
         public Projection {
             keyColumns = List.copyOf(keyColumns);
@@ -91,19 +101,20 @@ public final class ResolvedKeyProjections {
         var nodeTables = StoreNodeTables.read(dsl, graphName);
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         return new Projections(dsl
-            .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH, p.NODE_TYPE_NAME,
-                p.COLUMN_NAME)
+            .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH, p.TRAILING_SEGMENT_NAME,
+                p.NODE_TYPE_NAME, p.COLUMN_NAME)
             .from(p)
             .where(p.GRAPH_NAME.eq(graphName))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH)
             .fetch(row -> projectionOf(nodeTables, row.value1(), row.value2(), row.value3(),
-                row.value4(), row.value5())));
+                row.value4(), row.value5(), row.value6())));
     }
 
     /** One store row joined to its node type's facts, or a failure naming which side came up short. */
     private static Projection projectionOf(StoreNodeTables.Tables nodeTables, String typeName,
                                            String fieldName, String argumentPath,
-                                           String nodeTypeName, String columnName) {
+                                           String trailingSegmentName, String nodeTypeName,
+                                           String columnName) {
         var nodeTable = nodeTables.get(nodeTypeName).orElseThrow(() -> new IllegalStateException(
             "Graphitron generator bug (key projection): the store resolved a key column of node type"
             + " '" + nodeTypeName + "' for '" + typeName + "." + fieldName + "' entry '"
@@ -120,7 +131,7 @@ public final class ResolvedKeyProjections {
                 + fieldName + "' entry '" + argumentPath + "', but the key list assembled for that"
                 + " type is " + nodeTable.keyColumns().stream().map(ColumnRef::sqlName).toList()
                 + "; the key-column relation and the bound table's own columns have drifted"));
-        return new Projection(typeName, fieldName, argumentPath, nodeTypeName, nodeTable.typeId(),
-            nodeTable.table(), nodeTable.keyColumns(), column);
+        return new Projection(typeName, fieldName, argumentPath, trailingSegmentName, nodeTypeName,
+            nodeTable.typeId(), nodeTable.table(), nodeTable.keyColumns(), column);
     }
 }

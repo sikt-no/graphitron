@@ -106,19 +106,17 @@ public final class RoutineCallEmitter {
     private static CodeBlock argExpression(RoutineCall.RoutineArgument argument,
             ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
         var segments = argument.segments();
-        var tail = segments.subList(1, segments.size());
         TypeName paramType = CatalogRefs.typeName(argument.javaTypeName());
-        if (tail.isEmpty()) {
-            // A projection names a key column past a node id, so it has at least two segments.
-            // Asked before the leaf is derived rather than after, as the sink's own arm does.
-            return typedSlotRead(paramType, segments.getFirst(), argSource);
-        }
-        var leaf = segments.subList(0, segments.size() - 1);
         // Row presence decides, not a shape test on the path, for the reason the model-shaped arm
         // below states: a projected binding's path is spelled exactly like an ordinary dotted one.
-        return keys.readFor(argument.path(), String.join(".", leaf),
-                () -> descentRead(leaf, TypeName.get(Object.class), argSource, argHelpers))
-            .orElseGet(() -> descentRead(segments, paramType, argSource, argHelpers));
+        // Asked of a bare path too: a binding that stops on a @nodeId whose key is one column is a
+        // projection, and declining single-segment paths here is what used to hand such a parameter
+        // the base64 wire string. Which segment the node id is comes off the row, inside the sink.
+        return keys.readFor(segments,
+                leaf -> descentRead(leaf, TypeName.get(Object.class), argSource, argHelpers))
+            .orElseGet(() -> segments.size() == 1
+                ? typedSlotRead(paramType, segments.getFirst(), argSource)
+                : descentRead(segments, paramType, argSource, argHelpers));
     }
 
     /**
@@ -149,10 +147,15 @@ public final class RoutineCallEmitter {
         return switch (b.source()) {
             case ParamSource.Arg arg -> {
                 // Row presence decides, not a shape test on the path: a projected binding's path
-                // looks exactly like an ordinary dotted one, the difference being that its last
-                // segment named a key column, which is the store's resolution and this relation's
-                // to answer.
-                CodeBlock raw = keys.readFor(arg.path(), argSource, argHelpers)
+                // looks exactly like an ordinary dotted one, the difference being which of its
+                // segments the @nodeId is, which is the store's resolution and the sink's to apply.
+                // The whole-slot install rail is asked first: where it owns the binding this sink
+                // stands aside, which is the precedence ProjectedKeyReads.installRailOwns states.
+                var projected = ProjectedKeyReads.installRailOwns(arg.extraction())
+                    ? java.util.Optional.<CodeBlock>empty()
+                    : keys.readFor(segmentNames(arg.path()),
+                        leaf -> descentRead(leaf, TypeName.get(Object.class), argSource, argHelpers));
+                CodeBlock raw = projected
                     .orElseGet(() -> arg.path().isHead()
                         ? typedSlotRead(b.paramType(), arg.path().headName(), argSource)
                         : nestedSlotRead(b.paramType(), arg.path(), argSource, argHelpers));
@@ -178,6 +181,11 @@ public final class RoutineCallEmitter {
                     + "ParamSource.Arg");
             };
         };
+    }
+
+    /** A resolved path's segment names, outermost first: the {@code argMapping} as written. */
+    private static List<String> segmentNames(PathExpr path) {
+        return path.segments().stream().map(PathExpr.Segment::name).toList();
     }
 
     /** The bare-slot read: the argument value typed at the read itself. */

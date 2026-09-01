@@ -202,12 +202,20 @@ final class ConditionResolver {
      *
      * <p>Only a bare (single-segment) binding is a whole-slot binding. A dotted
      * {@code argMapping} path descends <em>into</em> the decoded identity to read one of its key
-     * columns, which the projection rail already serves at the column grain; leaving those alone is
-     * what keeps the two mechanisms from racing for one parameter. The one shape neither rail covers
-     * is a field-level {@code argMapping} descending to a {@code @nodeId} <em>input field</em>
-     * ({@code "p: filter.languageId"}): the path is dotted, so it is not a whole-slot binding here,
-     * and its last segment names an input field rather than a key column, so the projection rail
-     * does not claim it either. Such a parameter still receives the wire string.
+     * columns, which the projection rail serves at the column grain: a path that spells the column
+     * ({@code "p: filmId.film_id"}) and one that stops on the node id and lets a one-column key name
+     * it ({@code "p: filter.languageId"}) both resolve there, and both hand the parameter a column's
+     * own value.
+     *
+     * <p>Where a bare binding resolves on both rails, this one wins, and the rule is stated for
+     * render at {@link no.sikt.graphitron.render.ProjectedKeyReads#installRailOwns}. This contract is
+     * uniform across key arity (a scalar at arity one, a jOOQ {@code Row} above it) where a projection
+     * is per-column by construction, so a projection could not spell the composite half of it. The
+     * consequence an author sees is an asymmetry at a composite key, and it is deliberate: a bare
+     * binding gets the whole key here, while a path dotted to the node id gets a build error naming
+     * the key columns, a projection having no way to name a {@code Row}. The remedy the message points
+     * at is to name a column or to move the {@code @condition} onto the {@code @nodeId} slot, where
+     * this contract applies.
      *
      * <p>The refusal exists because the contract's only other enforcer is the consumer's javac
      * inside emitted glue, a failure with no line back to the SDL. It names the coordinate, the

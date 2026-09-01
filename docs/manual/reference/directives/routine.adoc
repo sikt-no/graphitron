@@ -182,8 +182,10 @@ is case-insensitive, so the SQL spelling and the generated spelling are one answ
 
 Where the node type's key is a single column you may leave the leaf closed:
 `pOrganisasjonskode: input.organisasjonId` names that column, there being no other it could name, and
-the parameter receives it exactly as the spelled-out form does. Naming the column is then a matter of
-saying out loud what the build would infer, which is worth doing where the reader benefits.
+the parameter receives it exactly as the spelled-out form does. That holds wherever the `@nodeId`
+sits, an argument of the field (`pOrganisasjonskode: organisasjonId`) as much as an input field below
+one. Naming the column is then a matter of saying out loud what the build would infer, which is worth
+doing where the reader benefits.
 
 Three things are build errors rather than surprises at runtime:
 

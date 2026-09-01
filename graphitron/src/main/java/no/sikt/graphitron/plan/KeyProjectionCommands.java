@@ -36,6 +36,7 @@ public final class KeyProjectionCommands {
             .map(row -> new KeyProjection(
                 FieldCoordinates.coordinates(row.typeName(), row.fieldName()),
                 row.argumentPath(),
+                row.trailingSegmentName(),
                 row.nodeTypeName(),
                 row.typeId(),
                 row.nodeTable(),

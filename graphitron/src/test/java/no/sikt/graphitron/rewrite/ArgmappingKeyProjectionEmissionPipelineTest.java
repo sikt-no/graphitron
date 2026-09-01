@@ -19,7 +19,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.decodedKeyMaterialisations;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.descendsWireValue;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.invocationTakesProjectedRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesDescentTo;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesWireDescent;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesWireSlot;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationPrecedesFirstRead;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationPrecedesWriteTransaction;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.projectedColumnReads;
@@ -184,6 +186,116 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .hasMessageContaining("Query.rental");
     }
 
+    // ===== The inferred arm: the author stopped on the node id and the key's arity named the column =====
+
+    /**
+     * A dotted binding that stops on the {@code @nodeId} input field. Nothing follows the node id, so
+     * the wire id sits at the whole written path, and the emission is the authored form's exactly: one
+     * decode of the value descended to {@code input.inventoryId}, and the sole key column read off it.
+     * Before the row carried its provenance the leaf was taken to be one segment short of the path's
+     * end unconditionally, so this shape decoded {@code env.getArgument("input")}, the whole input
+     * object, which the helper's wire-shape guard turns into a null record and the next line into an
+     * NPE on every request.
+     */
+    @Test
+    void anInferredDottedBindingDecodesTheNodeIdsOwnSlot() {
+        var fetchers = mutationFetchers(INFERRED_SDL,
+            inventoryProjection("Mutation", "rentFilm", "input.inventoryId"));
+
+        assertThat(materialisationDecodesWireDescent(fetchers, "rentFilm", "keyInputInventoryId",
+                "decodeInventoryRecord", "argInputInventoryId", "input"))
+            .as("the decode's argument is the node id's own slot, not the input object above it")
+            .isTrue();
+        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInputInventoryId", "INVENTORY", "INVENTORY_ID"))
+            .as("the inferred column is read by name, as the spelled-out form's is")
+            .isTrue();
+    }
+
+    /** The motivating fixture with the column left unspelled: {@code input.inventoryId} and no more. */
+    private static final String INFERRED_SDL =
+        SDL.replace("pInventoryId: input.inventoryId.inventory_id", "pInventoryId: input.inventoryId");
+
+    /** A {@code @nodeId} argument bound bare, the shape the sink used to decline outright. */
+    private static final String BARE_NODE_ID_SDL = SDL
+        .replace("rentFilm(input: RentFilmInput!)",
+            "rentFilm(inventoryId: ID! @nodeId(typeName: \"Inventory\"), customerId: Int!)")
+        .replace("pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId",
+            "pInventoryId: inventoryId, pCustomerId: customerId");
+
+    /**
+     * A bare binding to a {@code @nodeId} argument at a {@code @routine}. The projection resolves and
+     * is emitted: the encoded id is the slot's own value, so the decode takes the slot read directly.
+     * The sink used to decline every single-segment path before consulting the relation, so this
+     * coordinate read the base64 string off the wire and handed it to a parameter typed for the
+     * column, which is the undecoded-wire-value escape the whole family exists to close.
+     */
+    @Test
+    void aBareBindingToANodeIdArgumentDecodesTheSlot() {
+        var fetchers = mutationFetchers(BARE_NODE_ID_SDL,
+            inventoryProjection("Mutation", "rentFilm", "inventoryId"));
+
+        assertThat(materialisationDecodesWireSlot(fetchers, "rentFilm", "keyInventoryId",
+                "decodeInventoryRecord", "inventoryId"))
+            .as("the slot read is the decode's argument, with no descent to compose")
+            .isTrue();
+        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInventoryId", "INVENTORY", "INVENTORY_ID"))
+            .as("the routine gets the column, never the base64 string")
+            .isTrue();
+        assertThat(readsSlotThroughTypedAccessor(fetchers, "rentFilm", "inventoryId",
+                "java.lang.Long"))
+            .as("and the raw typed read of that slot is gone, not merely joined by a decode")
+            .isFalse();
+    }
+
+    /** Two node ids in one input, one opened with its column and one left closed. */
+    private static final String MIXED_ARMS_SDL = """
+        type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+            id: ID!
+        }
+        type Customer implements Node @table(name: "customer") @node(keyColumns: ["customer_id"]) {
+            id: ID!
+        }
+        type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+        type Query { rental: Rental, inventory: Inventory, customer: Customer }
+        input RentFilmInput {
+            inventoryId: ID! @nodeId(typeName: "Inventory")
+            customerId: ID! @nodeId(typeName: "Customer")
+        }
+        type Mutation {
+          rentFilm(input: RentFilmInput!): [Rental!]!
+            @routine(name: "rent_film", argMapping: "pInventoryId: input.inventoryId.inventory_id, pCustomerId: input.customerId")
+            @reference(path: [{table: "rental"}])
+        }
+        """;
+
+    /**
+     * An authored projection and an inferred one at the same coordinate each read their own leaf. The
+     * derivation is per row and not per method: one written path is one segment longer than its node
+     * id and the other is exactly its node id, and a method-wide arithmetic would aim one of the two
+     * decodes at the wrong slot whichever way it went.
+     */
+    @Test
+    void anAuthoredAndAnInferredArmAtOneCoordinateEachReadTheirOwnLeaf() {
+        var fetchers = mutationFetchers(MIXED_ARMS_SDL,
+            inventoryProjection("Mutation", "rentFilm", "input.inventoryId.inventory_id"),
+            customerProjection("Mutation", "rentFilm", "input.customerId"));
+
+        assertThat(materialisationDecodesWireDescent(fetchers, "rentFilm", "keyInputInventoryId",
+                "decodeInventoryRecord", "argInputInventoryId", "input"))
+            .as("the authored arm's leaf is its path minus the column it spelled")
+            .isTrue();
+        assertThat(materialisationDecodesWireDescent(fetchers, "rentFilm", "keyInputCustomerId",
+                "decodeCustomerRecord", "argInputCustomerId", "input"))
+            .as("the inferred arm's leaf is its whole path")
+            .isTrue();
+        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInputInventoryId", "INVENTORY", "INVENTORY_ID")).isTrue();
+        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInputCustomerId", "CUSTOMER", "CUSTOMER_ID")).isTrue();
+    }
+
     /** The same projection at the {@code @condition} site, whose glue hosts its own decode body. */
     private static final String CONDITION_SDL = """
         type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
@@ -217,11 +329,11 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .extracting(MethodSpec::name)
             .contains("decodeFilmRecord");
 
-        // The glue is the one method returning a jOOQ Condition; its name is the row's to mint.
-        String glue = conditions.methodSpecs().stream()
-            .filter(m -> m.returnType().toString().equals("org.jooq.Condition"))
-            .map(MethodSpec::name)
-            .findFirst().orElseThrow();
+        String glue = glueMethodOf(conditions);
+        assertThat(materialisationDecodesDescentTo(conditions, glue, "keyInFilmId",
+                "decodeFilmRecord", "filmId"))
+            .as("the decode's argument descends to the @nodeId input field, not the argument above it")
+            .isTrue();
         assertThat(decodedKeyMaterialisations(conditions, glue, "keyInFilmId"))
             .as("the wire value descends to the @nodeId leaf and the decode materialises the record")
             .isEqualTo(1);
@@ -233,11 +345,99 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .isTrue();
     }
 
-    /** The one conditions class the fixture's single glue owner produces, rendered through the plan. */
+    /** The authored-arm default at the {@code @condition} site. */
     private static TypeSpec conditionsClass() {
-        var projections = new ResolvedKeyProjections.Projections(List.of(
-            filmProjection("Query", "films", "in.filmId.film_id")));
-        var plan = TestSchemaHelper.storeBackedPlan(tmp, CONDITION_SDL,
+        return conditionsClass(CONDITION_SDL,
+            filmProjection("Query", "films", "in.filmId.film_id"));
+    }
+
+    /** The same {@code @condition} fixture with the column left unspelled. */
+    private static final String INFERRED_CONDITION_SDL =
+        CONDITION_SDL.replace("filmId: in.filmId.film_id", "filmId: in.filmId");
+
+    /**
+     * The field-level {@code @condition} whose {@code argMapping} stops on the {@code @nodeId} input
+     * field. Nothing follows the node id, so the decode's argument is the descent to that field, and
+     * the glue is the spelled-out form's exactly. The old arithmetic took the node id to sit one
+     * segment short of the path's end here too, so this shape decoded the whole {@code in} object and
+     * every request against the coordinate failed; and because the projection is looked up by the
+     * written path, the input field's <em>own</em> implicit predicate spells the same path and broke
+     * with it.
+     */
+    @Test
+    void anInferredConditionBindingDecodesTheNodeIdInputField() {
+        var conditions = conditionsClass(INFERRED_CONDITION_SDL,
+            filmProjection("Query", "films", "in.filmId"));
+        String glue = glueMethodOf(conditions);
+
+        assertThat(materialisationDecodesDescentTo(conditions, glue, "keyInFilmId",
+                "decodeFilmRecord", "filmId"))
+            .as("the decode's argument is the node id's own field, not the input object above it")
+            .isTrue();
+        assertThat(decodedKeyMaterialisations(conditions, glue, "keyInFilmId"))
+            .as("once, as the spelled-out form does")
+            .isEqualTo(1);
+        assertThat(readsColumnByName(conditions, glue, "keyInFilmId", "FILM", "FILM_ID"))
+            .as("the inferred column is read by name")
+            .isTrue();
+    }
+
+    /**
+     * A {@code @condition} on the {@code @nodeId} input field itself, with a projection deliberately
+     * spelled at the key the glue looks up by. The install rail wins: the parameter gets the
+     * whole-slot decode stated at the slot, and no projected record is materialised beside it.
+     *
+     * <p>The row is spelled to construct the race rather than to mirror the store, and that is the
+     * point of the case. The store keys an input-field {@code @condition}'s projection at the input
+     * type's own coordinate, while the glue this rewrap produces looks up by the consuming field's, so
+     * the two do not meet on any SDL today. What used to keep them apart at every other coordinate was
+     * the sink refusing single-segment paths outright, which was also what kept every inferred
+     * projection from being emitted; removing that refusal leaves the precedence as the only thing
+     * standing between two mechanisms and one parameter, so it is asserted where it can be made to
+     * fail rather than where it currently cannot.
+     */
+    @Test
+    void aWholeSlotBindingKeepsItsInstalledDecodeWhenAProjectionAlsoResolves() {
+        var conditions = conditionsClass(WHOLE_SLOT_CONDITION_SDL,
+            filmProjection("Query", "films", "in.filmId"));
+        String glue = glueMethodOf(conditions);
+
+        assertThat(conditions.methodSpecs())
+            .as("the install rail's decode is the one the class hosts; no record decode is minted")
+            .extracting(MethodSpec::name)
+            .contains("decodeFilmKeyOrThrow")
+            .doesNotContain("decodeFilmRecord");
+        assertThat(decodedKeyMaterialisations(conditions, glue, "keyInFilmId"))
+            .as("the sink stood aside: nothing was materialised for it to project off")
+            .isZero();
+        assertThat(projectedColumnReads(conditions, glue, "keyInFilmId"))
+            .as("and no column read fired")
+            .isZero();
+    }
+
+    /** The whole-slot shape: the {@code @condition} sits on the {@code @nodeId} field itself. */
+    private static final String WHOLE_SLOT_CONDITION_SDL = """
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID!
+            title: String
+        }
+        input FilmPick {
+            filmId: ID! @nodeId(typeName: "Film") @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "filmIdKeyEquals"
+            })
+        }
+        type Query {
+            film: Film
+            films(in: FilmPick!): [Film!]!
+        }
+        """;
+
+    /** The one conditions class the fixture's single glue owner produces, rendered through the plan. */
+    private static TypeSpec conditionsClass(String sdl,
+            ResolvedKeyProjections.Projection... rows) {
+        var projections = new ResolvedKeyProjections.Projections(List.of(rows));
+        var plan = TestSchemaHelper.storeBackedPlan(tmp, sdl,
             no.sikt.graphitron.common.configuration.TestConfiguration.testContext(), projections);
         assertThat(plan.conditions().rows())
             .as("the fixture's @condition mints a row, so the glue below is not empty by accident")
@@ -248,26 +448,40 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         return classes.getFirst();
     }
 
+    /** The one glue method a conditions class holds: its name is the command row's to mint. */
+    private static String glueMethodOf(TypeSpec conditions) {
+        return conditions.methodSpecs().stream()
+            .filter(m -> m.returnType().toString().equals("org.jooq.Condition"))
+            .map(MethodSpec::name)
+            .findFirst().orElseThrow();
+    }
+
     private static List<MethodSpec> helpers(String sdl) {
         return mutationFetchers(sdl).methodSpecs();
     }
 
+    /** The authored-arm default: every fixture derived from {@link #SDL} spells the column. */
+    private static TypeSpec mutationFetchers(String sdl) {
+        return mutationFetchers(sdl,
+            inventoryProjection("Mutation", "rentFilm", "input.inventoryId.inventory_id"));
+    }
+
     /**
      * The {@code MutationFetchers} class, generated through the plan so the reachability gate and the
-     * relation's own routing are exercised rather than bypassed. The projection is the one input the
-     * walk cannot supply, so it is spelled here as the store would have resolved it.
+     * relation's own routing are exercised rather than bypassed. The projections are the one input the
+     * walk cannot supply, so they are spelled here as the store would have resolved them.
      */
-    private static TypeSpec mutationFetchers(String sdl) {
+    private static TypeSpec mutationFetchers(String sdl,
+            ResolvedKeyProjections.Projection... rows) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var schema = bundle.model();
-        var projections = new ResolvedKeyProjections.Projections(List.of(
-            inventoryProjection("Mutation", "rentFilm", "input.inventoryId.inventory_id")));
+        var projections = new ResolvedKeyProjections.Projections(List.of(rows));
         var plan = TestSchemaHelper.storeBackedPlan(tmp, sdl, no.sikt.graphitron.common.configuration.TestConfiguration.testContext(),
             projections);
         assertThat(KeyProjectionCommands.produce(projections).rows())
-            .as("the fixture's projection reaches a command row, so the emission below is not passing"
+            .as("the fixture's projections reach command rows, so the emission below is not passing"
                 + " because nothing was carried")
-            .hasSize(1);
+            .hasSize(rows.length);
         return TypeFetcherGenerator.generate(schema, bundle.assembled(), DEFAULT_OUTPUT_PACKAGE,
                 plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
                 plan.routineWrites(), plan.keyProjections()).stream()
@@ -288,20 +502,44 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
     private static final ColumnRef INVENTORY_ID =
         new ColumnRef("inventory_id", "INVENTORY_ID", "java.lang.Long");
     private static final ColumnRef FILM_ID = new ColumnRef("film_id", "FILM_ID", "java.lang.Long");
+    private static final ColumnRef CUSTOMER_ID =
+        new ColumnRef("customer_id", "CUSTOMER_ID", "java.lang.Long");
 
+    /*
+     * The trailing segment is the store's record of which resolution answered, and the fixtures
+     * derive it the way the view does rather than taking it as a parameter: the authored arm's is the
+     * path's own last segment, and the inferred arm has none. Deriving it here is what keeps a fixture
+     * from spelling a combination the store cannot produce, an inferred row against a dotted-to-the-
+     * column path being exactly the off-by-one these tests exist to catch.
+     */
     private static ResolvedKeyProjections.Projection inventoryProjection(
             String typeName, String fieldName, String path) {
-        return new ResolvedKeyProjections.Projection(typeName, fieldName, path, "Inventory",
-            "Inventory",
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path,
+            trailingSegmentOf(path, INVENTORY_ID), "Inventory", "Inventory",
             TestFixtures.tableRef("inventory", "INVENTORY", "Inventory", List.of(INVENTORY_ID)),
             List.of(INVENTORY_ID), INVENTORY_ID);
     }
 
     private static ResolvedKeyProjections.Projection filmProjection(
             String typeName, String fieldName, String path) {
-        return new ResolvedKeyProjections.Projection(typeName, fieldName, path, "Film", "Film",
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path,
+            trailingSegmentOf(path, FILM_ID), "Film", "Film",
             TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID)),
             List.of(FILM_ID), FILM_ID);
+    }
+
+    private static ResolvedKeyProjections.Projection customerProjection(
+            String typeName, String fieldName, String path) {
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path,
+            trailingSegmentOf(path, CUSTOMER_ID), "Customer", "Customer",
+            TestFixtures.tableRef("customer", "CUSTOMER", "Customer", List.of(CUSTOMER_ID)),
+            List.of(CUSTOMER_ID), CUSTOMER_ID);
+    }
+
+    /** The path's last segment where it names {@code column}, and null where it does not. */
+    private static String trailingSegmentOf(String path, ColumnRef column) {
+        String last = path.substring(path.lastIndexOf('.') + 1);
+        return last.equalsIgnoreCase(column.sqlName()) ? last : null;
     }
 
 }

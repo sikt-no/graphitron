@@ -47,6 +47,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * to report, which is what keeps it a population an emitter can trust rather than a verdict it has to
  * interpret.
  *
+ * <p>The one thing this relation adds over the candidate beside it besides that agreement is
+ * provenance an emitter cannot derive: {@code trailing_segment_name}, the author's own spelling of the
+ * column where they spelled one and null where the key's arity named it, which is where in the written
+ * path the encoded id sits. The two arms produce paths of the same shape, so the cases assert the
+ * column and the segment together rather than the column alone.
+ *
  * <p>The type agreement fires only where both operands are known, and the cases pin the standing
  * aside because it is where the gate deliberately does not: an unresolvable parameter type and a
  * column the catalog cannot type both leave the pair projecting as it did before the gate existed.
@@ -77,6 +83,10 @@ class ResolvedNodeKeyProjectionTest {
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isZero();
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+                .as("the author's own spelling of the column, which is where in the path the wire id"
+                    + " sits: this path minus this segment")
+                .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER)).isEqualTo("SDL_PINNED");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.BOUND_KIND))
                 .isEqualTo("INPUT_FIELD");
@@ -119,9 +129,14 @@ class ResolvedNodeKeyProjectionTest {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "pInventoryId", "input.inventoryId.INVENTORY_ID");
 
-            assertThat(only(dsl).get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
+            var row = only(dsl);
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .as("the row is the tier's own spelling, not the one the author happened to type")
                 .isEqualTo("inventory_id");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+                .as("the segment beside it is the author's, which is what a message quotes and what"
+                    + " an emitter strips off the path to find the wire id")
+                .isEqualTo("INVENTORY_ID");
         });
     }
 
@@ -290,6 +305,10 @@ class ResolvedNodeKeyProjectionTest {
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.ARGUMENT_PATH))
                 .as("the path is the author's own, which is the only spelling there is")
                 .isEqualTo("input.inventoryId");
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+                .as("nothing was spelled past the node id, and that absence is what tells an emitter"
+                    + " the wire id sits at the whole of this path rather than one segment above")
+                .isNull();
         });
     }
 

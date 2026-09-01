@@ -71,8 +71,10 @@ public final class ConditionGlueRenderer {
      *
      * <p>{@code keyProjections} is the graph's projected {@code argMapping} bindings: a condition
      * parameter bound to a path that opens a {@code @nodeId} reads its column off a decoded record
-     * rather than off the args map. The decode body is hosted on this class, which is the reason this
-     * site needs more than the routine site did: the {@code decode<Record>} bodies a
+     * rather than off the args map. A parameter bound to the whole of such a slot is the install rail's
+     * instead, and takes precedence where both resolve; see
+     * {@link ProjectedKeyReads#installRailOwns}. The decode body is hosted on this class, which is the
+     * reason this site needs more than the routine site did: the {@code decode<Record>} bodies a
      * {@code <Type>Fetchers} class hosts are unreachable from here, so a conditions class mints its own
      * through {@link RecordDecodeHelperRegistry}.
      */
@@ -591,24 +593,32 @@ public final class ConditionGlueRenderer {
             ? CodeBlock.of("$L", lifted)
             : CodeBlock.of("args.get($S)", nif.outerArgName());
 
-        // Row presence decides, ahead of every leaf special case: a path whose last segment names a key
-        // column of a @nodeId's node type reads that column off a decoded record, and the wire value it
-        // decodes sits one segment short of the path's end. The leaf the walk resolved is an unresolvable
-        // one (the path descends past a scalar), so it arrives here as Direct and none of the arms below
-        // would know the difference.
-        String written = nif.outerArgName() + "." + String.join(".", nif.path());
-        var projected = keys.readFor(written, written.substring(0, written.lastIndexOf('.')),
-            () -> nif.path().size() == 1
-                ? CodeBlock.of("args.get($S)", nif.outerArgName())
-                : WireMapChain.of(root, nif.path().subList(0, nif.path().size() - 1), null, lifted));
-        if (projected.isPresent()) {
-            return projected.get();
-        }
-
+        // The whole-slot install rail first: a parameter bound to the whole of a @nodeId slot has its
+        // decode installed at the slot, and that contract is uniform across key arity where a
+        // projection is per-column by construction, so it wins wherever both resolve. Stated as
+        // precedence rather than left to the sink's arity test, which used to keep the two apart by
+        // refusing every single-segment path and so also refused every inferred projection.
         if (nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
             return decodeCall(registry, nidk, decodesList(param),
                 WireMapChain.of(root, nif.path(), null, lifted));
         }
+
+        // Row presence decides, ahead of every remaining leaf special case: a path that opens a
+        // @nodeId and names one of its key columns reads that column off a decoded record. Where the
+        // encoded id sits within the path is the sink's to derive, an author who spelled the column and
+        // one who let a one-column key name it having written paths of the same shape. The leaf the walk
+        // resolved is an unresolvable one (the path descends past a scalar), so it arrives here as
+        // Direct and none of the arms below would know the difference.
+        var writtenSegments = new ArrayList<String>();
+        writtenSegments.add(nif.outerArgName());
+        writtenSegments.addAll(nif.path());
+        var projected = keys.readFor(writtenSegments, leaf -> leaf.size() == 1
+            ? CodeBlock.of("args.get($S)", nif.outerArgName())
+            : WireMapChain.of(root, leaf.subList(1, leaf.size()), null, lifted));
+        if (projected.isPresent()) {
+            return projected.get();
+        }
+
         if (nif.leaf() instanceof CallSiteExtraction.EnumValueOf ev) {
             // The nested twin of the top-level enum arm. Reachable since the rewrap composes the
             // parameter's own extraction onto the descent rather than defaulting the leaf: before

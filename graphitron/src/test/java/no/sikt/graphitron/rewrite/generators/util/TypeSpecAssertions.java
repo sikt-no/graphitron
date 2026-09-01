@@ -190,6 +190,50 @@ public final class TypeSpecAssertions {
             + "\\(env\\.getArgument\\(\"" + Pattern.quote(argumentName) + "\"\\)\\)\\)")) > 0;
     }
 
+    /**
+     * True when {@code keyLocal}'s materialisation decodes the bare argument slot
+     * {@code argumentName} whole ({@code keyLocal = decodeHelper(env.getArgument("argumentName"))}),
+     * with no descent below it. What a binding that stops on a {@code @nodeId} argument emits: the
+     * encoded id <em>is</em> the slot's value, so there is nothing to descend through.
+     */
+    public static boolean materialisationDecodesWireSlot(TypeSpec type, String methodName,
+            String keyLocal, String decodeHelper, String argumentName) {
+        return countIn(type, methodName, Pattern.compile(
+            Pattern.quote(keyLocal) + "\\s*=\\s*" + Pattern.quote(decodeHelper)
+            + "\\(env\\.getArgument\\(\"" + Pattern.quote(argumentName) + "\"\\)\\)")) > 0;
+    }
+
+    /**
+     * True when {@code keyLocal}'s materialisation decodes a value descended to {@code leafKey}: the
+     * decode's own argument reads that key. Asked without naming the root, because how the glue
+     * reaches an argument is a separate decision from which slot it descends to (a lifted row reads
+     * through its {@code <arg>Map} local, an unlifted one tests {@code args.get("<arg>")} inline), and
+     * a test about the slot should not break when the lift does.
+     */
+    public static boolean materialisationDecodesDescentTo(TypeSpec type, String methodName,
+            String keyLocal, String decodeHelper, String leafKey) {
+        return countIn(type, methodName, Pattern.compile(
+            Pattern.quote(keyLocal) + "\\s*=\\s*" + Pattern.quote(decodeHelper)
+            + "\\([^;]*?\\.get\\(" + Pattern.quote("\"" + leafKey + "\"") + "\\)")) > 0;
+    }
+
+    /**
+     * True when {@code keyLocal}'s materialisation hands its decode a slot's value whole: the
+     * argument contains no nested key read at all. Correct where the {@code @nodeId} is that slot, and
+     * the wrong-slot emission where it is an input field below it, which is why it is worth asking
+     * negatively as well as positively.
+     */
+    public static boolean materialisationDecodesUndescended(TypeSpec type, String methodName,
+            String keyLocal, String decodeHelper) {
+        var argument = Pattern.compile(
+            Pattern.quote(keyLocal) + "\\s*=\\s*" + Pattern.quote(decodeHelper) + "\\(([^;]*)\\);");
+        return methodBody(type, methodName)
+            .map(argument::matcher)
+            .filter(java.util.regex.Matcher::find)
+            .map(m -> !m.group(1).contains(".get("))
+            .orElse(false);
+    }
+
     /** The number of column reads off {@code keyLocal} ({@code keyLocal.get(…)}) in the body. */
     public static long projectedColumnReads(TypeSpec type, String methodName, String keyLocal) {
         return countIn(type, methodName,

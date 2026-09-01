@@ -24,9 +24,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * can fail. A test that still found a disagreement to provoke here would mean the join had come back.
  *
  * <p>Which leaves two things worth pinning. The row carries every component through unchanged, so an
- * emitter reading one sees what the store resolved; and the relation's key holds, a second answer for
- * one coordinate and path being a contradiction rather than a precedence question. Unit tier now
- * rather than pipeline: with no model to build there is nothing to capture.
+ * emitter reading one sees what the store resolved, the trailing segment's null included, that null
+ * being the one component whose absence an emitter reads as a fact; and the relation's key holds, a
+ * second answer for one coordinate and path being a contradiction rather than a precedence question.
+ * Unit tier now rather than pipeline: with no model to build there is nothing to capture.
  *
  * @see no.sikt.graphitron.rewrite.derive.StoreNodeTablesTest the assembly this consumes, against a
  *      real captured store
@@ -52,6 +53,9 @@ class KeyProjectionRelationTest {
         assertThat(row.coordinate().getTypeName()).isEqualTo("Mutation");
         assertThat(row.coordinate().getFieldName()).isEqualTo("pair");
         assertThat(row.argumentPath()).isEqualTo("in.pairId.film_id");
+        assertThat(row.trailingSegmentName())
+            .as("the author's own spelling of the column, which is where in the path the wire id sits")
+            .isEqualTo("film_id");
         assertThat(row.nodeTypeName()).isEqualTo("FilmActor");
         assertThat(row.typeId())
             .as("the wire id the decode matches, which is the only decode input a row carries")
@@ -61,6 +65,35 @@ class KeyProjectionRelationTest {
         assertThat(row.keyColumns())
             .as("the whole key in the order the decode returns values")
             .containsExactly(ACTOR_ID, FILM_ID);
+    }
+
+    /**
+     * The inferred arm's absent trailing segment carries through as null rather than being filled in
+     * with the resolved column's name. The distinction is the whole of what an emitter reads it for:
+     * null says the encoded id sits at the whole written path, and a filled-in name would say it sits
+     * one segment above, which is a decode of the wrong slot.
+     */
+    @Test
+    void anInferredRowCarriesNoTrailingSegment() {
+        var row = only(relationOf(projection("in.pairId", null, FILM_ID)));
+
+        assertThat(row.argumentPath()).isEqualTo("in.pairId");
+        assertThat(row.trailingSegmentName()).isNull();
+        assertThat(row.column())
+            .as("the column is still resolved; only the author's spelling of it is absent")
+            .isEqualTo(FILM_ID);
+    }
+
+    /**
+     * A blank trailing segment is refused rather than read as absent. Blank is neither an author's
+     * spelling nor the absence of one, and admitting it would make the two resolutions
+     * indistinguishable at the one component that tells them apart.
+     */
+    @Test
+    void aBlankTrailingSegmentIsRefusedByTheRow() {
+        assertThatThrownBy(() -> relationOf(projection("in.pairId.film_id", "  ", FILM_ID)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("blank is neither");
     }
 
     /**
@@ -121,8 +154,13 @@ class KeyProjectionRelationTest {
     }
 
     private static ResolvedKeyProjections.Projection projection(String path, ColumnRef column) {
-        return new ResolvedKeyProjections.Projection("Mutation", "pair", path, "FilmActor",
-            "FilmActor", FILM_ACTOR, List.of(ACTOR_ID, FILM_ID), column);
+        return projection(path, path.substring(path.lastIndexOf('.') + 1), column);
+    }
+
+    private static ResolvedKeyProjections.Projection projection(String path,
+            String trailingSegmentName, ColumnRef column) {
+        return new ResolvedKeyProjections.Projection("Mutation", "pair", path, trailingSegmentName,
+            "FilmActor", "FilmActor", FILM_ACTOR, List.of(ACTOR_ID, FILM_ID), column);
     }
 
     private static KeyProjectionRelation relationOf(ResolvedKeyProjections.Projection... rows) {
