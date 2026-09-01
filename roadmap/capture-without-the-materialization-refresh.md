@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-08-31
+last-updated: 2026-09-01
 ---
 
 # The generator owns the fact tier it should merely read
@@ -119,9 +119,8 @@ things have to be split instead of moved:
 * `rewrite/lint`. `LintConfig` is just settings, so it moves down. The rules themselves stay: they
   analyse a schema, which is a job for the layer above.
 * The third split was capture's one write that read the walk. R870 has deleted it (shipped at
-  `9f50502`; that item is back at Ready for a rework round on an unrelated gate detail), so
-  `FactCapture.detect` writes nothing and there is nothing here to split. The dependency stays
-  listed until R870 reaches Done.
+  `9f50502`, and that item passed its Done gate at `dd8b5e7`), so `FactCapture.detect` writes
+  nothing and there is nothing here to split.
 
 **One thing to confirm before starting.** Six files in `rewrite/derive` use `ValidationError` and
 `Rejection`, and two use `TableRef` and `ColumnRef`, all of which currently sit above the line. The
@@ -277,7 +276,7 @@ it was needed, which is not the same thing as removing it.
 
 ## Sequencing
 
-**R870 is done, and the dependency is discharged.** Capture used to write one table,
+**R870 is Done, and the dependency is discharged.** Capture used to write one table,
 `walk_type_backing_class`, from the schema walk above it, and that call could not have survived the
 module move. R870 deleted the table and the write on its own merits, so the edge is gone from the
 tree and `depends-on` is empty. Nothing here waits on it any more.
@@ -392,6 +391,25 @@ whatever the lsp census actually yields, and reword the delivery criterion to wh
 Any of those is fine. What cannot stand is the criterion as written, since it is a gate the item fails on
 its own terms.
 
+*Author's response.* Accepted, and the census was run rather than the wording softened. Running it
+changed the answer twice, so the plan changed with it. The lsp count says the edge is droppable
+without moving the rule engine: the fixture packages that read as generator packages
+(`rewrite.test.jooq`, `rewrite.test.services`, `rewrite.test.conditions`, `multischemafixture`) are
+generated or written in `graphitron-sakila-db` and `graphitron-sakila-service`; the lint types the
+tests name are values they construct and never execute, so they belong with the diagnostics they
+describe, at or below the store; `DeprecationRecognizer` parses a `TypeDefinitionRegistry` and
+touches neither walk nor store, so this plan's own rule puts it below; and `CatalogBuilder.build`,
+which the earlier splits missed, projects `CompletionData` and goes down with it, which is what
+`FixtureCatalogTest` was actually reaching for. Across 67 lsp test files exactly one drives a real
+generator. The correction that matters more is in the other direction, and round 1 accepted the
+claim it corrects: `graphitron-mcp` is the harder of the two, because `StoreBackedBuild` has four
+users. So the criterion stands as written, and the residue it rests on is stated as a count rather
+than a hope: seven test files whose subject is two tiers agreeing with each other. Step 7 is new and
+rehomes them, picking `graphitron-maven-plugin` (which already depends on all three modules, because
+`DevMojo` is what wires them together) and naming the cross-tier-test module as the alternative a
+reviewer may prefer. `R157PipelineTest` and `FixtureCatalogTest` are called out there as the two that
+retire with the walk under R682 rather than being maintained.
+
 *Non-blocking, question one, traceability only.* The mcp import list under "Both store clients drop
 `graphitron` entirely" omits three of the imports actually present in `graphitron-mcp/src/test`:
 `no.sikt.graphitron.rewrite.FactWriters`, `rewrite.model.Rejection` and `rewrite.ValidationError`.
@@ -400,3 +418,12 @@ are a wording matter. `FactWriters` is not named anywhere in the plan and is not
 of the move-list packages, which makes it one more file whose side of the line is unsettled. It is
 also imported by `graphitron-lsp`'s `StoreFixture`, so it will surface again when the census above is
 run.
+
+*Author's response.* Taken. All three are now placed. `FactWriters` is named with `BuiltStore` and
+`CapturedStore` under "What changes when this lands" and again in step 6, which moves the three
+store-building test helpers down together and gives the reason: they are how a test gets a filled
+store, which is the thing being moved, so leaving them behind would keep `graphitron-mcp` depending
+on the generator for a fixture after every other reason had gone. `Rejection` and `ValidationError`
+are covered by the rejection-vocabulary line in the same list and by the step 1 census, which argues
+them below the line from the store's own schema: `rejection_validation_error` is a table and the
+language server reads the `diagnostic` view over it.
