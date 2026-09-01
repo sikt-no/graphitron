@@ -151,7 +151,7 @@ so this is only about their tests. Counted rather than guessed, because two earl
   which projects `CompletionData`. `CompletionData` moves down, so `build` goes with it, and
   `FixtureCatalogTest`'s use of it stops being a generator dependency.
 * **Exactly one lsp test runs a real generator.** `StoreFixture.ofBuild` is the helper that calls
-  `GraphQLRewriteGenerator.buildOutput()`, and across 67 lsp test files it has one caller,
+  `GraphQLRewriteGenerator.buildOutput()`, and across 75 lsp test classes it has one caller,
   `LintSuppressionDiagnosticsParityTest`. Every other test builds its store through `CapturedStore`,
   which moves down.
 * **`graphitron-mcp` is the harder of the two, not the easier one.** Its own build-driven fixture,
@@ -427,3 +427,99 @@ on the generator for a fixture after every other reason had gone. `Rejection` an
 are covered by the rejection-vocabulary line in the same list and by the step 1 census, which argues
 them below the line from the store's own schema: `rejection_validation_error` is a table and the
 language server reads the `diagnostic` view over it.
+
+### Round 2 (2026-09-01, Spec -> Ready, reviewer session 01ACqTfeZXHnE3pRXyUPbyA1)
+
+Verdict: withhold. One blocking finding on question one. Question two is clean, and round 1's
+reasons for saying so still hold.
+
+*What was checked and holds.* The round 1 finding is answered by a census, not a rewording, and
+the census is accurate where I could check it: the four fixture packages the lsp tests import are
+jOOQ output of `graphitron-sakila-db` (`rewrite.test.jooq`, `rewrite.multischemafixture`) or
+hand-written in `graphitron-sakila-service` (`rewrite.test.services`, `rewrite.test.conditions`);
+`LintRule` is an enum with no imports, `LintFix` a record, `BuildWarning` a sealed interface
+permitting exactly `NoRule` and `LintFinding`; `DeprecationRecognizer` imports graphql-java and
+nothing else from the tree; `CatalogBuilder` has three public method names and `build` reads
+`NodeDeclaration` and the assembled `GraphQLSchema`, not the walk, so it splits from
+`projectTypesByName` as the plan says; `StoreFixture.ofBuild` has the one caller named;
+`StoreBackedBuild` has the four users named. The seven-file residue is the right count. The
+`Rejection` vocabulary is self-contained: the sealed interface and its ten top-level arm files
+(about 2,100 lines) import nothing from the tree, so pulling it below the line is a move, not a
+split. The module graph admits the move: `graphitron-sakila-db` and `graphitron-sakila-service`
+depend on nothing in `graphitron-model`, so capture's pipeline tests can follow capture down
+without a cycle, and `graphitron-maven-plugin` already depends on `graphitron`, `graphitron-lsp`
+and `graphitron-mcp` at compile scope with both test-jars at test scope, so step 7's home exists
+as claimed. `rejection_validation_error` is a table and `diagnostic` a view in the store's DDL, and
+three lsp main classes read `DIAGNOSTIC`. `walk_type_backing_class` is gone from the tree.
+`StoreClientBoundaryTest.noGeneratorReferenceInMainSources` scans main sources only while its
+sibling `noLanguageServerReferenceInEitherTree` already scans both, so "widens to tests" is a
+one-line change with a template beside it. `R157PipelineTest` and `FixtureCatalogTest` import what
+the plan says they import. The lsp test-class count was 75, not 67, and is corrected in this
+commit.
+
+**Finding 1 (question one: is the outcome reachable as described). Step 1's census runs over what
+the two clients import from the generator, but not over what the move set imports from the code
+that stays, and that second census turns up decisions the plan has not made.** The plan says
+"most of it is clear" and names one thing to confirm: that `ValidationError`, `Rejection`,
+`TableRef` and `ColumnRef` are "plain data that both sides use". I grepped every import from the
+move set (`rewrite/capture`, `rewrite/derive`, `rewrite/session`, `rewrite/selection`,
+`rewrite/schema`, the named `catalog`, `lint` and `compile` classes, `JooqCatalog`,
+`RewriteContext`) that lands in code the plan keeps above. Three of the results change what the
+implementer builds.
+
+* *`TableRef` and `ColumnRef` are not plain data, and the fact tier takes on `graphitron-javapoet`
+  with them.* `ColumnRef` is a record whose fourth component is a javapoet `TypeName`; `TableRef`
+  imports `ClassName`; so do `ForeignKeyRef` and `MethodRef` (through `SessionHooks`), and so do
+  `JooqCatalog` itself and `derive/StoreNodeTables`. Nothing cycles, since `graphitron-javapoet`
+  depends on nothing in the tree, but `graphitron-model` gains a compile dependency on the
+  emitter's type-name library, and `roadmap-tool` picks it up transitively. The plan treats this
+  kind of growth as its own to decide: it argues the graphql-java dependency in "Decisions this
+  spec makes" and lists what `roadmap-tool` will inherit ("graphql-java, slf4j and the javac Tree
+  API") in "What is out of scope". Javapoet is in neither list. Decide it: either the fact tier
+  carries javapoet and both paragraphs say so, or the refs are re-encoded without it, which
+  changes what `command` and `render` borrow through the `PackageImportDirectionTest` dial and is
+  a larger item than this one. I recommend the first and think it needs one sentence of
+  justification, not a redesign, but it is the author's sentence.
+* *Capture runs one edge into code the plan places above the line, and the plan says there are
+  none left.* `FactCapture` calls `derive/AuthoredClaimRejectionRows`, which calls
+  `RejectionFacts.classSpelling` in `rewrite/diagnostics`. "What is out of scope" places
+  `RejectionFacts` above, as one of the dev session's writers from above, and "Sequencing" says
+  R870 removed the one edge from the generator into capture. One of the two placements has to
+  move. `RejectionFacts` itself imports `FactCapture` and the rejection vocabulary and nothing
+  from the walk, so moving it down is available and is probably right; alternatively
+  `classSpelling` becomes a method on the vocabulary it spells. Either way the plan should say
+  which, because the "writes from above" paragraph is what documents the boundary afterwards and
+  it currently names a class that cannot stay where it says.
+* *`rewrite/derive` does not move in one piece, for a reason other than the one the plan offers.*
+  `ClaimDomain.of(GraphitronSchema)` and `DemandResidue.of(GraphitronSchema)` read the walked
+  schema and switch over `GraphitronType` arms. Both are main-source values whose only callers
+  are three tests (`DemandShadowTest`, `TypeBackingClassesTest`, `FactCaptureAgreementTest`), and
+  `ClaimDomain`'s own javadoc says it retires with the shadow that reads it. They stay above (or
+  become test sources), which step 1 should say, since the plan's "one thing to confirm" would
+  come back clean on the four types it names and leave these two unmentioned.
+
+The rest of that census is detail the implementer settles under step 1's own instruction, listed
+here so the author can fold it in rather than rediscover it: `rewrite/schema` splits too, since
+`schema/federation/EntityResolutionBuilder` imports `TypeRegistry` and the `GraphitronType`
+family and nothing in capture reaches `schema.federation`; `RewriteContext` moves down rather
+than staying, because it already imports `FactCapture.OutputCoordinates` and is a parameter of
+both `CatalogBuilder.build` and `buildExternalReferences`, so the "worth settling" note under step
+7 is already settled by the imports; and eight plain root-level types come down with no imports
+of their own to worry about (`NodeDeclaration`, `ArgMappingSigil`, `RejectionKind`,
+`ClasspathEntry`, `ValidationFailedException`, `SchemaParseException`,
+`rewrite.dependency.DependencyVersions`, `rewrite.model.ConnectionNaming`).
+
+What would satisfy the finding: add the move-set-upward census to step 1 beside the client census
+that is already there, decide the javapoet dependency in "Decisions this spec makes" (and adjust
+the `roadmap-tool` sentence to match), place `RejectionFacts` on one side of the line and make
+"Writes from above" agree with it, and name `ClaimDomain` and `DemandResidue` as the two `derive`
+files that stay. None of this changes the shape of the plan; it changes what step 1 hands to step
+6, which is the part an implementer cannot decide alone.
+
+*Non-blocking, question two, for step 7.* Both parity tests lean on a `StoreFixture` helper that
+is private to its own module's test sources, and neither `graphitron-lsp` nor `graphitron-mcp`
+publishes a test-jar today. Relocating the tests means either those two modules start publishing
+test-jars for the plugin to consume, or the build-driving halves (`StoreFixture.ofBuild`,
+`StoreBackedBuild`) move with the tests and the store-only halves stay. The second keeps the
+detachment honest and is what I would expect the implementer to do; a sentence in step 7 saying so
+would save them the fork.
