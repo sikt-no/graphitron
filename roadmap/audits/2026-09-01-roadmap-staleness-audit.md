@@ -1,8 +1,8 @@
-# Roadmap staleness audit: 2026-08-31
+# Roadmap staleness audit: 2026-09-01
 
 A point-in-time review of every active roadmap item under [`roadmap/`](../) against the **current**
-state of the codebase on `claude/graphitron-rewrite` (HEAD `f21760d`, committed 2026-08-30 22:36 UTC,
-audited 2026-08-31). The goal is to find items whose premise no longer holds: work already shipped,
+state of the codebase on `claude/graphitron-rewrite` (HEAD `77beb3b`, committed 2026-08-31 22:17 UTC,
+audited 2026-09-01). The goal is to find items whose premise no longer holds: work already shipped,
 constructs renamed or removed, dependencies that have since landed or been discarded, or specs grown
 stale enough to mislead an implementer.
 
@@ -10,7 +10,7 @@ This file is an analysis artifact, not a roadmap item: it lives in a subdirector
 (which scans `roadmap/*.md` non-recursively and requires `id:` front-matter on each) ignores it, and it
 is Markdown so the `check-adoc-tables` build step (which scans `.adoc` only) leaves it alone.
 
-This audit supersedes the `2026-08-28` staleness audit, which has been deleted; only the latest
+This audit supersedes the `2026-08-31` staleness audit, which has been deleted; only the latest
 **staleness** audit is retained. The other seventeen files in this directory are **not** staleness audits
 and are left in place: deleting them would strand lineage that shipped items and active items cite by
 path, and they are provenance this audit did not author. The retained companions are
@@ -24,39 +24,56 @@ path, and they are provenance this audit did not author. The retained companions
 `2026-08-27-carrier-filter-redundancy-probe.md`, `2026-08-28-derived-read-cost-premise.md`, and
 `classification-test-dsl-inventory.md`.
 
-**Baseline correction (the same drift the prior audit named in its own predecessor, and then repeated).**
-The `2026-08-28` staleness audit measured "from `1f7ef5e` ... to this HEAD (`ef7edc9`, `next-id: R870`,
-318 item files)". Neither commit is in the current trunk history: the branch was rebased, and the audit
-was committed at `088ae37` (2026-08-29), whose **true tree read `next-id: R876` and 310 item files**, not
-`R870` and 318. So the prior audit under-reached its own board by six allocated ids in one direction and
-over-counted its file total in the other: it never reviewed the `R870` through `R875` intake, and its
-transition snapshot (R848 In Progress; R675/R839/R858/R859 In Review; R860 Ready) had already advanced by
-the time it landed, several of those items reaching Done in the gap between its ghost baseline and its
-real commit. This is precisely the "audit committed against a tree it did not re-read" failure the
-`2026-08-28` audit recorded against **its** predecessor, recurring one window later. This audit therefore
-measures the delta from the **true tree at the prior audit's landing commit** (`088ae37`, `next-id:
-R876`, 310 files) rather than from that audit's stated snapshot, and additionally reviews R870 through
-R875, which the prior audit's text never reached. **Every flag below was re-verified by a fresh `grep` of
-the main sources at this HEAD**, not carried on the prior audit's word.
+**Baseline correction (the same drift the prior two audits named, recurring a third time).**
+The `2026-08-31` staleness audit stated it measured "to this HEAD (`f21760d`, `next-id: R880`, 311
+item files)". `f21760d` is **not** in the current trunk history: the branch was rebased. Worse, the audit
+was actually committed at `436067a` (2026-08-31 12:19 UTC), whose **true tree read `next-id: R887` and
+313 item files**, not `R880` and 311. So the prior audit again described a snapshot it had drifted past:
+it never reviewed the R880 through R886 intake against its own landing tree, and its transition snapshot
+had advanced by the time it landed. This is the identical "audit committed against a tree it did not
+re-read" failure that audit recorded against **its** predecessor, and that predecessor recorded against
+**its** own. This audit therefore measures the delta from the **true tree at the prior audit's landing
+commit** (`436067a`, `next-id: R887`, 313 files) rather than from that audit's stated snapshot, and
+reviews R887 through R902 as new intake. **Every flag below was re-verified by a fresh `grep` of the main
+sources at this HEAD**, not carried on the prior audit's word.
 
-## Headline: a quiet window; one item shipped (R878, additive to the node-id decode family), no discards, and all 44 carried flags hold at their recorded status
+## Headline: a quiet window; three bug-fix items shipped (R687, R880, R885, all additive or corrective), no discards, and all 44 carried flags hold at their recorded status
 
-Relative to the true tree the prior audit was committed into (`088ae37`), **one item reached Done
-(R878)**, **nothing was discarded**, and the model-level work in flight (R876, R877 In Progress) stayed
-additive. No flag joined the set, no flag left it, and no flag changed section. The flag total holds at
-**44**: **1 §A / 13 §B / 30 §C / 0 §D**.
+Relative to the true tree the prior audit was committed into (`436067a`), **three items reached Done
+(R687, R880, R885)**, **nothing was discarded** (the one dissolution, R864, was already recorded in the
+prior audit's addendum), and the model-level work in flight (R682, R851, R876, R877) stayed additive. No
+flag joined the set, no flag left it, and no flag changed section. The flag total holds at **44**: **1 §A
+/ 13 §B / 30 §C / 0 §D**.
 
-- **R878 (`node-id-decode-hop-column-grain`, Done) shipped additively and corrective.** It re-keyed every
-  relation below `intent_node_id_decode_endpoint` on the consuming coordinate with the polymorphic branch
-  removed, so a multi-table `@nodeId` slot no longer reports one branch's rows as another's: the endpoint's
-  departure (`origin_source_name` / `origin_schema` / `origin_table`) now rides down through the hop, the
-  hop column, the key column and the decode, and `intent_node_id_decode.arity` states the node key's real
-  width. Delivery is confined to `graphitron-model.sql` (the node-id decode relations) plus two model tests
-  (`NodeIdDecodeBranchTest`, a `MaterializeRegistryGateTest` roster row). It deleted one index
-  (`ix_node_id_decode_column_use_site`) whose two jobs both dissolved. **It renames or removes no symbol any
-  open item names**, and its target relations are disjoint from the nodeId-cluster flags' re-anchor targets
-  (R34 -> `intent_node_id_instruction.basis`, R135 -> `FilterBinding.Local`, both re-verified live). It
-  stales nothing.
+- **R687 (`dml-carrier-errors-field-blocks-return-derived-table`, Done) shipped a phase-ordering bug fix,
+  additive to the type set.** A DML mutation payload carrying an `errors` field stopped classifying because
+  `groundDmlMutationField` ran (from `groundRootProducers`, inside `resolveAll()`) before
+  `buildClassificationIndices()` built the `ErrorIndex`; against `ErrorIndex.EMPTY` the errors field read as
+  a second data channel and the payload fell through to the scalar seat. The fix renames the pass for its
+  precondition (`groundIndexDependentBindings`), moves the "grounding verdicts must not stick" property onto
+  a write gate, and **splits `CarrierBinding.NotACarrier` into a sealed interface** over `NotACarrier.Plain`
+  and `NotACarrier.UngroundedDmlCarrier`. The split is additive: `instanceof NotACarrier` still answers at
+  all five read sites, exactly as **R725** (`carrier-recognizer-conflates-three-scan-verdicts`, Backlog)
+  anticipates in its own body ("the ungrounded-carrier arm is a sealed subtype of `NotACarrier`, so the
+  `@service` site's `instanceof NotACarrier` guard keeps matching"). It **renames or removes no symbol any
+  open item names as live**. Its follow-up R689 (`phase-varying-index-reads-lack-a-not-built-arm`, Backlog,
+  filed alongside R687) reads born-current against `ErrorIndex` / `detectErrorsFieldShape` /
+  `groundIndexDependentBindings`.
+
+- **R880 (`nullable-straddling-reference-clears-its-out-of-key-half`, Done) shipped additively (model + SQL).**
+  An explicit `null` on an optional cross-table `@nodeId` reference now clears the out-of-key half instead of
+  throwing. It adds a sealed `CarrierNullRule` (`CannotArrive` / `Clears` / `RefusedAsIdentity`), moves
+  `nonNull` onto `Contribution`, and adds an `identity_pinned` SQL window beside the destination's `pinned`
+  window. Its target relations are the `@nodeId` straddle carriers, disjoint from the nodeId-cluster flags'
+  re-anchor targets (R34 -> `intent_node_id_instruction.basis`, R135 -> `FilterBinding.Local`, both
+  re-verified live). It stales nothing.
+
+- **R885 (`converter-diverged-key-column-comparison`, Done) shipped one additive minting surface.** A jOOQ
+  `Converter` on one end of a key made `a.eq(b)` stop compiling; the fix routes eight emit sites through a new
+  `no.sikt.graphitron.render.ColumnComparison` that coerces (never casts) so the emitted SQL is byte-identical.
+  `ColumnComparison` is a **new** symbol; its own follow-up R887
+  (`column-comparison-catalog-column-overload-has-no-caller`, Backlog) reads born-current against it. It
+  retires no symbol any active item names.
 
 - **R762 stays in §B, unchanged.** The prior audit moved it there when R682 grew `intent_jvm_ancestor`,
   the first live reader of `jvm_class_supertype`. Both symbols re-verify present at this HEAD
@@ -64,72 +81,82 @@ additive. No flag joined the set, no flag left it, and no flag changed section. 
   closure), so R762's "read by nothing" premise remains false and its recommended action (re-spec the
   `jvm_class_supertype` subsection) still stands.
 
-The new intake this window (R876, R877, R879) and the previously-unreviewed R870 through R875 all read
-born-current and are correctly **not** flagged.
+The new intake this window (R887 through R902) and the prior audit's own-window intake (R880 to R886,
+which it never reviewed against its landing tree) all read born-current and are correctly **not** flagged.
 
-## Changes since the prior audit's true landing commit (`088ae37`)
+## Changes since the prior audit's true landing commit (`436067a`)
 
-Measured from `088ae37` (`next-id: R876`, 310 item files, 2026-08-29) to this HEAD (`f21760d`, `next-id:
-R880`, 311 item files, 2026-08-30).
+Measured from `436067a` (`next-id: R887`, 313 item files, 2026-08-31 12:19 UTC) to this HEAD (`77beb3b`,
+`next-id: R903`, 325 item files, 2026-08-31 22:17 UTC).
 
 **Items that reached Done, and what each did to the symbol set:**
 
-- **R878 (`node-id-decode-hop-column-grain`, Done):** filed and closed within this window (`8e3bc2f`
-  Backlog, `d43d267` Done). Re-keyed the node-id decode family to the per-branch grain, deleted one index,
-  added `NodeIdDecodeBranchTest`. Additive/corrective; retired no symbol any active item names.
+- **R687 (`dml-carrier-errors-field-blocks-return-derived-table`, Done):** phase-ordering bug fix. Renamed
+  `groundDmlMutationField` to `groundIndexDependentBindings`, split `NotACarrier` into a sealed interface
+  (`Plain` / `UngroundedDmlCarrier`), routed the return-derived-table rung through
+  `MutationInputResolver.resolveReturnDerivedTable`. Additive; retired no symbol any active item names.
+- **R880 (`nullable-straddling-reference-clears-its-out-of-key-half`, Done):** model + SQL. Added
+  `CarrierNullRule`, moved `nonNull` onto `Contribution`, added the `identity_pinned` window. Additive.
+- **R885 (`converter-diverged-key-column-comparison`, Done):** added `render/ColumnComparison`, routed eight
+  emit sites through it. Additive; SQL byte-identical.
 
-**Discards:** none this window.
+**Discards:** none this window. The one dissolution, R864 (`capture-moves-below-the-generator`) into R865,
+was recorded in the prior audit's own same-date addendum and its `depends-on` edge already dropped; it is
+not a fresh discard.
 
-**In Progress model-level activity (additive to the tree, no retirements landed):** R876
-(`derived-read-cost-is-a-shape-problem`) advanced through roughly twenty measurement slices over the
-derived-read register and the intent rules; R877 (`graphitron-model-house-cleaning`) moved Backlog ->
-Spec -> In Progress, making grain and owner declared data on every model relation. Neither has reached a
-retirement step. The window's additive growth shows in the live-symbol file counts: `ChildField` 59 -> 67,
-`KeyLift` 14 -> 21, `ComputedField` 14 -> 17, `ConditionOwnedField` 12 -> 13, `ColumnBackedField` 30 ->
-31. R682's bulk retirement (the walk and its taxonomy: `GraphitronSchemaBuilder`, `TypeBuilder`,
-`FieldBuilder`, the sealed classification hierarchies) still waits on its terminal step, so the many items
-that name those walk-tier symbols are **not yet** staled.
+**In Progress / model-level activity (additive to the tree, no retirements landed):** R876
+(`derived-read-cost-is-a-shape-problem`) advanced through further measurement slices (29 to 31) over the
+derived-read register and filed its tail as seven items of its own; R877 (`graphitron-model-house-cleaning`)
+continued declaring grain and owner on the model relations (the `sql_` family declared its grains this
+window); R682 and R851 remain In Progress. None reached a retirement step. R682's bulk retirement (the walk
+and its taxonomy: `GraphitronSchemaBuilder`, `TypeBuilder`, `FieldBuilder`, the sealed classification
+hierarchies) still waits on its terminal step (`GraphitronSchemaBuilder` re-verified live, 22 main files),
+so the many items that name those walk-tier symbols are **not yet** staled.
 
-**New items filed this window that remain open:** R876 (`derived-read-cost-is-a-shape-problem`, In
-Progress) and R877 (`graphitron-model-house-cleaning`, In Progress). R879 was allocated (clearing the
-`next-id` to R880) and left no file, a born-and-folded number. All born-current; none cites a retired
-symbol as a live mechanism.
+**New items filed this window that remain open (R887 to R902, all born-current):** R887
+(`column-comparison-catalog-column-overload-has-no-caller`, Backlog), R888
+(`optional-filter-reference-join-omitted-value`, In Review, shipped its round-1 rework), R889
+(`launcher-method-census-folds-case`, Spec), R890 (`name-case-fold-guard`, Spec), R891
+(`projection-collision-typed-arm`, Backlog), R892 (`generated-body-code-string-pins-in-single-record-payload-test`,
+Backlog), R893 (`nodeid-decode-membership-guard`, Backlog), R894 (`reference-input-field-decode-glue-pin`,
+Backlog), R895 (`author-surfaces-filter-minted-types`, Backlog), R896 (`retire-argmapping-segment-binding`,
+Backlog), R897 (`typeid-unique-at-supergraph-scope`, Backlog), R898 (`candidate-tree-reaches-the-key-column`,
+Backlog), R899 (`read-budget-with-nothing-materialized`, Backlog), R900 (`argmapping-relation-names-standardise`,
+Backlog), R901 (`trailing-segments-is-a-boolean`, Backlog), R902 (`node-default-key-columns-are-a-grain`,
+Backlog). Each carries a `bucket:` key; none cites a retired symbol as a live mechanism.
 
-**Items the prior audit's ghost baseline hid (R870 to R875), reviewed this pass:** R870
-(`capture-stops-reading-the-walk`, Spec), R872 (`warm-capture-empties-unpartitioned-catalog-relations`,
-Backlog), R873 (`outcome-payload-polymorphic-child-arm-unwrap`, In Review), R874
-(`nodeid-decode-helper-for-condition-methods`, In Review). R871 and R875 are numbering gaps (allocated,
-no file). All present files read born-current; none cites a retired symbol as live.
+**Transitions of note:** R687, R880, R885 reached Done within the window. R888 reached In Review; R663
+(`split-query-child-list-drops-default-order`) moved Ready -> In Progress -> In Review. R876, R877, R682,
+R851 remain In Progress. Several items (R663 was In the prior Ready set) shifted, but no flagged item
+changed status.
 
-**Transitions of note:** R878 Backlog -> Done within the window. R873 and R874 reached In Review. R876 and
-R877 reached In Progress. R682 remains In Progress. R848
-(`materialization-cut-set-is-accreted-not-designed`), R675 (`condition-method-overload-selection`), R839,
-R858, R859, R860, and R867 (`cold-refresh-plans-without-statistics`) all left the active board in the gap
-before the prior audit's landing and are gone now (shipped Done); none was a flagged item, so none stales
-a flag. The In Progress set holds four (R682, R851, R876, R877); the In Review set holds three (R834,
-R873, R874).
-
-**Board accounting.** **311** item files today (measured, excluding `README.md` and `changelog.md`), up
-from 310 at the prior landing commit. Status distribution: **265 Backlog, 30 Spec, 9 Ready, 4 In
-Progress, 3 In Review, 0 Done**. Tombstone-free (`grep` for `status: Done` in `roadmap/*.md` = 0). No
-duplicate `id:`; `changelog.md` carries `next-id: R880`, clearing the max present id (R877). A
-`depends-on:` sweep resolves all **nine** non-empty edges to present files (eleven distinct targets, all
-present). The only structural nits are the same four **legacy** items still missing a `bucket:` key (§D),
-all pre-dating this window. `README.md` is current (regenerates with no drift via `mvn -pl roadmap-tool
-exec:java -q`).
+**Board accounting.** **325** item files today (measured, excluding `README.md` and `changelog.md`), up
+from 313 at the prior landing commit. Status distribution: **282 Backlog, 29 Spec, 8 Ready, 4 In Progress,
+2 In Review, 0 Done**. Tombstone-free (`grep` for `status: Done` in `roadmap/*.md` = 0). No duplicate
+`id:`; `changelog.md` carries `next-id: R903`, clearing the max present id (R902). A `depends-on:` sweep
+resolves all **eight** non-empty edges (nine distinct targets, all present); the R687-shipped slug
+`dml-carrier-errors-field-blocks-return-derived-table` was cleanly dropped from R725's edge on Done, so no
+edge dangles. The one new edge this window, `name-case-fold-guard` (R890) -> `launcher-method-census-folds-case`
+(R889), resolves. The only structural nits are the same four **legacy** items still missing a `bucket:` key
+(§D), all pre-dating this window. `README.md` is current (regenerates with no drift via `mvn -pl
+roadmap-tool exec:java -q`).
 
 ## Scope and method
 
-All **311** `R<n>` item files were reviewed, and every flagged item's file was confirmed present on this
+All **325** `R<n>` item files were reviewed, and every flagged item's file was confirmed present on this
 branch at the status recorded below (no flagged item shipped or was discarded this window). Every driving
 symbol below was re-checked against a fresh `grep` of the main sources (`graphitron`, `graphitron-mcp`,
 `graphitron-lsp`, `graphitron-model`, `graphitron-maven-plugin`, `graphitron-fixtures-codegen`,
 `graphitron-javapoet`), not carried on the prior audit's word.
 
-**No Done item this window stales an open item.** The single item that reached Done (R878) retired no
-symbol any active item names: it is additive/corrective to the node-id decode relations and deleted only
-an index. A full-window deletion/rename sweep over the main sources found no removed declaration that any
-open item names as live.
+**No Done item this window stales an open item.** The three items that reached Done (R687, R880, R885) are
+each additive or corrective bug fixes reported against release candidates. A full-window
+deletion/rename sweep over the main sources found three removed declarations: the plain
+`NotACarrier()` record (now the sealed `NotACarrier` interface, `instanceof` unchanged, and pre-described
+by R725's body), the `Authored` predicate record's constructor (gained a `PresenceGuard presence`
+parameter, additive), and an `Expansions` record cited only inside the actively-churning In Progress item
+R876. None is a symbol an open flagged item names as a live mechanism, and each surviving citer reads
+born-current.
 
 **Long-standing retirements, re-verified still retired at this HEAD (`grep`=0 in main real code):**
 `reflectServiceMethod`, `looksLikeSourcesShape`, `validateLift`, `CompileDependencyGraphBuilder`,
@@ -139,32 +166,25 @@ open item names as live.
 `InlineColumnReferenceFieldEmitter`, `LookupValuesJoinEmitter`, `RecordTableField`, `SplitTableField`,
 `SplitLookupTableField`, `ParentProjectionContainmentCheck`, `collectRequiredProjection`,
 `LspSchemaSnapshot`, `CatalogFacts`, `intent_class_assignable`, `planSlug`, `FieldClassification`,
-`TableInputType`, `resolveInput` (as the retired `MutationInputResolver` dispatch), the retired
-`SourceKey.Reader` interface, `ClassifiedCorpus`, `ClassifiedDocTest`, `OutcomeBlockDocTest`, and
-`ReEvaluationMetric`. The `AUTHOR_ERROR` default arm is `grep`=0 in `FieldRegistry.java` (R209's residue,
-§A). `CompileDiagnostic` is `grep`=0 in `graphitron-lsp` main (R430's flag), surviving only in
-`graphitron` core (`CompileFacts` / `IncrementalCompileEngine` / `CompileDiagnostic`), exactly as R430
-records. Two substring false positives were cleared and are recorded so a later pass does not re-flag
-them: `InlineTableFieldEmitter` returns one hit, a comment in `graphitron-sakila-example`'s
-`schema.graphqls` fixture, not a live symbol; `RecordTableField` returns one hit in the same file, the
-substring of the test name `SingleRecordTableFieldServiceProducerPipelineTest`, not the retired variant.
-A third, `SourceKey.Reader` in `SourceEnvelope.java`, is a javadoc provenance note to the retired reader
-("riding on the retired ... reader"), not a live interface.
+`TableInputType`, and `ClassifiedCorpus`. The `AUTHOR_ERROR` default arm is `grep`=0 in
+`FieldRegistry.java` (R209's residue, §A; the surviving `AUTHOR_ERROR` hits are the live `RejectionKind`
+enum and message text, not the deleted default arm). `CompileDiagnostic` is `grep`=0 in `graphitron-lsp`
+main (R430's flag), surviving only in `graphitron` core (four files: `CompileFacts` /
+`IncrementalCompileEngine` / `CompileDiagnostic`), exactly as R430 records.
 
-**Still live, not stale (re-verified with hits):** `FilterBinding` (13 files), `liftedSourceColumns`
-(5 files), `ColumnBackedField` (31 files), `OperationMember` (25 files), `FkTargetConditionFilter`
-(6 files), `ConditionGlueRenderer` (8 files) / `ProjectionUnitRenderer` (3 files),
-`admitMutationInputFields` (5 files), `ConditionOwnedField` (13 files), `ChildField` (67 files),
-`ComputedField` (17 files), `StubKey` (4 files), `KeyLift` (21 files) / `LifterRef` (7 files),
-`ReachPath` (7 files), and both sides of the R762 premise: `jvm_class_supertype` (defined in
-`graphitron-model.sql`) with its live reader `intent_jvm_ancestor` (`JvmAncestorTest`,
-`FactCaptureAgreementTest`).
+**Still live, not stale (re-verified with hits at this HEAD):** `FilterBinding`, `liftedSourceColumns`,
+`ColumnBackedField`, `OperationMember`, `FkTargetConditionFilter`, `ConditionGlueRenderer` /
+`ProjectionUnitRenderer`, `admitMutationInputFields`, `ConditionOwnedField`, `ChildField`, `ComputedField`,
+`StubKey`, `KeyLift` / `LifterRef`, `ReachPath`, and both sides of the R762 premise: `jvm_class_supertype`
+(defined in `graphitron-model.sql`) with its live reader `intent_jvm_ancestor` (`JvmAncestorTest`,
+`FactCaptureAgreementTest`). `NotACarrier` re-verifies live as the sealed interface R687 introduced, with
+`instanceof NotACarrier` intact at its read sites. `render/ColumnComparison` (R885) is live and new.
 
 ## A. Obsolete: should leave the active roadmap (1)
 
 | Item | Status | Why obsolete | Recommended action |
 |---|---|---|---|
-| **R209** field-registry-typed-rejection-trace | Backlog | **Carried; still Backlog, still fully delivered.** The entire deliverable (remove the `RejectionKind.AUTHOR_ERROR` default arm and emit `RejectionKind.of(rejection)` consistently with `traceOutput`) is shipped by **R585**. Re-verified this window: `AUTHOR_ERROR` `grep`=0 in `FieldRegistry.java`. Nothing remains to do; not touched this window. | **Discard**, recording R585 as the delivery vehicle. |
+| **R209** field-registry-typed-rejection-trace | Backlog | **Carried; still Backlog, still fully delivered.** The entire deliverable (remove the `RejectionKind.AUTHOR_ERROR` default arm and emit `RejectionKind.of(rejection)` consistently with `traceOutput`) is shipped by **R585**. Re-verified this window: the `AUTHOR_ERROR` default arm is `grep`=0 in `FieldRegistry.java`. Nothing remains to do; not touched this window. | **Discard**, recording R585 as the delivery vehicle. |
 
 R520 (`table-on-input-removal-housekeeping`) stays a coherent deliberately-deferred docs tail, not
 obsolete. R846 (`authored-connection-type-scope-silence`) is a self-declared Backlog tombstone whose
@@ -178,19 +198,19 @@ re-verified `grep`=0 (or, for R34, its re-anchor relation re-verified materializ
 **R762 remains here**, its `jvm_class_supertype` consumer (`intent_jvm_ancestor`) re-verified live. **R135
 (§C.11, cross-listed here) and R34 both sit on the nodeId cluster,** whose re-anchor targets survive
 (`FilterBinding.Local` / `liftedSourceColumns` live; `intent_node_id_instruction.basis` a shipped
-materialized relation, undisturbed by R878's re-keying of the disjoint `intent_node_id_decode` family).
-**R193 and R213 remain the two overdue subsumption candidates** (R649 / R585 / R589 shipped what they
-scoped); running both re-checks, most likely closing both as subsumed, is the cheapest board-cleaning
-available.
+materialized relation, undisturbed by R880's addition of the `identity_pinned` window on the disjoint
+straddle carriers). **R193 and R213 remain the two overdue subsumption candidates** (R649 / R585 / R589
+shipped what they scoped); running both re-checks, most likely closing both as subsumed, is the cheapest
+board-cleaning available.
 
 | Item | Status | What changed | Recommended action |
 |---|---|---|---|
-| **R762** census-stores-members-it-reads-by-name | Backlog | R682 added `intent_jvm_ancestor` (`247d387`), the first live reader of `jvm_class_supertype`, consumed by `intent_condition_table_parameter`; re-verified live this window. The item's subsection "`jvm_class_supertype` is written every capture and read by nothing", its table row "not read at all", and its "only consumer is `intent_class_assignable`" claim are now all false. The closure seeds from captured signatures, so it is an argument for capturing supertypes, not against. The item's broader lever (store class names, resolve the seven by-name relations on demand) survives for those relations. | **Re-spec the `jvm_class_supertype` subsection:** it now feeds a live derivation, so re-derive whether it is still droppable, and re-baseline the row-count split. The on-demand thesis for the other by-name relations is untouched; the tense-fix on the R760-deleted `intent_class_assignable` folds into this re-spec. |
+| **R762** census-stores-members-it-reads-by-name | Backlog | R682 added `intent_jvm_ancestor`, the first live reader of `jvm_class_supertype`, consumed by `intent_condition_table_parameter`; re-verified live this window. The item's subsection "`jvm_class_supertype` is written every capture and read by nothing", its table row "not read at all", and its "only consumer is `intent_class_assignable`" claim are now all false. The closure seeds from captured signatures, so it is an argument for capturing supertypes, not against. The item's broader lever (store class names, resolve the seven by-name relations on demand) survives for those relations. | **Re-spec the `jvm_class_supertype` subsection:** it now feeds a live derivation, so re-derive whether it is still droppable, and re-baseline the row-count split. The on-demand thesis for the other by-name relations is untouched; the tense-fix on the R760-deleted `intent_class_assignable` folds into this re-spec. |
 | **R193** service-param-classification-sealed-hierarchy | Backlog | **R649 shipped the deliverable.** `reflectServiceMethod` / `looksLikeSourcesShape` `grep`=0; `reduceClaims` mints one sealed `ParamRole` per parameter. | **Re-derive the residue against shipped R649; most likely close as subsumed**, recording R649 as the delivery vehicle if nothing survives. |
 | **R72** slim-servicecatalog-to-lookup | Backlog | **Premise materially changed by R649.** R649 dissolved `reflectServiceMethod` (`grep`=0) into `decodeServiceMethod` / `reduceClaims` / `bindServiceMethod`; `reflectTableMethod` / `reflectExternalField` survive. | **Re-spec** against the post-R649 split; drop every stale `ServiceCatalog.java:NNN` line cite. |
 | **R213** input-field-rejection-attribution | Backlog | **Escalated, still unactioned.** `InputFieldResolution.Unresolved` now carries a `SourceLocation`; R589's occurrence-path derivation (Done) delivers the attribution split. | **Re-derive the residue against shipped R585 + R589; most likely close as subsumed.** |
 | **R66** rejection-string-carrier-widening | Backlog | Phase **A2** was verbatim what **R585** shipped (`Unresolved` carries `Rejection rejection`, not `reason:String`). Phases A1, A3, B1, B2 survive. | **Re-spec:** strike A2 as delivered; re-baseline the four surviving phases; fix the `:25-30` anchors. |
-| **R34** nodeid-migration-quickfix | Backlog | Carried, self-contradictory. The "shim facts" driver names three WARN sites deleted by R473; the re-anchor addendum (2026-08-20) confirms the driver is void and names `intent_node_id_instruction.basis` as the re-derivation target, a shipped materialized relation (re-verified live; R878 re-keyed the sibling `intent_node_id_decode` family, not this relation). Body still leads with the void driver. | **Re-spec** onto `intent_node_id_instruction` (`basis` + `node_type_name` + location); retitle off "shim facts". |
+| **R34** nodeid-migration-quickfix | Backlog | Carried, self-contradictory. The "shim facts" driver names three WARN sites deleted by R473; the re-anchor addendum (2026-08-20) confirms the driver is void and names `intent_node_id_instruction.basis` as the re-derivation target, a shipped materialized relation (re-verified live; R880 added the `identity_pinned` window on the sibling straddle carriers, not this relation). Body still leads with the void driver. | **Re-spec** onto `intent_node_id_instruction` (`basis` + `node_type_name` + location); retitle off "shim facts". |
 | **R122** compound-entity-mutations | Backlog | "Design space narrows under R222" leans on R222's discarded recursive `InputUsage` model (R222 left the board 2026-08-06). `ChildField.TableTargetField` (added by this item) is live. | **Re-spec the "narrows under R222" section**; re-express against the captured `intent_` / `applied_` relations. |
 | **R462** nested-fetcher-outgoing-field-edges | Spec | Central target `CompileDependencyGraphBuilder.addFieldEdges` deleted (`grep`=0); the body's own dissolution condition has occurred. Cites absent `FkTargetConditionEmitter.emitTerm` and phantom `MutationConditions` as live. | **Re-derive against the plan-projected recompile graph.** If closed, discard, else re-spec; repoint `FkTargetConditionEmitter.emitTerm` to `FkTargetConditionFilter` and drop `MutationConditions`. |
 | **R545** model-free-of-emit-vocabulary | Backlog | `RowsMethodBody` / `RowsMethodSkeleton` deleted (diagnosis + second deliverable gone); first deliverable survives (`ClassName` / `TypeName` model-pervasive). The `:18` counter-argument names R638-deleted `FieldClassification` / `TypeClassification`. | **Re-spec.** Drop the `RowsMethodBody` diagnosis; keep the first deliverable; update the `:18` counter-argument to the current `rewrite/catalog/` contents. |
@@ -265,7 +285,7 @@ R484 removed `Rejection.Deferred.planSlug`; R431 removed the `SourceKey.Reader` 
 | **R234** jooq-embedded-and-udt-input-backings | Backlog | `:15` cites `TypeBuilder.buildNonTableInputType` (`grep`=0) as the live dispatch. | **Re-anchor** to the current `TypeBuilder` input-classification path (`buildInputType`). |
 | **R257** updaterows-walker-sdl-substrate | Backlog | `:17` calls `resolveInput` "the legacy resolver" (gone R515); `:15`/`:19` reach via `TableInputType.inputFields()` (gone R519). | **Re-anchor** both: `resolveInput` to `admitMutationInputFields`, `TableInputType.inputFields()` to per-consumer input resolution. |
 | **R337** input-nesting-projection-classification | Backlog | `:30` reaches an input object's fields "via `TableInputType.inputFields()`" as the LSP-hover mechanism. | **Re-anchor** the one live mechanism cite to per-consumer input resolution. |
-| **R245** wire-condition-emit-on-mutations | Backlog | `:76` locates the `@condition` slot in `MutationInputResolver.resolveInput` (gone R515; one surviving hit is a historical comment); `:124` names the pre-R589 `UnboundField` carrier. | **Re-anchor** `:76` to `admitMutationInputFields`, `:124` to `ConditionOwnedField`. |
+| **R245** wire-condition-emit-on-mutations | Backlog | `:76` locates the `@condition` slot in `MutationInputResolver.resolveInput` (gone R515; one surviving hit is a historical comment); `:124` names the pre-R589 `UnboundField` carrier. R687 added `resolveReturnDerivedTable` to the same class but did not touch this slot. | **Re-anchor** `:76` to `admitMutationInputFields`, `:124` to `ConditionOwnedField`. |
 
 ### C.7 Condition + projection emitter dissolution drift (carried; R552 + R549)
 
@@ -313,7 +333,7 @@ R57 replaced the `liftedSourceColumns` slot on the two reference carriers with t
 (`Local(List<ColumnRef> ownTableColumns)` / payload-free `Remote`). The identically named component on the
 resolver's `JoinPath` and `Resolved.FkTarget.DirectFk` **survives**. **R728 removed `validateLift`**
 (`grep`=0), turning the junction-chain rejection into absent-local-columns reaching a hop-general
-`EXISTS`. `liftedSourceColumns` (5 files) and `FilterBinding` (13 files) re-verify live.
+`EXISTS`. `liftedSourceColumns` and `FilterBinding` re-verify live.
 
 | Item | Status | Stale reference | Recommended action |
 |---|---|---|---|
@@ -356,76 +376,72 @@ item naming the deleted view in the present tense.
 
 ## D. Structural: (0)
 
-Empty of blocking defects. `changelog.md` carries `next-id: R880`, clearing the max present id (R877).
-No duplicate `id:`, no `status: Done` tombstones in `roadmap/*.md`, and the nine non-empty `depends-on:`
-edges resolve to eleven distinct present target files (`carrier-recognizer-conflates-three-scan-verdicts`
--> `dml-carrier-errors-field-blocks-return-derived-table`; `condition-table-parameter-anchor-assignability`
--> `condition-method-overload-selection`; `corpus-directives-to-expect-equals` ->
+Empty of blocking defects. `changelog.md` carries `next-id: R903`, clearing the max present id (R902).
+No duplicate `id:`, no `status: Done` tombstones in `roadmap/*.md`, and the eight non-empty `depends-on:`
+edges resolve to nine distinct present target files (`capture-without-the-materialization-refresh` ->
+`capture-stops-reading-the-walk`; `corpus-directives-to-expect-equals` ->
 `planners-read-facts-emitters-read-commands`; `dev-start-refreshes-the-register-twice` ->
-`capture-moves-below-the-generator`, `capture-without-the-materialization-refresh`, and
-`warm-capture-empties-unpartitioned-catalog-relations`; `multi-source-input-validation` ->
-`catalog-check-constraint-validation`; `operation-driven-test-corpus` -> `capability-catalog`;
-`rover-graphos-integration` -> `oneof-augment-defeated-by-descriptions`; `preserve-enum-extraction-through-condition-rewrap`
-target present; `validator-integration-execute-coverage` -> `multi-source-input-validation`). The
-`dev-start-refreshes-the-register-twice` edge gained a third target this window
-(`warm-capture-empties-unpartitioned-catalog-relations`, R872), which resolves.
+`capture-without-the-materialization-refresh` and `warm-capture-empties-unpartitioned-catalog-relations`;
+`multi-source-input-validation` -> `catalog-check-constraint-validation`; `name-case-fold-guard` ->
+`launcher-method-census-folds-case`; `operation-driven-test-corpus` -> `capability-catalog`;
+`rover-graphos-integration` -> `oneof-augment-defeated-by-descriptions`; `validator-integration-execute-coverage`
+-> `multi-source-input-validation`). The R687-shipped slug
+`dml-carrier-errors-field-blocks-return-derived-table` was dropped from R725's `depends-on` on Done, so no
+edge dangles.
 
 Two **pre-existing, non-blocking** hygiene notes, unchanged this window:
 
 1. Four **legacy** items still lack a `bucket:` key: R242 (`dml-payload-positional-alignment`),
    R109 (`list-valued-external-field-multiset`), R252 (`multi-file-federation-fixture-coverage`),
    R180 (`record-parent-column-read-helper`). Build tolerates the omission; fold a `bucket:` in whenever
-   each is next edited.
+   each is next edited. Every item filed this window (R887 to R902) carries a `bucket:` key.
 2. **Numbering gaps** among the item files (each allocated id either folded away inline or born-and-closed
-   within a window, R871/R875/R878/R879 this pass among them) are harmless: numbers are never reused, and
-   `next-id` R880 clears the max present id R877.
+   within a window) are harmless: numbers are never reused, and `next-id` R903 clears the max present id R902.
 
 ## Cross-cutting observations
 
-1. **This was a quiet consolidation window: one item shipped, nothing was discarded, and no flag moved.**
-   R878 (the node-id decode grain re-key) is additive and corrective, confined to `graphitron-model.sql`
-   and its tests, and retires nothing an active item names. The two In Progress items (R876, R877) grew
-   the tree additively (live-symbol file counts rose; no retirement landed). The flag set is byte-for-byte
-   the same 44 the prior audit recorded, each re-verified by fresh grep at this HEAD.
+1. **This was a quiet bug-fix window: three items shipped, nothing was discarded, and no flag moved.**
+   R687, R880, and R885 are each additive or corrective bug fixes reported against release candidates
+   (RC31, the nullable-straddle regression, and issue 540). Each retires no symbol an active item names as
+   live: R687's `NotACarrier` split is a sealed refinement R725's own body already anticipates; R880 adds
+   an SQL window and a sealed null rule; R885 adds one `render/ColumnComparison` mint with byte-identical
+   SQL. The two other In Progress model items (R876, R877) grew the tree additively with no retirement. The
+   flag set is byte-for-byte the same 44 the prior audit recorded, each re-verified by fresh grep at this
+   HEAD.
 
-2. **The prior audit drifted from its own commit tree, and this pass corrects the baseline.** The
-   `2026-08-28` staleness audit described `next-id: R870` and 318 files while it was committed at
-   `next-id: R876` and 310 files, so it never reviewed R870 through R875 and its transition snapshot had
-   already advanced by landing. This is the identical failure that audit recorded against its own
-   predecessor. The lesson has now recurred twice: an audit must re-read the tree at the commit it is
-   actually landing in, not the (possibly rebased-away) snapshot it was drafted against. The fix this pass
-   ran is the honest baseline (`088ae37`, the true landing tree) plus a fresh full-corpus grep.
+2. **The prior audit drifted from its own commit tree for the third window running, and this pass corrects
+   the baseline.** The `2026-08-31` staleness audit stated `next-id: R880` and 311 files while it was
+   committed at `next-id: R887` and 313 files (`436067a`), and named a HEAD (`f21760d`) since rebased away.
+   This is the identical failure that audit recorded against its predecessor, and that predecessor recorded
+   against its own. The lesson has now recurred three times: an audit must re-read the tree at the commit it
+   is actually landing in, not the (possibly rebased-away) snapshot it was drafted against. The fix this pass
+   ran is the honest baseline (`436067a`, the true landing tree) plus a fresh full-corpus grep. **A publishing
+   discipline would help:** re-read `changelog.md`'s `next-id` and the file count in the same commit that
+   adds the audit, and quote those, not a drafting-time snapshot.
 
 3. **R682 is still the model-level activity whose terminal step is the next audit's likely headline.** Its
-   in-window history remains additive (the supertype closure `intent_jvm_ancestor`, the condition-table
-   arm, the enum-class capture); it retires nothing yet. The bulk retirement, the walk and its taxonomy
-   (`GraphitronSchemaBuilder`, `TypeBuilder`, `FieldBuilder`, the sealed classification hierarchies),
-   waits on the terminal step. When it lands it will stale the many Backlog items that name those
-   walk-tier symbols at once. Nothing to do now beyond noting it.
+   in-window history remains additive; it retires nothing yet (`GraphitronSchemaBuilder` re-verified live,
+   22 main files). The bulk retirement, the walk and its taxonomy (`GraphitronSchemaBuilder`, `TypeBuilder`,
+   `FieldBuilder`, the sealed classification hierarchies), waits on the terminal step. When it lands it will
+   stale the many Backlog items that name those walk-tier symbols at once. Nothing to do now beyond noting it.
 
 4. **R193 and R213 remain the two overdue subsumption candidates, and neither moved.** R193 asked for the
    sealed parameter classifier R649's `reduceClaims` / `ParamRole` shipped; R213 holds the same shape
    against R585 / R589. Running both re-checks and most likely closing both as subsumed is the cheapest
    board-cleaning available. R209 (§A) is the third mechanical close (fully delivered by R585).
 
-5. **The Ready set is where stale prose bites soonest.** It is now R333, R427, R467, R555, R663, R684,
-   R724, R730, R838 (nine; R860 shipped this cycle). Of these, **R333 (§C.5/§C.7), R427 (§C.0), R555
-   (§C.10), and R684 (§C.12) carry stale cites**, none refreshed this window; R467, R663, R724, R730 are
-   clean, and R838 is born-current. **Refreshing R333, R427, R555, and R684 before pickup remains the
+5. **The Ready set is where stale prose bites soonest.** It is now R333, R427, R467, R555, R684, R724,
+   R730, R838 (eight; R663 moved Ready -> In Progress -> In Review this cycle). Of these, **R333 (§C.5/§C.7),
+   R427 (§C.0), R555 (§C.10), and R684 (§C.12) carry stale cites**, none refreshed this window; R467, R724,
+   R730, R838 are clean or born-current. **Refreshing R333, R427, R555, and R684 before pickup remains the
    highest-value hygiene action on the board.**
 
-6. **The new-item intake is born-current, and so is the previously-unreviewed R870 to R875 span.** The
-   items filed this window (R876, R877) and the six the prior audit's ghost baseline hid (R870 to R875)
-   cite no retired symbol as a live mechanism. Several are follow-ups to the capture, dev-loop, and
-   derived-read-cost work in flight, and read against the live relations.
+6. **The new-item intake is born-current, and so are the prior audit's own-window items it never reviewed.**
+   The sixteen items filed this window (R887 to R902) and the R880 to R886 span the prior audit's snapshot
+   drift hid cite no retired symbol as a live mechanism. Several are follow-ups to the three shipped bug
+   fixes (R687 -> R689 phase-varying-index guard; R885 -> R887 unused-overload cleanup) and to the capture,
+   dev-loop, and derived-read-cost work in flight, and read against the live relations.
 
 ---
 
-_Review date: 2026-08-31._
-
-_Addendum, same date, after the review above was written: `capture-moves-below-the-generator` (R864)
-was dissolved into `capture-without-the-materialization-refresh` (R865) and its file deleted, the two
-having been separate specs against one defect. The section D edge count reads `dev-start-refreshes-the-register-twice`
--> three targets; it now names two, the deleted slug having been dropped from that item's
-`depends-on`. Everything else in section D stands._
-
+_Review date: 2026-09-01._
