@@ -2991,7 +2991,7 @@ CREATE TABLE java_file (
   stamp       VARCHAR NOT NULL,
   PRIMARY KEY (file)
 );
-COMMENT ON TABLE java_file IS 'A .java file whose declarations this store holds, and the stamp they were read at. The family''s refresh unit: one transaction per file, retained when the file still hashes to its stamp and rewritten whole when it does not, so an edit costs one parse rather than a workspace walk. A row exists exactly while the last walk covering the file''s root saw it, so a file deleted under a walked root loses its row and its declarations with it.';
+COMMENT ON TABLE java_file IS 'One .java file whose declarations this store holds, and the stamp they were read at. For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.';
 COMMENT ON COLUMN java_file.file IS 'absolute normalised path of the source file; the family''s partition dimension and the grain its refresh runs at. Path form, as store_source spells a schema file, but never a store_source row (see this family''s charter) and never joined to jvm_class.source_name, which names a classpath entry rather than a source file';
 COMMENT ON COLUMN java_file.source_root IS 'the walked root the file was reached under, on jvm_class.source_name''s terms: where the row came from, and so the scope whoever put it there owns. A walk prunes the files that left its own roots and leaves a sibling module''s alone. A file reachable under two nested roots is attributed to whichever root reached it first in the walk''s own order, one row either way';
 COMMENT ON COLUMN java_file.stamp IS 'content hash of the file as parsed, on ClasspathSources'' terms and for its reasons: modification time is a heuristic that a checkout, a rebase or a container layer defeats. NOT NULL because a file that cannot be read cannot be parsed either, so there is no partially-written partition to record';
@@ -3005,7 +3005,7 @@ CREATE TABLE java_class_declaration (
   PRIMARY KEY (file, class_name),
   FOREIGN KEY (file) REFERENCES java_file (file)
 );
-COMMENT ON TABLE java_class_declaration IS 'A class, interface, enum, record or annotation declaration written in a source file, at the position the parse read it. Keyed by file and name rather than by name alone: two files declaring one fully-qualified name is malformed Java that a parse still reads, and a relation keyed on the name would have to pick one of them. A nested class earns its own row under the dotted name its declaration chain spells; anonymous and local classes have no name to key on and are absent.';
+COMMENT ON TABLE java_class_declaration IS 'One class, interface, enum, record or annotation declaration written in a source file, at the position the parse read it. For example the FilmService declaration at line 12 of that file, carrying the doc comment written above it.';
 COMMENT ON COLUMN java_class_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
 COMMENT ON COLUMN java_class_declaration.class_name IS 'the dotted name the declaration spells: the file''s package, then the chain of enclosing class simple names. The join key to jvm_class.class_name, matched by name and by nothing else, the generated jOOQ package being absent there and present here';
 COMMENT ON COLUMN java_class_declaration.source_line IS 'line of the declaration, 1-based per the Compiler Tree API''s LineMap; the store holds the parse''s own convention and an editor surface converts to its own. A parse positions every declaration it reads, so -1, that API''s own no-position sentinel, is defensive: it is carried through rather than dropped, because a declaration whose position is missing still has a doc comment worth holding';
@@ -3024,7 +3024,7 @@ CREATE TABLE java_method_declaration (
   PRIMARY KEY (file, class_name, method_name, ordinal),
   FOREIGN KEY (file, class_name) REFERENCES java_class_declaration (file, class_name)
 );
-COMMENT ON TABLE java_method_declaration IS 'A method declaration on a declared class: one row per declaration, not one per resolvable name. Overloads are separate rows, so a consumer asking for a name gets as many rows as the class declares and the count is the resolution outcome; that is what replaces an index which dropped colliding keys into a side set of ambiguous ones and kept a first-declaration-wins view beside it. A constructor is a declaration and earns a row under the parse''s own name for it, where jvm_method excludes constructors: the two populations are not required to agree, and this is one of the places they do not.';
+COMMENT ON TABLE java_method_declaration IS 'One method declaration on a declared class. For example the first findFilm declaration on FilmService at ordinal 0, beside a second overload of the same name at ordinal 1.';
 COMMENT ON COLUMN java_method_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
 COMMENT ON COLUMN java_method_declaration.class_name IS 'the declaring class, as java_class_declaration spells it';
 COMMENT ON COLUMN java_method_declaration.method_name IS 'the declared method name; not a key on its own, overloads sharing it';
@@ -3044,7 +3044,7 @@ CREATE TABLE java_field_declaration (
   PRIMARY KEY (file, class_name, field_name),
   FOREIGN KEY (file, class_name) REFERENCES java_class_declaration (file, class_name)
 );
-COMMENT ON TABLE java_field_declaration IS 'A field declaration on a declared class: the position and doc comment of a variable whose immediate encloser is a class, so parameters and locals are absent. Enum constants are fields at this grain, and so are the generated jOOQ table classes'' column constants, which is what makes a column''s declaration reachable here at all. A field name is unique within a class, so no ordinal is needed beside it.';
+COMMENT ON TABLE java_field_declaration IS 'One field declaration on a declared class, meaning a variable whose immediate encloser is the class. For example the FILM_ID constant on a generated Film table class, which is how a column''s own declaration becomes reachable.';
 COMMENT ON COLUMN java_field_declaration.file IS 'the source file the declaration is written in; the family''s partition dimension and the key''s leading column';
 COMMENT ON COLUMN java_field_declaration.class_name IS 'the declaring class, as java_class_declaration spells it';
 COMMENT ON COLUMN java_field_declaration.field_name IS 'the declared field name as written; the Java name, which is what joins to a generated table class''s column constant, never the SQL column name';
@@ -3072,7 +3072,7 @@ CREATE TABLE javac_diagnostic (
   PRIMARY KEY (graph_name, file, line_number, column_number, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE javac_diagnostic IS 'One javac diagnostic from the latest compile round over a graph''s emitted sources; the round replaces the graph''s rows wholesale, so the relation''s content contract is exactly the published round. Graph-keyed and graph-private: a sibling graph''s compile errors are its internals, not its schema contract, so cross-graph reads never range over this family, and rows exist only between one of the graph''s compile rounds and its next generation (capture clears the graph''s own partition with the rest of its ownership scope). Two key columns transcribe absence as javac''s own sentinels rather than NULL, a primary-key column admitting no NULL: readers compare against the sentinel values, never IS NULL.';
+COMMENT ON TABLE javac_diagnostic IS 'One javac diagnostic from the latest compile round over a graph''s emitted sources. For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.';
 COMMENT ON COLUMN javac_diagnostic.graph_name IS 'the graph whose emitted sources the round compiled; the partition dimension, anchored by store_graph and the scope of every statement the writer issues';
 COMMENT ON COLUMN javac_diagnostic.file IS 'path of the generated .java javac anchored the diagnostic on, as javac named it and in java_file.file''s form, or the "(no source)" sentinel where javac reported no source; never NULL, this column being part of the key';
 COMMENT ON COLUMN javac_diagnostic.line_number IS 'javac''s 1-based line, or -1 (javax.tools.Diagnostic.NOPOS) where javac reported no position; a sentinel, never NULL, this column being part of the key';
@@ -10225,7 +10225,22 @@ INSERT INTO meta_grain VALUES
    'source_name, class_name, component_name', 'classpath'),
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
-   'source_name, class_name, field_name', 'classpath');
+   'source_name, class_name, field_name', 'classpath'),
+  ('source-file',
+   'one .java source file this store holds declarations from',
+   'file', 'java-source'),
+  ('source-class-declaration',
+   'one class declaration written in one source file',
+   'file, class_name', 'java-source'),
+  ('source-method-declaration',
+   'one method declaration on one declared class, overloads told apart by declaration order',
+   'file, class_name, method_name, ordinal', 'java-source'),
+  ('source-field-declaration',
+   'one field declaration on one declared class',
+   'file, class_name, field_name', 'java-source'),
+  ('compile-diagnostic',
+   'one diagnostic the compiler reported at one position of one file, in one graph''s round',
+   'graph_name, file, line_number, column_number, ordinal', 'javac');
 
 INSERT INTO meta_relation VALUES
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
@@ -10335,7 +10350,27 @@ INSERT INTO meta_relation VALUES
   ('jvm_scalar_type_field', 'scalar-type-field', 'catalog',
    'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType.',
    'For example a DATE_TIME field an author names in @scalarType.',
-   '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.');
+   '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.'),
+  ('java_file', 'source-file', 'java-source',
+   'One .java file whose declarations this store holds, and the stamp they were read at.',
+   'For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.',
+   'The family''s refresh unit, which is what makes an edit cost one parse rather than a workspace walk: a file is retained while it still hashes to its stamp and rewritten whole when it does not. Its own relation rather than a store_source row because store_source is a capture round''s read set and a .java file is read by neither the SDL walk nor the classpath scan, so this family carries its own freshness bookkeeping and leaves that taxonomy closed.'),
+  ('java_class_declaration', 'source-class-declaration', 'java-source',
+   'One class, interface, enum, record or annotation declaration written in a source file, at the position the parse read it.',
+   'For example the FilmService declaration at line 12 of that file, carrying the doc comment written above it.',
+   'Where a declaration is written and what its doc comment says, which the classfile census cannot answer for the half that matters most: the jvm_ scan excludes the generated jOOQ package, and that is exactly where a jump from @table or @field(name:) has to land. Keyed by file and name rather than by name alone, because two files declaring one fully-qualified name is malformed Java that a parse still reads, and a name-keyed relation would have to pick one of them.'),
+  ('java_method_declaration', 'source-method-declaration', 'java-source',
+   'One method declaration on a declared class.',
+   'For example the first findFilm declaration on FilmService at ordinal 0, beside a second overload of the same name at ordinal 1.',
+   'One row per declaration rather than per resolvable name, so a consumer asking for a name gets as many rows as the class declares and the count is the resolution outcome; that replaces an index which dropped colliding keys into a side set of ambiguous ones and kept a first-declaration-wins view beside it. Arity rather than parameter types, an unattributed parse resolving a type to the unqualified name as written, so the arity is the part that is a fact.'),
+  ('java_field_declaration', 'source-field-declaration', 'java-source',
+   'One field declaration on a declared class, meaning a variable whose immediate encloser is the class.',
+   'For example the FILM_ID constant on a generated Film table class, which is how a column''s own declaration becomes reachable.',
+   'A column''s declaration is reachable only here: the generated jOOQ table classes'' column constants are fields at this grain and the classfile census excludes that package by design. Enum constants are fields at this grain too. Parameters and locals are absent, their encloser not being a class, and a field name is unique within a class, so no ordinal sits beside it.'),
+  ('javac_diagnostic', 'compile-diagnostic', 'compile',
+   'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
+   'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
+   'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

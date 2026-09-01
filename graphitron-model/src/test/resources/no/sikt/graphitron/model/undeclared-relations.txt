@@ -219,11 +219,6 @@ intent_type_backing_seed
 intent_type_demand
 intent_type_domain
 intent_type_exemption
-java_class_declaration
-java_field_declaration
-java_file
-java_method_declaration
-javac_diagnostic
 lint_finding
 lint_finding_fix
 lint_finding_fix_edit

@@ -654,3 +654,18 @@ holds. They are on that column now, which also repairs the pointer this slice wo
 stranded: it read "see this relation''s comment", and the relation's comment no longer argues
 anything. That is the second time the echo rewrite has stranded such a pointer, so the check is now
 part of the per-family loop rather than a lesson.
+
+### The scaffolding group, part one: `java_` and `javac_` (2026-09-01)
+
+Five relations at five grains, roster 260 to 255. `java_` is owned by the `java-source` gatherer over
+the `java-source` corpus and `javac_` by the `compile` gatherer over the `javac` corpus, both already
+rostered, so this half needed no roster change and is what the family order calls settling the model
+one corpus over.
+
+**The other four families in this group have no owner on the roster, and that is the slice's real
+question.** `walk_`, `rejection_`, `lint_` and `build_warning_` are written by `TypeBackingClassRows`
+(inside capture's detect pass, standing on the walked model) and by `RejectionFacts` and
+`BuildWarningFacts` (from the dev loop, out of the assembled build report). None of those is one of
+the seven rostered gatherers, and none of the seven runs them, so the four cannot be declared without
+deciding what a producer of this kind is. That is the question the family table parked here, and it
+is left open in the tree rather than answered by whichever attribution would have made the gate pass.
