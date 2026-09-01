@@ -12,266 +12,275 @@ last-updated: 2026-08-31
 
 # The generator owns the fact tier it should merely read
 
-The fact store is supposed to sit below the generator: capture writes facts, planners read facts and
-produce commands, emitters render commands, and validation is questions asked of the facts. Each
-tier reads only the tier below it.
+Graphitron reads three things about a consumer's project: their GraphQL schema, their jOOQ-generated
+database classes, and their compiled Java classes. It writes what it learns into a small database we
+call the **fact store**, and then generates code by asking that database questions.
 
-The tree does not draw that line anywhere. Capture lives in the same module as the planners that are
-meant to sit above it, so nothing but review stops a planner from reaching into the thing that
-produced its facts. The generator creates the store it captures into, so no caller can hand it one.
-And because the generator is the only thing that fills a store, obtaining a store means running a
-generation.
+Writing the store is meant to be the bottom layer, and generating code the layer above it. The
+bottom layer should not know the top exists.
 
-This item draws the line in the three places it is missing, so that later work stops paying for its
-absence.
+Right now it does, in three ways:
 
-## Vocabulary
+* The code that fills the store lives in the same module as the code that generates from it, so
+  nothing stops one from calling the other except a reviewer noticing.
+* The generator creates the store itself, so no one can hand it a store to use.
+* The only way to fill a store is to run the generator, so anyone who wants the facts has to run the
+  thing that consumes them.
 
-The **fact tier** is everything at or below the store: the DDL that says what a fact is, the
-derivations that say what facts mean, the read and write surfaces, and the **capture** that fills
-the store from the three **corpora** (the consumer's SDL, their jOOQ-generated catalog classes, and
-their compiled extension classes on the build classpath).
+This item fixes all three.
 
-The **generator** is what sits above: the planners that join facts into command rows, and the
-emitters that render them.
+## Words used here
 
-**Store creation** is opening a `GraphitronModelStore` at a directory and deciding what to do when
-that fails or when another checkout holds the graph: the open, the graph-ownership check, the retry,
-and the fallback to a private in-memory store.
+**Capture** is the pass that reads the three sources and writes what it finds into the store.
+
+The **fact tier** is capture plus everything under it: the database schema that says what a fact is,
+the queries that say what facts mean, and the code that reads and writes them.
+
+The **generator** is what sits above: the planners that turn facts into a description of the code to
+write, and the emitters that write it.
+
+**Store creation** means opening the store file and deciding what to do when that goes wrong: when
+the file cannot be opened, or when another checkout of the project is already using it. Today that
+decision includes an ownership check, one retry, and a fallback to a temporary store held in memory.
 
 ## Why now
 
-This is tech debt, paid so the next changes are cheap rather than because anything is broken today.
-Three concrete costs it removes:
+Nothing is broken today. This is debt we pay so the work after it is cheaper. Three costs it
+removes:
 
-**Every fact-tier change is reviewed by hand.** There is no mechanism that refuses a planner
-importing a crawler, so the rule survives only as long as reviewers keep noticing. After the module
-move, javac refuses it.
+**The layering is kept by hand.** Nothing stops the generator's code from calling into capture, or
+capture from calling into the generator, except somebody spotting it in review. Once the two live in
+different modules, the compiler refuses it and nobody has to watch for it.
 
-**The store clients carry an edge they do not want.** `graphitron-lsp` and `graphitron-mcp` both
-depend on `graphitron` at test scope, and both poms apologise for it in their own words: compile
-scope "would let a request-path class reach a generator type again without anyone noticing". Neither
-module's main sources name a generator type today; the edge is entirely about what their tests need
-to build a fixture.
+**Two side modules depend on the generator when they should not.** The language server
+(`graphitron-lsp`) and the MCP server (`graphitron-mcp`) both read the store. Neither one's shipped
+code touches the generator, and both poms say they want to keep it that way. But both depend on the
+generator in their tests, for one reason: the only way to build a store to test against is to run a
+generator.
 
-For `graphitron-mcp` that need is the whole edge, and this item removes it. For `graphitron-lsp` it
-is most of the edge but not all: its tests also exercise the lint rule engine and the walk, which
-stay above the line, so the edge narrows rather than disappearing. The census under step 1 states
-both outcomes exactly, because the first draft of this item asserted the stronger claim for both and
-it is false for one.
+This item removes that reason. For `graphitron-mcp` it is the whole reason, so that module can drop
+the dependency completely. For `graphitron-lsp` it is most of it but not all, because some of its
+tests also exercise the lint rules and the old schema walk, and both of those stay where they are.
+Step 1 lists exactly what is left.
 
-**Nobody can get a store without running a generation.** Every instrument built on the store so far
-has had to keep a file left behind by a run that happened to produce one, which is why the
-derived-read-cost figures in R876 rest on a single kept capture with a recorded SHA rather than on a
-store anyone can make.
+**You cannot get a store without generating code.** Anyone who wants to look at the facts, or
+measure a query against a realistic store, has to keep a file left behind by some earlier run. That
+is why the measurements in R876 rest on one saved file rather than on a store anyone can produce on
+demand.
 
 ## What changes when this lands
 
-**The fact tier moves into `graphitron-model`.** `rewrite/capture`, `rewrite/derive`, `JooqCatalog`,
-the SDL reader and its input family, the selection parser, `rewrite/session`, `ClasspathScanner` and
-`CompletionData` cross the line, about 14,000 lines. `plan`, `render` and `command` stay, about
-14,800. A planner that imports a crawler stops compiling.
+**The fact tier moves into the `graphitron-model` module.** Moving down: `rewrite/capture`,
+`rewrite/derive`, `JooqCatalog`, the SDL reader and its input family, the selection parser,
+`rewrite/session`, `ClasspathScanner` and `CompletionData`, about 14,000 lines. Staying put: `plan`,
+`render` and `command`, about 14,800 lines. After the move, generator code that calls into capture
+does not compile.
 
-**The generator is handed a store.** `GraphQLRewriteGenerator` stops passing a directory into
-capture and starts receiving an open store, which is the shape every fact reader in `graphitron-lsp`
-and `graphitron-mcp` already has. Store creation becomes one fact-tier entry point that the mojos
-call.
+**The generator is given a store instead of making one.** `GraphQLRewriteGenerator` stops passing a
+directory to capture and starts being handed an open store. That is already how every fact reader in
+`graphitron-lsp` and `graphitron-mcp` works. Opening the store becomes one entry point in the fact
+tier, and the Maven goals call it.
 
-**`mvn graphitron:capture` fills a store and stops.** Schema loading, attribution, classification and
-the capture loads, then commit. No detections, no validation, no lint, no plan, no emission. It
-produces a store for a schema that would fail validation, which is what separates it from
-`mvn graphitron:validate`: a command that produces an artifact must not refuse to produce it because
-it disliked the input.
+**A new command, `mvn graphitron:capture`, fills a store and stops.** It reads the schema, classifies
+it, writes the facts, commits, and does nothing else: no checks, no plan, no generated files. It
+works even on a schema that would fail validation, which is the point of having it. Today the closest
+thing is `mvn graphitron:validate`, and that command fills a store on its way to failing your build
+over your schema. A command whose job is to produce something should not refuse because it disliked
+the input.
 
-**The dev session opens one store instead of two.** `DevMojo` already opens a long-lived session
-store for the language server, the MCP server and the diagnostics writers, and today every generator
-pass inside that session opens a second handle underneath it because no caller can substitute one.
-The saving is a handle rather than a database, H2 giving one process one database per file; what
-matters is that the session and the pass stop disagreeing about who owns the store.
+**A dev session opens one store instead of two.** `DevMojo` already opens a long-lived store for the
+language server, the MCP server and the diagnostics writers. Today every generator run inside that
+session opens a second connection to it, because nothing can hand the generator the session's own
+store. This is not a saving in disk or memory (H2 gives one process one database per file); it is
+that the session and the run stop disagreeing about who owns the store.
 
-**`graphitron-mcp` drops `graphitron` entirely, and `graphitron-lsp`'s edge narrows.** What
-`graphitron-mcp` imports at test scope is `FactCapture`, `JooqCatalog`, `ClasspathScanner`,
-`CompletionData`, `CompileFacts`, `CompileDiagnostic`, `CompileRound`, `LintConfig`, `Rejection` and
-`ValidationError`, all of which move down, plus `GraphQLRewriteGenerator`, `RewriteContext` and the
-`BuiltStore` / `CapturedStore` / `FactWriters` harnesses, which exist to drive a generator in order
-to obtain a store. The capture goal and the moved capture remove both reasons, so
-`StoreClientBoundaryTest` tightens from main-sources-only to all scopes.
+**`graphitron-mcp` drops its dependency on the generator completely.** Its tests currently use
+`FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
+`CompileDiagnostic`, `CompileRound`, `LintConfig`, `Rejection` and `ValidationError`, all of which
+move down with the fact tier, plus `GraphQLRewriteGenerator`, `RewriteContext` and the
+`BuiltStore` / `CapturedStore` / `FactWriters` test helpers, which exist only to run a generator in
+order to get a store. Both reasons go away, so its guard test `StoreClientBoundaryTest` can widen
+from checking shipped code to checking the tests too.
 
-`graphitron-lsp` keeps a test-scope edge, for the imports named in step 1. What it gains instead is
-the guard `graphitron-mcp` already has: its rule about main sources lives only as a comment in its
-pom today, and this item makes it a test.
+**`graphitron-lsp` keeps a smaller dependency, in its tests only.** Step 1 lists what is left. In
+exchange it gets the guard `graphitron-mcp` already has: the rule that its shipped code names no
+generator type is a comment in its pom today, and this item makes it a test.
 
 ## How we get there
 
 The order matters, because each step makes the next one smaller.
 
-**1. Census the cut, and settle `rewrite/derive`.** Capture's imports from outside its own package
-sort cleanly: corpus readers and fact writers move with it, values move as values, and three things
-split rather than move. `rewrite/catalog` splits, `CatalogBuilder.buildExternalReferences` going
-down as a classpath read while `projectTypesByName` and `TypeBackingShape` stay above and retire
-with the walk under R682; they have live callers in `TypeBackingProjectionTest` and in
-`graphitron-lsp`'s `R157PipelineTest`, so "dies with the walk" does not mean delete now.
-`rewrite/lint` splits, `LintConfig` going down as a value in `SubjectConfig` while the rule engine
-stays above as analysis over a read schema. The third is the walk-side write, which R870 deletes and
-which this item therefore does not carry.
+**1. List what moves, and settle the unclear cases.** Most of it is clear. Everything capture uses to
+read the three sources moves with it, and so do the plain data types it copies into the store. Three
+things have to be split instead of moved:
 
-**The store clients are censused too, and the two answers differ.** Both modules' main sources
-import nothing from the generator today, so this is entirely about their tests.
+* `rewrite/catalog`. `CatalogBuilder.buildExternalReferences` reads the classpath, so it moves down.
+  `projectTypesByName` and `TypeBackingShape` read the old schema walk, so they stay. Those two will
+  disappear when the walk does, under R682, but they still have callers today
+  (`TypeBackingProjectionTest`, and `graphitron-lsp`'s `R157PipelineTest`), so "will disappear" does
+  not mean delete them now.
+* `rewrite/lint`. `LintConfig` is just settings, so it moves down. The rules themselves stay: they
+  analyse a schema, which is a job for the layer above.
+* The third split is capture's one write that reads the walk. R870 deletes it, and this item depends
+  on R870, so there is nothing here to split.
 
-`graphitron-mcp` clears. Every generator type its tests name either moves down with capture
+**One thing to confirm before starting.** Six files in `rewrite/derive` use `ValidationError` and
+`Rejection`, and two use `TableRef` and `ColumnRef`, all of which currently sit above the line. The
+likely answer is that they belong below it: rejections are already a table in the store's schema and
+the language server reads them, and `TableRef` and `ColumnRef` are plain data that both sides use.
+Check this rather than assume it, because it decides whether `rewrite/derive` moves in one piece.
+
+**What the two side modules use, and what is left after the move.** Neither module's shipped code
+uses the generator at all, so this is only about their tests.
+
+`graphitron-mcp` comes out clean. Everything its tests use either moves down with capture
 (`FactCapture`, `JooqCatalog`, `ClasspathScanner`, `CompletionData`, `CompileFacts`,
-`CompileDiagnostic`, `CompileRound`, `LintConfig`), is settled by the `rewrite/derive` gap below
-(`Rejection`, `ValidationError`), or is a store-fixture harness that moves with what it drives
-(`BuiltStore`, `CapturedStore`, `FactWriters`, all three in `graphitron`'s test sources today).
+`CompileDiagnostic`, `CompileRound`, `LintConfig`), is settled by the check above (`Rejection`,
+`ValidationError`), or is a test helper that moves along with what it drives (`BuiltStore`,
+`CapturedStore`, `FactWriters`).
 
-`graphitron-lsp` does not clear, and the reason is this plan's own splits. Its tests import the lint
-rule engine (`LintRule`, `LintFix`, `DeprecationRecognizer`), which stays above as analysis over a
-read schema; the half of `rewrite/catalog` that stays above (`CatalogBuilder`, `TypeBackingShape`),
-whose live caller `R157PipelineTest` is the reason this plan does not delete it yet; the walk itself
-(`GraphitronSchemaBuilder`); and three generator-tier values (`ValidationReport`, `BuildWarning`,
-`GraphitronType`). None of those is store-fixture work, so no amount of capture moving down reaches
-them.
+`graphitron-lsp` does not, and the reason is the splits above. Its tests use the lint rules
+(`LintRule`, `LintFix`, `DeprecationRecognizer`), the half of `rewrite/catalog` that stays
+(`CatalogBuilder`, `TypeBackingShape`), the schema walk itself (`GraphitronSchemaBuilder`), and three
+values that belong to the generator (`ValidationReport`, `BuildWarning`, `GraphitronType`). None of
+that has anything to do with building a store, so moving capture down does not reach it.
 
-**So `graphitron-lsp` keeps a test-scope edge on `graphitron`, and this item says so rather than
-promising otherwise.** Two things bound it. The edge shrinks to tests that exercise the analysis
-tier and the walk, which is what a test-scope dependency on the generator is legitimately for, and
-most of what is left retires on its own schedule: `GraphitronSchemaBuilder`, `CatalogBuilder`'s
-above-half and `TypeBackingShape` all die with the walk under R682. The durable residue is the lint
-rule engine, and moving *that* below the line is a separate design question about whether lint is
-analysis or fact, which this item does not open.
+**So `graphitron-lsp` keeps a test-only dependency on the generator, and this item says so instead
+of promising otherwise.** Two things limit it. What is left are tests of the lint rules and the
+walk, which is a fair reason for a test dependency. And most of it goes away on its own: the walk,
+`CatalogBuilder`'s remaining half and `TypeBackingShape` all disappear under R682. What is left after
+that is the lint rules, and whether they belong above or below the line is a separate question this
+item does not open.
 
-The one census gap to close first: six files in `rewrite/derive` import `ValidationError` and
-`Rejection`, and two import `TableRef` and `ColumnRef` from the leaf zoo that stays above. The
-likely answer is that the rejection vocabulary belongs at or below the fact tier anyway, since
-`rejection_validation_error` is a DDL relation and the `diagnostic` view is what the language server
-reads, and that `TableRef` and `ColumnRef` landing below is the shared pure-data floor
-`PackageImportDirectionTest`'s borrow dial already names as its endpoint. Confirm it rather than
-assume it, because it decides whether `rewrite/derive` crosses whole.
+**2. Add a temporary import rule, so the layering holds until the move happens.** Give
+`PackageImportDirectionTest` a `capture` rule, written like the `facts` rule it already has: capture
+may import nothing else from the tree, with its one allowance for graphql-java written as an
+allowance rather than a list of exceptions. This is a stand-in for the module boundary, not a rival
+to it, and step 6 deletes it.
 
-**2. Hold the invariant with a package rule while the move is scheduled.** Add a `capture` arm to
-`PackageImportDirectionTest`, written like the existing `facts` arm: a blanket "imports nothing else
-of the tree" with its graphql-java allowance stated as a positive allowance rather than an exception
-list. This is not a rival to the module boundary, it is a stage of it, and the move deletes the arm.
+**3. Take store creation out of capture.** `FactCapture.runInternal` today opens the store, reports
+what the cleanup sweep deleted, checks whether this project may write under its graph name, retries
+once if the write fails, and falls back to a temporary in-memory store with a warning. All of that
+becomes its own entry point that returns one of two answers: `Shared(handle)`, meaning the run got
+the real store, or `Demoted(handle, reason)`, meaning it got a temporary one and here is why. The
+caller then has a plain answer to work with instead of a value that might be null and a log line to
+match it against.
 
-**3. Lift store creation out of capture.** `FactCapture.runInternal` currently opens the store,
-reports what the reaper released, checks graph ownership, retries once, and falls back to a private
-in-memory store with a warning. That becomes an entry point of its own returning a sealed outcome,
-`Shared(handle)` or `Demoted(handle, reason)`, so whether a run captured into the shared file is a
-decided value carried with its provenance rather than a null plus a log line. The check stays in the
-fact tier rather than moving to the mojo, for the reason `ownsGraph`'s javadoc already gives: it
-lives where the store is open and the row readable, and the mojo never reads the store.
+The ownership check stays in the fact tier rather than moving up to the Maven goal, for the reason
+`ownsGraph` already gives in its own javadoc: it needs the store open and the row readable, and the
+goal never reads the store. The retry logic moves with it, for the same reason.
 
-The retry policy goes with it. `captureWithRetry` distinguishes a lock timeout from a probable
-capture bug and reports them differently, and it asks `reconciles` per attempt because the
-first-graph refresh cadence commits mid-capture. That is store-lifetime policy, and it belongs
-beside the opener.
+**4. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
+point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
+directory, because the Maven goals still need it as a setting. What goes away is the generator
+running with no store at all: that stops being possible.
 
-**4. Hand the store to the generator.** `captureAndRead` and `captureFacts` take what the opener
-returned instead of `ctx.storeDirectory()`. `RewriteContext` keeps the directory, because a path is
-configuration the mojos still need; it stops standing in for a store the generator will mint later.
-A generation with no store stops being a state the generator can be in.
+**5. Add the command.** `CaptureMojo` copies the shape `ValidateMojo` already has: 34 lines whose
+body is a single `runGenerator` call, with `AbstractRewriteMojo.runGenerator` doing the setup. Like
+`validate`, it does not require the output and jOOQ package settings (`packagesRequired()` returns
+`false`). When it falls back to a placeholder package, it warns, because such a run writes no `sql_`
+rows and a store with no database facts in it is not much use.
 
-**5. Add the goal.** `CaptureMojo` is the shape `ValidateMojo` already has, thirty-four lines whose
-body is one `runGenerator` call, and `AbstractRewriteMojo.runGenerator` already owns the context
-build, the codegen classloader scope and the error wrapping. Its `packagesRequired()` returns
-`false` as `validate`'s does, and it warns when the sentinel substitutes, because a run that fell
-back on the sentinel writes no `sql_` rows and a store without the catalog answers few of the
-questions people open one for.
+Inside the generator, capture-only is a fifth `Projection` of the existing `runPipeline`, not a
+second copy of the pipeline. The class javadoc asks for exactly that, and says a second copy is the
+mistake the design exists to prevent. The existing stage order makes it cheap: everything the
+command needs already runs before the capture, and everything it does not need runs after. Lint is
+the one exception, since it runs before the capture today, so the projection needs a switch for it.
+Validation needs no switch, because it runs after the capture and the projection simply returns
+first.
 
-The capture-only entry point is a fifth `Projection` of `runPipeline`, not a second pipeline body;
-the class's javadoc names a fifth entry point growing a front half of its own as the regression that
-shape exists to prevent. The pipeline's stage order makes it cheap: everything the goal wants runs
-above the capture and everything it does not runs below, with lint the one exception, computed above
-the capture today and needing a switch. Validation needs none, because it runs inside the capture
-window's continuation and the projection returns before it.
-
-**6. Move the modules.** No relation changes shape, no generated output changes, no store answers
-differently. A commit that moves a class and a commit that changes what it does are separate
-commits. The corpus at `graphitron/src/test/resources/corpus` moves with capture and ships as a
-test-jar for the planner and emitter tests that consume it. The store-fixture harnesses
-`BuiltStore`, `CapturedStore` and `FactWriters` move by the same mechanism and for a stronger
-reason: they are how a test obtains a populated store, which is the thing this item relocates, and
-leaving them above the line would keep `graphitron-mcp` reaching over it for a fixture after every
-other reason had gone. `FactCaptureAgreementTest` does not move: it is scaffolding for the walk's
-retirement, and an agreement test between two tiers belongs above the line anyway.
+**6. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
+changes, no query answers differently. Keep moves and behaviour changes in separate commits. The
+test schemas in `graphitron/src/test/resources/corpus` move with capture and are shared back up as a
+test-jar, for the planner and emitter tests that use them. The store-building test helpers
+(`BuiltStore`, `CapturedStore`, `FactWriters`) move the same way, and for a stronger reason: they are
+how a test gets a filled store, which is the thing being moved. Leaving them behind would keep
+`graphitron-mcp` depending on the generator for a test fixture after every other reason had gone.
+`FactCaptureAgreementTest` stays where it is: it compares capture's output against the old walk, and
+a test comparing two layers belongs in the upper one.
 
 ## Decisions this spec makes
 
-**One module, not two.** A separate `graphitron-capture` between the model and the generator is the
-alternative, and the DDL settles it: a relation added to `graphitron-model.sql` is inert until
-capture writes it, and capture writing a column the DDL does not declare does not compile. Two
-modules let two halves of one change land separately and skew, and buy nothing back. The model
-without its capture is a schema nobody fills.
+**One module, not two.** The alternative is a new `graphitron-capture` module between the store and
+the generator. The database schema settles it: a table added to `graphitron-model.sql` does nothing
+until capture writes to it, and capture writing to a column the schema does not declare does not
+compile. The two halves always change together, so splitting them only lets one half land without
+the other.
 
-**The refresh is untouched.** Capture refreshes the registered targets exactly as it does now, on
-both of its cadences, and nothing here gives any caller a way to obtain a store whose targets are
-stale. A refresh worth declining is a registration worth retiring, and that is R876's question and
-R899's after it, not a switch this item adds.
+**The refresh is left alone.** After capture writes facts, it refreshes the pre-computed tables that
+readers use. That keeps working exactly as it does now, and nothing here gives anyone a way to get a
+store whose pre-computed tables are out of date. If a refresh is slow enough to want to skip, the
+pre-computed table should not exist in the first place, which is R876's question and R899's after it.
 
-**graphql-java becomes constitutive rather than a contaminant.** The SDL is one of the three corpora
-the fact model transcribes, and a module that owns what a GraphQL schema fact *is* while being
-unable to parse GraphQL is incoherent. The module's description stops saying "the fact-schema DDL
-and the H2 bootstrap" and starts saying it is the fact tier.
+**`graphitron-model` gains a GraphQL parser, and that is correct.** The consumer's schema is one of
+the three things capture reads, so a module that defines what a schema fact is cannot sensibly be
+unable to parse a schema. Its description changes from "the fact database and its bootstrap" to what
+it will be: the whole fact tier.
 
 ## What is out of scope
 
-**The write direction.** This closes the read direction only. `CompileFacts`, `RejectionFacts`,
-`BuildWarningFacts` and `OwnedGraphPartition` write base relations from above the line on the
-dev-session cadence, through the same generated jOOQ surface `graphitron-model` publishes, which a
-module boundary cannot refuse. A tier above the facts writing a base relation stays possible after
-this, and what separates a sanctioned instance from a defect is a cadence argument rather than an
-import direction. Whatever documentation lands with the boundary says that the rule javac now
-enforces is about imports.
+**Writes from above.** The module boundary stops the upper layer from *reading* the lower one's code.
+It does not stop the upper layer from *writing* to the store: `CompileFacts`, `RejectionFacts`,
+`BuildWarningFacts` and `OwnedGraphPartition` all write tables during a dev session, through the
+same generated jOOQ code `graphitron-model` publishes to everyone. That stays possible afterwards.
+Whether a given write is fine or a mistake is a question about when it runs, not about who imports
+whom, and this item does not answer it. Any documentation that lands with the move should say the
+compiler-enforced rule is about imports.
 
-**`roadmap-tool`'s classpath.** It depends on `graphitron-model` alone and will inherit graphql-java,
-slf4j and the javac Tree API from the widened module. That is an accepted build-time cost on a build
-tool; untangling it is its own problem and is not allowed to shape this boundary.
+**`roadmap-tool`'s dependencies.** It depends on `graphitron-model` only, and will pick up
+graphql-java, slf4j and the javac Tree API when that module grows. That is a build-time cost on a
+build tool, and we accept it. Untangling it is a separate problem and should not shape where this
+line goes.
 
-**The dev session's defensive `refreshAll`.** R857 removes the call. This removes the ownership split
-that made it necessary, which is a reason rather than a line of code.
+**The dev session's extra refresh at startup.** R857 removes that call. This item removes the reason
+it was needed, which is not the same thing as removing it.
 
 ## Sequencing
 
-**R870 first, as a hard dependency.** Capture writes `walk_type_backing_class` from the
-classification walk, so the fact tier reads its own consumer. That edge cannot cross the module line,
-and R870 deletes it on its own evidence without waiting for anything here.
+**R870 must land first.** Capture writes one table, `walk_type_backing_class`, using the schema walk
+that lives above it. That call cannot survive the module move. R870 deletes the table and the write
+on its own merits, without waiting for anything here, which is why it is a dependency rather than a
+step.
 
-**R876's slices before the move.** Its slices land new code in exactly the packages this relocates.
-Nothing conflicts in substance, since this moves files without changing what they do, but it
-conflicts in mechanics, and ordering is the cheaper resolution than coordination. An implementer
-starting the move while a supertype slice is in flight should say so rather than rebase through it.
+**R876's work should land before the move.** It is adding code to the very packages this relocates.
+Nothing actually clashes, since this move does not change what any file does, but the two will
+collide as edits. Ordering them is cheaper than coordinating them. Whoever starts the move while one
+of R876's slices is in flight should say so rather than rebase through it.
 
-**Before R682, not after.** Waiting for the leaf zoo to dissolve means waiting for a large in-flight
-item to finish before the boundary that would have protected it exists, and every relation added in
-the meantime is one more thing the boundary has to be talked past. R682 is not blocked by this: it
-dissolves the middle either way, and this decides where the line is rather than what stands above it.
+**Do this before R682, not after.** R682 is a large clean-up of the middle layer, still in progress.
+Waiting for it means the boundary that would protect it does not exist while it happens, and every
+new table added meanwhile is one more thing to argue past the line later. R682 is not blocked by
+this: it clears out the middle either way, and this decides where the line sits, not what stands
+above it.
 
 ## How we will know it is delivered
 
 * **`mvn graphitron:capture` on `graphitron-sakila-example` produces a store and nothing else.** No
-  emitted file, no validation report, no plan. Reopen the store and find graphs and fields non-zero.
-* **The goal produces a store for a schema `validate` rejects.** Point it at a fixture whose schema
-  fails validation and find that schema's captured rows and the stage verdicts that refused it.
-* **The goal's store equals a generating run's.** Capture one fixture graph both ways and assert the
-  two stores hold the same rows in every relation capture writes, refreshed targets included.
-* **`graphitron-model` compiles with the fact tier inside it and no dependency on `graphitron`.** The
-  reactor's module order is the proof: a cycle does not build.
-* **`GraphQLRewriteGenerator` has no `FactCapture` import**, and `graphitron`'s main sources name no
-  store opener. Both are guard tests rather than review-time greps. Scope the opener guard to that
-  module: `graphitron-model` keeps two openers this item does not touch, the build-time
-  `ModelCodegenDriver` and the store's own boot surface.
-* **`graphitron-mcp` declares no dependency on `graphitron` in any scope**, and
-  `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` scans test sources too.
-* **`graphitron-lsp`'s remaining edge is test scope only, and is the set step 1 names.** Its main
-  sources name no generator type, which is true today and becomes a guard of its own rather than a
-  comment in its pom. Its test imports are the lint rule engine, the walk, `CatalogBuilder`'s
-  above-half with `TypeBackingShape`, and three generator-tier values; a test importing anything
-  that moved down is a test that was not updated.
-* **A generation drives against a store its caller opened**, and the demotion arm is covered: a
-  store directory the run does not own yields the demoted outcome with its reason, the generation
-  completes, and the shared file is untouched.
-* **The full verification build is green with no generated-output diff in
-  `graphitron-sakila-example`.** A move that changes an emitted file did something else too.
+  generated files, no validation report, no plan. Open the store afterwards and find a non-zero
+  number of graphs and fields in it.
+* **The command works on a schema `validate` rejects.** Point it at a test schema that fails
+  validation, and find that schema's facts in the store along with the recorded reasons it was
+  rejected.
+* **The command's store matches a normal run's.** Capture the same test schema both ways and check
+  that every table capture writes holds the same rows, pre-computed tables included.
+* **`graphitron-model` compiles with the fact tier in it and no dependency on `graphitron`.** The
+  build proves this by itself: a circular dependency between modules does not build.
+* **`GraphQLRewriteGenerator` no longer imports `FactCapture`**, and nothing in `graphitron`'s
+  shipped code opens a store. Both are tests, not something a reviewer has to check. Keep the second
+  test scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store
+  that this item does not touch, `ModelCodegenDriver` and the store's own startup code.
+* **`graphitron-mcp` has no dependency on `graphitron` at all**, and its guard test
+  `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` now checks its tests too.
+* **`graphitron-lsp`'s remaining dependency is test-only, and is exactly what step 1 lists.** Its
+  shipped code uses no generator type, which is already true and becomes a test rather than a comment
+  in its pom. Its tests may use the lint rules, the schema walk, `CatalogBuilder` with
+  `TypeBackingShape`, and three generator values. A test using anything that moved down is a test
+  somebody forgot to update.
+* **A generation runs against a store its caller opened**, and the fallback case is tested too:
+  pointed at a store another project owns, the run gets the temporary store with a stated reason,
+  finishes normally, and leaves the shared file untouched.
+* **The full build is green and `graphitron-sakila-example` generates identical files.** If an
+  emitted file changed, the move did something more than move.
 
 ## Reviewer findings
 
