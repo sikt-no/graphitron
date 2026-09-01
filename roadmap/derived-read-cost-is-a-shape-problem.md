@@ -345,6 +345,91 @@ read exactly one corpus family: four `sql_`, four `graphitron_`, two `jvm_` and 
 further six bottom out at hand-written derivations the walk cannot see through and are unresolved
 rather than local. The remaining ninety-six cross two to five families.
 
+## The target architecture
+
+The end state is computable from the shipped DDL, so it is stated here as a computation rather than
+as a description. Assign every base relation to the gatherer whose corpus it transcribes; give the
+five hand-written `intent_` base tables to `graphitron` per the collapse; resolve each registered
+target through the rule that fills it, so a target's owner is its rule's owner; and take every view's
+owner to be the latest, in gatherer dependency order, of the owners of what it reads. That runs over
+all 287 relations the schema ships today, 170 tables and 117 views.
+
+**Nothing computes to `derivation`.** Not one relation of 287. The gatherer is empty, which is the
+collapse as a result rather than as an argument.
+
+[cols="3,2,5"]
+|===
+| owner | relations | what it holds
+
+| `graphitron` | 186 | the decode's own facts, and every rule derived from more than one corpus
+| `sdl` | 31 | the document transcription, and two rules local to it
+| `catalog` | 27 | the catalog and classpath transcriptions, and six rules local to them
+| `configuration` | 14 | the session and graph configuration
+| `java-source` | 7 | the Java source corpus
+| `compile` | 1 | the compiler corpus
+| `derivation` | 0 | nothing
+|===
+
+Eleven relations sit outside the model and are not a gap in it: nine `meta_` registry tables, which
+are the model's description of itself rather than any gatherer's output, and `rejection_` and
+`build_warning_no_rule`, which are outputs rather than facts.
+
+**All twenty registered targets compute to `graphitron`.** Every one, not most, and without a
+judgement call anywhere in the walk. The register's whole population moves to one owner that already
+exists and already runs, which is what makes the dissolution one change rather than twenty decisions.
+
+**Nine relations named `intent_` compute to an owner that runs before `graphitron`.** These are the
+family-local rules this item has been calling misplaced, now enumerated rather than counted.
+
+[cols="2,6"]
+|===
+| computed owner | relation
+
+| `catalog` | `intent_class_member_slot`, `intent_foreign_key_column_pair`, `intent_jvm_ancestor`, `intent_name_matched_key_pair`, `intent_node_metadata_defect`, `intent_table_key_candidate`
+| `sdl` | `intent_poly_member`, `intent_type_exemption`
+| ambiguous | `intent_java_enum_class`, for the reason below
+|===
+
+### Two gaps in the rule, found by running it
+
+**"The latest in gatherer dependency order" is not a total order.** Five gatherers depend on nothing
+and therefore tie. `intent_java_enum_class` reads `store_graph_source`, `sql_enum_binding` and
+`jvm_class`, owned by `configuration`, `catalog` and `catalog`: two gatherers are equally late and the
+rule does not say which wins. The recommendation is to exclude `store_` from the computation rather
+than to invent a tie-break. Session and graph configuration is state every gatherer reads to know
+which graph it is working on, so counting it as an input makes `configuration` a candidate owner for
+almost everything while saying nothing about where a rule belongs. Excluding it puts this relation in
+`catalog`, where its facts are. Whether any genuine tie survives that exclusion is unmeasured.
+
+**A rule with no inputs has no computed owner.** `intent_delivery_container` is a `VALUES` list of
+seven container classes, a named vocabulary rather than a derivation, and the rule is a function of
+what a relation reads. Five views above it inherit the gap: `intent_class_member_element`,
+`intent_declared_type_element`, `intent_field_accessor_hop`, `intent_producer_cardinality_conflict`
+and `intent_type_backing_seed`. That reconciles the six the family-crossing walk left unresolved:
+five hand-written base tables and one constant view. Constants are owned by declaration rather than
+by computation, and the rule has to say so instead of returning nothing.
+
+Neither gap argues against the rule. Both are cases it is silent on, and both were invisible until it
+was computed.
+
+### What each mechanism becomes
+
+[cols="3,5"]
+|===
+| today | after
+
+| `meta_materialize`, 20 rows | gone. Its population is `graphitron`'s own to refresh, and a gatherer refreshing its own family needs no register.
+| `meta_materialize_dependency`, 62 rows | replaced or gone. It derives a refresh order among registrations; what supersedes it is whatever orders two relations under one owner, which is not settled.
+| the `_live` views | gone as a convention. A rule its owner decides to store is stored under its own name.
+| the `intent_` prefix | kept, and stops naming an owner. `sql_` and `jvm_` already share `catalog`, so a prefix has never been an owner, and renaming 114 relations buys nothing this item can name.
+| `meta_gatherer`, 7 rows | 6 rows. The `derivation` row goes, and with it the six `meta_gatherer_dependency` rows under it.
+| `meta_relation.owner_name` | unchanged in shape, and checkable: a declared owner must equal the computed one.
+|===
+
+What this does not settle: what orders two relations under one owner, which is the one mechanism
+`meta_materialize_dependency` provides today and nothing here replaces; and what becomes of the
+`java-source` and `compile` gatherers, whose eight relations no derivation reads.
+
 ## What is not done
 
 **An unowned register is the mechanism behind every stale figure above.** A materialization is work
@@ -395,14 +480,14 @@ them are relations this item created, which is worth saying plainly: `intent_arg
 `intent_field_navigated_type` read only `graphitron_` facts, so this item took the default twice
 while arguing against it.
 
-**The target the chart points at: there is one derivation gatherer, and `intent_` is its.** The
-collapse is stated at the top of this item and counted under "What the evidence is"; what belongs
-here is what taking it costs. `intent_` moves to `graphitron`, and the difference between writing a
-row from Java and stating it in SQL becomes an implementation choice inside one owner, made where the
-cost is visible and changeable without anyone else being told. The register is not retired, argued
-down or shrunk to a defensible core; the gatherer it was compensating for stops existing. Read the
-other way, this is why the register exists at all: a gatherer invented to run last needs a mechanism
-to schedule the refreshes of relations that never had to wait for it.
+**The target is stated under "The target architecture" above, as the owner every one of the 287
+relations computes to.** What belongs here is what taking it costs. `intent_` moves to `graphitron`,
+and the difference between writing a row from Java and stating it in SQL becomes an implementation
+choice inside one owner, made where the cost is visible and changeable without anyone else being
+told. The register is not retired, argued down or shrunk to a defensible core; the gatherer it was
+compensating for stops existing. Read the other way, this is why the register exists at all: a
+gatherer invented to run last needs a mechanism to schedule the refreshes of relations that never had
+to wait for it.
 
 **The rule that keeps it from coming back is that an owner is computed, not chosen.** A relation's
 owner is the latest, in gatherer dependency order, of the owners of the relations it reads. That is a
@@ -416,14 +501,11 @@ relations with 260 still on the frozen roster, because computed ownership cannot
 undeclared relations. And per-gatherer transaction control, named above, which the collapse makes
 easier rather than harder: one derivation gatherer needs one boundary, not two.
 
-Questions the chart raises and does not answer. Whether `intent_` survives as a prefix once its
-owner is `graphitron`, given that `sql_` and `jvm_` already share the `catalog` owner so a prefix has
-never been an owner; keeping the names and moving the ownership is the cheaper reading. What orders
-two relations under one owner, which `meta_materialize_dependency` derives today for registrations
-only and would have to derive for all of them. Whether the six unresolved relations change the
-picture, which depends on what the hand-written derivations they bottom out at read. And what becomes
-of the `java-source` and `compile` gatherers, whose output no derivation reads at all, which is a
-different finding from this one and is not evidence that they are unnecessary.
+Three of the four questions the chart raised are answered above: the prefix is kept and stops naming
+an owner, the six unresolved relations turned out to be one constant view and the five that read it,
+and the ordering question survives as the one mechanism nothing here replaces. The fourth stands
+unchanged. What becomes of the `java-source` and `compile` gatherers, whose eight relations no
+derivation reads, is a different finding from this one and is not evidence that they are unnecessary.
 
 **One of the twelve costs more than anything else in the store.** `intent_jvm_ancestor` reads
 `jvm_class_supertype` and `jvm_declared_type_ref` and nothing else, so it belongs to the `jvm_`
