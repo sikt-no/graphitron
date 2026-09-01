@@ -7,7 +7,7 @@ priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-29
-last-updated: 2026-08-31
+last-updated: 2026-09-01
 ---
 
 # The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation
@@ -597,6 +597,22 @@ the classpath, but the classpath census excludes the generated jOOQ package by d
 reachable only through the catalog's column walk, so the catalog is the corpus the grain lives in.
 The gate would have passed either way, the catalog gatherer reading both; the choice is stated here
 because the wrong answer is available and cheap.
+
+**What `rationale` holds, settled by getting it wrong first.** The slice's first pass moved each
+comment's tail into `rationale` more or less intact, which is the one thing the plan above says the
+column is not for, and the family's fourteen rationales came to 8548 characters. A second pass cut
+them to 5932 by asking each one only why the relation exists and deleting the rest. The rule the
+family order should carry forward: a rationale is two or three sentences, and a sentence that
+restates the grain, enumerates a domain the DDL already constrains, or recounts what an earlier
+author argued is not one of them. Two facts that fell out were not lost but rehoused on the columns
+they are actually about, an overload set colliding in `sql_routine`'s key and an array-typed column
+contributing no `sql_enum_binding` row, which is the shape of the answer whenever a cut sentence is a
+real fact: it belongs to a column, or to `docs/architecture/`, and only then to nowhere.
+
+**The echo can strand a column comment that pointed at the old tail.** `sql_routine_parameter`'s
+`binding_type` comment ended "the relation''s own comment says why", and after the rewrite the
+relation's comment says no such thing. Shortening a relation comment means grepping its own family's
+column comments for references to it; this one is now self-contained.
 
 **The seeded detection case now clears the shipped declarations first.**
 `MetaDeclarationGateTest.theGatesDetectWhatTheyClaimTo` proves each gate detects its own violation by
