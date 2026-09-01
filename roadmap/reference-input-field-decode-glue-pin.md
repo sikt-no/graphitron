@@ -1,7 +1,7 @@
 ---
 id: R894
 title: "Emitter-tier pin: the @reference-carrying input-field @nodeId form emits its decode in the rendered glue"
-status: Spec
+status: Ready
 bucket: testing
 theme: nodeid
 depends-on: []
@@ -31,7 +31,7 @@ The fall-through the item is about registers nothing, so it is observable as an 
 
 Two further structural facts come along for free and are worth asserting, because they pin the shape the local is declared against rather than merely its existence:
 
-* the helper's `MethodSpec.returns()` is the decoded type: `List<Integer>` at arity 1, `List<Row2<String, String>>` at arity 2. That is the axis (`Keys` versus `Rows`, list versus scalar) that `CompositeDecodeHelperRegistry.helperName` derives its name from, asserted as a type rather than as a naming convention.
+* the helper's `MethodSpec.returnType()` is the decoded type: `List<Integer>` at arity 1, `List<Row2<String, String>>` at arity 2. That is the axis (`Keys` versus `Rows`, list versus scalar) that `CompositeDecodeHelperRegistry.helperName` derives its name from, asserted as a type rather than as a naming convention.
 * the helper is `private static`, matching the drain contract.
 
 ## Implementation
@@ -72,7 +72,7 @@ Each test asserts, on the rendered `QueryConditions`:
 
 1. the coordinate's glue method is present (`filmsCondition`, `liftFailCsCondition`);
 2. the methods whose names start with `decode` are exactly the one expected helper, named `decodeCategoryKeysOrThrow` and `decodeLiftFailARowsOrThrow` respectively. Asserting the whole decode set rather than mere presence is what keeps the biconditional honest if the fixture ever grows a second carrier;
-3. that helper is `private static`, and its `returns()` is `List<Integer>` at arity 1 and `List<Row2<String, String>>` at arity 2.
+3. that helper is `private static`, and its `returnType()` is `List<Integer>` at arity 1 and `List<Row2<String, String>>` at arity 2.
 
 No assertion reads a method body.
 
