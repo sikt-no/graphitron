@@ -23,10 +23,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R889` | The launcher-method census folds case, rejecting a valid deprecated-alias field pair | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](launcher-method-census-folds-case.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R890` | A structural guard gives case-folded name comparison one legitimate home <sub>blocked by: [launcher-method-census-folds-case](launcher-method-census-folds-case.md)</sub> | Spec | 2026-08-31 | [plan](name-case-fold-guard.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
+| `R890` | A structural guard gives case-folded name comparison one legitimate home <sub>blocked by: [launcher-method-census-folds-case](launcher-method-census-folds-case.md)</sub> | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](name-case-fold-guard.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-08-27 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
@@ -422,7 +422,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R889` [**The launcher-method census folds case, rejecting a valid deprecated-alias field pair**](launcher-method-census-folds-case.md) — Ready, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R890` [**A structural guard gives case-folded name comparison one legitimate home**](name-case-fold-guard.md) — Spec, testing, blocked by [launcher-method-census-folds-case](launcher-method-census-folds-case.md)
+- `R890` [**A structural guard gives case-folded name comparison one legitimate home**](name-case-fold-guard.md) — Ready, testing, blocked by [launcher-method-census-folds-case](launcher-method-census-folds-case.md)
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug
