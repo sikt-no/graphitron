@@ -78,7 +78,7 @@ Do not write em dashes (—) into prose you author. Use a comma, semicolon, colo
 
 In `.adoc` files, use AsciiDoc table syntax (`[cols="..."]` + `|===` block) for tables; the markdown form (`| col | col |` header followed by a `|---|---|` separator) renders as paragraph text with literal pipes. The roadmap-tool `check-adoc-tables` step fails the build on any such row outside a structural block.
 
-When writing roadmap items use a top-down writing approach. Don't use complex jargon without defining it first.
+When writing roadmap items, state the goal first, then the plan that reaches it, glossing project terms on first use; `roadmap/workflow.adoc` § Item file conventions owns the body shape.
 
 ## Javadoc conventions
 

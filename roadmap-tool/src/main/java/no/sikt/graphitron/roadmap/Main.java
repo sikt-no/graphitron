@@ -350,8 +350,10 @@ public final class Main {
         fm.append("last-updated: ").append(today).append('\n');
         fm.append("---\n\n");
         fm.append("# ").append(title).append("\n\n");
-        fm.append("<One-paragraph problem statement: what is missing or broken, and why it matters."
-            + " Replace this and add a plan body when the item moves to Spec.>\n");
+        fm.append("## Goal\n\n");
+        fm.append("<One paragraph: what changes for graphitron or its consumers when this lands;"
+            + " it doubles as the item's one-line description in the roll-up."
+            + " Add plan sections after the goal when the item moves to Spec.>\n");
 
         Files.writeString(target, fm.toString());
         writeChangelogNextId(dir, allocated + 1);

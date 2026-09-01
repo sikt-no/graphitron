@@ -33,7 +33,7 @@ mvn -pl roadmap-tool exec:java -q \
 
 Slug rules (enforced by the tool): lowercase kebab-case, describes the work and not the phase (`variant-coverage-meta-test`, not `phase-2`), no `plan-` prefix.
 
-The created file has a single-paragraph TODO body. Edit it inline to add the real problem statement before the user reviews.
+The created file carries a `## Goal` heading with a placeholder paragraph. Edit it inline to state the real goal (what changes for graphitron or its consumers when the item lands) before the user reviews; `roadmap/workflow.adoc` § Item file conventions owns the body shape.
 
 If the user only wants to know the next free number without writing a file yet:
 
