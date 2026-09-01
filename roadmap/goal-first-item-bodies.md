@@ -32,8 +32,8 @@ The shape binds the plan body, that is, items at Spec and beyond. A Backlog stub
 `roadmap/workflow.adoc` owns the definition; everything else points at it.
 
 * "Item file conventions": add a bullet codifying the body shape, with a short inline skeleton rather than a citation of a live item (item files are deleted at Done, so any exemplar citation rots). Content of the bullet:
-  * Section order: `## Goal` first; plan sections follow (including `## Retired vocabulary` and a first-client `## User documentation` draft where those conventions apply); optional `## Other solutions we've considered` after the plan sections; optional `## Provenance` for investigation items; `## Reviewer findings` stays last.
-  * The first paragraph of `## Goal` is rendered by the roadmap tool as the item's one-line description in the `README.md` roll-up and on the published status board, so it is written to stand alone.
+  * Section order: `## Goal` first; plan sections follow (including `## Retired vocabulary` and a first-client `## User documentation` draft where those conventions apply); optional `## Other solutions we've considered` after the plan sections; optional `## Provenance` for investigation items (an existing practice in item files that workflow.adoc has not defined until now, so this bullet is its first definition, not a restatement); `## Reviewer findings` stays last.
+  * The first paragraph of `## Goal` is written to stand alone. The reason that holds at every status is the gate: the reviewer's first `Spec → Ready` question is answered by reading that paragraph (the "What each gate decides" edit below makes that explicit). For a Backlog item the roadmap tool additionally renders it as the one-line description in the `README.md` roll-up and on the published status board; items past Backlog reach no roll-up surface today. Rendering the goal paragraph for active items too is R907, not this item.
   * For an item whose purpose is to settle a question rather than ship a change, the goal is the question and what a settled answer lets the next item do.
   * For an item with a user-visible surface, the first-client docs draft is the goal's strongest form; the `## Goal` section states the outcome and defers detail to that draft rather than competing with it.
   * The goal is stated in the reader's terms. For author-visible behaviour that means schema, query, and result, not classifier, variant, and emitter; the generator-internal mechanism belongs in the plan sections. Where the change is schema-visible, the goal carries an SDL example mined from real schemas (the corpus under `graphitron/src/test/resources/corpus/`, the sakila example schemas) rather than invented, as a minimal pair when a contrast makes the point; the example states the goal more precisely than prose can.
@@ -43,7 +43,7 @@ The shape binds the plan body, that is, items at Spec and beyond. A Backlog stub
 * "What each gate decides": add one clause pointing the first `Spec → Ready` question ("is the goal well communicated") at the `## Goal` section as the place the reviewer looks first. That gate stays the enforcer of the goal's quality.
 * `CLAUDE.md`, "Writing style": replace the two roadmap-item sentences ("top-down writing approach" and "Don't use complex jargon without defining it first") with a one-clause pointer: state the goal first, then the plan, glossing project terms on first use; `roadmap/workflow.adoc` § Item file conventions owns the shape. No second definition; the gloss rule moves to workflow.adoc with the rest.
 * `.claude/skills/roadmap/SKILL.md`, the `add` subcommand section: update the "single-paragraph TODO body / problem statement" sentence to name the stamped `## Goal` skeleton, again deferring to workflow.adoc.
-* `roadmap-tool` `Main.java`, the `create` body template: emit `# <title>` followed by a `## Goal` heading and a placeholder line ("One paragraph: what changes for graphitron or its consumers when this lands; it doubles as the item's one-line description in the roll-up."). Adjust whatever test pins the template text.
+* `roadmap-tool` `Main.java`, the `create` body template: emit `# <title>` followed by a `## Goal` heading and a placeholder line ("One paragraph: what changes for graphitron or its consumers when this lands; it doubles as the item's one-line description in the roll-up."). The roll-up claim is true for the stub because a fresh item is Backlog and `firstNonHeadingParagraph` skips the headings and picks up the placeholder. No test pins the template text today; whether to add one is the implementer's call.
 
 The `CLAUDE.md`, skill, and `Main.java` edits sit outside `roadmap/`, so the implementation commit owes the full verification build, not the roadmap-only scoped one.
 
@@ -130,6 +130,12 @@ choose mid-flight:
 
 Which one is the author's call, because the second is a visible improvement to the roll-up and not
 merely a way to make a sentence true, and the choice changes what gets built.
+
+> Response (author, 2026-09-01): took the first branch. The standalone-paragraph bullet now leads
+> with the gate as its reason (the reviewer reads that paragraph first, at every status), states the
+> roll-up rendering as Backlog-only fact, and points the active-item rendering at R907, filed as the
+> second branch so the improvement is not lost. The template bullet also now records why its own
+> roll-up claim stays true for the stub, and that no test pins the template today.
 
 *Non-blocking, no response needed.* Two small things noticed on the way through, neither bearing on
 either gate question.
