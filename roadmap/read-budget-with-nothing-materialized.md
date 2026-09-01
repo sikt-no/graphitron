@@ -1,7 +1,7 @@
 ---
 id: R899
 title: "A registration's alternative is counted from the schema, so the last lever stops being the first one reached for"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -370,3 +370,51 @@ and `Math.addExact` so an overflow on a future schema fails loudly instead of wr
 rationale to the interactive budget's javadoc alone, and the "twenty-two registrations" staleness
 joins the fact-model page edit this item already owes, with the caution that those counts sit under
 measured claims and want dating or rephrasing rather than a numeral swap.
+
+### Round 2 (2026-09-01, Spec -> Ready, reviewer session 011zrnHVVbsRGNmsuEmJckms)
+
+Verdict: sign off. Both gate questions are answered. The replaced statistic was re-derived
+independently from the DDL this session rather than read off the file, and every figure the file
+quotes reproduces exactly, including the pair being non-zero for all twenty; the monotonicity and
+bracket properties the file argues from hold under test rather than merely reading as plausible.
+Three non-blocking notes, none of which changes what gets built.
+
+**Non-blocking, and it is a false cost claim attached to an instruction to the implementer, so it is
+the author's to correct rather than mine.** Under "`InlineMultiplicityCheck` in `roadmap-tool` gains
+demotion arms": "each is one memoized walk over the view graph, so cost is not a consideration". One
+walk over today's schema costs about a second, measured on the shipping goal itself
+(`report-inline-multiplicity` on this tree, 1244 ms including JVM start), so forty-two walks is forty
+to fifty seconds added to `roadmap-tool`'s `verify` phase. Every build reaching verify pays it, and
+that module is half of the cheap scoped build CLAUDE.md prescribes for a roadmap-only diff. Pattern
+caching buys nothing here (1062 ms against 1061): the cost is `references()` scanning all 287
+relations against each of 117 view bodies, repeated per arm.
+
+What makes the claim true is a mechanism the file does not specify. The arms need no textual rewrite
+at all, a demotion being edge retargeting on an already-parsed graph: parse references once, then per
+arm redirect every edge pointing at a demoted target to that target's `_live` view and re-run the
+multiplication. Measured this session, that reproduces all six figures the file quotes (368,
+2792329, marginal 8 to 657, sole 736 to 2792316, `intent_mutation_write_destination` marginal 52,
+zero zeros on either figure) and costs 9 ms for all forty-two arms on top of the single parse the
+report already pays. The two mechanisms are equivalent by construction, the rewrite substituting
+names one-for-one where retargeting substitutes edges, so this is not a choice between arms with a
+trade-off to settle. It does reach one Tests bullet: the reach assertion's stated rationale, that it
+"catches the textual rewrite counting a name the parser does not read", guards a hazard edge
+retargeting removes by construction. The assertion stays worth making on its own terms; its reason
+changes.
+
+**The changelog carries no citation to the old phrasing.** Under "So the title changed with the
+premise": "citations to that phrasing in the predecessor item and in the changelog are the same item
+under its measured subject". The predecessor-item half is right, `derived-read-cost-is-a-shape-problem.md`
+naming the target as R899's as filed and recording that the arms retired it. `roadmap/changelog.md`
+carries neither the phrasing nor any mention of this item, R876 not having landed. Orientation prose
+rather than an instruction, so nothing downstream hangs on it.
+
+**"The ownership item" has no roadmap item behind it.** It is named three times as the recipient of
+work this item declines: the priced-reason gate over `meta_materialize.reason`, the retirement
+decisions, and reading the figures as fates. The predecessor item states "The register is ownerless"
+as a finding but files no item for it, and its "Filed out of this item" list names R899, R900, R901,
+R895 and R896 only. Nothing in this item's own scope depends on that item existing, which is why
+this is a note and not a finding: the metric lands and prints either way. What does rest on it is the
+file's "the metric is what stops the next twenty registrations arriving unpriced", which that item
+delivers rather than this one, so the sentence currently describes a hand-off with no destination.
+Filing the item is Backlog work any session can do.
