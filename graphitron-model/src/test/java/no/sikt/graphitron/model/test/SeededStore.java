@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
@@ -25,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
@@ -1073,6 +1075,37 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME, className)
             .set(GRAPHITRON_ARGUMENT_CONDITION.METHOD, method)
             .set(GRAPHITRON_ARGUMENT_CONDITION.OVERRIDE, override)
+            .execute();
+    }
+
+    /**
+     * One {@code contextArguments} entry on a field-site or input-field-site {@code @condition}, at
+     * the position the author wrote it. The position is the directive list's own and carries no
+     * ranking: the live rule reads the list as a set keyed by name, so a case whose subject is that
+     * reading seeds one name at two positions and expects one answer.
+     */
+    public static void seedFieldConditionContextArg(DSLContext dsl, String graphName, String typeName,
+                                                    String fieldName, int position, String name) {
+        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.POSITION, position)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.NAME, name)
+            .execute();
+    }
+
+    /** The same entry at the argument site, whose own relation keys the argument in. */
+    public static void seedArgumentConditionContextArg(DSLContext dsl, String graphName, String typeName,
+                                                      String fieldName, String argumentName,
+                                                      int position, String name) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.NAME, name)
             .execute();
     }
 

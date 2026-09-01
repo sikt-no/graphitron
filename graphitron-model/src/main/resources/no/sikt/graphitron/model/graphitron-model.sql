@@ -3905,6 +3905,69 @@ COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition
 COMMENT ON COLUMN intent_condition_table_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads are kept apart here exactly as they are on intent_condition_param_extraction';
 COMMENT ON COLUMN intent_condition_table_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature declaring two table parameters draws two rows, the generator passing the alias to each rather than picking one, so this is never a single answer per signature and a reader must not read it as one';
 
+CREATE VIEW intent_condition_context_parameter
+  (graph_name, site, use_site, descriptor, position) AS
+WITH
+declared (graph_name, site, use_site, class_name, method, name) AS (
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
+    FROM graphitron_field_condition_context_arg ca
+    JOIN graphitron_method_reference mr
+      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
+     AND mr.field_name = ca.field_name
+     AND mr.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
+   UNION ALL
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
+    FROM graphitron_argument_condition_context_arg ca
+    JOIN graphitron_method_reference mr
+      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
+     AND mr.field_name = ca.field_name AND mr.argument_name = ca.argument_name
+     AND mr.site = 'ARGUMENT_CONDITION'
+),
+slot (graph_name, site, use_site, name) AS (
+  SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name
+    FROM graphitron_method_reference mr
+    JOIN graphql_argument a
+      ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
+     AND a.field_name = mr.field_name
+   WHERE mr.site = 'FIELD_CONDITION'
+   UNION ALL
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.field_name
+    FROM graphitron_method_reference mr
+   WHERE mr.site = 'INPUT_FIELD_CONDITION'
+   UNION ALL
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.argument_name
+    FROM graphitron_method_reference mr
+   WHERE mr.site = 'ARGUMENT_CONDITION'
+)
+SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
+  FROM declared d
+  JOIN intent_condition_param_extraction p
+    ON p.graph_name = d.graph_name AND p.class_name = d.class_name
+   AND p.method_name = d.method AND p.param_name = d.name
+ WHERE NOT EXISTS (SELECT 1
+                     FROM intent_condition_table_parameter tp
+                    WHERE tp.graph_name = d.graph_name AND tp.class_name = d.class_name
+                      AND tp.method_name = d.method AND tp.descriptor = p.descriptor
+                      AND tp.position = p.position)
+   AND NOT EXISTS (SELECT 1
+                     FROM graphitron_arg_mapping_pair ap
+                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
+                      AND ap.use_site = d.use_site AND ap.param_name = d.name)
+   AND (NOT EXISTS (SELECT 1
+                      FROM slot s
+                     WHERE s.graph_name = d.graph_name AND s.site = d.site
+                       AND s.use_site = d.use_site AND s.name = d.name)
+        OR EXISTS (SELECT 1
+                     FROM graphitron_arg_mapping_pair ap
+                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
+                      AND ap.use_site = d.use_site AND ap.head_segment = d.name));
+COMMENT ON VIEW intent_condition_context_parameter IS 'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches. For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.';
+COMMENT ON COLUMN intent_condition_context_parameter.graph_name IS 'the owning graph''s partition, carried from the application that declared the context key; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_context_parameter.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary. Part of the key because the scope rule the exclusion reads differs per spelling, and because a row here is a fact about one application rather than about a method';
+COMMENT ON COLUMN intent_condition_context_parameter.use_site IS 'the application spelled as one string, in exactly the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site use, so the three relations join on a key none of them has to translate';
+COMMENT ON COLUMN intent_condition_context_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads one application names stay apart here exactly as they do on intent_condition_param_extraction';
+COMMENT ON COLUMN intent_condition_context_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature may take several context values and each is a row; nothing here ranks them, the keys being a set at the directive and the parameter''s own name being what it reads';
+
 CREATE VIEW intent_field_reference_step_hop_live
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
@@ -10119,6 +10182,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('condition-site-parameter',
+   'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
+   'graph_name, site, use_site, descriptor, position', 'sdl'),
   ('argmapping-candidate',
    'one position an argMapping right-hand side may name, under the origin its path is written from',
    'graph_name, origin, path', 'sdl'),
@@ -10329,7 +10395,11 @@ INSERT INTO meta_relation VALUES
   ('javac_diagnostic', 'compile-diagnostic', 'compile',
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
-   'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.');
+   'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
+  ('intent_condition_context_parameter', 'condition-site-parameter', 'derivation',
+   'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches.',
+   'For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.',
+   'The role is decided per application rather than from the signature, so the grain is the site: a context key is written on the directive, and one signature named at two sites answers differently. Two exclusions are what make the rule more than a name match. A parameter typed to receive the source table receives it whatever it is called, which is what makes the roles disjoint at a position rather than merely ordered. And an argument binding wins, the binding map being asked first; that map is an authored argMapping pair naming the parameter and, separately, the identity entry filled for every slot in scope no pair has claimed, so a pair claiming a slot takes the identity away and the same-named parameter falls through to the context key it also is. What is in scope is the site''s own rule, three rules for three spellings, read off intent_argmapping_segment_binding rather than spelled a fourth time. Membership is the whole fact: the parameter''s name and declared type are stated at this key by intent_condition_param_extraction and the context key equals the name, so a column here would be one fact in three places. The arm does not wait on the argument role, the arity and type inference skipping context keys by its own rule, and the converse does not hold: a parameter absent here is not therefore bound. Absence is four facts and none of them a verdict, the last being the classpath census''s own silence.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,
