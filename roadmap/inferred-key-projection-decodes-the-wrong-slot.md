@@ -1,7 +1,7 @@
 ---
 id: R884
 title: "An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: nodeid
@@ -240,3 +240,75 @@ helpers ask about the slot alone.
 * "the one shape neither rail covers", and any prose saying a dotted descent to a `@nodeId` input
   field is unclaimed or receives the wire string
 * "a projection names a key column past a node id, so it has at least two segments"
+
+## Reviewer findings
+
+### Round 1, In Review -> Done gate
+
+Not approved. The change itself is the change the spec approved, and it is complete against every
+piece of evidence the spec named. The one thing missing is the item's own `## Retired vocabulary`
+declaration: two sentences that state the retired claim in the present tense are still in the tree,
+and one of them is in a file this delivery edited, contradicted by the fixture this delivery added to
+that same file.
+
+**1. `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`, the comment above
+`input RentFilmProjectedInput`.** It reads "Without the trailing segment the base64 string would
+reach `p_customer_id` verbatim, which is the silence the projection rules close". That is the first
+retired term verbatim, and it is now false: `rentFilmPayloadInferred`, added by this delivery further
+down the same file, binds `pCustomerId: input.customerId` against this exact input type with no
+trailing segment, and `rentFilmPayloadInferred_aClosedLeafReachesTheRoutineAsAKey` asserts
+`customerId` arrives as `3`. This is the site the sweep most needed to catch: the comment renders into
+the example project's generated `schema.graphqls`, so it is prose a consumer reads, and it now
+describes behaviour the delivery removed. Rewrite it to say what the two spellings now mean (the
+column spelled, or the one-column key naming it), so the three sibling mutations below read as the
+three arms of one rule rather than one working shape and two the comment says cannot work.
+
+**2. `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/ArgmappingBindingLeafTest.java`,
+the javadoc on `aBareNodeIdArgumentHeadIsTheLeafWithNothingTrailing`.** It reads "This is the arm the
+silently-wrong case runs through: today such a binding hands a routine parameter the base64 wire id
+and nothing says a word". That is the bare-`@nodeId`-argument-at-a-`@routine` shape this item names as
+its third broken coordinate and fixes; the sentence's "today" is now wrong. The store fact the test
+pins (zero trailing segments on the leaf) is unaffected and the test itself stays as it is; only the
+javadoc's account of what that fact leads to needs to catch up with the emitter.
+
+Both are one- or two-sentence edits. Nothing else was found, and nothing in the code needs to move.
+
+#### What was checked and held
+
+Recorded so the next pass does not repeat it.
+
+* Full reactor green on the delivered tree: `mvn install -Plocal-db`, `BUILD SUCCESS`, fourteen
+  modules, zero failures across 742 test totals.
+* Completeness was measured rather than read off the build, because every one of these shapes emitted
+  compile-clean code before the fix and so was green then too. Neutering `ProjectedKeyReads.leafOf`
+  back to the unconditional drop turns all four inferred-arm emission cases red, each on the assertion
+  whose description names the defect: the two dotted cases and the mixed-arms case fail on "the
+  decode's argument is the node id's own slot", and the bare case cannot render at all. Separately,
+  moving the install-rail arm in `ConditionGlueRenderer.nestedExtraction` back below the projection
+  lookup turns `aWholeSlotBindingKeepsItsInstalledDecodeWhenAProjectionAlsoResolves` red on its own
+  claim. So the precedence rule is falsifiable where the implementation notes say it is, and none of
+  the new pins is vacuous.
+* No code-string assertions on generated method bodies. The three new helpers go into
+  `TypeSpecAssertions`, whose whole stated purpose is to keep body scanning in one file behind typed
+  questions, and the call sites ask about a slot and a decode rather than matching rendered text.
+* User-facing-doc check clean: the two `docs/` pages carry no roadmap-internal markers.
+* The derivation swap is behaviour-preserving on the authored arm at both sites, which is what lets
+  the existing fixtures stand as the regression pin. At the condition glue `leaf.size() == 1` is
+  reachable on exactly the paths `nif.path().size() == 1` used to be, and `leaf.subList(1, ...)` is
+  the old `path.subList(0, size - 1)`; at the routine site `String.join(".", segmentNames(path))`
+  is `PathExpr.asString()`, so the relation is looked up by the same key.
+
+#### Noted, not blocking
+
+* `TypeSpecAssertions.materialisationDecodesUndescended` has no caller anywhere in the reactor. The
+  implementation notes describe *two* new descent helpers and two is what the tests use; this is a
+  third that shipped unused. Delete it or give it the case its javadoc argues for ("worth asking
+  negatively as well as positively") while the file is open.
+* `ProjectedKeyReads.installRailOwns` is called at one render site, not two. The condition glue
+  states the same precedence by arm order instead, at the top-level switch and again as the `if`
+  ahead of the projection lookup. That is defensible, the nested arm needing the destructured `nidk`
+  the predicate throws away, but the implementation notes' "asked at both sites" is not what shipped
+  and the next reader will go looking for the second call.
+* The spec body was never annotated with a landing SHA before the flip to In Review, the same slip
+  the last two Done-gate reviews recorded. It cost nothing here, the item having shipped in one
+  commit.
