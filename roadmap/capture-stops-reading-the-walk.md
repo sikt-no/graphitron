@@ -12,206 +12,171 @@ last-updated: 2026-09-01
 
 # The fact tier reads its consumer: capture writes a relation from the classification walk, and the comparison that relation serves never needed a store-side copy
 
-`FactCapture.detect` writes `walk_type_backing_class` from the run's `ClassifiedRun`, which the
-generator projects from the classification walk. So the pass that fills the fact store reads the
-thing above it, and the fact tier depends on its own consumer. R682's destination sentence says each
-tier reads only the tier below it; this is the one place in capture where that is false today, and
-it is the only edge from the generator into capture that exists at all.
+## Goal
 
-The relation can go rather than be inverted, because the comparison it was built for does not need
-it.
+Capture writes nothing that comes from the code above it.
 
-## Vocabulary
+One relation breaks that today. `walk_type_backing_class` records, per SDL type, the Java class that
+the *classification walk* resolved as that type's backing, the walk being the retiring reflective
+pass the generator still emits from. `FactCapture.detect` writes those rows from a value the
+generator hands down, so the pass that fills the fact store reads its own consumer. R682's
+destination sentence says each tier reads only the tier below it. This is the one place in capture
+where that is false, and the only edge from the generator into capture that exists at all.
 
-The **classification walk** is the retiring reflective pass that resolves, among much else, which
-Java class backs each SDL type. The **derivation** is `intent_type_backing_class`, the store-native
-closure that replaces it. A **differential** is the shape the fact model prescribes for a migration
-that needs to be checked against its predecessor: the predecessor writes facts, and the comparison
-is between two relations rather than an equality assertion in Java. `walk_type_backing_class` is the
-predecessor's half of one such differential.
+The relation exists to serve one comparison. `intent_type_backing_class` is the store-native closure
+replacing the walk, and it is checked against the walk's answer by a *differential*: the predecessor
+writes facts, and the check compares two relations instead of asserting equality in Java. That
+comparison does not need a stored copy of the walk's answer, because it already holds that answer in
+memory at the moment it runs.
 
-## Why the relation can go
+So the goal is to delete the relation rather than invert the edge. When this item is done:
 
-**It has no production reader.** No view selects from it. Nothing in any module's main sources reads
-it. Its whole consumer set is three tests: `TypeBackingShadowTest`, which is the differential; two
-cases in `FactCaptureAgreementTest` that pin the writer and its partition lifecycle, and so exist
-only because the writer does; and a guard list in `graphitron-mcp`'s `StoreClientBoundaryTest`. A
-fourth test, `TypeBackingClassesTest`, is a consumer of the *value* rather than of the relation: it
-pins the projection off the walked model and never opens a store. That distinction is what decides
-its fate below, and it is why the count here is three rather than four.
+* No main source in any module projects a `GraphitronSchema` into capture, and `FactCapture.detect`
+  is detections-only.
+* The `walk_` family is gone. R743 drained its other relations, so this is the last resident and the
+  name has no referent once it goes.
+* The backing differential still runs, still over its four fixtures, and still pins two deliberate
+  disagreements by direction. It compares the projected map against the derivation's query in one
+  JVM, with no store round-trip.
 
-**The differential already computes both sides in the test's own JVM.**
-`TypeBackingShadowTest.withBothSides` builds the walk's answer as `TypeBackingClasses.of(bundle.model())`,
-writes it into the store, and reads it back three lines later to compare. The store round-trip adds
-nothing: comparing that map against the derivation's query pins exactly the property comparing two
-relations pins. The relation is storage for a value the comparison is holding anyway.
+That third bullet is part of the goal, not a detail of the plan. What this item removes is a stored
+copy, never the check.
 
-## The argument on the other side, and what survives it
+## Plan
 
-The `walk_` family header in `graphitron-model.sql` argues for keeping the relation, and the
-argument deserves answering rather than out-voting. It says the differential belongs inside the
-store "rather than a total-agreement test in Java", because a total agreement test "makes the walk
-normative and pins whatever bugs it has as invariants, which is the shape this relation exists to
-avoid."
+**1. Delete the relation and its family from `graphitron-model.sql`.** The `CREATE TABLE`, its four
+`COMMENT ON` statements, the family header comment above it, the `walk_` row in `meta_family`, and
+the `walk_type_backing_class` row in `meta_family_headline`. Also its line in
+`graphitron-model/src/test/resources/no/sikt/graphitron/model/undeclared-relations.txt`:
+`MetaDeclarationGateTest` closes that frozen roster against the observed relations in both
+directions, so a retired relation's leftover line fails the gate. `meta_relation_family` needs no
+edit, deriving its rows from the engine's catalog by prefix match.
 
-**That warning is correct and this item does not violate it.** What it forbids is asserting that the
-derivation equals the walk, which would install the walk as the specification. The comparison keeps
-the shape it has: four named fixtures, agreement asserted where the two are meant to agree, and two
-cases that assert deliberate *disagreement* and name its direction. A departure stays a pinned
-departure. Nothing in this item licenses a corpus-wide equality assertion, and an implementer who
-reads "compare in memory" as permission to write one has built the thing the header warns about.
+**2. Cut the write edge in capture.** `TypeBackingClassRows` goes, having nothing left to write.
+`ClassifiedRun.of(GraphitronSchema)` and the `backingClasses` component of `ClassifiedRun.Present`
+go with it, so `GraphQLRewriteGenerator` hands the discriminator directly instead of projecting it
+from a schema. `FactCapture.detect` loses its write and becomes detections-only, and the javadoc on
+`detect` and on `GraphQLRewriteGenerator`'s capture entry point stop describing a walk-side write.
 
-**The claim that does die is the one about reach.** The header's case for store-side storage is that
-two relations "diff over any corpus a run touches". Nothing does that. `TypeBackingShadowTest` is
-four hand-written schemas, and no other test and no view compares the pair. The capability is paid
-for on every capture and never exercised, and it has now had its opportunity: a consumer-scale
-capture exists and is the measurement instrument the 2026-08-28 derived-read-cost audit works from,
-and no walk-against-derivation diff has been run over it. A differential nobody runs at the one
-scale that would make it informative is storage, not an instrument.
+**3. Rewrite the differential in the test's own JVM.** `TypeBackingShadowTest.withBothSides` builds
+the walk's answer, writes it to the store, and reads it back three lines later. Drop the round-trip
+and compare the projected map against the derivation's query directly. The comparison keeps its
+shape exactly: four named fixtures, agreement asserted where the two are meant to agree, two cases
+asserting deliberate disagreement and naming its direction. Reading "compare in memory" as licence
+for one corpus-wide equality assertion fails this item whether or not it is green.
 
-## What execution tests do and do not cover
+**4. Move the walk-answer projection to test sources, with its test.** The reduction inside
+`TypeBackingClasses`, the one over `CatalogBuilder.projectTypesByName` that keeps the class arms and
+drops the table and unbacked arms, is what step 3 builds the walk's side with, so it survives the
+deletion of its main-source home and lands beside its one remaining caller. `TypeBackingClassesTest`
+moves with it: it pins the projection's reach against a walked model, and a silent emptiness there
+would make the rewritten comparison pass vacuously. Whether the reduction becomes a private helper
+on the comparison or a small test-source class, and whether it keeps its name, are implementation
+calls.
 
-Worth stating, because it is the tempting reason to believe this is safe and it is the wrong one.
-Execution-tier tests cover the **walk's** answer, because the generator still emits from
+**5. Drop the guards the relation leaves behind.** `FactCaptureAgreementTest`'s two walk-binding
+cases, their helper, and the relation's row in that test's registration roster; the `ORACLE` arm
+keeps nine other residents, so it stays. `StoreClientBoundaryTest.noWalkRelationIsRead` goes
+outright rather than being left standing over an empty relation list, which would pass for the wrong
+reason.
+
+**6. Sweep the three places that cite the family.** Two are in
+`docs/architecture/explanation/fact-model.adoc`: the oracle corollary, which names `walk_` as the
+shipped case of the shape it recommends and so needs a replacement exemplar or a rewrite that states
+the shape without one; and the "No stratum, scaffolding" bucket, which pairs `walk_` with
+`rejection_` and ends on "the clock `walk_` keeps", a clock that will not exist. `rejection_`'s own
+DDL charter carries the same clock and repoints the same way, at the walk itself. The third is
+`build_warning_`'s charter in `meta_family`, which defends its name by contrast with `walk_`; it
+repoints at the walk or the clause goes. R876's landed slice 5 amended the lever order on the same
+`fact-model.adoc` page without touching these paragraphs; read that edit before writing this one
+rather than assuming a clean merge.
+
+## What this deliberately leaves alone
+
+**`ClassifiedRun` the type.** It is the run-mode discriminator, not the walk-write carrier it looks
+like from outside: its `Absent` arm means a stage refused the document, and `detect` runs no
+detections on that arm. Step 2 empties it, not deletes it. Whether the emptied type keeps its name is
+an implementation call.
+
+**`CatalogBuilder.projectTypesByName` and `TypeBackingShape`.** They read the walked model and retire
+with it under R682, but they have live callers in `TypeBackingProjectionTest` and in
+`graphitron-lsp`'s `R157PipelineTest`.
+
+**`TypeBackingShadowTest`'s name and its asymmetric assertions.** R740 owns the rename away from
+"shadow" and the rest of that test's cleanup. This item takes only what cutting the back-edge forces.
+
+## Other solutions we have considered
+
+**Invert the edge instead of deleting it: have the derivation or a store-native pass write the
+relation, so capture no longer reads upward.** Rejected because it preserves storage nothing needs.
+The relation has no production reader: no view selects from it, and no main source in any module
+reads it. Its only consumers are the differential, two `FactCaptureAgreementTest` cases that exist
+because the writer does, and one `graphitron-mcp` guard list.
+
+**Keep the relation for its reach: two stored relations diff over any corpus a run touches, which an
+in-memory comparison cannot.** This is the `walk_` family header's own argument and it is the
+strongest one available. It fails on exercise rather than on principle. `TypeBackingShadowTest` is
+four hand-written schemas, and no other test and no view compares the pair. The capability has had
+its opportunity: a consumer-scale capture exists and is the instrument the 2026-08-28
+derived-read-cost audit works from, and no walk-against-derivation diff has been run over it. A
+differential nobody runs at the one scale that would make it informative is storage, not an
+instrument.
+
+**Delete the comparison along with the relation, on the grounds that execution tests already cover
+this.** They do not, and this is the tempting wrong reason to believe the deletion is safe.
+Execution-tier tests cover the *walk's* answer, because the generator still emits from
 `RecordBindingResolver`. The generator reads neither `intent_type_backing_class` nor the views over
-it. Its main-source readers are the two tool modules, `graphitron-lsp` and `graphitron-mcp`, the
-latter through `intent_type_backing` in `SchemaQueries`; neither is on the path any execution-tier
-test exercises. So execution coverage says nothing about the derivation and nothing about whether
-the two agree.
+it; its main-source readers are the two tool modules, `graphitron-lsp` and `graphitron-mcp`, the
+latter through `intent_type_backing` in `SchemaQueries`, and neither sits on a path an execution-tier
+test exercises. Agreement between the class an editor names and the class the generated code uses is
+a difference a user can see, and after this item exactly one test pins it.
 
-That is what the differential is for, and it is why this item rewrites the comparison instead of
-dropping it. Agreement between the class an editor names and the class the generated code uses is a
-difference a user can see, and after this item exactly one test still pins it.
+**Replace the differential with a total-agreement test in Java.** Refused, and the family header
+names the reason: it would make the walk normative and pin whatever bugs it has as invariants. Step 3
+keeps the pinned-departure shape precisely so this stays refused.
 
-## What is deleted
+## How we will know it is delivered
 
-* `walk_type_backing_class`, its four `COMMENT ON` statements, its `meta_family_headline` row, and
-  its line on the frozen undeclared roster,
-  `graphitron-model/src/test/resources/no/sikt/graphitron/model/undeclared-relations.txt`. That
-  roster postdates the first draft of this item: it arrives with the per-relation declaration
-  machinery, and `MetaDeclarationGateTest` closes it against the observed relations in both
-  directions, so a retired relation whose line is left standing fails the gate with "an extra entry
-  is a declared or retired relation whose line must be removed". Nothing is owed to
-  `meta_relation_family`, which an earlier draft of this list named: that census derives its rows
-  from the engine's catalog by prefix match, so it loses the relation the moment the table goes.
-* The `walk_` family itself, its `meta_family` row included. R743 drained the family's other
-  relations, so this is its last resident and the family has no referent once it goes.
-* `TypeBackingClassRows`, the writer, and `TypeBackingClasses`, the value it reifies, **from main
-  sources**. The writer dies outright, having nothing left to write. The value's projection does
-  not; it is what the surviving comparison builds the walk's side with, and where it goes is under
-  "What is deliberately not deleted" below.
-* `ClassifiedRun.of(GraphitronSchema)`, the factory, and the `backingClasses` component of
-  `ClassifiedRun.Present`.
-* `FactCaptureAgreementTest`'s two walk-binding cases and their helper, plus the relation's row in
-  that test's registration roster.
-* `StoreClientBoundaryTest.noWalkRelationIsRead`, whose relation list becomes empty. A guard over an
-  empty list passes for the wrong reason, so the arm goes rather than being left standing.
-
-## What is deliberately not deleted
-
-**`ClassifiedRun` survives.** It is not the walk-write carrier it looks like from the outside. It is
-the run-mode discriminator: its `Absent` arm means a stage refused the document, and `detect` runs no
-detections at all on that arm. Deleting the type would delete that behaviour. What goes is its
-component and its projection from the walked model, which is the actual coupling;
-`GraphQLRewriteGenerator` then hands the discriminator directly instead of projecting it from a
-`GraphitronSchema`. Whether the emptied type keeps its name is an implementation call, not a
-decision this item makes.
-
-**`CatalogBuilder.projectTypesByName` and `TypeBackingShape` survive.** They read the walked model
-and retire with it under R682, but they have live callers in `TypeBackingProjectionTest` and in
-`graphitron-lsp`'s `R157PipelineTest`, and nothing in this item touches them.
-
-**The walk-answer projection survives, in test sources, and so does its test.** Deleting
-`TypeBackingClasses` from main sources is not deleting the reduction inside it. That reduction over
-`projectTypesByName`, the one that keeps the class arms and drops the table and unbacked arms, is
-exactly what `withBothSides` calls to build the walk's side of the comparison, and the comparison
-survives, so the reduction has to survive with it. It moves to test sources beside its one remaining
-caller. Whether that is a private helper on the comparison or a small test-source class is an
-implementation call, as is whether it keeps the name.
-
-`TypeBackingClassesTest` moves with it rather than being deleted, and this is not tidiness. That
-test pins the projection's reach against a walked model, and its own javadoc names the reason: a
-silent emptiness there "would make every future differential pass vacuously". The rewritten
-comparison leans on the projection harder than the stored version did, since nothing downstream
-would notice an empty map any more. Dropping the guard in the same change that removes the store
-round-trip is the item's central risk wearing a different hat.
-
-## The retirement sweep this owes
-
-The relation is cited as an exemplar in three places that would otherwise be left naming a dead
-thing.
-
-**`fact-model.adoc` names `walk_` as the shipped case of the sanctioned oracle shape,** in the
-corollary that says fidelity to a predecessor is evidence rather than specification, "with its
-removal criterion in its own family header." Deleting the family retires the page's only worked
-example of the shape it is recommending. The paragraph needs either a replacement exemplar or a
-rewrite that states the shape without one, and that rewrite belongs in this item rather than being
-left for whoever notices.
-
-**The same page's "No stratum, scaffolding" bucket pairs `walk_` with `rejection_`** and ends "the
-charter of `rejection_` already ties its own lifetime to the clock `walk_` keeps." After this item
-that clock does not exist. Both the page and `rejection_`'s own DDL charter need repointing at the
-walk itself, which is what the clock was always about.
-
-**`build_warning_`'s own charter argues against the name `walk_`,** in the `meta_family` roster: the
-advisory arm is "not `walk_`, because a family may not be named for its producer and both of the
-arm's producers outlive the walk." A charter that defends a name by contrast with a family the
-roster no longer holds is arguing with nobody, and a reader who goes looking for the loser of that
-comparison finds nothing. The clause names the walk rather than the family, the same repointing the
-`rejection_` charter needs, or it goes; deciding which is this item's, not a follow-up's.
-
-**The two `fact-model.adoc` edits share a file with R876's slice 5,** which has landed: it amended the same page's lever
-order and restated its top rung. The paragraphs do not overlap, R876 having worked the lever
-hierarchy where this item works the oracle corollary and the strata buckets, but read the landed edit
-before writing this one rather than assuming a clean merge. The reason the note was here still
-applies with its polarity reversed: the top rung no longer argues from cost, it argues that a rule
-reconstructing what capture could have written is a modelling defect whichever way the timings come
-out, and the corollary this item rewrites is the page's worked example of the argument that rung used
-to make.
+* No main source in any module names `walk_type_backing_class`, `TypeBackingClasses` or
+  `TypeBackingClassRows`, and nothing in `graphitron`'s main sources projects a `GraphitronSchema`
+  into capture.
+* The differential still fails when the two sides disagree. Reintroduce a known departure, one of the
+  two the test already names, and watch the rewritten comparison go red. This is the item's central
+  risk: a comparison can be deleted by accident while looking like it was rewritten, and only running
+  it against a real disagreement tells the two apart.
+* The comparison is still four cases and still asserts two deliberate disagreements. A diff showing
+  the fixtures collapsed into one corpus-wide equality assertion fails this item whether or not it is
+  green.
+* `TypeBackingClassesTest`'s cases pass from test sources, against the same walked models, with no
+  case dropped in the move.
+* `FactSchemaGateTest`, `MetaDeclarationGateTest` and the family roster gates pass with the `walk_`
+  family absent, which is what says the DDL, the two `meta_` rosters, the frozen undeclared roster
+  and the generated reference page came out together.
+* `fact-model.adoc` cites no retired family, and neither the `rejection_` charter nor the
+  `build_warning_` charter names a family that no longer exists.
+* The full verification build is green with no generated-output diff in `graphitron-sakila-example`.
 
 ## Retired vocabulary
 
 `walk_type_backing_class`, the `walk_` family, `TypeBackingClassRows`, and the phrase "walk-side
-write" for the edge they formed. `TypeBackingClasses` is *not* retired vocabulary: the reduction it
-names survives in test sources and may keep the name there, so the sweep would fire on a live symbol
-if this list claimed it. What retires with the writer is the value's role as a thing capture stores,
-not the word. The words "shadow" and "oracle" are *not* retired here: the differential survives, and
-R740 owns the rename of `TypeBackingShadowTest` and the rest of that test's cleanup.
+write" for the edge they formed. The words "shadow" and "oracle" are not retired here: the
+differential survives, and R740 owns the rename of `TypeBackingShadowTest`.
 
 ## Relation to the items around it
 
 **R865** names this deletion as the edge its module move must cut first, and depends on it. This item
 is split out because it needs none of that move: no module changes, no dependency changes, and the
 deletion stands on its own reasoning rather than on where capture ends up living. It also closes the
-write-direction half of the defect R865 is named after, which the module boundary itself cannot,
-since a boundary constrains import direction and this is a write.
+write-direction half of the defect R865 is named after, which a module boundary cannot, since a
+boundary constrains import direction and this is a write.
 
 The capture-only goal R865 adds is the other reason the order matters. That item would otherwise owe
-a seam separating `TypeBackingClassRows.write` from the detections inside `detect`, so a
-capture-only run could have the write without the detections. The seam disappears here rather than
-changing: with the write gone, `detect` is detections-only and there is nothing to separate.
+a seam separating `TypeBackingClassRows.write` from the detections inside `detect`, so a capture-only
+run could have the write without the detections. The seam disappears here rather than changing: with
+the write gone, `detect` is detections-only and there is nothing to separate.
 
-**R740** reaches the same conclusion from the other end, and owns what is left of
-`TypeBackingShadowTest` afterwards: the rename away from "shadow" and the symmetric assertion. This
-item takes only what the back-edge forces and does not wait on it.
+**R740** reaches the same conclusion from the other end and owns what is left of
+`TypeBackingShadowTest` afterwards. This item does not wait on it.
 
-## How we will know it is delivered
-
-* No main source in any module names `walk_type_backing_class` or the two feeder classes, and
-  `FactCapture` has no import from `no.sikt.graphitron.rewrite.derive` that reads the walked model.
-  Nothing in `graphitron`'s main sources projects a `GraphitronSchema` into capture.
-* The differential still fails when the two sides disagree. Reintroduce a known departure, one of
-  the two the test already names, and watch the rewritten comparison go red. This is the item's
-  central risk: a comparison can be deleted by accident while looking like it was rewritten, and
-  only running it against a real disagreement tells the two apart.
-* The comparison is still four cases and still asserts two deliberate disagreements. A diff showing
-  the fixtures collapsed into one corpus-wide equality assertion is the failure mode the DDL header
-  warned about, and it fails this item whether or not it is green.
-* `FactSchemaGateTest`, `MetaDeclarationGateTest` and the family roster gates pass with the `walk_`
-  family absent, which is what says the DDL, the `meta_family` and `meta_family_headline` rosters,
-  the frozen undeclared roster and the generated reference page came out together.
-* `fact-model.adoc` cites no retired family, and neither the `rejection_` charter nor the
-  `build_warning_` charter names a family that no longer exists.
-* The projection's guard is still running. `TypeBackingClassesTest`'s cases pass from test sources,
-  against the same walked models, with no case dropped in the move.
-* The full verification build is green with no generated-output diff in `graphitron-sakila-example`.
+**R877** is working `undeclared-relations.txt` family by family. If it reaches the `walk_` family
+first, step 1 collides with it on that file.
