@@ -85,7 +85,7 @@ when a store relation states it, and a directive is deleted when its last axis h
   "this command row exists" to "the inputs to the verdict exist", which output identity does not
   backstop per-document. Choosing (a) carries two obligations the fork would otherwise smuggle
   past the store's gates. First, the rows are a function of the schema, not of captured facts, so
-  they are scaffolding in the fact model's sense, the `walk_` shape: if they live as a declared
+  they are scaffolding in the fact model's sense, the shape `rejection_` has: if they live as a declared
   relation they owe the full scaffolding charter (a `meta_family` roster row whose header states
   the writer, the cadence, the single reader and the clock it drains on, which here is this
   item's own trio deletion plus R682's command-vocabulary settlement); if that charter is not

@@ -43,7 +43,7 @@ Classified by what each file does, over 17 files:
 | Capture-cadence fixpoint writers
 | 392
 | Fill a materialized relation by iterating a closure to a fixed point. `TypeBackingRows`,
-  `TypeBackingClassRows`, `InputOccurrencePaths`, `AuthoredClaimRejectionRows`.
+  `InputOccurrencePaths`, `AuthoredClaimRejectionRows`.
 
 | Support records
 | 351

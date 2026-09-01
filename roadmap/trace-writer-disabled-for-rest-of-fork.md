@@ -103,13 +103,14 @@ question is not only whether the defect outlives the leaf zoo but whether the *t
 does not, and this item is scoped so that the part with a store successor is corrected rather than
 deepened.
 
-**The payload has a store home already.** The classification walk writes into the store as the
-`walk_` family: `walk_claim_domain_type` and `walk_claim_domain_field` carry the coordinates the walk
-registered, `walk_type_backing_class` what it bound each type to, all keyed on `(graph_name,
-type_name [, field_name])` with a `store_graph` foreign key and a removal criterion stated in the
-family header. Rejections have `rejection_` and `diagnostic_` homes. So the trace's `(coordinate,
-verdict, source, rejection)` columns are a second and weaker transcription of data that now has a
-keyed, constraint-checked home. The tell is `LeafCoverageReport`'s input list: JSONL, plus a
+**The payload has a store home already.** What the walk concluded is derived store-native now
+rather than transcribed: `intent_type_domain` carries the coordinates the classification reaches and
+`intent_type_backing_class` what backs each type, both keyed on `(graph_name, type_name
+[, field_name])` with a `store_graph` foreign key. The `walk_` family that used to hold the walk's
+own transcription of the same answers is gone, R743 and R870 having drained it, which strengthens
+this argument rather than weakening it: the store's version is the only version. Rejections have
+`rejection_` and `diagnostic_` homes. So the trace's `(coordinate, verdict, source, rejection)`
+columns are a second and weaker transcription of data that has a keyed, constraint-checked home. The tell is `LeafCoverageReport`'s input list: JSONL, plus a
 source-parsed sealed-leaf inventory, plus a roadmap-mention grep, joined in DuckDB. Not one of the
 three is the model.
 

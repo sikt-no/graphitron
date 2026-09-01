@@ -433,8 +433,9 @@ public class GraphQLRewriteGenerator {
      * field-conflict claims the LSP/MCP snapshot's {@code Conflicted} projection overlay consumes.
      * Three families read the store here.
      * The authored-claim conflict rule reports from the claim views over the classification
-     * domain, a captured-fact population rather than anything the walk reached; what the walked
-     * model still contributes is the {@link ClassifiedRun} discriminator alone. The two
+     * domain, a captured-fact population rather than anything the walk reached; the walked model
+     * contributes nothing to this seam now, the {@link ClassifiedRun} arm being a property of
+     * which path reached here rather than of anything the walk resolved. The two
      * {@code @nodeId} rules
      * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} for a node id an
      * {@code argMapping} entry binds, {@link no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects}
@@ -454,7 +455,7 @@ public class GraphQLRewriteGenerator {
      * class's one capture seam; nothing else opens a store for a classified run.
      */
     private <T> T captureAndRead(
-            AttributedRegistry attributed, ReadSchema read, GraphitronSchema schema,
+            AttributedRegistry attributed, ReadSchema read,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
             FactCapture.AfterCapture<T> after) {
         return FactCapture.runAndRead(ctx.storeDirectory(),
@@ -600,7 +601,7 @@ public class GraphQLRewriteGenerator {
         // generators run: the launcher relation's rows are read by the fetcher generator (a root
         // coordinate with a row gets the launcher emission, one without falls through to its
         // legacy builder), and those generators need no store, so the window closes here.
-        var captured = captureAndRead(attributed, read, schema, jooq, census,
+        var captured = captureAndRead(attributed, read, jooq, census,
             (store, storeFacts) -> {
                 // The handle is what the window exists to hand over, and the plan tier holds it:
                 // the producers convert onto the store one family at a time, and each conversion

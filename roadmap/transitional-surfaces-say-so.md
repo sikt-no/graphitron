@@ -89,9 +89,10 @@ page owns the account and a paraphrase beside it is a second version to keep in 
 
 **4. The marking is a stated form, not four ad-hoc sentences.**
 
-The store's DDL already has this convention at relation grain: the `walk_` and `rejection_`
-charters carry their own retirement clocks, `walk_` saying that when the walk is gone the family
-has no referent. The docs equivalent gets written down once, in `docs/architecture/index.adoc`
+The store's DDL already has this convention at relation grain: the `rejection_` charter carries its
+own retirement clock, saying the family is transitional by construction and drains as its detections
+migrate store-native. Its sibling `walk_` carried the same clock and has since reached the end of
+it, which is the convention working rather than a gap in it. The docs equivalent gets written down once, in `docs/architecture/index.adoc`
 beside the quadrant grid or in the reference index, so the next transitional surface is marked
 the same way instead of the question being reargued. The form should say what a marker has to
 carry: that the surface is transitional, that it is accurate today, and where the rationale

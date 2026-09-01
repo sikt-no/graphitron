@@ -422,7 +422,7 @@ slice's decision, not the first one's.
 
 | `sql_` | 14 | 0 | 0 | one corpus, one gatherer, every relation keyed: proves the model end to end at the smallest scale
 | `jvm_` | 7 | 0 | 0 | the same shape one corpus over. Expected to introduce the second owner and did not: the classpath is the catalog gatherer's second corpus, so this family proves the corpus junction instead
-| `java_`, `javac_`, `lint_`, `walk_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
+| `java_`, `javac_`, `lint_`, `rejection_`, `build_warning_` | 12 | 0 | 0 | small and mostly scaffolding; settles how a family with a retirement clock declares an owner
 | `graphql_` | 27 | 1 | 0 | the first large family, and the one whose grains the key shapes already state most clearly
 | `graphitron_` | 61 | 0 | 0 | the largest table family, same gatherer as `graphql_`, so the owner is already settled by the time it starts
 | `store_`, `meta_`, and the prefixless `diagnostic` | 15 | 7 | 0 | the store describing itself and the run; their owner is neither a corpus gatherer nor the last one, and whether it takes a corpus of its own or no corpus rows like the derivation gatherer is left open for this slice deliberately, since the answer depends on what these relations turn out to be about
@@ -662,9 +662,9 @@ the `java-source` corpus and `javac_` by the `compile` gatherer over the `javac`
 rostered, so this half needed no roster change and is what the family order calls settling the model
 one corpus over.
 
-**The other four families in this group have no owner on the roster, and the answer is to wait rather
-than to invent one.** `walk_`, `rejection_`, `lint_` and `build_warning_` are written by
-`TypeBackingClassRows`, `RejectionFacts` and `BuildWarningFacts`, none of which is a rostered
+**The other three families in this group have no owner on the roster, and the answer is to wait rather
+than to invent one.** `rejection_`, `lint_` and `build_warning_` are written by
+`RejectionFacts` and `BuildWarningFacts`, neither of which is a rostered
 gatherer and none of which any rostered gatherer runs. The tempting reading is the one both writers'
 javadocs invite, that their cadence is `CompileFacts`'s and so they are its siblings: two gatherers
 reading a corpus the run produced, on the precedent the `javac` corpus sets. Tracing what they

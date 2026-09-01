@@ -404,7 +404,7 @@ fail on the four registrations above.
    that membership, so the gate says at least that much rather than nothing, and it makes the gate a
    second reader of a rule `store_graph`'s comment already states rather than a new rule of its own.
 
-4. **Cadence.** The closure is disjoint from the families written off the capture cadence: `walk_`,
+4. **Cadence.** The closure is disjoint from the families written off the capture cadence:
    `rejection_`, `lint_`, `build_warning_` and `javac_`, every one of them graph-keyed and therefore
    invisible to assertion 2, plus `java_`, which assertion 2 catches on shape as well. Their writers are the
    dev session's `CompileFacts`, `JavaSourceFacts`, `RejectionFacts` and `BuildWarningFacts`, on

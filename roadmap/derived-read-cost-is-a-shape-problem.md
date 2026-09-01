@@ -324,7 +324,7 @@ written late, and neither prefix records what a relation reads.
 **What the second gatherer actually reads.** Walking all 114 `intent_` rules to the base relations
 they bottom out at gives 41 in `graphitron_`, 11 in `sql_`, 8 in `graphql_`, 6 in `jvm_`,
 `store_graph_source`, and 6 hand-written `intent_` tables. Nothing reaches `java_`, `javac_`, the
-configuration corpus, `lint_`, `walk_`, `rejection_` or `diagnostic`: zero rules, not few. The
+configuration corpus, `lint_`, `rejection_` or `diagnostic`: zero rules, not few. The
 derivation gatherer declares six dependencies and three of them, `configuration`, `java-source` and
 `compile`, are used by nothing it owns. Its real inputs are the SDL transcription, the catalog and
 classpath transcriptions, and `graphitron_`, which is what the graphitron gatherer has once it has

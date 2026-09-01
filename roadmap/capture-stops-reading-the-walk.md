@@ -49,13 +49,14 @@ plan did not foresee:
 
 1. **The DDL.** `walk_type_backing_class`, its four `COMMENT ON` statements and the family header
    block are gone, with the `walk_` row in `meta_family`, the relation's `meta_family_headline`
-   row, and its line on the frozen undeclared roster. Unforeseen: removing the family left a hole
-   at ordinal 7, and `FamilyRosterGateTest` closes the ordinals against `0..n-1`, so `intent_`
-   through `meta_` renumbered down one.
+   row, and its line on the frozen undeclared roster. `meta_family` keeps a gap at ordinal 7 where
+   the family sat: no gate closes those ordinals against `0..n-1`, only against duplicates, and
+   renumbering the five rows below it is not this item's to do.
 2. **The write edge.** `TypeBackingClassRows` deleted; `ClassifiedRun` keeps both arms and loses
    its component and its projection from the walked model, gaining a `present()` beside `absent()`
-   so `GraphQLRewriteGenerator` hands the discriminator directly. `FactCapture.detect` writes
-   nothing.
+   so `GraphQLRewriteGenerator` hands the discriminator directly. Its `captureAndRead` seam drops
+   the `GraphitronSchema` parameter that went dead with the projection, so no signature on the path
+   into capture names a walked schema. `FactCapture.detect` writes nothing.
 3. **The differential.** `withBothSides` takes a `BiConsumer<DSLContext, List<String>>` and hands
    the body the walk's projected answer instead of round-tripping it through the store. Four
    fixtures, two pinned departures, unchanged.
@@ -66,7 +67,9 @@ plan did not foresee:
    deleting that list orphaned its javadoc, and an unattached doc comment is a warning under the
    module's `-Werror`, so the comment went with the constant.
 6. **The sweep.** Both `fact-model.adoc` paragraphs, plus the `rejection_` and `build_warning_`
-   charters in `meta_family`. The oracle corollary was rewritten without an exemplar, keeping the
+   charters in `meta_family`, and the roadmap bodies `workflow.adoc` counts as a swept surface:
+   R740 and R682 had this deletion filed as work still owed elsewhere, and five more items named
+   the family in an enumeration, an exemplar or a design option. The oracle corollary was rewritten without an exemplar, keeping the
    shape it recommends (named fixtures, departures asserted by direction, never a total-agreement
    test) and separating it from the second question of where the predecessor's answer lives.
 
@@ -198,6 +201,16 @@ change, still reads "0-based; unique by gate" beside the sibling comment that sp
 headline ordinal is the one gated dense. So a gap at 7 would have passed, and renumbering `intent_`
 through `meta_` was five rows of `meta_family` changed outside the plan's scope on a false premise.
 
+> **Author, round 1.** You are right, and I checked it rather than taking it on trust:
+> `FamilyRosterGateTest`'s density case reads `META_FAMILY_HEADLINE.ORDINAL`, and the tree's one
+> reader of `META_FAMILY.ORDINAL` is `FactSchemaGateTest.theFamilyRosterIsWellFormed`, which asserts
+> `doesNotHaveDuplicates()`. I misread the former when the gap appeared and renumbered on that
+> misreading. Restored: `intent_` through `meta_` are back at 8 to 12, `meta_family` keeps a gap at
+> 7, and step 1's note now says a gap is what the roster gets and why no gate objects. I took the
+> restore rather than the keep-and-justify branch because the renumbering was never wanted for
+> itself, and whether these ordinals should be dense is a question about the roster rather than
+> about this deletion. Filed as R909 so it is decided deliberately or not at all.
+
 The edit is inert, which is why the build cannot catch this: ordinals with a gap order the reference
 pages identically. The defect is in the record. This is the last gate, after which the item file is
 deleted and the changelog entry is all that survives, so a claim about a gate that does not say what
@@ -215,6 +228,12 @@ flows from the parameter into capture any more, but this is the item's own subje
 that hands a walked schema toward the capture seam is the last visible inch of the edge the item
 exists to cut, and a reader of that method still sees it.
 
+> **Author, round 1.** Fixed. The parameter and the argument at its one call site are gone, and the
+> method's javadoc no longer says the walked model contributes a discriminator, since the arm is now
+> a property of which path reached the seam rather than of anything the walk resolved. Agreed on why
+> it mattered: the criterion passing on a technicality is exactly the case where the signature is
+> the last thing a reader sees.
+
 **Finding 3 (the retirement sweep, a named precondition of this gate). The sweep did not reach
 roadmap bodies.** `roadmap/workflow.adoc` lists them among the surfaces the sweep greps, and seven
 items still name the retired vocabulary. Most are incidental or read naturally as past tense, but
@@ -227,6 +246,22 @@ might do, which is what its "Relation to the items around it" entry above antici
 (R682, R877, and the passing mentions in `derive-package-names-three-jobs`,
 `corpus-directives-to-expect-equals`, `trace-writer-disabled-for-rest-of-fork` and
 `derived-read-cost-is-a-shape-problem`) are the author's to read and leave or repoint.
+
+> **Author, round 1.** Swept. R865's two present-tense claims had already been repointed by another
+> session between the review and this pass; its remaining mention reads as past tense. R740 was the
+> live one: its "What drains as a consequence" section still claimed this deletion, `TypeBackingClasses`,
+> `TypeBackingClassRows` and both `fact-model.adoc` paragraphs as its own pending work, and its
+> `ORACLE` roster named the family. Both repointed, leaving R740 the comparison cleanup this item
+> deliberately did not take. Of the rest I repointed six rather than leaving them, because each named
+> the family as live rather than in passing: R682 divided this exact work between R743 and R740 and
+> would have told its next reader that R740 still owes it; R877 counted the family in a table and
+> named `TypeBackingClassRows` as a live writer; `nodeid-decode-membership-guard` offered "write it as
+> a `walk_` relation" as an open design option, which now means reviving a retired family;
+> `transitional-surfaces-say-so` used the family's charter as its worked exemplar of the convention;
+> and two enumerations (`derived-read-cost-is-a-shape-problem`, `dev-start-refreshes-the-register-twice`)
+> listed it among live families. `derive-package-names-three-jobs` listed the deleted writer in a
+> table of classes to move. Left alone: `changelog.md`, which is the historical record, and the
+> past-tense mentions in R740 and `planners-read-facts-emitters-read-commands`.
 
 None of the three needs code to move beyond the two lines in finding 2. The verification above does
 not need redoing: what a next pass owes is the ordinal decision, the dead parameter, the roadmap

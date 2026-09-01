@@ -230,13 +230,15 @@ appended note about the surprise.
 ## Open forks for the reviewer
 
 * *Where should the install fact be stated?* Slice 1 states it in Java, in the walk's own vocabulary.
-  The store-first alternative is to write it as a `walk_` relation, which makes the rule an anti-join
-  rather than code, drains with the walk, and can be diffed against `intent_node_id_decode` so the
-  over-claim becomes a measured shadow instead of a comment. The counterweight is that the `walk_`
-  family's membership grains were deliberately deleted once their only reader went away, so re-adding
-  one is an argument to make out loud rather than a default. Recommendation: single-mint in Java first,
-  because slice 2 needs the fact whichever surface holds it, and lift it to a `walk_` relation if a
-  second reader appears.
+  The store-first alternative is to write it as a relation transcribing what the walk installed,
+  which makes the rule an anti-join rather than code, drains with the walk, and can be diffed against
+  `intent_node_id_decode` so the over-claim becomes a measured shadow instead of a comment. The
+  counterweight has grown since this was written: the `walk_` family that would have housed such a
+  relation is gone, its membership grains deleted once their only reader went away and its last
+  resident with them, so the store-first option now means reviving a retired family rather than
+  adding to a live one. Recommendation, unchanged and now better supported: single-mint in Java
+  first, because slice 2 needs the fact whichever surface holds it, and revisit only if a second
+  reader appears.
 * *Which `Rejection` arm does the residual class get?* This plan says deferral by default. A reviewer
   who thinks a dropped decode is always the author's mistake would say structural, and that choice
   decides whether a consumer's build stops or reports.

@@ -188,7 +188,7 @@ in `generators.util`, `schema.federation`'s `EntityResolutionBuilder`, `catalog`
 `diagnostics` package is already clear of the hierarchies: `RejectionFacts` still retires with the
 walk, but it transcribes the `Rejection` axis rather than importing a leaf, so the terminal
 deletion reaches it through its writer's input and not through this census. No `walk_`-shaped
-projection appears here at all, R743 and R740 having drained that family between them, which is the
+projection appears here at all, R743 and R870 having drained that family between them, which is the
 same boundary the "Relationship to other items" section states from the other end. `command` and
 `render` (67 files) sit below the boundary, importing post-classification value records only, and
 the MCP, the LSP and the maven plugin are clean.
@@ -3780,7 +3780,7 @@ read against:
   javadoc says the tests "retire as consumers migrate off `GraphitronSchema` piece by piece; they pin
   a shadow copy, and a shadow with a reader does not need one". So the gate this item relies on for
   dozens of new relations is dissolved by this item's own terminal deliverable, and its `ORACLE` arm
-  loses its subjects with the `walk_` and `rejection_` families. Decide the successor while the
+  loses its subjects with the `rejection_` family, the `walk_` family having already gone. Decide the successor while the
   relations are landing, not at the cut: a registration that says how each relation is pinned when
   there is no model to compare against (its own given-rows test in `graphitron-model`, its
   consumer's behaviour, or the emitted output), on the same no-skip-list terms. This is the same
@@ -3977,18 +3977,17 @@ derivation lives.
 * `roadmap/retire-oracle-diff-shadow-tests.md` (R740) is the doctrine this item's verification
   stance applies, stated in "What output identity is, and what it is not" above: no oracle-diff
   scaffolding is built here.
-* **Two items still share the `walk_` and `rejection_` families, and the boundaries are worth
-  stating** so neither cuts the other's relation. R743 already took the membership half: it deleted
-  the two claim-domain relations with the gate that read them, and the `derive/` projection that
-  wrote them went in the same change, so the pairing that used to hold the family's grains together
-  is gone and `walk_type_backing_class` is the family's last resident. R740 drains that one, whose
-  only reader is the shadow test it retires, and takes `TypeBackingClasses`, `TypeBackingClassRows`,
-  `DemandResidue` and the `ClaimDomain` value the demand shadow still diffs against with it. So no
-  `walk_`-shaped projection is left for this item's terminal deletion; what remains here is
-  `SchemaReachability` and the walk itself, plus `RejectionFacts` and the `rejection_` relations once
-  the migrated verdicts have a stated permanent home in the `diagnostic` union. Whichever order they
-  land in, each family leaves with its last reader, and neither item deletes a relation the other
-  still writes.
+* **The `walk_` family is gone and only `rejection_` is still shared, so the boundary is narrower
+  than it was.** R743 took the membership half, deleting the two claim-domain relations with the
+  gate that read them and the `derive/` projection that wrote them. R870 then deleted the family's
+  last resident, `walk_type_backing_class`, and the family with it: its writer is gone and its
+  projection moved to test sources, where the backing differential still runs against the walk's
+  answer in memory. R740 keeps that comparison's own cleanup, plus `DemandResidue` and the
+  `ClaimDomain` value the demand shadow still diffs against. So no `walk_`-shaped projection is
+  left for this item's terminal deletion; what remains here is `SchemaReachability` and the walk
+  itself, plus `RejectionFacts` and the `rejection_` relations once the migrated verdicts have a
+  stated permanent home in the `diagnostic` union. Each family leaves with its last reader, and
+  neither item deletes a relation the other still writes.
 * R638 (`lsp-reads-the-fact-store`, Done, see `roadmap/changelog.md`; its 4,795-line body was
   deleted at the Done transition in `a5b667b` and is readable there) is the shape to copy: one item,
   many increments, each arm landing on its own commit with what it settled written down. It also
@@ -4088,8 +4087,8 @@ Provisional; the Done-gate sweep greps for these, and the list grows as incremen
 * At the terminal step, the walk and its taxonomy wholesale: `GraphitronSchemaBuilder`,
   `TypeBuilder`, `FieldBuilder`, `BuildContext`, the sealed classification hierarchies
   (`GraphitronType`, `GraphitronField` and everything under them), and the walk-transcription
-  writers (`RejectionFacts` with the `rejection_` relations, the `walk_` family and its `derive/`
-  projections). `Rejection` and its error sub-seals are deliberately *not* on this line: they are
+  writers (`RejectionFacts` with the `rejection_` relations; the `walk_` family and its `derive/`
+  projections are already gone, R743 and R870 having drained it). `Rejection` and its error sub-seals are deliberately *not* on this line: they are
   the consumer-facing verdict axis, not walk scaffolding (a store detection with no leaf anywhere
   in its derivation decodes them today, the editor's `lsp_code` is sourced from their `lspCode()`,
   and a doc-coverage gate pins their permits), so they either survive below the boundary as the
