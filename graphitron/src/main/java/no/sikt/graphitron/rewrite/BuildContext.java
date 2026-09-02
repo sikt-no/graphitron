@@ -1,11 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
-import graphql.language.ArrayValue;
 import graphql.schema.GraphQLType;
 import graphql.language.BooleanValue;
-import graphql.language.NullValue;
 import graphql.language.SourceLocation;
-import graphql.language.StringValue;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
@@ -84,11 +81,13 @@ class BuildContext {
 
     // ===== Directive names =====
 
-    static final String DIR_TABLE               = "table";
+    // NodeDeclaration owns the reads of @node and @table's name argument, so the three names
+    // have their home there, on the same rule as the trigger-fact names below.
+    static final String DIR_TABLE               = NodeDeclaration.DIR_TABLE;
     static final String DIR_SCALAR_TYPE         = "scalarType";
     static final String DIR_RECORD              = "record";
     static final String DIR_DISCRIMINATE        = "discriminate";
-    static final String DIR_NODE                = "node";
+    static final String DIR_NODE                = NodeDeclaration.DIR_NODE;
     static final String DIR_NOT_GENERATED       = "notGenerated";
     static final String DIR_MULTITABLE_REFERENCE = "multitableReference";
     static final String DIR_NODE_ID             = "nodeId";
@@ -124,7 +123,7 @@ class BuildContext {
     static final String ARG_ARGMAPPING        = "argMapping";
     static final String ARG_COLUMN_MAPPING     = "columnMapping";
     static final String ARG_VALUE              = "value";
-    static final String ARG_NAME               = "name";
+    static final String ARG_NAME               = NodeDeclaration.ARG_NAME;
     static final String ARG_ON                 = "on";
     static final String ARG_VOCABULARY         = "vocabulary";
     static final String ARG_TYPE_ID            = "typeId";
@@ -445,41 +444,20 @@ class BuildContext {
     // ===== Directive-reading helpers =====
 
     /**
-     * Returns the stripped String value of an applied directive argument, if present.
+     * Returns the stripped String value of an applied directive argument, if present. The
+     * decoding lives on {@link DirectiveArgs} with the fact tier that reads a consumer's SDL;
+     * this stays as the spelling the generator's directive readers already call.
      */
     static Optional<String> argString(GraphQLDirectiveContainer container, String directive, String arg) {
-        var dir = container.getAppliedDirective(directive);
-        if (dir == null) return Optional.empty();
-        var argument = dir.getArgument(arg);
-        if (argument == null) return Optional.empty();
-        Object value = argument.getValue();
-        if (value instanceof StringValue sv) return Optional.of(sv.getValue().strip());
-        if (value instanceof String s) return Optional.of(s.strip());
-        return Optional.empty();
+        return DirectiveArgs.argString(container, directive, arg);
     }
 
     /**
      * Returns the String values of a list applied-directive argument, or an empty list if absent.
+     * Decoded by {@link DirectiveArgs#argStringList}, on the same rule as {@link #argString}.
      */
     static List<String> argStringList(GraphQLDirectiveContainer container, String directive, String arg) {
-        var dir = container.getAppliedDirective(directive);
-        if (dir == null) return List.of();
-        var argument = dir.getArgument(arg);
-        if (argument == null) return List.of();
-        Object value = argument.getValue();
-        if (value instanceof StringValue sv) return List.of(sv.getValue().strip());
-        if (value instanceof String s) return List.of(s.strip());
-        if (value instanceof ArrayValue av) {
-            return av.getValues().stream()
-                .map(v -> v instanceof NullValue ? null : ((StringValue) v).getValue().strip())
-                .toList();
-        }
-        if (value instanceof List<?> list) {
-            return list.stream()
-                .map(v -> v == null ? null : v.toString().strip())
-                .toList();
-        }
-        return List.of();
+        return DirectiveArgs.argStringList(container, directive, arg);
     }
 
     /**

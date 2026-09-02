@@ -173,6 +173,7 @@ class RejectionRenderingTest {
         var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", ChildField.BatchedTableField.class);
         var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");
         assertThat(prefixed.summary()).isEqualTo("on Foo.bar: X is not yet supported");
-        assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(ChildField.BatchedTableField.class));
+        assertThat(prefixed.stubKey()).isEqualTo(new Rejection.StubKey.VariantClass(
+            Rejection.classSpelling(ChildField.BatchedTableField.class)));
     }
 }

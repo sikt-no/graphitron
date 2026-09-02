@@ -866,7 +866,7 @@ public class GraphitronSchemaBuilder {
             for (var coord : coords) {
                 var of = (OutputField) ctx.fieldRegistry.get(coord);
                 participants.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
-                    of.parentTypeName(), of.name(), of.domainReturnType()));
+                    of.parentTypeName(), of.name(), of.domainReturnType().toString()));
             }
             ctx.addDiagnostic(new ValidationError("<schema>",
                 new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(sdlReturn, participants),

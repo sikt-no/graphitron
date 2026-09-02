@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * A resolved column in a jOOQ table.

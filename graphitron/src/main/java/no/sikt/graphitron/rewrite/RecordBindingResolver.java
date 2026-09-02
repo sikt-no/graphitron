@@ -1015,7 +1015,11 @@ final class RecordBindingResolver {
         // Disagreement: record a typed rejection. The first observed binding's location is used
         // for the rejection's surfacing site; the full list is in the typed payload.
         rejections.computeIfAbsent(sdlType, k ->
-            new Rejection.AuthorError.RecordBindingMultiProducer(sdlType, observed));
+            new Rejection.AuthorError.RecordBindingMultiProducer(sdlType,
+                observed.stream()
+                    .map(b -> new Rejection.AuthorError.RecordBindingMultiProducer.Binding(
+                        b.describe(), b.reflectedClass().getName()))
+                    .toList()));
         memo.put(sdlType, null);
     }
 

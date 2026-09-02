@@ -101,23 +101,35 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * when the same SDL type accumulates more than one distinct class in its collection
          * set, this rejection surfaces with every disagreeing site listed.
          *
-         * <p>Carries the SDL type name plus the typed {@link ProducerBinding} list. Fires from
+         * <p>Carries the SDL type name plus one {@link Binding} per producer. Fires from
          * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-SDL-type fold when the
          * collection set holds more than one distinct backing class.
          */
-        record RecordBindingMultiProducer(String sdlTypeName, List<ProducerBinding> bindings)
+        record RecordBindingMultiProducer(String sdlTypeName, List<Binding> bindings)
                 implements AuthorError {
             public RecordBindingMultiProducer {
                 bindings = List.copyOf(bindings);
             }
 
+            /**
+             * One producer in a record-binding disagreement group: the site as it is described to
+             * an author, and the backing class it reflected, named.
+             *
+             * <p>Named rather than carrying the {@link ProducerBinding} it came from, on the rule
+             * a rejection follows: a rejection is a fact the store holds, so it carries the
+             * spelling of what was found and not the model value the classifier found it on. The
+             * live {@link Class} that {@link ProducerBinding#reflectedClass()} holds could not
+             * survive a round trip through a stored row in any case.
+             */
+            public record Binding(String site, String reflectedClassName) {}
+
             @Override public String message() {
                 var sb = new StringBuilder()
                     .append("type '").append(sdlTypeName)
                     .append("' has disagreeing reflected backing classes from multiple producers:");
-                for (ProducerBinding b : bindings) {
-                    sb.append("\n  - ").append(b.describe())
-                      .append(" → ").append(b.reflectedClass().getName());
+                for (Binding b : bindings) {
+                    sb.append("\n  - ").append(b.site())
+                      .append(" → ").append(b.reflectedClassName());
                 }
                 sb.append("\n  Resolve by aligning the producers on a single backing class.");
                 return sb.toString();
@@ -137,9 +149,10 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
          * {@code getContextArgument} call: any disagreement would mis-type the generated cast.
          *
-         * <p>Carries the contextArgument name plus the typed {@link ConflictSite} list. Fires from
+         * <p>Carries the contextArgument name plus the {@link ConflictSite} list, each site named
+         * and its declared type spelled. Fires from
          * {@link no.sikt.graphitron.rewrite.ContextArgumentClassifier} when the per-name fold finds
-         * disagreeing {@code TypeName}s across sites.
+         * disagreeing declared types across sites.
          */
         record TypeConflict(String contextArgumentName, List<ConflictSite> sites)
                 implements AuthorError {
@@ -152,8 +165,8 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                     .append("contextArgument '").append(contextArgumentName)
                     .append("' has disagreeing Java types across directive sites:");
                 for (ConflictSite cs : sites) {
-                    sb.append("\n  - ").append(cs.site().className()).append('.').append(cs.site().methodName())
-                      .append(" declared ").append(cs.declared().toString());
+                    sb.append("\n  - ").append(cs.className()).append('.').append(cs.methodName())
+                      .append(" declared ").append(cs.declared());
                 }
                 sb.append("\n  Resolve by aligning every directive site that references '")
                   .append(contextArgumentName).append("' on a single Java type.");
@@ -208,14 +221,19 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             /**
              * One producer in a multi-producer-domain-type-disagreement group. Names the field
-             * coord and the {@link DomainReturnType} arm it answers; every participant in the group
-             * is listed on the single rejection the validator surfaces so downstream tooling can
-             * cross-reference siblings.
+             * coord and the source-type claim it answers, as that claim states itself; every
+             * participant in the group is listed on the single rejection the validator surfaces so
+             * downstream tooling can cross-reference siblings, which it does on the coord.
+             *
+             * <p>The claim is carried as its own statement rather than as the
+             * {@link DomainReturnType} arm, on the rule a rejection follows: a rejection is a fact
+             * the store holds, so it carries what was found spelled out and not the model value it
+             * was found on.
              */
             public record Participant(
                 String parentTypeName,
                 String fieldName,
-                DomainReturnType domainReturnType
+                String domainReturnType
             ) {}
         }
 
@@ -479,12 +497,17 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      */
     sealed interface StubKey permits StubKey.VariantClass {
         /**
-         * Variant-class key. {@code fieldClass} may be {@code null} for inline-defer sites whose
-         * rejection names a feature shape ("@service returning a polymorphic type") rather than a
-         * stubbed leaf class; downstream tooling that wants to jump to a leaf class checks for
-         * non-null first.
+         * Variant-class key, as {@link Rejection#classSpelling} spells it. {@code variant} may be
+         * {@code null} for inline-defer sites whose rejection names a feature shape ("@service
+         * returning a polymorphic type") rather than a stubbed leaf class; downstream tooling that
+         * wants to jump to a leaf class checks for non-null first.
+         *
+         * <p>The spelling and not the {@link Class}, on the rule a rejection follows: a rejection
+         * is a fact the store holds, and {@code intent_authored_claim_rejection.variant} holds
+         * exactly this string. Spelling it at construction also means the stored value and this
+         * key cannot drift.
          */
-        record VariantClass(Class<? extends GraphitronField> fieldClass) implements StubKey {}
+        record VariantClass(String variant) implements StubKey {}
     }
 
     // ===== Factories =====
@@ -539,8 +562,26 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * {@link Deferred} factory keyed on a stubbed variant class. {@code fieldClass} is
      * {@code null} when the rejection names a feature shape rather than a stubbed leaf class.
      */
-    static Rejection deferred(String summary, Class<? extends GraphitronField> fieldClass) {
-        return new Deferred(summary, new StubKey.VariantClass(fieldClass));
+    static Rejection deferred(String summary, Class<?> fieldClass) {
+        return new Deferred(summary,
+            new StubKey.VariantClass(fieldClass == null ? null : classSpelling(fieldClass)));
+    }
+
+    /**
+     * The one spelling rule for class-valued rejection columns: the canonical name with the
+     * package stripped, enclosing classes kept. Plain simple names are ambiguous in this
+     * hierarchy ({@code AuthorError.Structural} versus {@code InvalidSchema.Structural},
+     * {@code UpdateRowsError.NoUniqueKeyCoverage} versus the {@code DeleteRowsError} leaf), and an
+     * ambiguous spelling would fuse two families in the very dimension that exists to split them.
+     *
+     * <p>Lives with the hierarchy it spells, so both writers of a rejection's stored variant
+     * ({@code diagnostics.RejectionFacts} and
+     * {@link no.sikt.graphitron.rewrite.derive.AuthoredClaimRejectionRows}) reach one rule and a
+     * rename of a leaf carries into every stored spelling by construction rather than by a reader
+     * remembering to follow it.
+     */
+    static String classSpelling(Class<?> cls) {
+        return cls.getCanonicalName().substring(cls.getPackageName().length() + 1);
     }
 
     /**

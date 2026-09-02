@@ -58,8 +58,8 @@ class ContextArgumentTypeAgreementValidationTest {
         assertThat(tc.sites())
             .extracting(s -> s.declared())
             .containsExactlyInAnyOrder(
-                ClassName.get(String.class),
-                ClassName.get(Long.class));
+                String.class.getName(),
+                Long.class.getName());
 
         // Renderer contract: header sentence + one line per ConflictSite. The L4 snapshot pins
         // the shape so a regression that drops or de-duplicates sites is caught here.

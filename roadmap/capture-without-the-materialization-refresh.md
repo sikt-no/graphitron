@@ -130,7 +130,14 @@ move compiles, and it is the one an earlier draft replaced with a guess. Every i
 set (`rewrite/capture`, `rewrite/derive`, `rewrite/session`, `rewrite/selection`, `rewrite/schema`,
 `rewrite/diagnostics`, the named `catalog`, `lint` and `compile` classes, `JooqCatalog` and
 `RewriteContext`) that lands in code above the line was counted. **Exclude three files and every
-remaining upward edge lands on something already moving down.** The three:
+remaining upward edge lands on something already moving down.**
+
+That claim was too strong, and step 3's guard is what showed it: four files carried an edge this
+census did not account for, two of them introduced by step 2 itself. The exclusions below are still
+right and still the only three; what was wrong was the closing "every remaining". Step 3 records the
+four and what each cost, and the move set that satisfies the boundary is 103 files rather than the 89
+counted here, because `Rejection` is sealed and its closure has to travel with it. The three
+exclusions:
 
 * **`derive/ClaimDomain` and `derive/DemandResidue` stay above, so `rewrite/derive` does not move in
   one piece.** Both read `GraphitronSchema` and switch over `GraphitronType` arms, which is the walk.
@@ -289,7 +296,8 @@ line that already lifted the command row's spelling of the same fact through `cl
 so the overload went and the two adjacent lines now read alike.
 
 *Two findings for step 7, recorded here because the strip is where they surfaced.* Neither changes
-step 2.
+step 2, and step 3 settled both: the eight same-package edges resolved into the `Rejection` closure
+coming down whole, and the `TypeConflict` arm took the third of the three options below.
 
 * **An import-based census cannot see a same-package reference, and `rewrite/model` splits.** Both
   round 2's census and the author's ran over import statements, so every edge between the fifteen
@@ -304,11 +312,94 @@ step 2.
   the `TypeConflict` arm is the one place where the plan's two halves meet, and step 7 has to say
   whether the arm moves, the site moves, or the declared type becomes a name of its own.
 
-**3. Add a temporary import rule, so the layering holds until the move happens.** Give
-`PackageImportDirectionTest` a `capture` rule, written like the `facts` rule it already has: capture
-may import nothing else from the tree, with its one allowance for graphql-java written as an
-allowance rather than a list of exceptions. This is a stand-in for the module boundary, not a rival
-to it, and step 7 deletes it.
+**3. Add a temporary boundary guard, so the layering holds until the move happens.** Assert over the
+move set that nothing in it reaches upward into the generator, with graphql-java written as an
+allowance rather than a list of exceptions: the consumer's schema is one of the three things capture
+reads, so a module that defines what a schema fact is cannot sensibly be unable to parse a schema.
+This is a stand-in for the module boundary, not a rival to it, and step 7 deletes it.
+
+*Shipped, and larger than this step was written to be.* Two departures from the plan, both because
+running the check is what showed the shape.
+
+*It is three properties, not one, and only the first is visible to a reader scanning imports.* No
+javapoet (step 2's rule, already enforced); no upward import; and no sealed type that moves while one
+of its arms stays behind. The third is not a style question. A sealed type's permitted subclasses
+must share its package when the declaring class is in an unnamed module, which every module here is,
+so a straddling seal is a compile error at move time. An import scan cannot see it, because the arms
+sit in the declaring type's own package and need no import. That check is why the move set now
+carries the whole `Rejection` closure rather than `Rejection` alone.
+
+*The guard lives with the move set, not in `PackageImportDirectionTest`.* This step was written
+before step 2 created the manifest. `PackageImportDirectionTest`'s rules scan a top-level package
+root and take an import predicate; the fact tier is a file set spanning eight packages, half of them
+split. Satisfying the letter of this step would mean copying a hundred-file manifest into a second
+test so two tests could disagree about what moves. The manifest has one home, and the boundary guard
+reads it.
+
+*What the guard found, which step 2 had missed.* Step 1's census closed on the claim that excluding
+three files leaves no unaccounted upward edge. That was false, and the guard names the four files it
+was false for. Two were step 2's own: `ColumnRef` and `JooqCatalog` were left importing
+`render.CatalogRefs` for javadoc that refers to it in `{@code}`, so the imports were dead and the
+upward compile edge was real. The other two were the plan's.
+
+*The rejection vocabulary now carries names, on the same rule as the refs.* `RejectionFacts` reached
+ten `Rejection.AuthorError` arms above the line, and `Rejection` is sealed over them, so the closure
+had to come down: eleven files, plus the six types its arms carry. Three of those six carried
+javapoet or an upward edge, which is where step 2's decision and step 1's move set met. The finding
+recorded under step 2 posed the question as "whether the arm moves, the site moves, or the declared
+type becomes a name of its own", and the answer is the third, four times over:
+
+* `ConflictSite` carried a `Site` sealed over `MethodRef` and `ServiceMethodCall` purely to project
+  two strings, which its own javadoc said ("so the renderer need not switch on the arm"), and
+  `Rejection`'s message renderer was the only reader. It is now the coordinate and the declared
+  type's spelling, three names. The sealed `Site` stays above the line on
+  `ResolvedContextArg`, which is the consumer that genuinely wants the model value, for LSP
+  navigation.
+* `MultiProducerDomainTypeDisagreement.Participant` carried a `DomainReturnType` and used it only as
+  `toString()`. It carries the claim's own statement, so `DomainReturnType` (157 lines, javapoet on
+  two arms) never moves.
+* `RecordBindingMultiProducer` carried `ProducerBinding` and used only `describe()` and
+  `reflectedClass().getName()`. It carries those two as a named `Binding`, so `ProducerBinding` (265
+  lines) never moves. Its `reflectedClass` is a live `Class`, which could not have survived a stored
+  row in any case.
+* `StubKey.VariantClass` carried a `Class<? extends GraphitronField>` and every reader wanted the
+  spelling, which is what `intent_authored_claim_rejection.variant` holds. It carries the spelling,
+  and `classSpelling` moves to `Rejection` where the hierarchy it spells lives. `GraphitronField` is
+  sealed over `OutputField` and `InputField`, so this is what keeps the entire field taxonomy from
+  being dragged down behind a rejection.
+
+Each of the four is the same shape as step 2's lift, and each was found by asking what the consumer
+actually reads rather than what the component is declared as. The pattern is worth stating for step
+7: a rejection is a fact the store holds, so it carries what was found spelled out, never the model
+value it was found on.
+
+*The directive vocabulary follows the reader, which the tree already does.* `NodeDeclaration` read
+`DIR_NODE`, `DIR_TABLE`, `ARG_NAME` and `argString` from `BuildContext`, 3403 lines above the line.
+`BuildContext` already delegates seven directive names to the `facts` visitor that reads each one,
+with the comment "each name has one home on its visitor", so the rule was in the tree and this is
+one more application of it: the three names have their home on `NodeDeclaration`, the one place that
+reads them, and `BuildContext` re-exports. `argString` and `argStringList` move to a `DirectiveArgs`
+in the move set, with `BuildContext` delegating so its ten callers above the line do not change.
+
+The move set is 103 files, and clean on all three properties. `rewrite/model` contributes 18 rather
+than the 5 step 1 counted.
+
+*One blind spot left for step 7, measured rather than guessed.* A javadoc `{@link}` to a
+same-package type needs no import, so it is invisible to the import check for the same reason a
+`permits` clause is, and the two split packages make it reachable: 22 move-set files carry 42 link
+targets that name a type staying above the line. `Rejection` alone has eight (`DomainReturnType`,
+`GraphitronField`, `GraphitronType`, `MethodRef`, `OrderBySpec`, `OutputField`, `ParamSource`,
+`ProducerBinding`), which is the residue of the four lifts above: the components left, and the prose
+explaining why still names them. These compile today and break at move time, when the javadoc
+reference gate runs against a module that cannot see `graphitron`. Enumerating them is mechanical
+(resolve each link's leading simple name against the declaring file's own package directory, and
+flag it when that sibling is not in the move set); deciding each one is not, so step 7 owns it. A
+link whose target is genuinely another module's internals after the move is the one case
+`CLAUDE.md` allows downgrading to `{@code}`, and most of these are that case; the rest want
+repointing or restating.
+
+No guard for it here, deliberately. The only shape that could pass today is a ratchet on the count,
+and this file's siblings are written to be checkable from the first file rather than ratcheted.
 
 **4. Take store creation out of capture.** `FactCapture.runInternal` today opens the store, reports
 what the cleanup sweep deleted, checks whether this project may write under its graph name, retries
@@ -623,7 +714,25 @@ Declared for the retirement sweep at the Done gate. Retired by step 2:
 * `JooqCatalog.RoutineParam.type`, now `typeName`; `RoutineResolution.Resolved.routinesClass`, now
   `routinesClassName`
 * `ColumnTypeConstructorArityGuardTest`, whose subject the strip removes, replaced by
-  `FactTierJavapoetBoundaryTest`
+  `FactTierBoundaryTest`
+
+Retired by step 3:
+
+* `ConflictSite.Site` and its three arms, and both `ConflictSite.of` factories; the sealed
+  coordinate now lives on `ResolvedContextArg.Site`
+* `ConflictSite.declared` as a `TypeName`, now the spelling; `ConflictSite.site()`, now
+  `className()` / `methodName()`
+* `Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant.domainReturnType` as a
+  `DomainReturnType`, now the claim's own statement
+* `Rejection.AuthorError.RecordBindingMultiProducer.bindings` as `List<ProducerBinding>`, now
+  `List<RecordBindingMultiProducer.Binding>`
+* `Rejection.StubKey.VariantClass.fieldClass`, now `variant` carrying the spelling
+* `RejectionFacts.classSpelling`, now `Rejection.classSpelling`
+* `BuildContext.DIR_TABLE` / `DIR_NODE` / `ARG_NAME` as the names' home, now re-exports of
+  `NodeDeclaration`'s; `BuildContext.argString` / `argStringList` as the decoding, now delegations
+  to `DirectiveArgs`
+* `FactTierJavapoetBoundaryTest`, renamed `FactTierBoundaryTest` when it grew the other two
+  properties
 
 * `RewriteContext`, now `RunContext`; `RewriteSchemaLoader`, now `SchemaLoader`
 * every `no.sikt.graphitron.rewrite.*` package name for the 89 files that move, now

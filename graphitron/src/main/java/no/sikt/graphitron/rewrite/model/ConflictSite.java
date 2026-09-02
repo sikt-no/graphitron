@@ -1,61 +1,24 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.TypeName;
-
 /**
- * One site in a cross-site {@code contextArgument} type-conflict rejection: the coordinate where
- * the name was referenced and the structural {@link TypeName} that site declared.
+ * One directive site that declared a type for a {@code contextArgument}, as the conflict
+ * rejection carries it: the coordinate the reference was written at, and the type that site
+ * declared, both as names.
  *
- * <p>The coordinate is a sealed {@link Site}: a {@link Site.Method} wraps a {@link MethodRef}
- * (a {@code @condition} / {@code @externalField} param list), and a
- * {@link Site.Carrier} wraps a {@link ServiceMethodCall} (a root sync {@code @service} carrier,
- * whose ctor/method args hold the context slots).
+ * <p>Names and no types, deliberately, on the same rule the catalog refs follow: this rides a
+ * {@link Rejection} arm, and a rejection is a fact the store holds. {@code declared} is the
+ * structural spelling of the declared type, which is what a disagreement is decided on (the
+ * classifier folds sites by this value) and all a message needs to render. Deciding how a type is
+ * written into a source file belongs to the emitting tier and happens there.
  *
- * <p>Captured at the classifier producing {@link Rejection.AuthorError.TypeConflict}; consumed by
- * the message renderer (via {@link Site#className()} / {@link Site#methodName()}) and by any future
- * LSP fix-it that wants to navigate to a declaring method or carrier.
+ * <p>{@code className} and {@code methodName} are projected at construction from whichever model
+ * value the reference came from: a {@link MethodRef} for {@code @condition} /
+ * {@code @externalField}, a {@link ServiceMethodCall} for a root sync {@code @service} carrier, or
+ * the {@code <sessionState>} {@code <mount>} method, which spells its class with a
+ * {@code <mount>} prefix so a mount-versus-{@code @service} conflict names the element rather
+ * than only the routine class the reference resolves to. The model value itself stays with the
+ * classifier's own output ({@link ResolvedContextArg.Site}), which is where a consumer that wants
+ * to navigate to the declaration reads it.
  */
-public record ConflictSite(Site site, TypeName declared) {
-
-    /**
-     * The directive coordinate a context-argument reference came from. Both arms expose the
-     * class + method names the conflict-rejection renderer reads, projected from the wrapped
-     * model value so the renderer need not switch on the arm.
-     */
-    public sealed interface Site permits Site.Method, Site.Carrier, Site.SessionMount {
-        String className();
-        String methodName();
-
-        /** A {@link MethodRef}-backed coordinate ({@code @condition} / {@code @externalField}). */
-        record Method(MethodRef ref) implements Site {
-            @Override public String className() { return ref.className(); }
-            @Override public String methodName() { return ref.methodName(); }
-        }
-
-        /** A {@link ServiceMethodCall}-carrier coordinate (a root sync {@code @service} permit). */
-        record Carrier(ServiceMethodCall call) implements Site {
-            @Override public String className() { return call.fqClassName(); }
-            @Override public String methodName() { return call.methodName(); }
-        }
-
-        /**
-         * The {@code <sessionState>} {@code <mount>} method's payload-parameter population, so a
-         * mount-versus-{@code @service} type conflict names the {@code <mount>} element rather
-         * than only the routine class the reference happens to resolve to.
-         */
-        record SessionMount(MethodRef ref) implements Site {
-            @Override public String className() { return "<mount> " + ref.className(); }
-            @Override public String methodName() { return ref.methodName(); }
-        }
-    }
-
-    /** Convenience factory for a {@link MethodRef}-backed site. */
-    public static ConflictSite of(MethodRef ref, TypeName declared) {
-        return new ConflictSite(new Site.Method(ref), declared);
-    }
-
-    /** Convenience factory for a {@link ServiceMethodCall}-carrier site. */
-    public static ConflictSite of(ServiceMethodCall call, TypeName declared) {
-        return new ConflictSite(new Site.Carrier(call), declared);
-    }
+public record ConflictSite(String className, String methodName, String declared) {
 }

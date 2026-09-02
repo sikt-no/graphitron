@@ -75,21 +75,21 @@ public final class ContextArgumentClassifier {
      * payload parameters as an additional root. A mount payload parameter is an ordinary
      * name-keyed contextArgument, so a same-named {@code @service}/{@code @condition}
      * declaration unifies into the one slot both consumers read, guarded by the same
-     * type-agreement fold; the mount site is a {@link ConflictSite.Site.SessionMount}, so a
+     * type-agreement fold; the mount site is a {@link ResolvedContextArg.Site.SessionMount}, so a
      * disagreement names {@code <mount>} rather than only the routine class.
      */
     public static Classification classify(Collection<GraphitronField> fields,
             no.sikt.graphitron.rewrite.session.SessionHooks sessionHooks) {
-        var byName = new LinkedHashMap<String, List<ConflictSite>>();
+        var byName = new LinkedHashMap<String, List<Declared>>();
         for (var field : fields) {
             collectFromField(field, byName);
         }
         sessionHooks.mountRef().ifPresent(mount -> {
-            var site = new ConflictSite.Site.SessionMount(mount);
+            var site = new ResolvedContextArg.Site.SessionMount(mount);
             for (var p : mount.params()) {
                 if (p instanceof MethodRef.Param.Typed typed && typed.source() instanceof ParamSource.Context) {
                     byName.computeIfAbsent(typed.name(), k -> new ArrayList<>())
-                        .add(new ConflictSite(site, typed.javaType()));
+                        .add(new Declared(site, typed.javaType()));
                 }
             }
         });
@@ -104,23 +104,24 @@ public final class ContextArgumentClassifier {
         var conflicts = new ArrayList<Rejection>();
         for (var entry : byName.entrySet()) {
             String name = entry.getKey();
-            List<ConflictSite> sites = entry.getValue();
+            List<Declared> sites = entry.getValue();
             var distinct = sites.stream()
-                .map(ConflictSite::declared)
+                .map(Declared::javaType)
                 .distinct()
                 .toList();
             if (distinct.size() == 1) {
-                var methodSites = sites.stream().map(ConflictSite::site).toList();
+                var methodSites = sites.stream().map(Declared::site).toList();
                 resolved.put(name, new ResolvedContextArg(name, distinct.get(0), methodSites));
             } else {
-                conflicts.add(Rejection.contextArgumentTypeConflict(name, sites));
+                conflicts.add(Rejection.contextArgumentTypeConflict(name,
+                    sites.stream().map(Declared::asConflictSite).toList()));
             }
         }
         return new Classification(resolved, conflicts);
     }
 
     private static void collectFromField(GraphitronField field,
-            Map<String, List<ConflictSite>> byName) {
+            Map<String, List<Declared>> byName) {
         if (field instanceof MethodBackedField mbf) {
             collectFromMethodRef(mbf.method(), byName);
         }
@@ -140,8 +141,8 @@ public final class ContextArgumentClassifier {
 
     private static void collectFromCarrier(
             no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier,
-            Map<String, List<ConflictSite>> byName) {
-        var site = new ConflictSite.Site.Carrier(carrier);
+            Map<String, List<Declared>> byName) {
+        var site = new ResolvedContextArg.Site.Carrier(carrier);
         if (carrier instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.Instance inst) {
             for (var entry : inst.ctorArgs()) recordFromContext(entry, site, byName);
         }
@@ -150,16 +151,16 @@ public final class ContextArgumentClassifier {
 
     private static void recordFromContext(
             no.sikt.graphitron.rewrite.model.MappingEntry entry,
-            ConflictSite.Site site,
-            Map<String, List<ConflictSite>> byName) {
+            ResolvedContextArg.Site site,
+            Map<String, List<Declared>> byName) {
         if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromContext fc) {
             byName.computeIfAbsent(fc.contextKey(), k -> new ArrayList<>())
-                .add(new ConflictSite(site, fc.javaType()));
+                .add(new Declared(site, fc.javaType()));
         }
     }
 
     private static void collectFromInputFieldCondition(GraphitronField field,
-            Map<String, List<ConflictSite>> byName) {
+            Map<String, List<Declared>> byName) {
         switch (field) {
             case InputField.ColumnBackedField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             case InputField.ColumnBackedReferenceField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
@@ -171,12 +172,26 @@ public final class ContextArgumentClassifier {
     }
 
     private static void collectFromMethodRef(MethodRef method,
-            Map<String, List<ConflictSite>> byName) {
+            Map<String, List<Declared>> byName) {
+        var site = new ResolvedContextArg.Site.Method(method);
         for (var p : method.params()) {
             if (p instanceof MethodRef.Param.Typed typed && typed.source() instanceof ParamSource.Context) {
                 byName.computeIfAbsent(typed.name(), k -> new ArrayList<>())
-                    .add(ConflictSite.of(method, typed.javaType()));
+                    .add(new Declared(site, typed.javaType()));
             }
+        }
+    }
+
+    /**
+     * One site's declaration during the fold: the coordinate and the structural type it declared.
+     * The fold needs the {@link TypeName} to decide agreement and to hand the agreed type to
+     * {@link ResolvedContextArg}, so the classifier holds the typed form and spells it only on the
+     * losing path, where {@link ConflictSite} carries the coordinate and the spelling into a
+     * rejection the store holds.
+     */
+    private record Declared(ResolvedContextArg.Site site, TypeName javaType) {
+        ConflictSite asConflictSite() {
+            return new ConflictSite(site.className(), site.methodName(), javaType.toString());
         }
     }
 }

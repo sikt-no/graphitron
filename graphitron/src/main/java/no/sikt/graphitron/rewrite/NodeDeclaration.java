@@ -7,10 +7,7 @@ import graphql.schema.GraphQLObjectType;
 
 import java.util.Locale;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
-import static no.sikt.graphitron.rewrite.BuildContext.argString;
+import static no.sikt.graphitron.rewrite.DirectiveArgs.argString;
 
 /**
  * The one place that answers "is this object type a node?". An object type is a node when it
@@ -56,6 +53,16 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
  * pruned rather than classified, exactly as it was before inference existed.
  */
 public final class NodeDeclaration {
+
+    /** The {@code @table} directive. Named here because this is the one place that reads it. */
+    public static final String DIR_TABLE = "table";
+
+    /** The {@code @node} directive. Named here because this is the one place that reads it. */
+    public static final String DIR_NODE = "node";
+
+    /** The {@code name} argument, as {@code @table(name:)} spells it. */
+    public static final String ARG_NAME = "name";
+
 
     private final JooqCatalog catalog;
 

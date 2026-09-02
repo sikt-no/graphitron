@@ -115,8 +115,8 @@ class ContextArgumentTypeAgreementTest {
         assertThat(conflict.sites())
             .extracting(s -> s.declared())
             .containsExactlyInAnyOrder(
-                ClassName.get(String.class),
-                ClassName.get(Long.class));
+                String.class.getName(),
+                Long.class.getName());
     }
 
     @Test
@@ -155,8 +155,8 @@ class ContextArgumentTypeAgreementTest {
         assertThat(conflict.sites())
             .extracting(s -> s.declared())
             .containsExactlyInAnyOrder(
-                ClassName.get(String.class),
-                ClassName.get(Long.class));
+                String.class.getName(),
+                Long.class.getName());
     }
 
     /**
@@ -177,7 +177,7 @@ class ContextArgumentTypeAgreementTest {
         assertThat(resolved.javaType()).isEqualTo(ClassName.get(String.class));
         assertThat(resolved.sites()).hasSize(1);
         assertThat(resolved.sites().get(0))
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ConflictSite.Site.SessionMount.class);
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ResolvedContextArg.Site.SessionMount.class);
     }
 
     /**
@@ -235,9 +235,9 @@ class ContextArgumentTypeAgreementTest {
         assertThat(conflict.contextArgumentName()).isEqualTo("userId");
         assertThat(conflict.sites())
             .extracting(s -> s.declared())
-            .containsExactlyInAnyOrder(ClassName.get(String.class), ClassName.get(Long.class));
+            .containsExactlyInAnyOrder(String.class.getName(), Long.class.getName());
         assertThat(conflict.sites())
-            .extracting(s -> s.site().className())
+            .extracting(s -> s.className())
             .anySatisfy(name -> assertThat(name).startsWith("<mount> "));
     }
 }

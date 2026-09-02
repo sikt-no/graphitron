@@ -46,7 +46,6 @@ class ModelEmitVocabularyGuardTest {
         "CallSiteExtraction.java",
         "ChildField.java",
         "ConditionFilter.java",
-        "ConflictSite.java",
         "DefaultedSlot.java",
         "DomainReturnType.java",
         "ErrorChannel.java",

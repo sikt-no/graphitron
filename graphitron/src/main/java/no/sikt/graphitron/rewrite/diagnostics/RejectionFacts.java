@@ -99,7 +99,7 @@ public final class RejectionFacts {
             row.setGraphName(graph.name());
             row.setOrdinal(ordinal);
             row.setKind(error.kind().name());
-            row.setVariant(classSpelling(error.rejection().getClass()));
+            row.setVariant(Rejection.classSpelling(error.rejection().getClass()));
             row.setLspCode(typed.lspCode());
             row.setAttemptKind(typed.attemptKind());
             row.setAttempt(typed.attempt());
@@ -185,27 +185,8 @@ public final class RejectionFacts {
     /** The stub anchor's stored spelling, on the same rule as {@code variant}. */
     private static String stubKeyOf(Rejection.StubKey key) {
         return switch (key) {
-            case Rejection.StubKey.VariantClass v ->
-                v.fieldClass() == null ? null : classSpelling(v.fieldClass());
+            case Rejection.StubKey.VariantClass v -> v.variant();
         };
-    }
-
-    /**
-     * The one spelling rule for class-valued columns: the canonical name with the package
-     * stripped, enclosing classes kept. Plain simple names are ambiguous in this hierarchy
-     * ({@code AuthorError.Structural} versus {@code InvalidSchema.Structural},
-     * {@code UpdateRowsError.NoUniqueKeyCoverage} versus the {@code DeleteRowsError} leaf), and
-     * an ambiguous {@code variant} would fuse two families in the very dimension that exists to
-     * split them.
-     *
-     * <p>Public because it is the one site, not merely this writer's helper: the store-native
-     * pilot's variant is minted through here too
-     * ({@link no.sikt.graphitron.rewrite.derive.AuthoredClaimRejectionRows}), so the two
-     * relations cannot spell one rejection family two ways and a rename of a leaf carries into
-     * every stored spelling by construction rather than by a reader remembering to follow it.
-     */
-    public static String classSpelling(Class<?> cls) {
-        return cls.getCanonicalName().substring(cls.getPackageName().length() + 1);
     }
 
     private record CoordinatePair(String typeName, String fieldName) {}

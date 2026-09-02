@@ -186,9 +186,9 @@ class RejectionSeverityCoverageTest {
         if (permit == Rejection.AuthorError.RecordBindingMultiProducer.class) {
             return new Rejection.AuthorError.RecordBindingMultiProducer(
                 "FilmDetails",
-                List.of(new no.sikt.graphitron.rewrite.model.ProducerBinding.RootService(
-                    String.class, "Query", "filmDetails",
-                    "com.example.FilmService", "getFilm", new SourceLocation(1, 1))));
+                List.of(new Rejection.AuthorError.RecordBindingMultiProducer.Binding(
+                    "@service on Query.filmDetails via com.example.FilmService.getFilm",
+                    String.class.getName())));
         }
         if (permit == Rejection.AuthorError.TypeConflict.class) {
             // Cross-site contextArgument type-agreement rejection. Build a minimal
@@ -196,40 +196,23 @@ class RejectionSeverityCoverageTest {
             return new Rejection.AuthorError.TypeConflict(
                 "fnr",
                 List.of(
-                    no.sikt.graphitron.rewrite.model.ConflictSite.of(
-                        new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
-                            "com.example.S", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
-                            List.of(), List.of()),
-                        no.sikt.graphitron.javapoet.ClassName.get(String.class)),
-                    no.sikt.graphitron.rewrite.model.ConflictSite.of(
-                        new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
-                            "com.example.T", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
-                            List.of(), List.of()),
-                        no.sikt.graphitron.javapoet.ClassName.get(Long.class))));
+                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                        "com.example.S", "m", String.class.getName()),
+                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                        "com.example.T", "m", Long.class.getName())));
         }
         if (permit == Rejection.AuthorError.MultiProducerDomainTypeDisagreement.class) {
-            // Cross-producer DomainReturnType disagreement. Two participants on the same
-            // SDL payload type with disagreeing arms is the minimum shape that exercises the
-            // multi-arm message rendering; both samples below construct the typed payload arms
-            // the validator emits.
-            var filmTable = new no.sikt.graphitron.rewrite.model.TableRef(
-                "film", "FILM",
-                "com.example.jooq.tables.Film",
-                "com.example.jooq.tables.records.FilmRecord",
-                "com.example.jooq.Tables",
-                List.of(),
-                List.of());
+            // Cross-producer source-type disagreement. Two participants on the same SDL payload
+            // type with disagreeing claims is the minimum shape that exercises the multi-arm
+            // message rendering; the claims are spelled as the arms state themselves, which is
+            // what the participant carries.
             return new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
                 "FilmListPayload",
                 List.of(
                     new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
-                        "Mutation", "createFilms",
-                        new no.sikt.graphitron.rewrite.model.DomainReturnType.Record(filmTable)),
+                        "Mutation", "createFilms", "Record(film)"),
                     new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
-                        "Mutation", "runFilms",
-                        new no.sikt.graphitron.rewrite.model.DomainReturnType.TableRecord(
-                            no.sikt.graphitron.javapoet.ClassName.bestGuess(
-                                "com.example.jooq.tables.records.FilmRecord")))));
+                        "Mutation", "runFilms", "TableRecord(FilmRecord)")));
         }
         if (permit == Rejection.AuthorError.SortEnumMissingOrder.class) {
             // An @orderBy sort enum carrying values with no ordering directive. Two missing

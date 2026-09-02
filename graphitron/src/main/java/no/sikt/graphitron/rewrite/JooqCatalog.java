@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.TableRef;

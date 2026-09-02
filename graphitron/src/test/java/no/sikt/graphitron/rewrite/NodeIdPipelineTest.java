@@ -1048,7 +1048,8 @@ class NodeIdPipelineTest {
             .anyMatch(e -> coordinate.equals(e.coordinate())
                 && e.rejection() instanceof no.sikt.graphitron.rewrite.model.Rejection.Deferred d
                 && d.stubKey() instanceof no.sikt.graphitron.rewrite.model.Rejection.StubKey.VariantClass vc
-                && vc.fieldClass() == ChildField.ColumnBackedReferenceField.class);
+                && vc.variant().equals(no.sikt.graphitron.rewrite.model.Rejection
+                    .classSpelling(ChildField.ColumnBackedReferenceField.class)));
     }
 
     // ===== Argument-level @nodeId =====

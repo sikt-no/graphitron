@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.tables.records.IntentAuthoredClaimRejectionRecord;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.jooq.DSLContext;
 
@@ -26,7 +25,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_REJECTION;
  * fact of any graph, so no view over this store can state the render. What lives here is the loop;
  * the rule is {@link AuthoredClaimConflicts#rejectionOf}, shared with the build-error consumer so
  * one violation cannot be worded two ways, and the three columns are three total projections of
- * that one value: {@link RejectionKind#of}, {@link RejectionFacts#classSpelling} and
+ * that one value: {@link RejectionKind#of}, {@link Rejection#classSpelling} and
  * {@link ValidationError}'s coordinate prefix.
  *
  * <p>Total over the conflict view rather than narrowed to the classification domain. The narrowing
@@ -69,7 +68,7 @@ public final class AuthoredClaimRejectionRows {
                 record.setTypeName(typeName);
                 record.setFieldName(fieldName);
                 record.setKind(RejectionKind.of(rejection).name());
-                record.setVariant(RejectionFacts.classSpelling(rejection.getClass()));
+                record.setVariant(Rejection.classSpelling(rejection.getClass()));
                 record.setMessage(error.message());
                 rows.add(record);
             });
