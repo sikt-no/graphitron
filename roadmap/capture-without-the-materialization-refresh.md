@@ -457,8 +457,13 @@ demoted store rather than nothing. What is left is the import, and the criterion
 it: `GraphQLRewriteGenerator` still names `FactCapture`. The recommendation is that step 5 hand the
 generator a capture port built above it, one interface whose single method captures and reads, so
 the generator names the port and its inputs and never a store or a directory. That keeps every
-criterion and drops nothing. Flagged rather than done, because it changes a step that was signed
-off.
+criterion and drops nothing, the criterion about a run against a store its caller opened included:
+the port can hold its store open from the moment the goal opens it, and the only thing that has to
+happen inside a capture call is the swap, a run whose shared write failed twice closing that store
+and recapturing into a private one before the caller's reads run. Nothing outside the call ever
+holds the store that was swapped away from, because what the goal holds is the port, and closing it
+closes whichever store the port ended on. Flagged rather than done, because it changes a step that
+was signed off.
 
 **5. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
 point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
