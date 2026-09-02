@@ -413,6 +413,53 @@ The ownership check stays in the fact tier rather than moving up to the Maven go
 `ownsGraph` already gives in its own javadoc: it needs the store open and the row readable, and the
 goal never reads the store. The retry logic moves with it, for the same reason.
 
+**What shipped.** `RunStore`, in the capture package and so in the move set: a sealed
+`Shared(store, graphName)` / `Demoted(store, graphName, reason)`, both `AutoCloseable`, answering
+`handle()` for the run's reads and `demotion()` for the flat question. `FactCapture` lost the
+store-lifetime half and went from 740 lines to 589; `runInternal` is now four lines around one
+`try`.
+
+**The answer has to be given after the capture, not before it.** Three of the four ways a run
+loses the shared store are known when the store opens: no directory was named, the file would not
+open, another checkout holds the graph name. The fourth is not. A write the shared file refuses
+twice demotes the run too, and only an attempted write can tell that from a casualty that clears.
+So the entry point takes the capture as a body and reports one outcome for both halves. The
+alternative shapes are both worse: answering before the write means either dropping that fallback,
+which fails a build over a cache defect and is the exact thing the fallback exists to prevent, or
+swapping the store under a caller that is already holding it.
+
+**Four reasons, each carrying its own message**: `NoHomeGiven`, `Unavailable`,
+`GraphOwnedElsewhere(graph, recordedBaseDir)` and `CaptureFailedTwice(graphName, failure)`.
+`Unavailable` is deliberately one arm for two causes, a file another process holds and an anchor row
+another writer holds, because the existing message already argues they are one event with one
+consequence from where the user stands. Reporting happens once, in one method, so a fifth reason
+cannot arrive without someone deciding whether it is a warning. `NoHomeGiven` logs at debug rather
+than warn: a caller that named no directory asked for exactly this, and today's code says nothing at
+all on that path.
+
+**The reason is now testable without reading the build's output**, which is what the delivery
+criterion below asks for. `PersistentStoreTest.aRunSaysWhichStoreItGot` pins three arms by value,
+the graph-name collision by full record equality against the directory that holds the name. The
+fourth arm has no fixture that is not itself a capture bug, so it is pinned by construction rather
+than by a case.
+
+`reconciles` and `timedOutOnALock` moved with the retry they belong to. Both were package-private
+because a test pins them, and a sealed interface has no way to say package-private, so they are
+public now and their javadoc says why they are visible rather than claiming a visibility they no
+longer have.
+
+**Step 5 needs restating, and step 4 is why.** Its plan is that `captureAndRead` and `captureFacts`
+"take the store the entry point returned". They cannot: the entry point needs the capture body, and
+only the generator holds the registry that body writes, so the store cannot be open before the
+generator runs. What step 5 was *for* is already delivered here, though: "the generator running with
+no store at all" stopped being possible the moment `forRun` with no directory started returning a
+demoted store rather than nothing. What is left is the import, and the criterion below that names
+it: `GraphQLRewriteGenerator` still names `FactCapture`. The recommendation is that step 5 hand the
+generator a capture port built above it, one interface whose single method captures and reads, so
+the generator names the port and its inputs and never a store or a directory. That keeps every
+criterion and drops nothing. Flagged rather than done, because it changes a step that was signed
+off.
+
 **5. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
 point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
 directory, because the Maven goals still need it as a setting. What goes away is the generator
@@ -733,6 +780,14 @@ Retired by step 3:
   to `DirectiveArgs`
 * `FactTierJavapoetBoundaryTest`, renamed `FactTierBoundaryTest` when it grew the other two
   properties
+
+Retired by step 4:
+
+* `FactCapture.DEMOTED_TO_MEMORY`, now `RunStore.Demotion.Unavailable`'s own message
+* `FactCapture.ownsGraph`, now `RunStore`'s ownership check, answering with a reason rather than a
+  boolean and a log line
+* `FactCapture.captureWithRetry`, `FactCapture.reconciles`, `FactCapture.timedOutOnALock`, all now
+  `RunStore`'s
 
 * `RewriteContext`, now `RunContext`; `RewriteSchemaLoader`, now `SchemaLoader`
 * every `no.sikt.graphitron.rewrite.*` package name for the 89 files that move, now

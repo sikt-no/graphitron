@@ -26,12 +26,10 @@ import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
 import no.sikt.graphitron.rewrite.session.SessionStateConfig;
 import org.jooq.DSLContext;
-import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.sql.SQLTimeoutException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +39,12 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 
 /**
- * Entry point for the generator's capture loads: opens a fact store for the run and fills it from
- * the parsed SDL, the jOOQ catalog, and the consumer's compiled extension classes.
+ * Entry point for the generator's capture loads: fills a fact store from the parsed SDL, the jOOQ
+ * catalog, and the consumer's compiled extension classes.
+ *
+ * <p>Which store that is, and what a run does when it cannot have the shared one, is
+ * {@link RunStore}'s question rather than this class's: capture writes the rows it found and the
+ * store it writes into is handed to it.
  *
  * <p>Both loads are infallible by construction, and construction is the only guarantee in play.
  * The {@link TypeDefinitionRegistry} validates nothing, so every capture path is tolerant: what
@@ -67,10 +69,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * pipeline and read by nothing; consumers migrate onto it one at a time.
  *
  * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
- * every module of a workspace, so a warm open reconciles only what this run owns, and any cache
- * trouble at all (a graph name another module's directory already holds, a concurrent writer the
- * store could not be shared with) falls back to a private in-memory store for this run and leaves
- * the file alone: warmth is the only thing a cache is ever allowed to cost.
+ * every module of a workspace, so a warm open reconciles only what this run owns; every way that
+ * sharing can fail ends in a private store holding the same rows, which {@link RunStore} states.
  */
 public final class FactCapture {
 
@@ -85,32 +85,14 @@ public final class FactCapture {
      *
      * <p>Deliberately far below {@link GraphitronModelStore#FILE_LOCK_MILLIS}, which every other row
      * a capture takes keeps, because this is the one row where waiting buys nothing. Blocking here
-     * means another writer is mid-capture of the same graph under the same base directory
-     * ({@link #ownsGraph} having already refused the other case), so waiting buys the right to
-     * delete that capture and write it again identically. Waiting on the rows a capture takes
-     * <em>after</em> the anchor is a different bargain: those are the store-global families two
+     * means another writer is mid-capture of the same graph under the same base directory (the
+     * ownership check in {@link RunStore} having already refused the other case), so waiting buys
+     * the right to delete that capture and write it again identically. Waiting on the rows a
+     * capture takes <em>after</em> the anchor is a different bargain: those are the store-global families two
      * different graphs' captures write concurrently, where the other writer is committing rows this
      * one also needs and a writer that waits its turn beats one that falls back cold.
      */
     static final long ANCHOR_LOCK_MILLIS = 2_000;
-
-    /**
-     * What a run says when it could not use the shared store and captured in memory instead. One
-     * message for both ways that happens, a file another process holds and an anchor row another
-     * writer holds, because from where the user stands they are one event with one consequence; the
-     * distinction matters to whoever fixes it, and a stack of the stalled process is how they
-     * recover it. It names the likely holder because "could not use the store" on its own sends a
-     * user looking for a stuck build rather than at the editor session they left running, says what
-     * the run did instead because a warning with no consequence attached reads as damage, and says
-     * the output is unaffected because a user who does not know the store is a cache will read a
-     * warning about a database as their schema not having generated.
-     */
-    private static final String DEMOTED_TO_MEMORY =
-        "graphitron: could not use the shared fact store for this workspace, so this run captured "
-            + "its facts in memory instead of waiting for it. The usual cause is another graphitron "
-            + "process holding it, a `mvn graphitron:dev` session in the same checkout being the "
-            + "common one. This costs warm-start speed and nothing else: the generated output is "
-            + "identical.";
 
     private FactCapture() {}
 
@@ -206,26 +188,11 @@ public final class FactCapture {
     /**
      * Runs both loads against the store for {@code storeDirectory} and closes it.
      *
-     * <p>With a home the store is the shared file under it, so this run starts from the previous
-     * runs' rows and rewrites only what it owns and cannot prove unchanged; without one it is a
-     * private in-memory database that dies here, which is what every caller with no home to give
-     * should get. The two differ in cost, never in content: a warm store is refreshed to exactly
-     * the rows a cold load would have produced, and the agreement anchors are stated against both.
-     *
-     * <p>Two cache conditions demote a run to the in-memory store, and neither touches the file.
-     * A graph name already recorded against a different base directory is not taken over, because
-     * ownership-scoped refresh would otherwise let two checkouts thrash one partition silently;
-     * this is the one cache condition a consumer can fix, so it is the one that always logs, naming
-     * both directories and {@code <graphName>} as the remedy. And a write that fails against the
-     * shared file is retried once against that same file before being demoted, which is what tells
-     * a concurrency casualty (a concurrent writer of the same rows, a lock that timed out; cleared
-     * by the time the retry runs, since capture's own delete-then-rewrite is safely rerunnable)
-     * apart from a deterministic capture bug (the same failure both times, timing-independent).
-     * The first case is absorbed at debug level, unremarkable by the time it is logged. The second
-     * demotes to the in-memory store just the same, since a cache is never allowed to cost more
-     * than warmth, but logs at warn with the exception, naming the graph, because a deterministic
-     * failure means this graph's warm start is out for good until the underlying bug is fixed, and
-     * that is not something the debug level below may leave unread.
+     * <p>Which store that is, what happens when it cannot be the shared one, and what a build is
+     * told about it are all {@link RunStore#forRun}'s, stated there. What holds whichever way it
+     * goes is that the two stores differ in cost and never in content: a warm store is refreshed
+     * to exactly the rows a cold load would have produced, and the agreement anchors are stated
+     * against both.
      */
     public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
                            TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution,
@@ -331,43 +298,24 @@ public final class FactCapture {
             jooq, extensions, classified, after);
     }
 
+    /**
+     * The whole of a capture entry point: the store this run gets, filled, read, and closed. What
+     * store that is and why is {@link RunStore}'s decision; what happens inside the window is the
+     * caller's, and both halves of that are stated where they are made rather than woven together
+     * here.
+     */
     private static <T> T runInternal(Path storeDirectory, GraphIdentity graph,
-                                                     SubjectConfig config,
-                                                     TypeDefinitionRegistry registry,
-                                                     SchemaAssembly assembly, SdlVerdicts verdicts,
-                                                     Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                                                     List<CompletionData.ExternalReference> extensions,
-                                                     ClassifiedRun classified,
-                                                     AfterCapture<T> after) {
-        if (storeDirectory != null) {
-            try (GraphitronModelStore store = GraphitronModelStore.openAt(storeDirectory)) {
-                // Whatever the open released from the cache home, said once. A run that quietly
-                // deletes gigabytes out of a person's cache home should say so, and this is where an
-                // ordinary build hears it: the store's once-per-JVM sweep guard makes the reporter
-                // whichever opener ran first, which on a build is this one.
-                store.reaped().report(storeDirectory).ifPresent(LOG::info);
-                if (store.location().isEmpty()) {
-                    // openAt already fell back to an in-memory store; use it as-is. This is the
-                    // one demotion no other layer reports: the store declines to say why an open
-                    // failed, and a silent one is what makes a build beside a dev session look
-                    // like a build that did nothing.
-                    LOG.warn(DEMOTED_TO_MEMORY);
-                    capture(store.dsl(), false, graph, config, registry, assembly, verdicts,
-                        attribution, jooq, extensions);
-                    return read(store.dsl(), graph, classified, after);
-                }
-                if (!store.warm() || ownsGraph(store.dsl(), graph)) {
-                    if (captureWithRetry(store, graph, config, registry, assembly, verdicts,
-                            attribution, jooq, extensions)) {
-                        return read(store.dsl(), graph, classified, after);
-                    }
-                }
-            }
-        }
-        try (GraphitronModelStore store = GraphitronModelStore.open()) {
-            capture(store.dsl(), false, graph, config, registry, assembly, verdicts, attribution,
-                jooq, extensions);
-            return read(store.dsl(), graph, classified, after);
+                                     SubjectConfig config,
+                                     TypeDefinitionRegistry registry,
+                                     SchemaAssembly assembly, SdlVerdicts verdicts,
+                                     Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                                     List<CompletionData.ExternalReference> extensions,
+                                     ClassifiedRun classified,
+                                     AfterCapture<T> after) {
+        try (RunStore store = RunStore.forRun(storeDirectory, graph,
+                (dsl, warm) -> capture(dsl, warm, graph, config, registry, assembly, verdicts,
+                    attribution, jooq, extensions))) {
+            return read(store.handle(), classified, after);
         }
     }
 
@@ -376,9 +324,8 @@ public final class FactCapture {
      * method so the three arms above each state the window once rather than pairing a detection
      * call with a continuation call and leaving an arm free to run one without the other.
      */
-    private static <T> T read(DSLContext dsl, GraphIdentity graph, ClassifiedRun classified,
-                              AfterCapture<T> after) {
-        return after.read(new StoreHandle(dsl, graph.name()), detect(dsl, graph, classified));
+    private static <T> T read(StoreHandle store, ClassifiedRun classified, AfterCapture<T> after) {
+        return after.read(store, detect(store.dsl(), store.graphName(), classified));
     }
 
     /**
@@ -401,112 +348,18 @@ public final class FactCapture {
      * classified-run arm anyway: a run with no classified model is a run whose verdict has already
      * been pronounced elsewhere, and there is no build for these rejections to fail.
      */
-    private static StoreDetections detect(DSLContext dsl, GraphIdentity graph,
+    private static StoreDetections detect(DSLContext dsl, String graphName,
                                           ClassifiedRun classified) {
         return switch (classified) {
             case ClassifiedRun.Absent ignored -> StoreDetections.empty();
             case ClassifiedRun.Present present -> {
-                yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graph.name()),
-                    ArgmappingProjectionDefects.detect(dsl, graph.name()),
-                    NodeIdDecodeDefects.detect(dsl, graph.name()),
-                    ReferenceForParticipantDefects.detect(dsl, graph.name()),
-                    ResolvedKeyProjections.read(dsl, graph.name()));
+                yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graphName),
+                    ArgmappingProjectionDefects.detect(dsl, graphName),
+                    NodeIdDecodeDefects.detect(dsl, graphName),
+                    ReferenceForParticipantDefects.detect(dsl, graphName),
+                    ResolvedKeyProjections.read(dsl, graphName));
             }
         };
-    }
-
-    /**
-     * Attempts the warm capture, retrying once against the same store before giving up, so a
-     * transient concurrency casualty (cleared by the time the retry runs) is told apart from a
-     * deterministic capture bug (fails the same way both times). Returns {@code true} once either
-     * attempt lands; {@code false} tells the caller to fall back to an in-memory capture instead.
-     *
-     * <p>A lock timeout is the one failure that is not retried, because the retry would re-enter a
-     * wait that just expired: the budget the capture gave up on is the whole of what waiting had to
-     * offer, and doubling a silent wait is precisely what made a contended store read as a hang.
-     * The split is by cause rather than by call site so a deadlock keeps its retry, that being
-     * exactly the transient casualty the retry was written for.
-     *
-     * <p>Each attempt asks {@link #reconciles} what it has to reconcile rather than being handed the
-     * store's warm flag, for the reason stated there. A deadlock out of the first-graph refresh is
-     * the retry's own reason for existing, so the retry has to be able to survive one.
-     */
-    private static boolean captureWithRetry(GraphitronModelStore store, GraphIdentity graph,
-                                            SubjectConfig config, TypeDefinitionRegistry registry,
-                                            SchemaAssembly assembly, SdlVerdicts verdicts,
-                                            Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                                            List<CompletionData.ExternalReference> extensions) {
-        try {
-            capture(store.dsl(), reconciles(store, graph), graph, config, registry, assembly,
-                verdicts, attribution, jooq, extensions);
-            return true;
-        } catch (DataAccessException first) {
-            if (timedOutOnALock(first)) {
-                LOG.warn(DEMOTED_TO_MEMORY);
-                LOG.debug("the contended row's own failure", first);
-                return false;
-            }
-            LOG.debug("shared fact store write failed; retrying once before recapturing in memory", first);
-        }
-        try {
-            capture(store.dsl(), reconciles(store, graph), graph, config, registry, assembly,
-                verdicts, attribution, jooq, extensions);
-            return true;
-        } catch (DataAccessException second) {
-            LOG.warn("shared fact store write for graph '{}' failed twice in a row; this looks like a "
-                    + "deterministic capture bug rather than a concurrency casualty, and warm start will "
-                    + "stay unavailable for this graph until it is fixed. Recapturing in memory for this run.",
-                graph.name(), second);
-            return false;
-        }
-    }
-
-    /**
-     * Whether an attempt at {@code graph} has rows of its own to reconcile: the store opened onto a
-     * previous run's, or this graph stands committed in it already.
-     *
-     * <p><b>Asked per attempt rather than taken from the open.</b> {@link GraphitronModelStore#warm}
-     * is fixed when the store opens, and it stood in for this question only while a capture was
-     * all-or-nothing: a failed attempt rolled back, so the next attempt met the store the first one
-     * found. That equivalence does not survive the first-graph refresh cadence, which commits this
-     * graph's facts, its anchor row and its hand-written derivations before it refreshes. A retry
-     * after a failed refresh therefore meets a partition its own first attempt wrote, and taking
-     * warmth from the open would have it skip {@link StoreRefresh#prepare} and collide with itself on
-     * the first key it re-inserts. The collision is a {@link DataAccessException} rather than a lock
-     * timeout, so the retry would report it as a deterministic capture bug, which is a false
-     * accusation about the run's own predecessor.
-     *
-     * <p>Package-private because that broken equivalence is what a test pins: the store's warm flag
-     * and this predicate disagree the moment a capture on the same handle commits, and no assertion
-     * over generated output can see the difference.
-     */
-    static boolean reconciles(GraphitronModelStore store, GraphIdentity graph) {
-        return store.warm() || store.dsl().fetchExists(STORE_GRAPH,
-            STORE_GRAPH.GRAPH_NAME.eq(graph.name()));
-    }
-
-    /**
-     * Whether {@code failure} is a writer that ran out of lock budget, anywhere in its cause chain.
-     * jOOQ wraps the driver's exception and H2 wraps its own store's, so the shape that survives
-     * both is the JDBC contract: a lock timeout arrives as a {@link SQLTimeoutException} (H2 raises
-     * error 50200, SQL state {@code HYT00}). Keying on that rather than on a message or a vendor
-     * code also keeps a deadlock out, which arrives as a
-     * {@link java.sql.SQLTransactionRollbackException} and keeps its retry.
-     *
-     * <p>That the type is enough holds only while no writer session carries a statement budget. An
-     * expired {@link no.sikt.graphitron.model.boot.ReadBudget} raises the same
-     * {@link SQLTimeoutException} with vendor code 57014, and this predicate would read it as lock
-     * contention and demote the store to memory for a query that was merely too slow. The read side
-     * therefore keys on the vendor code rather than the type; whoever gives a writer a budget has to
-     * do the same here.
-     */
-    static boolean timedOutOnALock(Throwable failure) {
-        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLTimeoutException) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -684,25 +537,6 @@ public final class FactCapture {
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution) {
         capture(dsl, graph, config, registry, attribution, null, List.of());
-    }
-
-    /**
-     * Whether this run may write under its graph name: true when the store has no row for it or
-     * the recorded base directory is this run's own. The check lives here, where the store is
-     * open and the row readable, rather than in the mojo, which never reads the store.
-     */
-    private static boolean ownsGraph(DSLContext dsl, GraphIdentity graph) {
-        String recorded = dsl.select(STORE_GRAPH.BASE_DIR).from(STORE_GRAPH)
-            .where(STORE_GRAPH.GRAPH_NAME.eq(graph.name()))
-            .fetchOne(0, String.class);
-        if (recorded == null || recorded.equals(graph.baseDir().toString())) {
-            return true;
-        }
-        LOG.warn("graph '{}' is already recorded in the shared fact store for {}, but this run's "
-                + "base directory is {}. Leaving that partition alone and capturing in memory; "
-                + "set <graphName> so the two modules stop claiming one name.",
-            graph.name(), recorded, graph.baseDir());
-        return false;
     }
 
     /**

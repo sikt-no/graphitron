@@ -285,6 +285,41 @@ class PersistentStoreTest {
     }
 
     /**
+     * Every way a run can lose the shared store is a value it can be asked for rather than a log
+     * line it has to match against its own run, which is what lets a case state the reason instead
+     * of reading the build's output. Three arms have a fixture; the fourth, a write the shared file
+     * refuses twice, is a deterministic capture bug by construction and has no fixture that is not
+     * one.
+     */
+    @Test
+    @DisplayName("a run says which store it got, and why when it is not the shared one")
+    void aRunSaysWhichStoreItGot(@TempDir Path tmp) throws IOException {
+        Path directory = tmp.resolve("graphitron-model");
+        Path original = Files.createDirectories(tmp.resolve("original"));
+        try (RunStore store = forRun(directory, original)) {
+            assertThat(store).as("a fresh home nobody holds is the shared store")
+                .isInstanceOf(RunStore.Shared.class);
+            assertThat(store.demotion()).as("and it has nothing to explain").isEmpty();
+        }
+
+        try (RunStore store = forRun(null, original)) {
+            assertThat(store.demotion())
+                .as("no home to give is a demotion, and the one the caller asked for")
+                .containsInstanceOf(RunStore.Demotion.NoHomeGiven.class);
+            assertThat(store.handle().dsl().fetchCount(GRAPHQL_TYPE))
+                .as("a demoted run captured the same facts a shared one would").isPositive();
+        }
+
+        Path impostor = Files.createDirectories(tmp.resolve("impostor"));
+        try (RunStore store = forRun(directory, impostor)) {
+            assertThat(store.demotion().orElseThrow())
+                .as("the one demotion a consumer can fix names the directory holding the name")
+                .isEqualTo(new RunStore.Demotion.GraphOwnedElsewhere(graph(impostor),
+                    original.toAbsolutePath().normalize().toString()));
+        }
+    }
+
+    /**
      * The anchor row is the one row a capture will not wait out. A second writer holding it
      * uncommitted is another capture of the same graph mid-flight, and waiting for it buys the
      * right to delete that capture and write it again identically, so the capture gives up on a
@@ -311,7 +346,7 @@ class PersistentStoreTest {
             long elapsed = millisSince(start);
 
             assertThat(thrown).as("the capture gave up on the anchor row").isNotNull();
-            assertThat(FactCapture.timedOutOnALock(thrown))
+            assertThat(RunStore.timedOutOnALock(thrown))
                 .as("it gave up on a lock budget, which is what the retry must not re-enter")
                 .isTrue();
             assertThat(elapsed)
@@ -412,16 +447,16 @@ class PersistentStoreTest {
     @Test
     @DisplayName("a lock timeout is not retried; every other write failure still is")
     void onlyALockTimeoutSkipsTheRetry() {
-        assertThat(FactCapture.timedOutOnALock(
+        assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLTimeoutException("Timeout trying to lock table"))))
             .as("a lock budget that expired, however deeply wrapped").isTrue();
-        assertThat(FactCapture.timedOutOnALock(new DataAccessException("wrapped",
+        assertThat(RunStore.timedOutOnALock(new DataAccessException("wrapped",
             new SQLException("outer", new SQLTimeoutException("Timeout trying to lock table")))))
             .as("H2 wraps its own store's failure, and jOOQ wraps that").isTrue();
-        assertThat(FactCapture.timedOutOnALock(
+        assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLTransactionRollbackException("Deadlock"))))
             .as("a deadlock is the transient casualty the retry exists for").isFalse();
-        assertThat(FactCapture.timedOutOnALock(
+        assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLException("Unique index violation"))))
             .as("a capture bug is retried once, so it fails the same way twice and says so").isFalse();
     }
@@ -447,7 +482,7 @@ class PersistentStoreTest {
     @DisplayName("what an attempt reconciles is read from the store, not from the open")
     void whatAnAttemptReconcilesIsReadFromTheStore(@TempDir Path tmp) {
         try (var store = GraphitronModelStore.openAt(tmp.resolve("graphitron-model"))) {
-            assertThat(FactCapture.reconciles(store, graph(tmp)))
+            assertThat(RunStore.reconciles(store, graph(tmp)))
                 .as("a store holding no graph has nothing for a first attempt to reconcile")
                 .isFalse();
 
@@ -458,13 +493,13 @@ class PersistentStoreTest {
             assertThat(store.warm())
                 .as("the open's answer, and it is stale: this handle has committed a partition since")
                 .isFalse();
-            assertThat(FactCapture.reconciles(store, graph(tmp)))
+            assertThat(RunStore.reconciles(store, graph(tmp)))
                 .as("what a retry after a failed refresh walks into, which is its own first attempt's"
                     + " committed partition")
                 .isTrue();
 
             assertThatCode(() -> FactCapture.capture(store.dsl(),
-                FactCapture.reconciles(store, graph(tmp)), graph(tmp),
+                RunStore.reconciles(store, graph(tmp)), graph(tmp),
                 FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
                 CapturedStore.attributionOf(tmp), null, List.of()))
                 .as("the retry itself, taking what the predicate answered. Handed the open's answer"
@@ -585,6 +620,19 @@ class PersistentStoreTest {
 
     private static long millisSince(long startNanos) {
         return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
+    /**
+     * The store a run got, captured into and still open, for the cases whose subject is which
+     * store that was.
+     */
+    private static RunStore forRun(Path directory, Path scratch) {
+        var graph = graph(scratch);
+        var registry = CapturedStore.registryOf(scratch, SDL);
+        var attribution = CapturedStore.attributionOf(scratch);
+        return RunStore.forRun(directory, graph, (dsl, warm) ->
+            FactCapture.capture(dsl, warm, graph, FactCapture.SubjectConfig.none(), registry,
+                attribution, null, List.of()));
     }
 
     private static void captureInto(Path directory, Path scratch) {
