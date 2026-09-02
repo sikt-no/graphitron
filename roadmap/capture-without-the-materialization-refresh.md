@@ -1,13 +1,13 @@
 ---
 id: R865
 title: "The generator owns the fact tier it should merely read"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-09-01
+last-updated: 2026-09-02
 ---
 
 # The generator owns the fact tier it should merely read
@@ -177,10 +177,11 @@ The rest of the census is bookkeeping and is listed so the implementer does not 
 `RewriteContext` moves down rather than staying: it already imports `FactCapture.OutputCoordinates`,
 `LintConfig`, `SchemaInput`, `SchemaRecipe`, `SessionStateConfig` and `DependencyVersions`, all of
 which move, and it is a parameter of both `CatalogBuilder` methods that move. That also settles the
-loose end step 8 leaves open about `FixtureCatalogTest`. Eight plain root-level types come down with
-no imports of their own to worry about: `NodeDeclaration`, `ArgMappingSigil`, `RejectionKind`,
+loose end step 8 leaves open about `FixtureCatalogTest`. Eight plain root-level types come down: `NodeDeclaration`, `ArgMappingSigil`, `RejectionKind`,
 `ClasspathEntry`, `ValidationFailedException`, `SchemaParseException`,
-`rewrite.dependency.DependencyVersions` and `rewrite.model.ConnectionNaming`. `BuildWarning`,
+`rewrite.dependency.DependencyVersions` and `rewrite.model.ConnectionNaming`. Seven import nothing
+of their own; `NodeDeclaration` statically imports four directive-name constants (`DIR_NODE`,
+`DIR_TABLE`, `ARG_NAME`, `argString`) from `BuildContext`, which stays. `BuildWarning`,
 `LintRule` and `LintFix` come down as the values the round-1 census found them to be.
 
 **What the two side modules actually use.** Neither module's shipped code uses the generator at all,
@@ -221,8 +222,10 @@ between this item and a clean detachment of both modules.
 **2. Take javapoet out of the fact tier's data, so it does not cross the line.** The refs capture
 produces carry javapoet types: `ColumnRef` holds a `TypeName` beside its `String columnClass`,
 `TableRef` holds three `ClassName`s, `ForeignKeyRef` holds one. `JooqCatalog` mints them from live
-jOOQ reflection and `derive/StoreNodeTables` mints them from stored strings. Those five files are
-the whole of it. Left alone, they would hand `graphitron-model` a compile dependency on the module
+jOOQ reflection and `derive/StoreNodeTables` mints them from stored strings. A sixth carrier is one component of the
+rejection vocabulary, `Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite.declared`, a
+fully qualified `TypeName` that no import betrays; it is built by `TenantScopeClassifier` above the
+line and read only by `Rejection`'s own message rendering. Those six files are the whole of it. Left alone, they would hand `graphitron-model` a compile dependency on the module
 that writes Java source, and `roadmap-tool` would inherit it.
 
 **The store already holds these as strings.** Every `class_name` in the DDL is a `VARCHAR`, and the
@@ -704,3 +707,48 @@ so the build-driving half has a place to be cut. The `BuiltStore` correction abo
 recommendation cheap, since the plugin already has the build-level helper on its test classpath. The
 test-jar route stays available as the implementer's fallback, with the one thing that must not happen
 stated instead of the one thing they must do.
+
+### Round 3 (2026-09-02, Spec -> Ready, reviewer session 01ACqTfeZXHnE3pRXyUPbyA1)
+
+Verdict: sign off. Both questions pass. Round 2's finding is answered by decisions, not by wording:
+javapoet stays out of the fact tier and step 2 is the work that makes it true; `rewrite/diagnostics`
+moves down whole and "Writes from above" now agrees with the code; `ClaimDomain` and `DemandResidue`
+are named as the two `derive` files that stay. The `BuiltStore` correction the author found on the
+way is right: it runs `GraphQLRewriteGenerator.buildOutput()`, so it cannot go below the generator.
+
+*What was checked and holds.* Re-running the move-set census against the revised move set (with
+`rewrite/diagnostics` in, `SessionHooks` and `SessionStateWarnings` out, and the three excluded
+files excluded) leaves every remaining upward edge on something the plan moves, with the one static
+import noted below. `ColumnRef` carries one `TypeName`, `TableRef` three `ClassName`s, `ForeignKeyRef`
+one; `JooqCatalog` mints them from reflection and `StoreNodeTables` from store rows via
+`ClassName.bestGuess`. `ColumnRef.decodeBindingType` handles the array descriptor by recursion.
+Every `class_name` column in the DDL (23 of them) is a `VARCHAR`. Inside the move set only
+`JooqCatalog` and `TableRef` itself read the typed accessors; capture writes class names without
+touching them. `MethodRef.returnType` is the `getGenericReturnType()` `TypeName` and
+`SessionHooks.Handled.handleType` the same, and neither is in the move set: `SessionStateConfig`
+imports nothing, `ConfigurationFactCapture` writes `store_graph_session_mount` from it, every reader
+of `SessionHooks` is the walk, the plan or the emitters, and the table comment says the reflected
+signature is never stored back. `rewrite/schema/federation` has four files; `EntityResolutionBuilder`
+is the one that reads the walk and `GraphitronSchemaBuilder` its one code caller, while
+`FederationKeyFieldsParser` and `FederationSpec` import nothing and `KeyNodeSynthesiser` imports
+`NodeDeclaration` and `FederationLinkApplier`. `rewrite/diagnostics` has three files importing
+`FactCapture`, the rejection and warning vocabulary and `LintFix` only. `RewriteContext`'s six
+imports all move. `CapturedStore` and `FactWriters` import nothing from the generator. The lsp
+`StoreFixture` holds `captured` and `built` as two fields, and `WorkspaceFileTestSupport` exists
+where step 8 says.
+
+*Corrected in this commit, count-level, both in step 1 and step 2's census.* Two entries my own
+round-2 census got wrong, which the author reproduced in good faith. `Rejection`'s ten arm files
+import nothing, as I said, but one nested record,
+`AuthorError.TenantColumnTypeDisagreement.TableSite`, holds a `TypeName` by its fully qualified
+name, so step 2 has six carriers, not five; the component is built by `TenantScopeClassifier` above
+the line and read only through `toString()` in `Rejection`'s own message rendering, so it strips
+the same way as the others. And `NodeDeclaration` is not import-free: it statically imports four
+directive-name string constants from `BuildContext`, which stays. Both are settled by the operations
+step 1 and step 2 already prescribe, so neither changes the plan, and the body now states the fact.
+
+*Non-blocking, for the implementer.* Two `{@link}`s will dangle when their files cross the line and
+the Javadoc reference gate will say so: `FederationKeyFieldsParser` links `EntityResolutionBuilder`,
+and `GraphitronType` links it by fully qualified name from the other direction (that one stays
+above and keeps resolving). Downgrade the moving one to `{@code}`, per CLAUDE.md's rule for a
+target that is genuinely another module's internals.
