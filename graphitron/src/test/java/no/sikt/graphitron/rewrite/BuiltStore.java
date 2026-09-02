@@ -16,10 +16,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
- * A fact store filled by a real {@link GraphQLRewriteGenerator#buildOutput()} run: the build-level
- * population, for the tests whose subject is the dev loop's own wiring.
+ * A fact store filled by a real generator run: the build-level population, for the tests whose
+ * subject is the dev loop's own wiring or which projection of the pipeline was invoked.
+ *
+ * <p><b>Two arms, named for the entry point each runs.</b> {@link #run} runs
+ * {@link GraphQLRewriteGenerator#buildOutput()}, which is the arm a test wanting the run's products
+ * beside its store takes. {@link #captured} runs {@link GraphQLRewriteGenerator#capture()}, which
+ * fills the store and stops; it has no products, and that is its subject rather than a limitation.
+ * The two build the identical context and differ only in the entry point, so a test comparing their
+ * stores is comparing the projections and nothing else.
  *
  * <p><b>Which harness is this.</b> {@link CapturedStore} beside it drives {@link
  * no.sikt.graphitron.rewrite.capture.FactCapture} directly, which is what a test wants when its
@@ -63,6 +71,22 @@ public final class BuiltStore implements AutoCloseable {
     }
 
     /**
+     * Captures {@code sdl} under {@code graphName} and stops: the {@code graphitron:capture}
+     * projection, which runs no checks, no plan and no renderers. The fixture a test about the
+     * capture-only command takes, and the one to compare a {@link #run} fixture's store against
+     * when the question is whether the two projections populate a store alike.
+     *
+     * <p>{@link #output()} on this arm throws, there being no products for it to return.
+     */
+    public static BuiltStore captured(Path tmp, String graphName, String sdl, String jooqPackage) {
+        return build(tmp, graphName, sdl, LintConfig.empty(), jooqPackage, List.of(),
+            generator -> {
+                generator.capture();
+                return null;
+            });
+    }
+
+    /**
      * The full arity. {@code lintConfig} is what a case whose subject is a suppression needs;
      * {@code classpathRoots} is what a case reading the {@code jvm_} census needs, a run with no
      * roots capturing no classes at all because the walk's fallback is a {@code target/classes} a
@@ -70,6 +94,19 @@ public final class BuiltStore implements AutoCloseable {
      */
     public static BuiltStore run(Path tmp, String graphName, String sdl, LintConfig lintConfig,
                                  String jooqPackage, List<Path> classpathRoots) {
+        return build(tmp, graphName, sdl, lintConfig, jooqPackage, classpathRoots,
+            GraphQLRewriteGenerator::buildOutput);
+    }
+
+    /**
+     * The one body both arms run: it lays the fixture out, builds the context, and hands the
+     * generator to {@code pass}, which is the entry point the arm is named for. One body rather
+     * than two, so the two arms cannot come to differ in anything but that call.
+     */
+    private static BuiltStore build(Path tmp, String graphName, String sdl, LintConfig lintConfig,
+                                    String jooqPackage, List<Path> classpathRoots,
+                                    Function<GraphQLRewriteGenerator,
+                                        GraphQLRewriteGenerator.BuildOutput> pass) {
         try {
             Path schemaFile = tmp.resolve(graphName + ".graphqls");
             Files.createDirectories(tmp);
@@ -86,7 +123,7 @@ public final class BuiltStore implements AutoCloseable {
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
                 null);
-            var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+            var output = pass.apply(new GraphQLRewriteGenerator(ctx));
             return new BuiltStore(FactStores.fileBacked(storeHome), graphName, schemaFile, storeHome,
                 output);
         } catch (IOException e) {
@@ -94,8 +131,17 @@ public final class BuiltStore implements AutoCloseable {
         }
     }
 
-    /** What the run produced: the artifacts, the report, and the two pre-fuse lists. */
+    /**
+     * What the run produced: the artifacts, the report, and the two pre-fuse lists. Present on a
+     * {@link #run} fixture; a {@link #captured} one produces none, so asking is a mistake rather
+     * than a question with an empty answer.
+     */
     public GraphQLRewriteGenerator.BuildOutput output() {
+        if (output == null) {
+            throw new IllegalStateException(
+                "a capture-only fixture has no build output: it runs the projection that produces "
+                    + "a store and nothing else. Take run(...) for a fixture with products.");
+        }
         return output;
     }
 

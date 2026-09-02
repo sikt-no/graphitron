@@ -86,18 +86,20 @@ import java.util.stream.Stream;
  * <p>Parses the GraphQL schema with {@link GraphitronSchemaBuilder}, runs its list of
  * generators, and writes output to the configured output directory.
  *
- * <p><b>One body, four projections.</b> {@link #runPipeline} is the whole pipeline and the only
+ * <p><b>One body, five projections.</b> {@link #runPipeline} is the whole pipeline and the only
  * place its stages are named: read and attribute the schema inputs, assemble and record the stage
  * verdicts, classify, load the jOOQ catalog, scan the classpath census, capture the graph's
- * partition, validate, lint, and (conditionally) project the completion catalog, emit the sources
+ * partition, and (conditionally) lint, validate, project the completion catalog, emit the sources
  * and project the compile graph. Each public entry point is a {@link Projection} of that one call:
- * {@link #generate()}, {@link #validate()}, {@link #buildOutput()} and {@link #runPass()}. A pass
- * calls exactly one of them, which is what keeps a round to one capture of the graph.
+ * {@link #generate()}, {@link #validate()}, {@link #capture()}, {@link #buildOutput()} and
+ * {@link #runPass()}. A pass calls exactly one of them, which is what keeps a round to one capture
+ * of the graph.
  *
- * <p>A fifth entry point that grows a front half of its own is the regression this shape exists to
+ * <p>An entry point that grows a front half of its own is the regression this shape exists to
  * prevent: two bodies duplicating the stages above is what let one dev round capture the same
  * graph twice, and what let a stage added to one body go silently missing from the other. Add a
- * projection, not a pipeline.
+ * projection, not a pipeline. {@link #capture()} is the worked example: a command that wanted only
+ * the front half of the pipeline cost one component on {@link Projection} and no second body.
  */
 public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
@@ -298,6 +300,23 @@ public class GraphQLRewriteGenerator {
      */
     public record BuildOutput(CompletionData catalog, ValidationReport report,
                               List<ValidationError> walkErrors, List<BuildWarning> warnings) {}
+
+    /**
+     * Fills the fact store and stops: reads and attributes the schema inputs, records the stage
+     * verdicts, classifies, loads the jOOQ catalog, scans the classpath census, captures the
+     * graph's partition, and returns. No warnings, no verdict, no completion catalog, no plan and
+     * no emitted sources.
+     *
+     * <p>Never throws on a schema the validator would reject, because it never asks it. A command
+     * whose job is to produce a store should not refuse over the input: the graph that classified
+     * is in the store either way, and what the schema build itself thought of the input is in
+     * there too, as the stage verdicts capture records. A schema that does not classify at all
+     * still fails, the same way every entry point does, since there is nothing to capture without
+     * a classified graph.
+     */
+    public void capture() {
+        runPipeline(Projection.CAPTURE);
+    }
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.
@@ -536,28 +555,39 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Which of the body's three optional halves one entry point wants. The four constants are the
-     * four public entry points, stated here rather than spelled at each call so the difference
+     * Which of the body's four optional halves one entry point wants. The five constants are the
+     * five public entry points, stated here rather than spelled at each call so the difference
      * between the projections is one table a reader can hold at once. Everything not switched on
      * here runs on every pass, because every pass needs it: one read, one assembly, one
-     * classification, one jOOQ load, one census, one capture, one validator run, one lint run.
+     * classification, one jOOQ load, one census, one capture.
+     *
+     * <p>{@code checks} is what makes a capture-only run a projection rather than a second
+     * pipeline. The other three components are all about products, and a run that only fills the
+     * store asks for none of them, which is the validating projection's triple exactly; the checks
+     * component is the one thing that tells the two apart. It gates both judgements the pipeline
+     * passes on a schema, the lint findings and the validator's verdict, because a command whose
+     * job is to produce a store should not spend a walk on an opinion nobody will read.
      *
      * @param emit        run the plan, the renderers, the writer, the orphan sweep and the SDL resource
      * @param compileGraph project the {@link CompileDependencyGraph} the dev compile driver reads
      * @param catalog     project the {@link CompletionData} completion catalog
+     * @param checks      assemble the warnings and run the validator over the classified schema
      */
-    private record Projection(boolean emit, boolean compileGraph, boolean catalog) {
+    private record Projection(boolean emit, boolean compileGraph, boolean catalog, boolean checks) {
         /** {@code GenerateMojo}: the emitted tree and nothing the dev loop or the editor wants. */
-        static final Projection GENERATE = new Projection(true, false, false);
+        static final Projection GENERATE = new Projection(true, false, false, true);
 
         /** {@code ValidateMojo}: the verdict alone, no output of any kind. */
-        static final Projection VALIDATE = new Projection(false, false, false);
+        static final Projection VALIDATE = new Projection(false, false, false, true);
 
         /** The editor-facing products with no emission: catalog and diagnostics. */
-        static final Projection BUILD_OUTPUT = new Projection(false, false, true);
+        static final Projection BUILD_OUTPUT = new Projection(false, false, true, true);
 
         /** The dev loop's pass: both halves at once, which is the whole point of it. */
-        static final Projection PASS = new Projection(true, true, true);
+        static final Projection PASS = new Projection(true, true, true, true);
+
+        /** {@code CaptureMojo}: the store filled and nothing else, on any schema that classifies. */
+        static final Projection CAPTURE = new Projection(false, false, false, false);
     }
 
     /**
@@ -613,8 +643,12 @@ public class GraphQLRewriteGenerator {
             : null;
         // Computed here, logged by the entry point that wants them: the one-shot build goals emit a
         // line per warning, the dev loop emits the same lines, and buildOutput() is silent because
-        // its consumer reads them off the store rather than the console.
-        var warnings = withLintFindings(schema, attributed);
+        // its consumer reads them off the store rather than the console. A capture-only run asks
+        // for no checks, so it assembles no warnings at all, the schema build's own included:
+        // nothing stores them and no entry point reads them back.
+        var warnings = projection.checks()
+            ? withLintFindings(schema, attributed)
+            : List.<BuildWarning>of();
 
         String outputPackage = ctx.outputPackage();
 
@@ -632,6 +666,11 @@ public class GraphQLRewriteGenerator {
                 // the producers convert onto the store one family at a time, and each conversion
                 // is a parameter change inside the plan rather than a lifecycle one here. The
                 // routine-write relation is the first that reads it.
+                if (!projection.checks()) {
+                    // The capture is done by the time this callback runs, so a run that wanted
+                    // only the store is finished here and pronounces no verdict on the schema.
+                    return new Captured(List.of(), List.of(), null);
+                }
                 var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
                 var fused = new ArrayList<>(walkErrors);
                 fused.addAll(storeFacts.violations());

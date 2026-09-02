@@ -19,8 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code docs/manual/reference/mojo-configuration.adoc}.
  *
  * <p>Asserts every editable parameter listed in {@code META-INF/maven/plugin.xml}
- * (the generated descriptor for {@code generate}, {@code validate}, and {@code dev})
- * has a row in the doc, and every parameter row in the doc corresponds to an editable
+ * (the generated descriptor for {@code generate}, {@code validate}, {@code capture} and
+ * {@code dev}) has a row in the doc, and every parameter row in the doc corresponds to an editable
  * parameter on one of those goals. Readonly parameters ({@code <editable>false</editable>}
  * in the descriptor; for example the Maven-injected {@code project}) are excluded
  * because they are not user-configurable and do not appear in the doc.
@@ -42,7 +42,8 @@ class MojoDocCoverageTest {
     private static final String PLUGIN_XML_PATH = "target/classes/META-INF/maven/plugin.xml";
 
     /** Goals whose parameters this test verifies against the doc. */
-    private static final Set<String> VERIFIED_GOALS = Set.of("generate", "validate", "dev");
+    private static final Set<String> VERIFIED_GOALS =
+        Set.of("generate", "validate", "capture", "dev");
 
     /**
      * Splits the doc text on AsciiDoc table delimiters ({@code |===}). The body
@@ -90,6 +91,19 @@ class MojoDocCoverageTest {
             + "<editable>true</editable>",
         Pattern.DOTALL);
 
+    /**
+     * The descriptor declares every goal this test verifies. Without this the filter above is
+     * silently one-sided: a goal missing from the descriptor (a dropped or misspelled
+     * {@code @Mojo} annotation) contributes no parameters, so the coverage assertion passes by
+     * having nothing to check rather than by the doc being right.
+     */
+    @Test
+    void everyVerifiedGoalIsDeclaredInTheDescriptor() throws IOException {
+        assertThat(goalsFromDescriptor())
+            .as("goals this test verifies that the plugin descriptor does not declare")
+            .containsAll(VERIFIED_GOALS);
+    }
+
     @Test
     void everyMojoParameterHasADocRowAndViceVersa() throws IOException {
         Set<String> parameters = parametersFromDescriptor();
@@ -111,20 +125,27 @@ class MojoDocCoverageTest {
             .isEmpty();
         assertThat(staleRows)
             .as("parameter rows in mojo-configuration.adoc with no matching editable "
-                + "parameter in plugin.xml (across the generate / validate / dev goals); "
+                + "parameter in plugin.xml (across the generate / validate / capture / dev "
+                + "goals); "
                 + "remove the stale row(s)")
             .isEmpty();
     }
 
-    private static Set<String> parametersFromDescriptor() throws IOException {
-        Path descriptor = Path.of(PLUGIN_XML_PATH).toAbsolutePath();
-        if (!Files.isRegularFile(descriptor)) {
-            throw new IllegalStateException(
-                "Plugin descriptor not found at " + descriptor + ". The "
-                    + "maven-plugin-plugin descriptor goal runs at process-classes "
-                    + "phase; ensure the module has been compiled before running tests.");
+    /** Every goal the generated descriptor declares. */
+    private static Set<String> goalsFromDescriptor() throws IOException {
+        Set<String> goals = new TreeSet<>();
+        Matcher mojoMatcher = MOJO_BLOCK.matcher(Files.readString(descriptor(), StandardCharsets.UTF_8));
+        while (mojoMatcher.find()) {
+            Matcher goalMatcher = MOJO_GOAL.matcher(mojoMatcher.group(1));
+            if (goalMatcher.find()) {
+                goals.add(goalMatcher.group(1));
+            }
         }
-        String text = Files.readString(descriptor, StandardCharsets.UTF_8);
+        return goals;
+    }
+
+    private static Set<String> parametersFromDescriptor() throws IOException {
+        String text = Files.readString(descriptor(), StandardCharsets.UTF_8);
         Set<String> names = new TreeSet<>();
         Matcher mojoMatcher = MOJO_BLOCK.matcher(text);
         while (mojoMatcher.find()) {
@@ -139,6 +160,18 @@ class MojoDocCoverageTest {
             }
         }
         return names;
+    }
+
+    /** The generated plugin descriptor, which both readers above parse. */
+    private static Path descriptor() {
+        Path descriptor = Path.of(PLUGIN_XML_PATH).toAbsolutePath();
+        if (!Files.isRegularFile(descriptor)) {
+            throw new IllegalStateException(
+                "Plugin descriptor not found at " + descriptor + ". The "
+                    + "maven-plugin-plugin descriptor goal runs at process-classes "
+                    + "phase; ensure the module has been compiled before running tests.");
+        }
+        return descriptor;
     }
 
     private static Set<String> parametersFromDoc() throws IOException {

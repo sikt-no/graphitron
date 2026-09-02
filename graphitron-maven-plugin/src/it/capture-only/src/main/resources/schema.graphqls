@@ -1,0 +1,16 @@
+# Deliberately a schema `graphitron:validate` refuses: the @reference names no foreign key in
+# the catalog, so Film.language is unclassified and the validator rejects the document. Every
+# other declaration is fine, which is what makes the facts worth capturing and the refusal worth
+# not making.
+type Query {
+  film: Film
+}
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "no_such_fk"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}

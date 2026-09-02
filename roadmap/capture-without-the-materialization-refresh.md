@@ -578,6 +578,36 @@ Step 5 left the mojo half of this easier than the plan assumed: `runGenerator` n
 capture port for the invocation, so a capture command gets one store for its run without saying
 anything about stores.
 
+**What shipped.** One component on `Projection`, `checks`, and it gates the validator walk as well
+as the lint findings. The plan named a lint switch alone, on the ground that lint is the one stage
+running before the capture. That is true, and it is also not the whole reason: a capture-only run
+reads no verdict, so running the validator buys an opinion the entry point discards. One component
+covering both judgements says what the command is in the goal's own words, no checks, no plan, no
+generated files, and it is still the thing that makes the new projection a distinct value rather
+than `VALIDATE`'s triple again.
+
+Skipping the checks skips the whole warning assembly, the schema build's own warnings included, not
+just the lint engine's. That is a saving and not a loss: no writer stores them and no entry point on
+this projection reads them back.
+
+Three of this step's delivery criteria are now tests. The first ships as a plugin integration test,
+`capture-only`, rather than as a run against `graphitron-sakila-example`: it is a real consumer
+build against the same catalog, invokes `graphitron:capture` by prefix with no `<executions>` block
+and no `<outputPackage>` (so the optional-package path is exercised end to end), and can assert the
+negative the example module cannot, that no emitted tree exists at all. The third ships as
+`CaptureProjectionPipelineTest`'s agreement case, comparing a capture-only run's store against a
+validating run's over every base relation rather than a chosen handful, because a gatherer dropped
+to make capture cheaper is exactly what a hand-picked list of families would miss.
+
+The second criterion needs a correction rather than a test. Capture records the SDL stages'
+verdicts, a parse refusal or an assembly error, and on those the goal fills the store and then fails
+as every entry point does, since there is no classified graph to capture without an assembly. A
+*validator* rejection has no recorded reason in the store at all: nothing in capture writes one, the
+classification walk's error stream being one of the plugin's four writers. So the criterion holds as
+"the schema's facts are in the store, and the recorded reasons are there for the refusals capture
+records"; where the rejection stream belongs is
+`roadmap/model-owns-every-gatherer.md`'s question, not this item's.
+
 **7. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
 changes, no query answers differently. Keep moves and behaviour changes in separate commits. The
 test schemas in `graphitron/src/test/resources/corpus` move with capture and are shared back up as a
@@ -828,6 +858,12 @@ above it.
   rejected.
 * **The command's store matches a normal run's.** Capture the same test schema both ways and check
   that every table capture writes holds the same rows, pre-computed tables included.
+
+  All three are met as of step 6, the second as amended: see step 6's "What shipped" for what a
+  capture run does and does not record about a schema it was handed, and why the first ships as a
+  plugin integration test rather than as a run against the example module. The first and third are
+  tests rather than checks a reviewer runs by hand; the second is a claim about the store's
+  families and is settled by reading what capture writes.
 * **`graphitron-model` compiles with the fact tier in it and no dependency on `graphitron`.** The
   build proves this by itself: a circular dependency between modules does not build.
 * **`graphitron-model` declares no dependency on `graphitron-javapoet`**, and no file under it

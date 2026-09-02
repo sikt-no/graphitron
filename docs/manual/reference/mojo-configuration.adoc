@@ -1,8 +1,8 @@
 = Maven plugin configuration
-:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the eleven shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the four goals (generate, validate, capture, dev), the eleven shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
 :!toc:
 
-`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds four of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
+`graphitron-maven-plugin` exposes four Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), `capture` (fills the fact store and stops), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds four of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
 
 This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
 
@@ -20,6 +20,11 @@ This page is the parameter-by-parameter reference. The xref:../tutorial/01-prere
 | `validate`
 | `validate`
 | Run load → attribute → classify → validate only. No Java is emitted; the pipeline stops after validation. Useful as a CI gate when you want a schema check without paying for the full code generation.
+| (none; both packages are optional, a sentinel is substituted)
+
+| `capture`
+| `validate`
+| Run load → attribute → classify → capture only. No checks, no Java, no verdict: the fact store is filled and the goal returns. Unlike `validate` it never fails over the schema it read, which is the point of having it; a store is most worth asking about when the schema is wrong.
 | (none; both packages are optional, a sentinel is substituted)
 
 | `dev`
@@ -41,17 +46,17 @@ The following parameters apply to every goal:
 | `outputDirectory`
 | `String` (path)
 | `${project.build.directory}/generated-sources/graphitron`
-| Directory the `generate` goal writes Java sources into. Resolved against the project basedir if relative. The `generate` goal also adds this directory as a compile source root so the consumer's `compile` phase picks up the generated code; `validate` and `dev` honour the parameter for their own context-construction but do not add the source root.
+| Directory the `generate` goal writes Java sources into. Resolved against the project basedir if relative. The `generate` goal also adds this directory as a compile source root so the consumer's `compile` phase picks up the generated code; `validate`, `capture` and `dev` honour the parameter for their own context-construction but do not add the source root.
 
 | `outputPackage`
 | `String` (Java package)
 | (none)
-| Root Java package the generator writes under. Required for `generate` and `dev`; optional for `validate` (a sentinel package is substituted because the validate goal never emits code). The `Graphitron` facade lands at `<outputPackage>.Graphitron` and `GraphitronContext` at `<outputPackage>.schema.GraphitronContext`.
+| Root Java package the generator writes under. Required for `generate` and `dev`; optional for `validate` and `capture` (a sentinel package is substituted because neither goal emits code). The `Graphitron` facade lands at `<outputPackage>.Graphitron` and `GraphitronContext` at `<outputPackage>.schema.GraphitronContext`.
 
 | `jooqPackage`
 | `String` (Java package)
 | (none)
-| Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package.
+| Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate` and `capture`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package. A `capture` run that falls back to the sentinel warns, because the catalog it then loads is empty and the store gets no database facts.
 
 | `graphName`
 | `String`
@@ -333,11 +338,13 @@ Note what the unmount clears to: the empty string, not `NULL`. Postgres cannot r
 
 Be aware of what this does and does not give you. A session variable is a convention: any SQL running on that connection can overwrite it, including a `@service` method of your own. If you need identity that consumer code on the same connection cannot forge, mount it with a definer-rights routine, or pass a signed token your `mount` verifies in the database. That choice is yours to make and graphitron cannot check it for you, which is why it is explained in xref:../../security.adoc[the security guide] rather than warned about at build time.
 
-== `validate`-goal sentinel
+== The non-emitting goals' package sentinel
 
-The `validate` goal exists so consumers can run `mvn graphitron:validate` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the classifier stage still type-checks against `RewriteContext`'s non-null contract. The sentinel never reaches generated code; the validate pipeline emits nothing.
+The `validate` and `capture` goals exist so consumers can run `mvn graphitron:validate` or `mvn graphitron:capture` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the classifier stage still type-checks against `RewriteContext`'s non-null contract. The sentinel never reaches generated code; neither pipeline emits anything.
 
 If the parameters *are* configured (e.g. when `validate` is bound to the `validate` lifecycle phase alongside a `generate` execution), the configured values flow through normally; the sentinel only activates when the parameters are absent.
+
+A sentinel `<jooqPackage>` resolves to no catalog at all, and both goals log a warning saying so. For `capture` the consequence is worth stating twice, which is why the goal warns a second time in its own words: the store it leaves behind holds the graph with no tables, columns or keys behind it, and a reader asking the store about the database gets nothing rather than an error.
 
 == Putting it together
 

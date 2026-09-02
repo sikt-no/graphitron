@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>no.sikt.graphitron.it</groupId>
+  <artifactId>capture-only</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <!-- The jOOQ catalog the schema's @table directives reflect against, on the project's own
+         compile classpath, which is where the goal sources its codegen classpath from. -->
+    <dependency>
+      <groupId>no.sikt</groupId>
+      <artifactId>graphitron-sakila-db</artifactId>
+      <version>@project.version@</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>no.sikt</groupId>
+        <artifactId>graphitron-maven-plugin</artifactId>
+        <version>@project.version@</version>
+        <!--
+          Plugin-level configuration and no <executions> at all, because that is the shape this
+          IT is about: `mvn graphitron:capture` from the command line, with no <outputPackage>
+          threaded through an execution block. The sentinel covers the absent parameter, and the
+          goal emits nothing for it to have been needed by.
+
+          The store home is pinned inside this project's own build directory rather than left to
+          the invoker's shared one, so verify.groovy can find the file the run left behind and
+          `mvn clean` removes it.
+        -->
+        <configuration>
+          <schemaInputs>
+            <schemaInput>
+              <pattern>src/main/resources/schema.graphqls</pattern>
+            </schemaInput>
+          </schemaInputs>
+          <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
+          <storeDirectory>target/model-store</storeDirectory>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>
