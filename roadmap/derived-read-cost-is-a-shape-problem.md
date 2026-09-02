@@ -583,8 +583,11 @@ decomposition, not every positional walk, and the two are not the same relation.
 `intent_argmapping_key_column_candidate` and `intent_argmapping_projection_defect` read it one
 position past where a path resolved, for the segment the author wrote naming a key column; that
 segment names no input field, so it is in no candidate tree and the join is the only way to reach it.
-`intent_argmapping_segment_binding` is the old shape and is the exception, still aligning
-decompositions, and it has no reader at all in SQL or in main sources, which is what R896 is for.
+`intent_argmapping_segment_binding` was the old shape and the exception, still aligning
+decompositions. R896's census came back empty, no reader in SQL or in main sources, and it is
+retired: the view, its own test, its agreement registration and its line on the undeclared
+roster are all gone, and three comments that named it are repaired, two of which had gone stale
+when the candidate tree took its readers.
 One real target was left: `intent_type_backing_seed` joined the segment relation at position zero to
 read a path head that `graphitron_arg_mapping_pair.head_segment` already carries, which is exactly
 what that column was added to stop readers doing. Measured on the capture, the two agree on 108 of
@@ -774,8 +777,6 @@ None of them is a precondition for anything left in this item.
 - **R895**, the four language-server surfaces that cannot tell a minted Connection type from an
   authored one. The provenance is a row now, so the mechanism is easy; what is owed is four
   decisions about what each surface should show.
-- **R896**, the census that would retire `intent_argmapping_segment_binding`. Its original reason is
-  gone and it still has readers in the plan, which is a census rather than a deletion.
 - **R897**, typeId uniqueness, which is scoped to the supergraph and therefore cannot be a
   constraint on a relation capture writes one graph at a time.
 - **R898**, the candidate tree stopping one level above the key column, which is this item's own

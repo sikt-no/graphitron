@@ -28,9 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What {@code graphitron_argmapping_match} returns: the last thing an {@code argMapping} path
  * bound, whether that thing carries a {@code @nodeId}, and how many segments the path spells beyond
- * it. A reduction over {@code intent_argmapping_segment_binding} rather than a resolution of its
- * own, so the cases here are about the reduction and its three added columns; where the binding
- * itself stops is the sibling suite's subject.
+ * it. The resolution itself, over what an author wrote and what the coordinate offers, so the cases
+ * here are about where a written path stops against the candidate tree.
  *
  * <p>Absence means the path bound nothing at all, which happens two ways: at a path-step
  * {@code @condition}, where the walk resolves against an empty slot map, and at any other site where

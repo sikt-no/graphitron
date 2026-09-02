@@ -4378,7 +4378,7 @@ COMMENT ON COLUMN intent_condition_slot.graph_name IS 'the owning graph''s parti
 COMMENT ON COLUMN intent_condition_slot.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, and what decides which arm drew the row';
 COMMENT ON COLUMN intent_condition_slot.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_argmapping_entry.use_site already use';
 COMMENT ON COLUMN intent_condition_slot.slot_name IS 'the slot''s own name, completing the key: the argument name on an ARGUMENT row, the input field''s name on an INPUT_FIELD row. This is the name a parameter matches to bind by identity, and the name an argMapping head segment names';
-COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, the same two-value vocabulary intent_argmapping_segment_binding.bound_kind uses, saying which relation declared the slot';
+COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, saying which relation declared the slot: graphql_argument at a site whose slots are a field''s arguments, and graphql_field at an input-field site. A closed two-value vocabulary, the arms of this view being the whole of what can produce a slot';
 COMMENT ON COLUMN intent_condition_slot.container_type_name IS 'the type owning the coordinate the directive sits on, carried so the slot''s declaration is one join away';
 COMMENT ON COLUMN intent_condition_slot.container_field_name IS 'the field owning the coordinate: the field the argument belongs to on an ARGUMENT row, the input field itself on an INPUT_FIELD row';
 COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type with every wrapper stripped, as the declaring relation spells it';
@@ -7030,103 +7030,6 @@ COMMENT ON COLUMN intent_argmapping_bound_parameter_type.param_name IS 'the left
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.java_type IS 'the parameter''s Java type, fully qualified: sql_routine_parameter.binding_type on the routine arm and jvm_declared_type_ref.referenced_class at the root type path on the other seven. Qualified on both by construction, which is the whole reason the classpath arm reads the decomposition rather than the parameter row beside it; the view''s own comment states that. The root of the declared type and so the raw head of a parameterised one, List rather than List<Film>: a comparison caring about the element type descends that relation''s own type_path rather than asking for a second column here';
 COMMENT ON COLUMN intent_argmapping_bound_parameter_type.candidates IS 'how many distinct types resolved for this pair, this row''s being one of them; 1 on an unambiguous parameter. Above one means an overload set or a doubly-declared class whose parameters of this name differ in type, which is a resolution nothing here picks between: a reader that must have one type requires 1, on intent_bound_table.candidates'' terms';
 
-CREATE VIEW intent_argmapping_segment_binding
-  (graph_name, site, use_site, type_name, field_name, position, argument_path,
-   segment_position, segment_name, bound_kind, bound_type_name, bound_field_name,
-   bound_argument_name) AS
-WITH headed (graph_name, site, use_site, type_name, field_name, position, argument_path,
-             head, head_kind) AS (
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, ap.head_segment, ap.head_kind
-    FROM graphitron_argmapping_entry ap
-   WHERE ap.site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION')
-     AND EXISTS (SELECT 1 FROM graphql_argument a
-                  WHERE a.graph_name = ap.graph_name AND a.type_name = ap.type_name
-                    AND a.field_name = ap.field_name AND a.argument_name = ap.head_segment)
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, ap.head_segment, ap.head_kind
-    FROM graphitron_argmapping_entry ap
-   WHERE ap.site = 'ARGUMENT_CONDITION' AND ap.head_segment = ap.argument_name
-   UNION ALL
-  SELECT ap.graph_name, ap.site, ap.use_site, ap.type_name, ap.field_name, ap.position,
-         ap.argument_path, ap.head_segment, ap.head_kind
-    FROM graphitron_argmapping_entry ap
-   WHERE ap.site = 'INPUT_FIELD_CONDITION' AND ap.head_segment = ap.field_name
-)
-SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-       0, h.head, 'ARGUMENT', h.type_name, h.field_name, h.head
-  FROM headed h
- WHERE h.head_kind = 'ARGUMENT'
- UNION ALL
-SELECT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position, h.argument_path,
-       0, h.head, 'INPUT_FIELD', h.type_name, h.head, CAST(NULL AS VARCHAR)
-  FROM headed h
- WHERE h.head_kind = 'INPUT_FIELD'
- UNION ALL
-SELECT DISTINCT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position,
-       h.argument_path, sg.position, sg.segment_name,
-       'INPUT_FIELD', lf.container_type_name, lf.field_name, CAST(NULL AS VARCHAR)
-  FROM headed h
-  JOIN intent_input_occurrence_path p
-    ON p.graph_name = h.graph_name AND p.root_type_name = h.type_name
-   AND p.root_field_name = h.field_name AND p.root_argument_name = h.head
-  JOIN intent_input_occurrence_path_step lf
-    ON lf.graph_name = p.graph_name AND lf.path = p.path AND lf.ordinal = p.depth
-  JOIN graphitron_argument_path_segment sg
-    ON sg.graph_name = h.graph_name AND sg.type_name = h.type_name
-   AND sg.field_name = h.field_name AND sg.argument_path = h.argument_path
-   AND sg.position = p.depth
- WHERE h.head_kind = 'ARGUMENT' AND p.depth >= 1
-   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
-                    WHERE o.graph_name = p.graph_name AND o.path = p.path
-                      AND NOT EXISTS (
-                        SELECT 1 FROM graphitron_argument_path_segment s2
-                         WHERE s2.graph_name = h.graph_name AND s2.type_name = h.type_name
-                           AND s2.field_name = h.field_name
-                           AND s2.argument_path = h.argument_path
-                           AND s2.position = o.ordinal
-                           AND s2.segment_name = o.field_name))
- UNION ALL
-SELECT DISTINCT h.graph_name, h.site, h.use_site, h.type_name, h.field_name, h.position,
-       h.argument_path, sg.position, sg.segment_name,
-       'INPUT_FIELD', lf.container_type_name, lf.field_name, CAST(NULL AS VARCHAR)
-  FROM headed h
-  JOIN intent_input_occurrence_path_step an
-    ON an.graph_name = h.graph_name AND an.container_type_name = h.type_name
-   AND an.field_name = h.head
-  JOIN intent_input_occurrence_path_step lf
-    ON lf.graph_name = an.graph_name AND lf.path = an.path AND lf.ordinal > an.ordinal
-  JOIN graphitron_argument_path_segment sg
-    ON sg.graph_name = h.graph_name AND sg.type_name = h.type_name
-   AND sg.field_name = h.field_name AND sg.argument_path = h.argument_path
-   AND sg.position = lf.ordinal - an.ordinal
- WHERE h.head_kind = 'INPUT_FIELD'
-   AND NOT EXISTS (SELECT 1 FROM intent_input_occurrence_path_step o
-                    WHERE o.graph_name = an.graph_name AND o.path = an.path
-                      AND o.ordinal > an.ordinal AND o.ordinal <= lf.ordinal
-                      AND NOT EXISTS (
-                        SELECT 1 FROM graphitron_argument_path_segment s2
-                         WHERE s2.graph_name = h.graph_name AND s2.type_name = h.type_name
-                           AND s2.field_name = h.field_name
-                           AND s2.argument_path = h.argument_path
-                           AND s2.position = o.ordinal - an.ordinal
-                           AND s2.segment_name = o.field_name));
-COMMENT ON VIEW intent_argmapping_segment_binding IS 'What each segment of an argMapping path binds to, one row per segment that names something reachable. The grain is the segment and not the path, which is the whole of the design: graphitron_argument_path_segment already says whether a segment exists at a position, so a position that has a segment and no row here means exactly one thing, it means it locally, and no verdict vocabulary is needed to say it. A path that stops halfway is therefore a prefix of rows rather than a stated silence, and the reader who wants to know where it stopped reads the last position that bound. One row per segment of every pair row of graphitron_argmapping_entry, at every site that spells an argMapping, which is what makes uniformity across @routine, @service and @condition structural rather than three call sites agreeing by discipline. A keying over intent_input_occurrence_path rather than a second walk of the input surface, joined through graphitron_argument_path_segment so neither the occurrence key nor the written path is ever split: the segment relation exists precisely so no reader has to, and a second decomposition here would be two spellings of one resolution that agree until one of them changes. The head is not always an argument, so position 0 has three arms, and which slots a head may name is the walk''s own rule read off the site: every argument of the field at a @routine, @service or output-field @condition, the pair''s own argument at an argument-site @condition, the pair''s own input field at an input-field @condition, and nothing at all at a path-step @condition, where no arm fires and the path binds nothing at any position. Positions below the head need no recursion, and that is what lets this be a view at all: every prefix of an occurrence path is its own row, so a segment at position j binds exactly when some occurrence path of depth j has every step matching the segment at the same ordinal, which is a join per position rather than a walk. The rows are prefix-dense by construction, since the prefix of a matching path matches too, so the bound positions of a pair are always 0 through some k with no hole; a reader may rely on that rather than checking for one. DISTINCT because the join is one-to-many in occurrence paths while the answer is one: two paths agreeing on the field names at ordinals 1 through j are descending the same input fields from the same root type, so their container types agree ordinal by ordinal and the tied rows cannot disagree. Two caveats the arms inherit. The occurrence expansion stops at a type already visited on the path, the classification walk''s own first-visit guard restated, so a cyclic re-entry contributes no step and a path that would have re-entered binds up to the last segment before the cycle and no further; that stop is load-bearing rather than incidental. And an input type no argument reaches has no occurrence row to descend, so a dotted input-field head binds at position 0 and nowhere below, which looks from here like any other path that stopped; the two are deliberately one fact at this grain, and a reader who needs them apart joins intent_input_occurrence_path_step to ask whether the head''s type is reached at all.';
-COMMENT ON COLUMN intent_argmapping_segment_binding.graph_name IS 'the owning graph''s partition, carried from the pair relation';
-COMMENT ON COLUMN intent_argmapping_segment_binding.site IS 'which SDL site spelled the pair, in graphitron_argmapping_entry''s closed vocabulary of nine; with the use-site key, the position and the segment position this is the grain, and it is what a consumer switches on to know whether an emitter is wired for the answer';
-COMMENT ON COLUMN intent_argmapping_segment_binding.use_site IS 'the consuming coordinate, serialized as graphitron_argmapping_entry serializes it; the coordinate a rejection about this pair names, and the key a reader joins that relation on to recover the arm''s own components';
-COMMENT ON COLUMN intent_argmapping_segment_binding.type_name IS 'the spelling site''s owning type, carried so the segment decomposition is one join away';
-COMMENT ON COLUMN intent_argmapping_segment_binding.field_name IS 'the spelling site''s field name within that type';
-COMMENT ON COLUMN intent_argmapping_segment_binding.position IS 'the pair''s 0-based position within its own argMapping list';
-COMMENT ON COLUMN intent_argmapping_segment_binding.argument_path IS 'the path as written, carried so a message can quote what the author wrote and so the segment rows are reachable without a second read of the pair';
-COMMENT ON COLUMN intent_argmapping_segment_binding.segment_position IS 'the bound segment''s 0-based position within the path, the same ordinal graphitron_argument_path_segment gives it. Position 0 is the head; the highest bound position of a pair is where the path stopped, and a segment existing one above it is a name that resolved to nothing';
-COMMENT ON COLUMN intent_argmapping_segment_binding.segment_name IS 'the segment as the author spelled it, carried beside what it bound so a reader never re-joins the segment relation to say which name this row is about';
-COMMENT ON COLUMN intent_argmapping_segment_binding.bound_kind IS 'ARGUMENT where the segment bound a field argument, which only position 0 can do and only at a site whose slots are arguments; INPUT_FIELD where it bound an input field, which is every position below the head and also position 0 at an input-field @condition. A closed two-value vocabulary, and the column saying which of the two @nodeId relations a reader joins to ask whether this binding carries one';
-COMMENT ON COLUMN intent_argmapping_segment_binding.bound_type_name IS 'the bound thing''s owning type: the argument''s own owning type on an ARGUMENT binding, the input object declaring the field on an INPUT_FIELD binding';
-COMMENT ON COLUMN intent_argmapping_segment_binding.bound_field_name IS 'the bound thing''s owning field on an ARGUMENT binding, and the input field itself on an INPUT_FIELD binding. With the columns around it this is the @nodeId relation''s own key, so a binding''s directive row and its source position are one join away';
-COMMENT ON COLUMN intent_argmapping_segment_binding.bound_argument_name IS 'the argument''s name on an ARGUMENT binding; NULL on an INPUT_FIELD binding, whose key needs no argument component';
-
 CREATE VIEW graphitron_argmapping_match
   (graph_name, site, use_site, type_name, field_name, position, argument_path,
    segment_position, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
@@ -7265,7 +7168,7 @@ SELECT n.graph_name, n.site, n.use_site, n.type_name, n.field_name, n.position, 
    AND p.position = n.position AND p.candidates = 1
  WHERE p.java_type IS NULL OR n.column_java_type IS NULL
     OR p.java_type = n.column_java_type;
-COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key, where the projected value can actually reach the parameter it is bound to: the candidate rows beside it, joined to the consuming parameter''s own Java type and kept only where the two agree. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is intent_argmapping_segment_binding''s, reduced to a leaf next door, the key list is intent_resolved_node_key_column''s, the name match and the column''s type are intent_argmapping_key_column_candidate''s, and the parameter''s type is intent_argmapping_bound_parameter_type''s; this is only where they meet. The type agreement is a join predicate and not a check performed after the fact, which is the whole of why it is sound: an emitter reads this relation, so a pair whose types disagree is not a projection an emitter can see, and there is no order of operations in which one is emitted and then rejected. Equality of the erased Java type, no widening admitted: a SMALLINT key column bound to an Integer parameter is a disagreement here, and whether that is a mismatch worth telling an author about is a question the detection''s message answers rather than one this predicate softens, softening it being what would let a narrowing through. The gate fires only where both operands are known, and standing aside on either absence is the deliberate half. A parameter whose name the classpath census cannot report (a consumer compiled without -parameters, a primitive int, a reference resolving no method) and a column the catalog cannot type (a node type with no unambiguous table binding, a pinned key column the bound table does not have) both leave the pair projecting exactly as it did before this predicate existed. Requiring the match in either case would have turned such a pair into one that is neither a projection nor a defect, which is the silence this whole family exists to close, and on the column side it would additionally have contradicted the key-column relation''s own rule that a pinned name resolves without a table. Standing aside leaves those where they were, projections whose types nothing checked, with the compiler''s own error as the backstop it always was. So the gate strictly adds rejections and removes no emission, which is what makes it safe to land as a join rather than as a staged flip. One trailing segment or none, never two and never a minimum, and where there is one it is reached by position: all of that is the candidate relation''s, stated there. The none case is the inferred form, a one-column key needing no segment to name it, and it resolves here on exactly the terms the authored form does: the same column, the same type reached the same way, the same row shape. So this relation is read without asking which of them a row came from, which is what makes the two one emission rather than two. Which arm answered rides here all the same, on trailing_segment_name, because an emitter needs one fact the row shape does not otherwise carry: where in the written path the wire id it decodes sits. That is provenance a reader may ignore and an emitter must not, so it is carried rather than left one join away on the candidate. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing under a key of two or more columns is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a candidate whose types disagree is the type mismatch, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
+COMMENT ON VIEW intent_resolved_node_key_projection IS 'An argMapping binding that decodes a node id and projects one column out of the decoded key, where the projected value can actually reach the parameter it is bound to: the candidate rows beside it, joined to the consuming parameter''s own Java type and kept only where the two agree. The reduction the whole item turns on, and the row an emitter reads to know which column of a decoded record to hand a routine parameter. A reduction over the relations beside it rather than a derivation of its own, which is what the resolved_ prefix names: the path resolution is graphitron_argmapping_match''s, the key list is intent_resolved_node_key_column''s, the name match and the column''s type are intent_argmapping_key_column_candidate''s, and the parameter''s type is intent_argmapping_bound_parameter_type''s; this is only where they meet. The type agreement is a join predicate and not a check performed after the fact, which is the whole of why it is sound: an emitter reads this relation, so a pair whose types disagree is not a projection an emitter can see, and there is no order of operations in which one is emitted and then rejected. Equality of the erased Java type, no widening admitted: a SMALLINT key column bound to an Integer parameter is a disagreement here, and whether that is a mismatch worth telling an author about is a question the detection''s message answers rather than one this predicate softens, softening it being what would let a narrowing through. The gate fires only where both operands are known, and standing aside on either absence is the deliberate half. A parameter whose name the classpath census cannot report (a consumer compiled without -parameters, a primitive int, a reference resolving no method) and a column the catalog cannot type (a node type with no unambiguous table binding, a pinned key column the bound table does not have) both leave the pair projecting exactly as it did before this predicate existed. Requiring the match in either case would have turned such a pair into one that is neither a projection nor a defect, which is the silence this whole family exists to close, and on the column side it would additionally have contradicted the key-column relation''s own rule that a pinned name resolves without a table. Standing aside leaves those where they were, projections whose types nothing checked, with the compiler''s own error as the backstop it always was. So the gate strictly adds rejections and removes no emission, which is what makes it safe to land as a join rather than as a staged flip. One trailing segment or none, never two and never a minimum, and where there is one it is reached by position: all of that is the candidate relation''s, stated there. The none case is the inferred form, a one-column key needing no segment to name it, and it resolves here on exactly the terms the authored form does: the same column, the same type reached the same way, the same row shape. So this relation is read without asking which of them a row came from, which is what makes the two one emission rather than two. Which arm answered rides here all the same, on trailing_segment_name, because an emitter needs one fact the row shape does not otherwise carry: where in the written path the wire id it decodes sits. That is provenance a reader may ignore and an emitter must not, so it is carried rather than left one join away on the candidate. Absence means this pair is not a projection, and every way of arriving at that absence is a query over the relations beside it rather than a fact this one withheld: a leaf with nothing trailing under a key of two or more columns is the bare form a rejection closes, a leaf with two or more trailing segments is the typo, a trailing segment matching no key column is the unknown column, a candidate whose types disagree is the type mismatch, a leaf carrying @nodeId with no typeName: is the missing type name, and a pair with no leaf row at all is a path the walk rejects before the store is written. None of them is this relation''s to report, which is what keeps it a positive population an emitter can trust rather than a verdict it has to interpret.';
 COMMENT ON COLUMN intent_resolved_node_key_projection.graph_name IS 'the owning graph''s partition, carried from both sides of the reduction, which agree on it by the join';
 COMMENT ON COLUMN intent_resolved_node_key_projection.site IS 'which SDL site spelled the pair, in graphitron_argmapping_entry''s closed vocabulary of nine; the column a consumer reads to know whether an emitter is wired for this projection yet';
 COMMENT ON COLUMN intent_resolved_node_key_projection.use_site IS 'the consuming coordinate, serialized as graphitron_argmapping_entry serializes it; with site and position the grain, and the key a planner joins the pair relation on to recover the application ordinal a command row needs';
@@ -10437,7 +10340,7 @@ INSERT INTO meta_relation VALUES
   ('intent_condition_context_parameter', 'condition-site-parameter', 'derivation',
    'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches.',
    'For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.',
-   'The role a parameter plays is decided per application of the directive rather than by the signature, so the grain is the site: one signature named at two sites answers differently. A name match alone is not the rule. A parameter typed to receive the source table belongs to the table role whatever it is called, and an argument binding is asked first, so a parameter sharing a slot''s name reads a context key only where no binding claims that slot. What is in scope at each spelling is read off intent_argmapping_segment_binding rather than restated here. A parameter absent from this relation is not therefore bound: absence carries no verdict.');
+   'The role a parameter plays is decided per application of the directive rather than by the signature, so the grain is the site: one signature named at two sites answers differently. A name match alone is not the rule. A parameter typed to receive the source table belongs to the table role whatever it is called, and an argument binding is asked first, so a parameter sharing a slot''s name reads a context key only where no binding claims that slot. What is in scope at each spelling is read off intent_condition_slot rather than restated here. A parameter absent from this relation is not therefore bound: absence carries no verdict.');
 
 CREATE TABLE meta_materialize_dependency (
   source_view_name VARCHAR NOT NULL,

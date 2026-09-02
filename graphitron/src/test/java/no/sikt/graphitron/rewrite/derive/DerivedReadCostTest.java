@@ -108,8 +108,14 @@ class DerivedReadCostTest {
      * <p>Raised to 118 by {@code intent_condition_context_parameter} and {@code intent_condition_slot},
      * neither of which reaches a registration's target, so {@value #READERS_WITH_CELLS} and
      * {@link #CELLS} did not move with them.
+     *
+     * <p>Lowered to 117 by retiring {@code intent_argmapping_segment_binding}, and the two figures
+     * that did not move are the interesting half: a view leaving takes its cells with it only if it
+     * had any, and this one reached no registration at all. So a retirement costs this domain
+     * nothing beyond the row, which is the opposite of what retiring a registration does, where the
+     * view count holds still and the cells fall.
      */
-    private static final int READERS_IN_SCHEMA = 118;
+    private static final int READERS_IN_SCHEMA = 117;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 65;
