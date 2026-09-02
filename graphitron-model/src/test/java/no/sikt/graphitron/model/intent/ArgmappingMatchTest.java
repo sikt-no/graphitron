@@ -14,7 +14,6 @@ import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
@@ -62,14 +61,14 @@ class ArgmappingMatchTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH)).isEqualTo("inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("ARGUMENT");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_ARGUMENT_NAME))
                 .isEqualTo("inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isTrue();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -85,7 +84,7 @@ class ArgmappingMatchTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId.inventory_id");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH)).isEqualTo("input.inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("INPUT_FIELD");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME))
                 .isEqualTo("RentFilmInput");
@@ -94,7 +93,7 @@ class ArgmappingMatchTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_ARGUMENT_NAME)).isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("inventory_id");
         });
     }
 
@@ -111,12 +110,13 @@ class ArgmappingMatchTest {
                 "input.nested.inventoryId.inventory_id");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH))
+                .isEqualTo("input.nested.inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME))
                 .isEqualTo("NestedInput");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("inventory_id");
         });
     }
 
@@ -131,7 +131,8 @@ class ArgmappingMatchTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pNested", "input.nested.inventoryId");
 
             assertThat(rows(dsl)).hasSize(1);
-            assertThat(only(dsl).get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(2);
+            assertThat(only(dsl).get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH))
+                .isEqualTo("input.nested.inventoryId");
         });
     }
 
@@ -166,7 +167,6 @@ class ArgmappingMatchTest {
             seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "since", "Inventory");
             seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "p", "since");
-            seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "since");
 
             assertThat(rows(dsl))
                 .as("a head that would bind anywhere else binds nothing here")
@@ -189,7 +189,7 @@ class ArgmappingMatchTest {
             var row = only(dsl);
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isNull();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -235,23 +235,23 @@ class ArgmappingMatchTest {
         });
     }
 
-    // ===== Trailing segments are counted, not flagged =====
+    // ===== One name past a candidate is a row; two is nothing =====
 
     /**
-     * Two trailing segments must not read as a projection. One is this item's form; two is a typo or
-     * a nested form neither this relation nor its readers claim to resolve, and the count is what
-     * lets the two rejections say different things.
+     * Two names past what a path opened is not a partial resolution, it is a spelling nothing at
+     * the coordinate has. The candidate relation holds every legal spelling, so the question "how
+     * far did this get" has only two answers worth a row: the whole path bound, or the whole path
+     * less its last name bound. Anything shorter is a refusal, and it is the same refusal a head
+     * naming nothing gets, because an author is owed the same message either way.
      */
     @Test
-    void twoTrailingSegmentsAreCountedRatherThanCollapsed() {
+    void twoNamesPastACandidateBindNothing() {
         withRentFilmInput(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId",
                 "input.inventoryId.inventory_id.nope");
 
-            var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(1);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(2);
+            assertThat(rows(dsl)).isEmpty();
         });
     }
 
@@ -267,12 +267,12 @@ class ArgmappingMatchTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pNope", "input.nope");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH))
                 .as("the path stopped at the head")
-                .isZero();
+                .isEqualTo("input");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("ARGUMENT");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("nope");
         });
     }
 
@@ -304,12 +304,11 @@ class ArgmappingMatchTest {
             seedFieldNodeId(dsl, GRAPH, "Inner", "inventoryId", "Inventory");
             seedFieldConditionArgmappingEntry(dsl, GRAPH, "Orphan", "inner", 0,
                 "p", "inner.inventoryId");
-            seedArgumentPathSegments(dsl, GRAPH, "Orphan", "inner", "inner.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION))
-                .as("the path resolved both segments")
-                .isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH))
+                .as("the path resolved both names")
+                .isEqualTo("inner.inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME)).isEqualTo("Inner");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
@@ -317,7 +316,7 @@ class ArgmappingMatchTest {
                 .as("the @nodeId is on what the path bound, so it is declared")
                 .isTrue();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -338,8 +337,8 @@ class ArgmappingMatchTest {
             var all = rows(dsl);
             assertThat(all).hasSize(2);
             assertThat(all.stream()
-                .map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)))
-                .containsExactlyInAnyOrder(1, 0);
+                .map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)))
+                .containsExactlyInAnyOrder("inventory_id", null);
             assertThat(all.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });
@@ -374,7 +373,6 @@ class ArgmappingMatchTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "byActor", "Actor");
             seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "byActor", 0,
                 "p", "byActor");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
             seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "other", 0,
                 "p", "byActor");
 
@@ -432,7 +430,6 @@ class ArgmappingMatchTest {
                              int position, String paramName, String argumentPath) {
         seedRoutineArgmappingEntry(dsl, GRAPH, typeName, fieldName, ordinal, position, paramName,
             argumentPath);
-        seedArgumentPathSegments(dsl, GRAPH, typeName, fieldName, argumentPath);
     }
 
     // ===== Reads =====

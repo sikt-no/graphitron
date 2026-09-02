@@ -305,7 +305,7 @@ class ArgBindingMapTest {
 
     /**
      * Every remaining segment is carried, not one. How many follow the leaf is what the store's
-     * {@code trailing_segments} counts and its {@code TRAILING_SEGMENTS_BEYOND_ONE} arm rejects, so
+     * {@code trailing_name} carries and the unknown-column arm rejects, so
      * truncating here would hide a miscount from the relation that reports it.
      */
     @Test

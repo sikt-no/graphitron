@@ -17,7 +17,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
@@ -1268,19 +1267,14 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, stepPosition)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.POSITION, position)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME, paramName)
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_PATH, argumentPath)
-            // Derived here the way capture derives it, from the path text, so a fixture cannot
-            // state a head the same path would not produce. The head's kind is not set: the
-            // relation computes it, so there is nowhere for a fixture to disagree with it.
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.HEAD_SEGMENT,
-                argumentPath.indexOf('.') < 0 ? argumentPath
-                    : argumentPath.substring(0, argumentPath.indexOf('.')))
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.HEAD_KIND,
-                argumentPath.startsWith("$") ? "SIGIL"
-                    : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_COORDINATE,
-                "INPUT_FIELD_CONDITION".equals(site) ? typeName : typeName + "." + fieldName)
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_PATH, argumentPath)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.WRITTEN_PATH, argumentPath)
+            // Derived here the way capture derives it, from the site, so a fixture cannot state a
+            // coordinate the same site would not produce. The three split columns are not set:
+            // the engine computes them off the path, so there is nowhere to disagree with them.
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE,
+                "ARGUMENT_CONDITION".equals(site)
+                    ? SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName)
+                    : SchemaCoordinateSyntax.ofField(typeName, fieldName))
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_LINE, location.value1())
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_COLUMN, location.value2())
@@ -1584,32 +1578,6 @@ public final class SeededStore {
         }
         pair(dsl, graphName, "REFERENCE_FOR_STEP", typeName, fieldName, null, ordinal,
             stepPosition, position, paramName, argumentPath);
-    }
-
-    /**
-     * The segment decomposition capture writes beside a pair, one row per dot-separated segment in
-     * written order. Stated by splitting the path the same way the lexer does, since the invariant
-     * the relation carries is that the segments in order rejoin the path exactly.
-     */
-    public static void seedArgumentPathSegments(DSLContext dsl, String graphName, String typeName,
-                                                String fieldName, String argumentPath) {
-        var segments = argumentPath.split("\\.", -1);
-        for (int position = 0; position < segments.length; position++) {
-            dsl.insertInto(GRAPHITRON_ARGUMENT_PATH_SEGMENT)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.TYPE_NAME, typeName)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.ARGUMENT_PATH, argumentPath)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.POSITION, position)
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.SEGMENT_NAME, segments[position])
-                // Derived as capture derives it: the path from the head up to this segment, which
-                // is what a candidate at this entry's coordinate is keyed by.
-                .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.CANDIDATE_PATH,
-                    String.join(".", java.util.Arrays.asList(segments)
-                        .subList(0, position + 1)))
-                .onDuplicateKeyIgnore()
-                .execute();
-        }
     }
 
     /**

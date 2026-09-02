@@ -156,7 +156,8 @@ through its generic `marker` helper (5), and by `MacroCapture` (3).
 
 The eleven that need a real parser cluster on three of them:
 `GraphQLSelectionParser.parseEntries` serves the eight `*_arg_mapping_pair` / `*_column_mapping_pair`
-relations plus `graphitron_argument_path_segment`; `ArgMappingSigil.scan` serves
+relations, and served `graphitron_argument_path_segment` until that relation was retired;
+`ArgMappingSigil.scan` serves
 `graphitron_service_arg_mapping_sigil`; `FieldSetGrammar.paths` serves
 `graphitron_federation_key_field`.
 

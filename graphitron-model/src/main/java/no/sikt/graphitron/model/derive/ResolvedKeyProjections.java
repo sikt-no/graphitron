@@ -101,11 +101,11 @@ public final class ResolvedKeyProjections {
         var nodeTables = StoreNodeTables.read(dsl, graphName);
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         return new Projections(dsl
-            .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH, p.TRAILING_SEGMENT_NAME,
+            .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH, p.TRAILING_NAME,
                 p.NODE_TYPE_NAME, p.COLUMN_NAME)
             .from(p)
             .where(p.GRAPH_NAME.eq(graphName))
-            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.ARGUMENT_PATH)
+            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH)
             .fetch(row -> projectionOf(nodeTables, row.value1(), row.value2(), row.value3(),
                 row.value4(), row.value5(), row.value6())));
     }

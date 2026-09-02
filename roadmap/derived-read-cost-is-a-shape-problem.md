@@ -206,6 +206,27 @@ roster is what keeps a new relation from arriving undeclared.
 positional segment list, a hundred-odd probes per statement. `graphitron_argmapping_candidate` keys
 the candidate tree by the path it resolves, and the resolution is a prefix match ranked by depth.
 
+**The argMapping family put on schema coordinates.** The candidate tree is keyed by the coordinate
+the directive carrying the argMapping sits on, spelled as the GraphQL specification spells one and
+anchored by `graphql_coordinate`: `Type.field`, `Type.field(argument:)`, `InputType.field`. It holds
+every spelling an author may legally write at that coordinate, including the one that repeats the
+coordinate's own name, marked `deprecated`. `graphitron_argmapping_entry` carries `written_path` and
+three generated readings of it, and `graphitron_argument_path_segment` is deleted: the stored
+decomposition existed so a reader could probe every prefix, and with every legal spelling a
+candidate there are only two prefixes worth asking about. `graphitron_argmapping_match` lost its two
+window functions, its subquery wrapper, its ranking, and the nine-way `CASE` that enforced the
+repeating spelling; what survives is two left joins and a five-site list, those four of the nine
+sites that bind nothing whatever they spell.
+
+The plan-size figure moved the wrong way and is reported rather than explained away: the shipping
+arm goes 2774 to 2794 instantiations and the heaviest read 349 to 355. The match view itself goes 6
+to 8, having traded one segment join for a second candidate join and two coordinate joins that
+recover what the candidate no longer decomposes. What the measure does not count is what was removed
+from the same view, two window partitions over the entry grain, or that
+`intent_argmapping_projection_defect` lost a third of its text and one of its six verdicts. That is
+worth stating as a limit of the measure rather than as a defence: relation instantiations count
+namings, so a rewrite that replaces a ranked probe with two equalities reads as slightly worse.
+
 **The gathering architecture.** `FactSink` buffered every gatherer's rows until one flush at the end,
 so no gatherer could read another's facts and everything crossed as hand-threaded Java parameters.
 Each gatherer now flushes inside the same transaction in declared order, `meta_gatherer_dependency`
@@ -710,6 +731,18 @@ deletes a `_live` view and a table each: `intent_argmapping_pair_live` and `inte
 **Columns and values.** `graphitron_field_synthesis.authored_type_sdl`, the relation's payload having
 flipped to carry the macro's replacement rather than the expression it overwrote.
 `AUTHORED_EXPRESSION`, retired from the navigation basis vocabulary, which is two values now.
+
+**The argMapping coordinate remodelling retired more.** One relation,
+`graphitron_argument_path_segment`, and with it `graphitron_argmapping_match.segment_position` and
+`trailing_segments`, which counted over its rows. Four columns of
+`graphitron_argmapping_entry`: `head_segment`, `head_kind`, `candidate_coordinate` and
+`candidate_path`, the first two because the matched candidate says what was bound and the last two
+because the coordinate is the site's own and the path is the written one. `argument_path` is
+`written_path` there and everywhere it was carried through, having claimed an argument that two of
+the nine sites do not sit under. `graphitron_argmapping_candidate.element_name` is `name`, and its
+`type_name` and `field_name` are gone, a reader wanting the coordinate's parts joining the coordinate
+relation. One verdict, `TRAILING_SEGMENTS_BEYOND_ONE`, from a vocabulary of six now five, along with
+`intent_resolved_node_key_projection.trailing_segment_name`, now `trailing_name`.
 
 **Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
 than by the walk. The `Expansions` record and the five `captureXDirective` callbacks `SdlFactCapture`

@@ -63,7 +63,7 @@ class ArgmappingEntryTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME)).isEqualTo("pInventoryId");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_PATH)).isEqualTo("input.inventoryId");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.WRITTEN_PATH)).isEqualTo("input.inventoryId");
         });
     }
 

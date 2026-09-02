@@ -42,13 +42,14 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * still fire: a type disagreement at the inferred column refuses, and a resolved projection at a
  * site no emitter reads defers. Neither lets base64 through.
  *
- * <p>That includes the two arms a reader might expect the schema walk to own. An {@code ID} carrying
- * no {@code @nodeId} has nothing to open, and more than one segment past a node id resolves nothing,
- * but both are questions about captured directive facts and the walk runs before capture. So the walk
- * carries every segment it cannot resolve against SDL and judges none of them, and
- * {@code UNDECLARED_NODE_ID} and {@code TRAILING_SEGMENTS_BEYOND_ONE} are where those rules live. A
- * rule spelled in the walk instead would be an earlier second copy that wins by rejecting first,
- * which is how one family ends up with two answers that agree until one changes.
+ * <p>That includes the arm a reader might expect the schema walk to own. An {@code ID} carrying no
+ * {@code @nodeId} has nothing to open, but that is a question about captured directive facts and the
+ * walk runs before capture. So the walk carries every name it cannot resolve against SDL and judges
+ * none of them, and {@code UNDECLARED_NODE_ID} is where that rule lives. A rule spelled in the walk
+ * instead would be an earlier second copy that wins by rejecting first, which is how one family ends
+ * up with two answers that agree until one changes. A path spelling more than one name past what it
+ * opened has no verdict of its own: nothing at its coordinate is spelled that way, so it draws no
+ * match and is refused with every other unresolvable spelling.
  *
  * <p>Two further arms are the generator's rather than the author's, which is why they are derived
  * here and not in SQL: a projection that resolves at a site whose emitter does not read it yet, and
@@ -155,11 +156,6 @@ public final class ArgmappingProjectionDefects {
          * projection such a binding could mean, and it resolves instead.
          */
         BARE_NODE_ID,
-        /**
-         * More names following the single key column a node id opens into: a typo, or a nested form
-         * nothing resolves.
-         */
-        TRAILING_SEGMENTS_BEYOND_ONE,
         /** A projection asked for against a {@code @nodeId} that names no node type. */
         MISSING_TYPE_NAME,
         /** A trailing segment naming no key column the node type resolved. */
@@ -221,7 +217,7 @@ public final class ArgmappingProjectionDefects {
 
     /**
      * Projects every {@code argMapping} node-id rejection over {@code graphName}'s partition: the
-     * six author defects from the detection view, then the deferrals for projections that resolve and
+     * five author defects from the detection view, then the deferrals for projections that resolve and
      * cannot be emitted. Empty for a graph whose {@code argMapping} paths all bind ordinary values,
      * and whose projections all resolve at sites that emit them in a shape those emitters build.
      */
@@ -240,15 +236,15 @@ public final class ArgmappingProjectionDefects {
             .fetch(row -> {
                 var site = Site.of(row.getSite());
                 var entry = entry(site, row.getUseSite(), row.getTypeName(), row.getFieldName(),
-                    row.getParamName(), row.getArgumentPath());
+                    row.getParamName(), row.getWrittenPath());
                 return new Defect(
                     row.getTypeName() + "." + row.getFieldName(),
-                    row.getUseSite(), row.getParamName(), row.getArgumentPath(), false,
+                    row.getUseSite(), row.getParamName(), row.getWrittenPath(), false,
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
-                        row.getTrailingSegmentName(),
+                        row.getTrailingName(),
                         keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
                         row.getColumnJavaType(), row.getParamJavaType(),
-                        row.getLeafNamedType(), row.getTrailingSegments()),
+                        row.getLeafNamedType()),
                     location(row.getSourceName(), row.getSourceLine(), row.getSourceColumn()));
             });
     }
@@ -270,7 +266,7 @@ public final class ArgmappingProjectionDefects {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         var ap = GRAPHITRON_ARGMAPPING_ENTRY;
         return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
-                p.ARGUMENT_PATH, p.NODE_TYPE_NAME, p.LEAF_IS_LIST, ap.PARAM_NAME,
+                p.WRITTEN_PATH, p.NODE_TYPE_NAME, p.LEAF_IS_LIST, ap.PARAM_NAME,
                 ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
             .from(p)
             .join(ap).on(ap.GRAPH_NAME.eq(p.GRAPH_NAME), ap.SITE.eq(p.SITE),
@@ -284,7 +280,7 @@ public final class ArgmappingProjectionDefects {
             .map(row -> {
                 var site = Site.of(row.get(p.SITE));
                 var entry = entry(site, row.get(p.USE_SITE), row.get(p.TYPE_NAME),
-                    row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.ARGUMENT_PATH));
+                    row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH));
                 // The list reason is reported ahead of the unwired-site one where both hold: it is
                 // the shape the author can act on, an unwired site being nothing they control.
                 String why = Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
@@ -295,7 +291,7 @@ public final class ArgmappingProjectionDefects {
                       + "', which no emitter reads at this site yet";
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
-                    row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.ARGUMENT_PATH), true,
+                    row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH), true,
                     Rejection.deferred(entry + why),
                     location(row.get(ap.SOURCE_NAME), row.get(ap.SOURCE_LINE),
                         row.get(ap.SOURCE_COLUMN)));
@@ -326,7 +322,7 @@ public final class ArgmappingProjectionDefects {
     private static Rejection rejectionOf(Verdict verdict, String entry, String nodeTypeRef,
                                          String trailingSegment, List<String> keyColumns,
                                          String columnJavaType, String paramJavaType,
-                                         String leafNamedType, int trailingSegments) {
+                                         String leafNamedType) {
         return switch (verdict) {
             case UNDECLARED_NODE_ID -> Rejection.structural(entry + " opens "
                 + article(leafNamedType) + " '" + leafNamedType + "' with '" + trailingSegment
@@ -336,11 +332,6 @@ public final class ArgmappingProjectionDefects {
                       + " column out of. Annotate it @nodeId(typeName: \"<NodeType>\") to open it"
                       + " into that node type's key columns"
                     : "; " + OPENABLE_KINDS));
-            case TRAILING_SEGMENTS_BEYOND_ONE -> Rejection.structural(entry + " opens the "
-                + nodeIdSpelling(nodeTypeRef) + " with '" + trailingSegment + "' and "
-                + (trailingSegments - 1) + " more segment"
-                + (trailingSegments - 1 == 1 ? "" : "s")
-                + ", but a node id opens into exactly one key column, so nothing may follow it");
             case BARE_NODE_ID -> Rejection.structural(bareMessage(entry, nodeTypeRef, keyColumns));
             case MISSING_TYPE_NAME -> Rejection.structural(entry + " opens a @nodeId with '"
                 + trailingSegment + "', but @nodeId must specify typeName: explicitly at an"

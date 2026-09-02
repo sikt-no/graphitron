@@ -166,8 +166,9 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> aut
                 if (!(walkType instanceof GraphQLInputObjectType inputObj)) {
                     // Below an input object there is no SDL surface left to resolve against, so the
                     // rest of the path is carried verbatim and judged by the store. Every remaining
-                    // segment, not one: how many there are is what the leaf relation's
-                    // trailing_segments counts, and truncating here would hide a miscount from it.
+                    // segment, not one: the store decides whether the whole written path names a
+                    // candidate at its coordinate, and truncating here would hand it a shorter path
+                    // than the author wrote.
                     for (int j = i; j < segments.size(); j++) {
                         expr = PathExpr.step(expr, segments.get(j), false);
                     }

@@ -387,7 +387,7 @@ class FactCaptureAgreementTest {
             "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",
             "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
             "graphql_argument_directive_arg", "graphql_enum_value_directive",
-            "graphql_enum_value_directive_arg", "graphitron_argument_path_segment",
+            "graphql_enum_value_directive_arg",
             "graphitron_table", "graphitron_field_binding",
             "graphitron_argument_binding", "graphitron_enum_value_binding", "graphitron_scalar_type",
             "graphitron_enum", "graphitron_field_condition", "graphitron_field_condition_context_arg",

@@ -7,7 +7,7 @@ priority: 5
 theme: model-cleanup
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-19
+last-updated: 2026-09-03
 ---
 
 # The stated key-column match spends its ambiguity silently; make it state its arity
@@ -22,6 +22,16 @@ rule owes this crossing, lifts the match out into a relation that states its own
 other folded resolution in the schema does, and lets the arity decide, exact spelling winning where
 more than one column answers and an irreducible ambiguity becoming a stated defect instead of a
 silent pick.
+
+**Dated 2026-09-03: one relation this item's prose names three times has been retired.** The
+argMapping coordinate remodelling deleted `graphitron_argument_path_segment`, and with it the
+`segment_name_upper` column that three passages below cite as the properly-folded authored side of
+`intent_resolved_node_key_projection`'s crossing. The narrative about what R668 decided and why is
+accurate as history and is left standing. What has changed for anyone acting on it: the authored
+name reaches that view as `graphitron_argmapping_match.trailing_name`, folded at the crossing rather
+than stored, so the projection now carries two unfolded operands and not one. That strengthens the
+sibling question this item repeatedly defers to rather than changing this item's own subject, which
+is `intent_node_metadata_defect`.
 
 ## What the tree settles about the open question
 

@@ -15,7 +15,6 @@ import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
@@ -188,7 +187,6 @@ class NodeIdDecodeDestinationTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
             seedProducer(dsl, "Query", "films", "filmId", "java.lang.String");
             seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "ids");
 
             assertThat(slots(dsl)).containsExactly(
                 "Query.films(ids) MAPPED_PARAMETER filmId java.lang.String"
@@ -213,7 +211,6 @@ class NodeIdDecodeDestinationTest {
             seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
             seedProducer(dsl, "Query", "films", "ids", "java.lang.String");
             seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "ids", "other");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "other");
 
             assertThat(slots(dsl)).isEmpty();
             assertThat(destinations(dsl))

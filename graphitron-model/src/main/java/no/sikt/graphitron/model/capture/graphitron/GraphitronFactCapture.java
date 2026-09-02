@@ -15,6 +15,7 @@ import graphql.language.Value;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
@@ -40,7 +41,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
@@ -628,7 +628,7 @@ public final class GraphitronFactCapture {
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
                     int at = pair++;
-                    String path = argumentPath(sink, type, field, entry);
+                    String path = String.join(".", entry.segments());
                     argMappingPair(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
                         useSite(type, field, null, null, null), type, field, null, null, null,
                         at, entry.key(), path, directive);
@@ -665,7 +665,7 @@ public final class GraphitronFactCapture {
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
-                        String path = argumentPath(sink, type, field, entry);
+                        String path = String.join(".", entry.segments());
                         argMappingPair("FIELD_REFERENCE_STEP",
                             useSite(type, field, null, ordinal, position), type, field, null,
                             ordinal, position, at, entry.key(), path, directive);
@@ -707,7 +707,7 @@ public final class GraphitronFactCapture {
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
-                        String path = argumentPath(sink, type, field, entry);
+                        String path = String.join(".", entry.segments());
                         argMappingPair("REFERENCE_FOR_STEP",
                             useSite(type, field, null, ordinal, position), type, field, null,
                             ordinal, position, at, entry.key(), path, directive);
@@ -764,7 +764,7 @@ public final class GraphitronFactCapture {
                 for (ParsedEntry entry : pairs(residual, directive, "service")) {
                     while (taken.contains(pair)) pair++;
                     int at = pair++;
-                    String path = argumentPath(sink, type, field, entry);
+                    String path = String.join(".", entry.segments());
                     argMappingPair("SERVICE", useSite(type, field, null, null, null),
                         type, field, null, null, null, at, entry.key(), path, directive);
                 }
@@ -892,7 +892,7 @@ public final class GraphitronFactCapture {
                 int pair = 0;
                 for (ParsedEntry entry : pairs(argMapping, directive, "argMapping")) {
                     int at = pair++;
-                    String path = argumentPath(sink, type, field, entry);
+                    String path = String.join(".", entry.segments());
                     argMappingPair("ROUTINE", useSite(type, field, null, ordinal, null),
                         type, field, null, ordinal, null, at, entry.key(), path, directive);
                 }
@@ -960,7 +960,7 @@ public final class GraphitronFactCapture {
                 int pair = 0;
                 for (ParsedEntry entry : pairs(reference.argMapping(), directive, "condition")) {
                     int at = pair++;
-                    String path = argumentPath(sink, type, field, entry);
+                    String path = String.join(".", entry.segments());
                     argMappingPair("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
                         type, field, argument, null, null, at, entry.key(), path, directive);
                 }
@@ -998,7 +998,7 @@ public final class GraphitronFactCapture {
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
-                        String path = argumentPath(sink, type, field, entry);
+                        String path = String.join(".", entry.segments());
                         argMappingPair("ARGUMENT_REFERENCE_STEP",
                             useSite(type, field, argument, ordinal, position), type, field, argument,
                             ordinal, position, at, entry.key(), path, directive);
@@ -1042,7 +1042,7 @@ public final class GraphitronFactCapture {
                     int pair = 0;
                     for (ParsedEntry entry : pairs(step.argMapping(), directive, "path")) {
                         int at = pair++;
-                        String path = argumentPath(sink, type, field, entry);
+                        String path = String.join(".", entry.segments());
                         argMappingPair("ARGUMENT_REFERENCE_FOR_STEP",
                             useSite(type, field, argument, ordinal, position), type, field, argument,
                             ordinal, position, at, entry.key(), path, directive);
@@ -1214,41 +1214,6 @@ public final class GraphitronFactCapture {
             undecoded(directive, argumentName, StringValue.newStringValue(raw).build());
             return List.of();
         }
-    }
-
-    /**
-     * Writes one pair's right-hand side, returning the path as the pair relation spells it and
-     * recording what it is made of. The decode is the parse's own segment list, which every caller
-     * here would otherwise join and drop; recording it costs nothing and is the only chance the
-     * store gets, since no reader may split a string.
-     *
-     * <p>Keyed by the coordinate the site sits on and then by the path, so a segment set has an
-     * owner and is reachable from every one of the seven pair relations, all of which lead with the
-     * same coordinate. A path several coordinates spell is decoded under each of them; that is a
-     * copy of a total function of the path text, which nothing can update out from under. What the
-     * claim drops is a repeat within one coordinate, several pairs of one field naming the same
-     * path, and dropping it is not losing an author's duplicate, which is a different question the
-     * position-keyed pair relations already answer.
-     */
-    private static String argumentPath(FactSink sink, String type, String field, ParsedEntry entry) {
-        String path = String.join(".", entry.segments());
-        for (int position = 0; position < entry.segments().size(); position++) {
-            if (!sink.claim(GRAPHITRON_ARGUMENT_PATH_SEGMENT, type, field, path, position)) {
-                continue;
-            }
-            var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_PATH_SEGMENT);
-            row.setTypeName(type);
-            row.setFieldName(field);
-            row.setArgumentPath(path);
-            row.setPosition(position);
-            row.setSegmentName(entry.segments().get(position));
-            // The path from the head down to this segment, spelled as the candidate tree spells
-            // its own, so a reader asks how far a written path resolves with an equality rather
-            // than a prefix test. The head is a candidate like any other, so no segment is empty.
-            row.setCandidatePath(String.join(".", entry.segments().subList(0, position + 1)));
-            sink.add(row);
-        }
-        return path;
     }
 
     private static Value<?> argument(Directive directive, String name) {
@@ -1442,23 +1407,17 @@ public final class GraphitronFactCapture {
         row.setStepPosition(stepPosition);
         row.setPosition(position);
         row.setParamName(paramName);
-        row.setArgumentPath(argumentPath);
-        // The head is what the path enters at, and it is known here: the first segment of a path
-        // this writer has already split. Writing it is what lets a reader ask which slot an entry
-        // enters at without joining the segment child at position zero, which several of them were
-        // each doing on their own. Its kind is not written, the relation computing it from this
-        // column and the site. Neither asserts the head resolves; that is the refusal relation's.
-        int dot = argumentPath.indexOf('.');
-        row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
-        // The path is carried whole, head included, because the candidate relation spells its own
-        // that way: every row there is something writable, and a head is writable.
-        row.setCandidatePath(argumentPath);
-        row.setHeadKind(argumentPath.startsWith("$") ? "SIGIL"
-            : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
-        // The container the right side is written at: the field, whose arguments and admitted
-        // sigils are what a head may name, and the input type at an input-field site, whose fields
-        // are. Never the head itself, which is a path and not a place.
-        row.setCandidateCoordinate("INPUT_FIELD_CONDITION".equals(site) ? type : type + "." + field);
+        row.setWrittenPath(argumentPath);
+        // The coordinate the directive sits on, which is where the candidate relation is keyed and
+        // therefore what an entry meets its candidates on. Three shapes for three placements: an
+        // argument-level condition sits on the argument, an input-field-level one on the input
+        // field, and the other seven sites on the field. Never a container and never the path's
+        // own head, which is a spelling and not a place. The split columns beside this one are the
+        // engine's, computed from the written path, so nothing here decomposes anything.
+        row.setCoordinate(switch (site) {
+            case "ARGUMENT_CONDITION" -> SchemaCoordinateSyntax.ofArgument(type, field, argument);
+            default -> SchemaCoordinateSyntax.ofField(type, field);
+        });
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }

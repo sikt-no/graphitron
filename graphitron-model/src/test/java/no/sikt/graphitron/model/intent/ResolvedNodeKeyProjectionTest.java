@@ -12,7 +12,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
@@ -48,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * interpret.
  *
  * <p>The one thing this relation adds over the candidate beside it besides that agreement is
- * provenance an emitter cannot derive: {@code trailing_segment_name}, the author's own spelling of the
+ * provenance an emitter cannot derive: {@code trailing_name}, the author's own spelling of the
  * column where they spelled one and null where the key's arity named it, which is where in the written
  * path the encoded id sits. The two arms produce paths of the same shape, so the cases assert the
  * column and the segment together rather than the column alone.
@@ -83,7 +82,7 @@ class ResolvedNodeKeyProjectionTest {
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isZero();
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_NAME))
                 .as("the author's own spelling of the column, which is where in the path the wire id"
                     + " sits: this path minus this segment")
                 .isEqualTo("inventory_id");
@@ -133,7 +132,7 @@ class ResolvedNodeKeyProjectionTest {
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .as("the row is the tier's own spelling, not the one the author happened to type")
                 .isEqualTo("inventory_id");
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_NAME))
                 .as("the segment beside it is the author's, which is what a message quotes and what"
                     + " an emitter strips off the path to find the wire id")
                 .isEqualTo("INVENTORY_ID");
@@ -302,10 +301,10 @@ class ResolvedNodeKeyProjectionTest {
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_NAME))
                 .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.KEY_POSITION)).isEqualTo(0);
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.ARGUMENT_PATH))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.WRITTEN_PATH))
                 .as("the path is the author's own, which is the only spelling there is")
                 .isEqualTo("input.inventoryId");
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TRAILING_NAME))
                 .as("nothing was spelled past the node id, and that absence is what tells an emitter"
                     + " the wire id sits at the whole of this path rather than one segment above")
                 .isNull();
@@ -476,7 +475,6 @@ class ResolvedNodeKeyProjectionTest {
     private static void pair(DSLContext dsl, int position, String paramName, String argumentPath) {
         seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
             argumentPath);
-        seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }
 
     // ===== Reads =====

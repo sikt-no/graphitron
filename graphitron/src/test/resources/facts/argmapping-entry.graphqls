@@ -31,7 +31,7 @@ extend type Query {
 }
 
 extend schema @assertContains(relation: "graphitron_argmapping_entry", rows: """
-  site,                  use_site,        position, param_name, argument_path
+  site,                  use_site,        position, param_name, written_path
   FIELD_CONDITION,       Language.films,  0,        cityNames,  name
   INPUT_FIELD_CONDITION, FilmFilter.title, 0,       cityNames,  title
   SERVICE,               Query.languages, 0,        titles,     name

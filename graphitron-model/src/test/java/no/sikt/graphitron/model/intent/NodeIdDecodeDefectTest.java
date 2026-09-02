@@ -16,7 +16,6 @@ import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -233,7 +232,6 @@ class NodeIdDecodeDefectTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
             seedProducer(dsl, "Query", "films", "filmId", "java.lang.Long");
             seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "ids");
 
             assertThat(rows(dsl)).isEmpty();
             // The other family's use site is the directive application's coordinate and this one's

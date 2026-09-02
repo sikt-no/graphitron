@@ -17,7 +17,6 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
@@ -91,12 +90,12 @@ class ArgmappingProjectionDefectTest {
                 .isEqualTo("BARE_NODE_ID");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
                 .isEqualTo("FilmActor");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
                 .as("there is no trailing segment on this arm")
                 .isNull();
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.PARAM_NAME))
                 .isEqualTo("pInventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.ARGUMENT_PATH))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.WRITTEN_PATH))
                 .isEqualTo("input.inventoryId");
         });
     }
@@ -232,7 +231,7 @@ class ArgmappingProjectionDefectTest {
      * The inferred column is still subject to the type gate, which is what makes lifting the bare
      * rejection safe rather than lenient. The author named no column, so nothing they wrote is wrong;
      * the parameter still cannot take the value, and the refusal names the column the inference
-     * chose. {@code trailing_segment_name} is NULL here on the mismatch arm, which is how a consumer
+     * chose. {@code trailing_name} is NULL here on the mismatch arm, which is how a consumer
      * knows to name the key column rather than quote a segment nobody spelled.
      */
     @Test
@@ -241,12 +240,9 @@ class ArgmappingProjectionDefectTest {
             var row = only(dsl);
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("KEY_COLUMN_TYPE_MISMATCH");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
-                .as("the author spelled no segment, so there is none to quote")
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
+                .as("the author spelled no name past the binding, so there is none to quote")
                 .isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENTS))
-                .as("and the count agrees with that absence rather than being a second fact")
-                .isEqualTo(0);
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.COLUMN_JAVA_TYPE))
                 .isEqualTo("java.lang.Integer");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.PARAM_JAVA_TYPE))
@@ -271,7 +267,7 @@ class ArgmappingProjectionDefectTest {
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("MISSING_TYPE_NAME");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
                 .as("the segment that would have been projected")
                 .isEqualTo("inventory_id");
         });
@@ -291,7 +287,7 @@ class ArgmappingProjectionDefectTest {
             var row = only(dsl);
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("UNKNOWN_KEY_COLUMN");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
                 .isEqualTo("no_such_column");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
@@ -352,7 +348,7 @@ class ArgmappingProjectionDefectTest {
             var row = only(dsl);
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
                 .isEqualTo("KEY_COLUMN_TYPE_MISMATCH");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
                 .as("the column the author named, which exists")
                 .isEqualTo("inventory_id");
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.COLUMN_JAVA_TYPE))
@@ -419,7 +415,7 @@ class ArgmappingProjectionDefectTest {
             assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.LEAF_NAMED_TYPE))
                 .as("an ID gets the annotate-it remedy, which is what this column is for")
                 .isEqualTo("ID");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
+            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_NAME))
                 .isEqualTo("inventory_id");
         });
     }
@@ -520,18 +516,15 @@ class ArgmappingProjectionDefectTest {
      * name is wrong, the path is too long.
      */
     @Test
-    void moreThanOneTrailingSegmentIsItsOwnArm() {
+    void moreThanOneNamePastTheNodeIdIsRefusedRatherThanJudgedHere() {
         withInventoryNode(dsl -> {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             routinePair(dsl, "pInventoryId", "input.inventoryId.inventory_id.nope");
 
-            var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.VERDICT))
-                .isEqualTo("TRAILING_SEGMENTS_BEYOND_ONE");
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENTS)).isEqualTo(2);
-            assertThat(row.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.TRAILING_SEGMENT_NAME))
-                .as("the first name past the node id, which is the one that was openable")
-                .isEqualTo("inventory_id");
+            assertThat(rows(dsl))
+                .as("nothing at the coordinate is spelled this way, so it draws no match and"
+                    + " therefore no verdict of its own")
+                .isEmpty();
         });
     }
 
@@ -565,7 +558,6 @@ class ArgmappingProjectionDefectTest {
             seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "byInventory", "Inventory");
             seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "p", "byInventory");
-            seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "byInventory");
 
             assertThat(rows(dsl)).isEmpty();
         });
@@ -590,13 +582,11 @@ class ArgmappingProjectionDefectTest {
                 new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
             seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "javaParam",
                 "input.inventoryId");
-            seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "input.inventoryId");
 
             seedField(dsl, GRAPH, "Film", "rentals");
             seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "FilmActor");
             seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
                 "p", "byInventory");
-            seedArgumentPathSegments(dsl, GRAPH, "Film", "rentals", "byInventory");
 
             assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_PROJECTION_DEFECT.SITE)))
                 .containsExactlyInAnyOrder("ROUTINE", "SERVICE", "ARGUMENT_CONDITION");
@@ -644,7 +634,6 @@ class ArgmappingProjectionDefectTest {
                 "no.example.Cond", "apply", false);
             seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
                 "p", "byInventory");
-            seedArgumentPathSegments(dsl, GRAPH, "Film", "rentals", "byInventory");
             seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "other", 0,
                 "p", "byInventory");
 
@@ -678,7 +667,6 @@ class ArgmappingProjectionDefectTest {
             seedFieldNodeId(dsl, "other", "RentFilmInput", "inventoryId", "FilmActor");
             seedRoutineArgmappingEntry(dsl, "other", "Mutation", "rentFilm", 0, 0, "pOther",
                 "input.inventoryId");
-            seedArgumentPathSegments(dsl, "other", "Mutation", "rentFilm", "input.inventoryId");
 
             assertThat(rows(dsl))
                 .as("the sibling graph's own defect stays in its own partition")
@@ -798,7 +786,6 @@ class ArgmappingProjectionDefectTest {
                                     String argumentPath) {
         seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
             argumentPath);
-        seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }
 
     /** A {@code @routine} pair of the application a case names, at position zero. */
@@ -806,7 +793,6 @@ class ArgmappingProjectionDefectTest {
                                                String argumentPath) {
         seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", ordinal, 0, paramName,
             argumentPath);
-        seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }
 
     // ===== Reads =====

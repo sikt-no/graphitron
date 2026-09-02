@@ -317,7 +317,7 @@ public final class RoutineWriteFacts {
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(
-                    field(select(m.ARGUMENT_PATH)
+                    field(select(m.WRITTEN_PATH)
                         .from(m)
                         .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), m.SITE.eq("ROUTINE"),
                             m.TYPE_NAME.eq(s.TYPE_NAME),

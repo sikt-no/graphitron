@@ -20,10 +20,18 @@ deliberately not asked here". Every consumer that has to match against that name
 at the crossing, because the answer it was handed is a spelling rather than a reference.
 
 That is why `intent_resolved_node_key_projection` carries the schema's only surviving per-row case
-fold, `UPPER(k.column_name) = sg.segment_name_upper`. Its authored side is folded properly, on
-`graphitron_argument_path_segment.segment_name_upper`; the key-column side has nowhere to reach,
-because the value came out of a three-tier pick and no single base relation owns it. The comparison is
-correct and this item is not a bug report about it.
+fold. The key-column side has nowhere to reach, because the value came out of a three-tier pick and
+no single base relation owns it. The comparison is correct and this item is not a bug report about
+it.
+
+**Dated 2026-09-03, after the argMapping coordinate remodelling.** The fold used to read
+`UPPER(k.column_name) = sg.segment_name_upper`, with the authored side folded properly on
+`graphitron_argument_path_segment.segment_name_upper`. That relation is gone: the authored name is
+`graphitron_argmapping_match.trailing_name` now, carried up from the entry's generated split rather
+than off a stored decomposition, and the comparison is `UPPER(k.column_name) = UPPER(l.trailing_name)`
+with neither side stored folded. That makes the asymmetry this item is about worse rather than
+better, and it does not change what the item asks: a spelling handed across a crossing is still a
+spelling. Re-read the fold before acting on the prose above.
 
 The question is whether the view is handing out the wrong thing. The schema has a worked example of
 the other shape: `intent_spelled_table` is a union across five-plus arms with no single owning

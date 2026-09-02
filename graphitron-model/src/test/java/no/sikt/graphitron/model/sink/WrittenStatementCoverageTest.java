@@ -25,11 +25,19 @@ import static org.assertj.core.api.Assertions.fail;
  *
  * <p>Two properties, and neither needs a list of relations or of columns to check against, which is
  * the point: a roster would be the thing that rots. Every relation the schema computes a column for
- * has a write function, because an insert naming every column of such a relation is rejected
- * outright and that rejection is what this gate moves from a run to the build. And every write
- * function names every column of its relation the database does not compute, checked by writing a
- * row whose every writable column carries a distinct value and reading it back: a column left out
- * of the statement comes back null, and a pair bound in the wrong order comes back swapped.
+ * is writable, whether it has a written statement or goes through the generic arm, because an
+ * insert naming a column the database computes is rejected outright and that rejection is what this
+ * gate moves from a run to the build. And every write function names every column of its relation
+ * the database does not compute, checked by writing a row whose every writable column carries a
+ * distinct value and reading it back: a column left out of the statement comes back null, and a
+ * pair bound in the wrong order comes back swapped.
+ *
+ * <p>The generic arm used to be the reason a computed column needed a written statement at all: it
+ * named every column a relation declared, so a relation with one could not be inserted through it.
+ * It now names the columns a row actually touched, and nothing touches a computed one, so a
+ * relation is free to have no statement of its own. That is what the first property checks rather
+ * than assumes; requiring a statement instead would be asserting the old constraint against a
+ * writer that no longer has it.
  *
  * <p>The store is bent for the probe, referential integrity off and the check constraints dropped,
  * because the subject here is a statement's column list and not a relation's domains. Nothing else
@@ -38,18 +46,23 @@ import static org.assertj.core.api.Assertions.fail;
 class WrittenStatementCoverageTest {
 
     @Test
-    @DisplayName("A relation carrying a computed column has a written statement")
-    void everyRelationWithAGeneratedColumnHasAWriteFunction() {
+    @DisplayName("A relation carrying a computed column is writable through whichever arm takes it")
+    void everyRelationWithAGeneratedColumnIsWritable() {
         try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
+            relax(dsl);
+            var covered = new ArrayList<String>();
             for (Table<?> table : Public.PUBLIC.getTables()) {
-                if (generatedColumns(store.dsl(), table).isEmpty()) {
+                if (generatedColumns(dsl, table).isEmpty()) {
                     continue;
                 }
-                assertThat(FactWrites.of(table))
-                    .describedAs("%s carries a column the database computes, so the generic arm's "
-                        + "every-column insert cannot write it", table.getName())
-                    .isNotNull();
+                covered.add(table.getName());
+                var writer = FactWrites.of(table);
+                probe(dsl, table, writer != null ? writer : throughTheSink());
             }
+            assertThat(covered)
+                .describedAs("the schema computes columns somewhere, or this gate is vacuous")
+                .isNotEmpty();
         }
     }
 
@@ -72,6 +85,20 @@ class WrittenStatementCoverageTest {
                 .describedAs("the registry FactSink dispatches through")
                 .isNotEmpty();
         }
+    }
+
+    /**
+     * The generic arm, addressed as a writer so the probe can drive it the same way. The graph name
+     * is taken off the row rather than fixed, because the sink stamps it and the probe is checking
+     * that every value it wrote survives, that column included.
+     */
+    private static FactWrites.RelationWriter throughTheSink() {
+        return (dsl, rows) -> {
+            var graph = rows.get(0).getTable().field("GRAPH_NAME", String.class);
+            var sink = new FactSink(dsl, graph == null ? "probe" : rows.get(0).get(graph));
+            rows.forEach(sink::add);
+            sink.flush();
+        };
     }
 
     /** Writes one fully-populated row through {@code writer} and asserts every value survived. */

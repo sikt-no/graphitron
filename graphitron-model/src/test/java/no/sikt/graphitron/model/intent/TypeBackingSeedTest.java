@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_SEED;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -357,6 +356,5 @@ class TypeBackingSeedTest {
     private static void mapping(DSLContext dsl, String fieldName, String paramName,
                                 String argumentPath) {
         seedServiceArgmappingEntry(dsl, GRAPH, "Query", fieldName, 0, paramName, argumentPath);
-        seedArgumentPathSegments(dsl, GRAPH, "Query", fieldName, argumentPath);
     }
 }
