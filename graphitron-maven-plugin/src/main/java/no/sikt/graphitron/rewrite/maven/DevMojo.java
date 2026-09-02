@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import no.sikt.graphitron.rewrite.capture.CapturePort;
 import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.StoreAccess;
@@ -211,12 +212,19 @@ public class DevMojo extends AbstractRewriteMojo {
     // generate-only). Package-private so DevMojoTest can assert the opt-out leaves it unbuilt.
     IncrementalCompiler incrementalCompiler;
     // The dev session's fact-store handle: one live handle over the store the session's generator
-    // passes write, opened once at startup and closed in cleanup(). Live and shared on purpose:
-    // the compile-facts writer and any in-process reader of the store see each round through the
-    // same database, so a written round is a visible round (capture's own per-pass opens reach the
-    // same database, H2 giving one process one database per file). Package-private so
+    // passes capture into, opened before the first of them runs and closed in cleanup(). Live and
+    // shared on purpose: the passes, the compile-facts writer and every in-process reader see each
+    // round through one database, so a written round is a visible round. It is one store rather
+    // than a pass's own aliased onto the same file by H2, which is what lets a reader's budget and
+    // a capture's lock timeout be settings of one session instead of two. Package-private so
     // DevMojoTest can inject an in-memory store.
     GraphitronModelStore sessionStore;
+    // Every pass's capture, over sessionStore: the session opens one store and each pass writes
+    // into the one its readers are on, so a round is written and read through one database rather
+    // than through a database of the pass's own that H2 happened to alias onto the same file.
+    // Closed ahead of the store in cleanup(); closing it gives back nothing, the port never owning
+    // a store it was lent, unless a refusal demoted it to one of its own.
+    CapturePort sessionCapture;
     // The language server's own reader over sessionStore, minted once the store opens and closed
     // ahead of it in cleanup(). Null for the bare mojos that never start a session.
     StoreAccess lspStore;
@@ -277,38 +285,61 @@ public class DevMojo extends AbstractRewriteMojo {
         // returns a closed URLClassLoader and would surface as a confusing ClassNotFoundException
         // on the next reflection attempt. Each file-change callback (regenerate / rebuildCatalog)
         // opens its own scope and is the right place to reach for a live loader.
-        var initialCtxHolder = new AtomicReference<RewriteContext>();
-        var initialHolder = new AtomicReference<InitialOutput>();
-        withCodegenScope(ctx -> {
-            initialCtxHolder.set(ctx);
-            if (skipInitial) {
-                // Nothing is emitted this startup by design, so the editor's products come from the
-                // reporting-only entry point rather than from a pass.
-                initialHolder.set(buildOutputQuietly(ctx));
-            } else {
-                getLog().info(banner("initial run"));
-                initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
-            }
-        });
-        var initialCtx = initialCtxHolder.get();
-        var initial = initialHolder.get();
-
-        // The session store handle (path-only read on initialCtx). openAt falls back to a private
-        // in-memory store on any cache trouble, so this never fails the goal; either way the
-        // handle lives until cleanup() and every compile round is written and readable through it.
-        this.sessionStore = initialCtx.storeDirectory() != null
-            ? GraphitronModelStore.openAt(initialCtx.storeDirectory())
+        // The session store handle, opened before the first pass runs so that pass captures into it
+        // rather than into a store of its own. openAt falls back to a private in-memory store on
+        // any cache trouble, so this never fails the goal; either way the handle lives until
+        // cleanup() and every capture and compile round is written and readable through it.
+        //
+        // Resolved from the project rather than from a context, which is what lets the open come
+        // first: the store's home is a pure function of the module's base directory and this
+        // goal's own parameters, so it needs none of what building a context needs.
+        Path storeHome = resolveStoreDirectory(project.getBasedir().toPath());
+        this.sessionStore = storeHome != null
+            ? GraphitronModelStore.openAt(storeHome)
             : GraphitronModelStore.open();
         // What the open released from the cache home. The store's sweep runs once per home per JVM,
-        // so on a session whose initial run was skipped this open is the first one and this log is
-        // the only place the report surfaces.
-        if (initialCtx.storeDirectory() != null) {
-            sessionStore.reaped().report(initialCtx.storeDirectory()).ifPresent(getLog()::info);
+        // and this open is now always the session's first, so this is where the report surfaces on
+        // every startup rather than only on one whose initial run was skipped.
+        if (storeHome != null) {
+            sessionStore.reaped().report(storeHome).ifPresent(getLog()::info);
         }
-        // The session reads this store without capturing into it, and the editor-facing readers
-        // below are read-only, so the materialized targets are refreshed here rather than assumed
-        // current: a warm store whose capture was skipped because nothing changed would otherwise
-        // serve the language server and MCP stale rows. Idempotent, and a no-op with no
+        // Every pass captures through here, into the store above. The port is handed a store it
+        // does not own: a refusal still demotes it to a private one of its own, exactly as it did
+        // when each pass opened its own store, and the session's readers stay on what they were
+        // given either way.
+        this.sessionCapture = CapturePort.over(sessionStore);
+
+        var initialCtxHolder = new AtomicReference<RewriteContext>();
+        var initialHolder = new AtomicReference<InitialOutput>();
+        try {
+            withCodegenScope(ctx -> {
+                initialCtxHolder.set(ctx);
+                if (skipInitial) {
+                    // Nothing is emitted this startup by design, so the editor's products come from
+                    // the reporting-only entry point rather than from a pass.
+                    initialHolder.set(buildOutputQuietly(ctx));
+                } else {
+                    getLog().info(banner("initial run"));
+                    initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
+                }
+            });
+        } catch (MojoExecutionException | RuntimeException e) {
+            // The store is open this early now, and the shutdown hook that would give it back is
+            // not registered until the watchers are up. A startup that fails here (a module whose
+            // <schemaInputs> match nothing is the ordinary way) would otherwise leave the workspace
+            // file held for the rest of the Maven run, which is precisely the held-store trouble
+            // the demotion warning tells users to go looking for.
+            sessionStore.close();
+            throw e;
+        }
+        var initialCtx = initialCtxHolder.get();
+        var initial = initialHolder.get();
+        // The store may hold graphs no pass of this session captures (it is shared by every module
+        // of the workspace), and a warm partition whose capture was skipped because nothing changed
+        // refreshes nothing of its own, so the materialized targets are refreshed here rather than
+        // assumed current: the editor-facing readers below are read-only and would otherwise serve
+        // the language server and MCP stale rows. After the initial pass, so this graph's own
+        // targets are already current by the time it runs. Idempotent, and a no-op with no
         // registrations.
         // The pass boundary at info, so a start that stalls here is attributed rather than looking
         // like a slow boot, and the per-registration tier at debug for a re-run with -X.
@@ -834,7 +865,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             withCodegenScope(ctx -> {
                 try {
-                    var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+                    var output = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
                     var catalog = output.catalog();
@@ -873,7 +904,7 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private InitialOutput buildOutputQuietly(RewriteContext ctx) {
         try {
-            var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+            var output = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).buildOutput();
             return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
@@ -937,6 +968,15 @@ public class DevMojo extends AbstractRewriteMojo {
 
     // Package-private so DevMojoTest can drive the catch-arm discrimination directly
     // (a malformed schema vs a missing file) without standing up the full watch loop.
+    /**
+     * The port a pass captures through: the session's, so every round writes into the store the
+     * session's readers are on. A per-pass port where there is no session, which is the unit tier
+     * driving {@link #runGeneratorPass} directly without {@link #execute()} having opened one.
+     */
+    private CapturePort captureFor(RewriteContext ctx) {
+        return sessionCapture != null ? sessionCapture : CapturePort.forContext(ctx);
+    }
+
     PassRound runGeneratorPass(RewriteContext ctx, String label) {
         // Cleared up front so a failed pass never leaves a stale generation for the compile driver to
         // act on; reassigned from the pass below, which returns one only when it emitted.
@@ -945,7 +985,7 @@ public class DevMojo extends AbstractRewriteMojo {
             // One pass: the emitted tree, the compile graph the incremental driver reads, and the
             // editor-facing catalog and diagnostics, from a single read of the schema and a single
             // capture of the graph's partition.
-            var pass = new GraphQLRewriteGenerator(ctx).runPass();
+            var pass = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).runPass();
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
             if (!errors.isEmpty()) {
@@ -1065,6 +1105,13 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         if (mcpStore != null) {
             mcpStore.close();
+        }
+        // Before the store, and after the servers: the capture port. Ordinarily this gives back
+        // nothing, the port having been lent the store below rather than opening one. It has
+        // something to give back only where a refusal demoted it to a private store of its own,
+        // and that store is the port's to close.
+        if (sessionCapture != null) {
+            sessionCapture.close();
         }
         // Last, after the servers whose tools read through it: the session's store handle. A
         // file-backed store only releases its connection here; the file stays for the next run.

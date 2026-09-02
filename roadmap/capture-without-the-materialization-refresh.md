@@ -507,12 +507,51 @@ names the port and its inputs and never a store, a directory, or `FactCapture`. 
   stops being is something the generator reads on its way to a store.
 
 **Why the store ownership is this item's and not a follow-on's.** `DevMojo` runs its initial
-generator pass before it opens its session store, so that pass writes through a store that is closed
-by the time the session exists, which is why the session replays the pass's diagnostics into a
-second store on its own handle. The two-store complaint in this item's own account and the plugin's
-reporting arrangement are one problem. Once the goal owns the store, the dev session hands one store
-to every pass and that replay is deletable. Leaving it costs the follow-on item the same work plus
-an inherited workaround.
+generator pass before it opens its session store, so that pass captures into a store that is closed
+by the time the session exists, and every round after that opens a second store over the same file
+while the session holds the first. That is the two-store complaint in this item's own account, and
+owning the store is what settles it: the session opens one store, hands it to every pass, and its
+language server and MCP readers are on the store the passes actually wrote.
+
+An earlier draft of this paragraph claimed the session's diagnostic replay was deletable once the
+store was owned. It is not, and the claim is worth recording as wrong rather than quietly dropping,
+because the reasoning that produced it will recur. `DevMojo.writeReportFacts` runs on every round,
+not only after the initial pass, and what it writes is the classification walk's error stream and
+the suppression-filtered warning list. Capture writes neither, and the generator must not write
+anything at all, so those rows need a writer however many stores there are. That writer is the
+gatherer-ownership item's (`roadmap/model-owns-every-gatherer.md`), which already argues the
+rejection arm should be let die rather than rehomed. Store ownership and fact ownership are two
+questions, and only the first is this item's.
+
+**What shipped.** `CapturePort`, one interface with a `captureAndRead` that takes a `CaptureRequest`
+and hands back a `StoreHandle` plus the detections. The split between the two types is what carries
+the design: a request is everything about a pass and nothing about where its facts go, so a caller
+can build a port before any store exists and hold it across passes. Three arms, differing only in
+the store's lifetime: `holding` opens one store on the first capture and keeps it until `close`,
+`over` is the same over a store the caller already opened and never closes it, and `forContext`
+opens and closes one per capture, which is what every caller had before and what a caller with no
+lifetime to lend still gets.
+
+`RunStore` grew `recapture` for the second and later captures of a held store, and a `Borrowed` arm
+for a store the run captures into and does not own. The retry and the demotion are unchanged in
+every arm; what differs is only what happens to the store when a refusal lands, which for a
+borrowed one is nothing. A session whose graph name is recorded against another checkout therefore
+still leaves that partition alone, on a private store of the port's own, while the lent store stays
+as its owner left it.
+
+`AbstractRewriteMojo.runGenerator` owns a `holding` port for the invocation. `DevMojo` opens its
+session store before the codegen scope (the store's home is a pure function of the module's base
+directory and the goal's own parameters, so it needs nothing a context would have to be built for)
+and hands every pass a port `over` it. Opening that early widened one pre-existing hole: the
+shutdown hook that gives the store back is not registered until the watchers are up, so a startup
+that fails in between leaves the workspace file held, which is exactly the trouble the demotion
+warning sends users looking for. The initial pass is now guarded to close the store on the way out.
+The bind-failure path has the same hole and had it already; it is not this item's.
+
+The boundary test gained a fifth property, over the files that stay: nothing above the line names
+the capture entry point, the type that owns a store's lifetime, or the store's home. It also found a
+false positive in the fourth property, `CatalogFactCapture` ending in `FactCapture`, so both match
+whole identifiers now.
 
 **6. Add the command.** `CaptureMojo` copies the shape `ValidateMojo` already has: 34 lines whose
 body is a single `runGenerator` call, with `AbstractRewriteMojo.runGenerator` doing the setup. Like
@@ -789,7 +828,11 @@ above it.
   it: no file above the line may name the generated table constants, the capture sink, or the boot
   package that opens a store to write to, those being the three spellings a writer cannot avoid
   while a reader needs none of them. It ships as `FactTierBoundaryTest`'s fourth property, over the
-  complement of the move set, and passes today at 283 files with zero hits on all three. Keep it
+  complement of the move set, and passes today at 283 files with zero hits on all three.
+
+  Both halves are met as of step 5. The first is now pinned by a fifth property rather than left to
+  a reader's grep, and it pins more than the criterion asked for: nothing above the line names the
+  capture entry point, the type that owns a store's lifetime, or the store's home either. Keep it
   scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store that
   this item does not touch, `ModelCodegenDriver` and the store's own startup code.
 
@@ -862,6 +905,19 @@ Retired by step 4:
   boolean and a log line
 * `FactCapture.captureWithRetry`, `FactCapture.reconciles`, `FactCapture.timedOutOnALock`, all now
   `RunStore`'s
+
+Retired by step 5:
+
+* `FactCapture.GraphIdentity`, `FactCapture.SubjectConfig`, `FactCapture.OutputCoordinates`, all now
+  top-level types in the capture package, so a file that needs a coordinate no longer names the
+  entry point that captures
+* `FactCapture.AfterCapture`, now `CapturePort.AfterCapture`, the callback being the port's contract
+* `FactCapture.runWithDetections`, deleted with no replacement: it had no callers, `runAndRead`
+  covering both shapes
+* `FactCapture.runInternal`, now `CapturePort`'s two arms, which is where the store's lifetime is
+  decided
+* `RunStore.graphName()`, now `RunStore.graph()`, a recapture needing the whole coordinate rather
+  than the name
 
 * `RewriteContext`, now `RunContext`; `RewriteSchemaLoader`, now `SchemaLoader`
 * every `no.sikt.graphitron.rewrite.*` package name for the 89 files that move, now

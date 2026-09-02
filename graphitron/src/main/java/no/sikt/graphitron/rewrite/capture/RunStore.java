@@ -15,10 +15,10 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 
 /**
- * The store a capture run got, open, and which of the two stores it is: the workspace's shared
- * file, or a private in-memory one nothing outside this run will ever see. One value in place of
- * the pair a caller used to work from, a nullable directory going in and a log line coming out
- * that it had to match against its own run.
+ * The store a capture run got, open, and which store it is: the workspace's shared file, a private
+ * in-memory one nothing outside this run will ever see, or one its caller opened and will close.
+ * One value in place of the pair a caller used to work from, a nullable directory going in and a
+ * log line coming out that it had to match against its own run.
  *
  * <p>The answer is final because it is given after the capture, not before it. Three of the four
  * ways a run loses the shared store are known when the store opens (no directory was named, the
@@ -123,6 +123,42 @@ public sealed interface RunStore extends AutoCloseable {
         public RunStore recapture(CaptureBody body) {
             body.capture(store.dsl(), reconciles(store, graph));
             return this;
+        }
+    }
+
+    /**
+     * The run captured into a store its caller opened and will close: a session that runs many
+     * passes and hands each of them the one store it holds for its own readers. Structurally
+     * separate from {@link Shared} because the only thing that differs is who closes, and that is
+     * exactly the thing a caller must not get wrong.
+     *
+     * <p>{@code demotion} is the lender's own, not this run's: a store handed over may already be
+     * the private fallback its opener arrived at, and a run on it should be able to say so. A
+     * refusal met while capturing does not land here, it lands in {@link Demoted}, because losing
+     * the lent store means capturing somewhere else.
+     */
+    record Borrowed(GraphitronModelStore store, GraphIdentity graph, Optional<Demotion> demotion)
+        implements RunStore {
+        public Borrowed {
+            Objects.requireNonNull(store, "store");
+            Objects.requireNonNull(graph, "graph");
+            Objects.requireNonNull(demotion, "demotion");
+        }
+
+        /**
+         * Retried as {@link Shared#recapture} is, and demoted to a private store the same way, with
+         * the one difference that the lent store is left open: it is the caller's, and the caller's
+         * readers are still on it.
+         */
+        @Override
+        public RunStore recapture(CaptureBody body) {
+            Optional<Demotion> refused = captureWithRetry(store, graph, body);
+            return refused.isEmpty() ? this : inMemory(graph, body, refused.get());
+        }
+
+        /** Nothing: the lender closes what the lender opened. */
+        @Override
+        public void close() {
         }
     }
 
@@ -282,6 +318,43 @@ public sealed interface RunStore extends AutoCloseable {
             return new Shared(shared, graph);
         }
         shared.close();
+        return inMemory(graph, body, refused.get());
+    }
+
+    /**
+     * {@link #forRun} for a caller that already holds an open store and wants this run to capture
+     * into it: a dev session, whose readers are on that store and whose passes should write where
+     * those readers look rather than each opening a database of their own.
+     *
+     * <p>The refusals are the same and reach the same end. The ownership check is asked of a warm
+     * lent store exactly as it is of a warm one opened here, so a session whose graph name is
+     * recorded against another checkout still leaves that partition alone; a write refused twice
+     * still demotes. What differs is only what happens to the lent store when a refusal lands:
+     * nothing, because it is not this run's to close.
+     *
+     * <p>A lent store that is itself already a fallback is reported here, once for the port's
+     * lifetime rather than once per pass, because {@link GraphitronModelStore#openAt} declines to
+     * say why an open failed and a silent demotion is what makes a dev session look like a session
+     * that indexed nothing.
+     *
+     * @param lent  the caller's open store, which this run captures into and never closes
+     * @param graph the coordinate this run writes under
+     * @param body  the capture itself, called exactly once per attempt
+     */
+    static RunStore forRunOn(GraphitronModelStore lent, GraphIdentity graph, CaptureBody body) {
+        Objects.requireNonNull(lent, "lent");
+        Objects.requireNonNull(graph, "graph");
+        Objects.requireNonNull(body, "body");
+        if (lent.location().isEmpty()) {
+            Demotion reason = new Demotion.Unavailable();
+            report(reason);
+            body.capture(lent.dsl(), reconciles(lent, graph));
+            return new Borrowed(lent, graph, Optional.of(reason));
+        }
+        Optional<Demotion> refused = attemptShared(lent, graph, body);
+        if (refused.isEmpty()) {
+            return new Borrowed(lent, graph, Optional.empty());
+        }
         return inMemory(graph, body, refused.get());
     }
 

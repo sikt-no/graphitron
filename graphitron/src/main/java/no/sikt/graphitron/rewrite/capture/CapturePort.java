@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
@@ -77,7 +78,22 @@ public sealed interface CapturePort extends AutoCloseable {
      * @param storeDirectory the workspace's store home, or {@code null} for a caller with none
      */
     static CapturePort holding(Path storeDirectory) {
-        return new Held(storeDirectory);
+        return new Held(storeDirectory, null);
+    }
+
+    /**
+     * {@link #holding} over a store the caller already has open, which the port captures into and
+     * never closes. What a dev session builds: its language server and MCP readers are on that
+     * store, so a pass that captured anywhere else would leave them answering from rows no pass
+     * wrote.
+     *
+     * <p>A refusal still demotes, and then the port is on a private store of its own while the
+     * lent one stays exactly as its owner left it. That is the same outcome a session had when each
+     * pass opened its own store, and it is why the lender keeps closing what it opened.
+     */
+    static CapturePort over(GraphitronModelStore lent) {
+        Objects.requireNonNull(lent, "lent");
+        return new Held(null, lent);
     }
 
     /**
@@ -129,20 +145,31 @@ public sealed interface CapturePort extends AutoCloseable {
     final class Held implements CapturePort {
 
         private final Path storeDirectory;
+        private final GraphitronModelStore lent;
         private RunStore store;
 
-        private Held(Path storeDirectory) {
+        private Held(Path storeDirectory, GraphitronModelStore lent) {
             this.storeDirectory = storeDirectory;
+            this.lent = lent;
         }
 
         @Override
         public synchronized <T> T captureAndRead(CaptureRequest request, AfterCapture<T> after) {
             Objects.requireNonNull(request, "request");
             Objects.requireNonNull(after, "after");
-            store = store == null
-                ? RunStore.forRun(storeDirectory, request.graph(), request.body())
-                : store.recapture(request.body());
+            store = store == null ? first(request) : store.recapture(request.body());
             return FactCapture.read(store.handle(), request.classified(), after);
+        }
+
+        /**
+         * The capture that decides which store this port is on: into the lent store when there is
+         * one, otherwise into whichever store the home yields. Only the first capture asks, every
+         * later one recapturing into the answer.
+         */
+        private RunStore first(CaptureRequest request) {
+            return lent == null
+                ? RunStore.forRun(storeDirectory, request.graph(), request.body())
+                : RunStore.forRunOn(lent, request.graph(), request.body());
         }
 
         @Override
