@@ -725,6 +725,19 @@ Nothing actually clashes, since this move does not change what any file does, bu
 collide as edits. Ordering them is cheaper than coordinating them. Whoever starts the move while one
 of R876's slices is in flight should say so rather than rebase through it.
 
+**Step 5's store-ownership inversion is in scope here, and deferring it costs more than it saves.**
+The follow-on item that reintroduces run records on top of this boundary can take the four writers
+whenever it likes: every input type they take is in the move set, so they compile wherever they
+land, and their caller sits above both tiers. What it cannot take later for free is who owns the
+store. `DevMojo` today runs the initial generator pass first and opens its session store afterwards,
+so the pass writes through a store that is closed by the time the session exists, which is why the
+session has to replay that pass's diagnostics into a second store on its own handle. The two-store
+complaint in this item's own account and the plugin's reporting arrangement are therefore one
+problem, not two. If this item ships capture still opening its own store per pass, the replay stays,
+the second store stays, and the follow-on inherits writers pointed at a connection that is not the
+one capture wrote through, so it would have to redo this work before it can put a recorded
+conclusion beside the facts of the same run.
+
 **Do this before R682, not after.** R682 is a large clean-up of the middle layer, still in progress.
 Waiting for it means the boundary that would protect it does not exist while it happens, and every
 new table added meanwhile is one more thing to argue past the line later. R682 is not blocked by
@@ -754,6 +767,13 @@ above it.
   complement of the move set, and passes today at 283 files with zero hits on all three. Keep it
   scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store that
   this item does not touch, `ModelCodegenDriver` and the store's own startup code.
+
+  Read the guard for what it is. Once step 7 relocates the four plugin-driven writers it keeps
+  passing because those files left, not because anything about reporting changed, so its value from
+  then on is as a ratchet against `graphitron` acquiring a write again. It cannot cover
+  `graphitron-maven-plugin`, which sits above both tiers and legitimately depends on both, so it is
+  not evidence that no consumer reports facts. Whether a consumer may report at all, and in what
+  shape, is `roadmap/run-record-families-for-commands-and-emitted-units.md`'s question.
 * **Neither `graphitron-lsp` nor `graphitron-mcp` declares a dependency on `graphitron`, at any
   scope.** Both poms lose it entirely. `graphitron-mcp`'s guard test
   `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` widens to cover tests, and
