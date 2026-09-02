@@ -1,7 +1,9 @@
 package no.sikt.graphitron.model.capture.compile;
 
-import no.sikt.graphitron.model.tables.records.JavacDiagnosticRecord;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.compile.CompileRound;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.tables.records.JavacDiagnosticRecord;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
@@ -16,8 +18,6 @@ import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
-import no.sikt.graphitron.model.compile.CompileDiagnostic;
-import no.sikt.graphitron.model.compile.CompileRound;
 
 /**
  * The {@code javac_} family's writer: transcribes a published {@link CompileRound} into the fact

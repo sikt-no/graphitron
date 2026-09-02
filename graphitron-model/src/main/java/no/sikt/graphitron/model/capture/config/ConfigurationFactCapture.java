@@ -1,7 +1,10 @@
 package no.sikt.graphitron.model.capture.config;
 
-import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.OutputCoordinates;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.sink.FactSink;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
@@ -10,9 +13,6 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.run.OutputCoordinates;
-import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * Transcribes the configuration a run held in hand, written fresh by every run from its resolved

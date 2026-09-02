@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DeprecationsDocCoverageTest {
 
     private static final String DIRECTIVES_RESOURCE =
-        "/no/sikt/graphitron/rewrite/schema/directives.graphqls";
+        "/no/sikt/graphitron/model/schema/directives.graphqls";
 
     private static final String DOCS_PAGE_PATH = "docs/manual/reference/deprecations.adoc";
 

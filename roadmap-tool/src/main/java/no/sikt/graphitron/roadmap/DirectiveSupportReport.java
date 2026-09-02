@@ -189,7 +189,7 @@ final class DirectiveSupportReport {
     static final String REGENERATE_COMMAND =
         "mvn -pl roadmap-tool exec:java -Dexec.args='directive-support"
             + " roadmap-tool/src/main/resources/legacy-directives.graphqls"
-            + " graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls"
+            + " graphitron-model/src/main/resources/no/sikt/graphitron/model/schema/directives.graphqls"
             + " graphitron/src/test/resources --mode=migration"
             + " --output=docs/manual/_generated/supported-directives.adoc'";
 

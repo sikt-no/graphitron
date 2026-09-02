@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.capture.java;
 
+import no.sikt.graphitron.model.sources.ClasspathSources;
+import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.tables.records.JavaClassDeclarationRecord;
 import no.sikt.graphitron.model.tables.records.JavaFieldDeclarationRecord;
 import no.sikt.graphitron.model.tables.records.JavaMethodDeclarationRecord;
@@ -22,8 +24,6 @@ import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
-import no.sikt.graphitron.model.sources.ClasspathSources;
-import no.sikt.graphitron.model.sources.SourceWalker;
 
 /**
  * The {@code java_} family's writer: transcribes a source walk's declarations into the store, one

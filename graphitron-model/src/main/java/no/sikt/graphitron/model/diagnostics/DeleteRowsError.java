@@ -1,10 +1,10 @@
 package no.sikt.graphitron.model.diagnostics;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 import java.util.List;
 import java.util.stream.Collectors;
-import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Sealed sub-family of {@link Rejection.AuthorError} for {@code DeleteRowsWalker}. Each typed

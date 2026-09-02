@@ -1,8 +1,8 @@
 package no.sikt.graphitron.model.run;
 
+import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.config.SessionStateConfig;
 
 import java.util.Objects;
 import java.util.Optional;

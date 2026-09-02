@@ -136,7 +136,7 @@
                         <phase>verify</phase>
                         <goals><goal>java</goal></goals>
                         <configuration>
-                            <commandlineArgs>directive-support ${project.basedir}/src/main/resources/legacy-directives.graphqls ${project.basedir}/../graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls ${project.basedir}/../graphitron/src/test/resources --mode=migration --output=${project.basedir}/../docs/manual/_generated/supported-directives.adoc --verify</commandlineArgs>
+                            <commandlineArgs>directive-support ${project.basedir}/src/main/resources/legacy-directives.graphqls ${project.basedir}/../graphitron-model/src/main/resources/no/sikt/graphitron/model/schema/directives.graphqls ${project.basedir}/../graphitron/src/test/resources --mode=migration --output=${project.basedir}/../docs/manual/_generated/supported-directives.adoc --verify</commandlineArgs>
                         </configuration>
                     </execution>
                     <execution>

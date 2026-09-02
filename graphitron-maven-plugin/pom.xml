@@ -38,10 +38,11 @@
         </dependency>
 
         <!--
-          The two test-jars carrying the shared fact-store harness: the store's own lifetime from
-          the model, and the capture and writer levels from the generator. Test scope, so nothing
-          the plugin ships can reach a fixture; what they buy is that a test here takes its store
-          from the harness that owns its subject rather than standing one up of its own.
+          The two test-jars carrying the shared fact-store harness: the store's own lifetime and
+          the writer level from the model, and the capture level from the generator, which is where
+          a store filled by a build still comes from. Test scope, so nothing the plugin ships can
+          reach a fixture; what they buy is that a test here takes its store from the harness that
+          owns its subject rather than standing one up of its own.
         -->
         <dependency>
             <groupId>no.sikt</groupId>

@@ -126,7 +126,7 @@ Deferred (case-by-case as production schemas surface a need):
 `@Email`, `@Past`, `@Future`, `@Digits`, custom validators.
 
 The directive declarations land in
-`graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
+`graphitron-model/src/main/resources/no/sikt/graphitron/model/schema/directives.graphqls`
 alongside the existing graphitron directives, scoped to
 `INPUT_FIELD_DEFINITION`.
 

@@ -73,9 +73,13 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -312,34 +316,33 @@ class HierarchyKindRegistryTest {
         Map.entry(BuildWarning.class, HierarchyKind.ERROR_CHANNEL)
     );
 
-    /** Package roots whose top-level sealed types the registry must cover. */
-    private static final Set<String> SCANNED_PACKAGE_DIRS = Set.of(
-        "no/sikt/graphitron/rewrite/model",
-        "no/sikt/graphitron/command");
+    /**
+     * Package roots whose top-level sealed types the registry must cover, each named beside a
+     * class that lives in the artifact holding it. The witness is how the scan finds the package:
+     * the rejection vocabulary is in {@code graphitron-model} now, so it arrives on the classpath
+     * as that module's artifact rather than under this module's {@code target/classes}, and a path
+     * relative to the working directory would have stopped seeing it and passed while blind.
+     */
+    private static final Map<String, Class<?>> SCANNED_PACKAGE_DIRS = Map.of(
+        "no/sikt/graphitron/rewrite/model", GraphitronType.class,
+        "no/sikt/graphitron/command", GraphitronType.class,
+        "no/sikt/graphitron/model/diagnostics", Rejection.class);
 
     private static final Set<Class<?>> NAMED_EXTRAS = Set.of(BuildWarning.class);
 
     @Test
     void everyFactBaseHierarchyIsLabelledExactlyOnce() throws IOException {
         var discovered = new HashSet<Class<?>>(NAMED_EXTRAS);
-        Path classesRoot = Path.of("target/classes");
-        for (String pkg : SCANNED_PACKAGE_DIRS) {
-            Path dir = classesRoot.resolve(pkg);
-            if (!Files.isDirectory(dir)) continue;
-            try (Stream<Path> files = Files.walk(dir)) {
-                for (Path classFile : files.filter(p -> p.toString().endsWith(".class"))
-                        .filter(p -> !p.getFileName().toString().contains("$")).toList()) {
-                    String className = classesRoot.relativize(classFile).toString()
-                        .replace(".class", "").replace(java.io.File.separatorChar, '.');
-                    Class<?> clazz;
-                    try {
-                        clazz = Class.forName(className);
-                    } catch (ClassNotFoundException | NoClassDefFoundError e) {
-                        continue;
-                    }
-                    if (clazz.isSealed() && clazz.getEnclosingClass() == null) {
-                        discovered.add(clazz);
-                    }
+        for (var scanned : SCANNED_PACKAGE_DIRS.entrySet()) {
+            for (String className : classNamesIn(scanned.getKey(), scanned.getValue())) {
+                Class<?> clazz;
+                try {
+                    clazz = Class.forName(className);
+                } catch (ClassNotFoundException | NoClassDefFoundError e) {
+                    continue;
+                }
+                if (clazz.isSealed() && clazz.getEnclosingClass() == null) {
+                    discovered.add(clazz);
                 }
             }
         }
@@ -371,4 +374,40 @@ class HierarchyKindRegistryTest {
                 .as("%s must be a GraphitronType member", c.getSimpleName())
                 .isAssignableFrom(c));
     }
+
+    /**
+     * Every top-level class declared under {@code packageDir}, read out of the artifact that holds
+     * {@code witness}. Two shapes, because a reactor build hands a module its own classes as a
+     * directory and its dependencies' as jars, and this scan reaches across both.
+     */
+    private static List<String> classNamesIn(String packageDir, Class<?> witness) throws IOException {
+        Path source;
+        try {
+            source = Path.of(witness.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("cannot locate the artifact holding " + witness, e);
+        }
+        if (Files.isDirectory(source)) {
+            return classNamesUnder(source, source.resolve(packageDir));
+        }
+        try (FileSystem jar = FileSystems.newFileSystem(source)) {
+            return classNamesUnder(jar.getPath("/"), jar.getPath("/" + packageDir));
+        }
+    }
+
+    private static List<String> classNamesUnder(Path root, Path dir) throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return List.of();
+        }
+        try (Stream<Path> files = Files.walk(dir)) {
+            return files
+                .filter(p -> p.toString().endsWith(".class"))
+                .filter(p -> !p.getFileName().toString().contains("$"))
+                .map(p -> root.relativize(p).toString()
+                    .replace(".class", "")
+                    .replace(p.getFileSystem().getSeparator(), "."))
+                .toList();
+        }
+    }
+
 }

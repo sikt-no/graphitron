@@ -1,7 +1,10 @@
 package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.Public;
+import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sources.ClasspathSources;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.jooq.TableOptions;
@@ -29,9 +32,9 @@ import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -41,9 +44,6 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
-import no.sikt.graphitron.model.sources.ClasspathSources;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 
 /**
  * Brings a store that already holds a previous run's rows to the state capture expects, deleting

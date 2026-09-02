@@ -11,7 +11,7 @@ depends-on: []
 # Widen string-carrier intermediates onto Rejection (R58 follow-up)
 
 R58 lifted the direct candidate-hint producers onto typed
-[`Rejection.AuthorError.UnknownName`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java)
+[`Rejection.AuthorError.UnknownName`](../graphitron-model/src/main/java/no/sikt/graphitron/model/diagnostics/Rejection.java)
 factories. Five intermediate carriers still flatten the typed shape into prose before it reaches
 a `Rejection` consumer, blocking five candidate-hint producers from reaching the typed surface
 their factories (`unknownForeignKey`, `unknownTypeName`, `unknownEnumConstant`,

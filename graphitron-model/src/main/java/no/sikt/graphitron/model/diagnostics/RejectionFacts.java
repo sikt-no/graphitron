@@ -1,11 +1,6 @@
 package no.sikt.graphitron.model.diagnostics;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.model.tables.records.RejectionValidationErrorDirectiveRecord;
-import no.sikt.graphitron.model.tables.records.RejectionValidationErrorRecord;
-import no.sikt.graphitron.model.diagnostics.RejectionKind;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
@@ -13,10 +8,15 @@ import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
 import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.tables.records.RejectionValidationErrorDirectiveRecord;
+import no.sikt.graphitron.model.tables.records.RejectionValidationErrorRecord;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;

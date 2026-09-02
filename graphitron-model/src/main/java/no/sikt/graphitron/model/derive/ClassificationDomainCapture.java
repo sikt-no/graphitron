@@ -15,6 +15,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.schema.SchemaTraverser;
+import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import org.jooq.DSLContext;
 
@@ -31,7 +32,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
-import no.sikt.graphitron.model.capture.macro.MacroCapture;
 
 /**
  * The SDL gatherer's rooted traversal: the last stage, writing {@code intent_type_domain} from a

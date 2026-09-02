@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.macro;
 
 import no.sikt.graphitron.model.grammar.ConnectionNaming;
+import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
@@ -17,7 +18,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
-import no.sikt.graphitron.model.sink.FactSink;
 
 /**
  * The {@code @asConnection} expansion: the Relay machinery it mints, and the rewrite it performs on

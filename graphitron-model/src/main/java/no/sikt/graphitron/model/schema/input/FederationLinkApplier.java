@@ -13,13 +13,13 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
-import no.sikt.graphitron.model.schema.federation.FederationSpec;
 
 /**
  * Injects federation directive declarations into the registry when the schema contains an

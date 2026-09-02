@@ -788,6 +788,19 @@ and trimming a qualified target to its last segment turns `{@link ResolvedContex
 `{@code Site}`, which names nothing a reader can find. Both were repaired by re-deciding each target
 against the declaring file's own nested types and keeping the qualifier.
 
+**Four guards elsewhere in the tree had to be told where the line now is**, and each is worth a
+line because each was a real hole rather than a rename. `HierarchyKindRegistryTest` discovered
+sealed hierarchies by walking `graphitron`'s own `target/classes`, so the twelve rejection
+hierarchies vanished from its scan the moment they moved; it now finds each package through a class
+that lives in it, which reaches a dependency's jar as readily as this module's directory and would
+have failed loudly rather than passed blind. `PackageImportDirectionTest`'s borrow dial named
+`TableRef` and `ColumnRef` as legacy-tree borrows, and they stopped being borrows rather than
+stopped being read: the command rule now lets `no.sikt.graphitron.model` through outright, the fact
+tier being below every tier there rather than beside one. The roadmap-tool's directive-support
+verification and three doc-coverage tests read `directives.graphqls` by a path that named the
+generator's resources. And one roadmap item linked `Rejection.java` at its old path, which
+`ReadmeLinkIntegrityTest` caught.
+
 **8. Rehome the tests that need both tiers.** Seven files, in two kinds.
 
 *Five that check the build and a client agree.* `LintSuppressionDiagnosticsParityTest` exists twice,

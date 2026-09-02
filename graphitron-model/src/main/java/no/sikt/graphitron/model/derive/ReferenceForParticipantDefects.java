@@ -1,8 +1,8 @@
 package no.sikt.graphitron.model.derive;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.DSLContext;
 
 import java.util.List;

@@ -1,9 +1,9 @@
 package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.tables.records.IntentAuthoredClaimRejectionRecord;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.tables.records.IntentAuthoredClaimRejectionRecord;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;

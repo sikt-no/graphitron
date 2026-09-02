@@ -53,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DirectiveDocCoverageTest {
 
     private static final String DIRECTIVES_RESOURCE =
-        "/no/sikt/graphitron/rewrite/schema/directives.graphqls";
+        "/no/sikt/graphitron/model/schema/directives.graphqls";
 
     /** Matches an SDL directive declaration at column 0: {@code directive @<name>...}. */
     private static final Pattern DIRECTIVE_DECLARATION =

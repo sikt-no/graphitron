@@ -1,7 +1,10 @@
 package no.sikt.graphitron.model.capture.catalog;
 
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sources.ClasspathSources;
+import no.sikt.graphitron.model.sources.GraphSourceMembership;
 import org.jooq.Field;
 import org.jooq.Schema;
 import org.jooq.Table;
@@ -15,31 +18,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD;
+import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
+import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
-import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
+import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD;
-import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
-import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
-import no.sikt.graphitron.model.sources.ClasspathSources;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.sources.GraphSourceMembership;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
  * The catalog capture load: fills the {@code sql_} family from the jOOQ catalog walk and the

@@ -1,9 +1,10 @@
 package no.sikt.graphitron.model.run;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -11,7 +12,6 @@ import no.sikt.graphitron.model.schema.input.SchemaInput;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import no.sikt.graphitron.model.capture.FactCapture;
 
 /**
  * One pass's whole capture, as a value: which graph it writes under, what that graph declared, and

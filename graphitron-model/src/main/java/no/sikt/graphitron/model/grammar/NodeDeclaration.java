@@ -4,11 +4,11 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.language.StringValue;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 import java.util.Locale;
 
 import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * The one place that answers "is this object type a node?". An object type is a node when it

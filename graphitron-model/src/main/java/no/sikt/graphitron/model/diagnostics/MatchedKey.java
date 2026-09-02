@@ -1,7 +1,8 @@
 package no.sikt.graphitron.model.diagnostics;
 
-import java.util.List;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+
+import java.util.List;
 
 /**
  * The key identity {@code UpdateRowsWalker} matched against the UPDATE input's covered

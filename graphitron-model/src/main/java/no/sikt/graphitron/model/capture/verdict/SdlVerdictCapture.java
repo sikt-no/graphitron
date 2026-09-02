@@ -1,15 +1,15 @@
 package no.sikt.graphitron.model.capture.verdict;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaError;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
+import no.sikt.graphitron.model.sink.FactSink;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 
 /**
  * Transcribes what the SDL toolchain concluded about the document, beside

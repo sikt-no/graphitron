@@ -43,7 +43,7 @@ Today's emit, and where the flag would land:
   `dsl.transactionResult(tx -> { DSLContext txd = DSL.using(tx); ... })`. The `txd` rebinding
   is the part that matters here and is easy to omit.
 * The directive surface is `directive @service(service: ExternalCodeReference!, contextArguments: [String!])`
-  (`graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls:103`).
+  (`graphitron-model/src/main/resources/no/sikt/graphitron/model/schema/directives.graphqls:103`).
   `ExternalCodeReference` is shared with `@externalField` and `@enum`, so the new argument
   belongs on the directive beside `contextArguments:`, not inside the reference input.
 * The walked fact is presence-grain today: `ServiceFacts.Row` carries `parentTypeName` and

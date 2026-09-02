@@ -80,10 +80,15 @@ class PackageImportDirectionTest {
      * renderer lifts into emit types. The entries above survive on their other families' accounts
      * alone, which is what the dial is for: it names what is still borrowed, so a family's
      * conversion is visible as a line leaving rather than as prose claiming one did.
+     *
+     * <p>It shrinks one other way, and the fact tier's move is the first instance: a ref that goes
+     * below the line stops being a borrow at all. {@code TableRef} and {@code ColumnRef} left the
+     * dial when capture became {@code graphitron-model}, and nothing about how {@code command}
+     * reads them changed; what admitted them was that they lived in the legacy tree, and they no
+     * longer do. So the command rule now lets {@code no.sikt.graphitron.model} through outright,
+     * the fact tier being below every tier here rather than beside one.
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
-        "no.sikt.graphitron.model.jooq.TableRef",
-        "no.sikt.graphitron.model.jooq.ColumnRef",
         "no.sikt.graphitron.rewrite.model.MethodRef",
         "no.sikt.graphitron.rewrite.model.JoinStep",
         "no.sikt.graphitron.rewrite.model.On",
@@ -141,10 +146,8 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.AliasOwner",
         "no.sikt.graphitron.rewrite.model.CallParam",
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
-        "no.sikt.graphitron.model.jooq.ColumnRef",
         "no.sikt.graphitron.rewrite.model.ConditionFilter",
         "no.sikt.graphitron.rewrite.model.FacetSpec",
-        "no.sikt.graphitron.model.jooq.ForeignKeyRef",
         "no.sikt.graphitron.rewrite.model.HelperRef",
         "no.sikt.graphitron.rewrite.model.InputColumnBinding",
         "no.sikt.graphitron.rewrite.model.JoinConditionRef",
@@ -161,8 +164,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.RoutineRef",
         "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         "no.sikt.graphitron.rewrite.model.SourceKey",
-        "no.sikt.graphitron.rewrite.model.TableExpr",
-        "no.sikt.graphitron.model.jooq.TableRef"
+        "no.sikt.graphitron.rewrite.model.TableExpr"
     );
 
     private static final String COMMAND_GRAPHQL_ALLOWED = "graphql.schema.FieldCoordinates";
@@ -186,7 +188,7 @@ class PackageImportDirectionTest {
                 return "command sits below plan and render";
             }
             if (imp.startsWith("no.sikt.graphitron.") && !imp.startsWith("no.sikt.graphitron.command.")
-                && !isBorrowedRef(imp)) {
+                && !imp.startsWith("no.sikt.graphitron.model.") && !isBorrowedRef(imp)) {
                 return "command may borrow only the enumerated model-ref dial";
             }
             if (imp.startsWith("graphql.") && !imp.equals(COMMAND_GRAPHQL_ALLOWED)) {

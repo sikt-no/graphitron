@@ -183,7 +183,7 @@ class R157PipelineTest {
 
     private static String loadDirectives() {
         try (InputStream is = R157PipelineTest.class.getResourceAsStream(
-            "/no/sikt/graphitron/rewrite/schema/directives.graphqls")) {
+            "/no/sikt/graphitron/model/schema/directives.graphqls")) {
             if (is == null) {
                 throw new IllegalStateException("directives.graphqls not found on test classpath");
             }

@@ -1,13 +1,13 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.derive.StoreDetections;
+import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.nio.file.Path;
 import java.util.Objects;
-import no.sikt.graphitron.model.capture.FactCapture;
 
 /**
  * A place to capture into and read back, handed to whoever runs a pass. The generator asks for a

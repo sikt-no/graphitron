@@ -1,13 +1,13 @@
 package no.sikt.graphitron.model.diagnostics;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.tables.records.BuildWarningNoRuleRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingFixEditRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingFixRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingRecord;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
-import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.lint.LintFix;
 import org.jooq.DSLContext;
 import org.jooq.TableRecord;
 import org.jooq.exception.DataAccessException;

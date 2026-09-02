@@ -1,9 +1,10 @@
 package no.sikt.graphitron.model.compile;
 
+import no.sikt.graphitron.model.capture.compile.CompileFacts;
+
+import java.util.Locale;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
-import java.util.Locale;
-import no.sikt.graphitron.model.capture.compile.CompileFacts;
 
 /**
  * One compiler diagnostic from an incremental compile round, flattened to the fields the dev

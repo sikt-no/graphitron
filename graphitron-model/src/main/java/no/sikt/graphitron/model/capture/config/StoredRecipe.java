@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.config;
 
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 
 import java.nio.file.Path;
@@ -12,7 +13,6 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
-import no.sikt.graphitron.model.sink.FactSink;
 
 /**
  * The graph's SDL recipe as store rows, encode and decode in one place. Both directions live

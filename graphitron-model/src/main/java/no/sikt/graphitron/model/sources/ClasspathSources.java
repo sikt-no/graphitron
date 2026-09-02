@@ -1,5 +1,10 @@
 package no.sikt.graphitron.model.sources;
 
+import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.read.SourceStamp;
+import no.sikt.graphitron.model.sink.FactSink;
+import org.jooq.DSLContext;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -8,13 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-import no.sikt.graphitron.model.read.SourceStamp;
-
-import org.jooq.DSLContext;
-
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 
 /**
  * Records the {@code store_source} row for each classpath entry the class census came from, and

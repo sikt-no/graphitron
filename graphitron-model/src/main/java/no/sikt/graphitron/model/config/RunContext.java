@@ -1,11 +1,11 @@
 package no.sikt.graphitron.model.config;
 
-import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.config.DependencyVersions;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.config.SessionStateConfig;
 
 import java.nio.file.Path;
 import java.util.List;

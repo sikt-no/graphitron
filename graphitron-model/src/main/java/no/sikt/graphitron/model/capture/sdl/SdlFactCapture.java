@@ -22,12 +22,16 @@ import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sources.ClasspathSources;
+import no.sikt.graphitron.model.sources.GraphSourceMembership;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -44,7 +48,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DUPLICATE_DECLARATION;
@@ -54,6 +57,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
@@ -61,11 +65,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import no.sikt.graphitron.model.sources.ClasspathSources;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.sources.GraphSourceMembership;
-import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
  * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the {@code graphql_}
