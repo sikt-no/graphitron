@@ -567,6 +567,17 @@ the one exception, since it runs before the capture today, so the projection nee
 Validation needs no switch, because it runs after the capture and the projection simply returns
 first.
 
+That lint switch is not optional, for a reason worth stating before someone tries the projection
+without it. `Projection` is a triple of `emit`, `compileGraph` and `catalog`, and a capture-only run
+wants none of the three, which is exactly `VALIDATE`'s triple. So without a fourth component the new
+projection is indistinguishable from the validating one and the pipeline has nothing to branch on;
+the lint flag is what makes the two different values rather than a nicety on top of a distinction
+that already exists.
+
+Step 5 left the mojo half of this easier than the plan assumed: `runGenerator` now owns a holding
+capture port for the invocation, so a capture command gets one store for its run without saying
+anything about stores.
+
 **7. Move the modules.** Nothing changes behaviour here: no table changes shape, no generated file
 changes, no query answers differently. Keep moves and behaviour changes in separate commits. The
 test schemas in `graphitron/src/test/resources/corpus` move with capture and are shared back up as a
@@ -789,18 +800,17 @@ Nothing actually clashes, since this move does not change what any file does, bu
 collide as edits. Ordering them is cheaper than coordinating them. Whoever starts the move while one
 of R876's slices is in flight should say so rather than rebase through it.
 
-**Step 5's store-ownership inversion is in scope here, and deferring it costs more than it saves.**
-The follow-on item that reintroduces run records on top of this boundary can take the four writers
-whenever it likes: every input type they take is in the move set, so they compile wherever they
-land, and their caller sits above both tiers. What it cannot take later for free is who owns the
-store. `DevMojo` today runs the initial generator pass first and opens its session store afterwards,
-so the pass writes through a store that is closed by the time the session exists, which is why the
-session has to replay that pass's diagnostics into a second store on its own handle. The two-store
-complaint in this item's own account and the plugin's reporting arrangement are therefore one
-problem, not two. If this item ships capture still opening its own store per pass, the replay stays,
-the second store stays, and the follow-on inherits writers pointed at a connection that is not the
-one capture wrote through, so it would have to redo this work before it can put a recorded
-conclusion beside the facts of the same run.
+**Step 5's store-ownership inversion was in scope here, and shipped.** The follow-on item that
+reintroduces run records on top of this boundary can take the four writers whenever it likes: every
+input type they take is in the move set, so they compile wherever they land, and their caller sits
+above both tiers. What it could not have taken later for free is who owns the store. `DevMojo` used
+to run the initial generator pass first and open its session store afterwards, so that pass captured
+into a store closed by the time the session existed, and every round after it opened a second store
+over the same file while the session held the first. A follow-on inheriting that would have had
+writers pointed at a connection that is not the one capture wrote through, and would have had to
+redo this work before it could put a recorded conclusion beside the facts of the same run. Step 5's
+own account carries what shipped and one correction: the session's diagnostic replay is *not* what
+the two-store split caused, and is not deletable by owning the store.
 
 **Do this before R682, not after.** R682 is a large clean-up of the middle layer, still in progress.
 Waiting for it means the boundary that would protect it does not exist while it happens, and every
