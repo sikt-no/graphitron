@@ -706,6 +706,88 @@ module boundary in it: `GraphQLRewriteGenerator`, `AbstractRewriteMojo`, `Rewrit
 filed separately. Doing it here would put a reactor-wide rename in the same commit as a module move
 and make both unreviewable.
 
+*Shipped, and the layout is the part the plan had least right.* Nothing changed behaviour: no table
+changed shape, no query answers differently, and the emitted tree is byte-identical. Eight findings,
+each one measured on the way rather than reasoned about beforehand.
+
+**The move set is 111 files, not the 103 step 3 closed on.** Six are the port surface steps 4 to 6
+added after the census was taken. The other two are a real gap, and the same blind spot step 3
+measured for javadoc, in code this time: `DependencyVersions` names `ObservedVersion` and
+`WatchedDependency` from its own package, so no import scan could see the edge and no `permits`
+clause carried it. Both are plain data with no reader above the line, so `dependency` contributes
+three of its four files rather than one, and `DependencyVersionWarnings`, which turns version facts
+into an advisory, stays above with the other judgements.
+
+**Three of the gatherer table's rows were wrong, by the table's own rule.** A file sits in a
+gatherer's package when no other gatherer reaches it; `FactSink` is named by twelve of the thirteen
+gatherer files and `ClasspathSources` by four, so neither is private to the orchestrator. They are
+tier vocabulary and went to packages that are nobody's gatherer: `model.sink` takes `FactSink` and
+`FactWrites`, `model.sources` takes `ClasspathSources`, `GraphSourceMembership` and `SourceWalker`,
+`model.compile` takes `CompileRound` and `CompileDiagnostic`, and `model.run` takes the port surface
+(`CapturePort`, `CaptureRequest`, `RunStore`, `SubjectConfig`, `GraphIdentity`,
+`OutputCoordinates`). `model.capture` is left holding `FactCapture` and one private helper,
+`StoreRefresh`, which is the honest size of what the orchestrator keeps to itself. Two smaller
+corrections on the same rule: `SchemaInputException` stays with `model.schema.input`, its only
+reader being `SchemaInputAttribution` rather than `SdlFactCapture`, and
+`ClassificationDomainCapture` lands in `model.derive`, because its call site is the derivation
+stratum beside `InputOccurrencePaths` and the other three, not the gatherer run above it.
+
+**The guard is about helpers, not gatherers.** `GathererIsolationTest` in `graphitron-model`'s own
+tests asserts that a type in a gatherer's package other than the gatherer itself is named from
+inside that package and nowhere else, and that every package under `capture/` names a gatherer this
+file rolls. The entry points are deliberately outside the rule, because they are the tier's surface:
+the orchestrator names the eight it runs, `GraphitronFactCapture` needs `SdlFactCapture` and
+`MacroCapture`, and `DevMojo` names `CompileFacts` and `JavaSourceFacts` to record a dev session's
+own observations. Four helpers stay package-private and say it to javac as well; the guard exists
+because a public helper cannot, and because Java has no way to say "this package and no other".
+
+**`FactTierBoundaryTest` keeps two of its five properties rather than being deleted.** The first
+three are the pom's now: `graphitron-model` does not depend on `graphitron`, so an upward import is
+a compile error and javapoet and the seal closures follow from the same edge. The last two are not,
+and this step is what makes that visible. `graphitron` depends on `graphitron-model`, so the write
+surface and the store's lifetime are on the generator's classpath and the compiler is content for a
+planner to open a store and insert a row. Only the two remaining properties say it must not, which
+is why the file survives with its population simplified from a hundred-file manifest to "what is
+under `rewrite/`".
+
+**The corpus does not move, and step 7's sentence about it was wrong.** Nothing below the line reads
+`graphitron/src/test/resources/corpus`: every reader is a classified-DSL test or the documentation
+renderer, and both go through `GraphitronSchemaBuilder`, which is the walk. There was no test-jar to
+publish and no share-back to arrange.
+
+**`CapturedStore` does not move either, for `BuiltStore`'s reason.** Its `ofPipeline` arm runs
+`GraphQLRewriteGenerator.loadAttributedRegistry()` and the fixture exposes the `AttributedRegistry`
+that comes back, so it is a two-tier object exactly as `BuiltStore` is. Only two tests read that arm
+and both are about the pipeline agreeing with capture, which is a two-tier claim; the four arms the
+two clients use read nothing above the line, so a later split is available and is step 8's kind of
+question. `FactWriters` did move, into `no.sikt.graphitron.model.test`, because all five writers it
+wraps are below the line. One resource moved with the code and had to: `directives.graphqls` is
+package-relative to `SchemaLoader`, so it now sits under `no/sikt/graphitron/model/schema/` in the
+model's resources.
+
+**What the split cost in visibility, stated because it is the one thing the move gave up.** Types
+and members that were package-private because their readers were same-package are now public where
+the split put a reader in another package. Most are gatherer entry points and the sink's write
+surface, which is the layout working as intended. Five white-box tests are the exception: they
+exercise `JooqCatalog`'s metadata validator, its stated-constant reduction and its role-name
+spelling, and they cannot follow their subject down, because their jOOQ fixtures are generated in
+`graphitron-sakila-db`, which builds after `graphitron-model` and could not precede it without the
+fact tier depending on Testcontainers. So four `JooqCatalog` members, its `StatedConstant`, and
+`FactCapture.ANCHOR_LOCK_MILLIS` are public for their tests. The sixth test did follow, into
+`model.sink`, where `FactWrites` stays package-private; it bends the schema it runs on and so cannot
+share a store, which cost `ThreadConfinedStore.BOOT_BUDGET` two.
+
+**The javadoc blind spot was 88 targets in 28 files, not the 42 step 3 measured**, because the move
+set grew and because a link inside a moved file can dangle in either direction. Every one of them is
+a `{@code}` downgrade, which is the disposition `CLAUDE.md` allows only when the target genuinely is
+another module's internals after the move, and here that is what all 88 are: the model values a
+rejection was found on, the resolvers that raise it, the emitters that read a directive's support
+types. Two mistakes worth recording because the first pass made both: a link to a type nested in the
+declaring file reads as unresolvable when a top-level type above the line shares its simple name,
+and trimming a qualified target to its last segment turns `{@link ResolvedContextArg.Site}` into
+`{@code Site}`, which names nothing a reader can find. Both were repaired by re-deciding each target
+against the declaring file's own nested types and keeping the qualifier.
+
 **8. Rehome the tests that need both tiers.** Seven files, in two kinds.
 
 *Five that check the build and a client agree.* `LintSuppressionDiagnosticsParityTest` exists twice,
