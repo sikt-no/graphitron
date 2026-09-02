@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -434,7 +435,7 @@ public class GraphitronSchemaValidator {
         // code compiles but is silently wrong, so reject at validate time instead.
         if (field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField bk && bk.sourceKey() != null) {
             for (var col : bk.sourceKey().columns()) {
-                if (col.columnType() instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+                if (CatalogRefs.columnType(col) instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
                     errors.add(new ValidationError(
                         field.qualifiedName(),
                         Rejection.structural("Field '" + field.qualifiedName() + "': DataLoader key column '"
@@ -640,7 +641,7 @@ public class GraphitronSchemaValidator {
         // compared by array reference identity, so distinct rows with equal element content mis-match.
         // Reject at validate time rather than emitting a NodeId encoder that mis-identifies at runtime.
         for (var col : type.nodeKeyColumns()) {
-            if (col.columnType() instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+            if (CatalogRefs.columnType(col) instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
                 errors.add(ValidationError.forType(
                     type.name(),
                     Rejection.structural("@node key column '" + col.sqlName() + "' is array-typed ("
@@ -820,7 +821,7 @@ public class GraphitronSchemaValidator {
         var byRecordClass = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
             List<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>>();
         for (var tb : tableBound) {
-            byRecordClass.computeIfAbsent(tb.table().recordClass(), k -> new java.util.ArrayList<>()).add(tb);
+            byRecordClass.computeIfAbsent(CatalogRefs.recordClass(tb.table()), k -> new java.util.ArrayList<>()).add(tb);
         }
         for (var group : byRecordClass.values()) {
             if (group.size() < 2) continue;

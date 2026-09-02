@@ -33,9 +33,9 @@ class RecordReadFieldValidationTest {
 
     private static TableRef filmTable() {
         return new TableRef("film", "FILM",
-            ClassName.bestGuess("fake.tables.Film"),
-            ClassName.bestGuess("fake.tables.records.FilmRecord"),
-            ClassName.bestGuess("fake.Tables"),
+            "fake.tables.Film",
+            "fake.tables.records.FilmRecord",
+            "fake.Tables",
             List.of(), List.of());
     }
 

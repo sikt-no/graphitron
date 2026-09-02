@@ -130,7 +130,7 @@ class TenantAcquisitionFragmentsTest {
     void aPrimitiveTenantColumnDeclaresTheKeyLocalBoxed() {
         var declaration = declare(new TenantAcquisition.ArgumentBound(
             List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId")),
-            new ColumnRef("customer_id", "CUSTOMER_ID", "int", TypeName.INT)));
+            new ColumnRef("customer_id", "CUSTOMER_ID", "int")));
 
         assertThat(declaration.statement().toString()).startsWith("java.lang.Integer _divinedTenant");
     }

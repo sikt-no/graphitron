@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 import java.util.Objects;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * The batch key extracted from a source-bearing field's parent: the key column tuple plus the
@@ -89,7 +90,7 @@ public record SourceKey(
     private static TypeName jooqShape(String shape, List<ColumnRef> cols) {
         ClassName container = ClassName.get("org.jooq", shape + cols.size());
         TypeName[] args = cols.stream()
-            .map(ColumnRef::columnType)
+            .map(CatalogRefs::columnType)
             .toArray(TypeName[]::new);
         return ParameterizedTypeName.get(container, args);
     }

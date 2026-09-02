@@ -99,7 +99,7 @@ final class ServiceRowsFragments {
         boolean isMapped = batched.loader().container() == LoaderRegistration.Container.MAPPED_SET;
         boolean isList = batched.loader().valueIsList();
         TypeName keyElement = sourceKey.keyElementType();
-        TypeName xRecord = table.recordClass();
+        TypeName xRecord = CatalogRefs.recordClass(table);
         List<ColumnRef> pks = table.primaryKeyColumns();
         // VALUES row shape: (parentIdx, seq, pk…). idx drives the scatter back to the parent; seq
         // is the global flatten order so each parent's records keep the order the service returned
@@ -117,7 +117,7 @@ final class ServiceRowsFragments {
         rowTypeArgs[0] = ClassName.get(Integer.class);
         rowTypeArgs[1] = ClassName.get(Integer.class);
         for (int i = 0; i < pks.size(); i++) {
-            rowTypeArgs[i + 2] = pks.get(i).columnType();
+            rowTypeArgs[i + 2] = CatalogRefs.columnType(pks.get(i));
         }
         // ValuesJoinRowBuilder's schemes take the slot count and add the idx cell themselves;
         // the lift's extra slot beyond the PKs is the seq cell.
@@ -174,7 +174,7 @@ final class ServiceRowsFragments {
         body.beginControlFlow("for ($T rec : perParent.get(idx))", xRecord);
         // Cells delegated to the shared VALUES-cell authority so converter-backed target PKs
         // bind through the column's registered Converter DataType.
-        CodeBlock liftOwnerExpr = CodeBlock.of("$T.$L", table.constantsClass(), table.javaFieldName());
+        CodeBlock liftOwnerExpr = CodeBlock.of("$T.$L", CatalogRefs.constantsClass(table), table.javaFieldName());
         CodeBlock liftCells = ValuesJoinRowBuilder.cellsCode(
             pks, java.util.function.Function.identity(),
             CodeBlock.of("$T.inline(idx), $T.inline(seq)", DSL, DSL), liftOwnerExpr,
@@ -205,7 +205,7 @@ final class ServiceRowsFragments {
         body.addStatement("$T projectionInput = $T.values(rowArray).as($L)",
             projInputTableType, DSL, valuesAlias.build());
         body.addStatement("$T boundTable = $T.$L.as($S)",
-            table.tableClass(), table.constantsClass(), table.javaFieldName(), fieldName);
+            CatalogRefs.tableClass(table), CatalogRefs.constantsClass(table), table.javaFieldName(), fieldName);
         body.addStatement("$T selectFields = new $T<>($L)",
             listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, "boundTable"));
         body.addStatement("selectFields.add(projectionInput.field(0, $T.class).as($S))",
@@ -272,7 +272,7 @@ final class ServiceRowsFragments {
      */
     private static CodeBlock projectionInputFieldLookup(ColumnRef pk, TableRef table) {
         return CodeBlock.of("projectionInput.field($S, $T.$L.$L.getDataType())",
-            pk.sqlName(), table.constantsClass(), table.javaFieldName(), pk.javaName());
+            pk.sqlName(), CatalogRefs.constantsClass(table), table.javaFieldName(), pk.javaName());
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef ref) {

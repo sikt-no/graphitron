@@ -167,7 +167,7 @@ public final class RoutineCallEmitter {
                 case PreviousNodeRef.ParentInputField pif ->
                     CodeBlock.of("$L.field($S, $T.$L.$L.getDataType())",
                         pif.valuesLocal(), sc.column().sqlName(),
-                        pif.ownerTable().constantsClass(), pif.ownerTable().javaFieldName(),
+                        CatalogRefs.constantsClass(pif.ownerTable()), pif.ownerTable().javaFieldName(),
                         sc.column().javaName());
                 // Classifier-unreachable: a SourceColumn binding reads the previous
                 // chain node's column, but a None head has no previous node. The root chain pins

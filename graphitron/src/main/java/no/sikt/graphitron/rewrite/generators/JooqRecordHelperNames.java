@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
  *
  * <h3>Why shape, not record class (D1)</h3>
  *
- * <p>A dedup keyed on {@code jr.table().recordClass()} alone would collapse two {@code @service}
+ * <p>A dedup keyed on {@code CatalogRefs.recordClass(jr.table())} alone would collapse two {@code @service}
  * fields binding one jOOQ record through different input types (different {@code @field} column
  * sets) onto a single shape's helper, silently dropping the columns unique to the other. A
  * {@link CallSiteExtraction.JooqRecord} is a record whose every component is a value type with
@@ -104,7 +105,7 @@ final class JooqRecordHelperNames {
         // Group distinct shapes by record class to find contention.
         var byClass = new LinkedHashMap<ClassName, List<CallSiteExtraction.JooqRecord>>();
         for (var jr : distinct) {
-            byClass.computeIfAbsent(jr.table().recordClass(), k -> new ArrayList<>()).add(jr);
+            byClass.computeIfAbsent(CatalogRefs.recordClass(jr.table()), k -> new ArrayList<>()).add(jr);
         }
 
         var stems = new LinkedHashMap<CallSiteExtraction.JooqRecord, String>();
@@ -157,7 +158,7 @@ final class JooqRecordHelperNames {
     private String stem(CallSiteExtraction.JooqRecord jr) {
         if (!populated) {
             // Default resolver: bare name unconditionally (single-shape-per-class contexts only).
-            return jr.table().recordClass().simpleName();
+            return CatalogRefs.recordClass(jr.table()).simpleName();
         }
         String stem = stems.get(jr);
         if (stem == null) {
@@ -167,7 +168,7 @@ final class JooqRecordHelperNames {
             // helper). Fail at generation time instead.
             throw new IllegalStateException(
                 "JooqRecordHelperNames was asked to name a jOOQ-record carrier it never collected: "
-                + jr.table().recordClass() + " [" + canonicalRender(jr) + "]. Every call site must "
+                + CatalogRefs.recordClass(jr.table()) + " [" + canonicalRender(jr) + "]. Every call site must "
                 + "route through the resolver built from this <Type>Fetchers class's carriers.");
         }
         return stem;
@@ -184,7 +185,7 @@ final class JooqRecordHelperNames {
      * two shapes differing only in their aliases have different bodies and must sort apart.
      */
     private static String canonicalRender(CallSiteExtraction.JooqRecord jr) {
-        var sb = new StringBuilder(jr.table().recordClass().toString());
+        var sb = new StringBuilder(CatalogRefs.recordClass(jr.table()).toString());
         sb.append("|cols:");
         for (var cb : jr.columnBindings()) {
             sb.append(cb.paths().stream().map(p -> String.join(".", p)).collect(Collectors.joining("/")))

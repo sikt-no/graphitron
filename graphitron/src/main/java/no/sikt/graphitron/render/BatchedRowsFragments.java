@@ -199,8 +199,8 @@ public final class BatchedRowsFragments {
         TableRef pivotTable = pivot.pivotTable();
         String pivotAlias = PathFragments.liftedAlias(pivotTable);
         body.addStatement("$T $L = $T.$L.as($S)",
-            pivotTable.tableClass(), pivotAlias,
-            pivotTable.constantsClass(), pivotTable.javaFieldName(),
+            CatalogRefs.tableClass(pivotTable), pivotAlias,
+            CatalogRefs.constantsClass(pivotTable), pivotTable.javaFieldName(),
             fieldName + "_" + pivotAlias);
 
         TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
@@ -591,13 +591,13 @@ public final class BatchedRowsFragments {
         if (correlation instanceof ParentCorrelation.OnLiftedSlots lifted) {
             TableRef liftedTarget = lifted.targetTable();
             body.addStatement("$T $L = $T.$L.as($S)",
-                liftedTarget.tableClass(), firstAlias,
-                liftedTarget.constantsClass(), liftedTarget.javaFieldName(),
+                CatalogRefs.tableClass(liftedTarget), firstAlias,
+                CatalogRefs.constantsClass(liftedTarget), liftedTarget.javaFieldName(),
                 fieldName + "_" + firstAlias);
         }
         for (int i = 0; i < joinPath.size(); i++) {
             JoinStep.HasTargetTable step = (JoinStep.HasTargetTable) joinPath.get(i);
-            ClassName jooqTableClass = step.targetTable().tableClass();
+            ClassName jooqTableClass = CatalogRefs.tableClass(step.targetTable());
             PreviousNodeRef previousNode = i > 0
                 ? new PreviousNodeRef.TypedAlias(aliases.get(i - 1))
                 : correlation instanceof ParentCorrelation.OnLateralArgs
@@ -613,7 +613,7 @@ public final class BatchedRowsFragments {
         if (correlation instanceof ParentCorrelation.OnParentJoin pj) {
             TableRef parentTable = pj.parentTable();
             body.addStatement("$T parentAlias = $T.$L.as($S)",
-                parentTable.tableClass(), parentTable.constantsClass(), parentTable.javaFieldName(),
+                CatalogRefs.tableClass(parentTable), CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(),
                 fieldName + "_parent");
         }
 
@@ -641,7 +641,7 @@ public final class BatchedRowsFragments {
         TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
         parentRowTypeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < pkCols.size(); i++) {
-            parentRowTypeArgs[i + 1] = pkCols.get(i).columnType();
+            parentRowTypeArgs[i + 1] = CatalogRefs.columnType(pkCols.get(i));
         }
         // ValuesJoinRowBuilder's schemes take the slot count and add the idx cell themselves.
         TypeName parentRowType = ParameterizedTypeName.get(ValuesJoinRowBuilder.rowClass(pkCols.size()), parentRowTypeArgs);
@@ -677,7 +677,7 @@ public final class BatchedRowsFragments {
      * parent-input seam.
      */
     private static CodeBlock parentKeyCells(SourceKey sourceKey, List<ColumnRef> pkCols, TableRef ownerTable) {
-        CodeBlock ownerExpr = CodeBlock.of("$T.$L", ownerTable.constantsClass(), ownerTable.javaFieldName());
+        CodeBlock ownerExpr = CodeBlock.of("$T.$L", CatalogRefs.constantsClass(ownerTable), ownerTable.javaFieldName());
         java.util.function.BiFunction<ColumnRef, Integer, CodeBlock> valueExpr = switch (sourceKey.wrap()) {
             case SourceKey.Wrap.Record ignored -> (col, i) -> CodeBlock.of("k.value$L()", i + 1);
             case SourceKey.Wrap.Row ignored -> (col, i) -> CodeBlock.of("parentKeyCellValue(k.field$L())", i + 1);
@@ -749,7 +749,7 @@ public final class BatchedRowsFragments {
     private static CodeBlock parentInputFieldLookup(ColumnRef parentCol, TableRef ownerTable) {
         return CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
             parentCol.sqlName(),
-            ownerTable.constantsClass(), ownerTable.javaFieldName(), parentCol.javaName());
+            CatalogRefs.constantsClass(ownerTable), ownerTable.javaFieldName(), parentCol.javaName());
     }
 
     /**
@@ -808,7 +808,7 @@ public final class BatchedRowsFragments {
             if (i > 0) onCond.add(".and(");
             var col = lookupCols.get(i);
             onCond.add("$L.$L.eq(lookupInput.field($L, $T.class))",
-                terminalAlias, col.javaName(), i + 1, col.columnType());
+                terminalAlias, col.javaName(), i + 1, CatalogRefs.columnType(col));
             if (i > 0) onCond.add(")");
         }
         return onCond.build();

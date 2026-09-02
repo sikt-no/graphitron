@@ -15,6 +15,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.AccessorProbe;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.DmlKind;
@@ -264,7 +265,7 @@ final class RecordBindingResolver {
                     try {
                         // nameability: exempt (jOOQ catalog record class)
                         Class<?> recordClass = Class.forName(
-                            table.recordClass().reflectionName(), false, ctx.codegenLoader());
+                            CatalogRefs.recordClass(table).reflectionName(), false, ctx.codegenLoader());
                         addResultObservation(obj.getName(), new ProducerBinding.RootTable(
                             recordClass, obj.getName(), tableSqlName, locationOf(obj)));
                     } catch (ClassNotFoundException ignored) {
@@ -584,7 +585,7 @@ final class RecordBindingResolver {
         try {
             // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
-                table.recordClass().reflectionName(), false, ctx.codegenLoader());
+                CatalogRefs.recordClass(table).reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
             return;
         }
@@ -646,7 +647,7 @@ final class RecordBindingResolver {
         try {
             // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
-                table.recordClass().reflectionName(), false, ctx.codegenLoader());
+                CatalogRefs.recordClass(table).reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
             return;
         }
@@ -831,7 +832,7 @@ final class RecordBindingResolver {
         try {
             // nameability: exempt (jOOQ catalog record class)
             recordClass = Class.forName(
-                targetTable.recordClass().reflectionName(), false, ctx.codegenLoader());
+                CatalogRefs.recordClass(targetTable).reflectionName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException ignored) {
             return;
         }

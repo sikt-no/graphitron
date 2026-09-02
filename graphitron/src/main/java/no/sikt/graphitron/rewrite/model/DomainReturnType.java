@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.Objects;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * The Java domain type an {@link OutputField} producer puts at {@code env.getSource()} for its
@@ -150,7 +151,7 @@ public sealed interface DomainReturnType
      */
     static DomainReturnType claimForResultReturn(ReturnTypeRef.ResultReturnType returnType) {
         TableRef table = returnType.table();
-        if (table != null) return new TableRecord(table.recordClass());
+        if (table != null) return new TableRecord(CatalogRefs.recordClass(table));
         return claimForBacking(returnType);
     }
 }

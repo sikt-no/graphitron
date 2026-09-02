@@ -33,9 +33,9 @@ class ProducerBindingDmlEmittedTest {
     /** Stand-in TableRef whose recordClass FQN matches {@link String}'s. */
     private static final TableRef STRING_TABLE = new TableRef(
         "string_table", "STRING_TABLE",
-        ClassName.get("java.lang", "Object"),
-        ClassName.get("java.lang", "String"),
-        ClassName.get("java.lang", "Object"),
+        "java.lang.Object",
+        "java.lang.String",
+        "java.lang.Object",
         List.of(),
         List.of());
     private static final SourceLocation LOC = new SourceLocation(1, 1, "schema.graphqls");

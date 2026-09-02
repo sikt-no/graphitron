@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.render.CatalogRefs;
+
 /**
  * Where a record-read leaf's value is located on the parent's in-memory source object. One
  * non-null arm per read mechanism, replacing the nullable column/accessor slot pair the
@@ -28,7 +30,7 @@ public sealed interface ValueLocator {
     /**
      * The parent is a {@link GraphitronType.JooqTableRecordType} whose table resolved the
      * read name to a real column: the read is the typed-constant form
-     * {@code record.get(Tables.X.COL)}, and {@code column.columnType()} answers the leaf's
+     * {@code record.get(Tables.X.COL)}, and {@code CatalogRefs.columnType(column)} answers the leaf's
      * domain return type.
      */
     record TypedColumn(ColumnRef column) implements ValueLocator {

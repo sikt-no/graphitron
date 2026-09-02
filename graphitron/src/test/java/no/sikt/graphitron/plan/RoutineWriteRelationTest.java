@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.ErrorDispatch;
 import no.sikt.graphitron.command.JoinBasis;
 import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.command.RoutineWriteCommand;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -198,7 +199,7 @@ class RoutineWriteRelationTest {
         assertThat(((JoinBasis.ColumnPairs) hop.on()).keying())
             .as("the hop is keyed by the classified foreign key, named as its generated constant")
             .isEqualTo(new JoinBasis.Keying.ForeignKey(
-                fk.fk().keysClass().canonicalName(), fk.fk().constantName()));
+                fk.fk().keysClassName(), fk.fk().constantName()));
         assertThat(((JoinBasis.ColumnPairs) hop.on()).pairs())
             .extracting(p -> p.sourceSide().javaName(), p -> p.targetSide().javaName())
             .as("and pairs the two ends of that key, side for side")
@@ -215,7 +216,7 @@ class RoutineWriteRelationTest {
             .isEqualTo(hop0.alias());
         assertThat(row.anchor().table().tableClassName())
             .as("and from hop 0's table, carried as the captured class name the renderer lifts")
-            .isEqualTo(hop0.targetTable().tableClass().canonicalName());
+            .isEqualTo(CatalogRefs.tableClass(hop0.targetTable()).canonicalName());
         assertThat(row.hops().stream().map(RoutineWriteCommand.RereadHop::alias))
             .as("the tail is every hop after the anchor, in authored order")
             .containsExactlyElementsOf(hops.stream().skip(1)

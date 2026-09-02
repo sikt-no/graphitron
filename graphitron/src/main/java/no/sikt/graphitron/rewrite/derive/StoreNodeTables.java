@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.DSLContext;
@@ -20,7 +19,6 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType;
 
 /**
  * A node type's emission facts, assembled from the store: the {@link TableRef} its decode
@@ -43,12 +41,11 @@ import static no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType;
  * multi-schema layouts, where each schema's class sits in that schema's own package. Capture records
  * it; this reads it.
  *
- * <p>A column's javapoet type is decoded from its captured binding type through
- * {@link ColumnRef#decodeBindingType}, which handles the array descriptor a scalar decode would
- * crash on. That matters even though nothing on the projection path reads the type, the emission
- * naming a column by its {@code javaName} alone: the refs assembled here are ordinary
- * {@link ColumnRef} values that any later consumer may read, and a partially-decoded one is a trap
- * laid for whoever reads it next rather than a saving here.
+ * <p>Every name here is carried as the store holds it, the binding type of an array column
+ * included, which is a JVM descriptor rather than a class name. The refs assembled here are
+ * ordinary {@link ColumnRef} values that any later consumer may read, and a consumer that wants a
+ * type rather than a name lifts it through {@code CatalogRefs}, which is array-safe where a
+ * plain class-name parse is not.
  */
 public final class StoreNodeTables {
 
@@ -153,9 +150,9 @@ public final class StoreNodeTables {
         return Optional.of(new TableRef(
             row.value1(),
             row.value2(),
-            ClassName.bestGuess(row.value3()),
-            ClassName.bestGuess(row.value4()),
-            ClassName.bestGuess(row.value5()),
+            row.value3(),
+            row.value4(),
+            row.value5(),
             primaryKeyColumns(dsl, binding),
             allColumns(dsl, binding)));
     }
@@ -221,15 +218,14 @@ public final class StoreNodeTables {
     }
 
     /**
-     * One catalog column row as a {@link ColumnRef}, with its javapoet type decoded array-safely off
-     * the captured binding type. The short constructor is deliberately not used and a guard test
-     * forbids it: it decodes scalars only, and an array column's captured name is a JVM descriptor
-     * that crashes the scalar decode.
+     * One catalog column row as a {@link ColumnRef}, carrying the names the store holds. Nothing is
+     * decoded here: an array column's captured name is a JVM descriptor, and deciding how any of
+     * them is written into a source file belongs to the tier that emits.
      */
     private static ColumnRef columnOf(Record row) {
         String sqlName = row.get(SQL_COLUMN.COLUMN_NAME);
         String javaName = row.get(SQL_COLUMN.JOOQ_NAME);
         String bindingType = row.get(SQL_COLUMN.BINDING_TYPE);
-        return new ColumnRef(sqlName, javaName, bindingType, decodeBindingType(bindingType));
+        return new ColumnRef(sqlName, javaName, bindingType);
     }
 }

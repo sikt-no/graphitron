@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -19,16 +17,18 @@ import java.util.Optional;
  * <p>{@code javaFieldName} is the field name in the schema's {@code Tables} constants class
  * (e.g. {@code "FILM"} for {@code Tables.FILM}).
  *
- * <p>{@code tableClass} / {@code recordClass} / {@code constantsClass} are typed
- * {@link ClassName}s read directly from jOOQ reflection at parse time, so multi-schema
- * catalog layouts produce schema-segmented FQNs without per-emit-site derivation:
+ * <p>{@code tableClassName} / {@code recordClassName} / {@code constantsClassName} are fully
+ * qualified names read directly from jOOQ reflection at parse time, so multi-schema catalog
+ * layouts produce schema-segmented FQNs without per-emit-site derivation. Names and not javapoet
+ * types: a consumer emitting one lifts it through {@code CatalogRefs}, which is where
+ * deciding how a name is written into a source file belongs.
  *
  * <ul>
- *   <li>{@code tableClass}: the generated jOOQ table class
+ *   <li>{@code tableClassName}: the generated jOOQ table class
  *       (e.g. {@code multischema_a.tables.Widget})</li>
- *   <li>{@code recordClass}: the generated jOOQ record class
+ *   <li>{@code recordClassName}: the generated jOOQ record class
  *       (e.g. {@code multischema_a.tables.records.WidgetRecord})</li>
- *   <li>{@code constantsClass}: the schema's {@code Tables} constants class
+ *   <li>{@code constantsClassName}: the schema's {@code Tables} constants class
  *       (e.g. {@code multischema_a.Tables})</li>
  * </ul>
  *
@@ -50,9 +50,9 @@ import java.util.Optional;
 public record TableRef(
     String tableName,
     String javaFieldName,
-    ClassName tableClass,
-    ClassName recordClass,
-    ClassName constantsClass,
+    String tableClassName,
+    String recordClassName,
+    String constantsClassName,
     List<ColumnRef> primaryKeyColumns,
     List<ColumnRef> allColumns
 ) {
@@ -90,10 +90,10 @@ public record TableRef(
 
     /**
      * True when {@code other} denotes the same table as this ref. Compares the reified jOOQ
-     * table-class identity ({@code tableClass}) when both sides carry one; that is what
+     * table-class identity ({@code tableClassName}) when both sides carry one; that is what
      * distinguishes same-named tables across schemas and matches a schema-qualified {@code @table}
      * echo against jOOQ's unqualified canonical name. Falls back to the case-insensitive name
-     * compare ({@link #sameTable(String)}) only when either side lacks a {@code tableClass}, which
+     * compare ({@link #sameTable(String)}) only when either side lacks a {@code tableClassName}, which
      * catalog-constructed refs never do ({@code JooqCatalog.TableEntry.toTableRef} always populates
      * it); the fallback exists for fixture-built partial refs in unit tests. Null-safe: a null
      * {@code other} is not this table.
@@ -109,8 +109,8 @@ public record TableRef(
         if (other == null) {
             return false;
         }
-        if (tableClass != null && other.tableClass() != null) {
-            return tableClass.equals(other.tableClass());
+        if (tableClassName != null && other.tableClassName() != null) {
+            return tableClassName.equals(other.tableClassName());
         }
         return sameTable(other.tableName());
     }

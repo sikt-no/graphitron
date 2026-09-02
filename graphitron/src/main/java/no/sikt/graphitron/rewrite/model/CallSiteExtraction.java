@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * How to extract one argument value from a GraphQL execution context at the fetcher call site.
@@ -364,7 +365,7 @@ public sealed interface CallSiteExtraction
      * sub-structure here.
      *
      * <p>{@code table} is read off the param's classified
-     * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code table.recordClass()}
+     * {@link GraphitronType.JooqTableRecordInputType}; the record class is {@code CatalogRefs.recordClass(table)}
      * (the two name the same class by construction, so no separate component is carried).
      * {@code columnBindings} is the SET payload, {@code keyDecodes} are the {@code @nodeId}-decoded
      * identities / FK references; either may be empty, but not both.

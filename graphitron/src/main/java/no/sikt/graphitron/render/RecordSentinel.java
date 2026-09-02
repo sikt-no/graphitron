@@ -72,7 +72,7 @@ public final class RecordSentinel {
         var b = CodeBlock.builder().add("$T.using($T.DEFAULT).$L(", DSL, SQL_DIALECT, factory);
         for (int i = 0; i < keyColumns.size(); i++) {
             if (i > 0) b.add(", ");
-            b.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), keyColumns.get(i).javaName());
+            b.add("$T.$L.$L", CatalogRefs.constantsClass(table), table.javaFieldName(), keyColumns.get(i).javaName());
         }
         b.add(")");
         return b.build();

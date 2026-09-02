@@ -99,12 +99,12 @@ public final class ConditionGlueRenderer {
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
-                            row.glue().methodName(), row.table().tableClass(),
+                            row.glue().methodName(), CatalogRefs.tableClass(row.table()),
                             row.predicates(), row.lifts(), takesEnv, registry, contextHelper,
                             keyHost.at(row.coordinate())));
                         for (var fragment : row.facets()) {
                             classBuilder.addMethod(buildGlueMethod(
-                                fragment.method().methodName(), row.table().tableClass(),
+                                fragment.method().methodName(), CatalogRefs.tableClass(row.table()),
                                 fragment.predicates(), fragment.lifts(), takesEnv, registry, contextHelper,
                                 keyHost.at(row.coordinate())));
                         }
@@ -223,8 +223,8 @@ public final class ConditionGlueRenderer {
                     var target = reach.hop(h).targetTable();
                     String local = "table_fkt" + reachIndex + "_" + h;
                     builder.addStatement("$T $L = $T.$L.as(table.getName() + $S)",
-                        target.tableClass(), local,
-                        target.constantsClass(), target.javaFieldName(),
+                        CatalogRefs.tableClass(target), local,
+                        CatalogRefs.constantsClass(target), target.javaFieldName(),
                         "_fkt" + reachIndex + "_" + h);
                     hopLocals.add(local);
                 }

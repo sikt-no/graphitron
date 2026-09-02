@@ -32,7 +32,7 @@ class TableRefSameTablePredicateTest {
     }
 
     /** Carries a reified {@code tableClass} so the identity arm of {@code denotesSameTableAs} engages. */
-    private static TableRef ref(String tableName, ClassName tableClass) {
+    private static TableRef ref(String tableName, String tableClass) {
         return new TableRef(tableName, null, tableClass, null, null, List.of(), List.of());
     }
 
@@ -73,7 +73,7 @@ class TableRefSameTablePredicateTest {
      */
     @Test
     void denotesSameTableAs_sameTableClassDivergentNames_isTrue() {
-        var eventClass = ClassName.get("com.example.multischema_a.tables", "Event");
+        var eventClass = "com.example.multischema_a.tables.Event";
         var qualifiedEcho = ref("multischema_a.event", eventClass); // verbatim @table echo
         var jooqCanonical = ref("event", eventClass);               // jOOQ Table.getName()
         assertThat(qualifiedEcho.denotesSameTableAs(jooqCanonical)).isTrue();
@@ -87,8 +87,8 @@ class TableRefSameTablePredicateTest {
      */
     @Test
     void denotesSameTableAs_sameBareNameDifferentTableClass_isFalse() {
-        var aEvent = ref("event", ClassName.get("com.example.multischema_a.tables", "Event"));
-        var bEvent = ref("event", ClassName.get("com.example.multischema_b.tables", "Event"));
+        var aEvent = ref("event", "com.example.multischema_a.tables.Event");
+        var bEvent = ref("event", "com.example.multischema_b.tables.Event");
         assertThat(aEvent.denotesSameTableAs(bEvent)).isFalse();
         assertThat(bEvent.denotesSameTableAs(aEvent)).isFalse();
     }
@@ -101,7 +101,7 @@ class TableRefSameTablePredicateTest {
      */
     @Test
     void denotesSameTableAs_oneSideClassless_fallsBackToNameCompare() {
-        var classful = ref("FILM", ClassName.get("com.example.schema.tables", "Film"));
+        var classful = ref("FILM", "com.example.schema.tables.Film");
         var classless = ref("film"); // fixture-built partial ref
         assertThat(classful.denotesSameTableAs(classless)).isTrue();
         assertThat(classless.denotesSameTableAs(classful)).isTrue();

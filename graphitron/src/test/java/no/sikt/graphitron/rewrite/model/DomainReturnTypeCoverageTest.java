@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -116,7 +117,7 @@ class DomainReturnTypeCoverageTest {
         var withTable = new ReturnTypeRef.ResultReturnType(
             "FilmDetails", new FieldWrapper.Single(true), "com.example.jooq.tables.records.FilmRecord", table);
         assertThat(DomainReturnType.claimForResultReturn(withTable))
-            .isEqualTo(new DomainReturnType.TableRecord(table.recordClass()));
+            .isEqualTo(new DomainReturnType.TableRecord(CatalogRefs.recordClass(table)));
 
         var classOnly = new ReturnTypeRef.ResultReturnType(
             "FilmDto", new FieldWrapper.Single(true), "com.example.Outer$Nested", null);
@@ -161,9 +162,9 @@ class DomainReturnTypeCoverageTest {
         return new TableRef(
             "film",
             "FILM",
-            ClassName.bestGuess("com.example.jooq.tables.Film"),
-            ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"),
-            ClassName.bestGuess("com.example.jooq.Tables"),
+            "com.example.jooq.tables.Film",
+            "com.example.jooq.tables.records.FilmRecord",
+            "com.example.jooq.Tables",
             List.of(),
             List.of());
     }

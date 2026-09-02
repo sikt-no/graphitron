@@ -10,6 +10,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -440,14 +441,14 @@ final class InputBeanResolver {
                     return Rejection.structural(where
                         + ": input field '" + dottedPath(path) + "' (binding key '" + key + "') resolves to"
                         + " no column on table '" + table.tableName() + "' backing param record '"
-                        + table.recordClass() + "'"
+                        + CatalogRefs.recordClass(table) + "'"
                         + BuildContext.candidateHint(key, ctx.catalog.columnSqlNamesOf(table.tableName())));
                 }
                 var ce = col.get();
                 // f.isDeprecated() is the native @deprecated directive on the SDL leaf, the same read
                 // InputTypeGenerator makes when it re-emits the marker onto the generated input type.
                 plainLeaves.add(new PlainLeaf(path,
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()),
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
                     f.isDeprecated()));
             }
         }
@@ -508,7 +509,7 @@ final class InputBeanResolver {
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
         boolean nonNull = GraphQLTypeUtil.isNonNull(f.getType());
         List<ColumnRef> targetColumns;
-        if (resolved.table().recordClass().equals(table.recordClass())
+        if (CatalogRefs.recordClass(resolved.table()).equals(CatalogRefs.recordClass(table))
                 && !f.hasAppliedDirective(DIR_REFERENCE)) {
             // Same-table identity: the decoded values are the record's own key columns.
             targetColumns = resolved.keyColumns();
@@ -1043,7 +1044,7 @@ final class InputBeanResolver {
         // field references the decode helper emits are not fields of the declared record. Without
         // this gate the mismatch surfaces only as a javac "incompatible types" error in the
         // consumer's generated fetchers, not as a graphitron rejection; catch it at classification.
-        String nodeTableRecord = resolved.table().recordClass().toString();
+        String nodeTableRecord = CatalogRefs.recordClass(resolved.table()).toString();
         if (!nodeTableRecord.equals(recordTypeName)) {
             return new RecordLeaf.Fail(Rejection.structural(where
                 + ": the member is typed as jOOQ record '" + recordTypeName + "', but"

@@ -15,6 +15,7 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintRule;
@@ -2348,7 +2349,7 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in table '" + rt.tableName() + "'"
                     + candidateHint(columnName, ctx.catalog.columnJavaNamesOf(rt.tableName())));
         }
-        var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass(), col.get().columnType());
+        var columnRef = new ColumnRef(col.get().sqlName(), col.get().javaName(), col.get().columnClass());
         String enumClassName;
         switch (enumMappingResolver.validateEnumFilter(typeName, columnRef)) {
             case EnumMappingResolver.EnumValidation.NotEnum n -> enumClassName = null;
@@ -5074,7 +5075,7 @@ class FieldBuilder {
         if (!isSourceSigil) return null;
         var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
             method.returnType(), method.className(), method.methodName(),
-            shape.table().recordClass(),
+            CatalogRefs.recordClass(shape.table()),
             shape.arrival() == Arity.MANY);
         return mismatch.orElse(null);
     }
@@ -5189,9 +5190,9 @@ class FieldBuilder {
         var target = shape.table();
         var arrival = shape.arrival();
         no.sikt.graphitron.javapoet.TypeName expectedReturnType = arrival == Arity.ONE
-            ? target.recordClass()
+            ? CatalogRefs.recordClass(target)
             : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
-                ClassName.get(java.util.List.class), target.recordClass());
+                ClassName.get(java.util.List.class), CatalogRefs.recordClass(target));
         if (!expectedReturnType.equals(method.returnType())) {
             return "method '" + method.methodName() + "' in class '" + method.className()
                 + "' must return '" + expectedReturnType + "' to match the field's declared return type"
@@ -6961,7 +6962,7 @@ class FieldBuilder {
                     : SourceEnvelope.DIRECT;
                 var idSourceKey = new SourceKey(
                     nodeType.nodeKeyColumns(),
-                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()));
+                    new SourceKey.Wrap.TableRecord(CatalogRefs.recordClass(binding.tableRef())));
                 return new ChildField.SingleRecordIdField(parentTypeName, name, location,
                     scalarReturn, binding.tableRef(), idSourceKey, idEnvelope,
                     new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(nodeType.encodeMethod()));

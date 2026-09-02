@@ -9,6 +9,7 @@ import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
@@ -78,7 +79,7 @@ final class SelectMethodBody {
         EntityResolution entity, KeyAlternative alt, int altIndex,
         String outputPackage
     ) {
-        var jooqTableClass = entity.table().tableClass();
+        var jooqTableClass = CatalogRefs.tableClass(entity.table());
         var typeClass = ClassName.get(outputPackage + ".types", entity.typeName());
         String tableLocal = "t";
         String inputAlias = decap(entity.typeName()) + "Alt" + altIndex + "Input";
@@ -130,7 +131,7 @@ final class SelectMethodBody {
         var on = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             var col = columns.get(i);
-            var colClass = col.columnType();
+            var colClass = CatalogRefs.columnType(col);
             if (i == 0) {
                 on.add("$L.$L.eq(input.field($S, $T.class))",
                     tableLocal, col.javaName(), col.sqlName(), colClass);

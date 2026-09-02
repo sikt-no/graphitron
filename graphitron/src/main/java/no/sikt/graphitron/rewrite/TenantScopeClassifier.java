@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
 
@@ -37,7 +38,7 @@ public final class TenantScopeClassifier {
         }
         var scopedTables = new LinkedHashSet<String>();
         var sites = new ArrayList<Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite>();
-        var distinctTypes = new LinkedHashSet<TypeName>();
+        var distinctTypes = new LinkedHashSet<String>();
         var allColumnNames = new TreeSet<String>();
         for (var entry : catalog.allTableEntries()) {
             var table = entry.table();
@@ -51,8 +52,8 @@ public final class TenantScopeClassifier {
             String qualified = table.getSchema().getName() + "." + table.getName();
             scopedTables.add(qualified);
             sites.add(new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
-                qualified, column.get().columnType()));
-            distinctTypes.add(column.get().columnType());
+                qualified, column.get().columnClass()));
+            distinctTypes.add(column.get().columnClass());
         }
         var conflicts = new ArrayList<Rejection>();
         if (scopedTables.isEmpty()) {
@@ -69,7 +70,8 @@ public final class TenantScopeClassifier {
         // On disagreement the first encountered type (schema-then-table order) stands in as the
         // deterministic placeholder; the drained rejection fails the build before any consumer
         // emits against it.
-        TypeName tenantType = distinctTypes.isEmpty() ? null : distinctTypes.iterator().next();
+        TypeName tenantType = distinctTypes.isEmpty() ? null
+            : CatalogRefs.decodeBindingType(distinctTypes.iterator().next());
         return new TenantScopes.Configured(tenantColumn, tenantType, scopedTables, conflicts);
     }
 }

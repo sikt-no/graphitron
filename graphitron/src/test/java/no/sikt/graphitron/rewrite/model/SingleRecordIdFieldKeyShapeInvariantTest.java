@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,7 @@ class SingleRecordIdFieldKeyShapeInvariantTest {
     @Test
     void acceptsTypedTableRecordWrapUnderEitherEnvelope() {
         var typedKey = new SourceKey(
-            List.of(FILM_ID), new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()));
+            List.of(FILM_ID), new SourceKey.Wrap.TableRecord(CatalogRefs.recordClass(FILM_TABLE)));
         assertThatCode(() -> new ChildField.SingleRecordIdField(
                 "FilmIdsPayload", "filmIds", LOC, ID_RETURN, FILM_TABLE,
                 typedKey, SourceEnvelope.OUTCOME_SUCCESS, ENCODE))

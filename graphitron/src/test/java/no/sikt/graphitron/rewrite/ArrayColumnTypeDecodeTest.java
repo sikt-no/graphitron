@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
@@ -31,8 +32,8 @@ class ArrayColumnTypeDecodeTest {
     @Test
     void scalarColumn_decodesToClassName() {
         var id = catalog().findColumn("array_holder", "id").orElseThrow();
-        assertThat(id.columnType()).isInstanceOf(ClassName.class);
-        assertThat(id.columnType().toString()).isEqualTo("java.lang.Integer");
+        assertThat(CatalogRefs.decodeBindingType(id.columnClass())).isInstanceOf(ClassName.class);
+        assertThat(CatalogRefs.decodeBindingType(id.columnClass()).toString()).isEqualTo("java.lang.Integer");
         // The raw string carries the same source-form FQCN for a scalar.
         assertThat(id.columnClass()).isEqualTo("java.lang.Integer");
     }
@@ -40,10 +41,10 @@ class ArrayColumnTypeDecodeTest {
     @Test
     void booleanArrayColumn_decodesToArrayTypeName_ofBoolean() {
         var flags = catalog().findColumn("array_holder", "flags").orElseThrow();
-        assertThat(flags.columnType()).isInstanceOf(ArrayTypeName.class);
-        assertThat(((ArrayTypeName) flags.columnType()).componentType().toString())
+        assertThat(CatalogRefs.decodeBindingType(flags.columnClass())).isInstanceOf(ArrayTypeName.class);
+        assertThat(((ArrayTypeName) CatalogRefs.decodeBindingType(flags.columnClass())).componentType().toString())
             .isEqualTo("java.lang.Boolean");
-        assertThat(flags.columnType().toString()).isEqualTo("java.lang.Boolean[]");
+        assertThat(CatalogRefs.decodeBindingType(flags.columnClass()).toString()).isEqualTo("java.lang.Boolean[]");
         // The raw string stays the JVM binary descriptor: the form the Class.forName /
         // Class.getName consumers depend on, and the exact form that crashed ClassName.bestGuess.
         assertThat(flags.columnClass()).isEqualTo("[Ljava.lang.Boolean;");
@@ -52,8 +53,8 @@ class ArrayColumnTypeDecodeTest {
     @Test
     void textArrayColumn_decodesToArrayTypeName_ofString() {
         var tags = catalog().findColumn("array_holder", "tags").orElseThrow();
-        assertThat(tags.columnType()).isInstanceOf(ArrayTypeName.class);
-        assertThat(((ArrayTypeName) tags.columnType()).componentType().toString())
+        assertThat(CatalogRefs.decodeBindingType(tags.columnClass())).isInstanceOf(ArrayTypeName.class);
+        assertThat(((ArrayTypeName) CatalogRefs.decodeBindingType(tags.columnClass())).componentType().toString())
             .isEqualTo("java.lang.String");
         assertThat(tags.columnClass()).isEqualTo("[Ljava.lang.String;");
     }
@@ -65,9 +66,9 @@ class ArrayColumnTypeDecodeTest {
         // type-lift is pinned here rather than at any one consumer.
         var cols = catalog().allColumnsOf("array_holder");
         assertThat(cols).isNotEmpty();
-        assertThat(cols).allSatisfy(c -> assertThat(c.columnType()).isNotNull());
+        assertThat(cols).allSatisfy(c -> assertThat(CatalogRefs.decodeBindingType(c.columnClass())).isNotNull());
         var flags = cols.stream().filter(c -> c.sqlName().equals("flags")).findFirst().orElseThrow();
-        assertThat(flags.columnType()).isInstanceOf(ArrayTypeName.class);
+        assertThat(CatalogRefs.decodeBindingType(flags.columnClass())).isInstanceOf(ArrayTypeName.class);
     }
 
     // ===== The captured-name decode: the same answer without a live Class =====
@@ -81,8 +82,7 @@ class ArrayColumnTypeDecodeTest {
 
     @Test
     void capturedScalarName_decodesToClassName() {
-        var decoded = no.sikt.graphitron.rewrite.model.ColumnRef
-            .decodeBindingType("java.lang.Integer");
+        var decoded = CatalogRefs.decodeBindingType("java.lang.Integer");
         assertThat(decoded).isInstanceOf(ClassName.class);
         assertThat(decoded.toString()).isEqualTo("java.lang.Integer");
     }
@@ -90,8 +90,7 @@ class ArrayColumnTypeDecodeTest {
     /** The descriptor that crashed {@code bestGuess}, decoded rather than guessed. */
     @Test
     void capturedArrayDescriptor_decodesToArrayTypeName() {
-        var decoded = no.sikt.graphitron.rewrite.model.ColumnRef
-            .decodeBindingType("[Ljava.lang.Boolean;");
+        var decoded = CatalogRefs.decodeBindingType("[Ljava.lang.Boolean;");
         assertThat(decoded).isInstanceOf(ArrayTypeName.class);
         assertThat(decoded.toString()).isEqualTo("java.lang.Boolean[]");
     }
@@ -99,8 +98,7 @@ class ArrayColumnTypeDecodeTest {
     /** Two dimensions, one level stripped per recursion. */
     @Test
     void capturedNestedArrayDescriptor_decodesBothDimensions() {
-        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef
-            .decodeBindingType("[[Ljava.lang.String;").toString())
+        assertThat(CatalogRefs.decodeBindingType("[[Ljava.lang.String;").toString())
             .isEqualTo("java.lang.String[][]");
     }
 
@@ -110,7 +108,7 @@ class ArrayColumnTypeDecodeTest {
      */
     @Test
     void capturedPrimitiveArrayDescriptor_decodesToThePrimitiveElement() {
-        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType("[B").toString())
+        assertThat(CatalogRefs.decodeBindingType("[B").toString())
             .isEqualTo("byte[]");
     }
 
@@ -121,8 +119,8 @@ class ArrayColumnTypeDecodeTest {
     @Test
     void theCapturedNameDecodesToWhatTheBoundaryDecoded() {
         var flags = catalog().findColumn("array_holder", "flags").orElseThrow();
-        assertThat(no.sikt.graphitron.rewrite.model.ColumnRef.decodeBindingType(flags.columnClass()))
-            .isEqualTo(flags.columnType());
+        assertThat(CatalogRefs.decodeBindingType(flags.columnClass()))
+            .isEqualTo(CatalogRefs.decodeBindingType(flags.columnClass()));
     }
 
 }

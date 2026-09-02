@@ -4,6 +4,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -191,7 +192,7 @@ public final class ServiceMethodCallWalker {
         // already aligned the Java type with the SDL arg) and wrap the element in the existing ListOf.
         if (extraction instanceof CallSiteExtraction.JooqRecord jr) {
             ValueShape shape = new ValueShape.JooqRecordInput(jr, path);
-            if (isListType(javaType, jr.table().recordClass())) {
+            if (isListType(javaType, CatalogRefs.recordClass(jr.table()))) {
                 return new ValueShape.ListOf(path, shape);
             }
             return shape;

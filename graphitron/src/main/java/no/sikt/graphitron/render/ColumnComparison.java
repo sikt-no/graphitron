@@ -31,7 +31,7 @@ import no.sikt.graphitron.rewrite.model.TableRef;
  *
  * <h2>The rule</h2>
  *
- * Let {@code L} be the receiver's {@link ColumnRef#columnType()} and {@code R} the argument's.
+ * Let {@code L} be the receiver's {@link CatalogRefs#columnType(ColumnRef)} and {@code R} the argument's.
  *
  * <ul>
  *   <li>Either is {@code null}: emit {@code left.eq(right)} unchanged. {@code columnType()} is
@@ -77,7 +77,7 @@ public final class ColumnComparison {
             String rightAlias, ColumnRef rightColumn) {
         var left = CodeBlock.of("$L.$L", leftAlias, leftColumn.javaName());
         var right = CodeBlock.of("$L.$L", rightAlias, rightColumn.javaName());
-        return compare(left, leftColumn.columnType(), right, rightColumn.columnType());
+        return compare(left, CatalogRefs.columnType(leftColumn), right, CatalogRefs.columnType(rightColumn));
     }
 
     /**
@@ -92,8 +92,8 @@ public final class ColumnComparison {
             String rightAlias, CatalogColumn rightColumn) {
         var left = CodeBlock.of("$L.$L", leftAlias, leftColumn.javaName());
         var right = CodeBlock.of("$L.$L", rightAlias, rightColumn.javaName());
-        return compare(left, ColumnRef.decodeBindingType(leftColumn.javaTypeName()),
-            right, ColumnRef.decodeBindingType(rightColumn.javaTypeName()));
+        return compare(left, CatalogRefs.decodeBindingType(leftColumn.javaTypeName()),
+            right, CatalogRefs.decodeBindingType(rightColumn.javaTypeName()));
     }
 
     /**
@@ -109,7 +109,7 @@ public final class ColumnComparison {
     public static CodeBlock equalityAgainstField(String alias, ColumnRef column,
             ColumnRef fieldColumn, CodeBlock fieldExpression) {
         var left = CodeBlock.of("$L.$L", alias, column.javaName());
-        return compare(left, column.columnType(), fieldExpression, fieldColumn.columnType());
+        return compare(left, CatalogRefs.columnType(column), fieldExpression, CatalogRefs.columnType(fieldColumn));
     }
 
     /**
@@ -134,15 +134,15 @@ public final class ColumnComparison {
      */
     public static CodeBlock equalityAgainstValue(String alias, ColumnRef column,
             ColumnRef valueColumn, TableRef valueOwnerTable, CodeBlock valueExpression) {
-        TypeName leftType = column.columnType();
-        TypeName rightType = valueColumn.columnType();
+        TypeName leftType = CatalogRefs.columnType(column);
+        TypeName rightType = CatalogRefs.columnType(valueColumn);
         var left = CodeBlock.of("$L.$L", alias, column.javaName());
         if (!diverges(leftType, rightType)) {
             return CodeBlock.of("$L.eq($L)", left, valueExpression);
         }
         var bound = CodeBlock.of("$T.val($L, $T.$L.$L.getDataType())",
             DSL, valueExpression,
-            valueOwnerTable.constantsClass(), valueOwnerTable.javaFieldName(), valueColumn.javaName());
+            CatalogRefs.constantsClass(valueOwnerTable), valueOwnerTable.javaFieldName(), valueColumn.javaName());
         return CodeBlock.of("$L.eq($L.coerce($L))", left, bound, left);
     }
 

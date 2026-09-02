@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ErrorFieldRead;
@@ -117,7 +118,7 @@ public final class ErrorTypeFetcherClassGenerator {
      */
     private static MethodSpec encodedFieldMethod(ErrorFieldRead.SourceAccessor accessor,
             CallSiteCompaction.NodeIdEncodeKeys encode) {
-        var keyType = encode.encodeMethod().paramSignature().get(0).columnType();
+        var keyType = CatalogRefs.columnType(encode.encodeMethod().paramSignature().get(0));
         return MethodSpec.methodBuilder(accessor.sdlFieldName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)

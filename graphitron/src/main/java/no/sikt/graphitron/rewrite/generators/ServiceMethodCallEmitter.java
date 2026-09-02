@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
@@ -298,8 +299,8 @@ public final class ServiceMethodCallEmitter {
             }
             case CallSiteExtraction.NodeIdDecodeRecord rec -> CodeBlock.of("$L($L)",
                 isListType(javaType)
-                    ? helperNames.decodeList(rec.table().recordClass())
-                    : helperNames.decodeSingular(rec.table().recordClass()),
+                    ? helperNames.decodeList(CatalogRefs.recordClass(rec.table()))
+                    : helperNames.decodeSingular(CatalogRefs.recordClass(rec.table())),
                 rawValue);
             // Unreachable for well-formed Scalar leaves; defensive fallback.
             default -> CodeBlock.of("($T) $L", javaType, rawValue);

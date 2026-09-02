@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -68,7 +69,7 @@ class NodeIdProducerSlotDecodePipelineTest {
         assertThat(rec.typeId()).isEqualTo("Inventory");
         assertThat(rec.keyColumns()).extracting(ColumnRef::sqlName)
             .containsExactly("inventory_id", "store_id");
-        assertThat(rec.table().recordClass().simpleName()).isEqualTo("InventoryRecord");
+        assertThat(CatalogRefs.recordClass(rec.table()).simpleName()).isEqualTo("InventoryRecord");
     }
 
     /**

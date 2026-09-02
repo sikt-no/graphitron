@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -158,7 +159,7 @@ public class NodeIdEncoderClassGenerator {
             classBuilder.addMethod(buildPerTypeEncode(nt));
             // Each decode method references its own table's Tables class, so multi-schema codegen
             // layouts get schema-segmented references.
-            classBuilder.addMethod(buildPerTypeDecode(nt, nt.table().constantsClass()));
+            classBuilder.addMethod(buildPerTypeDecode(nt, CatalogRefs.constantsClass(nt.table())));
         }
 
         return List.of(classBuilder.build());
@@ -203,7 +204,7 @@ public class NodeIdEncoderClassGenerator {
         for (int i = 0; i < ref.paramSignature().size(); i++) {
             ColumnRef col = ref.paramSignature().get(i);
             String paramName = "v" + i;
-            b.addParameter(col.columnType(), paramName);
+            b.addParameter(CatalogRefs.columnType(col), paramName);
             argList.append(", ").append(paramName);
         }
         b.addStatement("return encode($S" + argList + ")", nt.typeId());

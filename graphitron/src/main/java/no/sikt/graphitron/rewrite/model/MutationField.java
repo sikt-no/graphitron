@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.
@@ -509,7 +510,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * the classifier's verb dispatch under the cardinality-safety regime (the compact
      * constructor backstops that refusal). The data table / input table agreement is structurally pinned by
      * the {@link ProducerBinding.DmlEmitted} compact constructor's
-     * {@code reflectedClass.getName().equals(tableRef.recordClass().reflectionName())}
+     * {@code reflectedClass.getName().equals(CatalogRefs.recordClass(tableRef).reflectionName())}
      * invariant, surfaced via {@link Rejection.AuthorError.RecordBindingMultiProducer} when
      * disagreeing producers fold against the same SDL payload type.
      *

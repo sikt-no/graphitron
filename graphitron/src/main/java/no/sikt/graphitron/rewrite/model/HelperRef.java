@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * A resolved reference to a stateless generated helper method.
@@ -122,12 +123,12 @@ public sealed interface HelperRef {
             int n = outputColumnShape.size();
             TypeName element;
             if (n == 1) {
-                element = outputColumnShape.getFirst().columnType();
+                element = CatalogRefs.columnType(outputColumnShape.getFirst());
             } else {
                 ClassName rowN = ClassName.get("org.jooq", "Row" + n);
                 TypeName[] typeArgs = new TypeName[n];
                 for (int i = 0; i < n; i++) {
-                    typeArgs[i] = outputColumnShape.get(i).columnType();
+                    typeArgs[i] = CatalogRefs.columnType(outputColumnShape.get(i));
                 }
                 element = ParameterizedTypeName.get(rowN, typeArgs);
             }

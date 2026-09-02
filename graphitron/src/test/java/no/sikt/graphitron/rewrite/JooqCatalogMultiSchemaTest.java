@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -247,34 +248,33 @@ class JooqCatalogMultiSchemaTest {
     @Test
     void tableEntry_tableClass_returnsSchemaQualifiedFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
-        assertThat(entry.tableClass())
-            .isEqualTo(ClassName.get("no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables", "Widget"));
+        assertThat(entry.tableClassName())
+            .isEqualTo("no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.Widget");
     }
 
     @Test
     void tableEntry_recordClass_returnsSchemaQualifiedRecordFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
-        assertThat(entry.recordClass())
-            .isEqualTo(ClassName.get(
-                "no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables.records",
-                "WidgetRecord"));
+        assertThat(entry.recordClassName())
+            .isEqualTo("no.sikt.graphitron.rewrite.multischemafixture.multischema_a.tables"
+                + ".records.WidgetRecord");
     }
 
     @Test
     void tableEntry_constantsClass_returnsSchemaTablesClassFqn() {
         var entry = multi().findTable("multischema_a", "widget").orElseThrow();
-        assertThat(entry.constantsClass())
-            .isEqualTo(Optional.of(ClassName.get(
-                "no.sikt.graphitron.rewrite.multischemafixture.multischema_a", "Tables")));
+        assertThat(entry.constantsClassName())
+            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.multischemafixture"
+                + ".multischema_a.Tables"));
     }
 
     @Test
     void tableEntry_constantsClass_followsSchemaForCrossSchemaTable() {
         // gadget is in B; constants class must point to B's Tables, not A's.
         var entry = multi().findTable("multischema_b", "gadget").orElseThrow();
-        assertThat(entry.constantsClass())
-            .isEqualTo(Optional.of(ClassName.get(
-                "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Tables")));
+        assertThat(entry.constantsClassName())
+            .isEqualTo(Optional.of("no.sikt.graphitron.rewrite.multischemafixture"
+                + ".multischema_b.Tables"));
     }
 
     @Test
@@ -319,7 +319,7 @@ class JooqCatalogMultiSchemaTest {
         var resolution = multi().findForeignKeyRef(fkByName("gadget_widget_id_fkey"));
         assertThat(resolution).isInstanceOf(JooqCatalog.ForeignKeyResolution.Resolved.class);
         var ref = ((JooqCatalog.ForeignKeyResolution.Resolved) resolution).ref();
-        assertThat(ref.keysClass()).isEqualTo(ClassName.get(
+        assertThat(CatalogRefs.className(ref.keysClassName())).isEqualTo(ClassName.get(
             "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
         assertThat(ref.sqlName()).isEqualToIgnoringCase("gadget_widget_id_fkey");
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> (uppercased), not FK_<...>;
@@ -604,9 +604,9 @@ class JooqCatalogMultiSchemaTest {
         // Origin is signal, target is widget; a bare name compare fails
         // "multischema_a.signal".equalsIgnoreCase("signal"), mis-orients the join, and
         // swaps origin/target so the slot pairing inverts.
-        assertThat(fkJoin.originTable().tableClass())
+        assertThat(CatalogRefs.tableClass(fkJoin.originTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Signal"));
-        assertThat(fkJoin.targetTable().tableClass())
+        assertThat(CatalogRefs.tableClass(fkJoin.targetTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Widget"));
         // Slot orientation: source column sits on signal (widget_id), target on widget (widget_id).
         var pairs = (On.ColumnPairs) fkJoin.on();
@@ -632,9 +632,9 @@ class JooqCatalogMultiSchemaTest {
 
         var refA = ((JooqCatalog.ForeignKeyResolution.Resolved) multi().findForeignKeyRef(fkA)).ref();
         var refB = ((JooqCatalog.ForeignKeyResolution.Resolved) multi().findForeignKeyRef(fkB)).ref();
-        assertThat(refA.keysClass()).isEqualTo(ClassName.get(
+        assertThat(CatalogRefs.className(refA.keysClassName())).isEqualTo(ClassName.get(
             "no.sikt.graphitron.rewrite.multischemafixture.multischema_a", "Keys"));
-        assertThat(refB.keysClass()).isEqualTo(ClassName.get(
+        assertThat(CatalogRefs.className(refB.keysClassName())).isEqualTo(ClassName.get(
             "no.sikt.graphitron.rewrite.multischemafixture.multischema_b", "Keys"));
     }
 
@@ -650,9 +650,9 @@ class JooqCatalogMultiSchemaTest {
             /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var hop = ((BuildContext.FkJoinResolution.Resolved) result).hop();
-        assertThat(hop.targetTable().tableClass())
+        assertThat(CatalogRefs.tableClass(hop.targetTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Event"));
-        assertThat(hop.originTable().tableClass())
+        assertThat(CatalogRefs.tableClass(hop.originTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_a.tables", "Note"));
     }
 
@@ -665,9 +665,9 @@ class JooqCatalogMultiSchemaTest {
             /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
         var hop = ((BuildContext.FkJoinResolution.Resolved) result).hop();
-        assertThat(hop.targetTable().tableClass())
+        assertThat(CatalogRefs.tableClass(hop.targetTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_b.tables", "Event"));
-        assertThat(hop.originTable().tableClass())
+        assertThat(CatalogRefs.tableClass(hop.originTable()))
             .isEqualTo(ClassName.get(MULTI_PACKAGE + ".multischema_b.tables", "Note"));
     }
 

@@ -111,7 +111,7 @@ public final class RecordDecodeFragments {
     private static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
             java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
             TableRef nodeTable, CodeBlock mismatchThrow) {
-        ClassName recordType = nodeTable.recordClass();
+        ClassName recordType = CatalogRefs.recordClass(nodeTable);
         int arity = keyColumns.size();
         var body = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -128,7 +128,7 @@ public final class RecordDecodeFragments {
             .addStatement("$T decoded = new $T()", recordType, recordType);
         var fields = CodeBlock.builder();
         for (var column : keyColumns) {
-            fields.add(", $T.$L.$L", nodeTable.constantsClass(), nodeTable.javaFieldName(),
+            fields.add(", $T.$L.$L", CatalogRefs.constantsClass(nodeTable), nodeTable.javaFieldName(),
                 column.javaName());
         }
         body.addStatement("decoded.fromArray(values$L)", fields.build());

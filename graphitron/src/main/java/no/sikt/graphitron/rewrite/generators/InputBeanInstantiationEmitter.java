@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import javax.lang.model.element.Modifier;
@@ -271,12 +272,12 @@ final class InputBeanInstantiationEmitter {
 
     /** {@code decode<RecordType>}, e.g. {@code decodeFilmRecord}. Named from the target table's record class. */
     private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        return names.decodeSingular(rec.table().recordClass());
+        return names.decodeSingular(CatalogRefs.recordClass(rec.table()));
     }
 
     /** {@code decode<RecordType>List}, e.g. {@code decodeFilmRecordList}. */
     private static String recordDecodeListHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        return names.decodeList(rec.table().recordClass());
+        return names.decodeList(CatalogRefs.recordClass(rec.table()));
     }
 
     private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl, String root) {
@@ -372,7 +373,7 @@ final class InputBeanInstantiationEmitter {
         for (var ib : beans) {
             for (var fb : ib.fields()) {
                 if (fb.leaf() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
-                    ClassName key = rec.table().recordClass();
+                    ClassName key = CatalogRefs.recordClass(rec.table());
                     scalarOut.putIfAbsent(key, rec);
                     if (fb.list()) {
                         listOut.putIfAbsent(key, rec);
@@ -462,7 +463,7 @@ final class InputBeanInstantiationEmitter {
     }
 
     static MethodSpec buildRecordDecodeHelperList(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        ClassName recordType = rec.table().recordClass();
+        ClassName recordType = CatalogRefs.recordClass(rec.table());
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
         ClassName arrayList = ClassName.get(java.util.ArrayList.class);
         return MethodSpec.methodBuilder(recordDecodeListHelperName(rec, names))

@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
@@ -258,13 +259,13 @@ public final class FetcherEmitter {
             for (int i = 0; i < cf.columns().size(); i++) {
                 if (i > 0) encode.add(", ");
                 encode.add("rec.get($T.$L.$L)",
-                    parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+                    CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
             }
             return encode.add(")").build();
         }
         // Direct implies arity 1 (the carrier's constructor invariant).
         return CodeBlock.of("rec.get($T.$L.$L)",
-            parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(0).javaName());
+            CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(0).javaName());
     }
 
     /**
@@ -359,7 +360,7 @@ public final class FetcherEmitter {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
                 yield CodeBlock.of("(($T) $L).get($T.$L.$L)",
-                    RECORD, sourceExpr, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
+                    RECORD, sourceExpr, CatalogRefs.constantsClass(table), table.javaFieldName(), tc.column().javaName());
             }
             case ValueLocator.ByName bn -> encode == null
                 ? CodeBlock.of("(($T) $L).get($T.field($S))", RECORD, sourceExpr, DSL, bn.sqlName())
@@ -488,7 +489,7 @@ public final class FetcherEmitter {
                 for (int i = 0; i < cf.columns().size(); i++) {
                     if (i > 0) body.add(", ");
                     body.add("r.get($T.$L.$L)",
-                        parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+                        CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
                 }
                 body.add(");\n");
                 return sourceOnly(field.name(), fetchersClass, outputPackage, body.build());
@@ -496,7 +497,7 @@ public final class FetcherEmitter {
             // Direct implies arity 1 (the carrier's constructor invariant): a plain typed-column read.
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
-                    RECORD, parentTable.constantsClass(), parentTable.javaFieldName(), cf.columns().get(0).javaName()));
+                    RECORD, CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(0).javaName()));
         }
         if (field instanceof ChildField.TableField tf) {
             boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
@@ -551,7 +552,7 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage,
                 CodeBlock.of("return (($T) source).get($T.field($T.name($S), $T.class));\n",
                     RECORD, DSL, DSL, pcrf.aliasName(),
-                    pcrf.column().columnType()));
+                    CatalogRefs.columnType(pcrf.column())));
         }
         if (field instanceof ChildField.ColumnBackedReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.Direct) {
@@ -636,7 +637,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 var col = keyColumns.get(i);
                 body.add("row.get($T.$L.$L)",
-                    table.constantsClass(), table.javaFieldName(), col.javaName());
+                    CatalogRefs.constantsClass(table), table.javaFieldName(), col.javaName());
             }
             body.add("));\n");
             body.add("    }\n");
@@ -649,7 +650,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 var col = keyColumns.get(i);
                 body.add("source.get($T.$L.$L)",
-                    table.constantsClass(), table.javaFieldName(), col.javaName());
+                    CatalogRefs.constantsClass(table), table.javaFieldName(), col.javaName());
             }
             body.add(");\n");
         }
@@ -718,7 +719,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 body.add("row.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
-                    pkColumns.get(i).columnType());
+                    CatalogRefs.columnType(pkColumns.get(i)));
             }
             body.add("));\n");
             body.add("    }\n");
@@ -731,7 +732,7 @@ public final class FetcherEmitter {
                 if (i > 0) body.add(", ");
                 body.add("source.get($T.field($S, $T.class))",
                     DSL, pkColumns.get(i).sqlName(),
-                    pkColumns.get(i).columnType());
+                    CatalogRefs.columnType(pkColumns.get(i)));
             }
             body.add(");\n");
         }
@@ -764,7 +765,7 @@ public final class FetcherEmitter {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
                 var read = CodeBlock.of("(($T) source).get($T.$L.$L)",
-                    RECORD, table.constantsClass(), table.javaFieldName(), tc.column().javaName());
+                    RECORD, CatalogRefs.constantsClass(table), table.javaFieldName(), tc.column().javaName());
                 yield sourceOnly(field.name(), fetchersClass, outputPackage,
                     encodedReadReturn(read, encode));
             }
@@ -828,7 +829,7 @@ public final class FetcherEmitter {
      * invariant, a read yielding one value.
      */
     private static no.sikt.graphitron.javapoet.TypeName encodeKeyType(CallSiteCompaction.NodeIdEncodeKeys encode) {
-        return encode.encodeMethod().paramSignature().get(0).columnType();
+        return CatalogRefs.columnType(encode.encodeMethod().paramSignature().get(0));
     }
 
     /**

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 
 /**
@@ -44,7 +45,7 @@ public final class RowsMethodShape {
      * (loader signature).
      *
      * <ul>
-     *   <li>{@link ReturnTypeRef.TableBoundReturnType} → {@code tb.table().recordClass()}
+     *   <li>{@link ReturnTypeRef.TableBoundReturnType} → {@code CatalogRefs.recordClass(tb.table())}
      *       (the jOOQ-generated {@code XRecord} class for the field's bound table).</li>
      *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName} → the
      *       backing class, resolved through {@link #fromBinaryName} so a nested one keeps its
@@ -58,7 +59,7 @@ public final class RowsMethodShape {
      */
     public static TypeName strictPerKeyType(ReturnTypeRef returnType) {
         return switch (returnType) {
-            case ReturnTypeRef.TableBoundReturnType tb -> tb.table().recordClass();
+            case ReturnTypeRef.TableBoundReturnType tb -> CatalogRefs.recordClass(tb.table());
             case ReturnTypeRef.ResultReturnType r -> r.fqClassName() != null
                 ? fromBinaryName(r.fqClassName())
                 : null;

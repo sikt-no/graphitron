@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
@@ -241,7 +242,7 @@ public class TypeFetcherGenerator {
         var encoderClass = no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage);
         keyProjections.rows().stream()
             .filter(row -> row.coordinate().getTypeName().equals(typeName))
-            .forEach(row -> out.putIfAbsent(row.nodeTable().recordClass(),
+            .forEach(row -> out.putIfAbsent(CatalogRefs.recordClass(row.nodeTable()),
                 new CallSiteExtraction.NodeIdDecodeRecord(encoderClass,
                     row.typeId(), row.keyColumns(), row.nodeTable(), false)));
     }
@@ -1441,7 +1442,7 @@ public class TypeFetcherGenerator {
                                                              no.sikt.graphitron.command.CarrierDsl carrierDsl,
                                                              String outputPackage) {
         var tableRef = qstf.returnType().table();
-        var recordClass = tableRef.recordClass();
+        var recordClass = CatalogRefs.recordClass(tableRef);
         boolean isList = qstf.returnType().wrapper().isList();
         // For List cardinality, the developer's declared return type is either Result<XRecord>
         // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootListTableBoundReturnPair);
@@ -1508,7 +1509,7 @@ public class TypeFetcherGenerator {
                                                                 no.sikt.graphitron.command.CarrierDsl carrierDsl,
                                                                 String outputPackage) {
         var tableRef = mstf.returnType().table();
-        var recordClass = tableRef.recordClass();
+        var recordClass = CatalogRefs.recordClass(tableRef);
         boolean isList = mstf.returnType().wrapper().isList();
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
         TypeName resultLocalType = isList ? mstf.serviceMethodCall().javaReturnType() : recordClass;
@@ -1740,7 +1741,7 @@ public class TypeFetcherGenerator {
         var b = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) b.add(", ");
-            b.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), keyCols.get(i).javaName());
+            b.add("$T.$L.$L", CatalogRefs.constantsClass(table), table.javaFieldName(), keyCols.get(i).javaName());
         }
         return b.build();
     }
@@ -1751,7 +1752,7 @@ public class TypeFetcherGenerator {
         var b = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) b.add(", ");
-            b.add("$L.get($T.$L.$L)", local, table.constantsClass(), table.javaFieldName(),
+            b.add("$L.get($T.$L.$L)", local, CatalogRefs.constantsClass(table), table.javaFieldName(),
                 keyCols.get(i).javaName());
         }
         return b.build();
@@ -2033,7 +2034,7 @@ public class TypeFetcherGenerator {
                     if (e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg
                             && fromArg.shape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.Scalar s
                             && s.leafTransform() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
-                        record0(rec, isListTypeName(s.javaType(), rec.table().recordClass()),
+                        record0(rec, isListTypeName(s.javaType(), CatalogRefs.recordClass(rec.table())),
                             scalarOut, listOut);
                     }
                 }
@@ -2045,7 +2046,7 @@ public class TypeFetcherGenerator {
     private static void record0(CallSiteExtraction.NodeIdDecodeRecord rec, boolean list,
             java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
             java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
-        var key = rec.table().recordClass();
+        var key = CatalogRefs.recordClass(rec.table());
         scalarOut.putIfAbsent(key, rec);
         if (list) {
             listOut.putIfAbsent(key, rec);
@@ -2149,7 +2150,7 @@ public class TypeFetcherGenerator {
             // InputBean field shape, so this leaf-for-field-binding walk never meets one.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr ->
                 throw new IllegalStateException(
-                    "JooqRecordInput is not an InputBean field shape: " + jr.carrier().table().recordClass());
+                    "JooqRecordInput is not an InputBean field shape: " + CatalogRefs.recordClass(jr.carrier().table()));
         };
     }
 
@@ -2176,7 +2177,7 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> jb.javaClass().toString();
             // Forced by the sealed addition; a JooqRecordInput is never an InputBean field shape,
             // but the record class is the trivially-correct inner element type if ever reached.
-            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.carrier().table().recordClass().toString();
+            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> CatalogRefs.recordClass(jr.carrier().table()).toString();
         };
     }
 
@@ -2706,7 +2707,7 @@ public class TypeFetcherGenerator {
                 .endControlFlow();
             // The cell is typed to the column's Java type (Field<ColType>, not Field<?>) so it matches the
             // typed .values(Field<T1>, ...) overload the deduped INSERT column list produces.
-            var cellType = ParameterizedTypeName.get(fieldCn, col.columnType());
+            var cellType = ParameterizedTypeName.get(fieldCn, CatalogRefs.columnType(col));
             locals.addStatement("$T $L", cellType, cellName);
             locals.beginControlFlow("if ($L.isEmpty())", listName)
                 .addStatement("$L = $T.defaultValue($T.$L.$L.getDataType())",
@@ -4968,7 +4969,7 @@ public class TypeFetcherGenerator {
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) body.add(", ");
             var col = keyCols.get(i);
-            body.add("$T.$L.$L", owner.constantsClass(), owner.javaFieldName(), col.javaName());
+            body.add("$T.$L.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
         }
         body.add(")\n")
             .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
@@ -5867,7 +5868,7 @@ public class TypeFetcherGenerator {
      *
      * <p>List/connection: returns {@code CompletableFuture<List<V>>}. Single: returns
      * {@code CompletableFuture<V>}. {@code V} is the {@code perKeyType} the caller threads
-     * through: {@code tb.table().recordClass()} for {@code ServiceTableField} and
+     * through: {@code CatalogRefs.recordClass(tb.table())} for {@code ServiceTableField} and
      * {@code srf.elementType()} for {@code ServiceRecordField}.
      *
      * <p>{@code keySource} is the leaf's stored key source, and it replaces the parent table this

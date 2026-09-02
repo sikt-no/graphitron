@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -99,7 +100,7 @@ class JooqRecordServiceParamPipelineTest {
         // arm is itself the pin that it did not bean-ify or stay Direct. table, the two column bindings,
         // and the single-key identity decode are all read off the carrier.
         var jr = carrier(SINGLE_KEY_SDL, "modifyFilm", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_RECORD_FQN);
         assertThat(jr.columnBindings())
             .as("the two plain @field columns bind on the column axis, each a resolved ColumnRef")
             .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
@@ -128,7 +129,7 @@ class JooqRecordServiceParamPipelineTest {
         // has no plain @field columns, so columnBindings is empty and the keyDecode satisfies the
         // at-least-one-binding floor on its own.
         var jr = carrier(COMPOSITE_KEY_SDL, "modifyFilmActor", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
         assertThat(jr.columnBindings()).isEmpty();
         assertThat(jr.keyDecodes()).hasSize(1);
         assertThat(jr.keyDecodes().get(0).targetColumns())
@@ -170,7 +171,7 @@ class JooqRecordServiceParamPipelineTest {
         assertThat(shape).as("a List<Record> param derives a ListOf wrap").isInstanceOf(ValueShape.ListOf.class);
         var element = ((ValueShape.ListOf) shape).elementShape();
         assertThat(element).isInstanceOf(ValueShape.JooqRecordInput.class);
-        assertThat(((ValueShape.JooqRecordInput) element).carrier().table().recordClass().toString())
+        assertThat(CatalogRefs.recordClass(((ValueShape.JooqRecordInput) element).carrier().table()).toString())
             .isEqualTo(FILM_RECORD_FQN);
         assertThat(findSpec("QueryFetchers", LIST_SDL).methodSpecs())
             .extracting(MethodSpec::name)
@@ -223,7 +224,7 @@ class JooqRecordServiceParamPipelineTest {
             .map(e -> (CallSiteExtraction.JooqRecord) e)
             .findFirst()
             .orElseThrow(() -> new AssertionError("no JooqRecord arg on the child @service rows-method"));
-        assertThat(jooqArg.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jooqArg.table()).toString()).isEqualTo(FILM_RECORD_FQN);
         assertThat(findSpec("FilmFetchers", CHILD_SDL).methodSpecs())
             .extracting(MethodSpec::name)
             .as("the child rows-method's createFilmRecord helper lands on the parent's *Fetchers class")
@@ -373,7 +374,7 @@ class JooqRecordServiceParamPipelineTest {
         // resolve (FK deduced). Smoke only — film_actor's PK columns ARE its FK columns, so this cannot
         // discriminate FK resolution from name-match; the renamed-FK fixtures below do that.
         var jr = carrier(PURE_FK_SDL, "assignFilmActor", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_ACTOR_RECORD_FQN);
         assertThat(jr.keyDecodes())
             .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
             .containsExactlyInAnyOrder("filmId->film_id", "actorId->actor_id");
@@ -399,7 +400,7 @@ class JooqRecordServiceParamPipelineTest {
         // parent key (film.film_id). FK-constraint resolution must land the decoded Film id on
         // endorsed_film — a name-match shortcut would produce [film_id] or fail.
         var jr = carrier(ENDORSEMENT_FK_SDL, "endorseFilm", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_ENDORSEMENT_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_ENDORSEMENT_RECORD_FQN);
         assertThat(jr.keyDecodes()).hasSize(1);
         var kd = jr.keyDecodes().get(0);
         assertThat(kd.leaf()).isEqualTo("filmId");
@@ -444,7 +445,7 @@ class JooqRecordServiceParamPipelineTest {
 
         var withTable = carrier(sdl, "assignFilmActorTable", false);
         var twin = carrier(PURE_FK_SDL, "assignFilmActor", false);
-        assertThat(withTable.table().recordClass()).isEqualTo(twin.table().recordClass());
+        assertThat(CatalogRefs.recordClass(withTable.table())).isEqualTo(CatalogRefs.recordClass(twin.table()));
         assertThat(withTable.keyDecodes())
             .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())
             .as("identical key decodes to the twin's")
@@ -539,7 +540,7 @@ class JooqRecordServiceParamPipelineTest {
             }
             """;
         var jr = carrier(sdl, "replyEmail", false);
-        assertThat(jr.table().recordClass().toString())
+        assertThat(CatalogRefs.recordClass(jr.table()).toString())
             .isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.EmailRecord");
         assertThat(jr.keyDecodes()).hasSize(1);
         var kd = jr.keyDecodes().get(0);
@@ -661,7 +662,7 @@ class JooqRecordServiceParamPipelineTest {
         // @nodeId identity keeps its single-element path. The flatten is transparent — the nested columns
         // bind exactly as top-level ones would, recorded only on the path.
         var jr = carrier(NESTED_FLATTEN_SDL, "modifyFilm", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_RECORD_FQN);
         assertThat(jr.columnBindings())
             .extracting(cb -> String.join(".", cb.path()) + "->" + cb.column().sqlName())
             .containsExactly("details.title->title", "details.releaseYear->release_year");
@@ -830,7 +831,7 @@ class JooqRecordServiceParamPipelineTest {
 
         var nested = carrier(withTable, "modifyWithTable", false);
         var plain = carrier(twin, "modifyPlain", false);
-        assertThat(nested.table().recordClass()).isEqualTo(plain.table().recordClass());
+        assertThat(CatalogRefs.recordClass(nested.table())).isEqualTo(CatalogRefs.recordClass(plain.table()));
         assertThat(nested.columnBindings())
             .extracting(cb -> cb.leaf() + "->" + cb.column().sqlName())
             .as("the nested group's column flattens onto film.title, as in the twin")
@@ -1168,7 +1169,7 @@ class JooqRecordServiceParamPipelineTest {
             }
             """;
         var jr = carrier(sdl, "modifyDual", false);
-        assertThat(jr.table().recordClass().toString()).isEqualTo(FILM_RECORD_FQN);
+        assertThat(CatalogRefs.recordClass(jr.table()).toString()).isEqualTo(FILM_RECORD_FQN);
         assertThat(jr.keyDecodes())
             .as("both @nodeId identity decodes are admitted, each targeting film_id")
             .extracting(kd -> kd.leaf() + "->" + kd.targetColumns().get(0).sqlName())

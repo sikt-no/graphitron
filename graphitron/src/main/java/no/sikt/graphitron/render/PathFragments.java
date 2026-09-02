@@ -36,7 +36,7 @@ public final class PathFragments {
      * a one-node chain (first character lowercased plus index 0).
      */
     public static String liftedAlias(no.sikt.graphitron.rewrite.model.TableRef targetTable) {
-        String javaName = targetTable.tableClass().simpleName();
+        String javaName = CatalogRefs.tableClass(targetTable).simpleName();
         String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
         return basePrefix + 0;
     }
@@ -52,7 +52,7 @@ public final class PathFragments {
         var aliases = new ArrayList<String>(path.size());
         var prefixCount = new HashMap<String, Integer>();
         for (int i = 0; i < path.size(); i++) {
-            String javaName = ((JoinStep.HasTargetTable) path.get(i)).targetTable().tableClass().simpleName();
+            String javaName = CatalogRefs.tableClass(((JoinStep.HasTargetTable) path.get(i)).targetTable()).simpleName();
             String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
             int occurrence = prefixCount.merge(basePrefix, 1, Integer::sum);
             String prefix = occurrence == 1 || javaName.length() < 2
@@ -81,7 +81,7 @@ public final class PathFragments {
         return switch (step) {
             case JoinStep.Hop hop -> switch (hop.target()) {
                 case TableExpr.Catalog c -> CodeBlock.of("$T.$L",
-                    c.table().constantsClass(), c.table().javaFieldName());
+                    CatalogRefs.constantsClass(c.table()), c.table().javaFieldName());
                 // A child-side routine hop carries no projection sink of its own: it is reached
                 // through a JoinStep rather than through a command row, so the plan refuses to
                 // produce a plan whose projected binding sits at a coordinate no wired emitter

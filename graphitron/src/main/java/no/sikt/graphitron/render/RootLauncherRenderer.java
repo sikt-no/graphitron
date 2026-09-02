@@ -520,13 +520,13 @@ public final class RootLauncherRenderer {
         // The decodes first: a projected IN parameter reads a column off a materialised record, so
         // the record has to exist before the call expression that reads it.
         code.add(keys.declarations());
-        code.addStatement("$T $L = $L", startTable.tableClass(), startLocal, call);
+        code.addStatement("$T $L = $L", CatalogRefs.tableClass(startTable), startLocal, call);
         for (var hop : chain.hops()) {
             // The chain constructor pins every hop target to the catalog, so the alias wraps the
             // bare Tables.<X> singleton, matching every other alias-declaration site.
             code.addStatement("$T $L = $T.$L.as($S)",
-                hop.targetTable().tableClass(), hop.alias(),
-                hop.targetTable().constantsClass(), hop.targetTable().javaFieldName(), hop.alias());
+                CatalogRefs.tableClass(hop.targetTable()), hop.alias(),
+                CatalogRefs.constantsClass(hop.targetTable()), hop.targetTable().javaFieldName(), hop.alias());
         }
         String terminal = chain.hops().isEmpty() ? startLocal : chain.hops().getLast().alias();
 

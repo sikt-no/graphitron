@@ -156,7 +156,7 @@ public final class ProjectedKeyReads {
             java.util.function.Supplier<CodeBlock> wireRead) {
         String local = declared
             .computeIfAbsent(leafPath, key -> declare(projection, key, wireRead)).local();
-        return CodeBlock.of("$L.get($T.$L.$L)", local, projection.nodeTable().constantsClass(),
+        return CodeBlock.of("$L.get($T.$L.$L)", local, CatalogRefs.constantsClass(projection.nodeTable()),
             projection.nodeTable().javaFieldName(), projection.column().javaName());
     }
 
@@ -169,7 +169,7 @@ public final class ProjectedKeyReads {
             java.util.function.Supplier<CodeBlock> wireRead) {
         String local = localName(leafPath);
         return new Declared(local, CodeBlock.of("$T $L = $L($L);\n",
-            projection.nodeTable().recordClass(), local,
+            CatalogRefs.recordClass(projection.nodeTable()), local,
             decodeHelperFor.apply(projection), wireRead.get()));
     }
 

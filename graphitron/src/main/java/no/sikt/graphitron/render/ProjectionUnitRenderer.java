@@ -78,7 +78,7 @@ public final class ProjectionUnitRenderer {
             if (contribution instanceof Contribution.Call call
                     && call.wrap() instanceof CallWrap.LookupMultiset lm) {
                 builder.addMethod(LookupRows.buildInputRowsMethod(lm.mapping(),
-                    lm.inputRowsHelper().methodName(), lm.terminalTable().tableClass(),
+                    lm.inputRowsHelper().methodName(), CatalogRefs.tableClass(lm.terminalTable()),
                     LookupRows.ArgSource.SELECTED_FIELD,
                     row.unit().simpleName() + "." + contribution.field()));
             }
@@ -98,7 +98,7 @@ public final class ProjectionUnitRenderer {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfFieldWildcard())
             .addParameter(groupedType(), "grouped")
-            .addParameter(tableRef.tableClass(), "table")
+            .addParameter(CatalogRefs.tableClass(tableRef), "table")
             .addParameter(ENV, "env")
             .addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
 
@@ -252,8 +252,8 @@ public final class ProjectionUnitRenderer {
             // correlated subquery against the field's own table.
             terminalAlias = "t0";
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                m.terminalTable().tableClass(), terminalAlias,
-                m.terminalTable().constantsClass(), m.terminalTable().javaFieldName(),
+                CatalogRefs.tableClass(m.terminalTable()), terminalAlias,
+                CatalogRefs.constantsClass(m.terminalTable()), m.terminalTable().javaFieldName(),
                 "table", "_" + terminalAlias);
         } else {
             var aliases = PathFragments.generateAliases(m.path());
@@ -344,8 +344,8 @@ public final class ProjectionUnitRenderer {
             aliases = List.of();
             terminalAlias = "lk0";
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                lm.terminalTable().tableClass(), terminalAlias,
-                lm.terminalTable().constantsClass(), lm.terminalTable().javaFieldName(),
+                CatalogRefs.tableClass(lm.terminalTable()), terminalAlias,
+                CatalogRefs.constantsClass(lm.terminalTable()), lm.terminalTable().javaFieldName(),
                 "table", "_" + c.field() + "_" + terminalAlias);
         } else {
             aliases = PathFragments.generateAliases(path);
@@ -433,8 +433,8 @@ public final class ProjectionUnitRenderer {
         // Alias string prefixed with the parent alias's runtime name so recursive /
         // self-referential subselects never shadow each other, like every multiset arm.
         code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-            pm.attributeTable().tableClass(), aliasVar,
-            pm.attributeTable().constantsClass(), pm.attributeTable().javaFieldName(),
+            CatalogRefs.tableClass(pm.attributeTable()), aliasVar,
+            CatalogRefs.constantsClass(pm.attributeTable()), pm.attributeTable().javaFieldName(),
             "table", "_" + c.field() + "_pv");
 
         // Correlation: AND-chain over the single FK hop's column pairs — target side on the
@@ -475,7 +475,7 @@ public final class ProjectionUnitRenderer {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfFieldWildcard())
             .addParameter(groupedType(), "grouped")
-            .addParameter(p.table().tableClass(), "table")
+            .addParameter(CatalogRefs.tableClass(p.table()), "table")
             .addParameter(ENV, "env");
 
         builder.addStatement("$T<String> slots = new $T<>()", SET, LINKED_HASH_SET);
@@ -524,7 +524,7 @@ public final class ProjectionUnitRenderer {
             String previousAlias = i == 0 ? "table" : aliases.get(i - 1);
             code.add(indent);
             code.addStatement("$T $L = $L.as($L.getName() + $S)",
-                ht.targetTable().tableClass(), aliases.get(i),
+                CatalogRefs.tableClass(ht.targetTable()), aliases.get(i),
                 PathFragments.emitTableExpression(path.get(i),
                     new PreviousNodeRef.TypedAlias(previousAlias),
                     new ArgumentValueSource.FromSelectedField("sf"), argHelpers),

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -317,14 +318,14 @@ final class RoutineDirectiveResolver {
                 // Type compatibility: the emitted call passes the column's Field directly to the
                 // routine's Field overload, so the column's boxed Java type must be the parameter's
                 // boxed Java type — a mismatch here would be a javac error in the generated source.
-                if (!column.get().columnClass().equals(param.type().toString())) {
+                if (!column.get().columnClass().equals(param.typeName())) {
                     return new NodeResolved.Rejected(Rejection.structural(
                         "@routine columnMapping binds parameter '" + param.name() + "' ("
-                        + param.type() + ") to column '" + columnName + "' of '"
+                        + param.typeName() + ") to column '" + columnName + "' of '"
                         + previousNodeTableSqlName + "' (" + column.get().columnClass()
                         + ") — the column's Java type must match the routine parameter's"));
                 }
-                bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
+                bindings.add(new RoutineRef.ArgBinding(param.name(), CatalogRefs.typeName(param.typeName()),
                     new ParamSource.SourceColumn(column.get())));
                 continue;
             }
@@ -344,11 +345,11 @@ final class RoutineDirectiveResolver {
             if (leafGate != null) {
                 return new NodeResolved.Rejected(leafGate);
             }
-            bindings.add(new RoutineRef.ArgBinding(param.name(), param.type(),
+            bindings.add(new RoutineRef.ArgBinding(param.name(), CatalogRefs.typeName(param.typeName()),
                 new ParamSource.Arg(new CallSiteExtraction.Direct(), path)));
         }
         return new NodeResolved.Node(
-            new RoutineRef(fn.routinesClass(), fn.methodName(), bindings), fn.resultTable());
+            new RoutineRef(CatalogRefs.className(fn.routinesClassName()), fn.methodName(), bindings), fn.resultTable());
     }
 
     /**
@@ -412,7 +413,7 @@ final class RoutineDirectiveResolver {
         if (ctx.svc == null) {
             return null; // schema-free contexts carry no catalog to reflect against
         }
-        var extraction = ctx.svc.argExtraction(param.type().toString(), leafType,
+        var extraction = ctx.svc.argExtraction(param.typeName(), leafType,
             "@routine parameter '" + param.name() + "'");
         if (extraction instanceof ServiceCatalog.ArgExtraction.Rejected rejected) {
             return rejected.rejection();

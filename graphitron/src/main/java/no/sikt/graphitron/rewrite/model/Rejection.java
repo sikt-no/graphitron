@@ -133,8 +133,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * mutually-incompatible Java types. The per-name agreement walk over every
          * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context} keys by
          * parameter name and requires every site to declare the same structural
-         * {@link no.sikt.graphitron.javapoet.TypeName}. The factory emitter pastes that single
-         * type verbatim into the generated {@code Graphitron.newExecutionInput(...)} parameter
+         * type. The factory emitter pastes that single type verbatim into the generated {@code Graphitron.newExecutionInput(...)} parameter
          * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
          * {@code getContextArgument} call: any disagreement would mis-type the generated cast.
          *
@@ -283,7 +282,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                     .append("' has disagreeing Java types across catalog tables:");
                 for (TableSite site : tables) {
                     sb.append("\n  - ").append(site.qualifiedTable())
-                      .append(" declared ").append(site.declared().toString());
+                      .append(" declared ").append(site.declared());
                 }
                 sb.append("\n  Resolve by aligning every table's '").append(columnName)
                   .append("' column on a single Java type, or point <tenantColumn> at a column the catalog agrees on.");
@@ -296,11 +295,12 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             /**
              * One table carrying the tenant column: its schema-qualified SQL name
-             * ({@code "schema.table"}) and the Java type its column declares.
+             * ({@code "schema.table"}) and the name of the Java type its column declares, as the
+             * catalog captured it.
              */
             public record TableSite(
                 String qualifiedTable,
-                no.sikt.graphitron.javapoet.TypeName declared
+                String declared
             ) {}
         }
 

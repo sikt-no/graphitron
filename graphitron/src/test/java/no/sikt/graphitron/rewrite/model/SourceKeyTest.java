@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -58,8 +59,8 @@ class SourceKeyTest {
     void tableRecordWrapDerivesTheCapturedClassName() {
         var key = new SourceKey(
             List.of(FILM_ID),
-            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()));
-        assertThat(key.keyElementType()).isEqualTo(FILM_TABLE.recordClass());
+            new SourceKey.Wrap.TableRecord(CatalogRefs.recordClass(FILM_TABLE)));
+        assertThat(key.keyElementType()).isEqualTo(CatalogRefs.recordClass(FILM_TABLE));
     }
 
     @Test

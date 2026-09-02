@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -224,8 +225,8 @@ public final class ArgCallEmitter {
             }
             case CallSiteExtraction.NodeIdDecodeRecord rec -> CodeBlock.of("$L(env.getArgument($S))",
                 isListShaped(param)
-                    ? ctx.fetchersHelperNames().decodeList(rec.table().recordClass())
-                    : ctx.fetchersHelperNames().decodeSingular(rec.table().recordClass()),
+                    ? ctx.fetchersHelperNames().decodeList(CatalogRefs.recordClass(rec.table()))
+                    : ctx.fetchersHelperNames().decodeSingular(CatalogRefs.recordClass(rec.table())),
                 param.name());
         };
     }

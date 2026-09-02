@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
@@ -64,8 +65,8 @@ final class JooqRecordInstantiationEmitter {
      * compile-tier check that every bound column exists on the record's table.
      */
     static MethodSpec buildSingularHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
-        ClassName recordType = jr.table().recordClass();
-        ClassName tablesClass = jr.table().constantsClass();
+        ClassName recordType = CatalogRefs.recordClass(jr.table());
+        ClassName tablesClass = CatalogRefs.constantsClass(jr.table());
         String tableField = jr.table().javaFieldName();
         TypeName mapStringObject = ParameterizedTypeName.get(MAP,
             ClassName.get(String.class), ClassName.get(Object.class));
@@ -577,7 +578,7 @@ final class JooqRecordInstantiationEmitter {
      * {@code InputBean} plural helper does.
      */
     static MethodSpec buildPluralHelper(CallSiteExtraction.JooqRecord jr, JooqRecordHelperNames names) {
-        ClassName recordType = jr.table().recordClass();
+        ClassName recordType = CatalogRefs.recordClass(jr.table());
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, recordType);
         String pluralName = names.pluralName(jr);
         String singularName = names.singularName(jr);

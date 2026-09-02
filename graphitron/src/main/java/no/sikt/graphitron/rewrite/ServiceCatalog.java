@@ -13,6 +13,7 @@ import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -89,7 +90,7 @@ class ServiceCatalog {
 
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {
         return ctx.catalog.findColumn(tableSqlName, colName)
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()));
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
     }
 
     Optional<ColumnRef> resolveColumn(String columnName, TableBackedType tableType) {
@@ -147,7 +148,7 @@ class ServiceCatalog {
 
     Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {
         return ctx.catalog.findColumn(tableSqlName, columnName)
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()));
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
     }
 
     /**
@@ -1151,7 +1152,7 @@ class ServiceCatalog {
      *
      * <p>The assignability half is javac's own rule at the emitted call site: the helper is
      * rendered as {@code <Helper>.<method>(table)} inside a {@code $project} unit whose
-     * {@code table} parameter is typed from {@link TableRef#tableClass()}, so a helper typed on
+     * {@code table} parameter is typed from {@link TableRef#tableClassName()}, so a helper typed on
      * another table fails a consumer's build with no line back to the SDL. Two ordered layers
      * enforce it as value comparisons on {@code parentTable}, both behind the
      * {@code Table}-subtype gate above:
@@ -1163,7 +1164,7 @@ class ServiceCatalog {
      *       and hand-written table supertypes are not catalog entries, so they admit. This
      *       layer carries the non-generic case ({@code h(Film t)}) alone.</li>
      *   <li><b>Record type.</b> When the parameter's generic type is {@code X<R>} with {@code R}
-     *       a concrete class, {@code R} must be the parent's {@link TableRef#recordClass()}.
+     *       a concrete class, {@code R} must be the parent's {@link TableRef#recordClassName()}.
      *       {@code Table<FilmRecord>} passes on a {@code film} parent; {@code Table<ActorRecord>}
      *       and {@code Table<Record>} do not, matching what javac accepts for a generated
      *       {@code Film}, which implements {@code Table<FilmRecord>} and nothing else.</li>
@@ -1276,14 +1277,14 @@ class ServiceCatalog {
                 return Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' takes parameter type '" + p.getType().getSimpleName()
                     + "', which does not accept the parent table '" + parentTable.tableName()
-                    + "' (jOOQ class '" + parentTable.tableClass() + "'); type the parameter as"
+                    + "' (jOOQ class '" + CatalogRefs.tableClass(parentTable) + "'); type the parameter as"
                     + " the parent's table class or widen it to org.jooq.Table<?>");
             }
             return null;
         }
         // Layer 2: `X<R>` with a concrete `R` must name the parent's record class. Wildcards,
         // raw `Table`, and type variables carry no concrete `R` and are skipped.
-        if (parentTable.recordClass() == null
+        if (CatalogRefs.recordClass(parentTable) == null
                 || !(p.getParameterizedType() instanceof java.lang.reflect.ParameterizedType pt)) {
             return null;
         }
@@ -1291,11 +1292,11 @@ class ServiceCatalog {
         if (typeArgs.length != 1 || !(typeArgs[0] instanceof Class<?> recordArg)) {
             return null;
         }
-        if (!ClassName.get(recordArg).equals(parentTable.recordClass())) {
+        if (!ClassName.get(recordArg).equals(CatalogRefs.recordClass(parentTable))) {
             return Rejection.structural("method '" + methodName + "' in class '" + className
                 + "' takes parameter type '" + p.getType().getSimpleName() + "<"
                 + recordArg.getSimpleName() + ">', which does not accept the parent table '"
-                + parentTable.tableName() + "' (jOOQ record class '" + parentTable.recordClass()
+                + parentTable.tableName() + "' (jOOQ record class '" + CatalogRefs.recordClass(parentTable)
                 + "'); parameterise the parameter with the parent's record class or widen it to"
                 + " org.jooq.Table<?>");
         }
@@ -1481,7 +1482,7 @@ class ServiceCatalog {
             return new ArgExtraction.Rejected(Rejection.structural(site + ": " + rejected.message()));
         }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) recordDecode;
-        if (takesTheNodeTablesRecord(slotType, resolved.table().recordClass())) {
+        if (takesTheNodeTablesRecord(slotType, CatalogRefs.recordClass(resolved.table()))) {
             return new ArgExtraction.Resolved(new CallSiteExtraction.NodeIdDecodeRecord(
                 resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(), resolved.table(),
                 GraphQLTypeUtil.isNonNull(declaration.getType())));

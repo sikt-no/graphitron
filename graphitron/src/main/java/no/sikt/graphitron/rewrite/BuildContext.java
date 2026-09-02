@@ -1468,7 +1468,7 @@ class BuildContext {
         return fields.stream()
             .map(f -> catalog.findColumn(table, f.getName()))
             .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()))
+            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
             .toList();
     }
 
@@ -2981,7 +2981,7 @@ class BuildContext {
             }
             return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType())), cond,
+                List.of(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass())), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // Column miss. @condition(override: true) lifts to ConditionOwnedField (the method owns
@@ -3228,7 +3228,7 @@ class BuildContext {
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
             var pkCols = catalog.findPkColumns(targetTableName).stream()
-                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()))
+                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
                 .toList();
             if (pkCols.isEmpty()) {
                 return new TargetKeys(null, null,

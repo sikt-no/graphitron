@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 
 import java.util.Objects;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * One observed binding from a producer site that reaches an SDL type. Carries the reflected
@@ -103,7 +104,7 @@ public sealed interface ProducerBinding
      * {@code mutation-dml-record-field.data-table-equals-input-table} invariant.
      *
      * <p>Compact-constructor invariants: every component is non-null and
-     * {@code reflectedClass.getName()} matches {@code tableRef.recordClass().reflectionName()}.
+     * {@code reflectedClass.getName()} matches {@code CatalogRefs.recordClass(tableRef).reflectionName()}.
      */
     record DmlEmitted(
         Class<?> reflectedClass,
@@ -118,11 +119,11 @@ public sealed interface ProducerBinding
             Objects.requireNonNull(kind, "kind");
             Objects.requireNonNull(arrival, "arrival");
             Objects.requireNonNull(location, "location");
-            String expected = tableRef.recordClass().reflectionName();
+            String expected = CatalogRefs.recordClass(tableRef).reflectionName();
             if (!reflectedClass.getName().equals(expected)) {
                 throw new IllegalArgumentException(
                     "ProducerBinding.DmlEmitted: reflectedClass (" + reflectedClass.getName()
-                        + ") must equal tableRef.recordClass().reflectionName() (" + expected
+                        + ") must equal CatalogRefs.recordClass(tableRef).reflectionName() (" + expected
                         + ") so the per-SDL-type binding fold matches RootTable for "
                         + "the same TableRef");
             }
@@ -154,7 +155,7 @@ public sealed interface ProducerBinding
      * the payload's data field.
      *
      * <p>Compact-constructor invariants mirror {@link DmlEmitted}: every component non-null,
-     * {@code reflectedClass.getName()} equals {@code tableRef.recordClass().reflectionName()}.
+     * {@code reflectedClass.getName()} equals {@code CatalogRefs.recordClass(tableRef).reflectionName()}.
      */
     record ServiceEmitted(
         Class<?> reflectedClass,
@@ -171,11 +172,11 @@ public sealed interface ProducerBinding
             Objects.requireNonNull(tableRef, "tableRef");
             Objects.requireNonNull(arrival, "arrival");
             Objects.requireNonNull(location, "location");
-            String expected = tableRef.recordClass().reflectionName();
+            String expected = CatalogRefs.recordClass(tableRef).reflectionName();
             if (!reflectedClass.getName().equals(expected)) {
                 throw new IllegalArgumentException(
                     "ProducerBinding.ServiceEmitted: reflectedClass (" + reflectedClass.getName()
-                        + ") must equal tableRef.recordClass().reflectionName() (" + expected
+                        + ") must equal CatalogRefs.recordClass(tableRef).reflectionName() (" + expected
                         + ") so the per-SDL-type binding fold matches RootTable "
                         + "for the same TableRef");
             }
@@ -245,11 +246,11 @@ public sealed interface ProducerBinding
                             + pair.targetSide().sqlName() + ") is not");
                 }
             }
-            String expected = tableRef.recordClass().reflectionName();
+            String expected = CatalogRefs.recordClass(tableRef).reflectionName();
             if (!reflectedClass.getName().equals(expected)) {
                 throw new IllegalArgumentException(
                     "ProducerBinding.RoutineEmitted: reflectedClass (" + reflectedClass.getName()
-                        + ") must equal tableRef.recordClass().reflectionName() (" + expected
+                        + ") must equal CatalogRefs.recordClass(tableRef).reflectionName() (" + expected
                         + ") so the per-SDL-type binding fold matches RootTable for "
                         + "the same TableRef");
             }

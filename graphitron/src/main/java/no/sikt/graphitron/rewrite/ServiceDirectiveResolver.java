@@ -4,6 +4,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -514,7 +515,7 @@ final class ServiceDirectiveResolver {
             ServiceCatalog.ServiceSignature signature) {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
         if (!returnType.wrapper().isList()) return null;
-        ClassName recordCls = tb.table().recordClass();
+        ClassName recordCls = CatalogRefs.recordClass(tb.table());
         TypeName expectedResult = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls);
         TypeName expectedList = ParameterizedTypeName.get(ClassName.get("java.util", "List"), recordCls);
         TypeName actual = signature.returnType();
@@ -541,7 +542,7 @@ final class ServiceDirectiveResolver {
         boolean isList = returnType.wrapper().isList();
         return switch (returnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
-                ClassName recordCls = tb.table().recordClass();
+                ClassName recordCls = CatalogRefs.recordClass(tb.table());
                 yield isList ? null : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {

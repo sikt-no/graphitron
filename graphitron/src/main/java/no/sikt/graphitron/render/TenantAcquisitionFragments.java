@@ -103,7 +103,7 @@ public final class TenantAcquisitionFragments {
      */
     private static CodeBlock divinedKey(TenantAcquisition.ArgumentBound bound, ClassName connections,
             RequestContextRead contextRead) {
-        var columnType = bound.keyColumn().columnType();
+        var columnType = CatalogRefs.columnType(bound.keyColumn());
         var keyType = columnType.isPrimitive() ? columnType.box() : columnType;
         var b = CodeBlock.builder()
             .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, connections);

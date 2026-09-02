@@ -1578,7 +1578,7 @@ class TypeBuilder {
                 resolvedKeyColumns = List.copyOf(sdlKeyColumns);
             } else {
                 var pk = ctx.catalog.findPkColumns(tableRef.tableName()).stream()
-                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()))
+                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
                     .toList();
                 if (pk.isEmpty()) {
                     return new UnclassifiedType(name, location, Rejection.structural(
@@ -1744,7 +1744,7 @@ class TypeBuilder {
                 discriminatorRaw, ctx.catalog.columnJavaNamesOf(tableOpt.get().tableName())));
         }
         var discriminatorColumn =
-            new ColumnRef(col.sqlName(), col.javaName(), col.columnClass(), col.columnType());
+            new ColumnRef(col.sqlName(), col.javaName(), col.columnClass());
         // The single-table interface passes its own table so each participant's cross-table
         // fields are detected against it.
         var participants = buildParticipantList(implementorNames(name), false, tableOpt.get());

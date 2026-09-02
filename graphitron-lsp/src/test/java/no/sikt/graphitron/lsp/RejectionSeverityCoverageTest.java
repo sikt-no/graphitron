@@ -214,9 +214,9 @@ class RejectionSeverityCoverageTest {
             // the validator emits.
             var filmTable = new no.sikt.graphitron.rewrite.model.TableRef(
                 "film", "FILM",
-                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.Film"),
-                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"),
-                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.Tables"),
+                "com.example.jooq.tables.Film",
+                "com.example.jooq.tables.records.FilmRecord",
+                "com.example.jooq.Tables",
                 List.of(),
                 List.of());
             return new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
@@ -248,10 +248,10 @@ class RejectionSeverityCoverageTest {
                 List.of(
                     new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
                         "public.emne",
-                        no.sikt.graphitron.javapoet.ClassName.get(Integer.class)),
+                        Integer.class.getName()),
                     new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
                         "public.person",
-                        no.sikt.graphitron.javapoet.ClassName.get(String.class))));
+                        String.class.getName())));
         }
         if (permit == Rejection.AuthorError.NoTenantBinding.class) {
             // Tenant-binding fold rejection: a field reaches a tenant-scoped table with no

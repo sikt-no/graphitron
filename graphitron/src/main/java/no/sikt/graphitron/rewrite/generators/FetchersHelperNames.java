@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.ArrayList;
@@ -94,7 +95,7 @@ final class FetchersHelperNames {
             Collection<ClassName> beanClasses, Collection<ClassName> decodeRecordClasses) {
         var createClasses = new LinkedHashSet<ClassName>();
         for (var jr : jooqCarriers) {
-            createClasses.add(jr.table().recordClass());
+            createClasses.add(CatalogRefs.recordClass(jr.table()));
         }
         createClasses.addAll(beanClasses);
 

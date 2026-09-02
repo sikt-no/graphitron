@@ -247,7 +247,7 @@ class DeleteRowsWalkerTest {
     // --- fixture builders (shared shape with UpdateRowsWalkerTest) ---
 
     private static TableRef table(String sqlName) {
-        var cn = ClassName.get("fixture", "T");
+        var cn = "fixture.T";
         return new TableRef(sqlName, sqlName.toUpperCase(), cn, cn, cn, List.of(), List.of());
     }
 
@@ -284,7 +284,7 @@ class DeleteRowsWalkerTest {
 
     private static CallSiteExtraction.NodeIdDecodeKeys dummyDecode(List<ColumnRef> columns) {
         return new CallSiteExtraction.NodeIdDecodeKeys.ThrowOnMismatch(
-            new HelperRef.Decode(ClassName.get("fixture", "Enc"), "decode", columns, "Type"));
+            new HelperRef.Decode(ClassName.bestGuess("fixture.Enc"), "decode", columns, "Type"));
     }
 
     private static SourceLocation loc() {

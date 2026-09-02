@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.Arity;
@@ -89,7 +90,7 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
         });
         // The source target is the qualified element table, pinned by class identity (its name()
         // is the verbatim "multischema_a.event" echo; tableClass is jOOQ's Event under schema A).
-        assertThat(btf.returnType().table().tableClass()).isEqualTo(SCHEMA_A_EVENT);
+        assertThat(CatalogRefs.tableClass(btf.returnType().table())).isEqualTo(SCHEMA_A_EVENT);
     }
 
     @Test

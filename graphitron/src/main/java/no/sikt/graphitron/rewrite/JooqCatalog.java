@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -183,10 +182,10 @@ public class JooqCatalog {
         }
 
         var params = Arrays.stream(method.getParameters())
-            .map(p -> new RoutineParam(p.getName(), TypeName.get(p.getType())))
+            .map(p -> new RoutineParam(p.getName(), p.getType().getCanonicalName()))
             .toList();
         return new RoutineResolution.Resolved(
-            ClassName.get(routinesClass), method.getName(), params, entry.toTableRef(routineName));
+            routinesClass.getCanonicalName(), method.getName(), params, entry.toTableRef(routineName));
     }
 
     /** The generated {@code Routines} class beside the table's schema, or null when there is none. */
@@ -628,7 +627,7 @@ public class JooqCatalog {
 
     /**
      * Resolves a jOOQ {@link ForeignKey} instance into a typed {@link ForeignKeyRef} carrying the
-     * schema-correct {@code Keys} {@link ClassName} together with the Java constant name, by
+     * schema-correct {@code Keys} class name together with the Java constant name, by
      * <em>reference identity</em>. Scans only the {@code Keys} class of the FK-holder schema
      * (the schema of {@code fk.getTable()}) and matches the constant whose value {@code == fk}.
      * jOOQ's generated {@link Table#getReferences()} returns the same {@code Keys.FK_*} singletons,
@@ -648,7 +647,7 @@ public class JooqCatalog {
             .filter(f -> fieldValue(f) == fk)
             .map(f -> new ForeignKeyRef(
                 fk.getName(),
-                ClassName.get(f.getDeclaringClass()),
+                f.getDeclaringClass().getCanonicalName(),
                 f.getName()))
             .findFirst()
             .<ForeignKeyResolution>map(ForeignKeyResolution.Resolved::new)
@@ -892,7 +891,7 @@ public class JooqCatalog {
      * schema's own package. Empty when the generated model carries none for the schema.
      *
      * <p>The capture-facing sibling of the private {@link #tablesClass} the emit path reads through
-     * {@code TableEntry.constantsClass()}. Both exist because a store-sourced reader cannot call the
+     * {@code CatalogRefs.constantsClass(TableEntry)}. Both exist because a store-sourced reader cannot call the
      * classpath: a {@code Tables} name is reachable only while the codegen loader is open, so it is
      * captured or it is guessed later.
      */
@@ -1198,7 +1197,7 @@ public class JooqCatalog {
                     + "' which does not belong to this table");
             }
             var e = col.get();
-            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.columnType()));
+            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
         }
         return new NodeIdMetadataLookup.Present(new NodeIdMetadata(typeId, List.copyOf(resolved)));
     }
@@ -1259,7 +1258,7 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, te.table());
-                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable(), TypeName.get(col.getType()));
+                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
                 })
                 .toList())
             .orElse(java.util.List.of());
@@ -1314,8 +1313,8 @@ public class JooqCatalog {
     /**
      * The outgoing foreign keys of a table reduced to resolved-immutable facts: the SQL
      * constraint name, the schema-qualified source and target table IDs, and the source / target
-     * column SQL-name lists. Unlike {@link ForeignKeyRef} (constraint name + {@code Keys}
-     * {@link ClassName} + constant, no column pairs), this carries the column pairs the
+     * column SQL-name lists. Unlike {@link ForeignKeyRef} (constraint name + {@code Keys} class
+     * name + constant, no column pairs), this carries the column pairs the
      * {@code catalog.describe} wire shape promises, pulled from the live {@link ForeignKey} during
      * the build pass and reduced to {@link String} immediately. The build pass groups these
      * catalog-wide to derive each table's incoming edges.
@@ -1431,7 +1430,7 @@ public class JooqCatalog {
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable(), TypeName.get(col.getType()));
+                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
             })
             .toList();
         return entries.stream().filter(e -> columnName.equalsIgnoreCase(e.javaName())).findFirst()
@@ -1547,8 +1546,8 @@ public class JooqCatalog {
      * the schema's {@code Tables} constants class (e.g. {@code "FILM"}), and a back-reference to
      * the catalog used for derived lookups (PK columns, the schema's {@code Tables} class).
      *
-     * <p>The accessor methods ({@link #tableClass()}, {@link #recordClass()},
-     * {@link #constantsClass()}, {@link #pkColumnRefs()}) read schema-correct values from the
+     * <p>The accessor methods ({@link #tableClassName()}, {@link #recordClassName()},
+     * {@link #constantsClassName()}, {@link #pkColumnRefs()}) read schema-correct values from the
      * resolved {@link Table}, so single-schema and multi-schema catalog layouts produce the
      * same call shape with no per-caller derivation.
      *
@@ -1559,35 +1558,36 @@ public class JooqCatalog {
      */
     public record TableEntry(String javaFieldName, Table<?> table, JooqCatalog catalog) {
         /**
-         * The {@link ClassName} of the jOOQ-generated table class
+         * The fully qualified name of the jOOQ-generated table class
          * (e.g. {@code multischema_a.tables.Widget}). Read directly from the live class via
          * reflection, so multi-schema layouts produce schema-segmented FQNs without per-caller
-         * derivation.
+         * derivation. A name and not a javapoet type: a consumer emitting it lifts it through
+         * {@code CatalogRefs}.
          */
-        public ClassName tableClass() {
-            return ClassName.get(table.getClass());
+        public String tableClassName() {
+            return table.getClass().getCanonicalName();
         }
 
         /**
-         * The {@link ClassName} of the jOOQ-generated record class
+         * The fully qualified name of the jOOQ-generated record class
          * (e.g. {@code multischema_a.tables.records.WidgetRecord}). Sourced from
          * {@link Table#getRecordType()}, which is schema-correct for both single- and
          * multi-schema codegen.
          */
-        public ClassName recordClass() {
-            return ClassName.get(table.getRecordType());
+        public String recordClassName() {
+            return table.getRecordType().getCanonicalName();
         }
 
         /**
-         * The {@link ClassName} of the schema's {@code Tables} constants class
+         * The fully qualified name of the schema's {@code Tables} constants class
          * (e.g. {@code multischema_a.Tables}). The catalog-construction precondition
          * (see {@link JooqCatalog#verifyTablesClassPresent}) guarantees every schema in a live
          * catalog has a generated {@code Tables} class; the {@link Optional} return is a
          * defence-in-depth wrapper around reflection and in practice is always present for
          * any {@code TableEntry} produced by {@link JooqCatalog#findTable}.
          */
-        public Optional<ClassName> constantsClass() {
-            return catalog.tablesClass(table.getSchema()).map(ClassName::get);
+        public Optional<String> constantsClassName() {
+            return catalog.tablesClass(table.getSchema()).map(Class::getCanonicalName);
         }
 
         /**
@@ -1603,7 +1603,7 @@ public class JooqCatalog {
             return pk.getFields().stream()
                 .map(f -> catalog.findColumn(table, f.getName()))
                 .<ColumnEntry>flatMap(Optional::stream)
-                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.columnType()))
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
                 .toList();
         }
 
@@ -1620,7 +1620,7 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName(), TypeName.get(col.getType()));
+                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName());
                 })
                 .toList();
         }
@@ -1639,15 +1639,15 @@ public class JooqCatalog {
          * failure rather than a silent partial result.
          */
         public no.sikt.graphitron.rewrite.model.TableRef toTableRef(String sqlName) {
-            ClassName cc = constantsClass().orElseThrow(() -> new IllegalStateException(
+            String cc = constantsClassName().orElseThrow(() -> new IllegalStateException(
                 "TableEntry for table '" + sqlName + "' (schema '" + table.getSchema().getName()
                 + "') has no resolvable Tables constants class — catalog-construction precondition"
                 + " should have rejected this state at JooqCatalog instantiation."));
             return new no.sikt.graphitron.rewrite.model.TableRef(
                 sqlName,
                 javaFieldName,
-                tableClass(),
-                recordClass(),
+                tableClassName(),
+                recordClassName(),
                 cc,
                 pkColumnRefs(),
                 allColumnRefs());
@@ -1692,18 +1692,7 @@ public class JooqCatalog {
      * for codegen, so array columns emit a real {@code ArrayTypeName} rather than crashing
      * {@code ClassName.bestGuess}.
      */
-    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable, TypeName columnType) {
-        /**
-         * Convenience for hand-built scalar entries (tests) that only carry the source-form
-         * {@code columnClass} string. Routes through {@link ColumnRef#bestGuessScalarTypeOrNull} so
-         * this and {@link ColumnRef}'s auxiliary constructor share one decode and cannot diverge on
-         * placeholder tolerance. Array columns must come through the reflection boundary, which
-         * supplies {@code TypeName.get(col.getType())}.
-         */
-        public ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {
-            this(javaName, columnClass, sqlName, nullable, ColumnRef.bestGuessScalarTypeOrNull(columnClass));
-        }
-    }
+    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
 
     /**
      * Sub-taxonomy of outcomes for {@link #findTable(String)}. Lookup failures fan out into
@@ -1745,7 +1734,7 @@ public class JooqCatalog {
      * name and its boxed Java type. Read off the table-form convenience method on the generated
      * {@code Routines} class by {@link #resolveTableValuedFunction(String)}.
      */
-    public record RoutineParam(String name, TypeName type) {}
+    public record RoutineParam(String name, String typeName) {}
 
     /**
      * Outcome of {@link #resolveTableValuedFunction(String)}. {@link Resolved} carries the call
@@ -1754,7 +1743,7 @@ public class JooqCatalog {
      * {@code RoutineDirectiveResolver} surfaces.
      */
     public sealed interface RoutineResolution {
-        record Resolved(ClassName routinesClass, String methodName, List<RoutineParam> params, TableRef resultTable)
+        record Resolved(String routinesClassName, String methodName, List<RoutineParam> params, TableRef resultTable)
             implements RoutineResolution {
             public Resolved { params = List.copyOf(params); }
         }

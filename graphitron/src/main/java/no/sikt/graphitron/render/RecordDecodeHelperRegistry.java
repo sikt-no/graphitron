@@ -64,7 +64,7 @@ public final class RecordDecodeHelperRegistry {
     public String register(ClassName encoderClass, String typeId, String nodeTypeName,
             java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
             TableRef nodeTable) {
-        ClassName recordType = nodeTable.recordClass();
+        ClassName recordType = CatalogRefs.recordClass(nodeTable);
         String name = helperName(recordType);
         helpers.computeIfAbsent(recordType, k -> RecordDecodeFragments.decodeHelper(
             name, encoderClass, typeId, nodeTypeName, keyColumns, nodeTable, outputPackage));

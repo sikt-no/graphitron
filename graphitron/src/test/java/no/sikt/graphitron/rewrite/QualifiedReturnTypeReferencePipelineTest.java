@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -89,7 +90,7 @@ class QualifiedReturnTypeReferencePipelineTest {
 
         // The terminal hop genuinely lands on widget: the classification is not vacuous.
         var terminal = ((ChildField.TableField) widgetField).joinPath().getLast();
-        assertThat(TestFixtures.fkHop(terminal).targetTable().tableClass())
+        assertThat(CatalogRefs.tableClass(TestFixtures.fkHop(terminal).targetTable()))
             .isEqualTo(no.sikt.graphitron.javapoet.ClassName.get(
                 MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }

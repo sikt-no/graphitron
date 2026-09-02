@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * The shape of a GraphQL-argument-sourced value at a {@link MappingEntry.FromArg} slot.
@@ -56,7 +57,7 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
      * is the record class read off the carrier's table.
      */
     record JooqRecordInput(CallSiteExtraction.JooqRecord carrier, ArgPath sdlPath) implements ValueShape {
-        @Override public TypeName javaType() { return carrier.table().recordClass(); }
+        @Override public TypeName javaType() { return CatalogRefs.recordClass(carrier.table()); }
     }
 
     /**

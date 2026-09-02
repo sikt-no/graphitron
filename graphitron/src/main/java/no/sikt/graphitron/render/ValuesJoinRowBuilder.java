@@ -82,7 +82,7 @@ public final class ValuesJoinRowBuilder {
         TypeName[] typeArgs = new TypeName[arity];
         typeArgs[0] = ClassName.get(Integer.class);
         for (int i = 0; i < slots.size(); i++) {
-            typeArgs[i + 1] = column.apply(slots.get(i)).columnType();
+            typeArgs[i + 1] = CatalogRefs.columnType(column.apply(slots.get(i)));
         }
         return typeArgs;
     }

@@ -4,6 +4,7 @@ import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.CodeBlock;
 
 import java.util.EnumSet;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * Per-class emission scratchpad for {@link TypeFetcherGenerator}. One instance lives for the
@@ -145,7 +146,7 @@ final class TypeFetcherEmissionContext {
     no.sikt.graphitron.render.ProjectedKeyHost projectedKeyHost() {
         return new no.sikt.graphitron.render.ProjectedKeyHost(keyProjections,
             projection -> fetchersHelperNames()
-                .decodeSingular(projection.nodeTable().recordClass()));
+                .decodeSingular(CatalogRefs.recordClass(projection.nodeTable())));
     }
 
     /**

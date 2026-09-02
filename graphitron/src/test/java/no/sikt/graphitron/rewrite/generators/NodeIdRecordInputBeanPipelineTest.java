@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
@@ -71,7 +72,7 @@ class NodeIdRecordInputBeanPipelineTest {
         assertThat(leaf.typeId()).as("typeId resolved from @nodeId(typeName:)").isEqualTo("Film");
         assertThat(leaf.keyColumns()).as("single-PK arity").hasSize(1);
         assertThat(leaf.keyColumns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(leaf.table().recordClass().toString()).isEqualTo(RECORD_TYPE_FQN);
+        assertThat(CatalogRefs.recordClass(leaf.table()).toString()).isEqualTo(RECORD_TYPE_FQN);
         assertThat(leaf.nonNull()).as("ID! is non-null").isTrue();
     }
 
@@ -278,7 +279,7 @@ class NodeIdRecordInputBeanPipelineTest {
         assertThat(leaf.typeId())
             .as("the named sibling's typeId, not the metadata typeId its neighbour inherited")
             .isEqualTo("46");
-        assertThat(leaf.table().recordClass().toString())
+        assertThat(CatalogRefs.recordClass(leaf.table()).toString())
             .as("both siblings are backed by film_actor, so the target record is unchanged")
             .isEqualTo(COMPOSITE_RECORD_TYPE_FQN);
     }

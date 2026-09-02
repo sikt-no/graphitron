@@ -36,16 +36,16 @@ class ColumnComparisonTest {
 
     /**
      * A hand-built placeholder ref: {@code "related_1"} is not a class name, so
-     * {@link ColumnRef#columnType()} is null and the ref exists only for its names.
+     * {@link CatalogRefs#columnType(ColumnRef)} is null and the ref exists only for its names.
      */
     private static final ColumnRef PLACEHOLDER =
         new ColumnRef("org_code", "ORG_CODE", "related_1");
 
     private static final TableRef CONVERTER_ORG = new TableRef(
         "converter_org", "CONVERTER_ORG",
-        ClassName.get("com.example.jooq.tables", "ConverterOrg"),
-        ClassName.get("com.example.jooq.tables.records", "ConverterOrgRecord"),
-        ClassName.get("com.example.jooq", "Tables"),
+        "com.example.jooq.tables.ConverterOrg",
+        "com.example.jooq.tables.records.ConverterOrgRecord",
+        "com.example.jooq.Tables",
         List.of(CONVERTED), List.of(CONVERTED));
 
     // ----------------------------------------------------------------------------------------
@@ -148,7 +148,7 @@ class ColumnComparisonTest {
 
     private static CodeBlock lookup() {
         return CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
-            "org_code", CONVERTER_ORG.constantsClass(), CONVERTER_ORG.javaFieldName(),
+            "org_code", CatalogRefs.constantsClass(CONVERTER_ORG), CONVERTER_ORG.javaFieldName(),
             CONVERTED.javaName());
     }
 

@@ -255,6 +255,55 @@ This lands before the module move rather than inside it. It is an API change to 
 thirty-seven read sites, and step 7 promises that the move changes no behaviour; folding the two
 together would hide the real change inside the one that is supposed to be mechanical.
 
+*Shipped.* Six carriers stripped, as round 3's corrected count said: `ColumnRef.columnType`,
+`TableRef`'s three class names, `ForeignKeyRef.keysClass`, and
+`Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite.declared`. `JooqCatalog` carried more
+than the refs and lost it too: `TableEntry`'s three accessors now answer names, and `RoutineParam`
+and `RoutineResolution.Resolved` carry names rather than types. `FactTierJavapoetBoundaryTest`
+replaces `ColumnTypeConstructorArityGuardTest`, whose subject the strip removes, and holds the
+invariant over the whole move set rather than over one constructor's arity. The full build is green
+and no generated file changed.
+
+Three things the plan did not anticipate, each settled the way the tree already answers the
+question rather than by adding a mechanism.
+
+*The lift belongs beside the rows' lift, not beside the refs.* A first cut put it in `rewrite`, and
+`PackageImportDirectionTest` refused it at twenty-one sites: `render` may read the borrowed refs and
+nothing else of the legacy core. The rule is right and the placement was wrong. `render.CatalogRefs`
+already existed as "the one place a captured name becomes something javapoet can spell", for the
+command tier's rows, and the refs now carry names for the same reason the rows do, so the two lift
+in one place. `TableRef`'s own javadoc had already named the failure mode: do not grow a third
+mechanism.
+
+*The decode was missing a case the boundary had for free.* `TypeName.get(col.getType())` handles a
+primitive column because a live `Class` knows it is one; the captured name is the string `"int"`,
+which `ClassName.bestGuess` rejects, so a first cut typed a primitive tenant column as null and
+`TenantAcquisitionFragmentsTest` caught it. The decode now reads the primitive spellings
+`Class.getName()` produces. Worth stating because it is the one real hazard in this shape of change:
+a decode from a name has to accept every name the reflection form can produce, and a gap in it is
+silent until something reads the type.
+
+*`ForeignKeyRef` never needed a lift.* Its only consumer sits in `render/JoinFragments`, beside a
+line that already lifted the command row's spelling of the same fact through `className`. Adding a
+`keysClass` overload would have meant widening the borrow dial for a method that hides a field read,
+so the overload went and the two adjacent lines now read alike.
+
+*Two findings for step 7, recorded here because the strip is where they surfaced.* Neither changes
+step 2.
+
+* **An import-based census cannot see a same-package reference, and `rewrite/model` splits.** Both
+  round 2's census and the author's ran over import statements, so every edge between the fifteen
+  files placed below the line and the hundred and twenty-five staying above is invisible to them.
+  Counted over code with comments stripped, there are eight: `Rejection` reaches `ConflictSite`,
+  `DomainReturnType`, `GraphitronField` and `ProducerBinding`; `DeleteRowsError` and
+  `UpdateRowsError` reach `MatchedKey`; `ReflectionError` reaches `On`; `ServiceCarrierShapeError`
+  reaches `Arity`. Step 7 settles each the way step 1 settled the rest.
+* **`Rejection` reaches the generic-`TypeName` family through `ConflictSite`.** `ConflictSite`
+  carries a `TypeName declared` built from `MethodRef.Param.Typed`, which is the family step 1 keeps
+  above the line for the reason step 2 restates: no string in this tree round-trips `List<Film>`. So
+  the `TypeConflict` arm is the one place where the plan's two halves meet, and step 7 has to say
+  whether the arm moves, the site moves, or the declared type becomes a name of its own.
+
 **3. Add a temporary import rule, so the layering holds until the move happens.** Give
 `PackageImportDirectionTest` a `capture` rule, written like the `facts` rule it already has: capture
 may import nothing else from the tree, with its one allowance for graphql-java written as an
@@ -448,6 +497,20 @@ above it.
   finishes normally, and leaves the shared file untouched.
 * **The full build is green and `graphitron-sakila-example` generates identical files.** If an
   emitted file changed, the move did something more than move.
+
+## Retired vocabulary
+
+Declared for the retirement sweep at the Done gate. Retired by step 2:
+
+* `ColumnRef.columnType`, `ColumnRef.decodeBindingType`, `ColumnRef.bestGuessScalarTypeOrNull`
+* `JooqCatalog.ColumnEntry.columnType` and its four-argument auxiliary constructor
+* `TableRef.tableClass` / `recordClass` / `constantsClass`, now `...ClassName`
+* `JooqCatalog.TableEntry.tableClass` / `recordClass` / `constantsClass`, now `...ClassName`
+* `ForeignKeyRef.keysClass`, now `keysClassName`
+* `JooqCatalog.RoutineParam.type`, now `typeName`; `RoutineResolution.Resolved.routinesClass`, now
+  `routinesClassName`
+* `ColumnTypeConstructorArityGuardTest`, whose subject the strip removes, replaced by
+  `FactTierJavapoetBoundaryTest`
 
 ## Reviewer findings
 

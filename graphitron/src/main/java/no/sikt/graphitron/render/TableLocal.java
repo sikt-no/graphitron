@@ -24,7 +24,7 @@ public final class TableLocal {
 
     /** {@link #name(ClassName)} off the ref's table class. */
     public static String name(TableRef tableRef) {
-        return name(tableRef.tableClass());
+        return name(CatalogRefs.tableClass(tableRef));
     }
 
     /** {@code <TableClass> <local> = <Tables>.<FIELD>;} with the caller's resolved class names. */
@@ -36,6 +36,6 @@ public final class TableLocal {
 
     /** {@link #declare(ClassName, ClassName, String)} off the ref's own resolved names. */
     public static CodeBlock declare(TableRef tableRef) {
-        return declare(tableRef.tableClass(), tableRef.constantsClass(), tableRef.javaFieldName());
+        return declare(CatalogRefs.tableClass(tableRef), CatalogRefs.constantsClass(tableRef), tableRef.javaFieldName());
     }
 }

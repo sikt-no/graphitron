@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
@@ -81,8 +82,8 @@ class QualifiedReferenceKeyPipelineTest {
         JoinStep.Hop hop = TestFixtures.fkHop(((ChildField.TableField) field).joinPath().get(0));
         assertThat(TestFixtures.fkRef((no.sikt.graphitron.rewrite.model.On.ColumnPairs) hop.on()).sqlName())
             .isEqualToIgnoringCase("note_event_fk");
-        assertThat(hop.originTable().tableClass()).isEqualTo(NOTE_A);
-        assertThat(hop.targetTable().tableClass()).isEqualTo(EVENT_A);
+        assertThat(CatalogRefs.tableClass(hop.originTable())).isEqualTo(NOTE_A);
+        assertThat(CatalogRefs.tableClass(hop.targetTable())).isEqualTo(EVENT_A);
     }
 
     @Test

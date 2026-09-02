@@ -162,7 +162,7 @@ public final class ReentryRowsFragments {
     private static CodeBlock valuesJoinDecls(ParentCorrelation.OnLiftedSlots correlation) {
         var cols = correlation.columns();
         var owner = correlation.targetTable();
-        CodeBlock tableExpr = CodeBlock.of("$T.$L", owner.constantsClass(), owner.javaFieldName());
+        CodeBlock tableExpr = CodeBlock.of("$T.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName());
         var keyRowType = SourceKey.keyElementType(new SourceKey.Wrap.Record(), cols);
         var b = CodeBlock.builder();
         ValuesJoinRowBuilder.emitRowArrayDecl(b, cols, c -> c, ROW_CONTEXT,
@@ -196,9 +196,9 @@ public final class ReentryRowsFragments {
             if (i > 0) on.add(".and(");
             var col = cols.get(i);
             on.add("$T.$L.$L.eq($L.field($S, $T.$L.$L.getDataType()))",
-                owner.constantsClass(), owner.javaFieldName(), col.javaName(),
+                CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName(),
                 KEYS_INPUT, col.sqlName(),
-                owner.constantsClass(), owner.javaFieldName(), col.javaName());
+                CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
             if (i > 0) on.add(")");
         }
         return on.build();
@@ -220,7 +220,7 @@ public final class ReentryRowsFragments {
         var owner = correlation.targetTable();
         var colExprs = correlation.columns().stream()
             .map(col -> CodeBlock.of("$T.$L.$L",
-                owner.constantsClass(), owner.javaFieldName(), col.javaName()))
+                CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName()))
             .toList();
         var b = CodeBlock.builder();
         if (colExprs.size() == 1) {

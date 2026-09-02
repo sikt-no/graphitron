@@ -77,7 +77,7 @@ class TenantScopeClassifierTest {
             .contains("public.staff", "public.customer");
         assertThat(disagreement.tables())
             .extracting(Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite::declared)
-            .contains(ClassName.get(Boolean.class), ClassName.get(Integer.class));
+            .contains(Boolean.class.getName(), Integer.class.getName());
         assertThat(disagreement.message())
             .contains("tenant column 'active'")
             .contains("disagreeing Java types")

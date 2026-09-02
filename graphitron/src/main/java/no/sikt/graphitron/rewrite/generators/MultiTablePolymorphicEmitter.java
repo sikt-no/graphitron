@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
@@ -301,12 +302,12 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T rec = records.get(i)", RECORD);
         for (int p = 0; p < participants.size(); p++) {
             var participant = participants.get(p);
-            var recordCls = participant.table().recordClass();
+            var recordCls = CatalogRefs.recordClass(participant.table());
             var pks = CodeBlock.builder().add("new Object[]{");
             var pkCols = participant.table().primaryKeyColumns();
             for (int s = 0; s < pkCols.size(); s++) {
                 if (s > 0) pks.add(", ");
-                pks.add("rec.get($T.$L.$L)", participant.table().constantsClass(),
+                pks.add("rec.get($T.$L.$L)", CatalogRefs.constantsClass(participant.table()),
                     participant.table().javaFieldName(), pkCols.get(s).javaName());
             }
             pks.add("}");
@@ -1083,7 +1084,7 @@ public final class MultiTablePolymorphicEmitter {
         TypeName pkColumnClass;
         if (pkArity == 1) {
             var firstPk = participants.get(0).table().primaryKeyColumns().get(0);
-            pkColumnClass = firstPk.columnType();
+            pkColumnClass = CatalogRefs.columnType(firstPk);
         } else {
             pkColumnClass = JSONB;
         }
@@ -1190,9 +1191,9 @@ public final class MultiTablePolymorphicEmitter {
         var b = CodeBlock.builder();
 
         for (var participant : participants) {
-            var jooqTableClass = participant.table().tableClass();
+            var jooqTableClass = CatalogRefs.tableClass(participant.table());
             String alias = "stage1_" + participant.typeName();
-            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias, CatalogRefs.constantsClass(participant.table()), participant.table().javaFieldName());
         }
 
         var tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
@@ -1232,7 +1233,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("    .select(\n");
         b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
         for (int s = 0; s < pkArity; s++) {
-            TypeName pkColClass = firstParticipantPks.get(s).columnType();
+            TypeName pkColClass = CatalogRefs.columnType(firstParticipantPks.get(s));
             b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL,
                 PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX, pkColClass);
         }
@@ -1372,8 +1373,8 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static void declareBranchAliases(CodeBlock.Builder b, ParticipantRef.TableBound participant,
             ParticipantCorrelation correlation, TableRef parentKeyOwnerTable) {
-        b.addStatement("$T $L = $T.$L", participant.table().tableClass(), "stage1_" + participant.typeName(),
-            participant.table().constantsClass(), participant.table().javaFieldName());
+        b.addStatement("$T $L = $T.$L", CatalogRefs.tableClass(participant.table()), "stage1_" + participant.typeName(),
+            CatalogRefs.constantsClass(participant.table()), participant.table().javaFieldName());
         if (!(correlation instanceof ParticipantCorrelation.JoinedCorrelation jc)) return;
         var aliases = branchHopAliases(participant, correlation);
         var hops = jc.hops();
@@ -1381,13 +1382,13 @@ public final class MultiTablePolymorphicEmitter {
         // the participant, already declared above as the FROM alias.
         for (int i = 0; i < hops.size() - 1; i++) {
             TableRef t = ((JoinStep.HasTargetTable) hops.get(i)).targetTable();
-            b.addStatement("$T $L = $T.$L.as($S)", t.tableClass(), aliases.get(i),
-                t.constantsClass(), t.javaFieldName(), aliases.get(i));
+            b.addStatement("$T $L = $T.$L.as($S)", CatalogRefs.tableClass(t), aliases.get(i),
+                CatalogRefs.constantsClass(t), t.javaFieldName(), aliases.get(i));
         }
         String parentAlias = branchParentAlias(participant, correlation);
         if (parentAlias != null) {
-            b.addStatement("$T $L = $T.$L.as($S)", parentKeyOwnerTable.tableClass(), parentAlias,
-                parentKeyOwnerTable.constantsClass(), parentKeyOwnerTable.javaFieldName(), parentAlias);
+            b.addStatement("$T $L = $T.$L.as($S)", CatalogRefs.tableClass(parentKeyOwnerTable), parentAlias,
+                CatalogRefs.constantsClass(parentKeyOwnerTable), parentKeyOwnerTable.javaFieldName(), parentAlias);
         }
     }
 
@@ -1469,7 +1470,7 @@ public final class MultiTablePolymorphicEmitter {
             ColumnRef parentSide = slot.sourceSide();
             ColumnRef childSide = slot.targetSide();
             CodeBlock value = CodeBlock.of("parentRecord.get($T.name($S), $T.class)",
-                DSL, parentSide.sqlName(), parentSide.columnType());
+                DSL, parentSide.sqlName(), CatalogRefs.columnType(parentSide));
             CodeBlock eq = ColumnComparison.equalityAgainstValue(
                 firstAlias, childSide, parentSide, parentKeyOwnerTable, value);
             if (i == 0) {
@@ -1494,10 +1495,10 @@ public final class MultiTablePolymorphicEmitter {
         for (var col : parentSourceKey.columns()) {
             if (i == 0) {
                 b.add("$L.$L.eq(parentRecord.get($T.name($S), $T.class))",
-                    parentAlias, col.javaName(), DSL, col.sqlName(), col.columnType());
+                    parentAlias, col.javaName(), DSL, col.sqlName(), CatalogRefs.columnType(col));
             } else {
                 b.add(".and($L.$L.eq(parentRecord.get($T.name($S), $T.class)))",
-                    parentAlias, col.javaName(), DSL, col.sqlName(), col.columnType());
+                    parentAlias, col.javaName(), DSL, col.sqlName(), CatalogRefs.columnType(col));
             }
             i++;
         }
@@ -1827,7 +1828,7 @@ public final class MultiTablePolymorphicEmitter {
 
         // Participant PK (single column for connection mode — validator enforces).
         ColumnRef firstParticipantPk = participants.get(0).table().primaryKeyColumns().get(0);
-        TypeName participantPkClass = firstParticipantPk.columnType();
+        TypeName participantPkClass = CatalogRefs.columnType(firstParticipantPk);
 
         var b = CodeBlock.builder();
 
@@ -2057,7 +2058,7 @@ public final class MultiTablePolymorphicEmitter {
             ColumnRef parentCol = slot.sourceSide();
             ColumnRef childCol = slot.targetSide();
             CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
-                parentCol.sqlName(), parentKeyOwnerTable.constantsClass(),
+                parentCol.sqlName(), CatalogRefs.constantsClass(parentKeyOwnerTable),
                 parentKeyOwnerTable.javaFieldName(), parentCol.javaName());
             CodeBlock eq = ColumnComparison.equalityAgainstField(
                 firstAlias, childCol, parentCol, lookup);
@@ -2082,7 +2083,7 @@ public final class MultiTablePolymorphicEmitter {
         int i = 0;
         for (var col : parentSourceKey.columns()) {
             CodeBlock lookup = CodeBlock.of("parentInput.field($S, $T.$L.$L.getDataType())",
-                col.sqlName(), parentKeyOwnerTable.constantsClass(),
+                col.sqlName(), CatalogRefs.constantsClass(parentKeyOwnerTable),
                 parentKeyOwnerTable.javaFieldName(), col.javaName());
             if (i == 0) {
                 b.add("$L.$L.eq($L)", parentAlias, col.javaName(), lookup);
@@ -2105,7 +2106,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName, ParticipantRef.TableBound participant,
             boolean includeSortKey,
             String outputPackage) {
-        var jooqTableClass = participant.table().tableClass();
+        var jooqTableClass = CatalogRefs.tableClass(participant.table());
         var typeClass = ClassName.get(outputPackage + ".types", participant.typeName());
 
         var listOfBindings = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
@@ -2116,7 +2117,7 @@ public final class MultiTablePolymorphicEmitter {
 
         var b = CodeBlock.builder();
         b.addStatement("if (bindings.isEmpty()) return");
-        b.addStatement("$T $L = $T.$L", jooqTableClass, tableLocal, participant.table().constantsClass(), participant.table().javaFieldName());
+        b.addStatement("$T $L = $T.$L", jooqTableClass, tableLocal, CatalogRefs.constantsClass(participant.table()), participant.table().javaFieldName());
 
         // Typed Row<N+1>[] declaration delegated to ValuesJoinRowBuilder. The for-loop body
         // unpacks the dispatcher's (idx, pks) binding tuple into row cells.
@@ -2182,7 +2183,7 @@ public final class MultiTablePolymorphicEmitter {
         var on = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             var col = columns.get(i);
-            var colClass = col.columnType();
+            var colClass = CatalogRefs.columnType(col);
             if (i == 0) {
                 on.add("$L.$L.eq(input.field($S, $T.class))",
                     tableLocal, col.javaName(), col.sqlName(), colClass);
@@ -2234,7 +2235,7 @@ public final class MultiTablePolymorphicEmitter {
         TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
         parentRowTypeArgs[0] = integerClass;
         for (int i = 0; i < parentKeyArity; i++) {
-            parentRowTypeArgs[i + 1] = parentPkCols.get(i).columnType();
+            parentRowTypeArgs[i + 1] = CatalogRefs.columnType(parentPkCols.get(i));
         }
         TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
         TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
@@ -2247,7 +2248,7 @@ public final class MultiTablePolymorphicEmitter {
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
         b.addStatement("$T k = keys.get(i)", keyType);
         CodeBlock ownerExpr = CodeBlock.of("$T.$L",
-            parentKeyOwnerTable.constantsClass(), parentKeyOwnerTable.javaFieldName());
+            CatalogRefs.constantsClass(parentKeyOwnerTable), parentKeyOwnerTable.javaFieldName());
         java.util.function.BiFunction<ColumnRef, Integer, CodeBlock> valueExpr =
             switch (parentSourceKey.wrap()) {
                 case SourceKey.Wrap.Record ignored -> (col, i) -> CodeBlock.of("k.value$L()", i + 1);

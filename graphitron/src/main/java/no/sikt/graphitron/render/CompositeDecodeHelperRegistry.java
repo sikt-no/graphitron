@@ -124,7 +124,7 @@ public final class CompositeDecodeHelperRegistry {
     private MethodSpec buildHelper(HelperRef.Decode decode, Mode mode, boolean list, String name) {
         int arity = decode.outputColumnShape().size();
         TypeName elementType = arity == 1
-            ? decode.outputColumnShape().getFirst().columnType()
+            ? CatalogRefs.columnType(decode.outputColumnShape().getFirst())
             : typedRow(decode.outputColumnShape());
         TypeName returnType = list
             ? ParameterizedTypeName.get(ClassName.get(List.class), elementType)
@@ -222,7 +222,7 @@ public final class CompositeDecodeHelperRegistry {
         ClassName rowN = ClassName.get("org.jooq", "Row" + n);
         TypeName[] typeArgs = new TypeName[n];
         for (int i = 0; i < n; i++) {
-            typeArgs[i] = columns.get(i).columnType();
+            typeArgs[i] = CatalogRefs.columnType(columns.get(i));
         }
         return ParameterizedTypeName.get(rowN, typeArgs);
     }
@@ -232,7 +232,7 @@ public final class CompositeDecodeHelperRegistry {
         ClassName recordN = ClassName.get("org.jooq", "Record" + n);
         TypeName[] typeArgs = new TypeName[n];
         for (int i = 0; i < n; i++) {
-            typeArgs[i] = columns.get(i).columnType();
+            typeArgs[i] = CatalogRefs.columnType(columns.get(i));
         }
         return ParameterizedTypeName.get(recordN, typeArgs);
     }

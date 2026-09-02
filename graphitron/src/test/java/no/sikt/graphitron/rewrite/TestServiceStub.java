@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
@@ -607,7 +608,7 @@ class TestServiceStub {
      * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
      * child field returning {@code Language} (single) with a {@code List<Row1<Integer>>}
      * Sources param structurally requires {@code List<LanguageRecord>} per the rows-method
-     * shape (where {@code V = tb.table().recordClass() = LanguageRecord}). This stub
+     * shape (where {@code V = CatalogRefs.recordClass(tb.table()) = LanguageRecord}). This stub
      * declares scalar {@code LanguageRecord} instead of {@code List<LanguageRecord>}, so
      * classification rejects on the outer-shape mismatch (scalar vs {@code List<V>}).
      */
@@ -631,7 +632,7 @@ class TestServiceStub {
     /**
      * Rejection arm: a list-cardinality {@code @table}-bound child field with a
      * {@code List<Row1<Integer>>} Sources param structurally requires
-     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). This stub
+     * {@code List<List<LanguageRecord>>} (V = {@code CatalogRefs.recordClass(tb.table())}). This stub
      * declares raw {@code Record} on V, which mismatches the narrowed expectation.
      */
     public static java.util.List<java.util.List<org.jooq.Record>> childServiceRowKeyedRawRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
@@ -641,7 +642,7 @@ class TestServiceStub {
     /**
      * Acceptance arm: the same list-cardinality child field, declaring
      * {@code List<List<LanguageRecord>>}, the canonical accepted shape because
-     * V = {@code tb.table().recordClass() = LanguageRecord}.
+     * V = {@code CatalogRefs.recordClass(tb.table()) = LanguageRecord}.
      */
     public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();

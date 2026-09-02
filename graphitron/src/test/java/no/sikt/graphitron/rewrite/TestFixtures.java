@@ -304,9 +304,9 @@ public final class TestFixtures {
         return new TableRef(
             sqlName,
             javaFieldName,
-            ClassName.get(TEST_JOOQ_ROOT + ".tables", simpleClassName),
-            ClassName.get(TEST_JOOQ_ROOT + ".tables.records", simpleClassName + "Record"),
-            ClassName.get(TEST_JOOQ_ROOT, "Tables"),
+            TEST_JOOQ_ROOT + ".tables." + simpleClassName,
+            TEST_JOOQ_ROOT + ".tables.records." + simpleClassName + "Record",
+            TEST_JOOQ_ROOT + ".Tables",
             pkColumns,
             // allColumns: fixtures that build a TableRef by hand don't enumerate the whole row. Its
             // readers are all classification-time and are exercised through the real-catalog
@@ -376,12 +376,11 @@ public final class TestFixtures {
      * is type-correct end to end.
      */
     public static ForeignKeyRef foreignKeyRef(String sqlName) {
-        return foreignKeyRef(sqlName, sqlName.toUpperCase(),
-            ClassName.get(TEST_JOOQ_ROOT, "Keys"));
+        return foreignKeyRef(sqlName, sqlName.toUpperCase(), TEST_JOOQ_ROOT + ".Keys");
     }
 
-    public static ForeignKeyRef foreignKeyRef(String sqlName, String constantName, ClassName keysClass) {
-        return new ForeignKeyRef(sqlName, keysClass, constantName);
+    public static ForeignKeyRef foreignKeyRef(String sqlName, String constantName, String keysClassName) {
+        return new ForeignKeyRef(sqlName, keysClassName, constantName);
     }
 
     // ===== ColumnRef =====

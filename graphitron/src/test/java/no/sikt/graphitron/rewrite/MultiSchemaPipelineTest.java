@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -91,11 +92,11 @@ class MultiSchemaPipelineTest {
     void widgetTable_resolvesUnqualifiedToSchemaSegmentedFqn() {
         var schema = buildSchema();
         var widget = (GraphitronType.TableType) schema.type("Widget");
-        assertThat(widget.table().tableClass())
+        assertThat(CatalogRefs.tableClass(widget.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
-        assertThat(widget.table().recordClass())
+        assertThat(CatalogRefs.recordClass(widget.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.records", "WidgetRecord"));
-        assertThat(widget.table().constantsClass())
+        assertThat(CatalogRefs.constantsClass(widget.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a", "Tables"));
     }
 
@@ -105,9 +106,9 @@ class MultiSchemaPipelineTest {
         var event = (GraphitronType.TableType) schema.type("Event");
         // Unqualified "event" is ambiguous (exists in both schemas); the qualified form
         // pins it to multischema_a.
-        assertThat(event.table().tableClass())
+        assertThat(CatalogRefs.tableClass(event.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
-        assertThat(event.table().constantsClass())
+        assertThat(CatalogRefs.constantsClass(event.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a", "Tables"));
     }
 
@@ -117,9 +118,9 @@ class MultiSchemaPipelineTest {
         var gadget = (GraphitronType.TableType) schema.type("Gadget");
         // gadget is unique to multischema_b; the unqualified resolver lands on B without a
         // qualifier, so the FQN must follow the FK-holder's schema, not the default.
-        assertThat(gadget.table().tableClass())
+        assertThat(CatalogRefs.tableClass(gadget.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
-        assertThat(gadget.table().constantsClass())
+        assertThat(CatalogRefs.constantsClass(gadget.table()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Tables"));
     }
 
@@ -136,16 +137,16 @@ class MultiSchemaPipelineTest {
         // to the FK-holder side (B), not the target side (A). The bug shape is a
         // per-emit-site `ClassName.get(jooqPackage, "Keys")` compiling to root.Keys,
         // a class which does not exist under multi-schema codegen.
-        assertThat(TestFixtures.fkRef(firstPairs).keysClass())
-            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Keys"));
+        assertThat(TestFixtures.fkRef(firstPairs).keysClassName())
+            .isEqualTo(MULTI_JOOQ_PACKAGE + ".multischema_b.Keys");
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> uppercased; pin the
         // upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
         assertThat(TestFixtures.fkRef(firstPairs).constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
 
-        // Every emitter that traverses the FK reads firstHop.targetTable().tableClass()
+        // Every emitter that traverses the FK reads CatalogRefs.tableClass(firstHop.targetTable())
         // to bind the joined-table alias; a regression that re-derives it from the bare
         // jooqPackage emits root.tables.Widget here.
-        assertThat(firstHop.targetTable().tableClass())
+        assertThat(CatalogRefs.tableClass(firstHop.targetTable()))
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }
 
@@ -229,8 +230,8 @@ class MultiSchemaPipelineTest {
      * (return, parameter, exception, and field types) plus the parsed import list of the
      * rendered {@link JavaFile}. ClassNames appearing only inline inside CodeBlocks are not
      * reachable here, but every such reference flows from a typed model slot
-     * ({@link no.sikt.graphitron.rewrite.model.TableRef#tableClass()},
-     * {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClass()},
+     * ({@link no.sikt.graphitron.rewrite.model.TableRef#tableClassName()},
+     * {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClassName()},
      * {@link JoinStep.Hop#targetTable()}) pinned by the model-level assertions above.
      */
     private static Set<ClassName> referencedClassNames(TypeSpec spec) {

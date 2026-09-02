@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.render.CatalogRefs;
 
 /**
  * A field on a non-root output type. Source context (table-mapped or result-mapped) is
@@ -264,7 +265,7 @@ public sealed interface ChildField extends OutputField
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
             // Direct implies arity 1 (constructor invariant), so the single column's type.
-            return new DomainReturnType.Plain(columns.get(0).columnType());
+            return new DomainReturnType.Plain(CatalogRefs.columnType(columns.get(0)));
         }
     }
 
@@ -315,7 +316,7 @@ public sealed interface ChildField extends OutputField
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
             }
-            return new DomainReturnType.Plain(columns.get(0).columnType());
+            return new DomainReturnType.Plain(CatalogRefs.columnType(columns.get(0)));
         }
     }
 
@@ -352,7 +353,7 @@ public sealed interface ChildField extends OutputField
         /** The cross table the hop reaches, selected from by the correlated subselect that projects this field; equivalent to {@code hop().targetTable()}. */
         public TableRef targetTable() { return hop.targetTable(); }
         @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(column.columnType());
+            return new DomainReturnType.Plain(CatalogRefs.columnType(column));
         }
     }
 
@@ -1354,7 +1355,7 @@ public sealed interface ChildField extends OutputField
             return switch (returnType) {
                 case ReturnTypeRef.ResultReturnType r -> DomainReturnType.claimForResultReturn(r);
                 case ReturnTypeRef.ScalarReturnType ignored -> switch (locator) {
-                    case ValueLocator.TypedColumn tc -> new DomainReturnType.Plain(tc.column().columnType());
+                    case ValueLocator.TypedColumn tc -> new DomainReturnType.Plain(CatalogRefs.columnType(tc.column()));
                     case ValueLocator.JavaAccessor ignored2 -> new DomainReturnType.NoClaim();
                     case ValueLocator.ByName ignored2 -> new DomainReturnType.NoClaim();
                     case ValueLocator.DefaultRead ignored2 -> new DomainReturnType.NoClaim();

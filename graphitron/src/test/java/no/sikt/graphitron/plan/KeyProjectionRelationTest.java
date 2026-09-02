@@ -2,6 +2,7 @@ package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -60,7 +61,7 @@ class KeyProjectionRelationTest {
         assertThat(row.typeId())
             .as("the wire id the decode matches, which is the only decode input a row carries")
             .isEqualTo("FilmActor");
-        assertThat(row.nodeTable().recordClass().simpleName()).isEqualTo("FilmActorRecord");
+        assertThat(CatalogRefs.recordClass(row.nodeTable()).simpleName()).isEqualTo("FilmActorRecord");
         assertThat(row.column()).isEqualTo(FILM_ID);
         assertThat(row.keyColumns())
             .as("the whole key in the order the decode returns values")

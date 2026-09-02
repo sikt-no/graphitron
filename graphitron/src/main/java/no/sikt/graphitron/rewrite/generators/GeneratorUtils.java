@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.Arity;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -125,16 +126,16 @@ class GeneratorUtils {
 
         static ResolvedTableNames of(TableRef tableRef, String returnTypeName, String outputPackage) {
             return new ResolvedTableNames(
-                tableRef.constantsClass(),
-                tableRef.tableClass(),
+                CatalogRefs.constantsClass(tableRef),
+                CatalogRefs.tableClass(tableRef),
                 ClassName.get(outputPackage + ".types", returnTypeName));
         }
 
         /** Resolves only {@link #tablesClass} and {@link #jooqTableClass} — use when the type class is not needed. */
         static ResolvedTableNames ofTable(TableRef tableRef) {
             return new ResolvedTableNames(
-                tableRef.constantsClass(),
-                tableRef.tableClass(),
+                CatalogRefs.constantsClass(tableRef),
+                CatalogRefs.tableClass(tableRef),
                 null);
         }
 
@@ -257,7 +258,7 @@ class GeneratorUtils {
             if (i > 0) rowArgs.add(", ");
             ColumnRef col = cols.get(i);
             if (resultType instanceof GraphitronType.JooqTableRecordType jtt) {
-                var tablesClass = jtt.table().constantsClass();
+                var tablesClass = CatalogRefs.constantsClass(jtt.table());
                 rowArgs.add("(($T) $L).get($T.$L.$L)",
                     RECORD, recordExpr, tablesClass, jtt.table().javaFieldName(), col.javaName());
             } else if (resultType instanceof GraphitronType.JooqRecordType) {
@@ -315,7 +316,7 @@ class GeneratorUtils {
             TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        var tablesClass = elementTable.constantsClass();
+        var tablesClass = CatalogRefs.constantsClass(elementTable);
         String tableField = elementTable.javaFieldName();
         var intoArgs = CodeBlock.builder();
         var pkCols = sourceKey.columns();
@@ -346,7 +347,7 @@ class GeneratorUtils {
             TypeName keyType, CodeBlock sourceExpr) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        var tablesClass = elementTable.constantsClass();
+        var tablesClass = CatalogRefs.constantsClass(elementTable);
         String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         ClassName arrayList = ClassName.get("java.util", "ArrayList");
@@ -431,7 +432,7 @@ class GeneratorUtils {
                 "buildKeyExtractionWithNullCheck supports SourceKey.Wrap.Row only, got "
                 + sourceKey.wrap().getClass().getSimpleName());
         }
-        var tablesClass = parentTable.constantsClass();
+        var tablesClass = CatalogRefs.constantsClass(parentTable);
         String tableField = parentTable.javaFieldName();
         List<ColumnRef> pkCols = sourceKey.columns();
         TypeName keyType = sourceKey.keyElementType();
@@ -440,7 +441,7 @@ class GeneratorUtils {
         var nullCheck = CodeBlock.builder();
         for (int i = 0; i < pkCols.size(); i++) {
             ColumnRef col = pkCols.get(i);
-            TypeName colType = col.columnType();
+            TypeName colType = CatalogRefs.columnType(col);
             String local = "fkVal" + i;
             out.addStatement("$T $L = (($T) $L).get($T.$L.$L)",
                 colType, local, RECORD, sourceExpr, tablesClass, tableField, col.javaName());
@@ -499,7 +500,7 @@ class GeneratorUtils {
      */
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef keyOwner, CodeBlock sourceExpr) {
         TypeName keyType = sourceKey.keyElementType();
-        var tablesClass = keyOwner.constantsClass();
+        var tablesClass = CatalogRefs.constantsClass(keyOwner);
         String tableField = keyOwner.javaFieldName();
         List<ColumnRef> pkCols = sourceKey.columns();
         return switch (sourceKey.wrap()) {

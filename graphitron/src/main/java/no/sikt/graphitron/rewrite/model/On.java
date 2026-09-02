@@ -37,7 +37,7 @@ public sealed interface On permits On.ColumnPairs, On.Predicate, On.Lateral {
 
         /**
          * The pairs were derived from a resolved catalog foreign key. {@code fk} carries what
-         * the {@code .onKey(Keys.<FK>)} emit needs ({@code keysClass()} / {@code constantName()});
+         * the {@code .onKey(Keys.<FK>)} emit needs ({@code keysClassName()} / {@code constantName()});
          * classification and diagnostics additionally read {@code fk.sqlName()}. Non-null by
          * the type system: catalog misses route through {@code BuildContext.synthesizeFkJoin}'s
          * {@code FkJoinResolution} sub-taxonomy rather than producing a pair list with no

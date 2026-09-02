@@ -76,7 +76,7 @@ public final class JoinFragments {
             String prevAlias, String hopAlias) {
         return switch (cp.keying()) {
             case On.Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
-                joinedAlias, k.fk().keysClass(), k.fk().constantName());
+                joinedAlias, CatalogRefs.className(k.fk().keysClassName()), k.fk().constantName());
             case On.Keying.NameMatchedKey ignored -> {
                 var on = CodeBlock.builder();
                 int i = 0;

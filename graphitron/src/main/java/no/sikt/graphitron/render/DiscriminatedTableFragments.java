@@ -344,7 +344,7 @@ public final class DiscriminatedTableFragments {
                     var target = ((no.sikt.graphitron.rewrite.model.JoinStep.HasTargetTable)
                         term.path().get(i)).targetTable();
                     b.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                        target.tableClass(), locals.get(i), target.constantsClass(),
+                        CatalogRefs.tableClass(target), locals.get(i), CatalogRefs.constantsClass(target),
                         target.javaFieldName(), tableLocal, "_" + aliases.get(i));
                 }
                 b.addStatement("fields.add($T.field($L).as($S))",
@@ -371,11 +371,11 @@ public final class DiscriminatedTableFragments {
             if (jtb.discriminatorValue() == null) continue;
             if (joined.detailFields().isEmpty()) continue;
             String aliasVar = jtb.detailAliasVarName();
-            b.addStatement("$T $L = null", jtb.detailTable().tableClass(), aliasVar);
+            b.addStatement("$T $L = null", CatalogRefs.tableClass(jtb.detailTable()), aliasVar);
             for (var df : joined.detailFields()) {
                 b.beginControlFlow("if ($L)",
                     typeConditionedGate(jtb.typeName(), df.fieldName()));
-                b.addStatement("$L = $T.$L.as($S)", aliasVar, jtb.detailTable().constantsClass(),
+                b.addStatement("$L = $T.$L.as($S)", aliasVar, CatalogRefs.constantsClass(jtb.detailTable()),
                     jtb.detailTable().javaFieldName(), jtb.detailAliasName());
                 b.addStatement("fields.add($L.$L)", aliasVar, df.column().javaName());
                 b.endControlFlow();

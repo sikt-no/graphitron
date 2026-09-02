@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -85,8 +86,8 @@ class QualifiedSourceReferencePipelineTest {
     private static void assertOrientedSignalToWidget(JoinStep.Hop hop) {
         var pairs = (On.ColumnPairs) hop.on();
         assertThat(TestFixtures.fkRef(pairs).sqlName()).isEqualToIgnoringCase("signal_widget_id_fkey");
-        assertThat(hop.originTable().tableClass()).isEqualTo(SIGNAL);
-        assertThat(hop.targetTable().tableClass()).isEqualTo(WIDGET);
+        assertThat(CatalogRefs.tableClass(hop.originTable())).isEqualTo(SIGNAL);
+        assertThat(CatalogRefs.tableClass(hop.targetTable())).isEqualTo(WIDGET);
         assertThat(pairs.sourceSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
         assertThat(pairs.targetSideColumns()).extracting(c -> c.sqlName()).containsExactly("widget_id");
     }

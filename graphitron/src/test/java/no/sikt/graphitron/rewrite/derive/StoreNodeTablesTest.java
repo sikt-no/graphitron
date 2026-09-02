@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -54,9 +55,9 @@ class StoreNodeTablesTest {
 
         assertThat(table.table().tableName()).isEqualTo("inventory");
         assertThat(table.table().javaFieldName()).isEqualTo("INVENTORY");
-        assertThat(table.table().tableClass().simpleName()).isEqualTo("Inventory");
-        assertThat(table.table().recordClass().simpleName()).isEqualTo("InventoryRecord");
-        assertThat(table.table().constantsClass().simpleName())
+        assertThat(CatalogRefs.tableClass(table.table()).simpleName()).isEqualTo("Inventory");
+        assertThat(CatalogRefs.recordClass(table.table()).simpleName()).isEqualTo("InventoryRecord");
+        assertThat(CatalogRefs.constantsClass(table.table()).simpleName())
             .as("the per-schema Tables class, read from sql_schema rather than concatenated")
             .isEqualTo("Tables");
         assertThat(table.table().allColumns())

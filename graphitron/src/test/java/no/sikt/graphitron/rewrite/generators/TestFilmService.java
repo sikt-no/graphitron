@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.ArrayHolderRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmListRecord;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
@@ -20,7 +21,7 @@ import java.util.Set;
  * {@code language_id} {@code serial} (Integer) column. Return type is the structurally-
  * required {@code List<List<FilmRecord>>} per the rows-method shape for a {@code [Film!]!}
  * list field with a positional {@code Row}-shaped batch key (the per-key value
- * {@code V} is {@code tb.table().recordClass()}, here {@code FilmRecord}).
+ * {@code V} is {@code CatalogRefs.recordClass(tb.table())}, here {@code FilmRecord}).
  */
 public class TestFilmService {
 
