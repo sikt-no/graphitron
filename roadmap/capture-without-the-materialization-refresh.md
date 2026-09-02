@@ -357,6 +357,88 @@ users end up.
 `FactCaptureAgreementTest` stays where it is: it compares capture's output against the old walk, and
 a test comparing two layers belongs in the upper one.
 
+
+**Where the moved files land.** The move set leaves `no.sikt.graphitron.rewrite` behind and lands
+under `no.sikt.graphitron.model`, the destination module's existing root. Dropping the old root is
+not cosmetic. Eight of the source packages split across the line rather than moving whole: `model`
+(5 of 140), `derive` (14 of 16), `compile` (3 of 12), `lint` (4 of 10), `catalog` (2 of 4),
+`dependency` (1 of 4), `schema/federation` (3 of 4), `session` (1 of 3). Keeping the root would
+declare each of those eight in both modules, and the files left behind would hold same-package
+access to the ones that moved, so the compiler would enforce nothing. That is the boundary this item
+exists to create. Renaming the root makes `no.sikt.graphitron.rewrite.derive` and
+`no.sikt.graphitron.model.derive` distinct packages, and the split disappears by construction.
+
+`graphitron-model` has no files loose in its root; all six of its existing packages are job-named.
+The move honours that, so the ten types currently loose in `rewrite/` each acquire a job package.
+
+**One package per gatherer.** The capture body's own comment already calls them gatherers. Each gets
+a package, and a file sits inside that package when no other gatherer reaches it and nothing outside
+the fact tier names it. Everything else is tier vocabulary and lands in a package that belongs to no
+gatherer. The rule is mechanically checkable, and the move brings its own guard to check it: a test
+in `graphitron-model`'s own test sources, asserting that no file in a gatherer package is named from
+another gatherer package or from outside the fact tier. It does not extend step 3's rule, which is
+about the tier boundary and lives in `graphitron`; a test up there walking this module's internals is
+the cross-module source read this item exists to end.
+
+| package | gatherer | private helpers it takes |
+|---|---|---|
+| `model.capture` | `FactCapture`, the orchestrator | `FactSink`, `FactWrites`, `ClasspathSources`, `GraphSourceMembership`, `StoreRefresh` |
+| `model.capture.graphitron` | `GraphitronFactCapture` | `FieldSetGrammar` |
+| `model.capture.sdl` | `SdlFactCapture` | `SdlCoordinates`, `SchemaInputException` |
+| `model.capture.config` | `ConfigurationFactCapture` | `StoredRecipe` |
+| `model.capture.catalog` | `CatalogFactCapture` | none |
+| `model.capture.verdict` | `SdlVerdictCapture` | none |
+| `model.capture.java` | `JavaSourceFacts` | none; `SourceWalker` has two readers above the line |
+| `model.capture.compile` | `CompileFacts` | none; `CompileRound` has four, `CompileDiagnostic` two |
+| `model.capture.macro` | `MacroCapture` | none; `ConnectionNaming` is read by `ConnectionPromoter` |
+
+Four of the nine hold only the gatherer itself. That is the rule's honest result and not a defect in
+it: those four have no private helpers, because every type they touch is read above the line too. The
+same census locates the fact tier's public surface, which is `JooqCatalog` plus the three refs, the
+rejection vocabulary, and `schema/`.
+
+The vocabulary packages take the rest. `model.jooq` gets `JooqCatalog`, `ColumnRef`, `TableRef` and
+`ForeignKeyRef`; the jOOQ reader is deliberately not put beside `model.catalog`, which is the fact
+store's own catalog, because the two catalogs are the confusion this layout exists to clear.
+`model.diagnostics` gets the rejection vocabulary (`Rejection`, `RejectionKind`, `ValidationError`,
+`BuildWarning`, `ValidationFailedException`, `SchemaParseException`) alongside `RejectionFacts`,
+`BuildWarningFacts` and `OwnedGraphPartition`. `model.schema`, `model.schema.input` and
+`model.schema.federation` keep their leaf names. `model.derive` merges with the five files already
+there, which is a reunion rather than a collision: `ArgMappingCandidates` and
+`MaterializeDependencies` are already described as capture-cadence writers of derived rows, which is
+what `StoreDetections`, `TypeBackingRows` and `ResolvedKeyProjections` are. `model.grammar` gets
+`NodeDeclaration`, `ArgMappingSigil` and `ConnectionNaming`, joining the sigil and name grammars
+already in it. `model.config` is the one new package: `RunContext`, `SessionStateConfig`,
+`DependencyVersions` and `ClasspathEntry`, which is what stops `session` and `dependency` from
+arriving as one-file packages. `model.selection` and `model.lint` keep their leaf names, and
+`ClasspathScanner` with `CompletionData` go to `model.classpath`.
+
+**What the census changed about this step.** Two things a package-by-package reading of the move set
+does not show:
+
+* `schema/`, `schema/input/` and `schema/federation/` are not capture machinery. No gatherer reaches
+  most of them. `DirectiveSupportTypes` is read by `InputTypeGenerator`, `SchemaSdlEmitter` and
+  `TypeBuilder`; `OneOfDirectiveSdl` by `EmitPlan` and three generators; `KeyNodeSynthesiser` by
+  `SchemaReachability`, `AttributedRegistry` and the generator entry point; all three appliers by the
+  generator entry point. They still move down, because the generator reading downward is the
+  direction this item wants, but they are shared vocabulary and belong in no gatherer's package.
+* The nine-file selection parser has exactly one consumer outside `GraphitronFactCapture`, and it is
+  a single file above the line, `ArgBindingMap`. Under the rule that makes it `model.selection`
+  rather than gatherer-private. Whether `ArgBindingMap` should be parsing selections at all is a
+  separate question and not this item's.
+
+`no.sikt.graphitron.facts` already exists above the line, and its eighteen `*FactVisitor` classes are
+described as gathering facts, so "gatherer" is live vocabulary on both sides of the line. Keeping
+capture's under `model.capture.*` keeps the two readable apart.
+
+**Two renames travel with the move.** `RewriteContext` becomes `RunContext` and `RewriteSchemaLoader`
+becomes `SchemaLoader`. Both move down, so their package declaration is being rewritten anyway and
+the rename is free here. The `rewrite` vocabulary that stays above the line is a pure rename with no
+module boundary in it: `GraphQLRewriteGenerator`, `AbstractRewriteMojo`, `RewriteResult`, the
+`preRewriteSchema` parameters, and the 296 files that keep `no.sikt.graphitron.rewrite.*`. That is
+filed separately. Doing it here would put a reactor-wide rename in the same commit as a module move
+and make both unreviewable.
+
 **8. Rehome the tests that need both tiers.** Seven files, in two kinds.
 
 *Five that check the build and a client agree.* `LintSuppressionDiagnosticsParityTest` exists twice,
@@ -429,6 +511,21 @@ exists. The alternative was to carry the dependency and file the strip as a foll
 rejected: a follow-up that removes a dependency the spec has just finished justifying is a
 follow-up that does not happen.
 
+**The move set leaves the `rewrite` package name behind, and the files that stay keep it.** Eight
+source packages split across the line, so keeping the root would declare each of them in both
+modules and hand the leftovers same-package access to what moved. The compiler would then enforce
+nothing, which is the boundary this item exists to create; step 7 carries the count. The same
+reasoning does not reach the 296 files that stay above the line: renaming those is a reactor-wide
+rename with no module boundary in it, and it is filed separately rather than ridden along.
+
+**Each gatherer gets a package, and what only it uses goes in that package.** The alternative is one
+flat `model.capture` holding eighteen files, which is what exists today and which hides who reads
+what. The rule (a file sits in a gatherer's package when no other gatherer reaches it and nothing
+outside the fact tier names it) is worth more than the tidiness: it is checkable, step 3's import
+test checks it, and running it over the move set is what surfaced that `schema/` is not capture
+machinery at all. Four of the nine packages come out holding only their gatherer, which the spec
+accepts rather than papers over.
+
 ## What is out of scope
 
 **Writes from above.** The module boundary stops the upper layer from *reading* the lower one's code.
@@ -447,6 +544,12 @@ line goes.
 
 **The dev session's extra refresh at startup.** R857 removes that call. This item removes the reason
 it was needed, which is not the same thing as removing it.
+
+**The `rewrite` package name above the line.** Step 7 drops it from the 89 files that move, because
+keeping it would cost the boundary. The 296 that stay keep `no.sikt.graphitron.rewrite.*`, and so do
+`GraphQLRewriteGenerator`, `AbstractRewriteMojo`, `RewriteResult` and the `preRewriteSchema`
+parameters. That is R911, and it is separate on purpose: it is a reactor-wide rename with no module
+boundary in it, and putting it in the same commit as a module move would make both unreviewable.
 
 ## Sequencing
 
@@ -498,6 +601,16 @@ above it.
 * **The full build is green and `graphitron-sakila-example` generates identical files.** If an
   emitted file changed, the move did something more than move.
 
+* **Each gatherer's package holds only what that gatherer uses.** The guard test in
+  `graphitron-model` fails if a file in a gatherer package is named from another gatherer package or
+  from outside the fact tier. Four of the nine packages are expected to hold only their gatherer;
+  that is the census result, not a gap to close, and a reviewer should not read a thin package as an
+  unfinished one.
+* **No package is declared in both `graphitron` and `graphitron-model`.** Eight of the source
+  packages split across the line, so this is the check that the rename actually bought the boundary
+  rather than just moving files. A single split package would give the leftovers same-package access
+  to what moved.
+
 ## Retired vocabulary
 
 Declared for the retirement sweep at the Done gate. Retired by step 2:
@@ -511,6 +624,10 @@ Declared for the retirement sweep at the Done gate. Retired by step 2:
   `routinesClassName`
 * `ColumnTypeConstructorArityGuardTest`, whose subject the strip removes, replaced by
   `FactTierJavapoetBoundaryTest`
+
+* `RewriteContext`, now `RunContext`; `RewriteSchemaLoader`, now `SchemaLoader`
+* every `no.sikt.graphitron.rewrite.*` package name for the 89 files that move, now
+  `no.sikt.graphitron.model.*`
 
 ## Reviewer findings
 
