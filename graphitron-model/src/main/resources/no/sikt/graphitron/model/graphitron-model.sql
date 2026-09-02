@@ -3905,92 +3905,6 @@ COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition
 COMMENT ON COLUMN intent_condition_table_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads are kept apart here exactly as they are on intent_condition_param_extraction';
 COMMENT ON COLUMN intent_condition_table_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature declaring two table parameters draws two rows, the generator passing the alias to each rather than picking one, so this is never a single answer per signature and a reader must not read it as one';
 
-CREATE VIEW intent_condition_slot
-  (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
-   named_type, non_null, is_list, item_non_null) AS
-SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
-       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
-  FROM graphitron_method_reference mr
-  JOIN graphql_argument a
-    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
-   AND a.field_name = mr.field_name
- WHERE mr.site = 'FIELD_CONDITION'
- UNION ALL
-SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
-       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
-  FROM graphitron_method_reference mr
-  JOIN graphql_argument a
-    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
-   AND a.field_name = mr.field_name AND a.argument_name = mr.argument_name
- WHERE mr.site = 'ARGUMENT_CONDITION'
- UNION ALL
-SELECT mr.graph_name, mr.site, mr.use_site, f.field_name, 'INPUT_FIELD',
-       mr.type_name, mr.field_name, f.named_type, f.non_null, f.is_list, f.item_non_null
-  FROM graphitron_method_reference mr
-  JOIN graphql_field f
-    ON f.graph_name = mr.graph_name AND f.type_name = mr.type_name
-   AND f.field_name = mr.field_name
- WHERE mr.site = 'INPUT_FIELD_CONDITION';
-COMMENT ON VIEW intent_condition_slot IS 'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there. For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.';
-COMMENT ON COLUMN intent_condition_slot.graph_name IS 'the owning graph''s partition, carried from the method reference; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_slot.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, and what decides which arm drew the row';
-COMMENT ON COLUMN intent_condition_slot.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site already use';
-COMMENT ON COLUMN intent_condition_slot.slot_name IS 'the slot''s own name, completing the key: the argument name on an ARGUMENT row, the input field''s name on an INPUT_FIELD row. This is the name a parameter matches to bind by identity, and the name an argMapping head segment names';
-COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, the same two-value vocabulary intent_argmapping_segment_binding.bound_kind uses, saying which relation declared the slot';
-COMMENT ON COLUMN intent_condition_slot.container_type_name IS 'the type owning the coordinate the directive sits on, carried so the slot''s declaration is one join away';
-COMMENT ON COLUMN intent_condition_slot.container_field_name IS 'the field owning the coordinate: the field the argument belongs to on an ARGUMENT row, the input field itself on an INPUT_FIELD row';
-COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type with every wrapper stripped, as the declaring relation spells it';
-COMMENT ON COLUMN intent_condition_slot.non_null IS 'whether the slot''s outermost wrapper is non-null';
-COMMENT ON COLUMN intent_condition_slot.is_list IS 'whether the slot is list-shaped, which is what a depth-1 descent refuses to walk through';
-COMMENT ON COLUMN intent_condition_slot.item_non_null IS 'whether a list slot''s items are non-null; NULL where the slot is not a list';
-
-CREATE VIEW intent_condition_context_parameter
-  (graph_name, site, use_site, descriptor, position) AS
-WITH
-declared (graph_name, site, use_site, class_name, method, name) AS (
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
-    FROM graphitron_field_condition_context_arg ca
-    JOIN graphitron_method_reference mr
-      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
-     AND mr.field_name = ca.field_name
-     AND mr.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
-   UNION ALL
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
-    FROM graphitron_argument_condition_context_arg ca
-    JOIN graphitron_method_reference mr
-      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
-     AND mr.field_name = ca.field_name AND mr.argument_name = ca.argument_name
-     AND mr.site = 'ARGUMENT_CONDITION'
-)
-SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
-  FROM declared d
-  JOIN intent_condition_param_extraction p
-    ON p.graph_name = d.graph_name AND p.class_name = d.class_name
-   AND p.method_name = d.method AND p.param_name = d.name
- WHERE NOT EXISTS (SELECT 1
-                     FROM intent_condition_table_parameter tp
-                    WHERE tp.graph_name = d.graph_name AND tp.class_name = d.class_name
-                      AND tp.method_name = d.method AND tp.descriptor = p.descriptor
-                      AND tp.position = p.position)
-   AND NOT EXISTS (SELECT 1
-                     FROM graphitron_arg_mapping_pair ap
-                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
-                      AND ap.use_site = d.use_site AND ap.param_name = d.name)
-   AND (NOT EXISTS (SELECT 1
-                      FROM intent_condition_slot s
-                     WHERE s.graph_name = d.graph_name AND s.site = d.site
-                       AND s.use_site = d.use_site AND s.slot_name = d.name)
-        OR EXISTS (SELECT 1
-                     FROM graphitron_arg_mapping_pair ap
-                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
-                      AND ap.use_site = d.use_site AND ap.head_segment = d.name));
-COMMENT ON VIEW intent_condition_context_parameter IS 'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches. For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.';
-COMMENT ON COLUMN intent_condition_context_parameter.graph_name IS 'the owning graph''s partition, carried from the application that declared the context key; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_condition_context_parameter.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, a row being a fact about one application rather than about a method';
-COMMENT ON COLUMN intent_condition_context_parameter.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site already use';
-COMMENT ON COLUMN intent_condition_context_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads one application names stay apart';
-COMMENT ON COLUMN intent_condition_context_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature may take several context values and each is a row; nothing here ranks them';
-
 CREATE VIEW intent_field_reference_step_hop_live
   (graph_name, type_name, field_name, ordinal, position, via, key_matched_by,
    from_source_name, from_schema, from_table,
@@ -4424,6 +4338,92 @@ COMMENT ON COLUMN intent_expanded_field.is_list IS 'whether the expression is a 
 COMMENT ON COLUMN intent_expanded_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list';
 COMMENT ON COLUMN intent_expanded_field.default_value_sdl IS 'the authored default literal where the coordinate is an argument-bearing input field with one; display material, never a dimension';
 COMMENT ON COLUMN intent_expanded_field.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+
+CREATE VIEW intent_condition_slot
+  (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
+   named_type, non_null, is_list, item_non_null) AS
+SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
+       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN graphql_argument a
+    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
+   AND a.field_name = mr.field_name
+ WHERE mr.site = 'FIELD_CONDITION'
+ UNION ALL
+SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
+       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN graphql_argument a
+    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
+   AND a.field_name = mr.field_name AND a.argument_name = mr.argument_name
+ WHERE mr.site = 'ARGUMENT_CONDITION'
+ UNION ALL
+SELECT mr.graph_name, mr.site, mr.use_site, f.field_name, 'INPUT_FIELD',
+       mr.type_name, mr.field_name, f.named_type, f.non_null, f.is_list, f.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN intent_expanded_field f
+    ON f.graph_name = mr.graph_name AND f.type_name = mr.type_name
+   AND f.field_name = mr.field_name
+ WHERE mr.site = 'INPUT_FIELD_CONDITION';
+COMMENT ON VIEW intent_condition_slot IS 'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there. For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.';
+COMMENT ON COLUMN intent_condition_slot.graph_name IS 'the owning graph''s partition, carried from the method reference; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_slot.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, and what decides which arm drew the row';
+COMMENT ON COLUMN intent_condition_slot.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site already use';
+COMMENT ON COLUMN intent_condition_slot.slot_name IS 'the slot''s own name, completing the key: the argument name on an ARGUMENT row, the input field''s name on an INPUT_FIELD row. This is the name a parameter matches to bind by identity, and the name an argMapping head segment names';
+COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, the same two-value vocabulary intent_argmapping_segment_binding.bound_kind uses, saying which relation declared the slot';
+COMMENT ON COLUMN intent_condition_slot.container_type_name IS 'the type owning the coordinate the directive sits on, carried so the slot''s declaration is one join away';
+COMMENT ON COLUMN intent_condition_slot.container_field_name IS 'the field owning the coordinate: the field the argument belongs to on an ARGUMENT row, the input field itself on an INPUT_FIELD row';
+COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type with every wrapper stripped, as the declaring relation spells it';
+COMMENT ON COLUMN intent_condition_slot.non_null IS 'whether the slot''s outermost wrapper is non-null';
+COMMENT ON COLUMN intent_condition_slot.is_list IS 'whether the slot is list-shaped, which is what a depth-1 descent refuses to walk through';
+COMMENT ON COLUMN intent_condition_slot.item_non_null IS 'whether a list slot''s items are non-null; NULL where the slot is not a list';
+
+CREATE VIEW intent_condition_context_parameter
+  (graph_name, site, use_site, descriptor, position) AS
+WITH
+declared (graph_name, site, use_site, class_name, method, name) AS (
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
+    FROM graphitron_field_condition_context_arg ca
+    JOIN graphitron_method_reference mr
+      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
+     AND mr.field_name = ca.field_name
+     AND mr.site IN ('FIELD_CONDITION', 'INPUT_FIELD_CONDITION')
+   UNION ALL
+  SELECT mr.graph_name, mr.site, mr.use_site, mr.class_name, mr.method, ca.name
+    FROM graphitron_argument_condition_context_arg ca
+    JOIN graphitron_method_reference mr
+      ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
+     AND mr.field_name = ca.field_name AND mr.argument_name = ca.argument_name
+     AND mr.site = 'ARGUMENT_CONDITION'
+)
+SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
+  FROM declared d
+  JOIN intent_condition_param_extraction p
+    ON p.graph_name = d.graph_name AND p.class_name = d.class_name
+   AND p.method_name = d.method AND p.param_name = d.name
+ WHERE NOT EXISTS (SELECT 1
+                     FROM intent_condition_table_parameter tp
+                    WHERE tp.graph_name = d.graph_name AND tp.class_name = d.class_name
+                      AND tp.method_name = d.method AND tp.descriptor = p.descriptor
+                      AND tp.position = p.position)
+   AND NOT EXISTS (SELECT 1
+                     FROM graphitron_arg_mapping_pair ap
+                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
+                      AND ap.use_site = d.use_site AND ap.param_name = d.name)
+   AND (NOT EXISTS (SELECT 1
+                      FROM intent_condition_slot s
+                     WHERE s.graph_name = d.graph_name AND s.site = d.site
+                       AND s.use_site = d.use_site AND s.slot_name = d.name)
+        OR EXISTS (SELECT 1
+                     FROM graphitron_arg_mapping_pair ap
+                    WHERE ap.graph_name = d.graph_name AND ap.site = d.site
+                      AND ap.use_site = d.use_site AND ap.head_segment = d.name));
+COMMENT ON VIEW intent_condition_context_parameter IS 'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches. For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.';
+COMMENT ON COLUMN intent_condition_context_parameter.graph_name IS 'the owning graph''s partition, carried from the application that declared the context key; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_context_parameter.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, a row being a fact about one application rather than about a method';
+COMMENT ON COLUMN intent_condition_context_parameter.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site already use';
+COMMENT ON COLUMN intent_condition_context_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads one application names stay apart';
+COMMENT ON COLUMN intent_condition_context_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature may take several context values and each is a row; nothing here ranks them';
 
 CREATE VIEW intent_connection_element_type
   (graph_name, type_name, element_type_name) AS
