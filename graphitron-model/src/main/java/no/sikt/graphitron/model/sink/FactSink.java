@@ -108,8 +108,11 @@ public final class FactSink {
      * setting.
      *
      * <p>A relation with a written statement in {@link FactWrites} is rendered by that instead. The
-     * generic arm here names every column the relation declares, which a relation carrying a column
-     * the database computes cannot survive. The two arms coexist because the relations that have
+     * generic arm names the columns the bucket wrote, taken once per relation as the union of its
+     * rows' touched fields, so a column the database computes is absent from the statement because
+     * nothing set it. Naming every declared column instead makes such a relation unwritable through
+     * this arm, and the written set is a property of the rows rather than of the schema, so nothing
+     * has to be kept in step with the DDL. The two arms coexist because the relations that have
      * written statements interleave with relations that do not on both sides of the foreign keys, so
      * the ordering below has to span them; a write issued eagerly during the walk would reach a child
      * before its parent's bucket flushed.
@@ -125,7 +128,7 @@ public final class FactSink {
                 writer.write(dsl, rows);
                 continue;
             }
-            Field<?>[] fields = table.fields();
+            Field<?>[] fields = writtenColumns(table, rows);
             var insert = dsl.insertInto(table)
                 .columns(fields)
                 .values(new Object[fields.length]);
@@ -138,11 +141,37 @@ public final class FactSink {
                 ? dsl.batch(insert.onDuplicateKeyIgnore())
                 : dsl.batch(insert);
             for (TableRecord<?> row : rows) {
-                batch = batch.bind(row.intoArray());
+                var values = new Object[fields.length];
+                for (int i = 0; i < fields.length; i++) {
+                    values[i] = row.get(fields[i]);
+                }
+                batch = batch.bind(values);
             }
             batch.execute();
         }
         buckets.clear();
+    }
+
+    /**
+     * The columns this bucket wrote: every field some row of it set, in the relation's own column
+     * order. Derived from the rows and not from the relation, which is what leaves a column the
+     * database computes out by construction, nothing having set one. Asking the relation instead
+     * names every declared column and the insert is refused, and the code generator is no help
+     * here: it models H2's computed columns as ordinary fields, so no property of the relation
+     * tells them apart. A field some row set to null counts as written, a record marking a null set
+     * as touched, which keeps an explicit null distinct from a column the walk never reached.
+     */
+    private static Field<?>[] writtenColumns(Table<?> table, List<TableRecord<?>> rows) {
+        var written = new ArrayList<Field<?>>();
+        for (Field<?> field : table.fields()) {
+            for (TableRecord<?> row : rows) {
+                if (row.touched(field)) {
+                    written.add(field);
+                    break;
+                }
+            }
+        }
+        return written.toArray(new Field<?>[0]);
     }
 
     private static boolean sharedFamily(Table<?> table) {

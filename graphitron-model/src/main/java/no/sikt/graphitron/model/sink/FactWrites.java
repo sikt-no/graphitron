@@ -32,14 +32,12 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * The written half of capture's write path: one function per relation, each rendering its own bulk
  * insert and naming the columns it has data for.
  *
- * <p>{@link FactSink#flush()} renders a statement for a relation from {@code table.fields()}, which
- * asserts every column of the relation writable. A column the database computes cannot be written at
- * all, and h2 rejects an insert that so much as names one, so a relation carrying a folded companion
- * column has to state its own column list instead of having one inferred from its shape. That is the
- * whole reason this class exists, and the reason the list is written out here rather than filtered
- * out of the relation's fields or held in a table the sink consults: an insert should say what it
- * writes, in constants the compiler checks, so a column the writer has nothing for cannot join it
- * later without someone deciding that it should.
+ * <p>An insert should say what it writes, in constants the compiler checks, so a column the writer
+ * has nothing for cannot join it later without someone deciding that it should. {@link
+ * FactSink#flush()} reaches the same answer for a relation with no function here by taking the
+ * columns its rows actually touched, which is what lets a relation carrying a column the database
+ * computes go through the generic arm at all; what it cannot do is state the list somewhere a
+ * reader of the writer can see it.
  *
  * <p>Each function issues one prepared statement bound once per row, which is the property the
  * sink's own batch has and the load's cost depends on. Conflict behaviour is stated per relation
@@ -47,8 +45,9 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * because two builds crawling one jar concurrently both land, and the graph-keyed rest do not,
  * because there a duplicate is a capture bug the constraint must surface.
  *
- * <p>This covers the relations that carry a generated column today. Everything else still goes
- * through the sink's generic arm, so the two coexist and the write order has to span both; see
+ * <p>This covers the relations that carry a generated column today, which were the relations the
+ * generic arm could not write before it learned to name what it wrote. Everything else still goes
+ * through that arm, so the two coexist and the write order has to span both; see
  * {@link FactSink#parentsFirst}.
  */
 final class FactWrites {
