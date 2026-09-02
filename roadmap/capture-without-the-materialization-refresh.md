@@ -484,10 +484,35 @@ generator that produces no fact has no reason to name the capture entry point be
 custody, so taking custody away is the whole of the change and nothing has to be relocated to make
 it true. Flagged rather than done, because it changes a step that was signed off.
 
-**5. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
-point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
-directory, because the Maven goals still need it as a setting. What goes away is the generator
-running with no store at all: that stops being possible.
+**5. Hand the store to the generator.** Restated after step 4, which found that the original plan
+could not be executed as written: the entry point needs the capture body, and only the generator
+holds the registry that body writes, so no store can be open before the generator runs if the
+generator is the one calling the entry point. What that plan was *for* is already delivered, since
+step 4's entry point returns a demoted store rather than nothing and a generator with no store at
+all stopped being possible then. What is left is the dependency itself.
+
+**The shape.** A capture port, built above the generator and handed to it. One interface whose
+single method captures and reads; the goal constructs it with the store directory, and the generator
+names the port and its inputs and never a store, a directory, or `FactCapture`. Concretely:
+
+* The goal opens the store when it constructs the port, and closes it when the run ends, so a
+  generation runs against a store its caller opened, which is what the delivery criterion asks for
+  literally rather than approximately.
+* The port owns the demotion, because step 4's finding stands: three of the four reasons are known
+  at open, and a write the shared file refuses twice is only knowable after the write. So the swap
+  happens inside a capture call, before the caller's reads run, and `close` closes whichever store
+  the port ended on. Nothing outside the call ever holds the store that was swapped away from,
+  because what the goal holds is the port.
+* `RewriteContext` keeps the directory, because the Maven goals still need it as a setting. What it
+  stops being is something the generator reads on its way to a store.
+
+**Why the store ownership is this item's and not a follow-on's.** `DevMojo` runs its initial
+generator pass before it opens its session store, so that pass writes through a store that is closed
+by the time the session exists, which is why the session replays the pass's diagnostics into a
+second store on its own handle. The two-store complaint in this item's own account and the plugin's
+reporting arrangement are one problem. Once the goal owns the store, the dev session hands one store
+to every pass and that replay is deletable. Leaving it costs the follow-on item the same work plus
+an inherited workaround.
 
 **6. Add the command.** `CaptureMojo` copies the shape `ValidateMojo` already has: 34 lines whose
 body is a single `runGenerator` call, with `AbstractRewriteMojo.runGenerator` doing the setup. Like
