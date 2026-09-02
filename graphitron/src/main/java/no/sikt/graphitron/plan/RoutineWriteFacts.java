@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
@@ -313,7 +313,7 @@ public final class RoutineWriteFacts {
     private static Field<List<RoutineCall.RoutineArgument>> arguments(
             IntentMutationRoutineSeat s, IntentFieldRoutineMethod rm) {
         var p = SQL_ROUTINE_PARAMETER;
-        var m = GRAPHITRON_ARG_MAPPING_PAIR;
+        var m = GRAPHITRON_ARGMAPPING_ENTRY;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(

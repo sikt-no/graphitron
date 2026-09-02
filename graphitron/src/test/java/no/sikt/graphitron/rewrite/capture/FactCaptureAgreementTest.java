@@ -378,7 +378,6 @@ class FactCaptureAgreementTest {
             "graphitron_reference_for", "graphitron_reference_for_step",
             "graphitron_argument_reference_for", "graphitron_argument_reference_for_step",
             "graphitron_service", "graphitron_service_context_arg",
-            "graphitron_service_arg_mapping_sigil",
             "graphitron_external_field", "graphitron_connection", "graphitron_facet",
             "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
             "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",
@@ -399,7 +398,7 @@ class FactCaptureAgreementTest {
             // per-site row left to sit beside, having absorbed the eight, and the method reference
             // has none at the source-row site for the same reason, both being written in that same
             // walk regardless.
-            "graphitron_spelled_reference", "graphitron_arg_mapping_pair",
+            "graphitron_spelled_reference", "graphitron_argmapping_entry",
             "graphitron_method_reference",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.
@@ -514,7 +513,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop_live", Arm.DERIVED);
         registrations.put("intent_node_id_instruction_live", Arm.DERIVED);
         registrations.put("intent_argmapping_segment_binding", Arm.DERIVED);
-        registrations.put("intent_argmapping_binding_leaf", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
         registrations.put("intent_argmapping_key_column_candidate", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_projection", Arm.DERIVED);

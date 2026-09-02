@@ -29,7 +29,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -232,7 +232,7 @@ class NodeIdDecodeDefectTest {
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
             seedProducer(dsl, "Query", "films", "filmId", "java.lang.Long");
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "filmId", "ids");
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "ids");
 
             assertThat(rows(dsl)).isEmpty();

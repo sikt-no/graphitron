@@ -64,11 +64,19 @@ public final class ArgMappingSigil {
      * Outcome of {@link #scan}: the recognized sigil entries lifted out (Java parameter name to
      * sigil literal, document order) plus the residual raw string for {@code parseEntries}, or
      * the canonical rejection.
+     *
+     * <p>{@code sigilPositions} carries each lifted entry's 0-based position in the argMapping as
+     * the author wrote it. The lift removes entries from the middle of the list, so the residual's
+     * own numbering is not the document's; a caller that records a position (fact capture does,
+     * the position being part of an entry's key) reconstructs document order by taking these
+     * positions for the sigils and the remaining ones, in order, for the residual.
      */
     public sealed interface ScanResult permits ScanResult.Ok, ScanResult.Rejected {
-        record Ok(Map<String, String> sigilBindings, String residual) implements ScanResult {
+        record Ok(Map<String, String> sigilBindings, Map<String, Integer> sigilPositions,
+                  String residual) implements ScanResult {
             public Ok {
                 sigilBindings = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(sigilBindings));
+                sigilPositions = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(sigilPositions));
             }
         }
         record Rejected(String message) implements ScanResult {}
@@ -83,11 +91,14 @@ public final class ArgMappingSigil {
      */
     public static ScanResult scan(String raw, Site site) {
         if (raw == null || raw.isBlank() || raw.indexOf('$') < 0) {
-            return new ScanResult.Ok(Map.of(), raw);
+            return new ScanResult.Ok(Map.of(), Map.of(), raw);
         }
         var sigils = new LinkedHashMap<String, String>();
+        var positions = new LinkedHashMap<String, Integer>();
         var residual = new StringBuilder();
+        int index = -1;
         for (String piece : raw.split(",", -1)) {
+            index++;
             int colon = piece.indexOf(':');
             String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
             if (colon >= 0 && rhs.startsWith("$")) {
@@ -108,6 +119,7 @@ public final class ArgMappingSigil {
                             + "' — each Java parameter may appear at most once");
                 }
                 sigils.put(javaName, rhs);
+                positions.put(javaName, index);
                 continue;
             }
             if (!residual.isEmpty()) {
@@ -115,7 +127,7 @@ public final class ArgMappingSigil {
             }
             residual.append(piece);
         }
-        return new ScanResult.Ok(sigils, residual.toString());
+        return new ScanResult.Ok(sigils, positions, residual.toString());
     }
 
     /** Canonical message for a {@code $}-prefixed argMapping value that is not an admitted sigil. */

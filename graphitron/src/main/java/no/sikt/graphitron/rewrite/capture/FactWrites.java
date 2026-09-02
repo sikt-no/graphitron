@@ -243,7 +243,7 @@ final class FactWrites {
                          t.KEY_REF_NAME_PART,
                          t.CLASS_NAME,
                          t.METHOD,
-                         t.ARG_MAPPING)
+                         t.ARGMAPPING)
                 .values(markers(14)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
@@ -259,7 +259,7 @@ final class FactWrites {
                                row.get(t.KEY_REF_NAME_PART),
                                row.get(t.CLASS_NAME),
                                row.get(t.METHOD),
-                               row.get(t.ARG_MAPPING));
+                               row.get(t.ARGMAPPING));
         }
         batch.execute();
     }
@@ -281,7 +281,7 @@ final class FactWrites {
                          t.KEY_REF_NAME_PART,
                          t.CLASS_NAME,
                          t.METHOD,
-                         t.ARG_MAPPING)
+                         t.ARGMAPPING)
                 .values(markers(15)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
@@ -298,7 +298,7 @@ final class FactWrites {
                                row.get(t.KEY_REF_NAME_PART),
                                row.get(t.CLASS_NAME),
                                row.get(t.METHOD),
-                               row.get(t.ARG_MAPPING));
+                               row.get(t.ARGMAPPING));
         }
         batch.execute();
     }
@@ -320,7 +320,7 @@ final class FactWrites {
                          t.KEY_REF_NAME_PART,
                          t.CLASS_NAME,
                          t.METHOD,
-                         t.ARG_MAPPING)
+                         t.ARGMAPPING)
                 .values(markers(15)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
@@ -337,7 +337,7 @@ final class FactWrites {
                                row.get(t.KEY_REF_NAME_PART),
                                row.get(t.CLASS_NAME),
                                row.get(t.METHOD),
-                               row.get(t.ARG_MAPPING));
+                               row.get(t.ARGMAPPING));
         }
         batch.execute();
     }
@@ -358,7 +358,7 @@ final class FactWrites {
                          t.KEY_REF_NAME_PART,
                          t.CLASS_NAME,
                          t.METHOD,
-                         t.ARG_MAPPING)
+                         t.ARGMAPPING)
                 .values(markers(14)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
@@ -374,7 +374,7 @@ final class FactWrites {
                                row.get(t.KEY_REF_NAME_PART),
                                row.get(t.CLASS_NAME),
                                row.get(t.METHOD),
-                               row.get(t.ARG_MAPPING));
+                               row.get(t.ARGMAPPING));
         }
         batch.execute();
     }
@@ -423,7 +423,7 @@ final class FactWrites {
                          t.ROUTINE_REF,
                          t.ROUTINE_REF_NAMESPACE_PART,
                          t.ROUTINE_REF_NAME_PART,
-                         t.ARG_MAPPING,
+                         t.ARGMAPPING,
                          t.COLUMN_MAPPING)
                 .values(markers(12)));
         for (TableRecord<?> row : rows) {
@@ -437,7 +437,7 @@ final class FactWrites {
                                row.get(t.ROUTINE_REF),
                                row.get(t.ROUTINE_REF_NAMESPACE_PART),
                                row.get(t.ROUTINE_REF_NAME_PART),
-                               row.get(t.ARG_MAPPING),
+                               row.get(t.ARGMAPPING),
                                row.get(t.COLUMN_MAPPING));
         }
         batch.execute();

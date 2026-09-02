@@ -30,7 +30,7 @@ extend type Query {
     method: "getFilmsMapped", argMapping: "titles: name"})
 }
 
-extend schema @assertContains(relation: "graphitron_arg_mapping_pair", rows: """
+extend schema @assertContains(relation: "graphitron_argmapping_entry", rows: """
   site,                  use_site,        position, param_name, argument_path
   FIELD_CONDITION,       Language.films,  0,        cityNames,  name
   INPUT_FIELD_CONDITION, FilmFilter.title, 0,       cityNames,  title

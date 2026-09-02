@@ -9,8 +9,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,20 +45,41 @@ class SessionSigilCaptureTest {
         """;
 
     @Test
-    @DisplayName("a $session entry lifts into the sigil relation; the residual keeps its pairs; nothing quarantines")
-    void sessionEntry_writesTheSigilRow_keepsThePairSet_andNoUndecodedRow(@TempDir Path tmp) {
+    @DisplayName("a $session entry is an entry like any other, at the position the author wrote it")
+    void sessionEntry_isAnOrdinaryEntry_atItsAuthoredPosition(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, SERVICE_WITH_SIGIL)) {
-            var sigils = store.dsl().selectFrom(GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL).fetch();
-            assertThat(sigils).hasSize(1);
-            assertThat(sigils.get(0).getParamName()).isEqualTo("identity");
-            assertThat(sigils.get(0).getSigil()).isEqualTo("$session");
-            assertThat(sigils.get(0).getPosition()).isZero();
+            var entries = store.dsl().selectFrom(GRAPHITRON_ARGMAPPING_ENTRY)
+                .where(GRAPHITRON_ARGMAPPING_ENTRY.SITE.eq("SERVICE"))
+                .orderBy(GRAPHITRON_ARGMAPPING_ENTRY.POSITION).fetch();
+            assertThat(entries)
+                .as("both entries land in the one relation that holds an argMapping entry")
+                .hasSize(2);
 
-            var pairs = store.dsl().selectFrom(GRAPHITRON_ARG_MAPPING_PAIR)
-                .where(GRAPHITRON_ARG_MAPPING_PAIR.SITE.eq("SERVICE")).fetch();
-            assertThat(pairs).as("the residual entry keeps its ordinary pair row").hasSize(1);
-            assertThat(pairs.get(0).getParamName()).isEqualTo("extra");
-            assertThat(pairs.get(0).getArgumentPath()).isEqualTo("someArg");
+            // The author wrote the sigil first. The lift takes it out of the middle of the list,
+            // so a position taken from the residual's own numbering would renumber what is left;
+            // these two assertions are what says it does not.
+            assertThat(entries.get(0).getParamName()).isEqualTo("identity");
+            assertThat(entries.get(0).getArgumentPath()).isEqualTo("$session");
+            assertThat(entries.get(0).getHeadKind()).isEqualTo("SIGIL");
+            assertThat(entries.get(0).getPosition()).isZero();
+
+            assertThat(entries.get(1).getParamName()).isEqualTo("extra");
+            assertThat(entries.get(1).getArgumentPath()).isEqualTo("someArg");
+            assertThat(entries.get(1).getHeadKind()).isEqualTo("ARGUMENT");
+            assertThat(entries.get(1).getPosition()).isEqualTo(1);
+
+            var candidates = store.dsl().selectFrom(GRAPHITRON_ARGMAPPING_CANDIDATE)
+                .where(GRAPHITRON_ARGMAPPING_CANDIDATE.ORIGIN_KIND.eq("SIGIL")).fetch();
+            assertThat(candidates)
+                .as("a sigil is something a right-hand side may name, so it has a candidate")
+                .hasSize(1);
+            assertThat(candidates.get(0).getOrigin())
+                .isEqualTo(entries.get(0).getCandidateOrigin());
+            assertThat(candidates.get(0).getElementName()).isEqualTo("$session");
+            assertThat(candidates.get(0).getNamedType())
+                .as("a sigil names a runtime value and no GraphQL type")
+                .isNull();
+            assertThat(candidates.get(0).getDepth()).isZero();
 
             assertThat(store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT).fetch())
                 .as("a recognized sigil is a decoded fact, never malformed overflow")

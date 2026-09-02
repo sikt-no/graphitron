@@ -2261,7 +2261,7 @@ class TypeBuilder {
      * "enum") and gets prefixed with {@code @} by the caller.
      */
     private static String checkArgMappingInert(Map<String, Object> ref, String directiveName) {
-        String rawArgMapping = Optional.ofNullable(ref.get(no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING))
+        String rawArgMapping = Optional.ofNullable(ref.get(no.sikt.graphitron.rewrite.BuildContext.ARG_ARGMAPPING))
             .map(Object::toString).orElse(null);
         if (rawArgMapping == null || rawArgMapping.isBlank()) return null;
         return "argMapping is not supported on @" + directiveName

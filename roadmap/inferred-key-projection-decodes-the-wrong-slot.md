@@ -263,7 +263,7 @@ describes behaviour the delivery removed. Rewrite it to say what the two spellin
 column spelled, or the one-column key naming it), so the three sibling mutations below read as the
 three arms of one rule rather than one working shape and two the comment says cannot work.
 
-**2. `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/ArgmappingBindingLeafTest.java`,
+**2. `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/ArgmappingMatchTest.java`,
 the javadoc on `aBareNodeIdArgumentHeadIsTheLeafWithNothingTrailing`.** It reads "This is the arm the
 silently-wrong case runs through: today such a binding hands a routine parameter the base64 wire id
 and nothing says a word". That is the bare-`@nodeId`-argument-at-a-`@routine` shape this item names as

@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARGMAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLUMN_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
@@ -198,7 +198,7 @@ final class RoutineDirectiveResolver {
         if (routineName == null || routineName.isBlank()) {
             return new NodeResolved.Rejected(Rejection.structural("@routine requires a non-empty `name`"));
         }
-        String rawArgMapping = Optional.ofNullable(dir.getArgument(ARG_ARG_MAPPING))
+        String rawArgMapping = Optional.ofNullable(dir.getArgument(ARG_ARGMAPPING))
             .map(a -> a.getValue()).map(Object::toString).orElse(null);
         var parsedMapping = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.ROUTINE);
         if (parsedMapping instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {

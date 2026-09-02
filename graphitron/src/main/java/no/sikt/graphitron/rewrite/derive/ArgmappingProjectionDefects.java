@@ -12,7 +12,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.rewrite.derive.NodeIdMessages.keyColumnsOf;
@@ -99,7 +99,7 @@ public final class ArgmappingProjectionDefects {
         EnumSet.of(Site.ROUTINE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
 
     /**
-     * The nine {@code site} values {@code graphitron_arg_mapping_pair} discriminates on, each mapped to
+     * The nine {@code site} values {@code graphitron_argmapping_entry} discriminates on, each mapped to
      * the {@link ArgMappingSigil.Site} whose description names the directive in a message. The
      * mapping is many-to-one in both directions of reading: three SDL positions share
      * {@code @condition} and the store tells them apart because their heads and their emitters
@@ -268,7 +268,7 @@ public final class ArgmappingProjectionDefects {
      */
     private static List<Defect> unemittableProjections(DSLContext dsl, String graphName) {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
-        var ap = GRAPHITRON_ARG_MAPPING_PAIR;
+        var ap = GRAPHITRON_ARGMAPPING_ENTRY;
         return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
                 p.ARGUMENT_PATH, p.NODE_TYPE_NAME, p.LEAF_IS_LIST, ap.PARAM_NAME,
                 ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)

@@ -18,13 +18,15 @@ six `intent_argmapping_*` views use `argmapping`; the directive itself is `@argM
 on the difference, which is exactly the problem: a reader who has seen one spelling cannot type the
 other from memory, and neither can a search.
 
-**Two of the names are also wrong about what they hold, and the schema already admits one of them.**
-`intent_argmapping_binding_leaf`'s own comment ends by saying so: a leaf in the candidate tree is a
-candidate with no children, while what that relation names is where a written path stopped, which is
-routinely an interior candidate, and that is precisely the case its `trailing_segments` column counts.
-Separately, `graphitron_arg_mapping_pair` carries "pair" from a shape it no longer has. Both halves of
-an argMapping are on the row, but the row is one authored binding at a coordinate, and "pair" says
-nothing a reader can use.
+**One name is also wrong about what it holds.** `graphitron_arg_mapping_pair` carries "pair" from a
+shape it no longer has. Both halves of an argMapping are on the row, but the row is one authored
+binding at a coordinate, and "pair" says nothing a reader can use.
+
+The other one landed elsewhere and is named here so this item is not read as still owing it.
+`intent_argmapping_binding_leaf` is now `graphitron_argmapping_match`, renamed in R876 rather than
+deferred to this sweep, because its defect was not spelling. Every relation it reads belongs to the
+graphitron gatherer, so the `intent_` prefix on it recorded a placement nobody chose, and correcting
+the noun and the family is one edit rather than two. It is the schema's first `graphitron_` view.
 
 This is a rename with no behaviour in it, which makes it cheap and makes it easy to keep postponing.
 The cost of postponing is paid by every reader of the schema, and the schema is the documentation.

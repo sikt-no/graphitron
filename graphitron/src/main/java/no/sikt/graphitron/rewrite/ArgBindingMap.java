@@ -128,7 +128,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> aut
      * being opened carries a {@code @nodeId}, whether it names a type, whether the trailing segment
      * is one of that type's key columns, whether there is exactly one of them, and whether the
      * column's Java type fits the parameter are all resolutions over captured facts, answered by
-     * {@code intent_argmapping_binding_leaf} and the relations that reduce it. This method cannot
+     * {@code graphitron_argmapping_match} and the relations that reduce it. This method cannot
      * consult any of them: the schema is built before capture runs, so the store is empty while this
      * executes. A rule spelled here would therefore be a second, earlier, unfalsifiable copy of an
      * answer the store already gives, and the copy would win by rejecting first.

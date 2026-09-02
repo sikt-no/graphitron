@@ -466,7 +466,7 @@ class DerivedReadCostTest {
      * something true.
      */
     private static final Set<String> KNOWN_NON_MONOTONIC = Set.of(
-        // graphitron_arg_mapping_pair|intent_argmapping_bound_parameter_type stood here on the pruning an
+        // graphitron_argmapping_entry|intent_argmapping_bound_parameter_type stood here on the pruning an
         // inlined body offered and a table cannot. It left with the registration itself: the rule
         // had become a projection of one captured table, so materializing it copied rows into rows,
         // and the index that came with it was that table's primary key spelled again. A pair also

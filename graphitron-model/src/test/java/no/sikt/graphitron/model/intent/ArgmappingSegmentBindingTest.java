@@ -11,15 +11,15 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_SEGMENT_BINDING;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgMappingPair;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
-import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -95,10 +95,10 @@ class ArgmappingSegmentBindingTest {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Query", "films");
             seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "byActor", 0,
                 "p", "byActor");
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "other", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "other", 0,
                 "p", "byActor");
 
             assertThat(boundPositions(dsl, "Query.films(byActor)")).containsExactly(0);
@@ -118,7 +118,7 @@ class ArgmappingSegmentBindingTest {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "RentFilmInput", "INPUT_OBJECT");
             seedField(dsl, GRAPH, "RentFilmInput", "inventoryId");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "RentFilmInput", "inventoryId", 0,
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "RentFilmInput", "inventoryId", 0,
                 "p", "inventoryId");
             seedArgumentPathSegments(dsl, GRAPH, "RentFilmInput", "inventoryId", "inventoryId");
 
@@ -145,7 +145,7 @@ class ArgmappingSegmentBindingTest {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Film", "actors");
             seedArgument(dsl, GRAPH, "Film", "actors", "since", "String");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "p", "since");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "since");
 
@@ -241,7 +241,7 @@ class ArgmappingSegmentBindingTest {
     @Test
     void aDottedInputFieldConditionAnchorsOnItsOwnContainer() {
         withNestedInput(dsl -> {
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "RentFilmInput", "nested", 0,
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "RentFilmInput", "nested", 0,
                 "p", "nested.inventoryId.inventory_id");
             seedArgumentPathSegments(dsl, GRAPH, "RentFilmInput", "nested",
                 "nested.inventoryId.inventory_id");
@@ -278,7 +278,7 @@ class ArgmappingSegmentBindingTest {
             seedOccurrencePath(dsl, GRAPH, "Mutation", "returnFilm", "other", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "nested", "NestedInput"),
                 new OccurrenceStep("NestedInput", "inventoryId", "ID"));
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "RentFilmInput", "nested", 0,
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "RentFilmInput", "nested", 0,
                 "p", "nested.inventoryId");
             seedArgumentPathSegments(dsl, GRAPH, "RentFilmInput", "nested", "nested.inventoryId");
 
@@ -322,7 +322,7 @@ class ArgmappingSegmentBindingTest {
             seedArgument(dsl, "other", "Mutation", "rentFilm", "input", "RentFilmInput");
             seedOccurrencePath(dsl, "other", "Mutation", "rentFilm", "input", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
-            seedRoutineArgMappingPair(dsl, "other", "Mutation", "rentFilm", 0, 0,
+            seedRoutineArgmappingEntry(dsl, "other", "Mutation", "rentFilm", 0, 0,
                 "pInventoryId", "input.inventoryId");
             seedArgumentPathSegments(dsl, "other", "Mutation", "rentFilm", "input.inventoryId");
 
@@ -367,7 +367,7 @@ class ArgmappingSegmentBindingTest {
     /** A {@code @routine} pair at an ordinal, with its segment decomposition beside it. */
     private static void routinePair(DSLContext dsl, String typeName, String fieldName, int ordinal,
                                     String paramName, String argumentPath) {
-        seedRoutineArgMappingPair(dsl, GRAPH, typeName, fieldName, ordinal, 0, paramName,
+        seedRoutineArgmappingEntry(dsl, GRAPH, typeName, fieldName, ordinal, 0, paramName,
             argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, typeName, fieldName, argumentPath);
     }

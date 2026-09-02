@@ -127,7 +127,7 @@ import static java.util.Objects.requireNonNull;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARGMAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_PATH;
@@ -8832,7 +8832,7 @@ class FieldBuilder {
         Map<String, Object> ref = asMap(arg.getValue());
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
         // Structural-inertness check: @externalField reaches a method whose Java parameter set is
         // fixed (the parent table). argMapping has no slot to bind to and is rejected at parse
         // time. (@enum / @record have their own parse sites in TypeBuilder.)

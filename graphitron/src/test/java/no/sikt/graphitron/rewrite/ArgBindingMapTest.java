@@ -264,7 +264,7 @@ class ArgBindingMapTest {
      * which is carry it. Every question about such a segment (does the thing being opened declare a
      * @nodeId, does it name a type, is the trailing name one of that type's key columns, is there
      * exactly one of them, does the column's type fit the parameter) is answered over captured facts
-     * by intent_argmapping_binding_leaf and the relations that reduce it. This method runs while the
+     * by graphitron_argmapping_match and the relations that reduce it. This method runs while the
      * store is still empty, so a rule here would be an earlier second copy that wins by rejecting
      * first. The rejections themselves are pinned where they live: the store's own tier, and
      * ArgmappingProjectionRejectionPipelineTest for the build verdict.

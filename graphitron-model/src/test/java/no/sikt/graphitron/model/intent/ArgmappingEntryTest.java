@@ -8,23 +8,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStepArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceStepArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgMappingPair;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
-import static no.sikt.graphitron.model.test.SeededStore.seedReferenceForStepArgMappingPair;
-import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedReferenceForStepArgmappingEntry;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgmappingEntry;
+import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code graphitron_arg_mapping_pair} holds: every {@code argMapping} pair any directive
+ * What {@code graphitron_argmapping_entry} holds: every {@code argMapping} pair any directive
  * spells, in one relation with a {@code site} literal naming which kind of site spelled a row.
  *
  * <p>These cases once pinned a union's correctness, the relation having been a widening over eight
@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code (site, use_site, position)} can join back and recover the arm's own components, which is
  * what makes the serialized key a key rather than a message string. Nothing parses it.
  */
-class ArgmappingPairTest {
+class ArgmappingEntryTest {
 
     private static final String GRAPH = "g";
 
@@ -53,17 +53,17 @@ class ArgmappingPairTest {
     void aRoutinePairCarriesItsApplicationsOrdinal() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, 0,
+            seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, 0,
                 "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ROUTINE");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Mutation.rentFilm#0");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isZero();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isNull();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.PARAM_NAME)).isEqualTo("pInventoryId");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_PATH)).isEqualTo("input.inventoryId");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ROUTINE");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Mutation.rentFilm#0");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME)).isEqualTo("pInventoryId");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_PATH)).isEqualTo("input.inventoryId");
         });
     }
 
@@ -72,16 +72,16 @@ class ArgmappingPairTest {
     void aServicePairCarriesNoOrdinalAndNoStep() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Query", "film");
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 0, "id", "filmId");
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "film", 0, "id", "filmId");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("SERVICE");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Query.film");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("SERVICE");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Query.film");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL))
                 .as("@service is not repeatable, so there is no ordinal to carry")
                 .isNull();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isNull();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
         });
     }
 
@@ -90,15 +90,15 @@ class ArgmappingPairTest {
     void anArgumentConditionPairNamesItsArgumentInTheKey() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Query", "films");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "titleLike", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "titleLike", 0,
                 "pattern", "titleLike");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_CONDITION");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ARGUMENT_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE))
                 .isEqualTo("Query.films(titleLike)");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("titleLike");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isEqualTo("titleLike");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isNull();
         });
     }
 
@@ -107,15 +107,15 @@ class ArgmappingPairTest {
     void aFieldReferenceStepPairCarriesBothAnOrdinalAndAStep() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Film", "actors");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 1, 2, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 1, 2, 0,
                 "cutoff", "since");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("FIELD_REFERENCE_STEP");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors#1[2]");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isEqualTo(1);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isEqualTo(2);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("FIELD_REFERENCE_STEP");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Film.actors#1[2]");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
         });
     }
 
@@ -124,16 +124,16 @@ class ArgmappingPairTest {
     void anArgumentReferenceStepPairCarriesAllThreeExtras() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Query", "films");
-            seedArgumentReferenceStepArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0, 1, 0,
+            seedArgumentReferenceStepArgmappingEntry(dsl, GRAPH, "Query", "films", "byActor", 0, 1, 0,
                 "actorId", "byActor");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("ARGUMENT_REFERENCE_STEP");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ARGUMENT_REFERENCE_STEP");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE))
                 .isEqualTo("Query.films(byActor)#0[1]");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)).isEqualTo("byActor");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL)).isZero();
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isEqualTo("byActor");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isEqualTo(1);
         });
     }
 
@@ -146,17 +146,17 @@ class ArgmappingPairTest {
     void theReferenceForArmSharesAKeyShapeAndIsToldApartBySite() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Film", "actors");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "a", "one");
-            seedReferenceForStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+            seedReferenceForStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "b", "two");
 
             var rows = rows(dsl);
             assertThat(rows).hasSize(2);
-            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).distinct())
+            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).distinct())
                 .as("the two arms serialize one coordinate the same way")
                 .containsExactly("Film.actors#0[0]");
-            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)))
+            assertThat(rows.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)))
                 .containsExactlyInAnyOrder("FIELD_REFERENCE_STEP", "REFERENCE_FOR_STEP");
         });
     }
@@ -172,11 +172,11 @@ class ArgmappingPairTest {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "Film", "OBJECT");
             seedField(dsl, GRAPH, "Film", "actors");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "Film", "actors", 0, "p", "since");
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, "p", "since");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("FIELD_CONDITION");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("Film.actors");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("FIELD_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Film.actors");
         });
     }
 
@@ -190,12 +190,12 @@ class ArgmappingPairTest {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "FilmFilter", "INPUT_OBJECT");
             seedField(dsl, GRAPH, "FilmFilter", "titleLike");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "FilmFilter", "titleLike", 0,
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "FilmFilter", "titleLike", 0,
                 "p", "titleLike");
 
             var row = only(dsl);
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).isEqualTo("INPUT_FIELD_CONDITION");
-            assertThat(row.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)).isEqualTo("FilmFilter.titleLike");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("INPUT_FIELD_CONDITION");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("FilmFilter.titleLike");
         });
     }
 
@@ -210,10 +210,10 @@ class ArgmappingPairTest {
     void twoApplicationsOnOneCoordinateStayTwoUseSites() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Mutation", "rentFilm");
-            seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, 0, "p", "one");
-            seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 1, 0, "p", "two");
+            seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, 0, "p", "one");
+            seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 1, 0, "p", "two");
 
-            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE)))
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });
     }
@@ -227,11 +227,11 @@ class ArgmappingPairTest {
     void aDuplicateParameterAtTwoPositionsSurvives() {
         withSeededStore(GRAPH, dsl -> {
             seedField(dsl, GRAPH, "Query", "film");
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 0, "id", "one");
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 1, "id", "two");
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "film", 0, "id", "one");
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "film", 1, "id", "two");
 
             assertThat(rows(dsl)).hasSize(2);
-            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.POSITION)))
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_ENTRY.POSITION)))
                 .containsExactlyInAnyOrder(0, 1);
         });
     }
@@ -242,7 +242,7 @@ class ArgmappingPairTest {
         withSeededStore(GRAPH, dsl -> {
             seedGraph(dsl, "other");
             seedField(dsl, "other", "Query", "film");
-            seedServiceArgMappingPair(dsl, "other", "Query", "film", 0, "id", "filmId");
+            seedServiceArgmappingEntry(dsl, "other", "Query", "film", 0, "id", "filmId");
 
             assertThat(rows(dsl)).isEmpty();
         });
@@ -258,7 +258,7 @@ class ArgmappingPairTest {
     @Test
     void everySiteValueIsReachable() {
         withEveryArm(dsl ->
-            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE)).distinct())
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).distinct())
                 .containsExactlyInAnyOrderElementsOf(EVERY_SITE));
     }
 
@@ -273,20 +273,20 @@ class ArgmappingPairTest {
         withEveryArm(dsl -> {
             var rows = rows(dsl);
             assertThat(rows.stream()
-                .map(r -> List.of(r.get(GRAPHITRON_ARG_MAPPING_PAIR.SITE),
-                    r.get(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE),
-                    r.get(GRAPHITRON_ARG_MAPPING_PAIR.POSITION)))
+                .map(r -> List.of(r.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE),
+                    r.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE),
+                    r.get(GRAPHITRON_ARGMAPPING_ENTRY.POSITION)))
                 .distinct())
                 .as("the grain is site plus the use-site key plus the position within the list")
                 .hasSize(rows.size());
 
-            var recovered = dsl.select(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL,
-                    GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION, GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME)
-                .from(GRAPHITRON_ARG_MAPPING_PAIR)
-                .where(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
-                .and(GRAPHITRON_ARG_MAPPING_PAIR.SITE.eq("ARGUMENT_REFERENCE_STEP"))
-                .and(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE.eq("Query.films(byActor)#0[1]"))
-                .and(GRAPHITRON_ARG_MAPPING_PAIR.POSITION.eq(0))
+            var recovered = dsl.select(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL,
+                    GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)
+                .from(GRAPHITRON_ARGMAPPING_ENTRY)
+                .where(GRAPHITRON_ARGMAPPING_ENTRY.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_ARGMAPPING_ENTRY.SITE.eq("ARGUMENT_REFERENCE_STEP"))
+                .and(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE.eq("Query.films(byActor)#0[1]"))
+                .and(GRAPHITRON_ARGMAPPING_ENTRY.POSITION.eq(0))
                 .fetchSingle();
             assertThat(recovered.value1()).isZero();
             assertThat(recovered.value2()).isEqualTo(1);
@@ -307,16 +307,16 @@ class ArgmappingPairTest {
             seedField(dsl, GRAPH, "Film", "actors");
             seedField(dsl, GRAPH, "FilmFilter", "titleLike");
 
-            seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, 0, "p", "input");
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "film", 0, "id", "filmId");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "Film", "actors", 0, "p", "since");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "FilmFilter", "titleLike", 0, "p", "q");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "titleLike", 0,
+            seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, 0, "p", "input");
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "film", 0, "id", "filmId");
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, "p", "since");
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "FilmFilter", "titleLike", 0, "p", "q");
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "titleLike", 0,
                 "p", "titleLike");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0, "a", "one");
-            seedArgumentReferenceStepArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0, 1, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0, "a", "one");
+            seedArgumentReferenceStepArgmappingEntry(dsl, GRAPH, "Query", "films", "byActor", 0, 1, 0,
                 "actorId", "byActor");
-            seedReferenceForStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0, "b", "two");
+            seedReferenceForStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0, "b", "two");
 
             body.accept(dsl);
         });
@@ -327,9 +327,9 @@ class ArgmappingPairTest {
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_ARG_MAPPING_PAIR.fields())
-            .from(GRAPHITRON_ARG_MAPPING_PAIR)
-            .where(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(GRAPHITRON_ARGMAPPING_ENTRY.fields())
+            .from(GRAPHITRON_ARGMAPPING_ENTRY)
+            .where(GRAPHITRON_ARGMAPPING_ENTRY.GRAPH_NAME.eq(GRAPH))
             .fetch()
             .stream()
             .map(Record.class::cast)

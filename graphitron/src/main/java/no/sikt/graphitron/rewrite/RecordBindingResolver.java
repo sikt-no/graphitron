@@ -337,7 +337,7 @@ final class RecordBindingResolver {
         // Ground input-axis bindings from method parameters → SDL arg types.
         // Argument mapping: parameter name = SDL arg name unless argMapping overrides.
         Map<String, String> argMappingOverrides = headSlotOverrides(
-            Optional.ofNullable(ref.get(BuildContext.ARG_ARG_MAPPING)).map(Object::toString).orElse(""));
+            Optional.ofNullable(ref.get(BuildContext.ARG_ARGMAPPING)).map(Object::toString).orElse(""));
         for (var p : method.getParameters()) {
             if (!p.isNamePresent()) continue;
             String paramName = p.getName();

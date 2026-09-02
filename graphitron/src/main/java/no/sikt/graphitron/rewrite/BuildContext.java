@@ -121,7 +121,7 @@ class BuildContext {
     static final String ARG_SERVICE_REF        = "service";
     static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
-    static final String ARG_ARG_MAPPING        = "argMapping";
+    static final String ARG_ARGMAPPING        = "argMapping";
     static final String ARG_COLUMN_MAPPING     = "columnMapping";
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = "name";
@@ -2562,7 +2562,7 @@ class BuildContext {
         if (className == null || methodName == null || svc == null) {
             return new ConditionResolution.Unresolved();
         }
-        String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionResolution.Failed(
@@ -2634,7 +2634,7 @@ class BuildContext {
         if (className == null || methodName == null) return null;
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
         List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
-        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARG_MAPPING)).map(Object::toString).orElse(null);
+        String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());

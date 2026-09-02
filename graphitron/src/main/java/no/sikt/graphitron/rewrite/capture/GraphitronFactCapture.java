@@ -51,7 +51,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_PATH_SEGMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
@@ -102,7 +102,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
@@ -454,7 +453,7 @@ final class GraphitronFactCapture {
                 var reference = codeReference(directive, "enumReference");
                 record.setClassName(reference.className());
                 record.setMethod(reference.method());
-                record.setArgMapping(reference.argMapping());
+                record.setArgmapping(reference.argMapping());
                 sink.add(record);
                 methodReference("ENUM", type, type, null, null, null, null,
                     reference.className(), reference.method(), directive);
@@ -608,7 +607,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setClassName(reference.className());
                 record.setMethod(reference.method());
-                record.setArgMapping(reference.argMapping());
+                record.setArgmapping(reference.argMapping());
                 record.setOverride(bool(directive, "override"));
                 sink.add(record);
                 methodReference(inputField ? "INPUT_FIELD_CONDITION" : "FIELD_CONDITION",
@@ -657,7 +656,7 @@ final class GraphitronFactCapture {
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
-                    row.setArgMapping(step.argMapping());
+                    row.setArgmapping(step.argMapping());
                     sink.add(row);
                     methodReference("FIELD_REFERENCE_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
@@ -699,7 +698,7 @@ final class GraphitronFactCapture {
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
-                    row.setArgMapping(step.argMapping());
+                    row.setArgmapping(step.argMapping());
                     sink.add(row);
                     methodReference("REFERENCE_FOR_STEP", useSite(type, field, null, ordinal, position), type, field, null,
                         ordinal, position,
@@ -724,7 +723,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setClassName(reference.className());
                 record.setMethod(reference.method());
-                record.setArgMapping(reference.argMapping());
+                record.setArgmapping(reference.argMapping());
                 sink.add(record);
                 methodReference("SERVICE", useSite(type, field, null, null, null),
                     type, field, null, null, null,
@@ -740,27 +739,29 @@ final class GraphitronFactCapture {
                     row.setName(name);
                     sink.add(row);
                 }
-                // The @service argMapping is the sigil-admitting site: sigil entries lift out
-                // through the shared owner (the same scan the build-side parse routes through)
-                // into the sibling sigil relation, and the residual keeps its full pair set, so
-                // a $session field writes no undecoded row.
+                // The @service argMapping is the sigil-admitting site. A sigil entry is an entry
+                // like any other, a parameter bound to a right-hand side at a position, so it is a
+                // row of the one entry relation rather than of a relation beside it; what the lift
+                // exists for is the shared selection parser, which lexes a $-prefixed value and
+                // rejects it. Positions come from the scan because the lift takes entries out of
+                // the middle, so the residual's own numbering is not the author's.
                 var scanned = ArgMappingSigil.scan(reference.argMapping(), ArgMappingSigil.Site.SERVICE);
                 String residual = reference.argMapping();
+                var sigilPositions = new java.util.LinkedHashMap<String, Integer>();
                 if (scanned instanceof ArgMappingSigil.ScanResult.Ok scanOk) {
                     residual = scanOk.residual();
-                    int sigilPosition = 0;
+                    sigilPositions.putAll(scanOk.sigilPositions());
                     for (var sigilEntry : scanOk.sigilBindings().entrySet()) {
-                        var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_ARG_MAPPING_SIGIL);
-                        row.setTypeName(type);
-                        row.setFieldName(field);
-                        row.setPosition(sigilPosition++);
-                        row.setParamName(sigilEntry.getKey());
-                        row.setSigil(sigilEntry.getValue());
-                        sink.add(row);
+                        int at = scanOk.sigilPositions().get(sigilEntry.getKey());
+                        argMappingPair("SERVICE", useSite(type, field, null, null, null),
+                            type, field, null, null, null, at,
+                            sigilEntry.getKey(), sigilEntry.getValue(), directive);
                     }
                 }
+                var taken = java.util.Set.copyOf(sigilPositions.values());
                 int pair = 0;
                 for (ParsedEntry entry : pairs(residual, directive, "service")) {
+                    while (taken.contains(pair)) pair++;
                     int at = pair++;
                     String path = argumentPath(sink, type, field, entry);
                     argMappingPair("SERVICE", useSite(type, field, null, null, null),
@@ -776,7 +777,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setClassName(reference.className());
                 record.setMethod(reference.method());
-                record.setArgMapping(reference.argMapping());
+                record.setArgmapping(reference.argMapping());
                 sink.add(record);
                 methodReference("EXTERNAL_FIELD", useSite(type, field, null, null, null),
                     type, field, null, null, null,
@@ -884,7 +885,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 spelledReference(name, record::setRoutineRef,
                     record::setRoutineRefNamespacePart, record::setRoutineRefNamePart);
-                record.setArgMapping(argMapping);
+                record.setArgmapping(argMapping);
                 record.setColumnMapping(columnMapping);
                 sink.add(record);
                 int pair = 0;
@@ -937,7 +938,7 @@ final class GraphitronFactCapture {
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
                 record.setClassName(reference.className());
                 record.setMethod(reference.method());
-                record.setArgMapping(reference.argMapping());
+                record.setArgmapping(reference.argMapping());
                 record.setOverride(bool(directive, "override"));
                 sink.add(record);
                 methodReference("ARGUMENT_CONDITION", useSite(type, field, argument, null, null),
@@ -988,7 +989,7 @@ final class GraphitronFactCapture {
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
-                    row.setArgMapping(step.argMapping());
+                    row.setArgmapping(step.argMapping());
                     sink.add(row);
                     methodReference("ARGUMENT_REFERENCE_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
@@ -1032,7 +1033,7 @@ final class GraphitronFactCapture {
                         row::setKeyRefNamespacePart, row::setKeyRefNamePart);
                     row.setClassName(step.className());
                     row.setMethod(step.method());
-                    row.setArgMapping(step.argMapping());
+                    row.setArgmapping(step.argMapping());
                     sink.add(row);
                     methodReference("ARGUMENT_REFERENCE_FOR_STEP", useSite(type, field, argument, ordinal, position), type, field, argument,
                         ordinal, position,
@@ -1423,14 +1424,14 @@ final class GraphitronFactCapture {
      * discriminator chooses between, so this method is where the reference is kept true: the
      * caller is inside the branch that just wrote the owning directive's own row.
      *
-     * @param site the discriminator, one of the nine {@code GRAPHITRON_ARG_MAPPING_PAIR} admits
+     * @param site the discriminator, one of the nine {@code GRAPHITRON_ARGMAPPING_ENTRY} admits
      * @param useSite the site spelled in its own grammar, total by construction and the key
      */
     private void argMappingPair(String site, String useSite, String type, String field,
                                 String argument, Integer ordinal, Integer stepPosition,
                                 int position, String paramName, String argumentPath,
                                 Directive directive) {
-        var row = sink.dsl().newRecord(GRAPHITRON_ARG_MAPPING_PAIR);
+        var row = sink.dsl().newRecord(GRAPHITRON_ARGMAPPING_ENTRY);
         row.setSite(site);
         row.setUseSite(useSite);
         row.setTypeName(type);
@@ -1441,21 +1442,22 @@ final class GraphitronFactCapture {
         row.setPosition(position);
         row.setParamName(paramName);
         row.setArgumentPath(argumentPath);
-        // The head and its kind are what the path enters at, and both are known here: the head is
-        // the first segment of a path this writer has already split, and the kind follows from the
-        // site alone. Writing them is what lets a reader ask which slot a pair enters at without
-        // joining the segment child at position zero, which several of them were each doing on
-        // their own. Neither column asserts the head resolves; that is the refusal relation's.
+        // The head is what the path enters at, and it is known here: the first segment of a path
+        // this writer has already split. Writing it is what lets a reader ask which slot an entry
+        // enters at without joining the segment child at position zero, which several of them were
+        // each doing on their own. Its kind is not written, the relation computing it from this
+        // column and the site. Neither asserts the head resolves; that is the refusal relation's.
         int dot = argumentPath.indexOf('.');
         row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
         row.setCandidatePath(dot < 0 ? "" : argumentPath.substring(dot + 1));
         // The position the right side is written from, spelled as the candidate relation spells it:
         // the field coordinate with the head as its argument where the head names one, and the
         // input field coordinate the head names where it does not.
+        row.setHeadKind(argumentPath.startsWith("$") ? "SIGIL"
+            : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
         row.setCandidateOrigin("INPUT_FIELD_CONDITION".equals(site)
             ? type + "." + row.getHeadSegment()
             : type + "." + field + "(" + row.getHeadSegment() + ")");
-        row.setHeadKind("INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }

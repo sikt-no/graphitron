@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARG_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
@@ -207,7 +207,7 @@ public final class SeededStore {
      * and the argMapping pair relation is the counterexample worth naming because it used to be
      * here. Its sites carried nothing of their own, so the schema collapsed them into it and there
      * is no second write left to stand in for: a case seeds that relation directly, through
-     * {@link #seedServiceArgMappingPair} and its siblings, which is both cheaper and one fewer
+     * {@link #seedServiceArgmappingEntry} and its siblings, which is both cheaper and one fewer
      * place for a fixture to disagree with itself.
      *
      * <p>The method reference is the mixed case and shows both halves at once. Nine of its sites
@@ -1227,36 +1227,38 @@ public final class SeededStore {
                              Integer stepPosition, int position, String paramName,
                              String argumentPath) {
         var location = siteLocation(dsl, graphName, site, typeName, fieldName, argumentName, ordinal);
-        dsl.insertInto(GRAPHITRON_ARG_MAPPING_PAIR)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.SITE, site)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.USE_SITE,
+        dsl.insertInto(GRAPHITRON_ARGMAPPING_ENTRY)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.SITE, site)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE,
                 useSite(typeName, fieldName, argumentName, ordinal, stepPosition))
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.STEP_POSITION, stepPosition)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.POSITION, position)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.PARAM_NAME, paramName)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.ARGUMENT_PATH, argumentPath)
-            // Derived here the way capture derives them, from the path text and the site, so a
-            // fixture cannot state a head the same path would not produce.
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.HEAD_SEGMENT,
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, stepPosition)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.POSITION, position)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME, paramName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_PATH, argumentPath)
+            // Derived here the way capture derives it, from the path text, so a fixture cannot
+            // state a head the same path would not produce. The head's kind is not set: the
+            // relation computes it, so there is nowhere for a fixture to disagree with it.
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.HEAD_SEGMENT,
                 argumentPath.indexOf('.') < 0 ? argumentPath
                     : argumentPath.substring(0, argumentPath.indexOf('.')))
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.HEAD_KIND,
-                "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.CANDIDATE_ORIGIN,
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.HEAD_KIND,
+                argumentPath.startsWith("$") ? "SIGIL"
+                    : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_ORIGIN,
                 "INPUT_FIELD_CONDITION".equals(site)
                     ? typeName + "." + head(argumentPath)
                     : typeName + "." + fieldName + "(" + head(argumentPath) + ")")
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.CANDIDATE_PATH,
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_PATH,
                 argumentPath.indexOf('.') < 0 ? ""
                     : argumentPath.substring(argumentPath.indexOf('.') + 1))
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_LINE, location.value1())
-            .set(GRAPHITRON_ARG_MAPPING_PAIR.SOURCE_COLUMN, location.value2())
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_LINE, location.value1())
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_COLUMN, location.value2())
             .execute();
     }
 
@@ -1376,7 +1378,7 @@ public final class SeededStore {
      * directive is repeatable, so the ordinal is the case's to state: it is half of what tells two
      * applications' pairs apart.
      */
-    public static void seedRoutineArgMappingPair(DSLContext dsl, String graphName, String typeName,
+    public static void seedRoutineArgmappingEntry(DSLContext dsl, String graphName, String typeName,
                                                  String fieldName, int ordinal, int position,
                                                  String paramName, String argumentPath) {
         if (!dsl.fetchExists(GRAPHITRON_ROUTINE, GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graphName)
@@ -1390,7 +1392,7 @@ public final class SeededStore {
     }
 
     /** One pair of a {@code @service}'s {@code argMapping}, with the application under it. */
-    public static void seedServiceArgMappingPair(DSLContext dsl, String graphName, String typeName,
+    public static void seedServiceArgmappingEntry(DSLContext dsl, String graphName, String typeName,
                                                  String fieldName, int position, String paramName,
                                                  String argumentPath) {
         if (!dsl.fetchExists(GRAPHITRON_SERVICE, GRAPHITRON_SERVICE.GRAPH_NAME.eq(graphName)
@@ -1408,7 +1410,7 @@ public final class SeededStore {
      * output-field site from an input-field one, so a case seeds the type it means first: this
      * helper does not seed one.
      */
-    public static void seedFieldConditionArgMappingPair(DSLContext dsl, String graphName,
+    public static void seedFieldConditionArgmappingEntry(DSLContext dsl, String graphName,
                                                         String typeName, String fieldName,
                                                         int position, String paramName,
                                                         String argumentPath) {
@@ -1429,7 +1431,7 @@ public final class SeededStore {
      * One pair of an argument-site {@code @condition}'s {@code argMapping}, with the application and
      * the argument it sits on under it.
      */
-    public static void seedArgumentConditionArgMappingPair(DSLContext dsl, String graphName,
+    public static void seedArgumentConditionArgmappingEntry(DSLContext dsl, String graphName,
                                                            String typeName, String fieldName,
                                                            String argumentName, int position,
                                                            String paramName, String argumentPath) {
@@ -1455,7 +1457,7 @@ public final class SeededStore {
      * One pair of a field-site {@code @reference} step condition's {@code argMapping}, with the
      * application and the step under it.
      */
-    public static void seedFieldReferenceStepArgMappingPair(DSLContext dsl, String graphName,
+    public static void seedFieldReferenceStepArgmappingEntry(DSLContext dsl, String graphName,
                                                             String typeName, String fieldName,
                                                             int ordinal, int stepPosition,
                                                             int position, String paramName,
@@ -1478,7 +1480,7 @@ public final class SeededStore {
      * One pair of an argument-site {@code @reference} step condition's {@code argMapping}, with the
      * argument, the application and the step under it.
      */
-    public static void seedArgumentReferenceStepArgMappingPair(DSLContext dsl, String graphName,
+    public static void seedArgumentReferenceStepArgmappingEntry(DSLContext dsl, String graphName,
                                                                String typeName, String fieldName,
                                                                String argumentName, int ordinal,
                                                                int stepPosition, int position,
@@ -1525,7 +1527,7 @@ public final class SeededStore {
      * One pair of a {@code @referenceFor} step condition's {@code argMapping}, with the application
      * and the step under it.
      */
-    public static void seedReferenceForStepArgMappingPair(DSLContext dsl, String graphName,
+    public static void seedReferenceForStepArgmappingEntry(DSLContext dsl, String graphName,
                                                           String typeName, String fieldName,
                                                           int ordinal, int stepPosition,
                                                           int position, String paramName,

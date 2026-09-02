@@ -2006,7 +2006,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(unc.reason()).contains("missing className");
             }),
 
-        ARG_MAPPING_INERT_ON_EXTERNAL_FIELD(
+        ARGMAPPING_INERT_ON_EXTERNAL_FIELD(
             "R53: argMapping on @externalField → UnclassifiedField (structural-inertness rejection)",
             """
             type Film @table(name: "film") {
@@ -5517,7 +5517,7 @@ class GraphitronSchemaBuilderTest {
         // corpus (the `catalog` corpus document's Query). This enum keeps the
         // typeClassificationProjectionsCarryTableNodeAndRootShapes projection test below.
 
-        ARG_MAPPING_INERT_ON_ENUM(
+        ARGMAPPING_INERT_ON_ENUM(
             "R53: argMapping on @enum → UnclassifiedType (structural-inertness rejection)",
             """
             enum Mood @enum(enumReference: {className: "no.sikt.graphitron.codereferences.dummyreferences.MoodEnum", argMapping: "x: y"}) { HAPPY SAD }
@@ -10410,7 +10410,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("@notGenerated", "no longer supported");
             }),
 
-        SERVICE_ARG_MAPPING_DUPLICATE_JAVA_TARGET(
+        SERVICE_ARGMAPPING_DUPLICATE_JAVA_TARGET(
             "R53: argMapping with two entries for the same Java parameter → UnclassifiedField (parser-level rejection)",
             """
             input TestDtoStub { id: ID }
@@ -10431,7 +10431,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("argMapping has duplicate entries for Java parameter 'inputs'");
             }),
 
-        SERVICE_ARG_MAPPING_UNKNOWN_GRAPHQL_ARG(
+        SERVICE_ARGMAPPING_UNKNOWN_GRAPHQL_ARG(
             "R53: argMapping references a GraphQL argument not on the field → UnclassifiedField (pre-reflection rejection)",
             """
             input TestDtoStub { id: ID }
@@ -10453,7 +10453,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("references GraphQL argument 'notAnArg'");
             }),
 
-        SERVICE_ARG_MAPPING_TYPO_GUARD(
+        SERVICE_ARGMAPPING_TYPO_GUARD(
             "R53: argMapping references a Java parameter that does not exist on the resolved method → UnclassifiedField (post-reflection typo guard)",
             """
             input TestDtoStub { id: ID }

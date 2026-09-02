@@ -9,24 +9,24 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_BINDING_LEAF;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_MATCH;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
-import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_argmapping_binding_leaf} returns: the last thing an {@code argMapping} path
+ * What {@code graphitron_argmapping_match} returns: the last thing an {@code argMapping} path
  * bound, whether that thing carries a {@code @nodeId}, and how many segments the path spells beyond
  * it. A reduction over {@code intent_argmapping_segment_binding} rather than a resolution of its
  * own, so the cases here are about the reduction and its three added columns; where the binding
@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * because a two-value fork would have to put the bare spelling on one side or the other and either
  * choice makes it indistinguishable from something it is not.
  */
-class ArgmappingBindingLeafTest {
+class ArgmappingMatchTest {
 
     private static final String GRAPH = "g";
 
@@ -63,14 +63,14 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isZero();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("ARGUMENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_ARGUMENT_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_ARGUMENT_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isTrue();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isTrue();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
         });
     }
 
@@ -86,16 +86,16 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId.inventory_id");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(1);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("INPUT_FIELD");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("INPUT_FIELD");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME))
                 .isEqualTo("RentFilmInput");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_ARGUMENT_NAME)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
         });
     }
 
@@ -112,12 +112,12 @@ class ArgmappingBindingLeafTest {
                 "input.nested.inventoryId.inventory_id");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(2);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME))
                 .isEqualTo("NestedInput");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
         });
     }
 
@@ -132,7 +132,7 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pNested", "input.nested.inventoryId");
 
             assertThat(rows(dsl)).hasSize(1);
-            assertThat(only(dsl).get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(2);
+            assertThat(only(dsl).get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(2);
         });
     }
 
@@ -165,7 +165,7 @@ class ArgmappingBindingLeafTest {
             seedField(dsl, GRAPH, "Film", "actors");
             seedArgument(dsl, GRAPH, "Film", "actors", "since", "String");
             seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "since", "Inventory");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "p", "since");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "since");
 
@@ -188,9 +188,9 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isFalse();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isNull();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
         });
     }
 
@@ -209,8 +209,8 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isTrue();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isTrue();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isNull();
         });
     }
 
@@ -227,10 +227,10 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, 0, "pDeep", "input.inventoryId");
             pair(dsl, "Mutation", "rentFilm", 0, 1, "pHead", "input");
 
-            assertThat(rowAt(dsl, 0).orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+            assertThat(rowAt(dsl, 0).orElseThrow().get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .as("the input-field leaf reads the field-grain directive")
                 .isEqualTo("Film");
-            assertThat(rowAt(dsl, 1).orElseThrow().get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+            assertThat(rowAt(dsl, 1).orElseThrow().get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .as("the argument leaf reads the argument-grain directive")
                 .isEqualTo("Inventory");
         });
@@ -251,8 +251,8 @@ class ArgmappingBindingLeafTest {
                 "input.inventoryId.inventory_id.nope");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION)).isEqualTo(1);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(2);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(2);
         });
     }
 
@@ -268,12 +268,12 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pNope", "input.nope");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION))
                 .as("the path stopped at the head")
                 .isZero();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_KIND)).isEqualTo("ARGUMENT");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED)).isFalse();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("ARGUMENT");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isEqualTo(1);
         });
     }
 
@@ -303,22 +303,22 @@ class ArgmappingBindingLeafTest {
             seedDeclaredType(dsl, GRAPH, "Inner", "INPUT_OBJECT");
             seedField(dsl, GRAPH, "Inner", "inventoryId");
             seedFieldNodeId(dsl, GRAPH, "Inner", "inventoryId", "Inventory");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "Orphan", "inner", 0,
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "Orphan", "inner", 0,
                 "p", "inner.inventoryId");
             seedArgumentPathSegments(dsl, GRAPH, "Orphan", "inner", "inner.inventoryId");
 
             var row = only(dsl);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.SEGMENT_POSITION))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.SEGMENT_POSITION))
                 .as("the path resolved both segments")
                 .isEqualTo(1);
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_TYPE_NAME)).isEqualTo("Inner");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.BOUND_FIELD_NAME))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_TYPE_NAME)).isEqualTo("Inner");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_ID_DECLARED))
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED))
                 .as("the @nodeId is on what the path bound, so it is declared")
                 .isTrue();
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF)).isEqualTo("Inventory");
-            assertThat(row.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)).isZero();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isEqualTo("Inventory");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)).isZero();
         });
     }
 
@@ -339,9 +339,9 @@ class ArgmappingBindingLeafTest {
             var all = rows(dsl);
             assertThat(all).hasSize(2);
             assertThat(all.stream()
-                .map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.TRAILING_SEGMENTS)))
+                .map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_SEGMENTS)))
                 .containsExactlyInAnyOrder(1, 0);
-            assertThat(all.stream().map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.USE_SITE)))
+            assertThat(all.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });
     }
@@ -356,7 +356,7 @@ class ArgmappingBindingLeafTest {
             pair(dsl, "Mutation", "rentFilm", 0, 1, "pOther", "input.inventoryId");
 
             assertThat(rows(dsl)).hasSize(2);
-            assertThat(rows(dsl).stream().map(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.POSITION)))
+            assertThat(rows(dsl).stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.POSITION)))
                 .containsExactlyInAnyOrder(0, 1);
         });
     }
@@ -373,14 +373,14 @@ class ArgmappingBindingLeafTest {
             seedField(dsl, GRAPH, "Query", "films");
             seedArgument(dsl, GRAPH, "Query", "films", "other", "ID");
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "byActor", "Actor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "byActor", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "byActor", 0,
                 "p", "byActor");
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "byActor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Query", "films", "other", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Query", "films", "other", 0,
                 "p", "byActor");
 
             assertThat(rowFor(dsl, "Query.films(byActor)").orElseThrow()
-                .get(INTENT_ARGMAPPING_BINDING_LEAF.NODE_TYPE_REF))
+                .get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Actor");
             assertThat(rowFor(dsl, "Query.films(other)"))
                 .as("the sibling argument is not in scope at this condition")
@@ -431,7 +431,7 @@ class ArgmappingBindingLeafTest {
     /** A {@code @routine} pair at an ordinal and a position the case names. */
     private static void pair(DSLContext dsl, String typeName, String fieldName, int ordinal,
                              int position, String paramName, String argumentPath) {
-        seedRoutineArgMappingPair(dsl, GRAPH, typeName, fieldName, ordinal, position, paramName,
+        seedRoutineArgmappingEntry(dsl, GRAPH, typeName, fieldName, ordinal, position, paramName,
             argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, typeName, fieldName, argumentPath);
     }
@@ -441,9 +441,9 @@ class ArgmappingBindingLeafTest {
     /** Every row of the graph under assertion. */
     private static List<Record> rows(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_ARGMAPPING_BINDING_LEAF.fields())
-            .from(INTENT_ARGMAPPING_BINDING_LEAF)
-            .where(INTENT_ARGMAPPING_BINDING_LEAF.GRAPH_NAME.eq(GRAPH))
+        return dsl.select(GRAPHITRON_ARGMAPPING_MATCH.fields())
+            .from(GRAPHITRON_ARGMAPPING_MATCH)
+            .where(GRAPHITRON_ARGMAPPING_MATCH.GRAPH_NAME.eq(GRAPH))
             .fetch()
             .stream()
             .map(Record.class::cast)
@@ -453,7 +453,7 @@ class ArgmappingBindingLeafTest {
     /** The one row at a use-site coordinate, the relation's grain being site plus that key. */
     private static Optional<Record> rowFor(DSLContext dsl, String useSite) {
         var matching = rows(dsl).stream()
-            .filter(r -> useSite.equals(r.get(INTENT_ARGMAPPING_BINDING_LEAF.USE_SITE)))
+            .filter(r -> useSite.equals(r.get(GRAPHITRON_ARGMAPPING_MATCH.USE_SITE)))
             .toList();
         assertThat(matching)
             .as("one row per use site and position")
@@ -464,7 +464,7 @@ class ArgmappingBindingLeafTest {
     /** The one row at an argMapping-list position, for fixtures pairing two spellings. */
     private static Optional<Record> rowAt(DSLContext dsl, int position) {
         var matching = rows(dsl).stream()
-            .filter(r -> r.get(INTENT_ARGMAPPING_BINDING_LEAF.POSITION) == position)
+            .filter(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.POSITION) == position)
             .toList();
         assertThat(matching).as("one leaf per position").hasSizeLessThanOrEqualTo(1);
         return matching.isEmpty() ? Optional.empty() : Optional.of(matching.getFirst());

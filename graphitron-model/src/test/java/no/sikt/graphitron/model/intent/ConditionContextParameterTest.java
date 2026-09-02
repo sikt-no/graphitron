@@ -11,12 +11,12 @@ import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_CONTEXT_PARAMETER
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionContextArg;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldCondition;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldConditionContextArg;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
@@ -166,7 +166,7 @@ class ConditionContextParameterTest {
             conditionMethod(dsl, "byTitle", param("table", TABLE_FQN),
                 param("title", STRING), param("wanted", STRING));
             fieldSite(dsl, "byTitle");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "Query", "films", 0, "wanted", "title");
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "wanted", "title");
             seedFieldConditionContextArg(dsl, GRAPH, "Query", "films", 0, "title");
 
             assertThat(positions(dsl)).containsExactly(1);
@@ -179,7 +179,7 @@ class ConditionContextParameterTest {
         withSources(dsl -> {
             conditionMethod(dsl, "byTenant", param("table", TABLE_FQN), param("tenant", STRING));
             fieldSite(dsl, "byTenant");
-            seedFieldConditionArgMappingPair(dsl, GRAPH, "Query", "films", 0, "tenant", "title");
+            seedFieldConditionArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "tenant", "title");
             seedFieldConditionContextArg(dsl, GRAPH, "Query", "films", 0, "tenant");
 
             assertThat(positions(dsl)).isEmpty();

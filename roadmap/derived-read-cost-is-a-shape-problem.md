@@ -533,6 +533,75 @@ gatherer can commit its family and then refresh its own relations against statis
 it just wrote. The empty-store path is the one exception already carved out, and the rule needs it
 promoted to the normal shape.
 
+**The argMapping groundwork is captured and unused, which is two subsumptions and a join swap.**
+This item landed a supertype and a candidate tree and then did not repoint the readers, so the claim
+that the right-hand side is modelled is only half true. Both halves are measured, on the same
+consumer capture, and neither needs a rewrite of any rule.
+
+The first subsumption is that `graphitron_argmapping_candidate` contains
+`intent_input_occurrence_path` outright. Of 3027 occurrence paths, 3027 have a candidate at the same
+coordinate and none is missing; the candidate tree carries 122 more, all at depth zero, being the
+arguments whose named type is not an input object that the occurrence walk skips. Below the root the
+depth histograms are identical, 1936, 505, 140 and 40 either way. Every shared attribute agrees on
+every row: leaf type, depth and the root coordinate, 3027 of 3027 each. The step child is not a
+second fact but a denormalization, 3526 rows over 2621 tree nodes, each node repeated once per
+descendant path through it, which the candidate tree states once with a parent link. So two
+hand-written `intent_` base tables and the 164-line writer that fills them are a view apiece over a
+relation capture already writes, and the reader interface does not move: the 19 slots that name them
+keep their columns. Priced as views the whole schema costs 55 more instantiations, two percent, with
+the heaviest read unchanged.
+
+The second is that the resolution is already captured, and it is already used. Every argMapping pair
+carries the candidate coordinate its right-hand side selects and every path segment carries the
+candidate its own position resolves to, both resolving completely at 108 of 108 pairs and 202 of 202
+segments. `intent_argmapping_binding_leaf` was rewritten onto that column when the candidate tree
+landed, and its own comment records the shape it replaced: a three-arm head union over two
+decompositions of one descent aligned by an anti-join inside an anti-join.
+
+**So the percolation is mostly done, and the census that said otherwise was measuring the wrong
+thing.** Counting readers of `graphitron_argument_path_segment` counts every use of the authored
+decomposition, not every positional walk, and the two are not the same relation.
+`intent_argmapping_key_column_candidate` and `intent_argmapping_projection_defect` read it one
+position past where a path resolved, for the segment the author wrote naming a key column; that
+segment names no input field, so it is in no candidate tree and the join is the only way to reach it.
+`intent_argmapping_segment_binding` is the old shape and is the exception, still aligning
+decompositions, and it has no reader at all in SQL or in main sources, which is what R896 is for.
+One real target was left: `intent_type_backing_seed` joined the segment relation at position zero to
+read a path head that `graphitron_arg_mapping_pair.head_segment` already carries, which is exactly
+what that column was added to stop readers doing. Measured on the capture, the two agree on 108 of
+108 pairs with no absences, so the join was redundant rather than defensive.
+
+**One relation moved into the family that computes its owner, and it is the first `graphitron_`
+view.** `intent_argmapping_binding_leaf` reads `graphitron_arg_mapping_pair`,
+`graphitron_argument_path_segment`, `graphitron_argmapping_candidate`, `graphitron_argument_node_id`
+and `graphitron_field_node_id`, and nothing else. Every input belongs to the graphitron gatherer, so
+the computed owner is graphitron and the `intent_` prefix on it recorded the default placement rather
+than a decision. It is now `graphitron_argmapping_match`, which corrects the noun at the same time:
+the schema already conceded that a leaf in the candidate tree is a candidate with no children while
+this relation states where a written path stopped, routinely at an interior candidate.
+
+Nothing in the build objected to a view in the `graphitron_` family, which is the part worth
+recording. The prefix had 64 tables and no views, so the shape looked forbidden; it was only absent.
+The `graphql_` family already holds one, so the precedent existed and nothing had to be relaxed. That
+makes this the cheapest possible test of the collapse: a relation crossing from the SQL-stated family
+to the Java-written one, under one owner, with the full build green and no gate touched. The rename
+was taken here rather than deferred to the naming sweep it was filed under, because the defect was a
+placement and not a spelling.
+
+**And the scale is the indictment rather than the cost.** Those are 108 pairs and 202 segments on a
+26 818-line schema. The heaviest read in the whole store, at 349 relation instantiations, is
+`intent_argmapping_projection_defect` over exactly that population. No registration was ever going to
+be the answer to a plan of that size over two hundred rows, and none stands there: the relation is
+unregistered and always was.
+
+**One rationale is spent and still load-bearing.** `intent_input_occurrence_path` justifies being a
+table by saying cyclic input nesting has no safe recursive H2 view form. That was true when written.
+The candidate tree resolves the cycles before any reader starts, under the same first-visit guard,
+and records the outcome in a column, so the recursion is spent and the view form is a prefix join
+rather than a recursion. This is the same defect the dissolved alias was hiding, in a different
+place: a reason that was sound when written, never rechecked, and holding a decision up by itself.
+Whatever this item does about the tables, the comment cannot stay as it is.
+
 **The other two plan defects are unfixed.** One rule was rewritten and measured, above. The demand
 and exemption family names the expansion union nine to twelve times per plan inside sixteen
 correlated existence tests, and its probes then resolve on the partition dimension alone, which on a

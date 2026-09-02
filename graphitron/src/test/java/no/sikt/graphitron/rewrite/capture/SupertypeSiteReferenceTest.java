@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two relations in the {@code graphitron_} family hold a fact several kinds of site spell, and
  * both reached that shape by absorbing relations that carried nothing of their own.
- * {@code graphitron_arg_mapping_pair} absorbed eight, {@code graphitron_method_reference} one. Each
+ * {@code graphitron_argmapping_entry} absorbed eight, {@code graphitron_method_reference} one. Each
  * absorbed relation had a foreign key into the directive that owned its rows, and no foreign key
  * can span the nine or eleven parents a discriminator column chooses between, so those edges are
  * not enforced by the schema any more. They are still true, because capture writes the shared row
@@ -90,7 +90,7 @@ class SupertypeSiteReferenceTest {
         """;
 
     /**
-     * Each site of {@code graphitron_arg_mapping_pair} against the relation that owns its rows,
+     * Each site of {@code graphitron_argmapping_entry} against the relation that owns its rows,
      * as the predicate joining the shared row {@code s} to an owner {@code d}. The two condition
      * sites share an owner, the owning type's kind being what splits them, so both point at the
      * one relation; a step site's owner is the application rather than the step, which is the same
@@ -180,7 +180,7 @@ class SupertypeSiteReferenceTest {
     @DisplayName("every argMapping pair resolves to the directive application that spelled it")
     void everyPairReachesItsSite(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertNoOrphans(store.dsl(), "graphitron_arg_mapping_pair", PAIR_OWNERS);
+            assertNoOrphans(store.dsl(), "graphitron_argmapping_entry", PAIR_OWNERS);
         }
     }
 
@@ -201,7 +201,7 @@ class SupertypeSiteReferenceTest {
     @DisplayName("the fixture populates the sites both scans claim to cover")
     void theFixtureReachesTheSitesTheScansCover(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(sites(store.dsl(), "graphitron_arg_mapping_pair"))
+            assertThat(sites(store.dsl(), "graphitron_argmapping_entry"))
                 .as("argMapping pair sites this fixture reaches")
                 .contains("SERVICE", "FIELD_CONDITION", "INPUT_FIELD_CONDITION",
                     "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
@@ -229,7 +229,7 @@ class SupertypeSiteReferenceTest {
     void theUseSiteAgreesWithItsColumns(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             for (String relation : java.util.List.of(
-                    "graphitron_arg_mapping_pair", "graphitron_method_reference")) {
+                    "graphitron_argmapping_entry", "graphitron_method_reference")) {
                 var wrong = store.dsl().fetch(
                     "SELECT site, use_site FROM " + relation
                         + " WHERE use_site <> type_name"

@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutine;
-import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutineParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -474,7 +474,7 @@ class ResolvedNodeKeyProjectionTest {
 
     /** A {@code @routine} pair at a position the case names. */
     private static void pair(DSLContext dsl, int position, String paramName, String argumentPath) {
-        seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
+        seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
             argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }

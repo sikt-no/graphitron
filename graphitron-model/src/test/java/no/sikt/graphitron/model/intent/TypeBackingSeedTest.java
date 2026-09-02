@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -356,7 +356,7 @@ class TypeBackingSeedTest {
     /** One {@code argMapping} pair on a field's service, with the path its right side spells. */
     private static void mapping(DSLContext dsl, String fieldName, String paramName,
                                 String argumentPath) {
-        seedServiceArgMappingPair(dsl, GRAPH, "Query", fieldName, 0, paramName, argumentPath);
+        seedServiceArgmappingEntry(dsl, GRAPH, "Query", fieldName, 0, paramName, argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, "Query", fieldName, argumentPath);
     }
 }

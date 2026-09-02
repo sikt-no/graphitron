@@ -15,7 +15,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentCondition;
-import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgumentConditionArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentPathSegments;
 import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
@@ -23,17 +23,17 @@ import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStepArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
 import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutine;
-import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedRoutineArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedRoutineParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
-import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgMappingPair;
+import static no.sikt.graphitron.model.test.SeededStore.seedServiceArgmappingEntry;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
@@ -563,7 +563,7 @@ class ArgmappingProjectionDefectTest {
             inventoryNodeType(dsl, "inventory_id");
             seedField(dsl, GRAPH, "Film", "actors");
             seedArgumentNodeId(dsl, GRAPH, "Film", "actors", "byInventory", "Inventory");
-            seedFieldReferenceStepArgMappingPair(dsl, GRAPH, "Film", "actors", 0, 0, 0,
+            seedFieldReferenceStepArgmappingEntry(dsl, GRAPH, "Film", "actors", 0, 0, 0,
                 "p", "byInventory");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "actors", "byInventory");
 
@@ -588,13 +588,13 @@ class ArgmappingProjectionDefectTest {
             seedArgument(dsl, GRAPH, "Query", "films", "input", "RentFilmInput");
             seedOccurrencePath(dsl, GRAPH, "Query", "films", "input", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
-            seedServiceArgMappingPair(dsl, GRAPH, "Query", "films", 0, "javaParam",
+            seedServiceArgmappingEntry(dsl, GRAPH, "Query", "films", 0, "javaParam",
                 "input.inventoryId");
             seedArgumentPathSegments(dsl, GRAPH, "Query", "films", "input.inventoryId");
 
             seedField(dsl, GRAPH, "Film", "rentals");
             seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "byInventory", "FilmActor");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
                 "p", "byInventory");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "rentals", "byInventory");
 
@@ -642,10 +642,10 @@ class ArgmappingProjectionDefectTest {
             seedArgumentNodeId(dsl, GRAPH, "Film", "rentals", "other", "FilmActor");
             seedArgumentCondition(dsl, GRAPH, "Film", "rentals", "other",
                 "no.example.Cond", "apply", false);
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "byInventory", 0,
                 "p", "byInventory");
             seedArgumentPathSegments(dsl, GRAPH, "Film", "rentals", "byInventory");
-            seedArgumentConditionArgMappingPair(dsl, GRAPH, "Film", "rentals", "other", 0,
+            seedArgumentConditionArgmappingEntry(dsl, GRAPH, "Film", "rentals", "other", 0,
                 "p", "byInventory");
 
             assertThat(rowFor(dsl, "Film.rentals(byInventory)")).isPresent();
@@ -676,7 +676,7 @@ class ArgmappingProjectionDefectTest {
             seedOccurrencePath(dsl, "other", "Mutation", "rentFilm", "input", "RentFilmInput",
                 new OccurrenceStep("RentFilmInput", "inventoryId", "ID"));
             seedFieldNodeId(dsl, "other", "RentFilmInput", "inventoryId", "FilmActor");
-            seedRoutineArgMappingPair(dsl, "other", "Mutation", "rentFilm", 0, 0, "pOther",
+            seedRoutineArgmappingEntry(dsl, "other", "Mutation", "rentFilm", 0, 0, "pOther",
                 "input.inventoryId");
             seedArgumentPathSegments(dsl, "other", "Mutation", "rentFilm", "input.inventoryId");
 
@@ -796,7 +796,7 @@ class ArgmappingProjectionDefectTest {
     /** A {@code @routine} pair of the one application, at a position the case names. */
     private static void routinePair(DSLContext dsl, int position, String paramName,
                                     String argumentPath) {
-        seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
+        seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", 0, position, paramName,
             argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }
@@ -804,7 +804,7 @@ class ArgmappingProjectionDefectTest {
     /** A {@code @routine} pair of the application a case names, at position zero. */
     private static void routineApplicationPair(DSLContext dsl, int ordinal, String paramName,
                                                String argumentPath) {
-        seedRoutineArgMappingPair(dsl, GRAPH, "Mutation", "rentFilm", ordinal, 0, paramName,
+        seedRoutineArgmappingEntry(dsl, GRAPH, "Mutation", "rentFilm", ordinal, 0, paramName,
             argumentPath);
         seedArgumentPathSegments(dsl, GRAPH, "Mutation", "rentFilm", argumentPath);
     }

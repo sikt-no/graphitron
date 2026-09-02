@@ -5,6 +5,7 @@ import org.jooq.DSLContext;
 import java.util.ArrayList;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -81,6 +82,7 @@ public final class ArgMappingCandidates {
             GRAPHQL_TYPE.GRAPH_NAME.eq(graphName).and(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT")));
         seedArgumentOrigins(dsl, graphName);
         seedInputFieldOrigins(dsl, graphName);
+        seedSigilOrigins(dsl, graphName);
         for (int depth = 0; expand(dsl, graphName, depth) > 0; depth++) {
             if (depth > bound) {
                 throw new IllegalStateException(
@@ -122,6 +124,33 @@ public final class ArgMappingCandidates {
                     GRAPHQL_ARGUMENT.NAMED_TYPE, GRAPHQL_ARGUMENT.IS_LIST, val(0), val(false))
                 .from(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)))
+            .execute();
+    }
+
+    /**
+     * One root per sigil an entry names. A sigil is one more thing an argMapping right-hand side
+     * may name, so it is a candidate like any other and an entry naming one matches it the same
+     * way; what it is not is a position on the input surface, which is why it has no named type
+     * and why nothing descends from it.
+     *
+     * <p>Seeded from the entries rather than from a vocabulary, so which sites admit a sigil stays
+     * one rule in {@code ArgMappingSigil} and is never restated here. An entry at a site that does
+     * not admit one is rejected at parse and never reaches this relation, so a candidate exists
+     * exactly where a sigil was both admitted and written. DISTINCT because one site may bind the
+     * same sigil to several parameters, which is several entries and one candidate.
+     */
+    private static void seedSigilOrigins(DSLContext dsl, String graphName) {
+        var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
+        var e = GRAPHITRON_ARGMAPPING_ENTRY;
+        dsl.insertInto(c, c.GRAPH_NAME, c.ORIGIN, c.ORIGIN_KIND, c.TYPE_NAME, c.FIELD_NAME,
+                c.ARGUMENT_NAME, c.PATH, c.PARENT_PATH, c.ELEMENT_NAME, c.CONTAINER_TYPE_NAME,
+                c.NAMED_TYPE, c.IS_LIST, c.DEPTH, c.CLOSES_CYCLE)
+            .select(dsl.selectDistinct(e.GRAPH_NAME, e.CANDIDATE_ORIGIN, val("SIGIL"),
+                    e.TYPE_NAME, e.FIELD_NAME, inline((String) null), val(""),
+                    inline((String) null), e.HEAD_SEGMENT, inline((String) null),
+                    inline((String) null), val(false), val(0), val(false))
+                .from(e)
+                .where(e.GRAPH_NAME.eq(graphName).and(e.HEAD_KIND.eq("SIGIL"))))
             .execute();
     }
 
