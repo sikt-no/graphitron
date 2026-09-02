@@ -16,7 +16,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;

@@ -6,6 +6,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * End-to-end check that the stubbed-variant validator fires through the full SDL → classifier →

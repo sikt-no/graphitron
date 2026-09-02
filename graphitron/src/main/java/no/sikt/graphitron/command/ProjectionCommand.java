@@ -1,6 +1,6 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.List;
 import java.util.Objects;

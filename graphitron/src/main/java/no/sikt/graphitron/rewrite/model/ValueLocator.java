@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Where a record-read leaf's value is located on the parent's in-memory source object. One

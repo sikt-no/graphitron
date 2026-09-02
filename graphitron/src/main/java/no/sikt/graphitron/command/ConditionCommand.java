@@ -1,7 +1,7 @@
 package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.ArrayList;
 import java.util.List;

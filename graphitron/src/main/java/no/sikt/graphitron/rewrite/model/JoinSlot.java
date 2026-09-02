@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
+
 /**
  * One cell of a join's column-pairing relationship between the source and target tables.
  *

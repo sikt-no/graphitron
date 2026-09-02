@@ -5,6 +5,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.Objects;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The Java domain type an {@link OutputField} producer puts at {@code env.getSource()} for its

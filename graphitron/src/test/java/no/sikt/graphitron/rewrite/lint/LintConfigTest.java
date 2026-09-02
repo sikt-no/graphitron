@@ -8,6 +8,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.lint.LintConfig;
 
 /**
  * Config-identity validation for {@link LintConfig}. A configured rule id is typed against the

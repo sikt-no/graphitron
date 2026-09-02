@@ -9,6 +9,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Compact-constructor invariants for {@link ProducerBinding.DmlEmitted}.

@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.maven.watch;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

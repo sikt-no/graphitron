@@ -2,7 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
 import graphql.schema.GraphQLFieldDefinition;
-import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * Classifies every field in a GraphQL schema. The sealed hierarchy mirrors the field taxonomy.

@@ -11,6 +11,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Compact-constructor invariants of the merged column-backed output carriers

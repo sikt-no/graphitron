@@ -1,6 +1,9 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The emitted-carrier producer capability: the {@link ProducerBinding} arms whose observation

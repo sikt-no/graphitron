@@ -11,7 +11,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

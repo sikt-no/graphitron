@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 

@@ -5,7 +5,7 @@ import no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.DetailField;
 import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 

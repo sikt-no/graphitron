@@ -7,7 +7,7 @@ import no.sikt.graphitron.render.PreviousNodeRef;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.List;
 

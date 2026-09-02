@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.maven.watch;
 
-import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 import java.util.Comparator;
 import java.util.EnumMap;

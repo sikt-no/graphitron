@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * classifier-side coverage, shape-parallel to
  * {@link ContextArgumentTypeAgreementValidationTest}: where the L2 test asserts on the typed
  * rejection structure, this test asserts that the validator drains the classification's
- * conflicts into {@link no.sikt.graphitron.rewrite.ValidationError}s (at {@code <schema>};
+ * conflicts into {@link no.sikt.graphitron.model.diagnostics.ValidationError}s (at {@code <schema>};
  * a tenant-column defect has no SDL coordinate).
  */
 @PipelineTier

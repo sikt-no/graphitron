@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.derive;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;

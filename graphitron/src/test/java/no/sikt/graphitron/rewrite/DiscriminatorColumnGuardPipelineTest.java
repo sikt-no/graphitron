@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The two build-time guards that make the discriminator's typed comparison bind total, plus the
- * resolved {@link no.sikt.graphitron.rewrite.model.ColumnRef} the verdict carries.
+ * resolved {@link no.sikt.graphitron.model.jooq.ColumnRef} the verdict carries.
  *
  * <p>The comparison sites emit {@code DSL.val("<value>", <table>.<COL>.getDataType())}, which needs
  * two things classification must supply. It needs the column to exist as a generated field, so an

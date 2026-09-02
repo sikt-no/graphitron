@@ -8,6 +8,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Pins the canonical-constructor non-empty invariants on the composite-key {@link

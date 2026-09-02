@@ -1,8 +1,8 @@
 package no.sikt.graphitron.command;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * One {@code argMapping} binding that decodes a node id and hands its consumer one column of the

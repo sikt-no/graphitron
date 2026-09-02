@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Classify-time entity-resolution metadata for a federation entity type.

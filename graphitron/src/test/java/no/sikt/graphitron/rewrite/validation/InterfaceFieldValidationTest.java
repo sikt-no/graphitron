@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
@@ -13,7 +13,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +24,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.as
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.TestFixtures;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Validates {@link InterfaceField} (the multi-table polymorphic child case): same field-level PK-presence
@@ -179,7 +180,7 @@ class InterfaceFieldValidationTest {
         assertThat(validateAgainstWidePkParent(new FieldWrapper.List(false, false), 21)).isEmpty();
     }
 
-    private static java.util.List<no.sikt.graphitron.rewrite.ValidationError> validateAgainstWidePkParent(
+    private static java.util.List<no.sikt.graphitron.model.diagnostics.ValidationError> validateAgainstWidePkParent(
             FieldWrapper wrapper, int pkArity) {
         var pkCols = new java.util.ArrayList<ColumnRef>();
         for (int i = 0; i < pkArity; i++) {

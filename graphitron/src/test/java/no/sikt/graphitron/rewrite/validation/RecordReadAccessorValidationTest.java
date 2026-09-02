@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordReadField;
 import no.sikt.graphitron.rewrite.model.ValueLocator;

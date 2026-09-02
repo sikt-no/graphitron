@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.TestFixtures;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;

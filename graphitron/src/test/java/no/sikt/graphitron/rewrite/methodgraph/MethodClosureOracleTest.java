@@ -3,8 +3,8 @@ package no.sikt.graphitron.rewrite.methodgraph;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -106,7 +106,7 @@ class MethodClosureOracleTest {
     static void generateAndWalk(@TempDir Path workDir) throws Exception {
         Path schemaFile = workDir.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA);
-        RewriteContext ctx = new RewriteContext(
+        RunContext ctx = new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             workDir, "MethodClosureOracleTest",
             workDir.resolve("generated-sources"),

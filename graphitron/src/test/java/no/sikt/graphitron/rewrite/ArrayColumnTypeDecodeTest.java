@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Boundary-decode coverage: the catalog decides each column's javapoet type once, at the jOOQ

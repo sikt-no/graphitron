@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The re-fetch derivation ({@link OutputField#requiresReFetch()}) is the single home of

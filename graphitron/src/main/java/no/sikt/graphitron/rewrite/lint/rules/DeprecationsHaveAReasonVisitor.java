@@ -4,9 +4,9 @@ import graphql.language.Directive;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import no.sikt.graphitron.rewrite.lint.LintContext;
-import no.sikt.graphitron.rewrite.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.lint.LintTarget;
 import no.sikt.graphitron.rewrite.lint.LintVisitor;
 

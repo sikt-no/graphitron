@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.Objects;
+import no.sikt.graphitron.model.diagnostics.Arity;
 
 /**
  * The field-level key-lift fact for a batched field: how the emitted fetcher lifts the

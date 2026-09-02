@@ -103,7 +103,7 @@ public final class QueryViewRenderer {
     /**
      * The test-only directive names to strip from rendered excerpts, derived from the parsed
      * {@link CorpusDocuments#prelude()}'s directive definitions (the
-     * {@link no.sikt.graphitron.rewrite.schema.DeclaredDirectives} derivation shape) rather
+     * {@link no.sikt.graphitron.model.schema.DeclaredDirectives} derivation shape) rather
      * than hand-maintained, so a new corpus directive cannot leak into the published triggers
      * page by construction.
      */

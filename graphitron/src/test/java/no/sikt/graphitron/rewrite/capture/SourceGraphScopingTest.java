@@ -4,7 +4,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.jooq.ExecuteContext;
@@ -19,6 +19,9 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * Turning a source file into the graph whose facts answer for it, which is the read a consumer

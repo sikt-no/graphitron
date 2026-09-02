@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Drift-protection seam across the whole directive documentation chain: the rewrite's
  * {@code directives.graphqls} (the canonical directive surface auto-injected by
- * {@code RewriteSchemaLoader}), the per-directive reference pages under
+ * {@code SchemaLoader}), the per-directive reference pages under
  * {@code docs/manual/reference/directives/}, and the hand-maintained directives landing
  * at {@code docs/manual/reference/directives/index.adoc} that indexes them.
  *

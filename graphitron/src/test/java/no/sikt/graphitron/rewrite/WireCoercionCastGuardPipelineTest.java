@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.WireCoercionError;
+import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 

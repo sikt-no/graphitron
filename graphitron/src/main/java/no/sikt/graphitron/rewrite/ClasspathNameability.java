@@ -10,6 +10,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipFile;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * The build-side statement of the nameability rule: a schema may name a class from this module,
@@ -38,7 +41,7 @@ import java.util.zip.ZipFile;
  *       to name the coordinate that carries the class; the build is failing anyway, and this is
  *       the one place a transitive jar gets opened.</li>
  *   <li>An empty classified list: inert, every name nameable. A unit-tier
- *       {@link RewriteContext} carries no classpath roots, and the rule cannot be enforced
+ *       {@link RunContext} carries no classpath roots, and the rule cannot be enforced
  *       against a classification nobody supplied.</li>
  * </ul>
  *
@@ -133,7 +136,7 @@ public final class ClasspathNameability {
             }
             return false;
         }
-        if (!no.sikt.graphitron.rewrite.catalog.ClasspathScanner.isJar(path)) {
+        if (!no.sikt.graphitron.model.classpath.ClasspathScanner.isJar(path)) {
             return false;
         }
         Set<String> index = jarIndexByPath.computeIfAbsent(path, ClasspathNameability::listClassResources);

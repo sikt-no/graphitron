@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * Result of classifying a single {@link graphql.schema.GraphQLInputObjectField} during the

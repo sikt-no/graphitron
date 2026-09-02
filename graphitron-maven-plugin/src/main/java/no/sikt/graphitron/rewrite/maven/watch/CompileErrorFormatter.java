@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.maven.watch;
 
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
 
 import java.util.List;
 

@@ -11,6 +11,11 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Coverage for {@link JooqCatalog}'s strict-resolution multi-schema API:
@@ -355,12 +360,12 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownTableRejection_unqualifiedAmbiguous_namesSchemasAndQualifiedForms() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var rejection = ctx.unknownTableRejection("event");
         // Author-error structural variant: rule violation with structured prose, not a closed-set
         // "did you mean" lookup. The candidate-hint shape doesn't fit because the user spelled
         // the name correctly; what they need is a qualified form, not a typo correction.
-        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.Structural.class);
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("@table(name: 'event') is ambiguous: defined in schemas")
             .contains("multischema_a")
@@ -371,23 +376,23 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownTableRejection_unqualifiedMissing_fallsThroughToUnknownTable() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var rejection = ctx.unknownTableRejection("nonexistent");
         // Missing-name path: route through Rejection.unknownTable so the candidate hint
         // surfaces a typo fix.
-        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName.class);
         assertThat(rejection.message())
             .startsWith("table 'nonexistent' could not be resolved in the jOOQ catalog");
     }
 
     @Test
     void unknownTableRejection_qualifiedMiss_fallsThroughToUnknownTable() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         // Qualified name where the schema is unknown; the qualified form parses to a two-arg
         // findTable miss, so the ambiguity branch is skipped (qualified lookups never produce
         // Ambiguous by construction).
         var rejection = ctx.unknownTableRejection("nonexistent.widget");
-        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName.class);
         assertThat(rejection.message())
             .startsWith("table 'nonexistent.widget' could not be resolved in the jOOQ catalog");
     }
@@ -396,13 +401,13 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownForeignKeyRejection_namesMissingFkAndCarriesFkAttemptKind() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var rejection = ctx.unknownForeignKeyRejection("not_a_fk");
         // UnknownName variant routes Levenshtein candidates over the catalog's FK names; the
         // attempt kind tags the rejection so LSP fix-its can scope candidate sets.
-        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName.class);
-        assertThat(((no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName) rejection).attemptKind())
-            .isEqualTo(no.sikt.graphitron.rewrite.model.Rejection.AttemptKind.FOREIGN_KEY);
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName.class);
+        assertThat(((no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName) rejection).attemptKind())
+            .isEqualTo(no.sikt.graphitron.model.diagnostics.Rejection.AttemptKind.FOREIGN_KEY);
         assertThat(rejection.message())
             .startsWith("foreign key 'not_a_fk' could not be resolved in the jOOQ catalog");
     }
@@ -415,10 +420,10 @@ class JooqCatalogMultiSchemaTest {
         // the `__` separator and whose SQL name does not, so the two namespaces are distinguishable
         // in the (unranked) candidate list the rejection carries.
         var ctx = new BuildContext(null,
-            new JooqCatalog("no.sikt.graphitron.rewrite.nodeidfixture"), stubRewriteContext());
+            new JooqCatalog("no.sikt.graphitron.rewrite.nodeidfixture"), stubRunContext());
 
         // Bare SQL-form attempt -> SQL-namespace candidates (no TABLE__CONSTRAINT separator).
-        var sqlForm = (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName)
+        var sqlForm = (no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName)
             ctx.unknownForeignKeyRejection("reordered_fk_child_parent_fkez");
         assertThat(sqlForm.candidates())
             .as("bare SQL-form attempt gets SQL-namespace candidates")
@@ -427,7 +432,7 @@ class JooqCatalogMultiSchemaTest {
 
         // jOOQ-constant-form attempt (contains `__`) -> Java-constant-namespace candidates, which
         // carry the `__` separator.
-        var constForm = (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.UnknownName)
+        var constForm = (no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnknownName)
             ctx.unknownForeignKeyRejection("reordered_fk_child__bogus_fk");
         assertThat(constForm.candidates())
             .as("__-form attempt gets jOOQ-constant-namespace candidates")
@@ -471,7 +476,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_resolvedHappyPath() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fk = fkByName("gadget_widget_id_fkey");
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
@@ -489,7 +494,7 @@ class JooqCatalogMultiSchemaTest {
         // that matches no catalog table does not break synthesis; the FK pins the exact origin
         // class regardless. Author-facing source-membership is enforced upstream by the {key:}
         // touches-check, pinned by parsePathElement_keyNotTouchingSource_* below.
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fk = fkByName("gadget_widget_id_fkey");
         var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
@@ -509,7 +514,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void fkJoinResolution_resolved_projectsToOptionalOfHop() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fk = fkByName("gadget_widget_id_fkey");
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result.asHop()).isPresent();
@@ -594,7 +599,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_qualifiedSource_orientsOriginSignalTargetWidget() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fk = fkByName("signal_widget_id_fkey");
         var result = ctx.synthesizeFkJoin(fk, "multischema_a.signal", "widget", 0, null,
             /*selfRefFkOnSource=*/false);
@@ -643,7 +648,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_collidingTargetName_resolvesSchemaAEventByClass() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fkA = ((JooqCatalog.ForeignKeyLookup.Resolved)
             multi().findForeignKey("note_event_fk", "multischema_a.note")).fk();
         var result = ctx.synthesizeFkJoin(fkA, "multischema_a.note", "event", 0, null,
@@ -658,7 +663,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_collidingTargetName_resolvesSchemaBEventByClass() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var fkB = ((JooqCatalog.ForeignKeyLookup.Resolved)
             multi().findForeignKey("note_event_fk", "multischema_b.note")).fk();
         var result = ctx.synthesizeFkJoin(fkB, "multischema_b.note", "event", 0, null,
@@ -791,26 +796,26 @@ class JooqCatalogMultiSchemaTest {
     // in the wrong schema rejects cleanly rather than degrading to a worse
     // column-reconciliation-miss message.
 
-    private static no.sikt.graphitron.rewrite.model.TableRef tableRef(String qualifiedName) {
+    private static no.sikt.graphitron.model.jooq.TableRef tableRef(String qualifiedName) {
         return multi().findTable(qualifiedName).asEntry().orElseThrow().toTableRef(qualifiedName);
     }
 
     @Test
     void resolveRecordFkTargetColumns_qualifiedKey_correctSchema_resolves() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var eventKeys = tableRef("multischema_a.event").primaryKeyColumns();
         var result = ctx.resolveRecordFkTargetColumns(
             tableRef("multischema_a.note"), "multischema_a.event", eventKeys,
             Optional.of("multischema_a.note_event_fk"));
         assertThat(result).isInstanceOf(BuildContext.RecordFkTargets.Resolved.class);
         assertThat(((BuildContext.RecordFkTargets.Resolved) result).targetColumns())
-            .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+            .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
             .containsExactly("event_id");
     }
 
     @Test
     void resolveRecordFkTargetColumns_qualifiedKey_wrongSchema_rejectsWithDoesNotConnect() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var eventKeys = tableRef("multischema_a.event").primaryKeyColumns();
         // multischema_b.note_event_fk resolves (hard qualifier) but does not touch multischema_a.note;
         // the connection check rejects it here, symmetric to the {key:} path element.
@@ -824,10 +829,10 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void ambiguousForeignKeyRejection_producesStructuralProseWithSchemasAndQualifiedForms() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         var rejection = ctx.ambiguousForeignKeyRejection(
             "note_event_fk", java.util.List.of("multischema_a", "multischema_b"));
-        assertThat(rejection).isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.Structural.class);
+        assertThat(rejection).isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.Structural.class);
         assertThat(rejection.message())
             .contains("foreign key 'note_event_fk' is ambiguous")
             .contains("multischema_a")
@@ -840,7 +845,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void parsePathElement_keyNotTouchingSource_rejectsBeforeSynthesis() {
-        var ctx = new BuildContext(null, multi(), stubRewriteContext());
+        var ctx = new BuildContext(null, multi(), stubRunContext());
         // signal_widget_id_fkey touches signal/widget, not gadget; standing on gadget the {key:}
         // membership check (foreignKeyTouchesTable) rejects before synthesizeFkJoin is entered.
         var parsed = ctx.parsePath(
@@ -872,8 +877,8 @@ class JooqCatalogMultiSchemaTest {
             .build();
     }
 
-    private static RewriteContext stubRewriteContext() {
-        return new RewriteContext(
+    private static RunContext stubRunContext() {
+        return new RunContext(
             java.util.List.of(),
             java.nio.file.Path.of("."), "JooqCatalogMultiSchemaTest",
             java.nio.file.Path.of("."),

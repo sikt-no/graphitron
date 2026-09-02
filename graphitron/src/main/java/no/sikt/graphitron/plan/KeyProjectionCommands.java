@@ -3,7 +3,7 @@ package no.sikt.graphitron.plan;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
-import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
+import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 
 /**
  * Produces {@link KeyProjectionRelation} from the store's resolved projections. A shape transform and

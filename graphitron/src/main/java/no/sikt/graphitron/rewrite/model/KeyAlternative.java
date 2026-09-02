@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * One {@code @key} alternative on an {@link EntityResolution}.

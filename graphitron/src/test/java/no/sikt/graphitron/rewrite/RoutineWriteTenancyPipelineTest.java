@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pipeline-tier pin that a routine-write entry point acquires its connection from the plan's
@@ -84,11 +85,11 @@ class RoutineWriteTenancyPipelineTest {
             .hasToString("Mutation.rentFilm");
     }
 
-    private static EmitPlan planFor(RewriteContext ctx) {
+    private static EmitPlan planFor(RunContext ctx) {
         return TestSchemaHelper.storeBackedPlan(tmp, SDL, ctx);
     }
 
-    private static TypeSpec mutationFetchers(RewriteContext ctx) {
+    private static TypeSpec mutationFetchers(RunContext ctx) {
         return TestSchemaHelper.storeBackedFetchers(tmp, SDL, ctx).stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()

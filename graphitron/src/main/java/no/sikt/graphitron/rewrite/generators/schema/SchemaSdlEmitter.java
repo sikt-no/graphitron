@@ -8,9 +8,9 @@ import graphql.schema.GraphQLSchemaElement;
 import graphql.schema.idl.DirectiveInfo;
 import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
+import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
-import no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

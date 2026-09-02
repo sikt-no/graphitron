@@ -6,7 +6,7 @@ import no.sikt.graphitron.command.TenantRouting;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 

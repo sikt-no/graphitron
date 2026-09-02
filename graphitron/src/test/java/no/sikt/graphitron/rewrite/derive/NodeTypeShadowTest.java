@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import graphql.schema.GraphQLObjectType;

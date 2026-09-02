@@ -2,14 +2,15 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.ReflectionError;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Unit-tier coverage of {@link ServiceCatalog#resolveSessionHooks}: the authored
@@ -30,11 +31,11 @@ class SessionHookResolutionTest {
         "no.sikt.graphitron.codereferences.noparams.NoParamsServiceStub";
 
     private static ServiceCatalog newCatalog() {
-        return new ServiceCatalog(new BuildContext(null, null, stubRewriteContext()));
+        return new ServiceCatalog(new BuildContext(null, null, stubRunContext()));
     }
 
-    private static RewriteContext stubRewriteContext() {
-        return new RewriteContext(
+    private static RunContext stubRunContext() {
+        return new RunContext(
             java.util.List.of(),
             java.nio.file.Path.of("."), "SessionHookResolutionTest",
             java.nio.file.Path.of("."),

@@ -8,6 +8,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaInputException;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 
 @UnitTier
 class SchemaInputAttributionTest {

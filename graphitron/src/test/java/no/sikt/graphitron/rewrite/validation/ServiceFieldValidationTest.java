@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -16,8 +16,8 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -29,6 +29,7 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 
 @UnitTier
 class ServiceFieldValidationTest {
@@ -393,8 +394,8 @@ class ServiceFieldValidationTest {
         var errors = validate(schema);
         var typed = errors.stream()
             .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible)
-            .map(r -> (no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible) r)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible)
+            .map(r -> (no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible) r)
             .findFirst();
         assertThat(typed)
             .as("validator surfaces the instance-holder rejection as a typed arm")

@@ -4,9 +4,9 @@ import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.compile.CompileFacts;
-import no.sikt.graphitron.rewrite.compile.CompileRound;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.capture.compile.CompileFacts;
+import no.sikt.graphitron.model.compile.CompileRound;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
+import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**

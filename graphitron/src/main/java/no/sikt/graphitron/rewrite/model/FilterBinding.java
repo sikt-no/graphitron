@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * Which table a filter carrier's value predicate binds against: the field's own table, or the

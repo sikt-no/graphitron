@@ -19,6 +19,9 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
 
 /**
  * Coverage for {@link ClasspathScanner}: synthesises minimal {@code .class}
@@ -35,7 +38,7 @@ class ClasspathScannerTest {
     private static java.util.List<CompletionData.ExternalReference> scanPaths(
             java.util.List<Path> entries, String jooqPackage) {
         return ClasspathScanner.scan(
-            no.sikt.graphitron.rewrite.ClasspathEntry.projectRoots(entries), jooqPackage);
+            no.sikt.graphitron.model.config.ClasspathEntry.projectRoots(entries), jooqPackage);
     }
 
     @Test
@@ -50,10 +53,10 @@ class ClasspathScannerTest {
         writePublicClass(transitiveClasses, "com.example.Dropped");
 
         var refs = ClasspathScanner.scan(java.util.List.of(
-            new no.sikt.graphitron.rewrite.ClasspathEntry(declaredClasses,
-                no.sikt.graphitron.rewrite.ClasspathEntry.Origin.DECLARED, "com.example:kept"),
-            new no.sikt.graphitron.rewrite.ClasspathEntry(transitiveClasses,
-                no.sikt.graphitron.rewrite.ClasspathEntry.Origin.TRANSITIVE, "com.example:dropped")),
+            new no.sikt.graphitron.model.config.ClasspathEntry(declaredClasses,
+                no.sikt.graphitron.model.config.ClasspathEntry.Origin.DECLARED, "com.example:kept"),
+            new no.sikt.graphitron.model.config.ClasspathEntry(transitiveClasses,
+                no.sikt.graphitron.model.config.ClasspathEntry.Origin.TRANSITIVE, "com.example:dropped")),
             JOOQ_PKG);
 
         assertThat(refs).extracting(CompletionData.ExternalReference::className)

@@ -3,12 +3,12 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
+import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.ServiceField;
@@ -347,13 +347,13 @@ class JooqRecordServiceParamPipelineTest {
     private static final String FILM_ENDORSEMENT_RECORD_FQN =
         "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmEndorsementRecord";
 
-    private static RewriteContext fixtureCtx(String jooqPackage) {
-        return new RewriteContext(List.of(), Path.of(""), "JooqRecordServiceParamPipelineTest", Path.of(""),
+    private static RunContext fixtureCtx(String jooqPackage) {
+        return new RunContext(List.of(), Path.of(""), "JooqRecordServiceParamPipelineTest", Path.of(""),
             DEFAULT_OUTPUT_PACKAGE, jooqPackage);
     }
 
-    private static final RewriteContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.nodeidfixture");
-    private static final RewriteContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.idreffixture");
+    private static final RunContext NODEID_CTX = fixtureCtx("no.sikt.graphitron.rewrite.nodeidfixture");
+    private static final RunContext IDREF_CTX = fixtureCtx("no.sikt.graphitron.rewrite.idreffixture");
 
     private static final String PURE_FK_SDL = """
         type Film implements Node @table(name: "film") @node { id: ID! }
@@ -1405,7 +1405,7 @@ class JooqRecordServiceParamPipelineTest {
 
     /** Variant against a fixture catalog (nodeidfixture / idreffixture) supplied as a custom context. */
     private static CallSiteExtraction.JooqRecord carrier(String sdl, String queryField, boolean list,
-            RewriteContext ctx) {
+            RunContext ctx) {
         return carrier(TestSchemaHelper.buildSchema(sdl, ctx).field("Query", queryField), list);
     }
 

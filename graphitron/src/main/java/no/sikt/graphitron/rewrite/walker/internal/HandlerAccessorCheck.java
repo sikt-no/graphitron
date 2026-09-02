@@ -4,7 +4,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.ClassAccessorResolver;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
-import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.walker.ReflectTypeResolver;
 

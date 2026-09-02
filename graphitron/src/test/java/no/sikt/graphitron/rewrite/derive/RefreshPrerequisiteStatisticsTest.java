@@ -4,7 +4,7 @@ import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;

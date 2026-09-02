@@ -7,7 +7,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
-import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.OutcomeType;

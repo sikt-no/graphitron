@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,6 +14,10 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 /**
  * The claim behind collapsing the dev loop's two generator entry points into one:
@@ -182,10 +186,10 @@ class DevPassProjectionPipelineTest {
                 .isEqualTo(reportedErrors));
     }
 
-    private static RewriteContext contextFor(Path tmp, String sdl) throws IOException {
+    private static RunContext contextFor(Path tmp, String sdl) throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
-        return new RewriteContext(
+        return new RunContext(
             List.of(SchemaInput.file(schema)),
             tmp, "DevPassProjectionPipelineTest",
             tmp.resolve("generated-sources"),

@@ -2,13 +2,14 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_EXTERNAL_FIELD_REF;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Resolves {@code @externalField} on a child field of a {@code @table}-typed parent into a sealed

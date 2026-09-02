@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite.walker;
 
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
-import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.OutcomeType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.WalkerResult;
 import no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks;
 import no.sikt.graphitron.rewrite.walker.internal.HandlerAccessorCheck;

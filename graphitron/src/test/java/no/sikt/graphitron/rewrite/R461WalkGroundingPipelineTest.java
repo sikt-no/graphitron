@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Pipeline-tier coverage of the SDL-field-to-Java-accessor resolution unification, exercised

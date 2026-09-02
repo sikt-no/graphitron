@@ -3,10 +3,10 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.capture.SubjectConfig;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -16,6 +16,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.derive.StoreNodeTables;
 
 /**
  * What {@link StoreNodeTables} assembles out of the store: a node type's table reference, its ordered

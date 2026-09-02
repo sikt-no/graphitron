@@ -4,8 +4,8 @@ import no.sikt.graphitron.command.CatalogColumn;
 import no.sikt.graphitron.command.CatalogTable;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.List;
 

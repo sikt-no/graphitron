@@ -2,12 +2,12 @@ package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.ClasspathEntry;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeAll;
@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
 
 /**
  * The store-backed home of the {@code @nodeId} decode rules at a producer parameter: real SDL

@@ -9,6 +9,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
+import no.sikt.graphitron.model.selection.ParsedArgument;
+import no.sikt.graphitron.model.selection.ParsedField;
+import no.sikt.graphitron.model.selection.ParsedValue;
 
 @DisplayName("GraphQLSelectionParser")
 @UnitTier

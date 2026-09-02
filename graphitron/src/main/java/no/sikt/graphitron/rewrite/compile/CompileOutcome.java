@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
 import java.util.Set;
+import no.sikt.graphitron.model.compile.CompileRound;
 
 /**
  * The result of driving the {@link IncrementalCompiler} for one dev-loop event: the

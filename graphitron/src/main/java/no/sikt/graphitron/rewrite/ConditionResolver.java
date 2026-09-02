@@ -8,8 +8,8 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.WireCoercionError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 import java.util.ArrayList;
 import java.util.List;

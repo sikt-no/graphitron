@@ -2,13 +2,14 @@ package no.sikt.graphitron.rewrite.schema.federation;
 
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 
 /**
  * Classify-time behavior of {@link EntityResolutionBuilder}: how {@code @key} directives

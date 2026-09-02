@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 
 /**
  * The UPDATE-shape walker carrier. Holds the matched key identity plus the SET and WHERE

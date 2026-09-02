@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import no.sikt.graphitron.model.derive.FieldClaim;
 
 /**
  * The {@code schema} tool's wire shape: what {@link SchemaQueries} read, rendered.

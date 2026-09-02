@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 import java.util.Objects;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Pre-resolved shape of the step-0 parent correlation for source-correlated child fields.

@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 /**
  * Read-side fallout of self-FK {@code @nodeId} reference support. The

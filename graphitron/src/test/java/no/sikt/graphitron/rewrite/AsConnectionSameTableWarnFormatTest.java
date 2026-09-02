@@ -8,6 +8,8 @@ import java.util.List;
 import static no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pins the user-facing warn-message format for {@code @asConnection} + required same-table
@@ -34,7 +36,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class AsConnectionSameTableWarnFormatTest {
 
-    private static final RewriteContext NODEID_CTX = new RewriteContext(
+    private static final RunContext NODEID_CTX = new RunContext(
         List.of(),
         Path.of(""), "AsConnectionSameTableWarnFormatTest",
         Path.of(""),

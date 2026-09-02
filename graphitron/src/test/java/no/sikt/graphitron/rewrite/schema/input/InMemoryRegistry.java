@@ -13,7 +13,7 @@ import java.util.Map;
 
 /**
  * Test-only helper: builds a {@link TypeDefinitionRegistry} from an in-memory map
- * of (source-name, SDL) pairs. Mirrors {@link no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader}
+ * of (source-name, SDL) pairs. Mirrors {@link no.sikt.graphitron.model.schema.SchemaLoader}
  * without the filesystem or directive-resource plumbing, so applier tests can control
  * source names directly.
  */

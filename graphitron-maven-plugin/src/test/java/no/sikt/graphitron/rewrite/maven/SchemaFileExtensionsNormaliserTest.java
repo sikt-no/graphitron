@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * Unit coverage for {@link AbstractRewriteMojo#effectiveSchemaFileExtensions}: the seam where
  * raw {@code <schemaFileExtensions>} values get normalised before flowing into
- * {@link no.sikt.graphitron.rewrite.RewriteContext}.
+ * {@link no.sikt.graphitron.model.config.RunContext}.
  */
 class SchemaFileExtensionsNormaliserTest {
 

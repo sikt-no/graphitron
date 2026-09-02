@@ -3,11 +3,12 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * End-to-end coverage for migrated producer sites that now emit

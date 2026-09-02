@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * One {@code @lookupKey}-bearing input field's contribution to a {@code TableInputArg}'s

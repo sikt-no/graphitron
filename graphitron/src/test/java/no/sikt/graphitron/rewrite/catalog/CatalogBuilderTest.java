@@ -1,12 +1,14 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Verifies that {@link CatalogBuilder#build} surfaces the right shape for
@@ -133,7 +135,7 @@ class CatalogBuilderTest {
     void externalReferencesEmptyWhenBasedirHasNoTargetClasses(@org.junit.jupiter.api.io.TempDir java.nio.file.Path empty) {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
-        var ctx = new no.sikt.graphitron.rewrite.RewriteContext(
+        var ctx = new no.sikt.graphitron.model.config.RunContext(
             java.util.List.of(), empty, "CatalogBuilderTest", empty.resolve("out"),
             "fake.code.generated", DEFAULT_JOOQ_PACKAGE
         );

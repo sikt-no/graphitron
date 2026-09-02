@@ -16,9 +16,9 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.lint.LintFix;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -40,15 +40,15 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.OperationMember;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
-import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.OutcomeType;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
@@ -73,7 +73,7 @@ import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
-import no.sikt.graphitron.rewrite.model.PivotError;
+import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -91,14 +91,14 @@ import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
+import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.StaticProducerRef;
 import no.sikt.graphitron.rewrite.model.TableExpr;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallParam;
@@ -160,6 +160,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Classifies all fields in the schema into the {@link GraphitronField} hierarchy.
@@ -5830,7 +5834,7 @@ class FieldBuilder {
                 if (MutationInputResolver.parseMutationTableArg(fieldDef).isPresent()
                         && !MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.contains(kind)) {
                     return new UnclassifiedField(parentTypeName, name, location,
-                        new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
+                        new no.sikt.graphitron.model.diagnostics.MutationTableArgError.UnsupportedVerb(
                             kind.name(),
                             MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
                 }

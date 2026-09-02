@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import java.util.Set;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * One built-in lint rule as an independent visitor, the ESLint /

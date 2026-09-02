@@ -8,12 +8,12 @@ import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.TypeRegistry;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -27,13 +27,15 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import no.sikt.graphitron.model.schema.federation.FederationKeyFieldsParser;
+import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 
 /**
  * Builds the {@code entitiesByType} sidecar map: one {@link EntityResolution} per type whose

@@ -14,10 +14,10 @@ import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
@@ -31,7 +31,7 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
@@ -1686,7 +1686,7 @@ public final class MultiTablePolymorphicEmitter {
      * <p>The load site reads the leaf's {@link BatchKeyField#loaderRegistration()} dispatch,
      * the classify-time decision {@link GeneratorUtils#buildRecordParentKeyExtraction}'s
      * declared key shape agrees with by construction (both derive from the lift's
-     * {@link no.sikt.graphitron.rewrite.model.Arity} at the same classifier site):
+     * {@link no.sikt.graphitron.model.diagnostics.Arity} at the same classifier site):
      * {@code LOAD_ONE} (catalog-FK {@code FkColumns} on a {@code @table} parent,
      * accessor-single on a record parent) declares a single {@code key} and dispatches
      * {@code loader.load(key, env)}; {@code LOAD_MANY} (accessor-many on a Pojo /

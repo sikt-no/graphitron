@@ -3,8 +3,8 @@ package no.sikt.graphitron.lsp;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
-import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.lint.DeprecationRecognizer;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -31,7 +31,7 @@ final class SdlDeprecations {
 
     /** The shipped deprecation markers, as coordinates. */
     static Set<SchemaCoordinate> shipped() {
-        var registry = new SchemaParser().parse(RewriteSchemaLoader.directivesSdl());
+        var registry = new SchemaParser().parse(SchemaLoader.directivesSdl());
         var recognizer = new DeprecationRecognizer(registry);
         var out = new LinkedHashSet<SchemaCoordinate>();
         for (var directive : registry.getDirectiveDefinitions().values()) {

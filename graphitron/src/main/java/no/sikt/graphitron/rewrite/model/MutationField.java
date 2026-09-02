@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * A field on the {@code Mutation} type. The only fields permitted to write to the database.

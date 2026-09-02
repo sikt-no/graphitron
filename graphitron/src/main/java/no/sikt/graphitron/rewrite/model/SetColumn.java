@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
+
 /**
  * One column contribution on the SET side of an UPDATE. Carries the GraphQL input field
  * name it came from, the jOOQ column it writes, how to read the input value at the call-site

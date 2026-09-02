@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The per-field tenant-binding axis: where a field's divined tenant key comes from, decided

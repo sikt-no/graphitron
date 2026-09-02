@@ -3,7 +3,7 @@ package no.sikt.graphitron.lsp.fixtures;
 /**
  * Pipeline test fixture: a Java {@code record} so the classifier
  * produces {@link no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType}
- * and {@link no.sikt.graphitron.rewrite.catalog.ClasspathScanner} reads the
+ * and {@link no.sikt.graphitron.model.classpath.ClasspathScanner} reads the
  * Record attribute into {@code recordComponents}. Component names match the
  * SDL field names in {@code R157Pipeline.recordBackedTypeSurfacesComponentsThroughSnapshot}.
  */

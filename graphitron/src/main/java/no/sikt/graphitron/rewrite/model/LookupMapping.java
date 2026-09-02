@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 import java.util.ArrayList;
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Generation-ready mapping for a lookup field. The only current shape is {@link ColumnMapping},

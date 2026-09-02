@@ -1,12 +1,14 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 /**
  * Tests for the recipe diagnostic that fires when a consumer uses a federation directive
@@ -22,7 +24,7 @@ class FederationRecipeDiagnosticTest {
     }
 
     private static String directivesPrelude() {
-        try (var is = no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader.class
+        try (var is = no.sikt.graphitron.model.schema.SchemaLoader.class
                 .getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not on classpath");
             return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);

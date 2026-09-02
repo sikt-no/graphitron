@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pipeline coverage for a {@code @reference} field on a type whose {@code @table(name:)} carries
@@ -48,8 +49,8 @@ class QualifiedSourceReferencePipelineTest {
     private static final ClassName WIDGET =
         ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget");
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(), Path.of(""), "QualifiedSourceReferencePipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }

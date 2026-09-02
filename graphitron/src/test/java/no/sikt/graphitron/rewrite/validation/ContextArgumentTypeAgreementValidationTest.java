@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Mirror of the L2 {@link no.sikt.graphitron.rewrite.ContextArgumentTypeAgreementTest}
  * classifier-side coverage. Where the L2 test asserts on the typed
  * {@link Rejection.AuthorError.TypeConflict} structure, this test asserts on the
- * {@link no.sikt.graphitron.rewrite.ValidationError} that the validator surfaces and on the
+ * {@link no.sikt.graphitron.model.diagnostics.ValidationError} that the validator surfaces and on the
  * rendered prose every site contributes one line to.
  */
 @PipelineTier

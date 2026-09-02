@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.FactWriters;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.test.FactWriters;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
-import no.sikt.graphitron.rewrite.compile.CompileRound;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.compile.CompileRound;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.mcp.GraphitronMcpServer;
 import no.sikt.graphitron.mcp.rag.AsyncWarm;
@@ -653,8 +653,8 @@ class DevMojoTest {
      * jOOQ model the graphitron test-jar carries, so {@code @table} resolves and the round reaches
      * the validator rather than dying at the catalog.
      */
-    private static RewriteContext jooqContextFor(Path basedir, Path schemaFile) {
-        return new RewriteContext(
+    private static RunContext jooqContextFor(Path basedir, Path schemaFile) {
+        return new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             basedir, "DevMojoTest",
             basedir.resolve("target/generated"),
@@ -662,10 +662,10 @@ class DevMojoTest {
             "no.sikt.graphitron.rewrite.test.jooq");
     }
 
-    private static RewriteContext contextFor(Path basedir, Path schemaFile) {
+    private static RunContext contextFor(Path basedir, Path schemaFile) {
         // Both failure modes occur during schema load, before any jOOQ catalog work,
         // so the jooq package / output directory values are never exercised.
-        return new RewriteContext(
+        return new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             basedir, "DevMojoTest",
             basedir.resolve("target/generated"),

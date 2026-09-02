@@ -10,7 +10,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -26,8 +26,8 @@ import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.TargetShape;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
@@ -41,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The per-field tenant-binding fold: assigns every classified {@link OutputField} its

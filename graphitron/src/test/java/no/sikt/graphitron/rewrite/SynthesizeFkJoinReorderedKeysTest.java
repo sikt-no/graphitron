@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Drives {@link BuildContext#synthesizeFkJoin} against a real jOOQ catalog FK whose own
@@ -35,7 +37,7 @@ class SynthesizeFkJoinReorderedKeysTest {
 
     @Test
     void synthesizeFkJoin_pairsSlotsByFkOwnReferencedColumnList() {
-        var ctx = new BuildContext(null, nodeIdCatalog(), stubRewriteContext());
+        var ctx = new BuildContext(null, nodeIdCatalog(), stubRunContext());
         var fk = ((JooqCatalog.ForeignKeyLookup.Resolved) nodeIdCatalog()
             .findForeignKey("reordered_fk_child_parent_fkey", null)).fk();
 
@@ -82,8 +84,8 @@ class SynthesizeFkJoinReorderedKeysTest {
             .containsExactly("fk_b", "fk_c", "fk_a");
     }
 
-    private static RewriteContext stubRewriteContext() {
-        return new RewriteContext(
+    private static RunContext stubRunContext() {
+        return new RunContext(
             java.util.List.of(),
             java.nio.file.Path.of("."), "SynthesizeFkJoinReorderedKeysTest",
             java.nio.file.Path.of("."),

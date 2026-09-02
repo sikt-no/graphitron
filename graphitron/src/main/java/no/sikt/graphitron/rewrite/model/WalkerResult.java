@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * Sealed result wrapper returned by directive walkers. {@link Ok} carries the populated carrier

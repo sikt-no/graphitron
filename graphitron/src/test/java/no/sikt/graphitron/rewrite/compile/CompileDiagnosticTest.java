@@ -11,6 +11,7 @@ import java.net.URI;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
 
 /**
  * The flattening's own pins: the path form shared with the schema channel and with every

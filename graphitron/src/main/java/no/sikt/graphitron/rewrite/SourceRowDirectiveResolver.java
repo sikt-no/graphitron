@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.KeyLift;
@@ -11,10 +11,10 @@ import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.TypeNames;
 
 import java.lang.reflect.Method;
@@ -29,6 +29,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Resolves {@code @sourceRow} on a child field whose class-backed parent has no FK

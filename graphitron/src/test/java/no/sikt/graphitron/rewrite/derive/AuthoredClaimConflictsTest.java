@@ -5,8 +5,8 @@ import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -23,6 +23,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.derive.AuthoredClaim;
+import no.sikt.graphitron.model.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.model.derive.FieldClaim;
 
 /**
  * The store-backed home of the directive mutual-exclusivity rule: the conflict fixtures that

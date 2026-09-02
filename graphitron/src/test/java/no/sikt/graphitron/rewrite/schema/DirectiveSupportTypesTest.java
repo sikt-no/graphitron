@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 
 /**
  * Pins the support-type set derived from {@code directives.graphqls}. The set is

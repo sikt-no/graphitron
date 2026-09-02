@@ -16,6 +16,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.compile.CompileRound;
 
 /**
  * The warm incremental compile engine. One {@link JavaCompiler}

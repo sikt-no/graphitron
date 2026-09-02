@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.model.catalog.StoreCatalog;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusExpectations.Block;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;

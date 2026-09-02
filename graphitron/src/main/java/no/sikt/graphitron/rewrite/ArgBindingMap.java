@@ -6,8 +6,8 @@ import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
-import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
-import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -15,6 +15,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.selection.ParsedEntry;
 
 /**
  * Pre-resolved binding map used by {@link ServiceCatalog#reduceClaims} and
@@ -254,7 +256,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> aut
      * empty path segment) or a duplicate Java target across entries.
      */
     static ParsedArgMapping parseArgMapping(String raw) {
-        List<no.sikt.graphitron.rewrite.selection.ParsedEntry> entries;
+        List<no.sikt.graphitron.model.selection.ParsedEntry> entries;
         try {
             entries = GraphQLSelectionParser.parseEntries(raw);
         } catch (GraphQLSelectionParseException e) {

@@ -4,8 +4,8 @@ import graphql.language.SourceLocation;
 import io.modelcontextprotocol.spec.McpSchema;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
-import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
+import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**

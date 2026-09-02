@@ -6,6 +6,8 @@ import no.sikt.graphitron.javapoet.ClassName;
 import java.util.List;
 import java.util.Optional;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * A field on a non-root output type. Source context (table-mapped or result-mapped) is

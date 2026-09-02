@@ -3,8 +3,8 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.ArrayList;
 import java.util.List;

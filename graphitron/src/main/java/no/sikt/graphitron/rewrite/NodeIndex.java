@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
 
 /**
  * Pure, fixed-point reverse index over the schema's node types. Built once by

@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
-import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

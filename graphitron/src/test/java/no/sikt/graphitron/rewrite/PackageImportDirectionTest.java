@@ -82,8 +82,8 @@ class PackageImportDirectionTest {
      * conversion is visible as a line leaving rather than as prose claiming one did.
      */
     private static final Set<String> BORROWED_MODEL_REFS = Set.of(
-        "no.sikt.graphitron.rewrite.model.TableRef",
-        "no.sikt.graphitron.rewrite.model.ColumnRef",
+        "no.sikt.graphitron.model.jooq.TableRef",
+        "no.sikt.graphitron.model.jooq.ColumnRef",
         "no.sikt.graphitron.rewrite.model.MethodRef",
         "no.sikt.graphitron.rewrite.model.JoinStep",
         "no.sikt.graphitron.rewrite.model.On",
@@ -141,10 +141,10 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.AliasOwner",
         "no.sikt.graphitron.rewrite.model.CallParam",
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
-        "no.sikt.graphitron.rewrite.model.ColumnRef",
+        "no.sikt.graphitron.model.jooq.ColumnRef",
         "no.sikt.graphitron.rewrite.model.ConditionFilter",
         "no.sikt.graphitron.rewrite.model.FacetSpec",
-        "no.sikt.graphitron.rewrite.model.ForeignKeyRef",
+        "no.sikt.graphitron.model.jooq.ForeignKeyRef",
         "no.sikt.graphitron.rewrite.model.HelperRef",
         "no.sikt.graphitron.rewrite.model.InputColumnBinding",
         "no.sikt.graphitron.rewrite.model.JoinConditionRef",
@@ -162,7 +162,7 @@ class PackageImportDirectionTest {
         "no.sikt.graphitron.rewrite.model.RowsMethodShape",
         "no.sikt.graphitron.rewrite.model.SourceKey",
         "no.sikt.graphitron.rewrite.model.TableExpr",
-        "no.sikt.graphitron.rewrite.model.TableRef"
+        "no.sikt.graphitron.model.jooq.TableRef"
     );
 
     private static final String COMMAND_GRAPHQL_ALLOWED = "graphql.schema.FieldCoordinates";

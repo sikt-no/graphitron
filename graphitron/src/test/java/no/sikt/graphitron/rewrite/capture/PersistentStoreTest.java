@@ -4,7 +4,7 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReaper;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.exception.DataAccessException;
@@ -34,6 +34,10 @@ import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.RunStore;
+import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * The persisted store's bootstrap: what survives a run, what falls back, and how two writers

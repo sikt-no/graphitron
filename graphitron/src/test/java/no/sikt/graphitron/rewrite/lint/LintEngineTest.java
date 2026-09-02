@@ -2,16 +2,18 @@ package no.sikt.graphitron.rewrite.lint;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.lint.rules.DeprecationsHaveAReasonVisitor;
 import no.sikt.graphitron.rewrite.lint.rules.TypesAndFieldsHaveDescriptionsVisitor;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * Per-rule behaviour for the built-in syntactic lint visitors: for each rule a positive case
@@ -24,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class LintEngineTest {
 
-    private static final String DIRECTIVES = RewriteSchemaLoader.directivesSdl();
+    private static final String DIRECTIVES = SchemaLoader.directivesSdl();
 
     private static List<BuildWarning.LintFinding> findings(String sdl) {
         return run(new SchemaParser().parse(sdl));

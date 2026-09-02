@@ -1,15 +1,18 @@
 package no.sikt.graphitron.rewrite.dependency;
 
-import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.model.config.DependencyVersions;
+import no.sikt.graphitron.model.config.ObservedVersion;
+import no.sikt.graphitron.model.config.WatchedDependency;
 
 /**
  * The generation-time nudge toward current graphql-java and jOOQ, derived purely from
- * {@link DependencyVersions}. Kept a pure decision (no schema, no {@code RewriteContext}) so it is
+ * {@link DependencyVersions}. Kept a pure decision (no schema, no {@code RunContext}) so it is
  * unit-testable directly; {@code GraphQLRewriteGenerator.withLintFindings} calls it with the carrier
  * and folds the result into the build-warning channel, where lint suppression (by rule id) applies
  * uniformly.

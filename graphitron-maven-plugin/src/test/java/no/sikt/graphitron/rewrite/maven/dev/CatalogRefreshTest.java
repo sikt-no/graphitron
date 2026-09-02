@@ -18,7 +18,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static no.sikt.graphitron.rewrite.FactWriters.refreshJavaSources;
+import static no.sikt.graphitron.model.test.FactWriters.refreshJavaSources;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,8 +38,8 @@ class CatalogRefreshTest {
      * The awaited window holds the watcher's dispatch, the {@link DebounceExecutor} delay, and
      * whatever the trigger itself does, which in
      * {@link #javaSourceWriteMovesTheStoreRowWithoutAGeneratorPass} is real work:
-     * {@link no.sikt.graphitron.rewrite.FactWriters#refreshJavaSources} is a
-     * {@link no.sikt.graphitron.rewrite.capture.SourceWalker} parse through the Compiler Tree API,
+     * {@link no.sikt.graphitron.model.test.FactWriters#refreshJavaSources} is a
+     * {@link no.sikt.graphitron.model.sources.SourceWalker} parse through the Compiler Tree API,
      * cold on its first use in the surefire JVM, plus the jOOQ writes that land the walk in the
      * store.
      *

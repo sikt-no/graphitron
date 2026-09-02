@@ -8,8 +8,8 @@ import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.model.read.SourceUri;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -21,8 +21,22 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
+import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.ConflictSite;
+import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.JooqRecordInputError;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
+import no.sikt.graphitron.model.diagnostics.PivotError;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
+import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
+import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 /**
  * Meta-test asserting that every {@link Rejection} sealed permit reachable from a
@@ -196,9 +210,9 @@ class RejectionSeverityCoverageTest {
             return new Rejection.AuthorError.TypeConflict(
                 "fnr",
                 List.of(
-                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                    new no.sikt.graphitron.model.diagnostics.ConflictSite(
                         "com.example.S", "m", String.class.getName()),
-                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                    new no.sikt.graphitron.model.diagnostics.ConflictSite(
                         "com.example.T", "m", Long.class.getName())));
         }
         if (permit == Rejection.AuthorError.MultiProducerDomainTypeDisagreement.class) {
@@ -266,194 +280,194 @@ class RejectionSeverityCoverageTest {
         // the translator-walker actually produces; the minimal sample is sufficient for the
         // severity-coverage walk (Diagnostics.compute's switch on Rejection.AuthorError catches the
         // whole sub-family uniformly). Further arms re-land later as their producer paths do.
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots(
                 "com.example.Svc",
-                no.sikt.graphitron.rewrite.model.ServiceMethodCallError.Round.METHOD);
+                no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.Round.METHOD);
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ParameterUnbindable(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ParameterUnbindable(
                 "title", List.of("name", "year"), "name");
         }
         // Re-added ServiceMethodCallError service-binding arms. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error),
         // and lspCodeOf forwards each arm's stable graphitron.service-method-call.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible(
                 "com.example.Svc", "getFilm", "Svc",
-                no.sikt.graphitron.rewrite.model.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR);
+                no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.HolderProblem.NO_BINDABLE_CTOR);
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgumentParameterMismatch.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.ArgumentParameterMismatch(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ArgumentParameterMismatch.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.ArgumentParameterMismatch(
                 "title", "getFilm", List.of("name", "year"), List.of("tenantId"), " — rename or argMapping");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.DtoSourcesUnsupported.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.DtoSourcesUnsupported(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.DtoSourcesUnsupported.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.DtoSourcesUnsupported(
                 "keys", "getFilms", "sources type 'com.example.Dto' is not backed by a jOOQ TableRecord");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.UnrecognizedSourcesType(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.UnrecognizedSourcesType.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.UnrecognizedSourcesType(
                 "input", "getFilms", "java.util.List<com.example.Weird>");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceMethodCallError.SourcesOnPkLessParent.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceMethodCallError.SourcesOnPkLessParent(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.SourcesOnPkLessParent.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.SourcesOnPkLessParent(
                 "keys", "getRank", "FilmList", "film_list");
         }
         // ReflectionError sub-seal of AuthorError (shared reflection-intrinsic arms). One
         // sample per arm; lspCodeOf forwards each arm's stable graphitron.reflect.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded("com.example.Missing");
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded("com.example.Missing");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch(
                 "com.example.Svc", "getFilm", "FilmRecord", "String");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.ParameterNamesMissing(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.ParameterNamesMissing.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.ParameterNamesMissing(
                 "com.example.Svc", "getFilm");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod(
                 "com.example.Svc", "getFilm",
                 List.of("getFilm(java.lang.String)", "getFilm(java.lang.String, int)"),
-                new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+                new no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod
                     .Ambiguity.NameShared());
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.SeamParameterMissing.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.SeamParameterMissing(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.SeamParameterMissing.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.SeamParameterMissing(
                 "com.example.db.Routines", "connect", List.of("connect(org.jooq.Field)"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.SeamCandidateAmbiguous.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.SeamCandidateAmbiguous(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.SeamCandidateAmbiguous.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.SeamCandidateAmbiguous(
                 "com.example.Hooks", "mount",
                 List.of("mount(org.jooq.Configuration)", "mount(java.sql.Connection)"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.HookNotStatic.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.HookNotStatic(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HookNotStatic.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HookNotStatic(
                 "com.example.Hooks", "mount");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.HookThrowsChecked.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.HookThrowsChecked(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HookThrowsChecked.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HookThrowsChecked(
                 "com.example.Hooks", "mount", List.of("java.sql.SQLException"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ReflectionError.HandleTypeMismatch.class) {
-            return new no.sikt.graphitron.rewrite.model.ReflectionError.HandleTypeMismatch(
+        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HandleTypeMismatch.class) {
+            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HandleTypeMismatch(
                 "com.example.Hooks", "mount", "SessionHandleRecord",
                 "com.example.Hooks", "unmount", "String");
         }
         // UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class) {
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage(
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage.class) {
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage(
                 "film",
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String")),
-                List.of(new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
-                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String")),
+                List.of(new no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
                     "film_pkey")));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class) {
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields(
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoSetFields.class) {
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoSetFields(
                 "film",
-                new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
-                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                new no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
                     "film_pkey"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership.class) {
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.MixedCarrierKeyMembership.class) {
             // Models an own-columns carrier whose lifted columns straddle the matched key: the only
             // carrier shape that still reaches this arm. A self-FK reference routes wholly to SET,
             // and a cross-table FK reference partitions per column.
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.MixedCarrierKeyMembership(
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.MixedCarrierKeyMembership(
                 "ownKey",
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.NullableStraddlingReference.class) {
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.NullableStraddlingReference.class) {
             // Models the nullable spelling of an admitted straddling cross-table FK reference.
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.NullableStraddlingReference(
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.NullableStraddlingReference(
                 "ref", new SourceLocation(1, 1), "film_actor",
-                new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
-                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
-                        new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                new no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"),
+                        new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
                     "film_actor_pkey"),
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class) {
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape(
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.UnsupportedInputFieldShape.class) {
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.UnsupportedInputFieldShape(
                 "nested", "NestingField", "nested input types in @mutation(typeName: UPDATE) fields are not yet supported");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class) {
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported(
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported.class) {
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.UpdateRowsError.PlainColumnCollision.class) {
-            return new no.sikt.graphitron.rewrite.model.UpdateRowsError.PlainColumnCollision(
+        if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.PlainColumnCollision.class) {
+            return new no.sikt.graphitron.model.diagnostics.UpdateRowsError.PlainColumnCollision(
                 "name", "alias", "name");
         }
         // DeleteRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity),
         // and lspCodeOf forwards each arm's stable graphitron.delete-rows.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class) {
-            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage(
+        if (permit == no.sikt.graphitron.model.diagnostics.DeleteRowsError.NoUniqueKeyCoverage.class) {
+            return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.NoUniqueKeyCoverage(
                 "film",
-                List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String")),
-                List.of(new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
-                    List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String")),
+                List.of(new no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey(
+                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
                     "film_pkey")));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape.class) {
-            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape(
+        if (permit == no.sikt.graphitron.model.diagnostics.DeleteRowsError.UnsupportedInputFieldShape.class) {
+            return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.UnsupportedInputFieldShape(
                 "nested", "NestingField", "nested input types in @mutation(typeName: DELETE) fields are not yet supported");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported.class) {
-            return new no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported(
+        if (permit == no.sikt.graphitron.model.diagnostics.DeleteRowsError.OverrideConditionNotSupported.class) {
+            return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
         // MutationTableArgError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards the stable graphitron.mutation-table-arg.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb.class) {
-            return new no.sikt.graphitron.rewrite.model.MutationTableArgError.UnsupportedVerb(
+        if (permit == no.sikt.graphitron.model.diagnostics.MutationTableArgError.UnsupportedVerb.class) {
+            return new no.sikt.graphitron.model.diagnostics.MutationTableArgError.UnsupportedVerb(
                 "INSERT", List.of("DELETE"));
         }
         // ErrorChannelWalkerError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards each arm's stable graphitron.error-channel.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields.class) {
-            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields(
+        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.MultipleErrorsFields.class) {
+            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.MultipleErrorsFields(
                 "FilmPayload", List.of("errors", "problems"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableSuccessProjectionField.class) {
-            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableSuccessProjectionField(
+        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.NonNullableSuccessProjectionField.class) {
+            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.NonNullableSuccessProjectionField(
                 "FilmPayload", "film");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableErrorsField.class) {
-            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.NonNullableErrorsField(
+        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.NonNullableErrorsField.class) {
+            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.NonNullableErrorsField(
                 "FilmPayload", "errors");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation.class) {
-            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation(
+        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation.class) {
+            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation(
                 "FilmPayload", "errors", 7, "two VALIDATION handlers in one channel");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing.class) {
-            return new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
+        if (permit == no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.HandlerSourceAccessorMissing.class) {
+            return new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.HandlerSourceAccessorMissing(
                 "FilmPayload", "FilmError", "com.example.FilmErrorHandler", "code", "code",
                 "java.lang.String", List.of("message", "path"));
         }
         // WireCoercionError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches them uniformly (Error severity), and lspCodeOf
         // forwards each arm's stable graphitron.wire-coercion.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability.class) {
-            return new no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability(
+        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.Assignability.class) {
+            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.Assignability(
                 "ID", "java.lang.String", "java.lang.Long", "@service argument 'id' of method 'getFilm'");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence.class) {
-            return new no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence(
+        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.EnumConstantDivergence.class) {
+            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.EnumConstantDivergence(
                 "com.example.jooq.enums.MpaaRating", List.of("PG_13"), List.of("G", "PG", "R"),
                 "input-bean field 'rating' of method 'createFilm'");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.WireCoercionError.NodeIdDecodedType.class) {
-            return new no.sikt.graphitron.rewrite.model.WireCoercionError.NodeIdDecodedType(
+        if (permit == no.sikt.graphitron.model.diagnostics.WireCoercionError.NodeIdDecodedType.class) {
+            return new no.sikt.graphitron.model.diagnostics.WireCoercionError.NodeIdDecodedType(
                 "Language", "java.lang.Integer", "java.lang.String",
                 "@nodeId argument 'languageId' on field 'films': parameter 'languageId' of"
                     + " condition method 'byLanguage'");
@@ -461,75 +475,75 @@ class RejectionSeverityCoverageTest {
         // ServiceCarrierShapeError sub-seal of AuthorError. One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
         // severity), and lspCodeOf forwards each arm's stable graphitron.service-carrier-shape.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.ProducerArrivalMismatch(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.ProducerArrivalMismatch.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.ProducerArrivalMismatch(
                 "FilmPayload", "Mutation", "runFilms",
-                no.sikt.graphitron.rewrite.model.Arity.MANY,
-                no.sikt.graphitron.rewrite.model.Arity.ONE,
+                no.sikt.graphitron.model.diagnostics.Arity.MANY,
+                no.sikt.graphitron.model.diagnostics.Arity.ONE,
                 "com.example.FilmService", "runFilm");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict.class) {
-            return new no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError.DataFieldArrivalConflict(
+        if (permit == no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.DataFieldArrivalConflict.class) {
+            return new no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError.DataFieldArrivalConflict(
                 "FilmListPayload", "Mutation", "runFilmsList", "films", "Film",
-                no.sikt.graphitron.rewrite.model.Arity.MANY,
-                no.sikt.graphitron.rewrite.model.Arity.MANY);
+                no.sikt.graphitron.model.diagnostics.Arity.MANY,
+                no.sikt.graphitron.model.diagnostics.Arity.MANY);
         }
         // PivotError sub-seal of AuthorError (@pivot classification). One sample per arm;
         // Diagnostics.compute's switch on Rejection.AuthorError catches them uniformly (Error
         // severity), and lspCodeOf forwards each arm's stable graphitron.pivot.* code.
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.NonNullSlot.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.NonNullSlot("nn", "TranslatedTexts");
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.NonNullSlot.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.NonNullSlot("nn", "TranslatedTexts");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.NonScalarSlot.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.NonScalarSlot("nn", "TranslatedTexts");
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.NonScalarSlot.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.NonScalarSlot("nn", "TranslatedTexts");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.DivergentSlotType.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.DivergentSlotType(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.DivergentSlotType.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.DivergentSlotType(
                 "nn", "TranslatedTexts", "String", "Int");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.VocabularyNotTextEnum.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.VocabularyNotTextEnum("Sprak");
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.VocabularyNotTextEnum.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.VocabularyNotTextEnum("Sprak");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.SlotMissingFromVocabulary.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.SlotMissingFromVocabulary(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.SlotMissingFromVocabulary.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.SlotMissingFromVocabulary(
                 "se", "Sprak", List.of("nn", "nb"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.DuplicateSlotToken.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.DuplicateSlotToken(
                 "nob", List.of("nb", "bokmaal"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ColumnUnresolved.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.ColumnUnresolved(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.ColumnUnresolved.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.ColumnUnresolved(
                 "on", "langcode", "film_translation", List.of("lang_code", "title_txt"));
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ValueTypeMismatch.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.ValueTypeMismatch(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.ValueTypeMismatch.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.ValueTypeMismatch(
                 "amount", "java.math.BigDecimal", "String");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.ListReturn.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.ListReturn("Film.titleTranslations");
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.ListReturn.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.ListReturn("Film.titleTranslations");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.UnsupportedReferencePath.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.UnsupportedReferencePath(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.UnsupportedReferencePath.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.UnsupportedReferencePath(
                 "Film.titleTranslations", "the path has 2 hops");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.RecordBackedParent.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.RecordBackedParent(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.RecordBackedParent.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.RecordBackedParent(
                 "Holder.texts", "Holder");
         }
-        if (permit == no.sikt.graphitron.rewrite.model.PivotError.InvalidProjectionType.class) {
-            return new no.sikt.graphitron.rewrite.model.PivotError.InvalidProjectionType(
+        if (permit == no.sikt.graphitron.model.diagnostics.PivotError.InvalidProjectionType.class) {
+            return new no.sikt.graphitron.model.diagnostics.PivotError.InvalidProjectionType(
                 "Film.titleTranslations", "Language", "is not a plain output type");
         }
         // JooqRecordInputError sub-seal of AuthorError, minted by InputBeanResolver's per-column fold
         // over a @service jOOQ-record parameter. Two live writers is the rejecting shape; a group whose
         // superseded fields carry @deprecated is admitted and never reaches a rejection at all.
-        if (permit == no.sikt.graphitron.rewrite.model.JooqRecordInputError.LiveColumnCollision.class) {
-            return new no.sikt.graphitron.rewrite.model.JooqRecordInputError.LiveColumnCollision(
+        if (permit == no.sikt.graphitron.model.diagnostics.JooqRecordInputError.LiveColumnCollision.class) {
+            return new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.LiveColumnCollision(
                 "in", "modifyFilm", "com.example.FilmService", "in",
                 List.of(
-                    new no.sikt.graphitron.rewrite.model.JooqRecordInputError.CollidingField("title", false),
-                    new no.sikt.graphitron.rewrite.model.JooqRecordInputError.CollidingField("details.aka", false)),
+                    new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.CollidingField("title", false),
+                    new no.sikt.graphitron.model.diagnostics.JooqRecordInputError.CollidingField("details.aka", false)),
                 "title", "film");
         }
         return null;

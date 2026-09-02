@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
+import no.sikt.graphitron.model.schema.DeclaredDirectives;
 
 import java.util.Set;
 
@@ -12,7 +12,7 @@ import java.util.Set;
  * <p>A directive is generator-only iff it is declared in Graphitron's own
  * {@code directives.graphqls}: the set is derived from that resource via
  * {@link DeclaredDirectives}, never hand-maintained, following the
- * {@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes} precedent. A survivor is any
+ * {@link no.sikt.graphitron.model.schema.DirectiveSupportTypes} precedent. A survivor is any
  * directive name that is not in the generator-only set: this covers Apollo Federation directives
  * and any user-declared custom directive (including the built-in {@code @deprecated}).
  *

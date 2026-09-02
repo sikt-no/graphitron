@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.schema.input;
 
-import no.sikt.graphitron.rewrite.ValidationFailedException;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -11,6 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 
 @UnitTier
 class TagLinkSynthesiserTest {

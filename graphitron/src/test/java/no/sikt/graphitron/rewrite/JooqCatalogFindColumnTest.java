@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Coverage for {@link JooqCatalog#findColumn} dual-name resolution: GraphQL schema directives

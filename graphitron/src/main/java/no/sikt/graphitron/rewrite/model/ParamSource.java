@@ -4,6 +4,8 @@ import no.sikt.graphitron.rewrite.PathExpr;
 
 import java.util.List;
 import java.util.Objects;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Classifies the runtime source of a single parameter in a {@link MethodRef} or a

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.schema.input;
 
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +13,12 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.schema.input.DescriptionNoteApplier;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.TagApplier;
 
 /**
  * The sealed source carrier's rendering invariant, end to end because that is the only altitude at
@@ -50,7 +56,7 @@ class SourceNameRenderingTest {
         assertThat(inputs).hasSize(1);
 
         var bySource = SchemaInputAttribution.build(inputs);
-        var registry = RewriteSchemaLoader.load(List.of((SchemaSource.File) inputs.getFirst().source()));
+        var registry = SchemaLoader.load(List.of((SchemaSource.File) inputs.getFirst().source()));
         TagApplier.apply(registry, bySource);
         DescriptionNoteApplier.apply(registry, bySource);
 

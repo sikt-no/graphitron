@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 import java.util.Objects;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * A developer-supplied {@code @condition} method on an FK-target {@code @nodeId} filter input

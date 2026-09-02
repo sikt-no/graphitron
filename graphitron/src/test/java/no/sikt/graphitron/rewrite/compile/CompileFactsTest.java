@@ -9,10 +9,12 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
+import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.compile.CompileRound;
 
 /**
  * The {@code javac_} writer's own pins: round-trip fidelity, wholesale replacement within the

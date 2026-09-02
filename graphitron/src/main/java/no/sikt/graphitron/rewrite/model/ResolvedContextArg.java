@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.ConflictSite;
 
 /**
  * Classifier output for one {@code contextArgument} name resolved to a single Java type across

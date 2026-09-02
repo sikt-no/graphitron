@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,6 +47,12 @@ import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.table;
+import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * The fact schema's gate family: the invariants the DDL itself cannot state, each as its own
@@ -922,7 +928,7 @@ class FactSchemaGateTest {
 
             // The write path's two directions. A diagnostics preamble after capture leaves the
             // declaration standing, so a compile-facts run can neither erase nor invent membership...
-            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(
+            new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(
                 store.dsl(), new GraphIdentity("a", aDir)).write(java.util.List.of());
             assertThat(peersOf(store, "a"))
                 .as("a diagnostics preamble never touches the relation").containsExactly("b");
@@ -943,8 +949,8 @@ class FactSchemaGateTest {
                                      String supergraph) {
         var config = new SubjectConfig(java.util.Optional.empty(),
             java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
-            java.util.Optional.empty(), no.sikt.graphitron.rewrite.lint.LintConfig.empty(),
-            no.sikt.graphitron.rewrite.session.SessionStateConfig.none());
+            java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
+            no.sikt.graphitron.model.config.SessionStateConfig.none());
         FactCapture.capture(store.dsl(), new GraphIdentity(graphName, dir), config,
             CapturedStore.registryOf(dir, FIXTURE), CapturedStore.attributionOf(dir));
     }

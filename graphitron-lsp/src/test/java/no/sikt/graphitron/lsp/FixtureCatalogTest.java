@@ -7,11 +7,11 @@ import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.classpath.CompletionData;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -73,7 +73,7 @@ class FixtureCatalogTest {
                     .name("x").type(Scalars.GraphQLInt).build())
                 .build())
             .build();
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(), Path.of(""), "FixtureCatalogTest", Path.of(""), "fake.output", JOOQ_PACKAGE
         );
         return CatalogBuilder.build(jooq, schema, ctx);

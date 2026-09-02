@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * {@link TableRef#sameTable(String)} / {@link TableRef#denotesSameTableAs(TableRef)}

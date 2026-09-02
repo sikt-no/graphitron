@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * What an explicit {@code null} on one UPDATE input field means, decided once by

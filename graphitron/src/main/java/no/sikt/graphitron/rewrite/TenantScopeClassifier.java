@@ -2,13 +2,14 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Classifies every catalog table into a tenant scope against the configured

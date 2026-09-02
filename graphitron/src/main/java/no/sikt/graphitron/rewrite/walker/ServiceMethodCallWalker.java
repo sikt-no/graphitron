@@ -11,9 +11,9 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.model.WalkerResult;
 

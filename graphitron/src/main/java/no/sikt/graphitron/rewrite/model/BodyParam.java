@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * One parameter of a generated condition predicate, as seen from the body side. Carries what

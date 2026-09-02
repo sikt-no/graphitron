@@ -1,13 +1,13 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.rewrite.capture.CapturePort;
-import no.sikt.graphitron.rewrite.capture.GraphIdentity;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.SchemaParseException;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
@@ -15,13 +15,13 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
-import no.sikt.graphitron.rewrite.capture.SourceWalker;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.compile.CompileFacts;
+import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.sources.SourceWalker;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.capture.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
-import no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts;
-import no.sikt.graphitron.rewrite.diagnostics.RejectionFacts;
+import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
+import no.sikt.graphitron.model.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.DevQueryExecutor;
@@ -55,6 +55,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Single user-facing entry point for editing graphitron schemas. Runs the
@@ -309,7 +312,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // given either way.
         this.sessionCapture = CapturePort.over(sessionStore);
 
-        var initialCtxHolder = new AtomicReference<RewriteContext>();
+        var initialCtxHolder = new AtomicReference<RunContext>();
         var initialHolder = new AtomicReference<InitialOutput>();
         try {
             withCodegenScope(ctx -> {
@@ -624,7 +627,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * The claims payload stays raw here (inline or {@code @file}); the tool resolves the
      * {@code @file} form per call so file edits apply without a restart.
      */
-    ExecuteTool.Config buildExecuteToolConfig(RewriteContext ctx) throws MojoExecutionException {
+    ExecuteTool.Config buildExecuteToolConfig(RunContext ctx) throws MojoExecutionException {
         DevDatabase devDb = resolveDevDatabase();
         if (devDb == null) {
             return null;
@@ -713,7 +716,7 @@ public class DevMojo extends AbstractRewriteMojo {
         return pom != null && !pom.isBlank() ? pom : null;
     }
 
-    private Set<Path> startSchemaWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {
+    private Set<Path> startSchemaWatcher(RunContext ctx, Workspace workspace) throws MojoExecutionException {
         Set<Path> roots = resolveSchemaRoots(ctx);
         if (roots.isEmpty()) {
             cleanup();
@@ -731,7 +734,7 @@ public class DevMojo extends AbstractRewriteMojo {
         return roots;
     }
 
-    private void startClasspathWatcher(RewriteContext ctx, Workspace workspace) throws MojoExecutionException {
+    private void startClasspathWatcher(RunContext ctx, Workspace workspace) throws MojoExecutionException {
         Set<Path> roots = resolveClasspathRoots(ctx);
         if (roots.isEmpty()) {
             getLog().info("graphitron:dev: skipping classpath watcher; "
@@ -761,7 +764,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * straight off the captured {@code ctx}'s path fields without a codegen
      * scope, unlike the regenerate / rebuildCatalog triggers.
      */
-    private void startSourceWatcher(RewriteContext ctx) throws MojoExecutionException {
+    private void startSourceWatcher(RunContext ctx) throws MojoExecutionException {
         Set<Path> roots = resolveSourceRoots(ctx);
         if (roots.isEmpty()) {
             getLog().info("graphitron:dev: skipping source watcher; "
@@ -790,7 +793,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * @param announce whether to say so on the console; the watcher's refresh is news, the startup
      *                 seed is not, the line after it already reporting how many roots were walked
      */
-    private void refreshSourceFacts(RewriteContext ctx, boolean announce) {
+    private void refreshSourceFacts(RunContext ctx, boolean announce) {
         try {
             var walk = sourceWalker.walkFiles(ctx.compileSourceRoots());
             if (javaSourceFacts != null) {
@@ -825,7 +828,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * itself: the scope around this is the mojo's classloader plumbing, not anything the round
      * decides.
      */
-    void regeneratePass(RewriteContext ctx, Workspace workspace) {
+    void regeneratePass(RunContext ctx, Workspace workspace) {
         getLog().info(banner("regenerate"));
         var round = runGeneratorPass(ctx, "regenerate");
         // A clean regen produces the writer's delta + this schema's compile graph; recompile
@@ -902,7 +905,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * did not classify: the LSP must still come up so the developer can fix the schema, and the
      * schema watcher will re-build on the next save.
      */
-    private InitialOutput buildOutputQuietly(RewriteContext ctx) {
+    private InitialOutput buildOutputQuietly(RunContext ctx) {
         try {
             var output = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).buildOutput();
             return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
@@ -923,8 +926,8 @@ public class DevMojo extends AbstractRewriteMojo {
      * reading a build's own findings from the store those lists are written to.
      */
     private record InitialOutput(CompletionData catalog, boolean classified,
-                                 List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
-                                 List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {
+                                 List<no.sikt.graphitron.model.diagnostics.ValidationError> walkErrors,
+                                 List<no.sikt.graphitron.model.diagnostics.BuildWarning> warnings) {
 
         /**
          * The same carrier read off a generating startup's own pass, so the initial run's products
@@ -949,8 +952,8 @@ public class DevMojo extends AbstractRewriteMojo {
      * path, so a broken build keeps the previous snapshot's rows instead of writing an empty
      * partition that would read as a clean schema.
      */
-    private void writeReportFacts(List<no.sikt.graphitron.rewrite.ValidationError> walkErrors,
-                                  List<no.sikt.graphitron.rewrite.BuildWarning> warnings) {
+    private void writeReportFacts(List<no.sikt.graphitron.model.diagnostics.ValidationError> walkErrors,
+                                  List<no.sikt.graphitron.model.diagnostics.BuildWarning> warnings) {
         rejectionFacts.write(walkErrors);
         warningFacts.write(warnings);
     }
@@ -973,11 +976,11 @@ public class DevMojo extends AbstractRewriteMojo {
      * session's readers are on. A per-pass port where there is no session, which is the unit tier
      * driving {@link #runGeneratorPass} directly without {@link #execute()} having opened one.
      */
-    private CapturePort captureFor(RewriteContext ctx) {
+    private CapturePort captureFor(RunContext ctx) {
         return sessionCapture != null ? sessionCapture : CapturePort.forContext(ctx);
     }
 
-    PassRound runGeneratorPass(RewriteContext ctx, String label) {
+    PassRound runGeneratorPass(RunContext ctx, String label) {
         // Cleared up front so a failed pass never leaves a stale generation for the compile driver to
         // act on; reassigned from the pass below, which returns one only when it emitted.
         this.lastGeneration = null;
@@ -1031,7 +1034,7 @@ public class DevMojo extends AbstractRewriteMojo {
         Path classesDir = resolveGraphitronClassesDirectory(project.getBasedir().toPath());
         try {
             this.incrementalCompiler = new IncrementalCompiler(classesDir,
-                resolveCompileClasspath().stream().map(no.sikt.graphitron.rewrite.ClasspathEntry::path).toList());
+                resolveCompileClasspath().stream().map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
         } catch (Exception e) {
             getLog().warn("graphitron:dev: incremental compile unavailable; "
                 + "generating without compiling this session: " + e.getMessage());
@@ -1149,7 +1152,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * only for URIs whose path ends with one of the configured schema
      * extensions; non-schema saves (e.g. {@code .md}) are silently dropped.
      * The LSP module stays suffix-agnostic — extension-set ownership lives
-     * here, in the Mojo, alongside {@link RewriteContext#schemaFileExtensions()}.
+     * here, in the Mojo, alongside {@link RunContext#schemaFileExtensions()}.
      */
     static Consumer<String> buildSaveListener(Set<String> suffixes, DebounceExecutor debounce, Runnable regen) {
         return uri -> {
@@ -1164,7 +1167,7 @@ public class DevMojo extends AbstractRewriteMojo {
      * file arm rather than reconstructed from its name, so nothing here re-derives path-ness from a
      * string the producer already classified. A label has no directory to watch.
      */
-    private static Set<Path> resolveSchemaRoots(RewriteContext ctx) {
+    private static Set<Path> resolveSchemaRoots(RunContext ctx) {
         Set<Path> roots = new LinkedHashSet<>();
         for (var input : ctx.schemaInputs()) {
             switch (input.source()) {
@@ -1180,7 +1183,7 @@ public class DevMojo extends AbstractRewriteMojo {
         return roots;
     }
 
-    private static Set<Path> resolveSourceRoots(RewriteContext ctx) {
+    private static Set<Path> resolveSourceRoots(RunContext ctx) {
         // Watch every reactor project's compile source roots (hand-written plus
         // generated-sources) so service / condition / record sources in sibling
         // modules also refresh goto-definition positions. Same roots the catalog
@@ -1194,7 +1197,7 @@ public class DevMojo extends AbstractRewriteMojo {
         return roots;
     }
 
-    private static Set<Path> resolveClasspathRoots(RewriteContext ctx) {
+    private static Set<Path> resolveClasspathRoots(RunContext ctx) {
         // Watch every reactor project's target/classes so service/condition/record
         // classes declared in sibling modules also trigger rebuilds.
         var roots = new java.util.LinkedHashSet<Path>();

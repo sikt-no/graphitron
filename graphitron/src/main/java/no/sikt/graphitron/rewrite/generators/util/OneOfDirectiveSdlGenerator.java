@@ -5,7 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
+import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;

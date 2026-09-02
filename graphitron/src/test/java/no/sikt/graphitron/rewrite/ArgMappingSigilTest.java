@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 
 /**
  * Unit-tier rule-table pin for {@link ArgMappingSigil}, the shared owner of the argMapping

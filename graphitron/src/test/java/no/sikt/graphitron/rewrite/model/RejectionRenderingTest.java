@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * Captures the {@code message()} contract on every {@link Rejection} sealed leaf, so the lift

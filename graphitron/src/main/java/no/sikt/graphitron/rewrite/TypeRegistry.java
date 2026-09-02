@@ -8,7 +8,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Type-axis classification registry that funnels every write through {@link #register} and emits a

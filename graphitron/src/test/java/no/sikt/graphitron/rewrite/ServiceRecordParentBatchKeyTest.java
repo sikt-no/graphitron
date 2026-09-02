@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
@@ -10,6 +10,8 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * A child {@code @service} field batches against a key its parent can produce, and the {@code Sources}
@@ -96,7 +98,7 @@ class ServiceRecordParentBatchKeyTest {
             .as("the wrap is authored by the Sources signature, not derived from a lift")
             .isInstanceOf(SourceKey.Wrap.TableRecord.class);
         assertThat(srf.sourceKey().columns())
-            .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+            .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
             .as("the key columns are the element table's primary key, not the parent's")
             .containsExactly("language_id");
         assertThat(srf.sourceShape())
@@ -348,7 +350,7 @@ class ServiceRecordParentBatchKeyTest {
             });
         assertThat(srf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
         assertThat(srf.sourceKey().columns())
-            .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+            .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
             .containsExactly("language_id");
         assertThat(srf.sourceShape()).isEqualTo(SourceShape.Record);
     }

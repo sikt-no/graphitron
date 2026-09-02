@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.TableRef;
+
 
 /**
  * Outcome of resolving the return type name of a field against the classified

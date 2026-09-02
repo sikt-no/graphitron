@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * The Check-2 concrete-condition-param check must match by jOOQ class identity, not by a
@@ -22,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * where identity and name compares agree; this class adds the discriminating shape only a
  * bare-name collision can produce. Because every operand here is a catalog-built {@code TableRef},
  * a genuine-mismatch case that still rejects doubles as the enforcer that the identity arm of
- * {@link no.sikt.graphitron.rewrite.model.TableRef#denotesSameTableAs} (not the name fallback)
+ * {@link no.sikt.graphitron.model.jooq.TableRef#denotesSameTableAs} (not the name fallback)
  * decided the compare.
  */
 @PipelineTier
@@ -32,8 +33,8 @@ class MultiSchemaConditionParamTest {
     private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(),
             Path.of(""), "MultiSchemaConditionParamTest",
             Path.of(""),

@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import java.util.List;
 import java.util.Objects;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The batch key extracted from a source-bearing field's parent: the key column tuple plus the

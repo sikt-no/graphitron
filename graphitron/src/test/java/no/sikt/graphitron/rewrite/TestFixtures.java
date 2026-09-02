@@ -2,11 +2,11 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
+import no.sikt.graphitron.model.jooq.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.KeyLift;
@@ -20,12 +20,13 @@ import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.WalkerResult;
 import no.sikt.graphitron.rewrite.walker.ServiceMethodCallWalker;
 
 import java.util.ArrayList;
 import java.util.List;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Shared factory methods for model objects used across test classes.
@@ -245,7 +246,7 @@ public final class TestFixtures {
      * arm's derivation ({@code RecordN}).
      */
     public static SourceKey polymorphicAccessorParentSourceKey(
-            no.sikt.graphitron.rewrite.model.TableRef hubTable,
+            no.sikt.graphitron.model.jooq.TableRef hubTable,
             no.sikt.graphitron.rewrite.model.AccessorRef accessor,
             boolean isMany) {
         return new SourceKey(hubTable.primaryKeyColumns(),

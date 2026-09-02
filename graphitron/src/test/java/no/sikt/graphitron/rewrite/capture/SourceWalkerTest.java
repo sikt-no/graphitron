@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.sources.SourceWalker;
 
 /**
  * Failure-mode and contract coverage for {@link SourceWalker}: the declarations it reads off a

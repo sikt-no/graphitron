@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * The deprecation window for {@code @table} on an {@code input} type. The directive is accepted,
@@ -43,7 +44,7 @@ class TableOnInputDeprecationWarningTest {
      * metadata, mirroring {@link MutationDmlNodeIdClassificationTest}; the encoded-return arms use
      * it.
      */
-    private static final RewriteContext NODEID_CTX = new RewriteContext(
+    private static final RunContext NODEID_CTX = new RunContext(
         List.of(),
         Path.of(""), "TableOnInputDeprecationWarningTest",
         Path.of(""),

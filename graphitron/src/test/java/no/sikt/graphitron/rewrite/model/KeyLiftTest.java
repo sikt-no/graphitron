@@ -8,6 +8,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Pins for the {@link KeyLift} lift fact: the {@link KeyLift#wrap()} shape derivation and

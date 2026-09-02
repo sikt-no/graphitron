@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +26,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Resolver-tier coverage for {@link ConnectionPromoter}: asserts that promotion synthesises
@@ -44,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConnectionPromoterTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConnectionPromoterTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );
@@ -696,7 +697,7 @@ class ConnectionPromoterTest {
     }
 
     private static String prelude() {
-        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = SchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8) + "\n";
         } catch (IOException e) {

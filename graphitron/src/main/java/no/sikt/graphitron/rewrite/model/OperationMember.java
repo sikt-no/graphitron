@@ -5,6 +5,8 @@ import no.sikt.graphitron.rewrite.ArgumentRef;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * One member of a coordinate's <em>operation set</em>: the 0..N relation

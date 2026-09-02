@@ -12,6 +12,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * A filter input on a root multitable interface / union query field is lowered
@@ -633,30 +637,30 @@ class MultiTableFilterLoweringTest {
      * field as the consequence ("2 participants could not be lowered") and its cause as a diagnostic
      * at the participant's own coordinate, so the typed arm is read from there at both coordinates.
      */
-    private static no.sikt.graphitron.rewrite.model.Rejection firstAmbiguousMethod(
+    private static no.sikt.graphitron.model.diagnostics.Rejection firstAmbiguousMethod(
             GraphitronSchema schema) {
         return schema.diagnostics().stream()
-            .map(no.sikt.graphitron.rewrite.ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod)
+            .map(no.sikt.graphitron.model.diagnostics.ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod)
             .findFirst()
             .orElseThrow(() -> new AssertionError(
                 "no typed AmbiguousMethod in " + schema.diagnostics()));
     }
 
     /**
-     * The rejection is a typed {@link no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod}
+     * The rejection is a typed {@link no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod}
      * naming the parameter position the declarations disagree on. The axis is the assertion, not the
      * rendered sentence: the message is data-driven from exactly this value.
      */
     private static void assertAmbiguousAtParameterPosition(
-            no.sikt.graphitron.rewrite.model.Rejection rejection, int position) {
+            no.sikt.graphitron.model.diagnostics.Rejection rejection, int position) {
         assertThat(rejection)
             .as("a shape-disagreeing @condition overload set must reject as a typed AmbiguousMethod")
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod.class);
         var ambiguous =
-            (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) rejection;
+            (no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod) rejection;
         assertThat(ambiguous.ambiguity())
-            .isEqualTo(new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+            .isEqualTo(new no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod
                 .Ambiguity.ParameterPosition(position));
         assertThat(ambiguous.candidateSignatures())
             .as("the overload set the author wrote arrives as data, not as prose")

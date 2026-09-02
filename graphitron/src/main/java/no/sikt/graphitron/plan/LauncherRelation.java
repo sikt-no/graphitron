@@ -43,7 +43,7 @@ import java.util.Optional;
  * <p>The comparison is exact, and complete for being exact: both sides of the key are names this
  * generator minted onto one owning class, so two rows that mint one method carry the identical
  * ref. A case fold belongs only where two namespaces meet, which a method name never does (it is
- * never a file name; {@link no.sikt.graphitron.rewrite.model.Rejection.InvalidSchema.CaseFoldCollision}
+ * never a file name; {@link no.sikt.graphitron.model.diagnostics.Rejection.InvalidSchema.CaseFoldCollision}
  * carries the filesystem rationale for the population that does). Folding here would reject pairs
  * whose emitted methods are distinct and legal, which is by definition not a collision. The owner
  * half needs no fold of its own either: {@code GraphitronSchemaBuilder}'s type-name-stem census

@@ -2,6 +2,9 @@ package no.sikt.graphitron.rewrite.lint;
 
 import graphql.language.SourceLocation;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.lint.DeprecationRecognizer;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * The context a {@link LintVisitor} receives for one {@link LintTarget}: a {@code report} sink that

@@ -9,9 +9,9 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -309,7 +309,7 @@ class IncrementalCompileHarnessTest {
         Path schemaFile = workDir.resolve("schema.graphqls");
         Files.writeString(schemaFile, schemaText);
 
-        RewriteContext ctx = new RewriteContext(
+        RunContext ctx = new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             workDir, "IncrementalCompileHarnessTest",
             workDir.resolve("generated-sources"),
@@ -373,7 +373,7 @@ class IncrementalCompileHarnessTest {
     }
 
     private static String directivesPrelude() {
-        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = SchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8) + "\n";
         } catch (Exception e) {

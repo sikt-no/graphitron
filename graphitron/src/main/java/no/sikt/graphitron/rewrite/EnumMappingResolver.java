@@ -1,13 +1,13 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -65,7 +65,7 @@ final class EnumMappingResolver {
      *   <li>{@link Divergence}: the GraphQL side is a classified enum but one or more values have
      *       no matching Java constant; carries the per-value diff so each caller shapes its own
      *       result (a column-flavoured {@link Mismatch} message, or a typed
-     *       {@link no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence}).</li>
+     *       {@link no.sikt.graphitron.model.diagnostics.WireCoercionError.EnumConstantDivergence}).</li>
      * </ul>
      */
     sealed interface EnumConstantParity {

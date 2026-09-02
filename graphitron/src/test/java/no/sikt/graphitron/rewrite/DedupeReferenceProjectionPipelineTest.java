@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -11,6 +11,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Regression coverage: a composite {@code @node(keyColumns: [...])} type with a sibling
@@ -28,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DedupeReferenceProjectionPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "DedupeReferenceProjectionPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );

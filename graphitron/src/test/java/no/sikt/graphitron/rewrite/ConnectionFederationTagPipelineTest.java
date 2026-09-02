@@ -7,8 +7,8 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,6 +24,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * End-to-end coverage of federation {@code @tag} inheritance: the federation {@code @tag} on an {@code @asConnection} carrier
@@ -94,7 +95,7 @@ class ConnectionFederationTagPipelineTest {
                 films: [Film!]! @asConnection @defaultOrder(primaryKey: true)
             }
             """);
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(src), Optional.of("catalog"), Optional.empty())),
             tmp, "ConnectionFederationTagPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
         var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();

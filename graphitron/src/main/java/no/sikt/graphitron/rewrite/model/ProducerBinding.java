@@ -4,6 +4,9 @@ import graphql.language.SourceLocation;
 
 import java.util.Objects;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * One observed binding from a producer site that reaches an SDL type. Carries the reflected

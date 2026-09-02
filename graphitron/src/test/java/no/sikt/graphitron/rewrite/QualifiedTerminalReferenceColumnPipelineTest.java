@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -11,11 +11,12 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pipeline coverage: a scalar {@code @reference} field whose FK path terminates on a table whose
  * bare name collides across generated schemas must resolve the column against the FK-pinned
- * terminal {@link no.sikt.graphitron.rewrite.model.TableRef} (class identity), not re-resolve the
+ * terminal {@link no.sikt.graphitron.model.jooq.TableRef} (class identity), not re-resolve the
  * bare SQL name through the catalog. A bare-name lookup is ambiguous on the colliding name and
  * would spuriously demote the field to {@link GraphitronField.UnclassifiedField}, with no
  * author-side workaround: the {@code @reference} key names the FK on the source table and carries
@@ -40,8 +41,8 @@ class QualifiedTerminalReferenceColumnPipelineTest {
     private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(), Path.of(""), "QualifiedTerminalReferenceColumnPipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }

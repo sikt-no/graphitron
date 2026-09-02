@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 

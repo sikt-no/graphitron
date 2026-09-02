@@ -4,7 +4,7 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NestingType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 

@@ -340,7 +340,7 @@ Be aware of what this does and does not give you. A session variable is a conven
 
 == The non-emitting goals' package sentinel
 
-The `validate` and `capture` goals exist so consumers can run `mvn graphitron:validate` or `mvn graphitron:capture` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the classifier stage still type-checks against `RewriteContext`'s non-null contract. The sentinel never reaches generated code; neither pipeline emits anything.
+The `validate` and `capture` goals exist so consumers can run `mvn graphitron:validate` or `mvn graphitron:capture` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the classifier stage still type-checks against `RunContext`'s non-null contract. The sentinel never reaches generated code; neither pipeline emits anything.
 
 If the parameters *are* configured (e.g. when `validate` is bound to the `validate` lifecycle phase alongside a `generate` execution), the configured values flow through normally; the sentinel only activates when the parameters are absent.
 

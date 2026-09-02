@@ -18,13 +18,13 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
-import no.sikt.graphitron.rewrite.derive.FieldClaim;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.model.derive.FieldClaim;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -34,8 +34,8 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.RoutineResolution;
-import no.sikt.graphitron.rewrite.model.TableRef;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.jooq.TableRef;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -45,6 +45,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
 
 /**
  * Assembles a {@link CompletionData} snapshot the LSP queries against. Sources
@@ -143,7 +146,7 @@ public final class CatalogBuilder {
      * the overload below, which is what makes "one census per pass" structural rather than
      * incidental.
      */
-    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
+    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RunContext ctx) {
         return build(jooq, assembled, ctx, buildExternalReferences(ctx));
     }
 
@@ -153,7 +156,7 @@ public final class CatalogBuilder {
      * builder scan its own would parse every consumer class twice and could disagree with the store
      * about what is on the classpath.
      */
-    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx,
+    public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RunContext ctx,
                                        List<CompletionData.ExternalReference> census) {
         // FQN of the generated jOOQ Keys class (jOOQ emits it at the package
         // root). Both the table classFqn and this Keys FQN are the join keys the
@@ -255,19 +258,19 @@ public final class CatalogBuilder {
      * straight off the classfile (parameter names included when the
      * consumer compiled with {@code -parameters}).
      *
-     * <p>Reads from {@link RewriteContext#classpathRoots()}: every reactor
+     * <p>Reads from {@link RunContext#classpathRoots()}: every reactor
      * project's compile-output directory, populated by the mojo from
      * {@code MavenSession.getAllProjects()}. Falls back to {@code
      * <basedir>/target/classes} as a single-root default when the context
      * carries no classpathRoots, so unit-tier callers built off
-     * {@link RewriteContext}'s six-arg overload get the single-root scope.
+     * {@link RunContext}'s six-arg overload get the single-root scope.
      *
      * <p>Public because the capture load reads the same census on its own to fill the store's
      * {@code extension_} family; {@link #build} keeps reading it as one part of the LSP catalog.
      */
-    public static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
+    public static List<CompletionData.ExternalReference> buildExternalReferences(RunContext ctx) {
         var roots = ctx.classpathRoots().isEmpty()
-            ? List.of(no.sikt.graphitron.rewrite.ClasspathEntry.project(
+            ? List.of(no.sikt.graphitron.model.config.ClasspathEntry.project(
                 ctx.basedir().resolve("target/classes")))
             : ctx.classpathRoots();
         // Bytecode-derived structure only; the class / method Javadoc the hover

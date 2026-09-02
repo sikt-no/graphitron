@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.test.FactWriters;
 
 /**
  * Structural guard: a test does not stand a fact store up for itself. It takes one from the

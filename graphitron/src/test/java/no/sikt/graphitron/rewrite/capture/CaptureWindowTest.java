@@ -2,9 +2,9 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
-import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
+import no.sikt.graphitron.model.derive.ClassifiedRun;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +16,9 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * The capture's window: how long the store a run captured into stays open, and who may read it

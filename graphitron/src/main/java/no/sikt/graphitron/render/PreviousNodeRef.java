@@ -1,7 +1,7 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Where a correlated routine call's {@link ParamSource.SourceColumn} bindings read the previous

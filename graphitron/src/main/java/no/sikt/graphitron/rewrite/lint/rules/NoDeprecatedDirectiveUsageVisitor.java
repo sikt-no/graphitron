@@ -11,10 +11,10 @@ import graphql.language.ObjectValue;
 import graphql.language.Type;
 import graphql.language.TypeName;
 import graphql.language.Value;
-import no.sikt.graphitron.rewrite.lint.DeprecationRecognizer;
+import no.sikt.graphitron.model.lint.DeprecationRecognizer;
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.lint.LintTarget;
 import no.sikt.graphitron.rewrite.lint.LintVisitor;
 

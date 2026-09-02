@@ -14,13 +14,14 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.rewrite.FactWriters.refreshJavaSources;
+import static no.sikt.graphitron.model.test.FactWriters.refreshJavaSources;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import no.sikt.graphitron.model.sources.SourceWalker;
 
 /**
  * The {@code java_} family's anchors: the rows are the parse reduced the same way the walk's own

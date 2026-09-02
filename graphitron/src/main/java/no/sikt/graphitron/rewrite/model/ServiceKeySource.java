@@ -2,6 +2,8 @@ package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 import java.util.Objects;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Where the jOOQ record carrying a batched child {@code @service} field's key columns is bound in

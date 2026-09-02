@@ -1,13 +1,15 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Wiring contract of {@link ValidationReport#from}: the report carries the two lists it was handed

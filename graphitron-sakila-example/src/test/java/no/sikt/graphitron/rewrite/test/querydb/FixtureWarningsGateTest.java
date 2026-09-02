@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
-import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * Fixture warnings-as-errors gate: builds the sakila-example schema and asserts the
@@ -48,7 +49,7 @@ class FixtureWarningsGateTest {
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
     private static List<BuildWarning> buildAllWarnings() {
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "FixtureWarningsGateTest",
             FIXTURE_SCHEMA.getParent(),
@@ -68,13 +69,13 @@ class FixtureWarningsGateTest {
         // same-table @asConnection one below) is itself a LintFinding but stays in scope here.
         List<BuildWarning> warnings = allWarnings.stream()
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
-                && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.ENGINE))
+                && lf.rule().source() == no.sikt.graphitron.model.lint.LintRule.Source.ENGINE))
             // Codegen advisories (whole-build facts folded in at report assembly): this gate's
-            // RewriteContext has no <sessionState>, so the no-session-state advisory fires. The
+            // RunContext has no <sessionState>, so the no-session-state advisory fires. The
             // category is owned by SessionStateWarningsTest and DependencyVersionWarningsTest, so
             // segregate it like the ENGINE lint findings above.
             .filter(w -> !(w instanceof BuildWarning.LintFinding lf
-                && lf.rule().source() == no.sikt.graphitron.rewrite.lint.LintRule.Source.CODEGEN))
+                && lf.rule().source() == no.sikt.graphitron.model.lint.LintRule.Source.CODEGEN))
             .toList();
 
         assertThat(warnings)

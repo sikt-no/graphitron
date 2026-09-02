@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.maven;
 
 import graphql.GraphQLError;
 import graphql.schema.idl.errors.SchemaProblem;
-import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 
 import java.io.IOException;
 import java.nio.file.Files;

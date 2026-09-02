@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -196,10 +196,10 @@ class GeneratorDeterminismTest {
         }
     }
 
-    private static RewriteContext contextFor(Path outputDir) {
+    private static RunContext contextFor(Path outputDir) {
         // The fixture schema binds a $session service parameter, so the context needs the same
         // <sessionState> pair the example pom configures for the default execution.
-        return new RewriteContext(
+        return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
             outputDir,

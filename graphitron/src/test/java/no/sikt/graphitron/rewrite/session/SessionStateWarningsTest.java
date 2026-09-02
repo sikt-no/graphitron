@@ -1,11 +1,12 @@
 package no.sikt.graphitron.rewrite.session;
 
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 
 /**
  * Unit-tier coverage of the one codegen-config advisory about the owned-connection runtime's

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
+
 /**
  * One SQL column that two UPDATE input fields both decode a value for, and the walker's finished
  * decision that the two must be checked equal before any DML runs.

@@ -9,14 +9,14 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.ArrayList;
@@ -24,6 +24,11 @@ import java.util.List;
 import java.util.Map;
 
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
+import no.sikt.graphitron.model.diagnostics.PivotError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Validates a {@link GraphitronSchema}, collecting all errors rather than failing on the first.
@@ -622,7 +627,7 @@ public class GraphitronSchemaValidator {
     }
 
     private static void emitDeferredError(GraphitronField field,
-            no.sikt.graphitron.rewrite.model.Rejection.Deferred deferred, List<ValidationError> errors) {
+            no.sikt.graphitron.model.diagnostics.Rejection.Deferred deferred, List<ValidationError> errors) {
         errors.add(new ValidationError(
             field.qualifiedName(),
             deferred.prefixedWith("Field '" + field.qualifiedName() + "': "),
@@ -1171,7 +1176,7 @@ public class GraphitronSchemaValidator {
         }
     }
 
-    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
+    private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.model.jooq.TableRef targetTable, List<ValidationError> errors) {
         if (path.isEmpty()) return; // classifier guarantees non-empty for this variant; skip in isolated validator unit tests
         // Every JoinStep permit implements HasTargetTable. The comparison is
         // uniform across permits.
@@ -1305,7 +1310,7 @@ public class GraphitronSchemaValidator {
      * Shared by both {@code @pivot} delivery leaves: mirrors at validate time the classifier
      * invariants that survive into the model. The schema-shape rejections (non-null / non-scalar
      * slots, vocabulary misses, unresolved columns, path shape, record parent, list return) fire
-     * at classify time as typed {@link no.sikt.graphitron.rewrite.model.PivotError} arms via
+     * at classify time as typed {@link no.sikt.graphitron.model.diagnostics.PivotError} arms via
      * {@code UnclassifiedField}; what remains checkable on the classified leaf is the
      * distinct-token invariant (the emitter would otherwise project two identical aggregates
      * under different aliases) plus the slot leaves' own validation, routed through the same
@@ -1323,7 +1328,7 @@ public class GraphitronSchemaValidator {
                 slots.sort(String::compareTo);
                 errors.add(new ValidationError(
                     field.qualifiedName(),
-                    new no.sikt.graphitron.rewrite.model.PivotError.DuplicateSlotToken(token, slots),
+                    new no.sikt.graphitron.model.diagnostics.PivotError.DuplicateSlotToken(token, slots),
                     field.location()));
             }
         });
@@ -1554,10 +1559,10 @@ public class GraphitronSchemaValidator {
                 continue;
             }
             if (rf instanceof ChildField.ColumnBackedField rcf && of instanceof ChildField.ColumnBackedField ocf) {
-                var repSql = rcf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName).toList();
-                var otherSql = ocf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName).toList();
-                var repClasses = rcf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList();
-                var otherClasses = ocf.columns().stream().map(no.sikt.graphitron.rewrite.model.ColumnRef::columnClass).toList();
+                var repSql = rcf.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList();
+                var otherSql = ocf.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList();
+                var repClasses = rcf.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::columnClass).toList();
+                var otherClasses = ocf.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::columnClass).toList();
                 if (!repSql.equals(otherSql)) {
                     errors.add(new ValidationError(
                         coord,
@@ -2046,7 +2051,7 @@ public class GraphitronSchemaValidator {
      * The binary {@code Outcome} witness ({@code Success | ErrorList}) has one error slot, so a type
      * carrying two {@link ChildField.ErrorsField} children has no well-defined success/error fork.
      * This is the validator face of the {@code OutcomeType} classification's
-     * {@link no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields} rejection;
+     * {@link no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.MultipleErrorsFields} rejection;
      * it runs over the classified model so a mis-shaped type fails the build rather than reaching
      * the walker.
      *
@@ -2068,7 +2073,7 @@ public class GraphitronSchemaValidator {
             var first = errorsFields.get(0);
             errors.add(new ValidationError(
                 first.qualifiedName(),
-                new no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.MultipleErrorsFields(
+                new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.MultipleErrorsFields(
                     entry.getKey(), names),
                 first.location()
             ));

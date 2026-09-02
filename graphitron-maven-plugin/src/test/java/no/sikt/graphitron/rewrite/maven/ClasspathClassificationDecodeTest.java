@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.rewrite.ClasspathEntry;
-import no.sikt.graphitron.rewrite.ClasspathEntry.Origin;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.config.ClasspathEntry.Origin;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;

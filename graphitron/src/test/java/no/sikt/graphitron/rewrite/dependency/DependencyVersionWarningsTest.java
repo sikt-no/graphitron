@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.dependency;
 
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -12,6 +12,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.DependencyVersions;
+import no.sikt.graphitron.model.config.ObservedVersion;
+import no.sikt.graphitron.model.config.WatchedDependency;
 
 /**
  * Unit-tier coverage of the dependency-currency nudge: the minor-line predicate and the message

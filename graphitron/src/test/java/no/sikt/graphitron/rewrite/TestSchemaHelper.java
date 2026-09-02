@@ -3,11 +3,20 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Shared test helper that builds a {@link GraphitronSchema} from inline SDL,
@@ -33,11 +42,11 @@ public final class TestSchemaHelper {
      * inputs and what the parser handed back, and capture refuses to guess at one. Every file is a
      * {@code file} arm, because a source that reached a real parse necessarily is one.
      */
-    public static java.util.Map<String, no.sikt.graphitron.rewrite.schema.input.SchemaInput>
+    public static java.util.Map<String, no.sikt.graphitron.model.schema.input.SchemaInput>
             attribution(java.nio.file.Path... files) {
-        return no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution.build(
+        return no.sikt.graphitron.model.schema.input.SchemaInputAttribution.build(
             java.util.Arrays.stream(files)
-                .map(no.sikt.graphitron.rewrite.schema.input.SchemaInput::file)
+                .map(no.sikt.graphitron.model.schema.input.SchemaInput::file)
                 .toList());
     }
 
@@ -45,7 +54,7 @@ public final class TestSchemaHelper {
         return buildSchema(schemaText, TestConfiguration.testContext());
     }
 
-    public static GraphitronSchema buildSchema(String schemaText, RewriteContext ctx) {
+    public static GraphitronSchema buildSchema(String schemaText, RunContext ctx) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
         return GraphitronSchemaBuilder.build(registry, ctx);
     }
@@ -71,7 +80,7 @@ public final class TestSchemaHelper {
         return buildBundle(schemaText, TestConfiguration.testContext());
     }
 
-    public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RewriteContext ctx) {
+    public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RunContext ctx) {
         return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
     }
 
@@ -93,9 +102,9 @@ public final class TestSchemaHelper {
 
     /** {@link #storeBackedPlan(java.nio.file.Path, String)} under a context the caller names. */
     public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
-            String schemaText, RewriteContext ctx) {
+            String schemaText, RunContext ctx) {
         return storeBackedPlan(directory, schemaText, ctx,
-            no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections.Projections.empty());
+            no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections.empty());
     }
 
     /**
@@ -104,8 +113,8 @@ public final class TestSchemaHelper {
      * projected {@code argMapping} spells them here as the store would have resolved them.
      */
     public static no.sikt.graphitron.plan.EmitPlan storeBackedPlan(java.nio.file.Path directory,
-            String schemaText, RewriteContext ctx,
-            no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections.Projections projections) {
+            String schemaText, RunContext ctx,
+            no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
         try (var store = CapturedStore.ofCatalog(directory, CapturedStore.GRAPH, schemaText,
                 new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), classpathCensus(ctx))) {
@@ -132,7 +141,7 @@ public final class TestSchemaHelper {
 
     /** {@link #storeBackedFetchers(java.nio.file.Path, String)} under a context the caller names. */
     public static java.util.List<no.sikt.graphitron.javapoet.TypeSpec> storeBackedFetchers(
-            java.nio.file.Path directory, String schemaText, RewriteContext ctx) {
+            java.nio.file.Path directory, String schemaText, RunContext ctx) {
         var bundle = buildBundle(schemaText, ctx);
         var plan = storeBackedPlan(directory, schemaText, ctx);
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
@@ -146,12 +155,12 @@ public final class TestSchemaHelper {
      * classes' own root: what a rule reading a class's declared form states is only worth
      * something when the classes it read are real ones.
      */
-    public static java.util.List<no.sikt.graphitron.rewrite.catalog.CompletionData.ExternalReference>
-            classpathCensus(RewriteContext ctx) {
+    public static java.util.List<no.sikt.graphitron.model.classpath.CompletionData.ExternalReference>
+            classpathCensus(RunContext ctx) {
         try {
             var root = java.nio.file.Path.of(TestSchemaHelper.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI());
-            return no.sikt.graphitron.rewrite.catalog.ClasspathScanner.scan(root, ctx.jooqPackage());
+            return no.sikt.graphitron.model.classpath.ClasspathScanner.scan(root, ctx.jooqPackage());
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException("the test classes are not on a file path", e);
         }
@@ -160,7 +169,7 @@ public final class TestSchemaHelper {
     /**
      * The node predicate over the default test context's jOOQ catalog. Test sites that drive
      * {@link SchemaReachability}, the fact traversal, or
-     * {@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser} directly, rather than
+     * {@link no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser} directly, rather than
      * through {@link GraphitronSchemaBuilder}, pass this so their seed set matches production's.
      */
     public static NodeDeclaration nodeDeclaration() {
@@ -168,7 +177,7 @@ public final class TestSchemaHelper {
     }
 
     /** {@link #nodeDeclaration()} against a caller-supplied context (a fixture jOOQ package). */
-    public static NodeDeclaration nodeDeclaration(RewriteContext ctx) {
+    public static NodeDeclaration nodeDeclaration(RunContext ctx) {
         return new NodeDeclaration(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
     }
 
@@ -179,7 +188,7 @@ public final class TestSchemaHelper {
      * the stage order itself instead of calling this pins its own reading of the pipeline rather
      * than the pipeline.
      */
-    public static AttributedRegistry attributedRegistry(RewriteContext ctx) {
+    public static AttributedRegistry attributedRegistry(RunContext ctx) {
         return new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
     }
 
@@ -216,7 +225,7 @@ public final class TestSchemaHelper {
     }
 
     private static String loadDirectives() {
-        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = SchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

@@ -68,7 +68,7 @@ public sealed interface Exemption {
 
     /**
      * Demonstrated, but only under a catalog the corpus harness cannot reach (the harness
-     * hard-wires one {@code RewriteContext}); {@link #demonstratedBy} is the covering test on
+     * hard-wires one {@code RunContext}); {@link #demonstratedBy} is the covering test on
      * the other catalog, compile-checked. Leaves the list when the harness gains a per-example
      * context slot or the shape lands in the corpus's own catalog.
      */

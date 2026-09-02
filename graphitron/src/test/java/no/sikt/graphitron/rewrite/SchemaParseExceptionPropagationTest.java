@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,10 +14,12 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 
 /**
  * Confirms a syntactically broken schema surfaces as the same {@link SchemaParseException}
- * out of the generator entry point as out of {@code RewriteSchemaLoader.load} directly:
+ * out of the generator entry point as out of {@code SchemaLoader.load} directly:
  * the loader throws it, and it propagates unchanged through
  * {@code GraphQLRewriteGenerator.loadAttributedRegistry()} into {@link GraphQLRewriteGenerator#generate()}
  * with no translation step. The build-time pipeline therefore still fails on a broken schema,
@@ -40,7 +42,7 @@ class SchemaParseExceptionPropagationTest {
             strayTokenHere
             """);
 
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(SchemaInput.file(broken)),
             tmp, "SchemaParseExceptionPropagationTest",
             tmp,

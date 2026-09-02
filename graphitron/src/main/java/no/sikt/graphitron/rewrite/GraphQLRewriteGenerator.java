@@ -7,30 +7,30 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
-import no.sikt.graphitron.rewrite.capture.CapturePort;
-import no.sikt.graphitron.rewrite.capture.CaptureRequest;
-import no.sikt.graphitron.rewrite.capture.GraphIdentity;
-import no.sikt.graphitron.rewrite.capture.SubjectConfig;
+import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.run.CaptureRequest;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.derive.StoreDetections;
-import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.derive.StoreDetections;
+import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
-import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.rewrite.lint.LintEngine;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
-import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
-import no.sikt.graphitron.rewrite.schema.input.DescriptionNoteApplier;
-import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.schema.input.TagApplier;
-import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
+import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
+import no.sikt.graphitron.model.schema.input.DescriptionNoteApplier;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.TagApplier;
+import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
@@ -79,6 +79,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 /**
  * Entry point for the rewrite code-generation pipeline.
@@ -107,11 +113,11 @@ public class GraphQLRewriteGenerator {
     private static final List<String> OWNED_SUBPACKAGES =
         List.of("", "util", "schema", "types", "conditions", "fetchers", "inputs");
 
-    private final RewriteContext ctx;
+    private final RunContext ctx;
     private final CapturePort capture;
 
     /**
-     * Constructs a generator driven by the supplied {@link RewriteContext}. The context's
+     * Constructs a generator driven by the supplied {@link RunContext}. The context's
      * {@code schemaInputs} drive schema loading; {@link TagApplier} and
      * {@link DescriptionNoteApplier} run between parse and classification.
      *
@@ -119,7 +125,7 @@ public class GraphQLRewriteGenerator {
      * around each capture. For a caller that runs more than one pass, the constructor below takes
      * a port whose store outlives them.
      */
-    public GraphQLRewriteGenerator(RewriteContext ctx) {
+    public GraphQLRewriteGenerator(RunContext ctx) {
         this(ctx, CapturePort.forContext(ctx));
     }
 
@@ -133,7 +139,7 @@ public class GraphQLRewriteGenerator {
      * the point of the parameter rather than a consequence of it, the generator being a reader of
      * facts and never a writer.
      */
-    public GraphQLRewriteGenerator(RewriteContext ctx, CapturePort capture) {
+    public GraphQLRewriteGenerator(RunContext ctx, CapturePort capture) {
         this.ctx = ctx;
         this.capture = Objects.requireNonNull(capture, "capture");
     }
@@ -359,7 +365,7 @@ public class GraphQLRewriteGenerator {
         // nothing else, and a declaration the registry will not admit costs itself; the run's
         // verdict on those refusals is pronounced downstream, after they have been recorded, so a
         // freshly broken file cannot blank the facts about every file beside it.
-        var read = RewriteSchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
+        var read = SchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
         var registry = read.registry();
         TagLinkSynthesiser.apply(registry, bySource);
         var injectedNames = FederationLinkApplier.apply(registry);
@@ -406,7 +412,7 @@ public class GraphQLRewriteGenerator {
         var verdicts = SdlVerdicts.of(attributed.read());
         if (verdicts.anyRefusal() || !assembly.errors().isEmpty()) {
             captureFacts(attributed, assembly, verdicts, jooq, census);
-            RewriteSchemaLoader.throwIfRejected(attributed.read());
+            SchemaLoader.throwIfRejected(attributed.read());
             // Nothing above threw, so the refusal was assembly's own: rethrow it as the stage
             // raised it, which is the exception this path has always failed with.
             GraphitronSchemaBuilder.assembleOrFail(assembly);
@@ -480,8 +486,8 @@ public class GraphQLRewriteGenerator {
      * contributes nothing to this seam now, the {@link ClassifiedRun} arm being a property of
      * which path reached here rather than of anything the walk resolved. The two
      * {@code @nodeId} rules
-     * ({@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} for a node id an
-     * {@code argMapping} entry binds, {@link no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefects}
+     * ({@link no.sikt.graphitron.model.derive.ArgmappingProjectionDefects} for a node id an
+     * {@code argMapping} entry binds, {@link no.sikt.graphitron.model.derive.NodeIdDecodeDefects}
      * for one a producer parameter's name receives) report from the captured corpora alone and are
      * gated on nothing of the walk's. Every other relation still shadows the
      * live pipeline unread, kept honest by the agreement tests until its own consumer migrates.

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
-import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
+import no.sikt.graphitron.model.config.ObservedVersion;
+import no.sikt.graphitron.model.config.WatchedDependency;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;

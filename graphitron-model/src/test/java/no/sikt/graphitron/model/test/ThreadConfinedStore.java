@@ -72,9 +72,12 @@ final class ThreadConfinedStore {
      * The most stores this module may open in one JVM before the funnel treats it as a regression
      * rather than as growth. About thirty-five are expected: one per thread that runs a funnel case,
      * the twenty-odd per-case boots of the classes whose subject is the boot path rather than their
-     * setup, and {@link CandidateCutSet}'s five, which are per case because realising a candidate
-     * rewrites the register one way and no clear puts it back. Orders of magnitude under the case
-     * count, which is the number this exists to keep the module away from.
+     * setup, {@link CandidateCutSet}'s five, which are per case because realising a candidate
+     * rewrites the register one way and no clear puts it back, and
+     * {@code WrittenStatementCoverageTest}'s two, which bend the schema they run on (referential
+     * integrity off, check constraints dropped) and so cannot share a store with anything. Orders
+     * of magnitude under the case count, which is the number this exists to keep the module away
+     * from.
      *
      * <p>It bounds {@link FactStores#boots()} rather than {@link #boots()}, which is the whole
      * point of having two counters: the funnel's own count cannot see a boot that does not go
@@ -88,7 +91,7 @@ final class ThreadConfinedStore {
      * <p>Raising it is a deliberate act: recount what boots and why, and if the answer is that a
      * new class opens a store per case, the question is whether it should run on the funnel instead.
      */
-    private static final int BOOT_BUDGET = 70;
+    private static final int BOOT_BUDGET = 72;
 
     private final GraphitronModelStore store;
 

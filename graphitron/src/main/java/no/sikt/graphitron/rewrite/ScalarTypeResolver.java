@@ -100,7 +100,7 @@ public final class ScalarTypeResolver {
      *
      * <p>The set tracks federation-jvm's {@code FederationDirectives.loadFederationSpecDefinitions}
      * output; when new namespaced scalars land, bump the spec version in
-     * {@link no.sikt.graphitron.rewrite.schema.federation.FederationSpec#URL} and extend this
+     * {@link no.sikt.graphitron.model.schema.federation.FederationSpec#URL} and extend this
      * set in the same commit.
      */
     private static final Set<String> FEDERATION_NAMESPACE_SCALARS = Set.of(

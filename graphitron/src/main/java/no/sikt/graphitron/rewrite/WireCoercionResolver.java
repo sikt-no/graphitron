@@ -8,7 +8,7 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.WireCoercionError;
+import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 /**
  * The single classify-time home for the wire-coercion judgment: for a scalar SDL leaf bound

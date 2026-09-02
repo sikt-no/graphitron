@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -15,6 +15,10 @@ import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.insertInputOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteArgOf;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
 
 /**
  * Phase 1 mutation classifier coverage that depends on KjerneJooqGenerator-synthesised NodeId
@@ -26,7 +30,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 @PipelineTier
 class MutationDmlNodeIdClassificationTest {
 
-    private static final RewriteContext NODEID_CTX = new RewriteContext(
+    private static final RunContext NODEID_CTX = new RunContext(
         List.of(),
         Path.of(""), "MutationDmlNodeIdClassificationTest",
         Path.of(""),
@@ -188,7 +192,7 @@ class MutationDmlNodeIdClassificationTest {
         // The composite-NodeId key covers the PK exactly, leaving nothing to SET; the walker
         // rejects with UpdateRowsError.NoSetFields.
         assertThat(f.rejection()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
+            no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoSetFields.class);
         assertThat(f.reason()).contains("nothing to set");
     }
 
@@ -211,7 +215,7 @@ class MutationDmlNodeIdClassificationTest {
         var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBar");
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
         assertThat(deleteRows.matchedKey()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+            no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey.class);
         assertThat(deleteRows.whereColumns()).hasSize(2);
         assertThat(deleteRows.whereColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -232,7 +236,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
         var del = (MutationField.DmlTableField) deleteSchema.field("Mutation", "deleteParentNode");
         var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(del);
-        assertThat(deleteRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
+        assertThat(deleteRows.matchedKey()).isInstanceOf(no.sikt.graphitron.model.diagnostics.MatchedKey.UniqueKey.class);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("alt_key");
 
@@ -247,7 +251,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
         var upd = (MutationField.DmlTableField) updateSchema.field("Mutation", "updateParentNode");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(upd);
-        assertThat(updateRows.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.UniqueKey.class);
+        assertThat(updateRows.matchedKey()).isInstanceOf(no.sikt.graphitron.model.diagnostics.MatchedKey.UniqueKey.class);
         assertThat(updateRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
 
         // Parity: the equivalent UK-covering DELETE and UPDATE select the same catalog key.
@@ -274,7 +278,7 @@ class MutationDmlNodeIdClassificationTest {
         var f = (MutationField.DmlTableField) schema.field("Mutation", "updateBar");
         var updateRows = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
         assertThat(updateRows.matchedKey()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+            no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey.class);
         assertThat(updateRows.keyColumns()).hasSize(2);
         assertThat(updateRows.keyColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
         assertThat(updateRows.keyColumns()).extracting(k -> k.targetColumn().sqlName())
@@ -538,7 +542,7 @@ class MutationDmlNodeIdClassificationTest {
         assertThat(fields).hasSize(2);
         var ref = (no.sikt.graphitron.rewrite.model.InputField.ColumnBackedReferenceField)
             fields.stream().filter(x -> x.name().equals("bazRef")).findFirst().orElseThrow();
-        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
             .containsExactly("id_1");
         assertThat(ref.extraction())
             .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
@@ -669,7 +673,7 @@ class MutationDmlNodeIdClassificationTest {
             insertInputOf(f).fields().stream()
                 .filter(x -> x.name().equals("parentRef"))
                 .findFirst().orElseThrow();
-        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+        assertThat(ownTableColumns(ref)).extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
             .containsExactly("fk_a", "fk_b", "fk_c");
     }
 
@@ -723,7 +727,7 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "deleteBarMissingPk");
         assertThat(f.rejection())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.NoUniqueKeyCoverage.class);
         assertThat(f.reason())
             .contains("covers no primary key or unique key")
             .contains("id_2");

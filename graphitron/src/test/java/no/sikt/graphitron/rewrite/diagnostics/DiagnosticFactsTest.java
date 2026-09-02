@@ -2,21 +2,21 @@ package no.sikt.graphitron.rewrite.diagnostics;
 
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.capture.GraphIdentity;
-import no.sikt.graphitron.rewrite.capture.SubjectConfig;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.compile.CompileRound;
-import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
-import no.sikt.graphitron.rewrite.lint.LintFix;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.compile.CompileRound;
+import no.sikt.graphitron.model.derive.AuthoredClaimConflicts;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.PivotError;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.diagnostics.PivotError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.jooq.DSLContext;
@@ -30,14 +30,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
-import static no.sikt.graphitron.rewrite.FactWriters.buildWarningFacts;
-import static no.sikt.graphitron.rewrite.FactWriters.compileFacts;
-import static no.sikt.graphitron.rewrite.FactWriters.rejectionFacts;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import static no.sikt.graphitron.model.test.FactWriters.buildWarningFacts;
+import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
+import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
@@ -314,7 +314,7 @@ class DiagnosticFactsTest {
         Path file = write(tmp, sdl);
         withStore(dsl -> {
             FactCapture.capture(dsl, graph(), SubjectConfig.none(),
-                RewriteSchemaLoader.load(List.of(SchemaSource.file(file))),
+                SchemaLoader.load(List.of(SchemaSource.file(file))),
                 TestSchemaHelper.attribution(file));
             var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
             assertThat(expected).hasSize(1);
@@ -348,7 +348,7 @@ class DiagnosticFactsTest {
         Files.writeString(dangling, "type Query { gone: Nope }\n");
 
         var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
-        var read = RewriteSchemaLoader.parsePerSource(sources);
+        var read = SchemaLoader.parsePerSource(sources);
         var assembly = SchemaAssembly.of(read.registry());
         var verdicts = SdlVerdicts.of(read);
         assertThat(verdicts.syntaxFailures()).hasSize(1);
@@ -432,7 +432,7 @@ class DiagnosticFactsTest {
             """);
         withStore(dsl -> {
             FactCapture.capture(dsl, graph(), SubjectConfig.none(),
-                RewriteSchemaLoader.load(List.of(SchemaSource.file(conflict))),
+                SchemaLoader.load(List.of(SchemaSource.file(conflict))),
                 TestSchemaHelper.attribution(conflict));
             assertEveryFileIsAPath(dsl, 1);
         });
@@ -442,7 +442,7 @@ class DiagnosticFactsTest {
         Path dangling = tmp.resolve("dangling.graphqls");
         Files.writeString(dangling, "type Query { gone: Nope }\n");
         var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
-        var read = RewriteSchemaLoader.parsePerSource(sources);
+        var read = SchemaLoader.parsePerSource(sources);
         withStore(dsl -> {
             FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
                 read.registry(), SchemaAssembly.of(read.registry()), SdlVerdicts.of(read),

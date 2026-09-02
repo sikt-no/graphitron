@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,6 +17,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * End-to-end coverage of the tagged-inputs pipeline driven through the new
@@ -57,7 +58,7 @@ class TaggedInputsPipelineTest {
             enum Status { ACTIVE INACTIVE }
             """);
 
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(
                 new SchemaInput(SchemaSource.file(enrolment), Optional.of("enrolment"), Optional.empty()),
                 new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of("Part of cinema feature.")),

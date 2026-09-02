@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
+
 /**
  * Maps one slot of a composite-key input source to a target jOOQ column.
  *

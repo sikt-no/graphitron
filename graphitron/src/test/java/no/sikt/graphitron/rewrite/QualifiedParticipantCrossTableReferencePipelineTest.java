@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -10,11 +10,13 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pipeline coverage: a participant cross-table {@code @reference} field whose single-hop FK
  * terminates on a table whose bare name collides across generated schemas must resolve the column
- * against the FK-pinned terminal {@link no.sikt.graphitron.rewrite.model.TableRef} (class identity),
+ * against the FK-pinned terminal {@link no.sikt.graphitron.model.jooq.TableRef} (class identity),
  * not re-resolve the bare SQL name through the catalog. A bare-name lookup is ambiguous on the
  * colliding name, so the field drops out of the participant's cross-table set and falls through to
  * the scalar {@code @reference} path as a plain {@link ChildField.ColumnBackedReferenceField}
@@ -42,8 +44,8 @@ class QualifiedParticipantCrossTableReferencePipelineTest {
     private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(), Path.of(""), "QualifiedParticipantCrossTableReferencePipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }

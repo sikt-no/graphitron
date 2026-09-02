@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Smoke test for the JSONL trace emitter. Drives one operation per arm

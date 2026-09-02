@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Pipeline-tier coverage for the {@code @field(name: "$source")} sigil on the

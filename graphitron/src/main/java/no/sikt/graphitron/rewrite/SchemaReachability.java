@@ -11,7 +11,7 @@ import graphql.schema.GraphQLTypeVisitor;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.schema.SchemaTraverser;
-import no.sikt.graphitron.rewrite.schema.DeclaredDirectives;
+import no.sikt.graphitron.model.schema.DeclaredDirectives;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
 
 /**
  * Reachability over the schema's whole declared-and-reached surface. {@link #reachableTypeNames}
@@ -34,7 +35,7 @@ import java.util.function.Function;
  * node type that no field returns are reachable through no field, so reachability cannot
  * hinge on a {@code Query.node} / {@code Query._entities} field being present. {@code @key} is
  * scanned separately because the node-to-{@code @key} synthesis
- * ({@link no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser}) runs only on the
+ * ({@link no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser}) runs only on the
  * production attributed-registry path, not on every classify.
  *
  * <p>Nodehood is asked of {@link NodeDeclaration} rather than read off {@code @node}, so a node

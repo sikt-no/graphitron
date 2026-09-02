@@ -4,9 +4,9 @@ import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.TestFixtures;
-import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 

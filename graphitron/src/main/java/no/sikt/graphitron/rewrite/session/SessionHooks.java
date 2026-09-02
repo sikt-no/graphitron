@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.MethodRef;
 
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 
 /**
  * The resolved session-hook carrier: the authored {@link SessionStateConfig.MethodHooks} strings

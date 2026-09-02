@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.walker;
 
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.MatchedKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.LinkedHashSet;
 import java.util.List;

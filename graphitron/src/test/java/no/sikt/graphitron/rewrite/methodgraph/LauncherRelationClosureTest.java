@@ -9,13 +9,13 @@ import no.sikt.graphitron.plan.LauncherCommands;
 import no.sikt.graphitron.plan.LauncherRelation;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -118,7 +118,7 @@ class LauncherRelationClosureTest {
         model = TestSchemaHelper.buildSchema(SCHEMA);
         Path schemaFile = workDir.resolve("schema.graphqls");
         Files.writeString(schemaFile, SCHEMA);
-        RewriteContext ctx = new RewriteContext(
+        RunContext ctx = new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             workDir, "LauncherRelationClosureTest",
             workDir.resolve("generated-sources"),

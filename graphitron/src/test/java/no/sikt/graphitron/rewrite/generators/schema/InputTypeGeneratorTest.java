@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 
 @UnitTier
 class InputTypeGeneratorTest {
@@ -85,7 +86,7 @@ class InputTypeGeneratorTest {
     @Test
     void generate_skipsDirectiveSupportTypes() {
         var names = generateFor(INPUT_SCHEMA).stream().map(TypeSpec::name).toList();
-        no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.all().forEach(supportType ->
+        no.sikt.graphitron.model.schema.DirectiveSupportTypes.all().forEach(supportType ->
             assertThat(names)
                 .as("support type %s must not reach emitted schema", supportType)
                 .doesNotContain(supportType + "Type"));

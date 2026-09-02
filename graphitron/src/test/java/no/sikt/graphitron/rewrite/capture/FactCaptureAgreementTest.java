@@ -15,17 +15,17 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConnectionSynthesis;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
-import no.sikt.graphitron.rewrite.compile.CompileFacts;
-import no.sikt.graphitron.rewrite.compile.CompileRound;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.compile.CompileDiagnostic;
+import no.sikt.graphitron.model.capture.compile.CompileFacts;
+import no.sikt.graphitron.model.compile.CompileRound;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,10 +77,10 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
@@ -102,6 +102,21 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.OutputCoordinates;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionFacts;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.capture.config.StoredRecipe;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The shadow period's honesty check: the store is filled beside the live pipeline and nobody reads
@@ -2270,15 +2285,15 @@ class FactCaptureAgreementTest {
 
             var loc = new graphql.language.SourceLocation(3, 1, ownDir.resolve("s.graphqls").toString());
             var errors = List.of(
-                no.sikt.graphitron.rewrite.ValidationError.forField("Film.title",
-                    no.sikt.graphitron.rewrite.model.Rejection.directiveConflict(
+                no.sikt.graphitron.model.diagnostics.ValidationError.forField("Film.title",
+                    no.sikt.graphitron.model.diagnostics.Rejection.directiveConflict(
                         List.of("service", "routine"), "@service, @routine are mutually exclusive"), loc));
-            var warnings = List.<no.sikt.graphitron.rewrite.BuildWarning>of(
-                new no.sikt.graphitron.rewrite.BuildWarning.NoRule("advisory", loc));
-            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(), own).write(errors);
-            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(store.dsl(), own).write(warnings);
-            new no.sikt.graphitron.rewrite.diagnostics.RejectionFacts(store.dsl(), sibling).write(errors);
-            new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(store.dsl(), sibling).write(warnings);
+            var warnings = List.<no.sikt.graphitron.model.diagnostics.BuildWarning>of(
+                new no.sikt.graphitron.model.diagnostics.BuildWarning.NoRule("advisory", loc));
+            new no.sikt.graphitron.model.diagnostics.RejectionFacts(store.dsl(), own).write(errors);
+            new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(store.dsl(), own).write(warnings);
+            new no.sikt.graphitron.model.diagnostics.RejectionFacts(store.dsl(), sibling).write(errors);
+            new no.sikt.graphitron.model.diagnostics.BuildWarningFacts(store.dsl(), sibling).write(warnings);
             assertThat(diagnosticsPartition(store, "own")).isNotEmpty();
             var siblingBefore = diagnosticsPartition(store, "sibling");
             assertThat(siblingBefore).isNotEmpty();
@@ -2318,9 +2333,9 @@ class FactCaptureAgreementTest {
 
         var sources = List.of(SchemaSource.file(good), SchemaSource.file(broken),
             SchemaSource.file(redefining));
-        var read = RewriteSchemaLoader.parsePerSource(sources);
-        var assembly = no.sikt.graphitron.rewrite.schema.SchemaAssembly.of(read.registry());
-        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read);
+        var read = SchemaLoader.parsePerSource(sources);
+        var assembly = no.sikt.graphitron.model.schema.SchemaAssembly.of(read.registry());
+        var verdicts = no.sikt.graphitron.model.schema.SdlVerdicts.of(read);
 
         // All three stages refused something, so no arm of the anchor below is vacuous.
         assertThat(read.failures()).hasSize(1);
@@ -2365,8 +2380,8 @@ class FactCaptureAgreementTest {
      * assertion reads. Both stages in the order they ran, which is the order the ordinal keys.
      */
     private static List<String> renderExpectedSchemaErrors(
-            no.sikt.graphitron.rewrite.schema.SdlVerdicts verdicts,
-            no.sikt.graphitron.rewrite.schema.SchemaAssembly assembly) {
+            no.sikt.graphitron.model.schema.SdlVerdicts verdicts,
+            no.sikt.graphitron.model.schema.SchemaAssembly assembly) {
         var expected = new ArrayList<String>();
         var errors = new ArrayList<>(verdicts.schemaErrors());
         errors.addAll(assembly.errors());
@@ -2421,8 +2436,8 @@ class FactCaptureAgreementTest {
         Path broken = directory.resolve("broken.graphqls");
         java.nio.file.Files.writeString(broken, "strayTokenHere\n");
         var sources = List.of(SchemaSource.file(missingType), SchemaSource.file(broken));
-        var read = RewriteSchemaLoader.parsePerSource(sources);
-        var verdicts = no.sikt.graphitron.rewrite.schema.SdlVerdicts.of(read);
+        var read = SchemaLoader.parsePerSource(sources);
+        var verdicts = no.sikt.graphitron.model.schema.SdlVerdicts.of(read);
         FactCapture.capture(store.dsl(), false, graph, SubjectConfig.none(),
             read.registry(), verdicts,
             SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
@@ -2538,7 +2553,7 @@ class FactCaptureAgreementTest {
     /**
      * The recipe's equality anchor, and the item's own enforcer: the run's recipe rows, decoded back
      * by the production decoder and re-expanded, reproduce the run's own
-     * {@link no.sikt.graphitron.rewrite.RewriteContext#schemaInputs} exactly. Both sides run the one
+     * {@link no.sikt.graphitron.model.config.RunContext#schemaInputs} exactly. Both sides run the one
      * expansion, so what the equality pins is transcription fidelity plus glob determinism rather
      * than two independent expansions, which is exactly the residue a single expansion path leaves to
      * verify.
@@ -2557,14 +2572,14 @@ class FactCaptureAgreementTest {
         Path sdl = java.nio.file.Files.createDirectories(tmp.resolve("sdl"));
         java.nio.file.Files.writeString(sdl.resolve("globbed.graphqls"), "type Query { ping: String }");
         java.nio.file.Files.writeString(sdl.resolve("extra.graphqls"), "type Extra { id: ID }");
-        var recipe = new no.sikt.graphitron.rewrite.schema.input.SchemaRecipe(null,
-            List.of(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Binding.pattern("sdl/*.graphqls")),
+        var recipe = new no.sikt.graphitron.model.schema.input.SchemaRecipe(null,
+            List.of(no.sikt.graphitron.model.schema.input.SchemaRecipe.Binding.pattern("sdl/*.graphqls")),
             List.of(".graphqls"));
         assertThat(recipe.bindings())
             .as("the fixture carries a pattern entry, without which the round trip is identity and "
                 + "pins nothing")
             .anyMatch(b -> b.entry() instanceof
-                no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Entry.Pattern);
+                no.sikt.graphitron.model.schema.input.SchemaRecipe.Entry.Pattern);
 
         assertRecipeRoundTrips(tmp, recipe);
     }
@@ -2581,12 +2596,12 @@ class FactCaptureAgreementTest {
         Path file = tmp.resolve("literal.graphqls");
         java.nio.file.Files.writeString(file, "type Query { ping: String }");
         var inputs = List.of(
-            new no.sikt.graphitron.rewrite.schema.input.SchemaInput(
-                no.sikt.graphitron.rewrite.schema.input.SchemaSource.file(file),
+            new no.sikt.graphitron.model.schema.input.SchemaInput(
+                no.sikt.graphitron.model.schema.input.SchemaSource.file(file),
                 java.util.Optional.of("t"), java.util.Optional.empty()),
-            no.sikt.graphitron.rewrite.schema.input.SchemaInput.named("a-bare-label"));
+            no.sikt.graphitron.model.schema.input.SchemaInput.named("a-bare-label"));
 
-        assertRecipeRoundTrips(tmp, no.sikt.graphitron.rewrite.schema.input.SchemaRecipe
+        assertRecipeRoundTrips(tmp, no.sikt.graphitron.model.schema.input.SchemaRecipe
             .literalOver(inputs, List.of(".graphqls")));
     }
 
@@ -2596,13 +2611,13 @@ class FactCaptureAgreementTest {
      * directly and derives the inputs from its expansion, the same pairing the build mojo makes.
      */
     private static void assertRecipeRoundTrips(
-            Path tmp, no.sikt.graphitron.rewrite.schema.input.SchemaRecipe recipe) {
+            Path tmp, no.sikt.graphitron.model.schema.input.SchemaRecipe recipe) {
         var expansion = recipe.expand(tmp);
         assertThat(expansion).isInstanceOf(
-            no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved.class);
-        var inputs = ((no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved) expansion)
+            no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Resolved.class);
+        var inputs = ((no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Resolved) expansion)
             .matches().stream()
-            .map(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Match::input)
+            .map(no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Match::input)
             .toList();
 
         try (var store = GraphitronModelStore.open()) {
@@ -2614,10 +2629,10 @@ class FactCaptureAgreementTest {
                 .orElseThrow(() -> new AssertionError("the run's own graph has no anchor row"));
             var replayed = remembered.expand(tmp);
             assertThat(replayed).isInstanceOf(
-                no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved.class);
-            assertThat(((no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Resolved) replayed)
+                no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Resolved.class);
+            assertThat(((no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Resolved) replayed)
                 .matches().stream()
-                .map(no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.Expansion.Match::input)
+                .map(no.sikt.graphitron.model.schema.input.SchemaRecipe.Expansion.Match::input)
                 .toList())
                 .as("the run's schema inputs, against the same value round-tripped through its rows")
                 .isEqualTo(inputs);
@@ -2638,9 +2653,9 @@ class FactCaptureAgreementTest {
     void theConfigurationFamilyEqualsTheRunsConfiguration(@TempDir Path tmp) {
         var output = new OutputCoordinates("com.example.out", "com.example.jooq",
             tmp.resolve("target/generated-sources"));
-        var lint = new no.sikt.graphitron.rewrite.lint.LintConfig(
+        var lint = new no.sikt.graphitron.model.lint.LintConfig(
             Set.of("rule-a"), List.of("Legacy*", "Deprecated*"));
-        var session = no.sikt.graphitron.rewrite.session.SessionStateConfig.from(
+        var session = no.sikt.graphitron.model.config.SessionStateConfig.from(
             "com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
         var config = new SubjectConfig(java.util.Optional.empty(),
             java.util.Optional.of("checkout-supergraph"), java.util.Optional.of(output),
@@ -2714,7 +2729,7 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("a mount-only configuration is a mount row with no unmount row")
     void aMountOnlyConfigurationIsAMountRowWithNoUnmountRow(@TempDir Path tmp) {
-        var mountOnly = no.sikt.graphitron.rewrite.session.SessionStateConfig.from(
+        var mountOnly = no.sikt.graphitron.model.config.SessionStateConfig.from(
             "com.example.KernelIdentity#mount", null);
         try (var store = GraphitronModelStore.open()) {
             FactCapture.capture(store.dsl(), graph(tmp), withSessionState(mountOnly),
@@ -2731,10 +2746,10 @@ class FactCaptureAgreementTest {
     }
 
     private static SubjectConfig withSessionState(
-            no.sikt.graphitron.rewrite.session.SessionStateConfig sessionState) {
+            no.sikt.graphitron.model.config.SessionStateConfig sessionState) {
         return new SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
             java.util.Optional.empty(), java.util.Optional.empty(),
-            no.sikt.graphitron.rewrite.lint.LintConfig.empty(), sessionState);
+            no.sikt.graphitron.model.lint.LintConfig.empty(), sessionState);
     }
 
     /**

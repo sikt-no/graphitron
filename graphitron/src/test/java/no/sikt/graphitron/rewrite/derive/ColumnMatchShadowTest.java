@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.derive;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedDsl;
@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.selectOne;
+import no.sikt.graphitron.model.derive.AuthoredClaim;
 
 /**
  * The shadow reader of the column-match classifier: whether {@code intent_column_match_claim} and

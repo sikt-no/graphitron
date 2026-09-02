@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.lint.rules.TypesAndFieldsHaveDescriptionsVisit
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * The built-in lint rule registry: every {@link LintRule.Source#ENGINE} rule paired with its

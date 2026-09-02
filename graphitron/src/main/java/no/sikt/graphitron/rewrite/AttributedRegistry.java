@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import com.apollographql.federation.graphqljava.directives.LinkDirectiveProcessor;
 import graphql.language.NamedNode;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,7 +23,7 @@ import java.util.Set;
  * them already there. Loading rewrites are on both sides of it; only synthesis is on one.
  *
  * <p>{@code injectedNames} is captured once, by the pipeline orchestrator, from
- * {@link no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier#apply}'s return value;
+ * {@link no.sikt.graphitron.model.schema.input.FederationLinkApplier#apply}'s return value;
  * downstream stages read it off the carrier instead of re-walking the registry. The
  * {@link #federationLink()} flag is derived from it ("injected anything"), so the two facts live in
  * one component rather than a parallel boolean. The lint engine excludes these names because they
@@ -42,7 +42,7 @@ import java.util.Set;
 public record AttributedRegistry(TypeDefinitionRegistry registry,
                                  TypeDefinitionRegistry preSynthesisRegistry,
                                  Set<String> injectedNames,
-                                 RewriteSchemaLoader.PerSourceParse read) {
+                                 SchemaLoader.PerSourceParse read) {
 
     public AttributedRegistry {
         Objects.requireNonNull(registry, "registry");
@@ -68,7 +68,7 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
                               TypeDefinitionRegistry preSynthesisRegistry,
                               Set<String> injectedNames) {
         this(registry, preSynthesisRegistry, injectedNames,
-            new RewriteSchemaLoader.PerSourceParse(registry, List.of(), List.of()));
+            new SchemaLoader.PerSourceParse(registry, List.of(), List.of()));
     }
 
     /** True when the federation {@code @link} injector contributed any definitions. */

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The {@code (start, hops)} shape of a root routine chain: {@code start} is the

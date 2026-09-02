@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.lint.rules;
 
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.lint.LintTarget;
 import no.sikt.graphitron.rewrite.lint.LintVisitor;
 

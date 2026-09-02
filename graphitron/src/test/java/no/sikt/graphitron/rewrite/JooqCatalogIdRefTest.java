@@ -10,6 +10,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Unit tests for {@link JooqCatalog} FK-qualifier helpers used by the {@code @nodeId}

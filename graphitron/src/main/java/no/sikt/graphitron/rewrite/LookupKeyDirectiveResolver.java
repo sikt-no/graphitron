@@ -1,10 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Resolves the directive-level invariants of {@code @lookupKey} into a sealed {@link Resolved}

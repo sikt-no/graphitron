@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -145,8 +145,8 @@ class FetchersHelperNameCollisionPipelineTest {
             .code().toString();
     }
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(List.of(), Path.of(""), "FetchersHelperNameCollisionPipelineTest", Path.of(""),
+    private static RunContext multiSchemaContext() {
+        return new RunContext(List.of(), Path.of(""), "FetchersHelperNameCollisionPipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }
 

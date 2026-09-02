@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * A WHERE-clause contribution backed by Graphitron-generated column predicates.

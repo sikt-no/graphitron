@@ -11,6 +11,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 
 @UnitTier
 class GraphitronSchemaClassGeneratorTest {
@@ -87,7 +88,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_skipsAllDirectiveSupportTypesWhenUnreferenced() {
         var body = buildBody("type Query { x: String }");
-        no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.all().forEach(name ->
+        no.sikt.graphitron.model.schema.DirectiveSupportTypes.all().forEach(name ->
             assertThat(body)
                 .as("support type %s must not be added when no consumer coordinate references it", name)
                 .doesNotContain(name + "Type.type()"));

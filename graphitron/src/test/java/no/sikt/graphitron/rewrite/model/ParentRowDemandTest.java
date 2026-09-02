@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Unit coverage for {@link ParentRowDemand#polymorphicParentRowColumns}: the parent-row

@@ -8,6 +8,7 @@ import java.util.EnumSet;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * Drift guard for the lint registry and its node-kind partition, mirroring the

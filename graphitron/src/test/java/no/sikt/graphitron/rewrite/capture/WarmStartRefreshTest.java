@@ -4,12 +4,12 @@ import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.NodeDeclaration;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -50,6 +50,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.table;
+import no.sikt.graphitron.model.sources.ClasspathSources;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.capture.config.StoredRecipe;
+import no.sikt.graphitron.model.run.SubjectConfig;
 
 /**
  * What a warm store keeps and what it rewrites, under ownership scoping: a run deletes exactly
@@ -469,7 +474,7 @@ class WarmStartRefreshTest {
     }
 
     private static List<CompletionData.ExternalReference> referencesOver(Path basedir, Path... entries) {
-        return CatalogBuilder.buildExternalReferences(new RewriteContext(
+        return CatalogBuilder.buildExternalReferences(new RunContext(
             List.of(), basedir, GRAPH_NAME, basedir.resolve("target/generated"),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, List.of(entries)));
     }

@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * The result-key alias namespace as model data, plus the census that guards what the namespace
@@ -286,7 +288,7 @@ class ParticipantAliasOwnerPipelineTest {
                 assertThat(error.rejection())
                     .as("legal and meaningful schema the generator does not emit yet, so deferred "
                         + "rather than pinned as an author error")
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.Deferred.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.Deferred.class);
                 assertThat(error.message())
                     .contains("Beta.target")
                     .contains("Alpha.target")
@@ -347,7 +349,7 @@ class ParticipantAliasOwnerPipelineTest {
         assertThat(new GraphitronSchemaValidator().validate(schema))
             .anySatisfy(error -> {
                 assertThat(error.rejection())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.Deferred.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.Rejection.Deferred.class);
                 assertThat(error.message())
                     .contains("reached through nesting type");
             });

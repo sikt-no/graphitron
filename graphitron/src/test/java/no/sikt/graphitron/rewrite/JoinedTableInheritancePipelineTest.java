@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Classification coverage for first-class discriminated joined-table (class-table) inheritance.

@@ -11,7 +11,7 @@ import java.util.Optional;
  * {@code FieldBuilder.checkChannelLevelHandlerRules} / {@code checkDuplicateMatchCriteria} so the
  * {@code ErrorChannelWalker} owns the in-scope error-channel rule surface; the two checks are pure
  * functions of {@code mappedErrorTypes}, so they live here as static helpers the walker wraps into
- * {@link no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError.ChannelRuleViolation} arms with
+ * {@link no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError.ChannelRuleViolation} arms with
  * the rule number and the returned detail string.
  *
  * <p>Each method returns the detail (the actionable second half of the diagnostic, no type/field

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.catalog;
 
+import no.sikt.graphitron.model.classpath.CompletionData;
+
 /**
  * What the walk bound a {@link no.sikt.graphitron.rewrite.model.GraphitronType} to, in the shape
  * the backing-class transcription writes into the store's walk shadow. Produced by
@@ -36,7 +38,7 @@ public sealed interface TypeBackingShape
 
     /**
      * Type backed by a jOOQ {@code Record<?>} subclass. Sealed over whether
-     * the classifier carries a {@link no.sikt.graphitron.rewrite.model.TableRef}
+     * the classifier carries a {@link no.sikt.graphitron.model.jooq.TableRef}
      * for the record: {@link WithTable} routes column-set lookup through
      * {@link CompletionData#getTable}; {@link Standalone} declines (no
      * actionable column metadata available).
@@ -48,7 +50,7 @@ public sealed interface TypeBackingShape
 
         /**
          * jOOQ record bound to a specific table (the classifier carried a
-         * {@link no.sikt.graphitron.rewrite.model.TableRef}). {@code tableName}
+         * {@link no.sikt.graphitron.model.jooq.TableRef}). {@code tableName}
          * is the jOOQ table name for column lookup.
          */
         record WithTable(String fqClassName, String tableName) implements JooqRecordBacking {}

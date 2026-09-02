@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.TableRef;
+
 /**
  * The table node a {@link JoinStep.Hop} joins to — the <em>target</em> axis of the two-axis
  * step model: a step is a target node materialized by a table expression, plus an

@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ArgumentRef;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -17,6 +17,8 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import no.sikt.graphitron.rewrite.TestFixtures;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
 
 @UnitTier
 class UpdateMutationValidationTest {
@@ -33,16 +35,16 @@ class UpdateMutationValidationTest {
                     "in", "FilmInput",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
                 new no.sikt.graphitron.rewrite.model.UpdateRows.Identified(
-                    new no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey(
-                        List.of(new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                    new no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey(
+                        List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
                         "film_pkey"),
                     List.of(new no.sikt.graphitron.rewrite.model.SetColumn(
                         "title",
-                        new no.sikt.graphitron.rewrite.model.ColumnRef("title", "TITLE", "java.lang.String"),
+                        new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String"),
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)),
                     List.of(new no.sikt.graphitron.rewrite.model.KeyColumn(
                         "filmId",
-                        new no.sikt.graphitron.rewrite.model.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                        new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)),
                     List.of(),
                     List.of(new no.sikt.graphitron.rewrite.model.CarrierNullRule(

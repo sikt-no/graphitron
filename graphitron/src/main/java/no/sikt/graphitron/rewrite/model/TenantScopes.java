@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 import java.util.Set;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * The catalog-wide tenant-scope classification: which tables live in the per-tenant databases
@@ -16,7 +17,7 @@ import java.util.Set;
  *
  * <p>Every field holds only resolved immutable values ({@link String}, {@link TypeName},
  * {@link Set}, {@link List}) so the classification can be read after the codegen loader closes,
- * the same invariant {@link no.sikt.graphitron.rewrite.capture.CatalogFactCapture} holds to when it
+ * the same invariant {@link no.sikt.graphitron.model.capture.catalog.CatalogFactCapture} holds to when it
  * reduces the live catalog into relations.
  */
 public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Configured {

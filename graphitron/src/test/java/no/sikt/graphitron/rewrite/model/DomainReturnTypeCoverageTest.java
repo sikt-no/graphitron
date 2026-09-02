@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Unit-tier coverage of the sealed-hierarchy enforcement and structural shape of

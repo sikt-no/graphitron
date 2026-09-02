@@ -5,7 +5,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLTypeReference;
 import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +17,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Coverage for {@code GraphitronSchemaBuilder.rejectUnregisteredScalarReferences}, the
@@ -102,7 +103,7 @@ class ScalarReferenceClosurePipelineTest {
             .contains("generator defect"));
     }
 
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ScalarReferenceClosurePipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture");
 
@@ -117,7 +118,7 @@ class ScalarReferenceClosurePipelineTest {
     }
 
     private static String directivePrelude() {
-        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = SchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8) + "\n";
         } catch (IOException e) {

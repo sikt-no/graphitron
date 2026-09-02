@@ -2,9 +2,9 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.SchemaParseException;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,10 +132,10 @@ class BrokenSourceStillCapturesPipelineTest {
     }
 
     /** A validate-only context over {@code inputs}, with a real store home so rows outlive the run. */
-    private static RewriteContext context(Path basedir, Path storeDir, List<SchemaInput> inputs) {
-        return new RewriteContext(
+    private static RunContext context(Path basedir, Path storeDir, List<SchemaInput> inputs) {
+        return new RunContext(
             inputs, basedir, "broken-source-fixture", basedir.resolve("out"),
-            RewriteContext.NO_OUTPUT_PACKAGE, RewriteContext.NO_OUTPUT_PACKAGE, List.of())
+            RunContext.NO_OUTPUT_PACKAGE, RunContext.NO_OUTPUT_PACKAGE, List.of())
             .withStoreDirectory(storeDir);
     }
 }

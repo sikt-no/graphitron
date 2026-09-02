@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.rewrite.ProjectionRenderTestSupport;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class InlineFilterArgumentSourcePipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "InlineFilterArgumentSourcePipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );

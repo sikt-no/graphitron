@@ -7,7 +7,7 @@ import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.derive.ResolvedKeyProjections;
+import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 

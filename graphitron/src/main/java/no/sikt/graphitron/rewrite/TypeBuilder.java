@@ -16,13 +16,13 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.rewrite.lint.LintFix;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.NodeProvenance;
@@ -44,9 +44,9 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,6 +88,11 @@ import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Classifies all named types in the schema into the {@link GraphitronType} hierarchy.
@@ -192,7 +197,7 @@ class TypeBuilder {
      * the reflection boundary and read by the classify-time shape verdict at the {@code @service}
      * carrier seat. Mirrors {@link #serviceEmittedBinding}.
      */
-    java.util.Optional<no.sikt.graphitron.rewrite.model.Arity> serviceCarrierProducerArrival(String parentType, String fieldName) {
+    java.util.Optional<no.sikt.graphitron.model.diagnostics.Arity> serviceCarrierProducerArrival(String parentType, String fieldName) {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceCarrierProducerArrival(parentType, fieldName);
     }
 
@@ -1174,10 +1179,10 @@ class TypeBuilder {
         // references them. Must run before the enum branch so the support enums are gated too.
         // schema.types() membership is the single retention decision both the runtime arm
         // (GraphitronSchemaClassGenerator.planFor) and the print seam (SchemaSdlEmitter) consume.
-        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isStrictlyInternal(namedType.getName())) {
+        if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isStrictlyInternal(namedType.getName())) {
             return null;
         }
-        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isPublished(namedType.getName())
+        if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isPublished(namedType.getName())
                 && !retainedSupportTypes().contains(namedType.getName())) {
             return null;
         }
@@ -1266,7 +1271,7 @@ class TypeBuilder {
     }
 
     /**
-     * Published support types ({@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes#published()})
+     * Published support types ({@link no.sikt.graphitron.model.schema.DirectiveSupportTypes#published()})
      * referenced from at least one coordinate of a non-support type: field return types, argument
      * types, and input field types. Computed once per build over the assembled schema. No
      * transitive closure is needed: the only support types referencing another support type are
@@ -1279,9 +1284,9 @@ class TypeBuilder {
         var retained = new java.util.HashSet<String>();
         for (var named : ctx.schema.getAllTypesAsList()) {
             if (named.getName().startsWith("__")) continue;
-            if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isSupportType(named.getName())) continue;
+            if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isSupportType(named.getName())) continue;
             forEachReferencedType(named, (coordinate, referencedName) -> {
-                if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isPublished(referencedName)) {
+                if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isPublished(referencedName)) {
                     retained.add(referencedName);
                 }
             });
@@ -1298,12 +1303,12 @@ class TypeBuilder {
      * the validator reports with the offending coordinate.
      */
     private GraphitronType rejectStrictlyInternalReferences(GraphQLNamedType namedType) {
-        if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isSupportType(namedType.getName())) {
+        if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isSupportType(namedType.getName())) {
             return null;  // support types may reference each other (FieldSort.direction)
         }
         var offenses = new ArrayList<String>();
         forEachReferencedType(namedType, (coordinate, referencedName) -> {
-            if (no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes.isStrictlyInternal(referencedName)) {
+            if (no.sikt.graphitron.model.schema.DirectiveSupportTypes.isStrictlyInternal(referencedName)) {
                 offenses.add("'" + coordinate + "' references graphitron-internal type '" + referencedName + "'");
             }
         });

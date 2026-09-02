@@ -5,15 +5,16 @@ import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OutputField;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 /**
  * Pipeline-tier coverage for the {@code @service}-backed producer admit for single-record
@@ -523,7 +524,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
      *
      * <p>The producer mutations stay classified as their producer leaves; the disagreement rides
      * on the model as a {@code MultiProducerDomainTypeDisagreement} the validator surfaces as a
-     * single {@link no.sikt.graphitron.rewrite.ValidationError}. The message names the payload
+     * single {@link no.sikt.graphitron.model.diagnostics.ValidationError}. The message names the payload
      * SDL type, both producer coords, and both {@code DomainReturnType} arms
      * ({@code Record(film)} and {@code TableRecord(FilmRecord)}).
      */

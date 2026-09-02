@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -18,6 +18,11 @@ import java.util.zip.ZipOutputStream;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 
 /**
  * The reported bug, at the boundary where it lived:
@@ -83,26 +88,26 @@ class JarResidentClassCensusTest {
         assertThat(fromJar).as("the scan reports which entries are jars").contains(true, false);
     }
 
-    private static RewriteContext contextOver(Path basedir, Path... entries) {
+    private static RunContext contextOver(Path basedir, Path... entries) {
         // The jar is classified DECLARED, the way a real consumer's library arrives: this test's
         // subject (a jar-resident class reaches the census) is unchanged by the transitive cut,
         // because the cut skips only TRANSITIVE entries.
         var classified = java.util.Arrays.stream(entries)
-            .map(entry -> no.sikt.graphitron.rewrite.catalog.ClasspathScanner.isJar(entry)
-                ? new no.sikt.graphitron.rewrite.ClasspathEntry(entry,
-                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.DECLARED,
+            .map(entry -> no.sikt.graphitron.model.classpath.ClasspathScanner.isJar(entry)
+                ? new no.sikt.graphitron.model.config.ClasspathEntry(entry,
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.DECLARED,
                     "com.example:fixture-library")
-                : no.sikt.graphitron.rewrite.ClasspathEntry.project(entry))
+                : no.sikt.graphitron.model.config.ClasspathEntry.project(entry))
             .toList();
-        var inputs = java.util.List.<no.sikt.graphitron.rewrite.schema.input.SchemaInput>of();
-        return new RewriteContext(
+        var inputs = java.util.List.<no.sikt.graphitron.model.schema.input.SchemaInput>of();
+        return new RunContext(
             inputs, basedir, "JarResidentClassCensusTest", basedir.resolve("target/generated"),
             basedir.resolve("target/generated-resources"),
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, classified,
             Thread.currentThread().getContextClassLoader(), java.util.List.of(),
             null, null, null, null, null,
-            no.sikt.graphitron.rewrite.schema.input.SchemaRecipe.literalOver(
-                inputs, RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
+            no.sikt.graphitron.model.schema.input.SchemaRecipe.literalOver(
+                inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
             null);
     }
 

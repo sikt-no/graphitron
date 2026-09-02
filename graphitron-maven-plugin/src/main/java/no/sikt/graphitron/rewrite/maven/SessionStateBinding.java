@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite.maven;
 
 /**
  * POM XML binding for the {@code <sessionState>} block. Collapses into a
- * {@link no.sikt.graphitron.rewrite.session.SessionStateConfig} on
- * {@link no.sikt.graphitron.rewrite.RewriteContext}; the schema build reflects the named
+ * {@link no.sikt.graphitron.model.config.SessionStateConfig} on
+ * {@link no.sikt.graphitron.model.config.RunContext}; the schema build reflects the named
  * methods into the resolved carrier the connection-runtime emitters read.
  *
  * <p>{@code <mount>} names a public static method as {@code fqcn#method}; graphitron calls it

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * SDL → classified schema → generated {@code TypeSpec} pipeline coverage for the
@@ -34,8 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * FK traversal ({@code Gadget.widget}) that must route through the FK-holder schema's
  * {@code Keys} class.
  *
- * <p>Assertions land at two typed surfaces: model-level ({@link no.sikt.graphitron.rewrite.model.TableRef}
- * / {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef} / the FK-derived {@link JoinStep.Hop}),
+ * <p>Assertions land at two typed surfaces: model-level ({@link no.sikt.graphitron.model.jooq.TableRef}
+ * / {@link no.sikt.graphitron.model.jooq.ForeignKeyRef} / the FK-derived {@link JoinStep.Hop}),
  * the slots every emitted {@code ClassName} flows from, so model correctness propagates to
  * emit correctness by construction; and structural emit-side, walked through JavaPoet's typed
  * graph plus the parsed import list. The pipeline tier bans code-string assertions over
@@ -72,8 +73,8 @@ class MultiSchemaPipelineTest {
         }
         """;
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(),
             Path.of(""), "MultiSchemaPipelineTest",
             Path.of(""),
@@ -230,8 +231,8 @@ class MultiSchemaPipelineTest {
      * (return, parameter, exception, and field types) plus the parsed import list of the
      * rendered {@link JavaFile}. ClassNames appearing only inline inside CodeBlocks are not
      * reachable here, but every such reference flows from a typed model slot
-     * ({@link no.sikt.graphitron.rewrite.model.TableRef#tableClassName()},
-     * {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClassName()},
+     * ({@link no.sikt.graphitron.model.jooq.TableRef#tableClassName()},
+     * {@link no.sikt.graphitron.model.jooq.ForeignKeyRef#keysClassName()},
      * {@link JoinStep.Hop#targetTable()}) pinned by the model-level assertions above.
      */
     private static Set<ClassName> referencedClassNames(TypeSpec spec) {

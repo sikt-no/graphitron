@@ -5,7 +5,7 @@ import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ReferenceFilterRemoteColumnPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ReferenceFilterRemoteColumnPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
 

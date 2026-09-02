@@ -12,11 +12,11 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import org.eclipse.lsp4j.CompletionItem;
@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * through the real
  * {@link GraphitronSchemaBuilder}, with real backing classes
  * ({@link R157FilmRecord}, {@link R157FilmPojo}) discoverable on the test
- * classpath through {@link no.sikt.graphitron.rewrite.catalog.ClasspathScanner}.
+ * classpath through {@link no.sikt.graphitron.model.classpath.ClasspathScanner}.
  *
  * <p>Drives {@link CatalogBuilder#projectTypesByName} for real over that classifier's output,
  * then exercises {@link FieldCompletions}, {@link Diagnostics}, and {@link Hovers} against a
@@ -203,9 +203,9 @@ class R157PipelineTest {
      * fixtures ({@link R157FilmRecord}, {@link R157FilmPojo}) surface in
      * {@link CompletionData#externalReferences()}.
      */
-    private static RewriteContext testContextWithTestClasses() {
+    private static RunContext testContextWithTestClasses() {
         Path testClasses = testClassesRoot();
-        return new RewriteContext(
+        return new RunContext(
             List.of(), Path.of(""), "R157PipelineTest", Path.of(""), "fake.output", JOOQ_PACKAGE, List.of(testClasses)
         );
     }

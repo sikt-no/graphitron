@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural guard. {@link no.sikt.graphitron.rewrite.model.TableRef#tableName()} is the
+ * Structural guard. {@link no.sikt.graphitron.model.jooq.TableRef#tableName()} is the
  * case-preserved verbatim {@code @table(name:)} echo, so the <em>same</em> logical table can surface
  * as two differently-cased {@code tableName()} strings: the verbatim {@code @table} casing on one
  * operand, the lowercase jOOQ {@code Table.getName()} casing the record-class resolution path feeds
@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Oracle-style UPPERCASE {@code @table} over a lowercase jOOQ catalog.
  *
  * <p>The canonical identity comparison lives on the type
- * ({@link no.sikt.graphitron.rewrite.model.TableRef#sameTable(String)} /
+ * ({@link no.sikt.graphitron.model.jooq.TableRef#sameTable(String)} /
  * {@code denotesSameTableAs(TableRef)}), so every consumer routes through one case-insensitive
  * predicate. This guard forbids <em>any</em> raw {@code tableName()} comparison elsewhere, either
  * operand orientation, either case-sensitivity. The single legitimate home for a raw comparison is

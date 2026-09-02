@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.JooqCatalog.ColumnEntry;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.JooqCatalog.ColumnEntry;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.nodeidfixture.tables.Bar;
 import org.jooq.Field;
 import org.jooq.impl.DSL;
@@ -13,6 +13,7 @@ import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Coverage for {@link JooqCatalog#nodeIdMetadata(String)} — the synthesized-NodeId metadata probe.

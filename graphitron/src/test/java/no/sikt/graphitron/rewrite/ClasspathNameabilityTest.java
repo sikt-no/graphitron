@@ -13,6 +13,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 
 /**
  * One case per arm of the nameability rule's verdict table; see {@link ClasspathNameability}'s
@@ -109,7 +110,7 @@ class ClasspathNameabilityTest {
 
     @Test
     void emptyClassifiedListIsInert(@TempDir Path tmp) {
-        // A unit-tier RewriteContext carries no classpath roots; the rule cannot be enforced
+        // A unit-tier RunContext carries no classpath roots; the rule cannot be enforced
         // against a classification nobody supplied, so every name is nameable.
         var check = new ClasspathNameability(List.of());
 

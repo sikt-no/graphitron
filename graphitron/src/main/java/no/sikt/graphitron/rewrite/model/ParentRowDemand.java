@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * A child field whose generated fetcher reads one or more columns off the parent's

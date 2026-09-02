@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * How to extract one argument value from a GraphQL execution context at the fetcher call site.

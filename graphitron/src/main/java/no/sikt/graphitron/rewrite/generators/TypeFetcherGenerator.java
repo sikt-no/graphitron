@@ -45,7 +45,7 @@ import no.sikt.graphitron.rewrite.model.CarrierNullRule;
 import no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.SetColumn;
 import no.sikt.graphitron.rewrite.model.UpdateRows;
@@ -58,11 +58,11 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
 import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -1737,7 +1737,7 @@ public class TypeFetcherGenerator {
 
     /** {@code Tables.FILM.FILM_ID, ...} over the table's key columns. */
     private static CodeBlock keyColumnFields(TableRef table,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyCols) {
+            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyCols) {
         var b = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) b.add(", ");
@@ -1748,7 +1748,7 @@ public class TypeFetcherGenerator {
 
     /** {@code <local>.get(Tables.FILM.FILM_ID), ...} over the table's key columns. */
     private static CodeBlock keyCellsFrom(TableRef table,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyCols, String local) {
+            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyCols, String local) {
         var b = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) b.add(", ");
@@ -2724,7 +2724,7 @@ public class TypeFetcherGenerator {
      * walk is uniform across both admissible SetField shapes: the value carrier sources from
      * {@code columns()}, the reference carrier from its {@link FilterBinding.Local} tuple.
      */
-    private static List<no.sikt.graphitron.rewrite.model.ColumnRef> setFieldColumns(InputField.SetField sf) {
+    private static List<no.sikt.graphitron.model.jooq.ColumnRef> setFieldColumns(InputField.SetField sf) {
         return switch (sf) {
             case InputField.ColumnBackedField cf -> cf.columns();
             case InputField.ColumnBackedReferenceField crf -> localColumnsOf(crf);
@@ -2740,7 +2740,7 @@ public class TypeFetcherGenerator {
      * emitter runs. Reaching here means a gate was bypassed, so it throws rather than inventing a
      * tuple and emitting a silently wrong statement.
      */
-    private static List<no.sikt.graphitron.rewrite.model.ColumnRef> localColumnsOf(
+    private static List<no.sikt.graphitron.model.jooq.ColumnRef> localColumnsOf(
             InputField.ColumnBackedReferenceField crf) {
         return switch (crf.binding()) {
             case FilterBinding.Local(var ownTableColumns) -> ownTableColumns;
@@ -3964,7 +3964,7 @@ public class TypeFetcherGenerator {
         var groups = keyGroups;
         // Flatten lookup-key target columns across groups for the join-on-column-names construction;
         // every column appears once at slot index i in vColNames / cells / WHERE.
-        var lookupTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        var lookupTargetColumns = new ArrayList<no.sikt.graphitron.model.jooq.ColumnRef>();
         for (var g : groups) lookupTargetColumns.addAll(g.targetColumns());
         // SET columns whose backing column is already a WHERE/lookup-key v-column (the self-FK
         // cross-partition overlap). The two v-populating SET emitters skip these so the column appears in
@@ -4156,7 +4156,7 @@ public class TypeFetcherGenerator {
         }
 
         var conflictCols = CodeBlock.builder();
-        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.model.jooq.ColumnRef>();
         for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
         for (int i = 0; i < conflictTargetColumns.size(); i++) {
             if (i > 0) conflictCols.add(", ");
@@ -5515,7 +5515,7 @@ public class TypeFetcherGenerator {
         }
         preGuard.add(buildInsertDecodeLocals(fields, "in", "insertKey", tablesOnly, tableRef));
         var conflictCols = CodeBlock.builder();
-        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.model.jooq.ColumnRef>();
         for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
         for (int i = 0; i < conflictTargetColumns.size(); i++) {
             if (i > 0) conflictCols.add(", ");
@@ -5544,7 +5544,7 @@ public class TypeFetcherGenerator {
      * {@code dsl.transactionResult(...)}, collects the PK records into a typed
      * {@code Result<RecordN<...>>} in input order, and returns the accumulated Result. The
      * downstream data field's fetcher ({@link FetcherEmitter#buildSingleRecordTableFetcherValue}
-     * with {@link no.sikt.graphitron.rewrite.model.Arity#MANY}) reads that Result
+     * with {@link no.sikt.graphitron.model.diagnostics.Arity#MANY}) reads that Result
      * via {@code env.getSource()} and runs the bulk response SELECT outside the transaction.
      *
      * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
@@ -5553,7 +5553,7 @@ public class TypeFetcherGenerator {
      * upstream {@code Result<RecordN<PK>>} therefore lands at the data-field fetcher with
      * PKs in input order. The downstream SELECT's {@code WHERE pk IN (...)} does not preserve
      * order, but {@link FetcherEmitter}'s {@code buildSingleRecordTableFetcherValue}
-     * {@link no.sikt.graphitron.rewrite.model.Arity#MANY} arm re-keys the SELECT result into a PK-indexed map and walks
+     * {@link no.sikt.graphitron.model.diagnostics.Arity#MANY} arm re-keys the SELECT result into a PK-indexed map and walks
      * {@code source.getValues(PK)} to project rows in input order — input order is a property
      * of the emitted Java, not of the SQL planner's choice. The deliberately-non-PK-ordered
      * round-trip in {@code DmlBulkMutationsExecutionTest} is the runtime audit of this invariant.
@@ -5617,7 +5617,7 @@ public class TypeFetcherGenerator {
     @FunctionalInterface
     private interface BulkPerRowBodyFn {
         CodeBlock build(GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-                        List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType);
+                        List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType);
     }
 
     /**
@@ -5706,7 +5706,7 @@ public class TypeFetcherGenerator {
             List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
             List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols, TypeName recordRowType) {
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
@@ -5753,7 +5753,7 @@ public class TypeFetcherGenerator {
             OperationMember.Write.Dml write,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
             TypeName recordRowType) {
         return switch (write) {
             case OperationMember.Write.Insert i -> buildBulkRecordPerRowInsertBody(
@@ -5784,7 +5784,7 @@ public class TypeFetcherGenerator {
             List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
             TypeName recordRowType) {
         var body = CodeBlock.builder();
         var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row");
@@ -5806,7 +5806,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
             TypeName recordRowType) {
         var fields = tia.fields();
         var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
@@ -5824,7 +5824,7 @@ public class TypeFetcherGenerator {
 
     /** Builds the comma-separated list of PK column references for a {@code returningResult(...)} call. */
     private static CodeBlock buildPkFieldList(
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var b = CodeBlock.builder();
         for (int i = 0; i < pkCols.size(); i++) {

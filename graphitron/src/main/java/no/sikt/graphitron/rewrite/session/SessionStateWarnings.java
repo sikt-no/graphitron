@@ -1,14 +1,15 @@
 package no.sikt.graphitron.rewrite.session;
 
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintRule;
 
 import java.util.List;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 
 /**
  * The generation-time advisory about the owned-connection runtime's identity posture, derived
  * purely from the authored {@link SessionStateConfig}. Kept a pure decision (no schema, no
- * {@code RewriteContext}) so it is unit-testable directly; {@code GraphQLRewriteGenerator}
+ * {@code RunContext}) so it is unit-testable directly; {@code GraphQLRewriteGenerator}
  * calls it with the config and folds the result into the build-warning channel, where lint
  * suppression (by rule id) applies uniformly.
  *

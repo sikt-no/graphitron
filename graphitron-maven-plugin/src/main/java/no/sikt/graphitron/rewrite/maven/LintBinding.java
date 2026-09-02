@@ -4,8 +4,8 @@ import java.util.List;
 
 /**
  * POM XML binding for the {@code <lint>} block. Collapses into a
- * {@link no.sikt.graphitron.rewrite.lint.LintConfig} on
- * {@link no.sikt.graphitron.rewrite.RewriteContext}:
+ * {@link no.sikt.graphitron.model.lint.LintConfig} on
+ * {@link no.sikt.graphitron.model.config.RunContext}:
  *
  * <pre>{@code
  * <lint>

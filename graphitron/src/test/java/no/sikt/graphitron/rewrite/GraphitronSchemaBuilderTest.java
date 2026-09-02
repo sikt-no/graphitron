@@ -2,11 +2,11 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnBackedField;
@@ -26,11 +26,11 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -85,6 +85,10 @@ import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.diagnostics.UpdateRowsError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Pipeline-tier classification tests. Each section has an enum where every constant is one (sdl, assertion)
@@ -1860,7 +1864,7 @@ class GraphitronSchemaBuilderTest {
         var f = schema.field("Query", "search");
         assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
         var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
-        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
         assertThat(unc.reason()).contains("union").contains("must return a multitable interface");
     }
 
@@ -1937,7 +1941,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Film", "displayTitle");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("doesNotExist");
             }),
 
@@ -1953,7 +1957,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Film", "title");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("collides with column 'title'");
             }),
 
@@ -1986,7 +1990,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Film", "noSuchExternalMethod");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("noSuchExternalMethod");
             }),
 
@@ -2002,7 +2006,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Film", "isEnglish");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("missing className");
             }),
 
@@ -2036,7 +2040,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Actor", "computedRating");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason())
                     .contains("parameter type 'Film'")
                     .contains("does not accept the parent table 'actor'")
@@ -2086,7 +2090,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Film", "computedRating");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason())
                     .contains("parameter type 'Table<ActorRecord>'")
                     .contains("does not accept the parent table 'film'")
@@ -2282,7 +2286,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("FilmDetails", "rating");
                 assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
                 var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
                 assertThat(unc.reason()).contains("FilmRecord", "cannot produce one");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class); }
@@ -2919,7 +2923,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
-                assertThat(f.sourceKey().columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                assertThat(f.sourceKey().columns()).extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
@@ -3022,7 +3026,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (BatchedTableField) schema.field("FilmDetails", "inventories");
                 var sk = f.sourceKey();
                 assertThat(f.lift()).isInstanceOf(KeyLift.Lifter.class);
-                assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                assertThat(sk.columns()).extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("inventory_id");
                 // Leaf-PK variant: hop-less — empty joinPath plus the pre-keyed
                 // OnLiftedSlots correlation pointing at the leaf target.
@@ -4086,8 +4090,8 @@ class GraphitronSchemaBuilderTest {
         var errors = new GraphitronSchemaValidator().validate(schema);
         var missingOrderRejections = errors.stream()
             .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.Rejection.AuthorError.SortEnumMissingOrder)
-            .map(r -> (no.sikt.graphitron.rewrite.model.Rejection.AuthorError.SortEnumMissingOrder) r)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.SortEnumMissingOrder)
+            .map(r -> (no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.SortEnumMissingOrder) r)
             .toList();
         assertThat(missingOrderRejections)
             .as("both unannotated values must ride a single rejection, not fail-fast on the first")
@@ -4682,8 +4686,8 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
         assertThat(f.rejection()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class);
-        assertThat(((no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
+            no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
             .fieldName()).isEqualTo("syntheticName");
     }
 
@@ -4712,8 +4716,8 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "updateFilmPayload");
         assertThat(f.rejection()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported.class);
-        assertThat(((no.sikt.graphitron.rewrite.model.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
+            no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.model.diagnostics.UpdateRowsError.OverrideConditionNotSupported) f.rejection())
             .fieldName()).isEqualTo("syntheticName");
     }
 
@@ -4740,8 +4744,8 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
         assertThat(f.rejection()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported.class);
-        assertThat(((no.sikt.graphitron.rewrite.model.DeleteRowsError.OverrideConditionNotSupported) f.rejection())
+            no.sikt.graphitron.model.diagnostics.DeleteRowsError.OverrideConditionNotSupported.class);
+        assertThat(((no.sikt.graphitron.model.diagnostics.DeleteRowsError.OverrideConditionNotSupported) f.rejection())
             .fieldName()).isEqualTo("syntheticName");
     }
 
@@ -4769,7 +4773,7 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Mutation", "updateFilmPayload");
         assertThat(f.rejection()).isInstanceOf(
-            no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class);
+            no.sikt.graphitron.model.diagnostics.UpdateRowsError.UnsupportedInputFieldShape.class);
         assertThat(f.reason()).contains("title");
     }
 
@@ -6654,7 +6658,7 @@ class GraphitronSchemaBuilderTest {
                 var field = schema.field("Mutation", "deleteFilmActor");
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) field).rejection())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.NoUniqueKeyCoverage.class);
                 assertThat(((UnclassifiedField) field).reason())
                     .contains("covers no primary key or unique key", "multiRow: true");
             }) {
@@ -6766,7 +6770,7 @@ class GraphitronSchemaBuilderTest {
                 var lift = ((no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField) dataField).lift();
                 assertThat(lift).isInstanceOf(no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.KeyLift.ProducedRecords) lift).arity())
-                    .isEqualTo(no.sikt.graphitron.rewrite.model.Arity.MANY);
+                    .isEqualTo(no.sikt.graphitron.model.diagnostics.Arity.MANY);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -8731,7 +8735,7 @@ class GraphitronSchemaBuilderTest {
                 // primary key, carried on the arm so the emit never re-derives the key set.
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
                 assertThat(rex.reentryCorrelation().columns())
-                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.DmlTableField.class); }
@@ -8751,7 +8755,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.DmlTableField) schema.field("Mutation", "updateFilm");
                 var ur = (no.sikt.graphitron.rewrite.model.UpdateRows.Identified) updateRowsOf(f);
-                assertThat(ur.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+                assertThat(ur.matchedKey()).isInstanceOf(no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey.class);
                 assertThat(ur.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("film_id");
                 assertThat(ur.setColumns()).extracting(s -> s.targetColumn().sqlName()).containsExactly("title");
             }) {
@@ -8769,7 +8773,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.rejection()).isInstanceOf(
-                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class);
+                    no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage.class);
                 assertThat(f.reason()).contains("covers no primary key or unique key");
             }),
 
@@ -8786,7 +8790,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.rejection()).isInstanceOf(
-                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoSetFields.class);
+                    no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoSetFields.class);
                 assertThat(f.reason()).contains("nothing to set");
             }),
 
@@ -8804,7 +8808,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilmActor");
                 assertThat(f.rejection()).isInstanceOf(
-                    no.sikt.graphitron.rewrite.model.UpdateRowsError.NoUniqueKeyCoverage.class);
+                    no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage.class);
                 assertThat(f.reason()).contains("film_actor");
             }),
 
@@ -8865,7 +8869,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilmActor");
                 assertThat(f.rejection())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.NoUniqueKeyCoverage.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.NoUniqueKeyCoverage.class);
                 assertThat(f.reason())
                     .contains("covers no primary key or unique key", "multiRow: true");
             }),
@@ -8995,7 +8999,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteFilm");
                 var dr = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
-                assertThat(dr.matchedKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.MatchedKey.PrimaryKey.class);
+                assertThat(dr.matchedKey()).isInstanceOf(no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey.class);
                 assertThat(dr.whereColumns()).singleElement().satisfies(w -> {
                     assertThat(w.targetColumn().sqlName()).isEqualTo("film_id");
                     assertThat(w.extraction())
@@ -9096,7 +9100,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
                 assertThat(f.rejection())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.UpdateRowsError.UnsupportedInputFieldShape.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.UpdateRowsError.UnsupportedInputFieldShape.class);
                 assertThat(f.reason()).contains("list-typed nested input types");
             }),
 
@@ -9112,7 +9116,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.rejection())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRowsError.UnsupportedInputFieldShape.class);
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.UnsupportedInputFieldShape.class);
                 assertThat(f.reason()).contains("list-typed nested input types");
             }),
 
@@ -9213,7 +9217,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
                 assertThat(rex.reentryCorrelation().columns())
-                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }),
 
@@ -9235,7 +9239,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(rex.returnTypeName()).isEqualTo("Film");
                 assertThat(rex.reentryCorrelation().targetTable().tableName()).isEqualTo("film");
                 assertThat(rex.reentryCorrelation().columns())
-                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }),
 
@@ -9354,7 +9358,7 @@ class GraphitronSchemaBuilderTest {
                 // projected arms: PK self-identity over the shared table's primary key.
                 assertThat(dl.reentryCorrelation().targetTable().tableName()).isEqualTo("content");
                 assertThat(dl.reentryCorrelation().columns())
-                    .extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                    .extracting(no.sikt.graphitron.model.jooq.ColumnRef::sqlName)
                     .containsExactly("content_id");
                 assertThat(f.returnExpression())
                     .isNotInstanceOf(no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList.class);
@@ -10654,7 +10658,7 @@ class GraphitronSchemaBuilderTest {
     // ===== Directive mutual exclusivity =====
     // Mutually exclusive claiming directives no longer tombstone at the builder: every claim is
     // a row in the store's authored claim views, and the conflict is the grouping rule in
-    // no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts, reported as a located
+    // no.sikt.graphitron.model.derive.AuthoredClaimConflicts, reported as a located
     // ValidationError while the coordinate classifies by arm order. The conflict fixtures live
     // with that detection's store-backed test (AuthoredClaimConflictsTest).
 

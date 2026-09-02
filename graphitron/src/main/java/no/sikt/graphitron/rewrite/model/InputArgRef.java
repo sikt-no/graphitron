@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.TableRef;
+
 /**
  * The slim per-argument surface a DML walker-carrier field needs to read its {@code @table}
  * input off {@code env} and reference the jOOQ table at emit time. Carries the SDL argument name,

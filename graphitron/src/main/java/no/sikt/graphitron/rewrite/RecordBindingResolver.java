@@ -17,11 +17,11 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.AccessorProbe;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ProducerBinding;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
@@ -51,6 +51,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.asMap;
 import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Derives SDL → backing-class bindings from reflection alone. The walk grounds at root producers

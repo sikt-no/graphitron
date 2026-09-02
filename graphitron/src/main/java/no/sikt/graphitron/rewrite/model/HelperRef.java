@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * A resolved reference to a stateless generated helper method.

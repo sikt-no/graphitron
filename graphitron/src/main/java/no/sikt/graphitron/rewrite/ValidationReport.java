@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Build-pipeline validator output. Carries the full {@link ValidationError} and

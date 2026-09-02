@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.lint.LintFix;
-import no.sikt.graphitron.rewrite.lint.LintRule;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 /**
  * Lint-engine fix slice, classifier arm: the two classifier-owned advisories whose ignored directive can be

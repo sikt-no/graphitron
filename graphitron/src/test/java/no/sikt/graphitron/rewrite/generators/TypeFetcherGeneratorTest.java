@@ -14,7 +14,7 @@ import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.model.RoutineResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
@@ -33,7 +33,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -1940,7 +1940,7 @@ class TypeFetcherGeneratorTest {
                 List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))));
     }
 
-    private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
+    private static no.sikt.graphitron.model.jooq.TableRef filmActorParentTableForList() {
         // Single-column PK on FilmActor that doubles as the FK source on the participants' join
         // paths (filmActorChildJoinPaths sources both FKs from last_update). The list
         // arm constructs a SourceKey (Wrap.Row) from a KeyLift.FkColumns lift over the parent PK;

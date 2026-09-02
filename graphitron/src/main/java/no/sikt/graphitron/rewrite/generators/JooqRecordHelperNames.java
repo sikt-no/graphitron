@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 import java.util.ArrayList;
 import java.util.Collection;

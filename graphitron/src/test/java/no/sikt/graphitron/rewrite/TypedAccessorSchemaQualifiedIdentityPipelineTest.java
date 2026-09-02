@@ -4,7 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.Arity;
+import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * The typed-accessor match on a free-form DTO payload parent must compare jOOQ table identity
@@ -23,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * schema-qualified to disambiguate.
  *
  * <p>The two sides' names never agree: the accessor-side
- * {@link no.sikt.graphitron.rewrite.model.TableRef} is resolved by record-class identity
+ * {@link no.sikt.graphitron.model.jooq.TableRef} is resolved by record-class identity
  * ({@code ServiceCatalog.resolveTableByRecordClass}) and carries jOOQ's unqualified canonical name
  * {@code "event"}, while the element side carries the verbatim qualified echo
  * {@code "multischema_a.event"}. Only class identity can match them, and only class identity can
@@ -40,8 +41,8 @@ class TypedAccessorSchemaQualifiedIdentityPipelineTest {
     private static final ClassName SCHEMA_A_EVENT =
         ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event");
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(),
             Path.of(""), "TypedAccessorSchemaQualifiedIdentityPipelineTest",
             Path.of(""),

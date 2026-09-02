@@ -2,7 +2,7 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The shared table-local fragment every SQL-composing body reads: the entity-prefixed local name

@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -16,6 +16,9 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 
 /**
  * Unit coverage for the {@code @service} decode and bind phases
@@ -40,18 +43,18 @@ class ServiceCatalogTest {
     private static final ClassName JOOQ_RESULT = ClassName.get("org.jooq", "Result");
 
     private static ServiceCatalog newCatalog() {
-        return new ServiceCatalog(new BuildContext(null, null, stubRewriteContext()));
+        return new ServiceCatalog(new BuildContext(null, null, stubRunContext()));
     }
 
     /**
-     * Minimal {@link RewriteContext} for unit-tier classifier tests that don't need real schema
+     * Minimal {@link RunContext} for unit-tier classifier tests that don't need real schema
      * inputs or output paths. The 6-arg overload defaults {@code classpathRoots} to the empty
      * list and {@code codegenLoader} to the current thread's context classloader; in a JUnit
      * JVM that's the system classloader, the same loader bare {@code Class.forName(name)}
      * resolves through.
      */
-    private static RewriteContext stubRewriteContext() {
-        return new RewriteContext(
+    private static RunContext stubRunContext() {
+        return new RunContext(
             java.util.List.of(),
             java.nio.file.Path.of("."), "ServiceCatalogTest",
             java.nio.file.Path.of("."),
@@ -630,7 +633,7 @@ class ServiceCatalogTest {
         // gate read), a BigDecimal parameter against a named input object slot defers to the
         // dot-path hint the same way a String parameter does — proving the predicate routes
         // through the model's scalar classification rather than a hard-coded allow-list.
-        var ctx = new BuildContext(null, null, stubRewriteContext());
+        var ctx = new BuildContext(null, null, stubRunContext());
         var decimalScalar = graphql.schema.GraphQLScalarType.newScalar()
             .name("Decimal").coercing(graphql.schema.GraphQLScalarType.newScalar()
                 .name("_").coercing(new graphql.schema.Coercing<Object, Object>() {}).build().getCoercing())
@@ -926,7 +929,7 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible.class);
         assertThat(result.rejection().message())
             .contains("instance method")
             .contains("no public constructor whose")
@@ -976,7 +979,7 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded.class);
         assertThat(result.rejection().message()).contains("could not be loaded");
     }
 
@@ -994,11 +997,11 @@ class ServiceCatalogTest {
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod.class);
         var ambiguous =
-            (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) result.rejection();
+            (no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod) result.rejection();
         assertThat(ambiguous.ambiguity())
-            .isEqualTo(new no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod
+            .isEqualTo(new no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod
                 .Ambiguity.NameShared());
         assertThat(ambiguous.candidateSignatures())
             .as("the declarations arrive as rendered signatures, not as bare arities")

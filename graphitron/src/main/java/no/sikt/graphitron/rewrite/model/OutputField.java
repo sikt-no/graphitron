@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 /**
  * A classified field that emits a Java value (i.e. has a runtime resolver) and is therefore a

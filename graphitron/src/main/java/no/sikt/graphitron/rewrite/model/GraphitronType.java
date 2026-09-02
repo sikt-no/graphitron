@@ -8,6 +8,9 @@ import graphql.schema.GraphQLScalarType;
 
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Classifies every named GraphQL type. Determines what Graphitron generates for a type
@@ -57,7 +60,7 @@ public sealed interface GraphitronType
      * <p>Two ways in, and {@code provenance} is the record of which: the author declared
      * {@code @node}, or the type declared {@code implements Node} over a table whose backing jOOQ
      * class publishes {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS} and the classifier took
-     * the two values from there. {@code no.sikt.graphitron.rewrite.NodeDeclaration} is the predicate
+     * the two values from there. {@code no.sikt.graphitron.model.grammar.NodeDeclaration} is the predicate
      * both paths share.
      *
      * <p>{@code typeId} is the resolved NodeId wire prefix: the {@code typeId} argument of the
@@ -561,8 +564,8 @@ public sealed interface GraphitronType
      * rejections from {@link no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder}.
      * A schema containing unclassified types is invalid — the
      * {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator} reports a
-     * {@link no.sikt.graphitron.rewrite.ValidationError} whose kind is projected from the
-     * {@link Rejection} variant via {@link no.sikt.graphitron.rewrite.RejectionKind#of}.
+     * {@link no.sikt.graphitron.model.diagnostics.ValidationError} whose kind is projected from the
+     * {@link Rejection} variant via {@link no.sikt.graphitron.model.diagnostics.RejectionKind#of}.
      *
      * <p>{@link #reason()} is a convenience accessor that delegates to
      * {@link Rejection#message()} for log formatters that don't need the structured data.

@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.compile.CompileRound;
 
 /**
  * The dev-loop compile driver that ties the warm {@link IncrementalCompileEngine} to the

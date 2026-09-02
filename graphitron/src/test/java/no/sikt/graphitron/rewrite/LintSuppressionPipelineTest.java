@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
-import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
-import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
-import no.sikt.graphitron.rewrite.lint.LintConfig;
-import no.sikt.graphitron.rewrite.lint.LintRule;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.config.DependencyVersions;
+import no.sikt.graphitron.model.config.ObservedVersion;
+import no.sikt.graphitron.model.config.WatchedDependency;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.lint.LintRule;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -22,6 +22,8 @@ import java.util.Set;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Primary (pipeline-tier) coverage for lint-finding suppression. Drives the real
@@ -44,7 +46,7 @@ class LintSuppressionPipelineTest {
         Path schema, String sdl, LintConfig lintConfig, DependencyVersions versions
     ) throws IOException {
         Files.writeString(schema, sdl);
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);

@@ -12,10 +12,10 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | Internal fork of Square JavaPoet; the emit-time API every generator builds through.
 
 | `graphitron-model`
-| The fact schema: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, and the in-memory H2 bootstrap a generator run captures into. Builds before the core so editing the DDL fails javac in every consumer that touched the changed relation.
+| The fact tier: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads the consumer's three sources (their GraphQL schema, their jOOQ-generated database classes, their compiled Java) and writes down what it found. Builds before the core, so editing the DDL fails javac in every consumer that touched the changed relation and the core cannot reach back into the tier that feeds it.
 
 | `graphitron`
-| The generator core: schema loader, classifier, validator, and every generator.
+| The generator core: the classifier, the validator, the planners and every emitter. Reads facts and writes none.
 
 | `graphitron-fixtures-codegen`
 | Builds the test database and runs jOOQ codegen against it.
@@ -27,7 +27,7 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
 
 | `graphitron-maven-plugin`
-| Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).
+| Maven plugin: `generate`, `validate`, `capture` and `dev` Mojos (the dev mojo provides the watch loop).
 
 | `graphitron-sakila-example`
 | End-to-end consumer: compiles emitted Java against a real jOOQ catalog, executes it against Postgres, and serves a runnable Quarkus + JAX-RS reference application from the same module.

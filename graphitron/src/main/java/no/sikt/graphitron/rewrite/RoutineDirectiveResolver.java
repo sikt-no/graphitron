@@ -4,10 +4,10 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RoutineRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +23,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 /**
  * Resolves {@code @routine} on a field into a sealed {@link Resolved} the caller switches on, the
@@ -377,7 +379,7 @@ final class RoutineDirectiveResolver {
      * checks below are also structurally unable to judge it: the key list and the column's binding
      * type are captured facts, and this runs before capture. So the whole judgment is the store's,
      * which has an arm for each way it fails,
-     * {@link no.sikt.graphitron.rewrite.derive.ArgmappingProjectionDefects} decoding them.
+     * {@link no.sikt.graphitron.model.derive.ArgmappingProjectionDefects} decoding them.
      * Standing aside here rather than there is not a second copy of that rule: it is this gate
      * declining to answer a question about a value it is not looking at.
      */

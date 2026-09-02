@@ -6,13 +6,13 @@ import no.sikt.graphitron.rewrite.model.Arrival;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
+import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +21,10 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The inference gate: a {@code @table} object type that declares {@code implements Node} over a
@@ -49,7 +53,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class NodeInferencePipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "NodeInferencePipelineTest", Path.of(""), DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE);
 
     private static GraphitronSchema schema(String sdl) {

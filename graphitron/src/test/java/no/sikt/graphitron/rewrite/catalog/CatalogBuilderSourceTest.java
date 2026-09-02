@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.catalog;
 
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -92,12 +92,12 @@ class CatalogBuilderSourceTest {
         assertThat(method.description()).isEmpty();
     }
 
-    private static RewriteContext contextWith(
+    private static RunContext contextWith(
         Path basedir, List<Path> classpathRoots, List<Path> compileSourceRoots
     ) {
-        return new RewriteContext(
+        return new RunContext(
             List.of(),
-            RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS,
+            RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS,
             basedir, "CatalogBuilderSourceTest",
             basedir.resolve("out"),
             basedir.resolve("res"),

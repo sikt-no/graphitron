@@ -175,7 +175,7 @@ public final class CorpusDocuments {
      * Splits a document into the type-system half and the projection operation.
      *
      * <p>graphql-java's parser accepts a document mixing SDL with an operation, but
-     * {@link no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader} refuses a non-SDL definition on
+     * {@link no.sikt.graphitron.model.schema.SchemaLoader} refuses a non-SDL definition on
      * purpose, so nothing downstream may see the operation. The split is therefore a truncation at
      * the operation's own source line, which keeps every remaining line at the line number an author
      * reads (re-printing the type-system half would move them all). The convention it rests on is

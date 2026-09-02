@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * The four rails that refuse a translated FK-target {@code @nodeId} carrier, and the one cause they
@@ -43,7 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class TranslatedFkTargetRailGatesPipelineTest {
 
-    private static final RewriteContext NODEID_CTX = new RewriteContext(
+    private static final RunContext NODEID_CTX = new RunContext(
         List.of(),
         Path.of(""), "TranslatedFkTargetRailGatesPipelineTest",
         Path.of(""),

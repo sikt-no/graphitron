@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Pipeline coverage for an {@code @reference} field whose <em>return</em> type carries a
@@ -40,8 +41,8 @@ class QualifiedReturnTypeReferencePipelineTest {
     private static final String MULTI_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.multischemafixture";
     private static final String MULTI_OUTPUT_PACKAGE = "fake.code.generated.multischema";
 
-    private static RewriteContext multiSchemaContext() {
-        return new RewriteContext(
+    private static RunContext multiSchemaContext() {
+        return new RunContext(
             List.of(), Path.of(""), "QualifiedReturnTypeReferencePipelineTest", Path.of(""),
             MULTI_OUTPUT_PACKAGE, MULTI_JOOQ_PACKAGE);
     }

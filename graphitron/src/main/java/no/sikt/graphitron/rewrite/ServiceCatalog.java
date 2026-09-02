@@ -15,18 +15,18 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.ReflectionError;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.ServiceMethodCallError;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
 import no.sikt.graphitron.rewrite.model.SourceKey;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +40,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 
 /**
  * Handles all reflection-based and jOOQ-catalog-based lookups: resolving Java service methods,
@@ -1384,7 +1388,7 @@ class ServiceCatalog {
      * emitting an {@code Enum.valueOf} that throws at runtime); a scalar gets
      * {@link CallSiteExtraction.Direct} only once the wire-coercion predicate confirms
      * graphql-java's coercion output for the SDL leaf is assignable to the declared Java type,
-     * else an {@link no.sikt.graphitron.rewrite.model.WireCoercionError.Assignability} rejection.
+     * else an {@link no.sikt.graphitron.model.diagnostics.WireCoercionError.Assignability} rejection.
      *
      * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
      * route through {@code Direct}: graphql-java translates the wire form to the runtime form
@@ -1414,7 +1418,7 @@ class ServiceCatalog {
                 var parity = new EnumMappingResolver(ctx).checkEnumConstants(enumType.getName(), javaClass);
                 if (parity instanceof EnumMappingResolver.EnumConstantParity.Divergence d) {
                     return new ArgExtraction.Rejected(
-                        new no.sikt.graphitron.rewrite.model.WireCoercionError.EnumConstantDivergence(
+                        new no.sikt.graphitron.model.diagnostics.WireCoercionError.EnumConstantDivergence(
                             typeName,
                             d.mismatches().stream().map(EnumMappingResolver.EnumConstantParity.ValueMismatch::sdlValueName).toList(),
                             d.mismatches().isEmpty() ? List.of() : d.mismatches().get(0).candidates(),
@@ -2196,8 +2200,8 @@ class ServiceCatalog {
      * additional root), and the unmount's optional handle parameter as
      * {@link ParamSource.SessionHandle}, type-checked against the mount's reflected return.
      */
-    SessionHookResolution resolveSessionHooks(no.sikt.graphitron.rewrite.session.SessionStateConfig config) {
-        if (!(config instanceof no.sikt.graphitron.rewrite.session.SessionStateConfig.MethodHooks methodHooks)) {
+    SessionHookResolution resolveSessionHooks(no.sikt.graphitron.model.config.SessionStateConfig config) {
+        if (!(config instanceof no.sikt.graphitron.model.config.SessionStateConfig.MethodHooks methodHooks)) {
             return new SessionHookResolution(SessionHooks.NotConfigured.INSTANCE, List.of());
         }
         var rejections = new ArrayList<Rejection>();
@@ -2242,7 +2246,7 @@ class ServiceCatalog {
      * ({@link ParamSource.SessionHandle}, structural, no name needed) on the unmount.
      */
     private MethodRef.StaticOnly reflectSessionHook(
-            no.sikt.graphitron.rewrite.session.SessionStateConfig.HookRef ref,
+            no.sikt.graphitron.model.config.SessionStateConfig.HookRef ref,
             boolean isMount, List<Rejection> rejections) {
         String className = ref.className();
         String methodName = ref.methodName();

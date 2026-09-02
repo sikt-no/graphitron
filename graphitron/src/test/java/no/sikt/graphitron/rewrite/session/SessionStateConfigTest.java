@@ -8,6 +8,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import no.sikt.graphitron.model.config.SessionStateConfig;
 
 /**
  * Unit-tier coverage of the authored {@code <sessionState>} reconciliation: the method-hook arm

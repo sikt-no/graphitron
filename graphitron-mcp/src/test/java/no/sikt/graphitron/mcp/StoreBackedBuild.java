@@ -3,10 +3,10 @@ package no.sikt.graphitron.mcp;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.rewrite.BuiltStore;
-import no.sikt.graphitron.rewrite.FactWriters;
+import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.lint.LintConfig;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.lint.LintConfig;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -63,7 +63,7 @@ final class StoreBackedBuild implements AutoCloseable {
 
     /**
      * The generated-package overload, for a case whose subject is a property of the census rather
-     * than of the schema. The package is what {@link RewriteContext} resolves the catalog from, so it
+     * than of the schema. The package is what {@link RunContext} resolves the catalog from, so it
      * decides which tables the capture writes and therefore what a bare table name can reach.
      */
     static StoreBackedBuild run(Path tmp, String graphName, String sdl, String jooqPackage) {

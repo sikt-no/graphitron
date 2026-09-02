@@ -13,9 +13,11 @@
     <artifactId>graphitron-model</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
     <description>
-        The generator's fact-schema module: the fact-schema DDL, the jOOQ compile-time surface
-        generated from it, and the in-memory H2 bootstrap a generator run captures into. Builds
-        before graphitron so core compiles against the generated classes.
+        The generator's fact tier: the fact-schema DDL, the jOOQ compile-time surface generated
+        from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads a
+        consumer's GraphQL schema, jOOQ-generated database classes and compiled Java and writes
+        down what it found. Builds before graphitron so core compiles against the generated
+        classes and cannot reach back into the tier that feeds it.
     </description>
 
     <properties>
@@ -40,6 +42,29 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
+        </dependency>
+        <!--
+            The consumer's GraphQL schema is one of the three sources capture reads, so the module
+            that says what a schema fact is parses schemas itself. Not a leak upward: nothing here
+            walks the classified graph, it reads the SDL a consumer wrote.
+        -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
+        <!-- Federation's directive vocabulary, which the schema assembly applies before capture. -->
+        <dependency>
+            <groupId>com.apollographql.federation</groupId>
+            <artifactId>federation-graphql-java-support</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- SchemaRecipe's one glob dialect; version pinned in the root pom's properties. -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-utils</artifactId>
         </dependency>
         <!--
             Build-time only: the codegen driver's GenerationTool. Provided rather than compile so

@@ -9,6 +9,8 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Field-axis classification registry. Two named operations:
@@ -50,7 +52,7 @@ public final class FieldRegistry {
         if (existing != null) {
             var conflict = new GraphitronField.UnclassifiedField(
                 coords.getTypeName(), coords.getFieldName(), field.location(),
-                no.sikt.graphitron.rewrite.model.Rejection.structural(
+                no.sikt.graphitron.model.diagnostics.Rejection.structural(
                     "field classified more than once (generator conflict): already "
                         + existing.getClass().getSimpleName() + ", attempted "
                         + field.getClass().getSimpleName()));

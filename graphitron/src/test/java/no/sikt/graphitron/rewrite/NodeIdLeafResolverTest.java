@@ -7,7 +7,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +20,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * Resolver-tier coverage for {@link NodeIdLeafResolver}: pins the variant choice itself,
@@ -40,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class NodeIdLeafResolverTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "NodeIdLeafResolverTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );
@@ -52,7 +53,7 @@ class NodeIdLeafResolverTest {
      * same shape is reachable from both these classifier tests and the
      * {@code graphitron-sakila-example} execution tier. See {@code init.sql}.
      */
-    private static final RewriteContext PUBLIC_CTX = TestConfiguration.testContext();
+    private static final RunContext PUBLIC_CTX = TestConfiguration.testContext();
 
     @Test
     void directFk_whenEveryKeyPositionLandsOnAnOwnTableColumn() {
@@ -518,13 +519,13 @@ class NodeIdLeafResolverTest {
         return buildBuildContext(sdl, FIXTURE_CTX);
     }
 
-    private static BuildContext buildBuildContext(String sdl, RewriteContext ctx) {
+    private static BuildContext buildBuildContext(String sdl, RunContext ctx) {
         TypeDefinitionRegistry registry = new SchemaParser().parse(prelude() + sdl);
         return GraphitronSchemaBuilder.buildContextForTests(AttributedRegistry.from(registry), ctx);
     }
 
     private static String prelude() {
-        try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
+        try (InputStream is = SchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8) + "\ninterface Node { id: ID! }\n";
         } catch (IOException e) {

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.diagnostics.Arity;
+
 /**
  * A composite type's <em>arrival cardinality</em>: how many source objects of a parent type
  * reach a nested field's fetcher in one request. The lattice is {@code One < Many} with {@code Many}

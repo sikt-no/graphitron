@@ -225,7 +225,7 @@ class TestConditionStub {
      * Fixture: a {@code @condition} method with concrete jOOQ table parameters, for hops with no
      * declared target. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
      * then resolves the target table by reflecting on the second parameter type and looking it up
-     * via {@link no.sikt.graphitron.rewrite.JooqCatalog#findTableByClass}. Source is
+     * via {@link no.sikt.graphitron.model.jooq.JooqCatalog#findTableByClass}. Source is
      * {@code film}; target is {@code film_actor}, so a subsequent {@code {table: "actor"}}
      * step derives the FilmActor → Actor FK.
      */

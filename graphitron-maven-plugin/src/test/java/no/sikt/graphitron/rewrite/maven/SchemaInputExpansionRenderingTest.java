@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
-import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +14,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 
 /**
  * The mojo-side half of the {@code <schemaInputs>} seam: the bean decode
@@ -117,7 +118,7 @@ class SchemaInputExpansionRenderingTest {
     }
 
     /** The one seam {@code buildContext} runs: the bean decode, then the core expansion. */
-    private static List<no.sikt.graphitron.rewrite.schema.input.SchemaInput> expand(
+    private static List<no.sikt.graphitron.model.schema.input.SchemaInput> expand(
             AbstractRewriteMojo mojo, Path basedir, Set<String> extensions)
             throws MojoExecutionException {
         SchemaRecipe recipe = mojo.buildSchemaRecipe(extensions);

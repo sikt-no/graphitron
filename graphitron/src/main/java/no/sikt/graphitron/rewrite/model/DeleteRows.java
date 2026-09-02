@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
 
 /**
  * The DELETE-shape walker carrier. Holds the WHERE columns {@code DeleteRowsWalker} derived

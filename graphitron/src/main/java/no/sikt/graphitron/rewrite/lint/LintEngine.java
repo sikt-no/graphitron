@@ -17,8 +17,8 @@ import graphql.language.TypeDefinition;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import no.sikt.graphitron.model.lint.DeprecationRecognizer;
+import no.sikt.graphitron.model.lint.LintFix;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * The SDL lint engine: one shared traversal over the parsed graphql-java AST that dispatches
@@ -249,7 +252,7 @@ public final class LintEngine {
     }
 
     private static Set<String> computeBundledTypeNames() {
-        var registry = new SchemaParser().parse(RewriteSchemaLoader.directivesSdl());
+        var registry = new SchemaParser().parse(SchemaLoader.directivesSdl());
         var names = new LinkedHashSet<String>();
         names.addAll(registry.types().keySet());
         names.addAll(registry.scalars().keySet());

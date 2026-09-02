@@ -25,7 +25,7 @@ import java.util.List;
  * skipped. Directive-declaration input-object types (declared in {@code directives.graphqls})
  * never appear in {@link GraphitronSchema#types()}: they exist only to give Graphitron's own
  * build-time directives argument shapes, and the classifier skips them per
- * {@link no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes}.
+ * {@link no.sikt.graphitron.model.schema.DirectiveSupportTypes}.
  *
  * <p>Cross-type references are emitted as {@code GraphQLTypeReference.typeRef(name)} so the
  * generator can emit types in any order and trust graphql-java's {@code .build()} call to

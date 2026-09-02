@@ -26,8 +26,8 @@ import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl;
-import no.sikt.graphitron.rewrite.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
@@ -42,13 +42,13 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.DmlWriteField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
-import no.sikt.graphitron.rewrite.model.Rejection;
-import no.sikt.graphitron.rewrite.model.Rejection.InvalidSchema.CaseFoldCollision.Origin;
+import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection.InvalidSchema.CaseFoldCollision.Origin;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
-import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
-import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,6 +62,12 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.*;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 /**
  * Builds a {@link GraphitronSchema} from a {@link TypeDefinitionRegistry} by classifying every
@@ -71,7 +77,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.*;
  * <p>This is the directive-reading boundary: the only place in the pipeline that reads schema
  * directives. Downstream code works exclusively with the produced model values.
  *
- * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry, RewriteContext)} before running
+ * <p>The Maven plugin calls {@link #build(TypeDefinitionRegistry, RunContext)} before running
  * {@link GraphitronSchemaValidator#validate(GraphitronSchema)}.
  */
 public class GraphitronSchemaBuilder {
@@ -108,11 +114,11 @@ public class GraphitronSchemaBuilder {
      * model does not carry it; both surface together. Production callers pass an
      * {@link AttributedRegistry} carrying the {@code federationLink} flag captured from
      * {@link FederationLinkApplier#apply}'s return value; tests that hand-craft a registry use
-     * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RewriteContext)},
+     * the convenience overload {@link #buildBundle(TypeDefinitionRegistry, RunContext)},
      * which derives the flag via {@link AttributedRegistry#from(TypeDefinitionRegistry)}.
      *
      * <p>{@code usesOneOf} is {@code federationLink}'s sibling schema-level fact, landed once
-     * here (from {@link no.sikt.graphitron.rewrite.schema.OneOfDirectiveSdl#usesOneOf}) so
+     * here (from {@link no.sikt.graphitron.model.schema.OneOfDirectiveSdl#usesOneOf}) so
      * downstream steps read the decision instead of re-walking the assembled schema.
      */
     public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink,
@@ -122,9 +128,9 @@ public class GraphitronSchemaBuilder {
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
      * running {@link GraphQLRewriteGenerator#loadAttributedRegistry}. Wraps via
      * {@link AttributedRegistry#from(TypeDefinitionRegistry)}; production code uses
-     * {@link #build(AttributedRegistry, RewriteContext)} directly.
+     * {@link #build(AttributedRegistry, RunContext)} directly.
      */
-    public static GraphitronSchema build(TypeDefinitionRegistry registry, RewriteContext ctx) {
+    public static GraphitronSchema build(TypeDefinitionRegistry registry, RunContext ctx) {
         return build(AttributedRegistry.from(registry), ctx);
     }
 
@@ -133,14 +139,14 @@ public class GraphitronSchemaBuilder {
      * resulting {@link GraphitronSchema}. The registry must already include the Graphitron
      * directive definitions.
      */
-    public static GraphitronSchema build(AttributedRegistry attributed, RewriteContext ctx) {
+    public static GraphitronSchema build(AttributedRegistry attributed, RunContext ctx) {
         return buildBundle(attributed, ctx).model();
     }
 
     /**
-     * Convenience overload for tests; see {@link #build(TypeDefinitionRegistry, RewriteContext)}.
+     * Convenience overload for tests; see {@link #build(TypeDefinitionRegistry, RunContext)}.
      */
-    public static Bundle buildBundle(TypeDefinitionRegistry registry, RewriteContext ctx) {
+    public static Bundle buildBundle(TypeDefinitionRegistry registry, RunContext ctx) {
         return buildBundle(AttributedRegistry.from(registry), ctx);
     }
 
@@ -148,7 +154,7 @@ public class GraphitronSchemaBuilder {
      * Classifies the {@link AttributedRegistry} and returns both the classified model and the
      * assembled {@link GraphQLSchema}. See {@link Bundle}.
      */
-    public static Bundle buildBundle(AttributedRegistry attributed, RewriteContext ctx) {
+    public static Bundle buildBundle(AttributedRegistry attributed, RunContext ctx) {
         return buildBundle(attributed, assembleOrFail(SchemaAssembly.of(attributed.registry())), ctx);
     }
 
@@ -156,7 +162,7 @@ public class GraphitronSchemaBuilder {
      * The assembly refusal a caller with nothing to record about it wants: the federation-recipe
      * translation where it applies, and otherwise the {@code SchemaProblem} graphql-java raised.
      *
-     * <p>Split out from {@link #buildBundle(AttributedRegistry, RewriteContext)} because the
+     * <p>Split out from {@link #buildBundle(AttributedRegistry, RunContext)} because the
      * pipeline assembles ahead of classification (so the refusal is captured as facts before
      * anything throws) and then needs this same translation at its own failure arm. One home for
      * it, so the two paths cannot disagree about which exception an unassemblable schema earns.
@@ -181,7 +187,7 @@ public class GraphitronSchemaBuilder {
      * twice would be both wasted work and two sources of truth, with the captured verdict coming
      * from a different call than the one the build actually classified.
      */
-    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RewriteContext ctx) {
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
@@ -238,7 +244,7 @@ public class GraphitronSchemaBuilder {
      * {@code BuildContext} the orchestrator hands to {@link FieldBuilder}, but without the
      * field-classification side effects (which would consume the resolver).
      */
-    static BuildContext buildContextForTests(AttributedRegistry attributed, RewriteContext ctx) {
+    static BuildContext buildContextForTests(AttributedRegistry attributed, RunContext ctx) {
         var registry = attributed.registry();
         GraphQLSchema assembled = SchemaAssembly.of(registry).orThrow();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
@@ -344,7 +350,7 @@ public class GraphitronSchemaBuilder {
         // nodes at the graph's migration), computed once here so no emit-side site re-derives it.
         var argumentReachableInputs = ArgumentReachableInputs.compute(ctx.types, rebuiltAssembled);
         // The session-hook resolution: the authored <sessionState> strings arrive on
-        // RewriteContext and are reflected here, the stage that owns ServiceCatalog, into the
+        // RunContext and are reflected here, the stage that owns ServiceCatalog, into the
         // total resolved carrier the emit-side readers switch on. A reflection failure drains
         // as a schema-wide, coordinate-less ValidationError (the same channel the reductions
         // above use) and the carrier stays NotConfigured, so no hook unit is planned for a
@@ -1009,7 +1015,7 @@ public class GraphitronSchemaBuilder {
      * deliberate: this is a deprecation announcement, not a lint-engine finding. The live
      * precedent for {@code NoRule} is the federation compound-key advisory in
      * {@link EntityResolutionBuilder}. It carries no fix: {@code NoRule} has no fix field, and
-     * {@link no.sikt.graphitron.rewrite.lint.LintFix#deleteBareAppliedDirective} gates on the
+     * {@link no.sikt.graphitron.model.lint.LintFix#deleteBareAppliedDirective} gates on the
      * directive definition declaring no arguments, which {@code @table} does not satisfy.
      * The advisory still reaches the LSP as a warning squiggle, which projects every located
      * {@link BuildWarning} regardless of arm.
@@ -1355,10 +1361,10 @@ public class GraphitronSchemaBuilder {
             if (m.find() && FederationDirectiveNamesHolder.NAMES.contains(m.group(1))) {
                 anyFed = true;
                 result.add(new ValidationError(null,
-                        no.sikt.graphitron.rewrite.model.Rejection.invalidSchema(buildRecipeMessage(m.group(1))), loc));
+                        no.sikt.graphitron.model.diagnostics.Rejection.invalidSchema(buildRecipeMessage(m.group(1))), loc));
             } else {
                 result.add(new ValidationError(null,
-                        no.sikt.graphitron.rewrite.model.Rejection.invalidSchema(err.getMessage()), loc));
+                        no.sikt.graphitron.model.diagnostics.Rejection.invalidSchema(err.getMessage()), loc));
             }
         }
         return anyFed ? result : null;

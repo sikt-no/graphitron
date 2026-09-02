@@ -4,6 +4,7 @@ import graphql.language.SourceLocation;
 
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * A field on the {@code Query} type. Read-only. All create a new scope or enter service scope.

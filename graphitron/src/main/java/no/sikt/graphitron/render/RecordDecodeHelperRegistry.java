@@ -3,10 +3,11 @@ package no.sikt.graphitron.render;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Per-class collector for the node-id record decodes one generated class needs, the third of this
@@ -62,7 +63,7 @@ public final class RecordDecodeHelperRegistry {
      * id.
      */
     public String register(ClassName encoderClass, String typeId, String nodeTypeName,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable) {
         ClassName recordType = CatalogRefs.recordClass(nodeTable);
         String name = helperName(recordType);

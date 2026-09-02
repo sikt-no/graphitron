@@ -4,9 +4,10 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.model.HelperRef;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 import javax.lang.model.element.Modifier;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The one body that turns a base64 node id into the target table's own {@code TableRecord}:
@@ -73,7 +74,7 @@ public final class RecordDecodeFragments {
      * @param nodeTypeName  the node type as the failure message names it to the client
      */
     public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
-            String nodeTypeName, java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            String nodeTypeName, java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable, String outputPackage) {
         return decodeHelper(name, encoderClass, typeId, keyColumns, nodeTable,
             NodeIdDecodeFailure.throwStatement(outputPackage, encoderClass, typeId, nodeTypeName,
@@ -94,7 +95,7 @@ public final class RecordDecodeFragments {
      * @param nodeTable    the node type's own table, whose record the load materialises
      */
     public static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable) {
         return decodeHelper(name, encoderClass, typeId, keyColumns, nodeTable,
             CodeBlock.builder()
@@ -109,7 +110,7 @@ public final class RecordDecodeFragments {
      * throw differs.
      */
     private static MethodSpec decodeHelper(String name, ClassName encoderClass, String typeId,
-            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> keyColumns,
+            java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable, CodeBlock mismatchThrow) {
         ClassName recordType = CatalogRefs.recordClass(nodeTable);
         int arity = keyColumns.size();

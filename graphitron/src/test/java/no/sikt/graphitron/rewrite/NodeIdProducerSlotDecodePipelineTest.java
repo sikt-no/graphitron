@@ -2,10 +2,10 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.ServiceField;
 import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;

@@ -6,6 +6,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * End-to-end check that classifier rejections from the root {@code @service}
@@ -65,8 +68,8 @@ class ServiceRootFetcherPipelineTest {
         // arm (SERVICE context) end-to-end through the validator, carrying its stable lspCode.
         var typed = errors.stream()
             .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch)
-            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.ReturnTypeMismatch) r)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch)
+            .map(r -> (no.sikt.graphitron.model.diagnostics.ReflectionError.ReturnTypeMismatch) r)
             .findFirst();
         assertThat(typed)
             .as("root @service strict-return mismatch must reach ValidationError as a typed ReturnTypeMismatch")
@@ -141,8 +144,8 @@ class ServiceRootFetcherPipelineTest {
 
         var typed = errors.stream()
             .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots)
-            .map(r -> (no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots) r)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots)
+            .map(r -> (no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.MultipleDslContextSlots) r)
             .findFirst();
         assertThat(typed)
             .as("Walker's MultipleDslContextSlots arm must reach ValidationError as a typed rejection")
@@ -165,8 +168,8 @@ class ServiceRootFetcherPipelineTest {
 
         var typed = errors.stream()
             .map(ValidationError::rejection)
-            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod)
-            .map(r -> (no.sikt.graphitron.rewrite.model.ReflectionError.AmbiguousMethod) r)
+            .filter(r -> r instanceof no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod)
+            .map(r -> (no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod) r)
             .findFirst();
         assertThat(typed)
             .as("overloaded @service method must reach ValidationError as a typed AmbiguousMethod")
@@ -190,7 +193,7 @@ class ServiceRootFetcherPipelineTest {
         assertThat(errors)
             .as("a (DSLContext, ctxArg) holder ctor must resolve without a holder rejection")
             .noneMatch(e -> e.rejection()
-                instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.InstanceHolderUnconstructible);
+                instanceof no.sikt.graphitron.model.diagnostics.ServiceMethodCallError.InstanceHolderUnconstructible);
     }
 
     private static List<ValidationError> validate(String sdl) {

@@ -12,6 +12,9 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 
 /**
  * The one glob dialect and its typed result. Retargeted from the Maven plugin's own expander, which

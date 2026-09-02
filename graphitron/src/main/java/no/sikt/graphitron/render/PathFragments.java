@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.TableExpr;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The join-path emission fragments that dispatch on a hop's occupants ({@link On},
@@ -35,7 +36,7 @@ public final class PathFragments {
      * {@link #generateAliases} has no path to walk, and the alias is that scheme specialized to
      * a one-node chain (first character lowercased plus index 0).
      */
-    public static String liftedAlias(no.sikt.graphitron.rewrite.model.TableRef targetTable) {
+    public static String liftedAlias(no.sikt.graphitron.model.jooq.TableRef targetTable) {
         String javaName = CatalogRefs.tableClass(targetTable).simpleName();
         String basePrefix = javaName.isEmpty() ? "t" : javaName.substring(0, 1).toLowerCase();
         return basePrefix + 0;

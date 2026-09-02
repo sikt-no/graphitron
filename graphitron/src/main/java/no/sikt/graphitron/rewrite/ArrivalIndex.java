@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
 
 /**
  * The ancestor-product arrival fold, materialised as a pure, typename-keyed index over the

@@ -4,11 +4,11 @@ import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.JooqCatalog;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.ValidationFailedException;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.rewrite.classifieddsl.CorpusDocuments.Document;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -144,7 +144,7 @@ final class OutcomeBlockRenderer {
      */
     private static Map<String, String> verdicts(Document document, Path directory) throws IOException {
         Files.createDirectories(directory);
-        RewriteContext ctx = TestConfiguration.testContext();
+        RunContext ctx = TestConfiguration.testContext();
         var store = CapturedStore.ofCatalog(directory, CorpusDocuments.prelude() + "\n" + document.sdl(),
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
 
@@ -176,7 +176,7 @@ final class OutcomeBlockRenderer {
         Files.createDirectories(directory);
         Path schemaFile = directory.resolve("schema.graphqls");
         Files.writeString(schemaFile, CorpusDocuments.prelude() + "\n" + document.sdl());
-        RewriteContext ctx = new RewriteContext(
+        RunContext ctx = new RunContext(
             List.of(SchemaInput.file(schemaFile)),
             directory, "outcome-block", directory.resolve("generated-sources"),
             OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);

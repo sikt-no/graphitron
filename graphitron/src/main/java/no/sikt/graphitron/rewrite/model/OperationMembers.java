@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The leaf-to-member crosswalk: derives a coordinate's {@link OperationMember} set from its

@@ -5,7 +5,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationBulkDmlRecordField;
 import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField;
-import no.sikt.graphitron.rewrite.model.MutationTableArgError;
+import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +18,8 @@ import static no.sikt.graphitron.rewrite.DmlWriteReads.deleteArgOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.insertInputOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateArgOf;
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The field-relative DML write-target precedence. For DELETE it pins the {@code @mutation(table:)}
@@ -37,7 +39,7 @@ class MutationTableArgClassificationTest {
      * (single {@code id} PK) and {@code Bar} (composite {@code id_1, id_2} PK) are hand-instrumented,
      * mirroring {@code MutationDmlNodeIdClassificationTest}.
      */
-    private static final RewriteContext NODEID_CTX = new RewriteContext(
+    private static final RunContext NODEID_CTX = new RunContext(
         List.of(),
         Path.of(""), "MutationTableArgClassificationTest",
         Path.of(""),

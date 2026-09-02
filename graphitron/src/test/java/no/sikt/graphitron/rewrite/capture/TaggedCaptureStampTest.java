@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.schema.input.TagLinkSynthesiser;
+import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 
 /**
  * Capture's stamp lookup has two legitimate misses, and this is the one the suite would otherwise
@@ -56,7 +57,7 @@ class TaggedCaptureStampTest {
                             .toAbsolutePath().normalize().toString())) {
                             assertThat(row.value1()).isIn(
                                 TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME,
-                                no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader.DIRECTIVES_SOURCE_NAME);
+                                no.sikt.graphitron.model.schema.SchemaLoader.DIRECTIVES_SOURCE_NAME);
                             assertThat(row.value2()).isNull();
                         }
                     });

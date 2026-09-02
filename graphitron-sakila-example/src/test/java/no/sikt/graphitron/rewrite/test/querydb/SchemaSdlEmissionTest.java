@@ -4,8 +4,8 @@ import graphql.language.EnumTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
-import no.sikt.graphitron.rewrite.schema.DirectiveSupportTypes;
-import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 

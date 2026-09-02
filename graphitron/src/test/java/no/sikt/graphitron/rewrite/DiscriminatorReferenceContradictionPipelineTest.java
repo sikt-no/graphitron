@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * Coverage for the discriminated-interface reference contradiction: a participant {@code @reference}

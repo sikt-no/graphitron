@@ -10,10 +10,10 @@ import no.sikt.graphitron.command.Predicate;
 import no.sikt.graphitron.command.PresenceGuard;
 import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.rewrite.GraphitronSchemaValidator;
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +23,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Pipeline-tier assertions on the condition command relation over classified fixture schemas:
@@ -42,7 +43,7 @@ class ConditionCommandsPipelineTest {
      * The {@code nodeidfixture} catalog, where {@code bar} carries a single-column FK to {@code baz}:
      * the FK-target shape an authored {@code @condition} reaches through a correlated EXISTS.
      */
-    private static final RewriteContext NODE_ID_FIXTURE_CTX = new RewriteContext(
+    private static final RunContext NODE_ID_FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "ConditionCommandsPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, "no.sikt.graphitron.rewrite.nodeidfixture");
 
@@ -349,7 +350,7 @@ class ConditionCommandsPipelineTest {
                 .filter(p -> p instanceof Predicate.Generated)
                 .flatMap(p -> ((Predicate.Generated) p).terms().stream())
                 .flatMap(t -> t.columns().stream())
-                .map(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName))
+                .map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName))
             .containsExactly("email");
     }
 

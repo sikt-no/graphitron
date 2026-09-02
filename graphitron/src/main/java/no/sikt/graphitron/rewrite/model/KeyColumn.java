@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.model.jooq.ColumnRef;
+
 /**
  * One column contribution on the WHERE side of an UPDATE or DELETE: a filter column the
  * input fills. Carries the GraphQL input field name it came from, the jOOQ column it fills, how

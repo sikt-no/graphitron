@@ -6,15 +6,15 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
-import no.sikt.graphitron.rewrite.capture.GraphIdentity;
-import no.sikt.graphitron.rewrite.capture.SubjectConfig;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInputAttribution;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
 
 import java.io.IOException;
@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * A booted fact store with one or more SDL fixtures captured into it: the capture-level population,
@@ -138,7 +140,7 @@ public final class CapturedStore implements AutoCloseable {
                                         String secondName, String secondSdl) {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
-        var registry = RewriteSchemaLoader.load(files.stream().map(SchemaSource::file).toList());
+        var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
         captureFiles(store, files, directory, GRAPH, registry, null, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, null);
@@ -178,7 +180,7 @@ public final class CapturedStore implements AutoCloseable {
      * {@link #attributed()} exposes both handles so a test can compare the two stages.
      *
      * <p>The marked name is the whole of the claim: everything above takes a bare
-     * {@link RewriteSchemaLoader#load} registry, so which registry a fixture derived its rows from is
+     * {@link SchemaLoader#load} registry, so which registry a fixture derived its rows from is
      * what a {@code grep} for this name separates on.
      *
      * <p>The catalog reaches capture, so a rule reading both corpora answers here the way it answers
@@ -198,7 +200,7 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ofPipeline(Path directory, String sdl, String tag) {
         Path file = write(directory, GRAPH, sdl);
         var input = new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty());
-        var ctx = new RewriteContext(
+        var ctx = new RunContext(
             List.of(input),
             directory, GRAPH, directory,
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
@@ -239,7 +241,7 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * Reads {@code files} through {@link RewriteSchemaLoader#parsePerSource} rather than
+     * Reads {@code files} through {@link SchemaLoader#parsePerSource} rather than
      * {@code load}, because a refusal is the subject here and {@code load}'s contract is to throw on
      * one, and captures the verdict beside whatever did parse.
      *
@@ -247,7 +249,7 @@ public final class CapturedStore implements AutoCloseable {
      * go on passing as a fixture for a refusal.
      */
     private static CapturedStore captureRefused(Path directory, List<Path> files, JooqCatalog jooq) {
-        var parse = RewriteSchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
+        var parse = SchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
         if (parse.failures().isEmpty() && parse.registryErrors().isEmpty()) {
             throw new AssertionError("nothing objected to " + files.getLast().getFileName()
                 + "; this arm's whole subject is a read that refused something");
@@ -263,7 +265,7 @@ public final class CapturedStore implements AutoCloseable {
                                                 JooqCatalog jooq,
                                                 List<CompletionData.ExternalReference> census) {
         Path file = write(directory, graphName, sdl);
-        var registry = RewriteSchemaLoader.load(List.of(SchemaSource.file(file)));
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = FactStores.inMemory();
         captureFile(store, file, directory, graphName, registry, jooq, census, false);
         return new CapturedStore(store, graphName, directory, file, registry, null);
@@ -308,7 +310,7 @@ public final class CapturedStore implements AutoCloseable {
      */
     public CapturedStore andGraphSharingTheFile(String otherGraph) {
         captureFile(store, file, directory, otherGraph,
-            RewriteSchemaLoader.load(List.of(SchemaSource.file(file))), null, List.of(), false);
+            SchemaLoader.load(List.of(SchemaSource.file(file))), null, List.of(), false);
         return this;
     }
 
@@ -336,7 +338,7 @@ public final class CapturedStore implements AutoCloseable {
                                 List<CompletionData.ExternalReference> census, boolean warm) {
         Path other = write(directory, graph, sdl);
         captureFile(store, other, directory, graph,
-            RewriteSchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, warm);
+            SchemaLoader.load(List.of(SchemaSource.file(other))), jooq, census, warm);
     }
 
     private static void captureFile(GraphitronModelStore store, Path file, Path directory,
@@ -373,7 +375,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /** {@link #registryOf(Path, String)} writing the fixture under a graph the caller names. */
     public static TypeDefinitionRegistry registryOf(Path directory, String graphName, String sdl) {
-        return RewriteSchemaLoader.load(List.of(SchemaSource.file(write(directory, graphName, sdl))));
+        return SchemaLoader.load(List.of(SchemaSource.file(write(directory, graphName, sdl))));
     }
 
     /**

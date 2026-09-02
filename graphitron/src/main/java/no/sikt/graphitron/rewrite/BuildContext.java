@@ -18,7 +18,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
@@ -30,9 +30,9 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.TableExpr;
-import no.sikt.graphitron.rewrite.model.TableRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
@@ -58,6 +58,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.diagnostics.Arity;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.grammar.DirectiveArgs;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.grammar.NodeDeclaration;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Shared build-time state and stateless utilities used by {@link TypeBuilder},
@@ -156,7 +165,7 @@ class BuildContext {
 
     final GraphQLSchema schema;
     final JooqCatalog catalog;
-    final RewriteContext ctx;
+    final RunContext ctx;
     /**
      * Type-axis classification registry. The single classification walk
      * ({@link TypeBuilder#classifyAndRegister} on the walk, {@link TypeBuilder#finishTypeClassification()}
@@ -341,11 +350,11 @@ class BuildContext {
      */
     final NodeDeclaration nodeDeclaration;
 
-    BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
+    BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of
         // its fields (codegenLoader, jooqPackage, classpathRoots). Test sites that don't care
-        // about ctx still construct a deterministic stub via RewriteContext's 6-arg overload.
+        // about ctx still construct a deterministic stub via RunContext's 6-arg overload.
         this.schema = schema;
         this.catalog = catalog;
         this.ctx = java.util.Objects.requireNonNull(ctx, "ctx");
@@ -390,13 +399,13 @@ class BuildContext {
         return nodeIdLeafResolver;
     }
 
-    RewriteContext ctx() {
+    RunContext ctx() {
         return ctx;
     }
 
     /**
      * Loader for consumer-declared classes (service, record, condition, jOOQ catalog). Mirrors
-     * {@link RewriteContext#codegenLoader()} so reflection sites holding a {@code BuildContext}
+     * {@link RunContext#codegenLoader()} so reflection sites holding a {@code BuildContext}
      * do not have to chain through {@code ctx().codegenLoader()}.
      */
     ClassLoader codegenLoader() {
@@ -404,7 +413,7 @@ class BuildContext {
     }
 
     /**
-     * The nameability rule over {@link RewriteContext#classpathRoots()}, built on first use and
+     * The nameability rule over {@link RunContext#classpathRoots()}, built on first use and
      * shared by every author-written-name site in the run so each probed jar is listed once.
      * Inert (every name nameable) when the context carries no classpath roots, which is every
      * unit-tier caller; see {@link ClasspathNameability}.
@@ -690,7 +699,7 @@ class BuildContext {
      * The single classify-time verdict over an {@code @service} carrier's shape triple:
      * (carrier field wrapper, {@code @service} producer return shape, payload data-field wrapper).
      * In the style of {@link DmlPayloadScan}, but its {@link Reject} arm carries a typed
-     * {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError} (with the disagreeing arrival
+     * {@link no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError} (with the disagreeing arrival
      * axes and a stable LSP code) rather than a composed reason string.
      *
      * <p>Computed at the {@code @service} payload seat by {@code FieldBuilder.scanServiceCarrierShape},
@@ -708,7 +717,7 @@ class BuildContext {
      *       downstream return-type match ({@code FieldBuilder.checkServiceReturnMatchesPayload}) reads
      *       that one fact instead of re-deriving it from the carrier / data-field wrappers.</li>
      *   <li>{@link Reject}: an incoherent list carrier; carries the typed
-     *       {@link no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError}.</li>
+     *       {@link no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError}.</li>
      *   <li>{@link NotApplicable}: not a producer-backed carrier (the seat falls through to its
      *       existing non-carrier classification).</li>
      * </ul>
@@ -716,14 +725,14 @@ class BuildContext {
     public sealed interface ServiceCarrierShape {
         /**
          * @param producerArrival the arrival the SDL shape requires the {@code @service}
-         *   producer's return to have ({@link no.sikt.graphitron.rewrite.model.Arity#MANY}
+         *   producer's return to have ({@link no.sikt.graphitron.model.diagnostics.Arity#MANY}
          *   for a list carrier {@code [Payload]}, or a single carrier whose data field is itself a
-         *   list; {@link no.sikt.graphitron.rewrite.model.Arity#ONE} otherwise). Decided
+         *   list; {@link no.sikt.graphitron.model.diagnostics.Arity#ONE} otherwise). Decided
          *   once at the verdict and carried, so no downstream consumer re-derives carrier arrival from
          *   the wrapper.
          */
-        record Coherent(no.sikt.graphitron.rewrite.model.Arity producerArrival) implements ServiceCarrierShape {}
-        record Reject(no.sikt.graphitron.rewrite.model.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
+        record Coherent(no.sikt.graphitron.model.diagnostics.Arity producerArrival) implements ServiceCarrierShape {}
+        record Reject(no.sikt.graphitron.model.diagnostics.ServiceCarrierShapeError error) implements ServiceCarrierShape {}
         record NotApplicable() implements ServiceCarrierShape {}
     }
 
@@ -3228,7 +3237,7 @@ class BuildContext {
      * carries everything the {@code decode<Record>} helper materialises a {@link org.jooq.TableRecord}
      * from: the generated {@code NodeIdEncoder} {@code encoderClass} (to call {@code decodeValues}),
      * the wire-format {@code typeId} (its first argument), the target's key columns (the per-column
-     * {@code set} loop), and the resolved {@link no.sikt.graphitron.rewrite.model.TableRef} (the
+     * {@code set} loop), and the resolved {@link no.sikt.graphitron.model.jooq.TableRef} (the
      * record class, the {@code Tables} constants class, and the table field name needed to write
      * {@code Tables.<T>.<col>}). {@link Rejected} carries a fully formatted reason ready for a
      * {@code Rejection}.
@@ -3240,7 +3249,7 @@ class BuildContext {
     sealed interface NodeIdRecordDecode {
         record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeId,
                         List<ColumnRef> keyColumns,
-                        no.sikt.graphitron.rewrite.model.TableRef table) implements NodeIdRecordDecode {}
+                        no.sikt.graphitron.model.jooq.TableRef table) implements NodeIdRecordDecode {}
         record Rejected(String message) implements NodeIdRecordDecode {}
     }
 
@@ -3248,7 +3257,7 @@ class BuildContext {
      * Resolves the NodeId-decode materialization data for a jOOQ-record input-bean member from the
      * author's {@code @nodeId(typeName:)}: the wire-format {@code typeId} and key columns come from
      * the table backing {@code typeName} via the shared {@link #resolveTargetKeys} (the single
-     * {@code @node(keyColumns:)} fallback site), and the {@link no.sikt.graphitron.rewrite.model.TableRef}
+     * {@code @node(keyColumns:)} fallback site), and the {@link no.sikt.graphitron.model.jooq.TableRef}
      * comes from the jOOQ catalog entry for that table (record class + {@code Tables} constants).
      * Works for any key arity (single-column or composite); the caller (the input-bean resolver)
      * decides scalar-vs-list from the member's Java shape.

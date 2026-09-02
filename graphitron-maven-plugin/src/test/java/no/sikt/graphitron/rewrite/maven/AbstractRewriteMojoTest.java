@@ -1,11 +1,11 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.catalog.ClasspathScanner;
-import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.DefaultMavenExecutionResult;
 import org.apache.maven.execution.MavenSession;
@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 
 /**
  * Covers the one-shot mojo's rendering of a {@code ValidationFailedException}: the failure message
@@ -333,14 +334,14 @@ class AbstractRewriteMojoTest {
         // own output is PROJECT, the convention-scanned sibling is SIBLING named by its module
         // directory, which is what the build-side rejection message needs.
         assertThat(ctx.classpathRoots())
-            .extracting(no.sikt.graphitron.rewrite.ClasspathEntry::path,
-                no.sikt.graphitron.rewrite.ClasspathEntry::origin,
-                no.sikt.graphitron.rewrite.ClasspathEntry::coordinate)
+            .extracting(no.sikt.graphitron.model.config.ClasspathEntry::path,
+                no.sikt.graphitron.model.config.ClasspathEntry::origin,
+                no.sikt.graphitron.model.config.ClasspathEntry::coordinate)
             .contains(
                 org.assertj.core.groups.Tuple.tuple(specClasses.toAbsolutePath().normalize(),
-                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.PROJECT, null),
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.PROJECT, null),
                 org.assertj.core.groups.Tuple.tuple(serviceClasses.toAbsolutePath().normalize(),
-                    no.sikt.graphitron.rewrite.ClasspathEntry.Origin.SIBLING, "service-module"));
+                    no.sikt.graphitron.model.config.ClasspathEntry.Origin.SIBLING, "service-module"));
         // ...so the sibling's @condition class lands as an external reference: the
         // catalog scan the LSP runs over exactly these roots now sees it.
         var refs = ClasspathScanner.scan(ctx.classpathRoots(), "no.sikt.example.jooq");

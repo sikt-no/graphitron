@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.ArgConditionRef;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Classifies every field in a GraphQL input object type.

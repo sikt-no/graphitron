@@ -8,7 +8,7 @@ import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.test.UnregisteredRelation;
 import no.sikt.graphitron.rewrite.CapturedStore;
-import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

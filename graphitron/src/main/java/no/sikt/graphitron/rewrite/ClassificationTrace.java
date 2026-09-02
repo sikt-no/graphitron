@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import no.sikt.graphitron.model.diagnostics.RejectionKind;
 
 /**
  * JSONL trace of classifier decisions, gated on the system property

@@ -1,13 +1,15 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ReflectionError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * The input-field fan-in reports one located fact per failure, not one joined sentence at the
@@ -200,7 +202,7 @@ class InputFieldFanInDiagnosticsTest {
         var minted = diagnosticsFor(schema, "PlainFilter.filmId");
         assertThat(minted).hasSize(1);
         assertThat(minted.getFirst().rejection())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class);
+            .isInstanceOf(no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded.class);
         assertThat(minted.getFirst().location()).isNotNull();
     }
 
@@ -253,7 +255,7 @@ class InputFieldFanInDiagnosticsTest {
                 }
                 """ + FILM + "type Query { films(filter: PlainFilter): [Film!]! }\n",
                 "PlainFilter.filmId", "could not be loaded",
-                no.sikt.graphitron.rewrite.model.ReflectionError.ClassNotLoaded.class, null),
+                no.sikt.graphitron.model.diagnostics.ReflectionError.ClassNotLoaded.class, null),
 
             new ProducerCase("repeated @reference",
                 """

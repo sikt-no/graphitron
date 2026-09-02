@@ -4,13 +4,13 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -22,6 +22,8 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * SDL → classified-variant pipeline tests for the node-id path: input-side carriers with
@@ -61,7 +63,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 class NodeIdPipelineTest {
 
     private static final String FIXTURE_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.nodeidfixture";
-    private static final RewriteContext FIXTURE_CTX = new RewriteContext(
+    private static final RunContext FIXTURE_CTX = new RunContext(
         List.of(), Path.of(""), "NodeIdPipelineTest", Path.of(""),
         DEFAULT_OUTPUT_PACKAGE, FIXTURE_JOOQ_PACKAGE
     );
@@ -1046,9 +1048,9 @@ class NodeIdPipelineTest {
             .as("rooted-at-parent NodeId reference '%s' must be rejected at validate time with "
                 + "disposition Deferred, anchored to the merged reference leaf", coordinate)
             .anyMatch(e -> coordinate.equals(e.coordinate())
-                && e.rejection() instanceof no.sikt.graphitron.rewrite.model.Rejection.Deferred d
-                && d.stubKey() instanceof no.sikt.graphitron.rewrite.model.Rejection.StubKey.VariantClass vc
-                && vc.variant().equals(no.sikt.graphitron.rewrite.model.Rejection
+                && e.rejection() instanceof no.sikt.graphitron.model.diagnostics.Rejection.Deferred d
+                && d.stubKey() instanceof no.sikt.graphitron.model.diagnostics.Rejection.StubKey.VariantClass vc
+                && vc.variant().equals(no.sikt.graphitron.model.diagnostics.Rejection
                     .classSpelling(ChildField.ColumnBackedReferenceField.class)));
     }
 

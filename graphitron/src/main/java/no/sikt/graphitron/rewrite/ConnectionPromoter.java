@@ -32,7 +32,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetsType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.FacetValueType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
-import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -46,6 +46,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import no.sikt.graphitron.model.grammar.ConnectionNaming;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * Promotes Connection-shaped carrier fields and synthesises the supporting
@@ -519,7 +521,7 @@ final class ConnectionPromoter {
                 return s;
             }
         }
-        return no.sikt.graphitron.rewrite.model.ConnectionNaming
+        return no.sikt.graphitron.model.grammar.ConnectionNaming
             .defaultConnectionName(parentTypeName, field.getName());
     }
 

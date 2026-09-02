@@ -4,10 +4,10 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
-import no.sikt.graphitron.rewrite.schema.federation.KeyNodeSynthesiser;
-import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
+import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * The federation {@code @link} injector's definitions (federation/link namespaced types and
@@ -42,7 +43,7 @@ class LintInjectedFederationDefinitionsTest {
 
     @Test
     void injectedFederationDefinitionsAreNotLinted_butAuthorNodeTypeStillIs() {
-        var registry = new SchemaParser().parse(RewriteSchemaLoader.directivesSdl() + "\n" + SDL);
+        var registry = new SchemaParser().parse(SchemaLoader.directivesSdl() + "\n" + SDL);
 
         Set<String> injectedNames = FederationLinkApplier.apply(registry);
         // Guard the premise: the @link really injected federation/link namespaced definitions.

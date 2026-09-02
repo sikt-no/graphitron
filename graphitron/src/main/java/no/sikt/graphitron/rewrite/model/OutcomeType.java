@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
 
 /**
  * Classification for an object type that forks at request time: a record-backed type that

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 
 /**
  * A root {@code @service} whose GraphQL return type carries {@code @table} reads the records the

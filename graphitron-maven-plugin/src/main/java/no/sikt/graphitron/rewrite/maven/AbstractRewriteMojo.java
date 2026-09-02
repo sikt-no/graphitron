@@ -1,21 +1,21 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import graphql.schema.idl.errors.SchemaProblem;
-import no.sikt.graphitron.rewrite.ClasspathEntry;
-import no.sikt.graphitron.rewrite.ClasspathEntry.Origin;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.config.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
-import no.sikt.graphitron.rewrite.capture.CapturePort;
-import no.sikt.graphitron.rewrite.RewriteContext;
-import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
-import no.sikt.graphitron.rewrite.dependency.ObservedVersion;
-import no.sikt.graphitron.rewrite.dependency.WatchedDependency;
-import no.sikt.graphitron.rewrite.lint.LintConfig;
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaRecipe;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.session.SessionStateConfig;
-import no.sikt.graphitron.rewrite.ValidationFailedException;
+import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.config.DependencyVersions;
+import no.sikt.graphitron.model.config.ObservedVersion;
+import no.sikt.graphitron.model.config.WatchedDependency;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
@@ -61,7 +61,7 @@ import java.util.stream.Stream;
 public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /** Sentinel used for validate-only invocations that do not emit code. */
-    private static final String VALIDATE_ONLY_PACKAGE = RewriteContext.NO_OUTPUT_PACKAGE;
+    private static final String VALIDATE_ONLY_PACKAGE = RunContext.NO_OUTPUT_PACKAGE;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
@@ -92,7 +92,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * leading dot is prepended.
      *
      * <p>Omit (Maven binds an empty POM list as {@code null}) to accept
-     * {@link RewriteContext#DEFAULT_SCHEMA_FILE_EXTENSIONS}. A configured but empty list is
+     * {@link RunContext#DEFAULT_SCHEMA_FILE_EXTENSIONS}. A configured but empty list is
      * rejected at execute.
      */
     @Parameter
@@ -149,7 +149,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     /**
      * Lint suppression. A {@code <lint>} block naming rule ids to silence everywhere
      * ({@code <disabledRules>}) and type-name globs to exclude from the SDL lint engine
-     * ({@code <excludedTypes>}). Threaded through {@link RewriteContext} so suppression is applied at
+     * ({@code <excludedTypes>}). Threaded through {@link RunContext} so suppression is applied at
      * the one build evaluator; the {@code graphitron:dev} LSP and MCP diagnostics suppress
      * identically. A disabled rule id that resolves to no rule fails the build with the list of valid
      * ids. Omit the block to lint every author-owned type with every rule.
@@ -161,7 +161,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * Session identity. A {@code <sessionState>} block naming the consumer's static Java
      * methods graphitron calls at the connection boundary: {@code <mount>} (as
      * {@code fqcn#method}) runs on each acquired connection before any SQL, the optional
-     * {@code <unmount>} at release. Threaded through {@link RewriteContext} as authored
+     * {@code <unmount>} at release. Threaded through {@link RunContext} as authored
      * strings; the schema build reflects them and the connection-runtime emitters call them
      * directly. A malformed reference or an {@code <unmount>} without a {@code <mount>} fails
      * the build here; omit the block to mount no identity.
@@ -186,28 +186,28 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * Body for {@link #withCodegenScope}: receives a {@link RewriteContext} whose
+     * Body for {@link #withCodegenScope}: receives a {@link RunContext} whose
      * {@code codegenLoader} is the scope's classloader, valid only until {@code run} returns.
      */
     @FunctionalInterface
     protected interface CodegenScopeBody {
-        void run(RewriteContext ctx) throws MojoExecutionException;
+        void run(RunContext ctx) throws MojoExecutionException;
     }
 
     /**
      * Returns {@code true} if this goal needs {@code <outputPackage>} and {@code <jooqPackage>},
      * {@code false} if it tolerates their absence: validate-only goals substitute an inert
      * sentinel so {@code mvn graphitron:validate} works standalone from the CLI. The validate
-     * pipeline never emits code, so the packages only satisfy {@link RewriteContext}'s non-null
+     * pipeline never emits code, so the packages only satisfy {@link RunContext}'s non-null
      * contract.
      */
     protected abstract boolean packagesRequired();
 
-    protected final RewriteContext buildContext() throws MojoExecutionException {
+    protected final RunContext buildContext() throws MojoExecutionException {
         return buildContext(Thread.currentThread().getContextClassLoader());
     }
 
-    private RewriteContext buildContext(ClassLoader codegenLoader) throws MojoExecutionException {
+    private RunContext buildContext(ClassLoader codegenLoader) throws MojoExecutionException {
         var basedir = project.getBasedir().toPath();
         var out = Path.of(outputDirectory);
         var outAbs = out.isAbsolute() ? out.normalize() : basedir.resolve(out).normalize();
@@ -231,7 +231,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
         var extensions = effectiveSchemaFileExtensions();
         var recipe = buildSchemaRecipe(extensions);
-        return new RewriteContext(
+        return new RunContext(
             expandRecipe(recipe, basedir),
             basedir,
             effectiveGraphName(),
@@ -430,7 +430,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * consumer's {@code <storeDirectory>} / {@code -Dgraphitron.store.directory} override taken
      * verbatim (a pinned home is already scoped to whatever the consumer meant it to be scoped
      * to). This is the only store-home resolver in the tree; every other opener reaches the
-     * store through the {@link RewriteContext} it built. The store itself appends a
+     * store through the {@link RunContext} it built. The store itself appends a
      * compatibility-stamped subdirectory under whatever home this returns, so the value means
      * "home", never "the directory the file sits in".
      *
@@ -587,7 +587,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      */
     Set<String> effectiveSchemaFileExtensions() throws MojoExecutionException {
         if (schemaFileExtensions == null) {
-            return RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS;
+            return RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS;
         }
         var normalised = new LinkedHashSet<String>();
         for (String raw : schemaFileExtensions) {
@@ -600,7 +600,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             throw new MojoExecutionException(
                 "<schemaFileExtensions> must contain at least one entry; "
                     + "omit the parameter to accept the default ["
-                    + String.join(", ", RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS) + "]");
+                    + String.join(", ", RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS) + "]");
         }
         return Set.copyOf(normalised);
     }
@@ -1130,7 +1130,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * over the source arms rather than a string projection: a label names no file, so it has nothing
      * to contribute to a listing of files and nothing to compare against the orphan scan's walk.
      */
-    private static Set<Path> loadedSchemaFiles(RewriteContext ctx) {
+    private static Set<Path> loadedSchemaFiles(RunContext ctx) {
         var files = new LinkedHashSet<Path>();
         for (SchemaInput input : ctx.schemaInputs()) {
             switch (input.source()) {
@@ -1145,17 +1145,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * Builds the context and invokes the generator through a single error-handling path so
      * every goal surfaces {@link RuntimeException}s wrapped as {@link MojoExecutionException}.
      * Goals with work after a successful generator call (e.g. registering the generated roots
-     * with Maven) read the returned {@link RewriteContext} so they reuse the paths
+     * with Maven) read the returned {@link RunContext} so they reuse the paths
      * {@link #buildContext} computed.
      *
      * <p>The returned context's {@code codegenLoader} has been closed by the time this method
      * returns; callers must not call back into the reflection seams off the returned context.
-     * The path-shaped fields ({@link RewriteContext#outputDirectory},
-     * {@link RewriteContext#outputResourcesDirectory}, {@link RewriteContext#basedir}) remain
+     * The path-shaped fields ({@link RunContext#outputDirectory},
+     * {@link RunContext#outputResourcesDirectory}, {@link RunContext#basedir}) remain
      * valid.
      */
-    protected final RewriteContext runGenerator(GeneratorCall call) throws MojoExecutionException {
-        var holder = new RewriteContext[1];
+    protected final RunContext runGenerator(GeneratorCall call) throws MojoExecutionException {
+        var holder = new RunContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
             // One store for the whole invocation, opened by the port on the pass's own capture and
@@ -1201,7 +1201,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * Runs {@code body} inside a freshly-built codegen scope. The loader is published both to
-     * the {@link RewriteContext} (explicit threading for the in-process reflection sites) and
+     * the {@link RunContext} (explicit threading for the in-process reflection sites) and
      * as the thread's context classloader (defense-in-depth for third-party transitive callees,
      * e.g. graphql-java / jOOQ / consumer-class static initializers). The previous TCCL is
      * restored and the loader closed to release JAR file descriptors, which matters for the

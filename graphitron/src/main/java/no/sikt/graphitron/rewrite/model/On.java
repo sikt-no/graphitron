@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.ForeignKeyRef;
 
 /**
  * How a {@link JoinStep.Hop} joins to its target — the <em>on</em> axis of the two-axis step

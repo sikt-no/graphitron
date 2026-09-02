@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * Produces the projection command relation: one {@link ProjectionCommand} row per projection
@@ -458,7 +459,7 @@ public final class ProjectionCommands {
      * bug. Fail at production rather than at runtime with a null DataLoader key.
      */
     private static Optional<Contribution> correlationKeyArm(ChildField field,
-            List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
+            List<no.sikt.graphitron.model.jooq.ColumnRef> columns) {
         if (field.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record) {
             throw new IllegalStateException(
                 "Record-sourced field '" + field.name() + "' (" + field.getClass().getSimpleName()

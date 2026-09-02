@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
-import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +17,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 /**
  * That the {@code argMapping} node-id rejections actually fail the build, which is the only claim
@@ -402,7 +405,7 @@ class ArgmappingProjectionRejectionPipelineTest {
     private static void validate(Path tmp, String sdl) throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
-        new GraphQLRewriteGenerator(new RewriteContext(
+        new GraphQLRewriteGenerator(new RunContext(
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "ArgmappingProjectionRejectionPipelineTest",
             tmp,

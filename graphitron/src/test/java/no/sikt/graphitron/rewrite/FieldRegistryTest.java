@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.RootField;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.diagnostics.Rejection;
 
 @UnitTier
 class FieldRegistryTest {
@@ -73,7 +74,7 @@ class FieldRegistryTest {
     void classifyInput_acceptsUnresolved_withoutCentralStorage() {
         var registry = new FieldRegistry();
         var resolution = new InputFieldResolution.Unresolved("title", null,
-            no.sikt.graphitron.rewrite.model.Rejection.unknownColumn(
+            no.sikt.graphitron.model.diagnostics.Rejection.unknownColumn(
                 "no such column", "title", java.util.List.of()));
         registry.classifyInput("FilmInput", "title", null, resolution);
         assertThat(registry.entries()).isEmpty();

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import no.sikt.graphitron.model.sink.FactSink;
 
 /**
  * The property the gatherer order rests on: one gatherer's rows are in the store before the next

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.command;
 
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 import java.util.List;
 

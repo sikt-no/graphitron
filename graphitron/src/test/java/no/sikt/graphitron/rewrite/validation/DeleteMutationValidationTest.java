@@ -1,14 +1,14 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputArgRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
-import no.sikt.graphitron.rewrite.model.MatchedKey;
+import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.GraphitronField;

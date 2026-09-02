@@ -1,6 +1,6 @@
 package no.sikt.graphitron.common.configuration;
 
-import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.model.config.RunContext;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -10,8 +10,8 @@ public class TestConfiguration {
             DEFAULT_OUTPUT_PACKAGE = "fake.code.generated",
             DEFAULT_JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
 
-    public static RewriteContext testContext() {
-        return new RewriteContext(
+    public static RunContext testContext() {
+        return new RunContext(
             List.of(),
             Path.of(""), "TestConfiguration",
             Path.of(""),
