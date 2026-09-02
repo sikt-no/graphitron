@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is spelled out rather than derived: it is the plan's move set, and a file joining it is a
  * decision somebody should make deliberately.
  *
- * <p>Four properties. Three are about what moves and can be broken three ways, only the first of
- * them visible to a reader scanning imports; the fourth is about what stays, and is the direction
- * the whole move exists to establish.
+ * <p>Five properties. Three are about what moves and can be broken three ways, only the first of
+ * them visible to a reader scanning imports; the last two are about what stays, and are the
+ * direction the whole move exists to establish and the seam that makes it keepable.
  *
  * <ul>
  *   <li><b>No javapoet.</b> Capture reads a consumer's sources and writes down what it found; how
@@ -54,6 +54,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       plugin's own writers are a separate matter and stay outside this module: they record a
  *       completed pass, a compile round and the consumer's source tree, which are the plugin's
  *       observations rather than the generator's account of itself.</li>
+ *   <li><b>Nothing that stays owns a store.</b> The generator asks a
+ *       {@link no.sikt.graphitron.rewrite.capture.CapturePort} for a capture and reads what comes
+ *       back; which store that is, where it lives and how long it is held are the port's, decided
+ *       by whichever caller built it. So nothing above the line names the capture entry point, the
+ *       type that owns a store's lifetime, or the store's home. The last of those is why
+ *       {@link no.sikt.graphitron.rewrite.RewriteContext} still carries its store directory: the
+ *       Maven goals need it as a setting, and what it stopped being is something a pass reads on
+ *       its way to a store.</li>
  * </ul>
  */
 @UnitTier
@@ -72,6 +80,17 @@ class FactTierBoundaryTest {
         "no.sikt.graphitron.model.Tables",
         "FactSink",
         "no.sikt.graphitron.model.boot");
+
+    /**
+     * The store-ownership surface: the capture entry point, the type that owns an open store's
+     * lifetime, and the name of the setting that says where one lives. A pass needs none of the
+     * three, naming {@code CapturePort} and its request instead, so any of them above the line is
+     * a pass deciding something about the store rather than asking for facts.
+     */
+    private static final Set<String> OWNERSHIP_SURFACE = Set.of(
+        "FactCapture",
+        "RunStore",
+        "storeDirectory");
 
     private static final Pattern IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?([\\w.]+)\\s*;");
     private static final Pattern PERMITS = Pattern.compile("permits\\s+([^{]+)\\{");
@@ -212,7 +231,7 @@ class FactTierBoundaryTest {
         for (Path file : staysAboveTheLine()) {
             String body = Files.readString(file);
             for (String surface : WRITE_SURFACE) {
-                if (body.contains(surface)) {
+                if (names(body, surface)) {
                     violations.add(rel(file) + "  names  " + surface);
                 }
             }
@@ -220,6 +239,23 @@ class FactTierBoundaryTest {
         assertThat(violations)
             .as("the generator writing facts; add the query to the fact tier and read what it"
                 + " returns, and if a new fact is wanted, capture is where it is written")
+            .isEmpty();
+    }
+
+    @Test
+    void nothingThatStaysOwnsAStore() throws IOException {
+        var violations = new ArrayList<String>();
+        for (Path file : staysAboveTheLine()) {
+            String body = Files.readString(file);
+            for (String surface : OWNERSHIP_SURFACE) {
+                if (names(body, surface)) {
+                    violations.add(rel(file) + "  names  " + surface);
+                }
+            }
+        }
+        assertThat(violations)
+            .as("the generator deciding something about the fact store; ask a CapturePort for the"
+                + " capture and let whoever built the port decide which store answers it")
             .isEmpty();
     }
 
@@ -283,6 +319,16 @@ class FactTierBoundaryTest {
             candidate = candidate.substring(0, candidate.lastIndexOf('.'));
         }
         return false;
+    }
+
+    /**
+     * Whether {@code body} names {@code token} as a whole identifier. Word boundaries rather than a
+     * substring, because a surface name is routinely a suffix of an unrelated one: capture's own
+     * {@code CatalogFactCapture} ends in {@code FactCapture}, and a substring test reads a javadoc
+     * link to it as the generator naming the entry point.
+     */
+    private static boolean names(String body, String token) {
+        return Pattern.compile("\\b" + Pattern.quote(token) + "\\b").matcher(body).find();
     }
 
     private static String stripComments(String source) {

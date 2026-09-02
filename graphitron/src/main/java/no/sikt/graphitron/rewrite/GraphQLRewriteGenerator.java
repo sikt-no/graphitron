@@ -7,12 +7,13 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
+import no.sikt.graphitron.rewrite.capture.CapturePort;
+import no.sikt.graphitron.rewrite.capture.CaptureRequest;
 import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.capture.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.derive.StoreDetections;
 import no.sikt.graphitron.rewrite.derive.ClassifiedRun;
@@ -75,6 +76,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -104,14 +106,34 @@ public class GraphQLRewriteGenerator {
         List.of("", "util", "schema", "types", "conditions", "fetchers", "inputs");
 
     private final RewriteContext ctx;
+    private final CapturePort capture;
 
     /**
      * Constructs a generator driven by the supplied {@link RewriteContext}. The context's
      * {@code schemaInputs} drive schema loading; {@link TagApplier} and
      * {@link DescriptionNoteApplier} run between parse and classification.
+     *
+     * <p>Capture goes through {@link CapturePort#forContext}, which opens and closes a store
+     * around each capture. For a caller that runs more than one pass, the constructor below takes
+     * a port whose store outlives them.
      */
     public GraphQLRewriteGenerator(RewriteContext ctx) {
+        this(ctx, CapturePort.forContext(ctx));
+    }
+
+    /**
+     * Constructs a generator that captures through the caller's {@code capture} port, so the store
+     * every pass writes into and reads back is the caller's to open, share between passes and
+     * close. The Maven goals build one per invocation.
+     *
+     * <p>The port is the whole of what this class knows about the fact store: it never names one,
+     * never learns where one lives, and cannot hold a handle past the reads it asked for. That is
+     * the point of the parameter rather than a consequence of it, the generator being a reader of
+     * facts and never a writer.
+     */
+    public GraphQLRewriteGenerator(RewriteContext ctx, CapturePort capture) {
         this.ctx = ctx;
+        this.capture = Objects.requireNonNull(capture, "capture");
     }
 
     /**
@@ -459,17 +481,10 @@ public class GraphQLRewriteGenerator {
     private <T> T captureAndRead(
             AttributedRegistry attributed, ReadSchema read,
             JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-            FactCapture.AfterCapture<T> after) {
-        return FactCapture.runAndRead(ctx.storeDirectory(),
-            graphIdentity(),
-            subjectConfig(),
-            attributed.preSynthesisRegistry(),
-            read.preSynthesisAssembly(),
-            read.verdicts(),
-            SchemaInputAttribution.build(ctx.schemaInputs()),
-            jooq,
-            extensions,
-            ClassifiedRun.present(),
+            CapturePort.AfterCapture<T> after) {
+        return capture.captureAndRead(
+            request(attributed, read.preSynthesisAssembly(), read.verdicts(), jooq, extensions,
+                ClassifiedRun.present()),
             after);
     }
 
@@ -482,15 +497,23 @@ public class GraphQLRewriteGenerator {
     private void captureFacts(AttributedRegistry attributed, SchemaAssembly assembly,
                               SdlVerdicts verdicts, JooqCatalog jooq,
                               List<CompletionData.ExternalReference> census) {
-        FactCapture.run(ctx.storeDirectory(),
-            graphIdentity(),
-            subjectConfig(),
-            attributed.preSynthesisRegistry(),
-            assembly,
-            verdicts,
-            SchemaInputAttribution.build(ctx.schemaInputs()),
-            jooq,
-            census);
+        capture.capture(
+            request(attributed, assembly, verdicts, jooq, census, ClassifiedRun.absent()));
+    }
+
+    /**
+     * This pass's capture, as the one value both arms above build. Assembled here so the two
+     * cannot describe the same pass differently: the failure arm and the classified arm used to
+     * spell the same nine arguments at two call sites, which is how the registry each of them
+     * handed over came to be chosen twice.
+     */
+    private CaptureRequest request(AttributedRegistry attributed, SchemaAssembly assembly,
+                                   SdlVerdicts verdicts, JooqCatalog jooq,
+                                   List<CompletionData.ExternalReference> census,
+                                   ClassifiedRun classified) {
+        return new CaptureRequest(graphIdentity(), subjectConfig(),
+            attributed.preSynthesisRegistry(), assembly, verdicts,
+            SchemaInputAttribution.build(ctx.schemaInputs()), jooq, census, classified);
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */

@@ -50,15 +50,16 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  *
  * <p>The store's window is the caller's, not this class's. {@link #runAndRead} keeps the store
  * open across whatever the caller does next and hands it a {@link StoreHandle}, which is what lets
- * the build pipeline validate and then plan against the same open store the capture just filled;
- * {@link #runWithDetections} is the same thing for a caller that reads nothing further. Capture
- * decides only that its own writes and the detections happen first.
+ * the build pipeline validate and then plan against the same open store the capture just filled.
+ * Capture decides only that its own writes and the detections happen first. Which store a caller
+ * gets and for how long is {@link CapturePort}'s, this class's entry points being the single-pass
+ * shorthand over its per-call arm.
  *
- * <p>The store has readers: {@link #runWithDetections} runs every store-backed rule family over
- * the freshly captured rows and returns the {@link StoreDetections} product they share (the
- * violations for the caller's error stream, and the field-conflict claims the snapshot's
- * {@code Conflicted} projection overlay consumes), so what those detections report is decided by
- * the store's content. Two families run today: the authored-claim conflict rule
+ * <p>The store has readers: every capture runs the store-backed rule families over the freshly
+ * captured rows and yields the {@link StoreDetections} product they share (the violations for the
+ * caller's error stream, and the field-conflict claims the snapshot's {@code Conflicted}
+ * projection overlay consumes), so what those detections report is decided by the store's
+ * content. Two families run today: the authored-claim conflict rule
  * ({@link AuthoredClaimConflicts}, narrowed to the classification domain, which is the population
  * a build can fail on) and the {@code argMapping} node-id projection rules
  * ({@link ArgmappingProjectionDefects}). Every other relation is still populated beside the live
@@ -132,62 +133,28 @@ public final class FactCapture {
                            TypeDefinitionRegistry registry, SchemaAssembly assembly,
                            SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution, jooq,
-            extensions, ClassifiedRun.absent(), (store, detections) -> null);
+        CapturePort.perRun(storeDirectory).capture(new CaptureRequest(graph, config, registry,
+            assembly, verdicts, attribution, jooq, extensions, ClassifiedRun.absent()));
     }
 
     /**
-     * What a caller does with the captured store while it is still open: the detection product
-     * every family writes into, plus the {@link StoreHandle} the same store answers reads through.
-     *
-     * <p>The handle is the whole reason this is a continuation rather than a return value. A store
-     * closes when the capture window does, so a phase that wants to ask it something has to run
-     * inside the window or reopen the store to ask; the pipeline's plan tier reads facts and
-     * therefore runs here. What the pipeline does with it stays the pipeline's own business,
-     * capture neither knowing nor deciding the order of what follows it.
-     */
-    @FunctionalInterface
-    public interface AfterCapture<T> {
-        T read(StoreHandle store, StoreDetections detections);
-    }
-
-    /**
-     * {@link #run}, then the store-backed detections over the store the capture just filled,
-     * before it closes. Returns the {@link StoreDetections} product every family writes into
-     * (gated on {@code reach}): every caller reads its
-     * {@link StoreDetections#violations() violations} for the error stream, and
-     * the LSP/MCP snapshot path additionally reads its
-     * {@link StoreDetections#fieldConflicts() field conflicts} for the
-     * {@code Conflicted} projection overlay. The detections run
-     * against whichever store the capture landed in, shared file and in-memory fallback alike,
-     * so a cache demotion changes cost and never verdicts.
-     *
-     * <p>The arm for a caller that reads nothing else off the store; the handle stays inside the
-     * window here, and {@link #runAndRead} is the arm for a caller whose later phases read it.
-     */
-    public static StoreDetections runWithDetections(Path storeDirectory, GraphIdentity graph,
-                                                          SubjectConfig config,
-                                                          TypeDefinitionRegistry registry,
-                                                          SchemaAssembly assembly,
-                                                          SdlVerdicts verdicts,
-                                                          Map<String, SchemaInput> attribution,
-                                                          JooqCatalog jooq,
-                                                          List<CompletionData.ExternalReference> extensions,
-                                                          ClassifiedRun classified) {
-        return runAndRead(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
-            jooq, extensions, classified, (store, detections) -> detections);
-    }
-
-    /**
-     * {@link #runWithDetections}, with the caller's own reads running inside the same window
-     * before the store closes. This is what store ownership hoisting out of the capture pass buys
-     * the pipeline: one open store serves the capture, the detections and every later phase that
-     * questions the facts, so a producer reading a relation costs no second open.
+     * {@link #run}, then the store-backed detections over the store the capture just filled, with
+     * the caller's own reads running inside the same window before it closes. Every caller reads
+     * the detections' {@link StoreDetections#violations() violations} for its error stream, and the
+     * LSP/MCP snapshot path additionally reads the
+     * {@link StoreDetections#fieldConflicts() field conflicts} for the {@code Conflicted}
+     * projection overlay. The detections run against whichever store the capture landed in, shared
+     * file and in-memory fallback alike, so a cache demotion changes cost and never verdicts.
      *
      * <p>The order stays the caller's. Capture and detection are done before {@code after} runs,
      * which is the only sequencing this method imposes; that the build pipeline validates before
      * it plans is the pipeline's rule and is stated there, because producing a plan for a schema
      * validation would have rejected is a mistake capture cannot see.
+     *
+     * <p>A store per call, which is the {@link CapturePort#perRun} arm. A caller that runs more
+     * than one pass wants {@link CapturePort#holding} instead and builds the request itself; this
+     * method is the shorthand for a caller with a single pass and a positional argument list
+     * already in hand.
      */
     public static <T> T runAndRead(Path storeDirectory, GraphIdentity graph,
                                    SubjectConfig config,
@@ -198,32 +165,9 @@ public final class FactCapture {
                                    JooqCatalog jooq,
                                    List<CompletionData.ExternalReference> extensions,
                                    ClassifiedRun classified,
-                                   AfterCapture<T> after) {
-        Objects.requireNonNull(classified, "classified");
-        Objects.requireNonNull(after, "after");
-        return runInternal(storeDirectory, graph, config, registry, assembly, verdicts, attribution,
-            jooq, extensions, classified, after);
-    }
-
-    /**
-     * The whole of a capture entry point: the store this run gets, filled, read, and closed. What
-     * store that is and why is {@link RunStore}'s decision; what happens inside the window is the
-     * caller's, and both halves of that are stated where they are made rather than woven together
-     * here.
-     */
-    private static <T> T runInternal(Path storeDirectory, GraphIdentity graph,
-                                     SubjectConfig config,
-                                     TypeDefinitionRegistry registry,
-                                     SchemaAssembly assembly, SdlVerdicts verdicts,
-                                     Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                                     List<CompletionData.ExternalReference> extensions,
-                                     ClassifiedRun classified,
-                                     AfterCapture<T> after) {
-        try (RunStore store = RunStore.forRun(storeDirectory, graph,
-                (dsl, warm) -> capture(dsl, warm, graph, config, registry, assembly, verdicts,
-                    attribution, jooq, extensions))) {
-            return read(store.handle(), classified, after);
-        }
+                                   CapturePort.AfterCapture<T> after) {
+        return CapturePort.perRun(storeDirectory).captureAndRead(new CaptureRequest(graph, config,
+            registry, assembly, verdicts, attribution, jooq, extensions, classified), after);
     }
 
     /**
@@ -231,7 +175,8 @@ public final class FactCapture {
      * method so the three arms above each state the window once rather than pairing a detection
      * call with a continuation call and leaving an arm free to run one without the other.
      */
-    private static <T> T read(StoreHandle store, ClassifiedRun classified, AfterCapture<T> after) {
+    static <T> T read(StoreHandle store, ClassifiedRun classified,
+                      CapturePort.AfterCapture<T> after) {
         return after.read(store, detect(store.dsl(), store.graphName(), classified));
     }
 

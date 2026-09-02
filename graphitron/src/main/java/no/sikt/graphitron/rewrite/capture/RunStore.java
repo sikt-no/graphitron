@@ -43,14 +43,25 @@ public sealed interface RunStore extends AutoCloseable {
     GraphitronModelStore store();
 
     /** The graph this run captured under, and the partition reads through it are scoped to. */
-    String graphName();
+    GraphIdentity graph();
 
     /** Why this run is not on the shared store; empty when it is. */
     Optional<Demotion> demotion();
 
+    /**
+     * Captures into the store this value already holds, and says which store <em>that</em> turned
+     * out to be. The same answer {@link #forRun} gives, for the second and later captures of a
+     * caller that keeps one store across a session's passes rather than opening one per pass.
+     *
+     * <p>Returns a value rather than mutating, because a demotion is a different store: the arm
+     * that comes back may hold a store the arm that went in did not, and the one that went in is
+     * closed by then. A caller therefore keeps what this returns and closes only that.
+     */
+    RunStore recapture(CaptureBody body);
+
     /** The query surface the run's own readers ask through. */
     default StoreHandle handle() {
-        return new StoreHandle(store().dsl(), graphName());
+        return new StoreHandle(store().dsl(), graph().name());
     }
 
     @Override
@@ -59,30 +70,59 @@ public sealed interface RunStore extends AutoCloseable {
     }
 
     /** The run captured into the workspace's shared store, which is what every run wants. */
-    record Shared(GraphitronModelStore store, String graphName) implements RunStore {
+    record Shared(GraphitronModelStore store, GraphIdentity graph) implements RunStore {
         public Shared {
             Objects.requireNonNull(store, "store");
-            Objects.requireNonNull(graphName, "graphName");
+            Objects.requireNonNull(graph, "graph");
         }
 
         @Override
         public Optional<Demotion> demotion() {
             return Optional.empty();
         }
+
+        /**
+         * Retried and demoted exactly as the first capture was: a store that has served one
+         * capture has earned no standing that would let the next one fail loudly.
+         */
+        @Override
+        public RunStore recapture(CaptureBody body) {
+            Optional<Demotion> refused = captureWithRetry(store, graph, body);
+            if (refused.isEmpty()) {
+                return this;
+            }
+            store.close();
+            return inMemory(graph, body, refused.get());
+        }
     }
 
     /** The run captured into a private in-memory store, and {@code reason} is why. */
-    record Demoted(GraphitronModelStore store, String graphName, Demotion reason)
+    record Demoted(GraphitronModelStore store, GraphIdentity graph, Demotion reason)
         implements RunStore {
         public Demoted {
             Objects.requireNonNull(store, "store");
-            Objects.requireNonNull(graphName, "graphName");
+            Objects.requireNonNull(graph, "graph");
             Objects.requireNonNull(reason, "reason");
         }
 
         @Override
         public Optional<Demotion> demotion() {
             return Optional.of(reason);
+        }
+
+        /**
+         * Straight through, with no retry and nothing to fall back to: this store is already the
+         * fallback, and nobody else can be contending a database only this run can see. A failure
+         * here is a capture bug with no cache left to pay for it, so it propagates.
+         *
+         * <p>The reason is not reported a second time. It was said when this store was arrived at,
+         * and a session that captures on every keystroke would otherwise repeat one warning until
+         * it stopped being read.
+         */
+        @Override
+        public RunStore recapture(CaptureBody body) {
+            body.capture(store.dsl(), reconciles(store, graph));
+            return this;
         }
     }
 
@@ -239,7 +279,7 @@ public sealed interface RunStore extends AutoCloseable {
         }
         Optional<Demotion> refused = attemptShared(shared, graph, body);
         if (refused.isEmpty()) {
-            return new Shared(shared, graph.name());
+            return new Shared(shared, graph);
         }
         shared.close();
         return inMemory(graph, body, refused.get());
@@ -383,7 +423,7 @@ public sealed interface RunStore extends AutoCloseable {
             store.close();
             throw failure;
         }
-        return new Demoted(store, graph.name(), reason);
+        return new Demoted(store, graph, reason);
     }
 
     /**

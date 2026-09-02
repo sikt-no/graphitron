@@ -4,6 +4,7 @@ import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.ClasspathEntry;
 import no.sikt.graphitron.rewrite.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.capture.CapturePort;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
@@ -1157,8 +1158,11 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var holder = new RewriteContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
-            try {
-                call.invoke(new GraphQLRewriteGenerator(ctx));
+            // One store for the whole invocation, opened by the port on the pass's own capture and
+            // given back here. The generator is handed the port rather than the directory, so a
+            // goal that grows a second pass shares this store with it instead of opening another.
+            try (CapturePort capture = CapturePort.holding(ctx.storeDirectory())) {
+                call.invoke(new GraphQLRewriteGenerator(ctx, capture));
             } catch (SchemaProblem e) {
                 var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's

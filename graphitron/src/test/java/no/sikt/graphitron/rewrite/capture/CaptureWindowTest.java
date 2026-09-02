@@ -90,7 +90,7 @@ class CaptureWindowTest {
     }
 
     private static <T> T captureAndRead(Path directory, Path scratch,
-                                        FactCapture.AfterCapture<T> after) {
+                                        CapturePort.AfterCapture<T> after) {
         var registry = CapturedStore.registryOf(scratch, GRAPH_NAME, SDL);
         return FactCapture.runAndRead(directory,
             CapturedStore.graph(scratch, GRAPH_NAME),
