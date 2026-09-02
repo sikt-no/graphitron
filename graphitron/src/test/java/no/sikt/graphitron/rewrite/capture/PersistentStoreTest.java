@@ -249,11 +249,14 @@ class PersistentStoreTest {
                     System.out.println("opened onto an empty store");
                     System.exit(3);
                 }
-                // The coordinate anchor, not the attribute relation beside it: the probe's subject
-                // is that the holder's write survives, and the anchor is the relation with no
-                // parent to seed.
-                store.dsl().execute("INSERT INTO graphql_type_coordinate (graph_name, type_name) "
-                    + "VALUES ('" + args[1] + "', 'HolderWritten')");
+                // The coordinate anchor and the supertype row above it, which is the shallowest
+                // pair this store admits: the probe's subject is that the holder's write survives,
+                // so it writes the least that a coordinate needs and nothing else.
+                store.dsl().execute("INSERT INTO graphql_coordinate (graph_name, coordinate, kind) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'TYPE')");
+                store.dsl().execute("INSERT INTO graphql_type_coordinate "
+                    + "(graph_name, type_name, coordinate) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'HolderWritten')");
                 System.out.println("HELD");
                 System.out.flush();
                 int ignored = System.in.read();

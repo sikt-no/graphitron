@@ -94,7 +94,9 @@ import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static org.jooq.impl.DSL.val;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -373,7 +375,9 @@ class FactCaptureAgreementTest {
         for (String relation : List.of(
             // The coordinate anchors ride their attribute siblings' arm: one walk claims a
             // coordinate and writes both rows, so the containment claim below transfers, and
-            // coordinatesAgreeWithTheirAttributeRelations makes the transfer a fact.
+            // coordinatesAgreeWithTheirAttributeRelations makes the transfer a fact. The supertype
+            // rides the same arm one level up, written by the same claim as the anchor under it.
+            "graphql_coordinate",
             "graphql_type_coordinate", "graphql_field_coordinate",
             "graphql_argument_coordinate", "graphql_enum_value_coordinate",
             "graphql_type", "graphql_type_declaration", "graphql_field", "graphql_argument",
@@ -799,6 +803,22 @@ class FactCaptureAgreementTest {
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME, GRAPHQL_ENUM_VALUE.VALUE_NAME)
                         .from(GRAPHQL_ENUM_VALUE).fetch());
+            // The supertype against the four it generalises. This direction is the one no
+            // constraint reaches: a foreign key refuses an anchor with no supertype row and
+            // nothing refuses a supertype row no anchor claimed, so the equality is stated here.
+            assertThat(dsl.select(GRAPHQL_COORDINATE.COORDINATE, GRAPHQL_COORDINATE.KIND)
+                .from(GRAPHQL_COORDINATE).fetch())
+                .as("the coordinate supertype against the union of the four anchors")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_TYPE_COORDINATE.COORDINATE, val("TYPE"))
+                        .from(GRAPHQL_TYPE_COORDINATE)
+                    .unionAll(dsl.select(GRAPHQL_FIELD_COORDINATE.COORDINATE, val("FIELD"))
+                        .from(GRAPHQL_FIELD_COORDINATE))
+                    .unionAll(dsl.select(GRAPHQL_ARGUMENT_COORDINATE.COORDINATE, val("ARGUMENT"))
+                        .from(GRAPHQL_ARGUMENT_COORDINATE))
+                    .unionAll(dsl.select(GRAPHQL_ENUM_VALUE_COORDINATE.COORDINATE, val("ENUM_VALUE"))
+                        .from(GRAPHQL_ENUM_VALUE_COORDINATE))
+                    .fetch());
         }
     }
 

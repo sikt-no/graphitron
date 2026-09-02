@@ -268,54 +268,79 @@ COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s i
 -- existence conditional on a stage it owes nothing to. Reading it: join the coordinate to ask what
 -- exists, join the attribute relation to ask what it is, and expect the two populations to agree
 -- wherever no later stage has taken an attribute over.
+CREATE TABLE graphql_coordinate (
+  graph_name VARCHAR NOT NULL,
+  coordinate VARCHAR NOT NULL,
+  kind       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE'))
+);
+COMMENT ON TABLE graphql_coordinate IS 'A schema coordinate exists in this graph: the supertype of the four coordinate relations beside it, keyed by the coordinate spelled as the GraphQL specification spells one. For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.';
+COMMENT ON COLUMN graphql_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_coordinate.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
+COMMENT ON COLUMN graphql_coordinate.kind IS 'which of the four coordinate relations this row was written from, and so which one a reader joins to get the parts. Stored rather than read off the spelling because Type.field spells both a field and an enum value, the two being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
+
 CREATE TABLE graphql_type_coordinate (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
+  coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
 );
 COMMENT ON TABLE graphql_type_coordinate IS 'A type name exists in this graph: the anchor every SDL fact, every directive decode and every type-keyed derivation hangs off. It carries the key and nothing else, which is what a coordinate relation is for: existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have. A name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed and before assembly has judged anything; a relation on a later cadence can then be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead makes every per-site fact''s existence conditional on the whole document assembling, and an author mid-edit is exactly the reader who has no assembled document and every per-site fact. The declared-or-extended reading is what makes the site rows'' foreign keys structural (capture writes this row before any site row), and on a base-less extension chain (an author error a detection reports) the row still exists, anchored by the extension sites.';
 COMMENT ON COLUMN graphql_type_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_coordinate.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
+COMMENT ON COLUMN graphql_type_coordinate.coordinate IS 'this row as graphql_coordinate spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
 
 CREATE TABLE graphql_field_coordinate (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
+  coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
 );
 COMMENT ON TABLE graphql_field_coordinate IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_coordinate''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join to the parent''s kind decides, and this relation asserts neither.';
 COMMENT ON COLUMN graphql_field_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_field_coordinate.type_name IS 'the owning type, anchored by graphql_type_coordinate';
 COMMENT ON COLUMN graphql_field_coordinate.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphql_field_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
 
 CREATE TABLE graphql_argument_coordinate (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
+  coordinate    VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
 );
 COMMENT ON TABLE graphql_argument_coordinate IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_coordinate''s terms and for its reason.';
 COMMENT ON COLUMN graphql_argument_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_argument_coordinate.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphql_argument_coordinate.field_name IS 'the field the argument sits on, anchored by graphql_field_coordinate';
 COMMENT ON COLUMN graphql_argument_coordinate.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphql_argument_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
 
 CREATE TABLE graphql_enum_value_coordinate (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   value_name VARCHAR NOT NULL,
+  coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
 );
 COMMENT ON TABLE graphql_enum_value_coordinate IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_coordinate''s terms and for its reason.';
 COMMENT ON COLUMN graphql_enum_value_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_enum_value_coordinate.type_name IS 'the owning ENUM type, anchored by graphql_type_coordinate';
 COMMENT ON COLUMN graphql_enum_value_coordinate.value_name IS 'the enum value name within the owning enum type';
+COMMENT ON COLUMN graphql_enum_value_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_coordinate.kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
 
 CREATE TABLE graphql_type (
   graph_name    VARCHAR NOT NULL,
@@ -10181,6 +10206,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('schema-coordinate',
+   'one schema coordinate in one graph, spelled as the GraphQL specification spells one',
+   'graph_name, coordinate', 'sdl'),
   ('condition-site-slot',
    'one GraphQL slot in scope at one application of a @condition directive, in one graph',
    'graph_name, site, use_site, slot_name', 'sdl'),
@@ -10270,6 +10298,10 @@ INSERT INTO meta_grain VALUES
    'graph_name, file, line_number, column_number, ordinal', 'javac');
 
 INSERT INTO meta_relation VALUES
+  ('graphql_coordinate', 'schema-coordinate', 'sdl',
+   'A schema coordinate exists in this graph: the supertype of the four coordinate relations beside it, keyed by the coordinate spelled as the GraphQL specification spells one.',
+   'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
+   'The coordinate family states a coordinate''s existence at four grains and states nowhere that a coordinate exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The kind says which of the four a row was written from, so a reader wanting the parts joins that relation instead of splitting the spelling.'),
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
    'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph.',
    'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.',

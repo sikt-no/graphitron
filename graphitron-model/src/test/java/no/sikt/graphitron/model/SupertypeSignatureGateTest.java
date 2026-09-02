@@ -6,6 +6,8 @@ import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -123,7 +125,7 @@ class SupertypeSignatureGateTest {
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")
     void theSubtypeSetsAreExactlyTheRecordedOnes() {
-        withStore(dsl -> assertThat(subtypeSets(dsl).values())
+        withStore(dsl -> assertThat(undeclaredSets(dsl))
             .as("groups of capture tables carrying the same payload under different keys."
                 + " Equality both ways: a set that has gained a member is a sibling nobody"
                 + " decided about, and a set that has lost one is a roster row to delete")
@@ -152,6 +154,76 @@ class SupertypeSignatureGateTest {
                 .filter(row -> row.split("\\|")[1].split(",").length >= 3).toList())
             .as("views unioning three or more members of one subtype set")
             .isEmpty());
+    }
+
+    /**
+     * The subtype sets whose supertype nobody has written, which is what the roster records: a set
+     * whose whole payload is a foreign key into one relation every member points at has its
+     * supertype already, and belongs on no roster of what the schema owes.
+     *
+     * <p>Read off the payload rather than off any list of relations. A set groups because its
+     * members carry the same columns outside their own keys, so the converted shape is those very
+     * columns, all of them, referencing one relation: the members agree on a spelling and the
+     * database holds them to it. The whole payload and not merely some of it, because a reference
+     * carrying part of one is a different fact entirely. graphitron_error and
+     * graphql_type_directive share five columns and both point three of them at
+     * graphql_type_declaration, which is where each was written and not what each is a kind of.
+     */
+    private static Collection<Set<String>> undeclaredSets(DSLContext dsl) {
+        var undeclared = new ArrayList<Set<String>>();
+        for (var group : subtypeSets(dsl).entrySet()) {
+            var payload = Set.of(group.getKey().split(","));
+            Set<String> shared = null;
+            for (String member : group.getValue()) {
+                var referenced = referencedByWholePayload(dsl, member, payload);
+                if (shared == null) {
+                    shared = referenced;
+                } else {
+                    shared.retainAll(referenced);
+                }
+            }
+            if (shared == null || shared.isEmpty()) {
+                undeclared.add(group.getValue());
+            }
+        }
+        return undeclared;
+    }
+
+    /** The relations {@code relation} references by a foreign key naming every payload column. */
+    private static Set<String> referencedByWholePayload(DSLContext dsl, String relation,
+                                                        Set<String> payload) {
+        var columnsPerConstraint = new TreeMap<String, Set<String>>();
+        var parentPerConstraint = new TreeMap<String, String>();
+        for (var row : dsl
+                .select(field(name("c", "CONSTRAINT_NAME"), String.class),
+                        field(name("k", "COLUMN_NAME"), String.class),
+                        field(name("p", "TABLE_NAME"), String.class))
+                .from(table(name("INFORMATION_SCHEMA", "TABLE_CONSTRAINTS")).as("c"))
+                .join(table(name("INFORMATION_SCHEMA", "KEY_COLUMN_USAGE")).as("k"))
+                .on(field(name("k", "CONSTRAINT_NAME"), String.class)
+                    .eq(field(name("c", "CONSTRAINT_NAME"), String.class)))
+                .join(table(name("INFORMATION_SCHEMA", "REFERENTIAL_CONSTRAINTS")).as("r"))
+                .on(field(name("r", "CONSTRAINT_NAME"), String.class)
+                    .eq(field(name("c", "CONSTRAINT_NAME"), String.class)))
+                .join(table(name("INFORMATION_SCHEMA", "TABLE_CONSTRAINTS")).as("p"))
+                .on(field(name("p", "CONSTRAINT_NAME"), String.class)
+                    .eq(field(name("r", "UNIQUE_CONSTRAINT_NAME"), String.class)))
+                .where(field(name("c", "TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                .and(field(name("c", "TABLE_NAME"), String.class).equalIgnoreCase(relation))
+                .and(field(name("c", "CONSTRAINT_TYPE"), String.class).eq("FOREIGN KEY"))
+                .fetch()) {
+            columnsPerConstraint
+                .computeIfAbsent(row.value1(), constraint -> new TreeSet<>())
+                .add(row.value2());
+            parentPerConstraint.put(row.value1(), row.value3().toLowerCase(Locale.ROOT));
+        }
+        var referenced = new TreeSet<String>();
+        for (var constraint : columnsPerConstraint.entrySet()) {
+            if (constraint.getValue().containsAll(payload)) {
+                referenced.add(parentPerConstraint.get(constraint.getKey()));
+            }
+        }
+        return referenced;
     }
 
     /** Capture tables grouped by their payload, keyed by that payload for a readable failure. */
