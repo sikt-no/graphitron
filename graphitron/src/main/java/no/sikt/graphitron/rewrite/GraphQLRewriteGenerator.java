@@ -7,6 +7,8 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
+import no.sikt.graphitron.rewrite.capture.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
@@ -492,16 +494,16 @@ public class GraphQLRewriteGenerator {
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */
-    private FactCapture.GraphIdentity graphIdentity() {
-        return new FactCapture.GraphIdentity(ctx.graphName(), ctx.basedir());
+    private GraphIdentity graphIdentity() {
+        return new GraphIdentity(ctx.graphName(), ctx.basedir());
     }
 
     /**
      * The configuration capture transcribes about this run's graph. Assembled here rather than
      * carried on the coordinate: a caller with no configuration to declare has none to synthesise.
      */
-    private FactCapture.SubjectConfig subjectConfig() {
-        return new FactCapture.SubjectConfig(
+    private SubjectConfig subjectConfig() {
+        return new SubjectConfig(
             Optional.ofNullable(ctx.schemaRecipe()),
             Optional.ofNullable(ctx.supergraph()),
             ctx.declaredOutputCoordinates(),

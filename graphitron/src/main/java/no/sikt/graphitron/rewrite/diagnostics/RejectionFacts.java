@@ -5,7 +5,7 @@ import no.sikt.graphitron.model.tables.records.RejectionValidationErrorDirective
 import no.sikt.graphitron.model.tables.records.RejectionValidationErrorRecord;
 import no.sikt.graphitron.rewrite.RejectionKind;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.model.DeleteRowsError;
 import no.sikt.graphitron.rewrite.model.ErrorChannelWalkerError;
 import no.sikt.graphitron.rewrite.model.JooqRecordInputError;
@@ -55,7 +55,7 @@ public final class RejectionFacts {
     private static final Logger LOG = LoggerFactory.getLogger(RejectionFacts.class);
 
     private final DSLContext dsl;
-    private final FactCapture.GraphIdentity graph;
+    private final GraphIdentity graph;
     private final boolean[] ownershipWarned = new boolean[1];
 
     /**
@@ -64,7 +64,7 @@ public final class RejectionFacts {
      * @param graph the session's graph: the partition every statement is scoped by, and the base
      *              directory the graph's ownership is checked against
      */
-    public RejectionFacts(DSLContext dsl, FactCapture.GraphIdentity graph) {
+    public RejectionFacts(DSLContext dsl, GraphIdentity graph) {
         this.dsl = Objects.requireNonNull(dsl, "dsl");
         this.graph = Objects.requireNonNull(graph, "graph");
     }

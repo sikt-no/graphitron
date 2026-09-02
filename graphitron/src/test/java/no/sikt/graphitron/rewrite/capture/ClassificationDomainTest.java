@@ -223,7 +223,7 @@ class ClassificationDomainTest {
         // stages ahead of assembly, and a dangling type reference is refused by assembly alone.
         try (var store = FactStores.inMemory()) {
             FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
-                FactCapture.SubjectConfig.none(),
+                SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, "type Query { gone: Nope }\n"),
                 CapturedStore.attributionOf(tmp));
             assertThat(domain(store.dsl(), CapturedStore.GRAPH)).isEmpty();

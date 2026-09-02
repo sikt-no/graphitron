@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.maven;
 
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.state.StoreAccess;
 import no.sikt.graphitron.lsp.state.Workspace;
@@ -13,7 +14,6 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.schema.input.SchemaSource;
@@ -318,11 +318,11 @@ public class DevMojo extends AbstractRewriteMojo {
         // before the watchers, so the console is up before the first round lands.
         this.storeConsoleHandle = startStoreConsole();
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
-            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+            new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.rejectionFacts = new RejectionFacts(sessionStore.dsl(),
-            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+            new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.warningFacts = new BuildWarningFacts(sessionStore.dsl(),
-            new FactCapture.GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+            new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         // No graph identity: a .java file's declarations are facts about the file, and a file
         // belongs to whoever compiles it rather than to a graph.
         this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl());

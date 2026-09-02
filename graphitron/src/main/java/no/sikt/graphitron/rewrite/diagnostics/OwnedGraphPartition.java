@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.diagnostics;
 
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import org.jooq.DSLContext;
 import org.slf4j.Logger;
 
@@ -26,7 +26,7 @@ final class OwnedGraphPartition {
      *
      * @param warned one-element state cell carrying the caller's warn-once flag
      */
-    static boolean prepare(DSLContext tx, FactCapture.GraphIdentity graph, Logger log, boolean[] warned) {
+    static boolean prepare(DSLContext tx, GraphIdentity graph, Logger log, boolean[] warned) {
         String recorded = tx.select(STORE_GRAPH.BASE_DIR).from(STORE_GRAPH)
             .where(STORE_GRAPH.GRAPH_NAME.eq(graph.name()))
             .fetchOne(0, String.class);

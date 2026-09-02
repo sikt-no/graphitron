@@ -6,7 +6,7 @@ import no.sikt.graphitron.model.tables.records.LintFindingFixEditRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingFixRecord;
 import no.sikt.graphitron.model.tables.records.LintFindingRecord;
 import no.sikt.graphitron.rewrite.BuildWarning;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.lint.LintFix;
 import org.jooq.DSLContext;
 import org.jooq.TableRecord;
@@ -47,7 +47,7 @@ public final class BuildWarningFacts {
     private static final Logger LOG = LoggerFactory.getLogger(BuildWarningFacts.class);
 
     private final DSLContext dsl;
-    private final FactCapture.GraphIdentity graph;
+    private final GraphIdentity graph;
     private final boolean[] ownershipWarned = new boolean[1];
 
     /**
@@ -56,7 +56,7 @@ public final class BuildWarningFacts {
      * @param graph the session's graph: the partition every statement is scoped by, and the base
      *              directory the graph's ownership is checked against
      */
-    public BuildWarningFacts(DSLContext dsl, FactCapture.GraphIdentity graph) {
+    public BuildWarningFacts(DSLContext dsl, GraphIdentity graph) {
         this.dsl = Objects.requireNonNull(dsl, "dsl");
         this.graph = Objects.requireNonNull(graph, "graph");
     }

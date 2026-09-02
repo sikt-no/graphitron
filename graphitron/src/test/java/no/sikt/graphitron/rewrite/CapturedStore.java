@@ -7,6 +7,8 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
+import no.sikt.graphitron.rewrite.capture.SubjectConfig;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 import no.sikt.graphitron.rewrite.schema.SdlVerdicts;
@@ -202,7 +204,7 @@ public final class CapturedStore implements AutoCloseable {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         var attributed = TestSchemaHelper.attributedRegistry(ctx);
         var store = FactStores.inMemory();
-        FactCapture.capture(store.dsl(), graph(directory), FactCapture.SubjectConfig.none(),
+        FactCapture.capture(store.dsl(), graph(directory), SubjectConfig.none(),
             attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)),
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
         return new CapturedStore(store, GRAPH, directory, file, attributed.preSynthesisRegistry(),
@@ -251,7 +253,7 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = FactStores.inMemory();
-        FactCapture.capture(store.dsl(), false, graph(directory), FactCapture.SubjectConfig.none(),
+        FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), null);
@@ -346,8 +348,8 @@ public final class CapturedStore implements AutoCloseable {
     private static void captureFiles(GraphitronModelStore store, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
-        FactCapture.capture(store.dsl(), warm, new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, attributionOfFiles(files), jooq, census);
+        FactCapture.capture(store.dsl(), warm, new GraphIdentity(graphName, directory),
+            SubjectConfig.none(), registry, attributionOfFiles(files), jooq, census);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -355,13 +357,13 @@ public final class CapturedStore implements AutoCloseable {
     // ---------------------------------------------------------------------------------------
 
     /** The graph identity a fixture captured under, shared so readers can scope by it. */
-    public static FactCapture.GraphIdentity graph(Path directory) {
+    public static GraphIdentity graph(Path directory) {
         return graph(directory, GRAPH);
     }
 
     /** {@link #graph(Path)} for a graph the caller names. */
-    public static FactCapture.GraphIdentity graph(Path directory, String graphName) {
-        return new FactCapture.GraphIdentity(graphName, directory);
+    public static GraphIdentity graph(Path directory, String graphName) {
+        return new GraphIdentity(graphName, directory);
     }
 
     /** Just the parse, for callers that fill a store from something other than the SDL. */

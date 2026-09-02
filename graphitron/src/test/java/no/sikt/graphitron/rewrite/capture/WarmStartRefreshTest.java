@@ -103,7 +103,7 @@ class WarmStartRefreshTest {
 
         Map<String, Integer> cold;
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 references);
             cold = census(store.dsl());
@@ -247,8 +247,8 @@ class WarmStartRefreshTest {
     void aSiblingGraphsPartitionSurvivesARefresh(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
-            FactCapture.SubjectConfig.none(), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
+            SubjectConfig.none(), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
             CapturedStore.attributionOf(siblingDir), null, List.of());
 
         capture(directory, tmp, List.of());
@@ -275,8 +275,8 @@ class WarmStartRefreshTest {
         var recipe = new SchemaRecipe(null,
             List.of(SchemaRecipe.Binding.pattern("schema/**")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
-            FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
+            SubjectConfig.of(recipe), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
             CapturedStore.attributionOf(siblingDir), null, List.of());
         Record siblingRow = graphRow(directory, "sibling");
 
@@ -297,8 +297,8 @@ class WarmStartRefreshTest {
             List.of(new SchemaRecipe.Binding(new SchemaRecipe.Entry.Pattern("sdl/**"),
                 Optional.of("v2"), Optional.empty())),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity("sibling", siblingDir),
-            FactCapture.SubjectConfig.of(revised), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
+        FactCapture.run(directory, new GraphIdentity("sibling", siblingDir),
+            SubjectConfig.of(revised), CapturedStore.registryOf(siblingDir, SIBLING_SDL),
             CapturedStore.attributionOf(siblingDir), null, List.of());
         try (var store = GraphitronModelStore.openAt(directory)) {
             assertThat(store.dsl().select(STORE_GRAPH_SCHEMA_INPUT.ENTRY_VALUE)
@@ -334,8 +334,8 @@ class WarmStartRefreshTest {
         var recipe = new SchemaRecipe(null,
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")),
             List.of(".graphqls"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, tmp),
-            FactCapture.SubjectConfig.of(recipe), CapturedStore.registryOf(tmp, SDL),
+        FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, tmp),
+            SubjectConfig.of(recipe), CapturedStore.registryOf(tmp, SDL),
             CapturedStore.attributionOf(tmp), null, List.of());
 
         // The remembered recipe, decoded from the graph's persisted rows alone: what a freshness
@@ -364,8 +364,8 @@ class WarmStartRefreshTest {
      * generated packages), while the catalog walk clears each package's {@code sql_} partition as
      * it visits that package. A warm refresh must not let the delete of one package's constraints
      * fire while a sibling package's stale referential rows still point at them. Calls
-     * {@link FactCapture#capture(DSLContext, boolean, FactCapture.GraphIdentity,
-     * FactCapture.SubjectConfig, graphql.schema.idl.TypeDefinitionRegistry, Map, JooqCatalog, List,
+     * {@link FactCapture#capture(DSLContext, boolean, GraphIdentity,
+     * SubjectConfig, graphql.schema.idl.TypeDefinitionRegistry, Map, JooqCatalog, List,
      * NodeDeclaration) capture}
      * directly rather than through {@link FactCapture#run}, whose retry-then-fall-back masks a
      * deterministic failure behind a private in-memory store instead of surfacing it here.
@@ -376,12 +376,12 @@ class WarmStartRefreshTest {
         var jooq = new JooqCatalog("no.sikt.graphitron.rewrite.multischemafixture",
             testContext().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), false, graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(store.dsl(), false, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp),
                 jooq, List.of());
 
             assertThatCode(() -> FactCapture.capture(store.dsl(), true, graph(tmp),
-                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
+                SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
                 CapturedStore.attributionOf(tmp), jooq, List.of()))
                 .as("a warm refresh over a catalog whose foreign keys cross package partitions")
                 .doesNotThrowAnyException();
@@ -397,13 +397,13 @@ class WarmStartRefreshTest {
 
     private static final String GRAPH_NAME = "WarmStartRefreshTest";
 
-    private static FactCapture.GraphIdentity graph(Path baseDir) {
-        return new FactCapture.GraphIdentity(GRAPH_NAME, baseDir);
+    private static GraphIdentity graph(Path baseDir) {
+        return new GraphIdentity(GRAPH_NAME, baseDir);
     }
 
     private static void capture(Path directory, Path scratch,
                                 List<CompletionData.ExternalReference> references) {
-        FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
+        FactCapture.run(directory, graph(scratch), SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
             references);
     }
@@ -417,7 +417,7 @@ class WarmStartRefreshTest {
 
     /** {@link #TABLE_BOUND_SDL} captured over a real catalog, so the intent targets take rows. */
     private static void captureBound(DSLContext dsl, boolean warm, Path scratch, JooqCatalog jooq) {
-        FactCapture.capture(dsl, warm, graph(scratch), FactCapture.SubjectConfig.none(),
+        FactCapture.capture(dsl, warm, graph(scratch), SubjectConfig.none(),
             CapturedStore.registryOf(scratch, TABLE_BOUND_SDL),
             CapturedStore.attributionOf(scratch), jooq, List.of());
     }

@@ -213,7 +213,7 @@ class PersistentStoreTest {
 
             // And the run on top of that open completes rather than stalling: this is the whole
             // reported symptom, a build in a checkout where a dev session is running.
-            FactCapture.run(directory, graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 List.of());
 
@@ -262,14 +262,14 @@ class PersistentStoreTest {
     void aClaimedGraphNameIsNotTakenOver(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path original = Files.createDirectories(tmp.resolve("original"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, original),
-            FactCapture.SubjectConfig.none(), CapturedStore.registryOf(original, SDL),
+        FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, original),
+            SubjectConfig.none(), CapturedStore.registryOf(original, SDL),
             CapturedStore.attributionOf(original), null, List.of());
         List<String> before = typeNames(directory);
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
-        FactCapture.run(directory, new FactCapture.GraphIdentity(GRAPH_NAME, impostor),
-            FactCapture.SubjectConfig.none(),
+        FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, impostor),
+            SubjectConfig.none(),
             CapturedStore.registryOf(impostor, "type Query { other: Int }"),
             CapturedStore.attributionOf(impostor), null, List.of());
 
@@ -340,7 +340,7 @@ class PersistentStoreTest {
 
             long start = System.nanoTime();
             var thrown = catchThrowableOfType(DataAccessException.class, () ->
-                FactCapture.capture(writer.dsl(), true, graph(tmp), FactCapture.SubjectConfig.none(),
+                FactCapture.capture(writer.dsl(), true, graph(tmp), SubjectConfig.none(),
                     CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                     List.of()));
             long elapsed = millisSince(start);
@@ -392,7 +392,7 @@ class PersistentStoreTest {
 
             long start = System.nanoTime();
             release.start();
-            FactCapture.capture(writer.dsl(), true, graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(writer.dsl(), true, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 List.of());
             long elapsed = millisSince(start);
@@ -425,7 +425,7 @@ class PersistentStoreTest {
                 .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
                 .where(STORE_GRAPH.GRAPH_NAME.eq(GRAPH_NAME)).execute());
             start = System.nanoTime();
-            FactCapture.run(directory, graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 List.of());
         }
@@ -486,7 +486,7 @@ class PersistentStoreTest {
                 .as("a store holding no graph has nothing for a first attempt to reconcile")
                 .isFalse();
 
-            FactCapture.capture(store.dsl(), false, graph(tmp), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(store.dsl(), false, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
                 List.of());
 
@@ -500,7 +500,7 @@ class PersistentStoreTest {
 
             assertThatCode(() -> FactCapture.capture(store.dsl(),
                 RunStore.reconciles(store, graph(tmp)), graph(tmp),
-                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
+                SubjectConfig.none(), CapturedStore.registryOf(tmp, SDL),
                 CapturedStore.attributionOf(tmp), null, List.of()))
                 .as("the retry itself, taking what the predicate answered. Handed the open's answer"
                     + " instead it fails on the first key it re-inserts, which is a plain write"
@@ -512,14 +512,14 @@ class PersistentStoreTest {
     @Test
     @DisplayName("no home means an in-memory capture, not a file")
     void noHomeMeansInMemory(@TempDir Path tmp) {
-        FactCapture.run(null, graph(tmp), FactCapture.SubjectConfig.none(),
+        FactCapture.run(null, graph(tmp), SubjectConfig.none(),
             CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null, List.of());
         assertThat(Files.exists(tmp.resolve("graphitron-model")))
             .as("nothing was written for a caller with no home to give").isFalse();
     }
 
-    private static FactCapture.GraphIdentity graph(Path baseDir) {
-        return new FactCapture.GraphIdentity(GRAPH_NAME, baseDir);
+    private static GraphIdentity graph(Path baseDir) {
+        return new GraphIdentity(GRAPH_NAME, baseDir);
     }
 
     /**
@@ -631,12 +631,12 @@ class PersistentStoreTest {
         var registry = CapturedStore.registryOf(scratch, SDL);
         var attribution = CapturedStore.attributionOf(scratch);
         return RunStore.forRun(directory, graph, (dsl, warm) ->
-            FactCapture.capture(dsl, warm, graph, FactCapture.SubjectConfig.none(), registry,
+            FactCapture.capture(dsl, warm, graph, SubjectConfig.none(), registry,
                 attribution, null, List.of()));
     }
 
     private static void captureInto(Path directory, Path scratch) {
-        FactCapture.run(directory, graph(scratch), FactCapture.SubjectConfig.none(),
+        FactCapture.run(directory, graph(scratch), SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,
             List.of());
     }
@@ -651,7 +651,7 @@ class PersistentStoreTest {
     /** The same capture cold, so the warm expectation is a measurement rather than a magic number. */
     private static int typeCount(Path directory, Path scratch) {
         try (var cold = GraphitronModelStore.open()) {
-            FactCapture.capture(cold.dsl(), graph(scratch), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(cold.dsl(), graph(scratch), SubjectConfig.none(),
                 CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch));
             return cold.dsl().fetchCount(GRAPHQL_TYPE);
         }

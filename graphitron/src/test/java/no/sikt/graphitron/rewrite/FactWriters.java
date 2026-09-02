@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import no.sikt.graphitron.rewrite.capture.JavaSourceFacts;
 import no.sikt.graphitron.rewrite.capture.SourceWalker;
 import no.sikt.graphitron.rewrite.compile.CompileFacts;
@@ -32,7 +32,7 @@ import java.util.List;
  * <p><b>The graph identity is two arguments rather than a type.</b> Every graph-scoped writer takes
  * the graph's name and the directory it was captured from, because those are the two values a case
  * varies: a second graph to say the partition holds, a second directory to say a checkout that does
- * not own the graph writes nothing. Assembling {@link FactCapture.GraphIdentity} is this level's job,
+ * not own the graph writes nothing. Assembling {@link GraphIdentity} is this level's job,
  * so a call site states what it is varying and nothing else.
  */
 public final class FactWriters {
@@ -82,7 +82,7 @@ public final class FactWriters {
         return walk;
     }
 
-    private static FactCapture.GraphIdentity identity(String graphName, Path baseDir) {
-        return new FactCapture.GraphIdentity(graphName, baseDir);
+    private static GraphIdentity identity(String graphName, Path baseDir) {
+        return new GraphIdentity(graphName, baseDir);
     }
 }

@@ -26,7 +26,7 @@ final class ConfigurationFactCapture {
 
     private ConfigurationFactCapture() {}
 
-    static void capture(FactSink sink, FactCapture.SubjectConfig config) {
+    static void capture(FactSink sink, SubjectConfig config) {
         config.recipe().ifPresent(recipe -> StoredRecipe.write(sink, recipe));
         config.supergraph().ifPresent(supergraph -> writeSupergraph(sink, supergraph));
         config.output().ifPresent(output -> writeOutput(sink, output));
@@ -48,7 +48,7 @@ final class ConfigurationFactCapture {
     }
 
     /** The three output coordinates, present together on a generating run and absent together. */
-    private static void writeOutput(FactSink sink, FactCapture.OutputCoordinates output) {
+    private static void writeOutput(FactSink sink, OutputCoordinates output) {
         var row = sink.dsl().newRecord(STORE_GRAPH_OUTPUT);
         row.setOutputPackage(output.outputPackage());
         row.setJooqPackage(output.jooqPackage());

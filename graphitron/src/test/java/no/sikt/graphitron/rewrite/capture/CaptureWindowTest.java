@@ -94,7 +94,7 @@ class CaptureWindowTest {
         var registry = CapturedStore.registryOf(scratch, GRAPH_NAME, SDL);
         return FactCapture.runAndRead(directory,
             CapturedStore.graph(scratch, GRAPH_NAME),
-            FactCapture.SubjectConfig.none(),
+            SubjectConfig.none(),
             registry,
             SchemaAssembly.of(registry),
             SdlVerdicts.none(),

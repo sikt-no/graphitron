@@ -5,6 +5,8 @@ import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
+import no.sikt.graphitron.rewrite.capture.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDiagnostic;
 import no.sikt.graphitron.rewrite.compile.CompileRound;
 import no.sikt.graphitron.rewrite.derive.AuthoredClaimConflicts;
@@ -311,7 +313,7 @@ class DiagnosticFactsTest {
             """;
         Path file = write(tmp, sdl);
         withStore(dsl -> {
-            FactCapture.capture(dsl, graph(), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(dsl, graph(), SubjectConfig.none(),
                 RewriteSchemaLoader.load(List.of(SchemaSource.file(file))),
                 TestSchemaHelper.attribution(file));
             var expected = AuthoredClaimConflicts.detect(dsl, GRAPH).violations();
@@ -353,7 +355,7 @@ class DiagnosticFactsTest {
         assertThat(assembly.errors()).isNotEmpty();
 
         withStore(dsl -> {
-            FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
                 read.registry(), assembly, verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
@@ -429,7 +431,7 @@ class DiagnosticFactsTest {
             type Query { film: Film }
             """);
         withStore(dsl -> {
-            FactCapture.capture(dsl, graph(), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(dsl, graph(), SubjectConfig.none(),
                 RewriteSchemaLoader.load(List.of(SchemaSource.file(conflict))),
                 TestSchemaHelper.attribution(conflict));
             assertEveryFileIsAPath(dsl, 1);
@@ -442,7 +444,7 @@ class DiagnosticFactsTest {
         var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
         var read = RewriteSchemaLoader.parsePerSource(sources);
         withStore(dsl -> {
-            FactCapture.capture(dsl, false, graph(), FactCapture.SubjectConfig.none(),
+            FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
                 read.registry(), SchemaAssembly.of(read.registry()), SdlVerdicts.of(read),
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
@@ -478,8 +480,8 @@ class DiagnosticFactsTest {
             .allSatisfy(file -> assertThat(file).doesNotStartWith("file:"));
     }
 
-    private FactCapture.GraphIdentity graph() {
-        return new FactCapture.GraphIdentity(GRAPH, tmp);
+    private GraphIdentity graph() {
+        return new GraphIdentity(GRAPH, tmp);
     }
 
     private void withStore(java.util.function.Consumer<DSLContext> body) {

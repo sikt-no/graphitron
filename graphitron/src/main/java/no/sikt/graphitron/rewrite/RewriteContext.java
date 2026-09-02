@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.OutputCoordinates;
 import no.sikt.graphitron.rewrite.dependency.DependencyVersions;
 import no.sikt.graphitron.rewrite.lint.LintConfig;
 import no.sikt.graphitron.rewrite.schema.input.SchemaInput;
@@ -172,12 +172,12 @@ public record RewriteContext(
      * carrying {@link #NO_OUTPUT_PACKAGE} is a validate-only run saying so, and what a fact store
      * transcribes from it is the absence rather than the sentinel.
      */
-    public java.util.Optional<FactCapture.OutputCoordinates> declaredOutputCoordinates() {
+    public java.util.Optional<OutputCoordinates> declaredOutputCoordinates() {
         if (NO_OUTPUT_PACKAGE.equals(outputPackage) || NO_OUTPUT_PACKAGE.equals(jooqPackage)) {
             return java.util.Optional.empty();
         }
         return java.util.Optional.of(
-            new FactCapture.OutputCoordinates(outputPackage, jooqPackage, outputDirectory));
+            new OutputCoordinates(outputPackage, jooqPackage, outputDirectory));
     }
 
     /**

@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.CapturedStore;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.SubjectConfig;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -160,7 +161,7 @@ class StoreNodeTablesTest {
         var registry = CapturedStore.registryOf(tmp, sdl);
         try (var store = FactStores.inMemory()) {
             FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
-                FactCapture.SubjectConfig.none(), registry, CapturedStore.attributionOf(tmp),
+                SubjectConfig.none(), registry, CapturedStore.attributionOf(tmp),
                 new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
             return StoreNodeTables.read(store.dsl(), CapturedStore.GRAPH);
         }

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
 import no.sikt.graphitron.model.tables.records.JavacDiagnosticRecord;
-import no.sikt.graphitron.rewrite.capture.FactCapture;
+import no.sikt.graphitron.rewrite.capture.GraphIdentity;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
@@ -43,7 +43,7 @@ public final class CompileFacts {
     private static final Logger LOG = LoggerFactory.getLogger(CompileFacts.class);
 
     private final DSLContext dsl;
-    private final FactCapture.GraphIdentity graph;
+    private final GraphIdentity graph;
     private boolean ownershipWarned;
 
     /**
@@ -52,7 +52,7 @@ public final class CompileFacts {
      * @param graph the session's graph: the partition every statement is scoped by, and the base
      *              directory the graph's ownership is checked against
      */
-    public CompileFacts(DSLContext dsl, FactCapture.GraphIdentity graph) {
+    public CompileFacts(DSLContext dsl, GraphIdentity graph) {
         this.dsl = Objects.requireNonNull(dsl, "dsl");
         this.graph = Objects.requireNonNull(graph, "graph");
     }

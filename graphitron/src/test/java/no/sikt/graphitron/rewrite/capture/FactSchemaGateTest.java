@@ -734,14 +734,14 @@ class FactSchemaGateTest {
         Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("sibling", siblingDir),
-                FactCapture.SubjectConfig.none(),
+            FactCapture.capture(store.dsl(), new GraphIdentity("sibling", siblingDir),
+                SubjectConfig.none(),
                 CapturedStore.registryOf(siblingDir, "type Query { actors: [String!]! }"),
                 CapturedStore.attributionOf(siblingDir));
             var before = partitionSnapshot(store, "sibling");
 
-            FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity("own", ownDir),
-                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
+            FactCapture.capture(store.dsl(), new GraphIdentity("own", ownDir),
+                SubjectConfig.none(), CapturedStore.registryOf(ownDir, FIXTURE),
                 CapturedStore.attributionOf(ownDir));
 
             assertThat(partitionSnapshot(store, "sibling"))
@@ -856,8 +856,8 @@ class FactSchemaGateTest {
      */
     private static void captureMaterializationFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(),
+        FactCapture.capture(dsl, new GraphIdentity(graphName, directory),
+            SubjectConfig.none(),
             CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE),
             CapturedStore.attributionOf(directory),
             fixtureCatalog(), List.of());
@@ -923,14 +923,14 @@ class FactSchemaGateTest {
             // The write path's two directions. A diagnostics preamble after capture leaves the
             // declaration standing, so a compile-facts run can neither erase nor invent membership...
             new no.sikt.graphitron.rewrite.diagnostics.BuildWarningFacts(
-                store.dsl(), new FactCapture.GraphIdentity("a", aDir)).write(java.util.List.of());
+                store.dsl(), new GraphIdentity("a", aDir)).write(java.util.List.of());
             assertThat(peersOf(store, "a"))
                 .as("a diagnostics preamble never touches the relation").containsExactly("b");
 
             // ...and a warm recapture without the declaration leaves none, removal propagating
             // through the ownership-scoped clear with no both-arms upsert subtlety to get wrong.
-            FactCapture.capture(store.dsl(), true, new FactCapture.GraphIdentity("a", aDir),
-                FactCapture.SubjectConfig.none(), CapturedStore.registryOf(aDir, FIXTURE),
+            FactCapture.capture(store.dsl(), true, new GraphIdentity("a", aDir),
+                SubjectConfig.none(), CapturedStore.registryOf(aDir, FIXTURE),
                 CapturedStore.attributionOf(aDir), null, java.util.List.of());
             assertThat(store.dsl().select(STORE_GRAPH_SUPERGRAPH.GRAPH_NAME)
                 .from(STORE_GRAPH_SUPERGRAPH).fetch(0, String.class))
@@ -941,11 +941,11 @@ class FactSchemaGateTest {
 
     private static void captureUnder(GraphitronModelStore store, String graphName, Path dir,
                                      String supergraph) {
-        var config = new FactCapture.SubjectConfig(java.util.Optional.empty(),
+        var config = new SubjectConfig(java.util.Optional.empty(),
             java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
             java.util.Optional.empty(), no.sikt.graphitron.rewrite.lint.LintConfig.empty(),
             no.sikt.graphitron.rewrite.session.SessionStateConfig.none());
-        FactCapture.capture(store.dsl(), new FactCapture.GraphIdentity(graphName, dir), config,
+        FactCapture.capture(store.dsl(), new GraphIdentity(graphName, dir), config,
             CapturedStore.registryOf(dir, FIXTURE), CapturedStore.attributionOf(dir));
     }
 

@@ -142,7 +142,7 @@ class SourceGraphScopingTest {
      */
     private static void captureAs(DSLContext dsl, String graphName, Path directory,
                                   TypeDefinitionRegistry registry) {
-        FactCapture.capture(dsl, new FactCapture.GraphIdentity(graphName, directory),
-            FactCapture.SubjectConfig.none(), registry, CapturedStore.attributionOf(directory));
+        FactCapture.capture(dsl, new GraphIdentity(graphName, directory),
+            SubjectConfig.none(), registry, CapturedStore.attributionOf(directory));
     }
 }
