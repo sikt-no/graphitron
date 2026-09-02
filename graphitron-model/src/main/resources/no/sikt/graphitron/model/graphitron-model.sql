@@ -882,47 +882,45 @@ COMMENT ON COLUMN graphql_directive_site.source_column IS 'source column of the 
 -- whose right-hand side is an argument path shares this one decode, so it leads the family.
 CREATE TABLE graphitron_argmapping_candidate (
   graph_name    VARCHAR NOT NULL,
-  origin        VARCHAR NOT NULL,
-  origin_kind   VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR,
+  coordinate    VARCHAR NOT NULL,
   path          VARCHAR NOT NULL,
   parent_path   VARCHAR,
+  element_kind  VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR,
   element_name  VARCHAR NOT NULL,
   container_type_name VARCHAR,
   named_type    VARCHAR,
   is_list       BOOLEAN NOT NULL,
   depth         INT     NOT NULL,
   closes_cycle  BOOLEAN NOT NULL,
-  PRIMARY KEY (graph_name, origin, path),
+  PRIMARY KEY (graph_name, coordinate, path),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, origin, parent_path)
-    REFERENCES graphitron_argmapping_candidate (graph_name, origin, path) ON DELETE CASCADE,
-  CHECK (origin_kind IN ('ARGUMENT', 'INPUT_FIELD', 'SIGIL')),
-  CHECK ((argument_name IS NULL) = (origin_kind IN ('INPUT_FIELD', 'SIGIL'))),
+  FOREIGN KEY (graph_name, coordinate, parent_path)
+    REFERENCES graphitron_argmapping_candidate (graph_name, coordinate, path) ON DELETE CASCADE,
+  CHECK (path <> ''),
+  CHECK (element_kind IN ('ARGUMENT', 'INPUT_FIELD', 'SIGIL')),
   CHECK ((parent_path IS NULL) = (depth = 0)),
-  CHECK ((container_type_name IS NULL)
-         = (depth = 0 AND origin_kind IN ('ARGUMENT', 'SIGIL'))),
-  CHECK ((named_type IS NULL) = (origin_kind = 'SIGIL')),
-  CHECK (origin_kind <> 'SIGIL' OR (depth = 0 AND is_list = FALSE AND closes_cycle = FALSE))
+  CHECK ((field_name IS NULL) = (coordinate = type_name)),
+  CHECK ((container_type_name IS NULL) = (element_kind IN ('ARGUMENT', 'SIGIL'))),
+  CHECK ((named_type IS NULL) = (element_kind = 'SIGIL')),
+  CHECK (element_kind <> 'SIGIL' OR (depth = 0 AND is_list = FALSE AND closes_cycle = FALSE))
 );
 CREATE INDEX graphitron_argmapping_candidate_parent_ix
-  ON graphitron_argmapping_candidate (graph_name, origin, parent_path);
-COMMENT ON TABLE graphitron_argmapping_candidate IS 'What an argMapping right-hand side may name: one row per candidate, under the position the path is written from. For example the argument input of Mutation.rentFilm is one row at the empty path, and the input field inventoryId below it is another at path inventoryId, each carrying the type that says whether anything opens under it in turn.';
+  ON graphitron_argmapping_candidate (graph_name, coordinate, parent_path);
+COMMENT ON TABLE graphitron_argmapping_candidate IS 'What an argMapping right-hand side may name: one row per writable path, under the coordinate it is written at. For example the argument input of Mutation.rentFilm is one row at the empty path, and the input field inventoryId below it is another at path inventoryId, each carrying the type that says whether anything opens under it in turn.';
 COMMENT ON COLUMN graphitron_argmapping_candidate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argmapping_candidate.origin IS 'the position a path is written from, spelled as one string in the coordinate grammar graphitron_argmapping_entry.use_site uses: Type.field(argument) where the path is rooted at a field and enters through one of its arguments, and Type.field where it is written relative to an input field a directive sits on. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot, the argument being absent on one of the two kinds. An argMapping pair carries the same spelling for the position its own head names, so a written selection meets its candidate on this column and the path beside it and nowhere else';
-COMMENT ON COLUMN graphitron_argmapping_candidate.origin_kind IS 'which kind of position the origin is, ARGUMENT where a path is rooted at a field and enters through an argument, INPUT_FIELD where it is written relative to an input field, SIGIL where the right-hand side names a value the runtime holds rather than a position on the input surface. A sigil is a root nothing descends from, so it carries no named type and no container, and both nullnesses are stated as rules against this column rather than left looking like missing values. The whole of what says how to read the decomposed columns beside it, on graphitron_argmapping_entry.site''s terms, and a check constraint ties it to the argument column so a reader switching on either cannot disagree with one switching on the other';
-COMMENT ON COLUMN graphitron_argmapping_candidate.type_name IS 'the type owning the coordinate the origin sits on: the query type where the origin is an argument, the input object type where it is an input field. Decomposed from the spelling beside it for readers that want the part rather than the key';
-COMMENT ON COLUMN graphitron_argmapping_candidate.field_name IS 'the field owning the coordinate the origin sits on; decomposed from the spelling beside it';
-COMMENT ON COLUMN graphitron_argmapping_candidate.argument_name IS 'the argument a field-rooted path enters through, NULL where the origin is an input field, which has no argument in scope. Nullable by kind and gated to exactly that kind, which is why the key is the spelling rather than these columns';
-COMMENT ON COLUMN graphitron_argmapping_candidate.path IS 'the dot-path below the origin, empty at the origin itself, spelled exactly as an author writes it after the first segment. Identity and nothing else: the parent and the element name beside it answer every question a reader could otherwise have parsed this for. An argMapping''s own right side splits along this relation''s key, its head naming the origin and its remainder this column, so a written selection either matches a row here or does not';
-COMMENT ON COLUMN graphitron_argmapping_candidate.parent_path IS 'the path one segment shorter, NULL at the origin; a foreign key back to this relation, which is what makes the candidates a tree rather than a list. It cascades on delete, because the capture cadence clears a graph''s partition in one statement and a subtree has no meaning once its root is gone; ordering the delete by depth instead would have made every clearing site know this relation''s shape. Completing a partially written path is a probe on this column, and how many segments remain below a candidate is a question about its descendants rather than a count over a positional decomposition';
-COMMENT ON COLUMN graphitron_argmapping_candidate.element_name IS 'what an author writes at this step: the origin''s own name at the root and an input field''s name below it. Stored rather than recovered from the path because no reader may split a string, the rule graphitron_argument_path_segment''s writer already states from the other side';
-COMMENT ON COLUMN graphitron_argmapping_candidate.container_type_name IS 'the type this candidate''s element is declared on: the parent''s own type below the origin, and the input object type at an input-field origin. NULL exactly where the origin is an argument at depth zero, an argument being declared on a field rather than on a type, which is nullable by kind and gated as one. Stored rather than reached by following the parent link, for the reason the element name is: a reader naming what a path bound needs the coordinate, and a walk to the parent to recover it is the shape this relation exists to remove';
+COMMENT ON COLUMN graphitron_argmapping_candidate.type_name IS 'the type owning the coordinate: the object type declaring the field where a head names an argument, and the input type itself where a head names one of its fields. Decomposed from the coordinate beside it so a reader joins on a column rather than parsing a spelling';
+COMMENT ON COLUMN graphitron_argmapping_candidate.field_name IS 'the field owning the coordinate, NULL where the coordinate is a bare input type and there is no field to name. Decomposed from the coordinate, and its nullness is exactly the two coordinate shapes told apart';
+COMMENT ON COLUMN graphitron_argmapping_candidate.coordinate IS 'the container whose members an author may name here, spelled Type.field where the members are a field''s arguments and Type where they are an input type''s fields. With the path beside it this is the key, and it is what an entry''s own candidate_coordinate meets. It names a position and never a value: a sigil is a path written at a coordinate, not a coordinate of its own.';
+COMMENT ON COLUMN graphitron_argmapping_candidate.element_kind IS 'what this row''s own element is: ARGUMENT for a field''s argument, INPUT_FIELD for a field of an input type, SIGIL for a value the runtime holds. A property of the element rather than of the root it descends from, so a reader switching on it needs no depth test, and the two nullnesses beside it are stated against this column. An argument and a sigil have no declaring type, so neither carries a container; a sigil names no GraphQL type, so it carries no named type either.';
+COMMENT ON COLUMN graphitron_argmapping_candidate.path IS 'the right-hand side an author writes to name this element, from its head down, dot-separated. Every row is something writable, so no path is empty: a root is a row whose parent_path is null, not one whose path is blank. An entry''s written path meets its candidate on this column exactly, with no head to strip first.';
+COMMENT ON COLUMN graphitron_argmapping_candidate.parent_path IS 'the path one segment shorter, NULL at a root; a foreign key back to this relation, so a subtree is deleted by deleting what it hangs from. This is what says a row is a root, and no blank path stands in for it';
+COMMENT ON COLUMN graphitron_argmapping_candidate.element_name IS 'what an author writes at this step: the argument or field this row''s path ends at, which at a root is the head of the path itself';
+COMMENT ON COLUMN graphitron_argmapping_candidate.container_type_name IS 'the type this candidate''s element is declared on, NULL where the element is an argument or a sigil and no type declares it';
 COMMENT ON COLUMN graphitron_argmapping_candidate.named_type IS 'the type of the value at this candidate, unwrapped of list and non-null. The whole of what says whether anything opens below: a candidate whose type is an input object has children and every other candidate is a leaf, so a reader needs no separate kind column and no rule of its own';
 COMMENT ON COLUMN graphitron_argmapping_candidate.is_list IS 'whether the value at this candidate is a list, carried from the argument or input field it stands for. A consumer binding a parameter to this candidate needs the arity as much as the type, and reading it here is what keeps such a consumer from joining back to the SDL relation the writer already read';
-COMMENT ON COLUMN graphitron_argmapping_candidate.depth IS 'how many segments below the origin this candidate sits, zero at the origin; carried because the writer expands one depth at a time and because a reader asking for the roots of a subtree should not have to test a column for NULL';
+COMMENT ON COLUMN graphitron_argmapping_candidate.depth IS 'how many segments below the root this candidate sits, zero at a root; carried because a reader ranking how far a path resolved compares it rather than counting separators';
 COMMENT ON COLUMN graphitron_argmapping_candidate.closes_cycle IS 'whether this candidate''s type already stands above it on its own ancestry, which is what makes it the element that closes a cycle. Such a candidate is nameable and so has a row, and nothing below it does, so this column is the difference between a leaf and a stopping point and a reader never has to infer one from the absence of children. Cyclic input nesting is not supported yet and the refusal an author sees is stated over these rows: a true here is where the candidate set stops, and saying so is what keeps the deferral visible instead of silent';
 
 CREATE TABLE graphitron_argument_path_segment (
@@ -2424,7 +2422,7 @@ CREATE TABLE graphitron_argmapping_entry (
   argument_path VARCHAR NOT NULL,
   head_segment   VARCHAR NOT NULL,
   head_kind        VARCHAR NOT NULL,
-  candidate_origin VARCHAR NOT NULL,
+  candidate_coordinate VARCHAR NOT NULL,
   candidate_path   VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT,
@@ -2456,8 +2454,8 @@ COMMENT ON COLUMN graphitron_argmapping_entry.position IS 'the pair''s own posit
 COMMENT ON COLUMN graphitron_argmapping_entry.param_name IS 'the method parameter name the pair binds';
 COMMENT ON COLUMN graphitron_argmapping_entry.argument_path IS 'the argument path the parameter is bound to, as written';
 COMMENT ON COLUMN graphitron_argmapping_entry.head_segment IS 'the first segment of argument_path, which is the slot the path enters at. A function of the path text and written here because the writer has already split it: every reader needs the head and no reader may split a string, so the alternative is a positional join back into the segment child at position zero, repeated once per reader. What the head must name to be valid is the specification''s question and this column does not answer it: an invalid head is written here as spelled and refused by the relation that names invalid selections. Distinguishing what was selected from whether the selection resolves is the same separation the schema keeps everywhere else between a resolution and a rejection';
-COMMENT ON COLUMN graphitron_argmapping_entry.candidate_origin IS 'the position this pair''s right side is written from, spelled as graphitron_argmapping_candidate.origin spells it: the field coordinate with the head as its argument where the head names one, and the input field coordinate the head names where it does not. A function of the coordinate, the head and the head''s kind, all of which sit beside it, and written here so a selection meets its candidate on a key rather than on a spelling either side reconstructs';
-COMMENT ON COLUMN graphitron_argmapping_entry.candidate_path IS 'the written path below the head, empty where the right side is a bare name; the other half of what this pair selects. Together with head_segment it is a candidate''s key under this pair''s own coordinate, so a reader asks whether the selection resolves by probing graphitron_argmapping_candidate rather than by walking a positional decomposition. Written by capture because it is a split of a string and no reader may split one, on head_segment''s terms. Says nothing about whether a candidate with that key exists: a selection that resolves and a selection that misses are both spelled here and only the probe tells them apart';
+COMMENT ON COLUMN graphitron_argmapping_entry.candidate_coordinate IS 'the container this entry''s right-hand side is written at, spelled as graphitron_argmapping_candidate.coordinate spells it: the field where a path enters through one of its arguments or a sigil is written, and the input type where a path is written on one of its fields. With candidate_path beside it, a candidate''s key.';
+COMMENT ON COLUMN graphitron_argmapping_entry.candidate_path IS 'the written path, head included, exactly as the candidate relation spells its own. Carried rather than reconstructed so a reader meets a candidate on an equality and never strips a head first; it equals argument_path wherever the head is a slot at the coordinate, which is every case the sites admit.';
 COMMENT ON COLUMN graphitron_argmapping_entry.head_kind IS 'what kind of slot the head names: ARGUMENT, INPUT_FIELD, or SIGIL where the right-hand side names a value the runtime holds rather than a position on the input surface. Determined rather than independent, and a check constraint keeps it so: a $-prefixed right-hand side is a SIGIL, an input-field-level condition enters at the input field it sits on, and every other site enters at an argument. GraphQL names cannot start with $, so a sigil and a path are disjoint by construction and the column restates that rather than deciding it. Stored and held to that rule by a check rather than computed by the engine, and the reason is the writer rather than the model: the capture sink''s generic arm names every column a relation declares, so a column the database computes cannot be inserted through it at all. Not a claim about whether the named slot exists';
 COMMENT ON COLUMN graphitron_argmapping_entry.source_name IS 'the file the owning site was written in, carried from that site so a reader of this relation needs no join back to it';
 COMMENT ON COLUMN graphitron_argmapping_entry.source_line IS 'the owning site''s line, carried with the file beside it';
@@ -7113,12 +7111,12 @@ SELECT graph_name, site, use_site, type_name, field_name, position, argument_pat
        node_id_declared, node_type_ref, trailing_segments, leaf_named_type, leaf_is_list
   FROM (SELECT p.graph_name, p.site, p.use_site, p.type_name, p.field_name, p.position,
                p.argument_path, c.depth AS segment_position,
-               CASE WHEN c.depth = 0 THEN c.origin_kind ELSE 'INPUT_FIELD' END AS bound_kind,
-               CASE WHEN c.depth = 0 THEN c.type_name ELSE c.container_type_name END
-                 AS bound_type_name,
-               CASE WHEN c.depth = 0 THEN c.field_name ELSE c.element_name END AS bound_field_name,
-               CASE WHEN c.depth = 0 THEN c.argument_name ELSE CAST(NULL AS VARCHAR) END
-                 AS bound_argument_name,
+               c.element_kind AS bound_kind,
+               COALESCE(c.container_type_name, c.type_name) AS bound_type_name,
+               CASE WHEN c.element_kind = 'ARGUMENT' THEN c.field_name ELSE c.element_name END
+                 AS bound_field_name,
+               CASE WHEN c.element_kind = 'ARGUMENT' THEN c.element_name
+                    ELSE CAST(NULL AS VARCHAR) END AS bound_argument_name,
                CASE WHEN an.type_name IS NOT NULL OR fn.type_name IS NOT NULL
                     THEN TRUE ELSE FALSE END AS node_id_declared,
                COALESCE(an.node_type_ref, fn.node_type_ref) AS node_type_ref,
@@ -7132,16 +7130,15 @@ SELECT graph_name, site, use_site, type_name, field_name, position, argument_pat
             ON s.graph_name = p.graph_name AND s.type_name = p.type_name
            AND s.field_name = p.field_name AND s.argument_path = p.argument_path
           LEFT JOIN graphitron_argmapping_candidate c
-            ON c.graph_name = p.graph_name AND c.origin = p.candidate_origin
+            ON c.graph_name = p.graph_name AND c.coordinate = p.candidate_coordinate
            AND c.path = s.candidate_path
           LEFT JOIN graphitron_argument_node_id an
-            ON c.depth = 0 AND c.origin_kind = 'ARGUMENT' AND an.graph_name = c.graph_name
+            ON c.element_kind = 'ARGUMENT' AND an.graph_name = c.graph_name
            AND an.type_name = c.type_name AND an.field_name = c.field_name
-           AND an.argument_name = c.argument_name
+           AND an.argument_name = c.element_name
           LEFT JOIN graphitron_field_node_id fn
-            ON (c.depth > 0 OR c.origin_kind = 'INPUT_FIELD') AND fn.graph_name = c.graph_name
-           AND fn.type_name = CASE WHEN c.depth = 0 THEN c.type_name ELSE c.container_type_name END
-           AND fn.field_name = CASE WHEN c.depth = 0 THEN c.field_name ELSE c.element_name END
+            ON c.element_kind = 'INPUT_FIELD' AND fn.graph_name = c.graph_name
+           AND fn.type_name = c.container_type_name AND fn.field_name = c.element_name
          WHERE CASE p.site
                  WHEN 'ARGUMENT_CONDITION' THEN p.head_segment = p.argument_name
                  WHEN 'INPUT_FIELD_CONDITION' THEN p.head_segment = p.field_name
@@ -10191,8 +10188,8 @@ INSERT INTO meta_grain VALUES
    'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
    'graph_name, site, use_site, descriptor, position', 'sdl'),
   ('argmapping-candidate',
-   'one position an argMapping right-hand side may name, under the origin its path is written from',
-   'graph_name, origin, path', 'sdl'),
+   'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
+   'graph_name, coordinate, path', 'sdl'),
   ('expanded-type',
    'one type the generator works with in one graph, whether an author declared it or macro expansion minted it',
    'graph_name, type_name', 'sdl'),
@@ -10294,7 +10291,7 @@ INSERT INTO meta_relation VALUES
    'For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.',
    'The field-grain half of intent_expanded_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that union is disjoint; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate, and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
-   'What an argMapping right-hand side may name: one row per candidate, under the position the path is written from.',
+   'What an argMapping right-hand side may name: one row per writable path, under the coordinate it is written at.',
    'For example the argument input of Mutation.rentFilm is one row at the empty path, and the input field inventoryId below it is another at path inventoryId, each carrying the type that says whether anything opens under it in turn.',
    'The available member of the argMapping triple: graphitron_argmapping_entry is what an author wrote, this is what a right-hand side may name, and graphitron_argmapping_match is where the two meet. The specification states rules an argMapping right-hand side follows, a head naming a position in scope and each later segment naming something the value there opens into, and no relation held that set: every reader re-derived it, walking a positional decomposition of the authored path against a second decomposition of the same descent and aligning the two with nested negation. Stating the candidates once turns resolution into a probe and completion into a read of one parent link. Two origins share the relation because a path written on a field and one written on an input field are one payload at two coordinates, which this schema answers with a discriminator and a total spelling rather than a second relation. Keyed by the input-field coordinate rather than by the occurrences that reach it, since a field opens into whatever its own type does, so every occurrence would repeat one subtree. Stored rather than stated as a view because the descent is recursive.'),
   ('sql_schema', 'database-schema', 'catalog',

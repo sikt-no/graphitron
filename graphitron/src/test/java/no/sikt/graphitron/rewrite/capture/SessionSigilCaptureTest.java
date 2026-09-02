@@ -69,12 +69,12 @@ class SessionSigilCaptureTest {
             assertThat(entries.get(1).getPosition()).isEqualTo(1);
 
             var candidates = store.dsl().selectFrom(GRAPHITRON_ARGMAPPING_CANDIDATE)
-                .where(GRAPHITRON_ARGMAPPING_CANDIDATE.ORIGIN_KIND.eq("SIGIL")).fetch();
+                .where(GRAPHITRON_ARGMAPPING_CANDIDATE.ELEMENT_KIND.eq("SIGIL")).fetch();
             assertThat(candidates)
                 .as("a sigil is something a right-hand side may name, so it has a candidate")
                 .hasSize(1);
-            assertThat(candidates.get(0).getOrigin())
-                .isEqualTo(entries.get(0).getCandidateOrigin());
+            assertThat(candidates.get(0).getCoordinate())
+                .isEqualTo(entries.get(0).getCandidateCoordinate());
             assertThat(candidates.get(0).getElementName()).isEqualTo("$session");
             assertThat(candidates.get(0).getNamedType())
                 .as("a sigil names a runtime value and no GraphQL type")

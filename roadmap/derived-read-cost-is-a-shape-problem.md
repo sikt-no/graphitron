@@ -233,6 +233,25 @@ enumerates nine. A count restated in six comments about a relation that restates
 the failure mode, not an accident. 287 relations to 286, with the frozen undeclared roster and the
 stated view count following.
 
+**The candidate relation is keyed by coordinate and path, and holds only writable things.** It was
+keyed by an origin, which was a serialized position with the path's head folded into it, and a root
+was a row whose path was the empty string. Neither survives. A coordinate is the container whose
+members a head may name, the field where a head names an argument and the input type where it names
+one of that type's fields; the path is the whole right-hand side, head included; and a root is a row
+with no parent. Nothing stores `''`, because `''` is not something an author can write.
+
+Three columns went with the change. `origin_kind` described the rooting and was constant down a
+subtree; `element_kind` replaces it and describes the row, which removed every `depth = 0` test in
+the reader, `bound_kind` collapsing from a two-arm CASE to a column. `argument_name` was origin-level
+data repeated on every descendant and equal to `element_name` at the one row that used it. And the
+serialized origin existed only because a nullable `argument_name` could not sit in the key; with the
+argument now the head of a path, the key needs neither.
+
+The sigil follows from the same rule rather than from a special case: a sigil is a path written at a
+coordinate, not a coordinate of its own, so it is a root like an argument is, and the only thing that
+distinguishes it is that it names no GraphQL type. What had looked like a subtype needing nullable
+columns was a path modelled as a place.
+
 ## What the evidence is
 
 **Plan instantiations, on a fresh capture of a 26 818-line consumer schema.** The criterion this item

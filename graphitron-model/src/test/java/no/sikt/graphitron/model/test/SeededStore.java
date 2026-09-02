@@ -1249,13 +1249,9 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGMAPPING_ENTRY.HEAD_KIND,
                 argumentPath.startsWith("$") ? "SIGIL"
                     : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT")
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_ORIGIN,
-                "INPUT_FIELD_CONDITION".equals(site)
-                    ? typeName + "." + head(argumentPath)
-                    : typeName + "." + fieldName + "(" + head(argumentPath) + ")")
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_PATH,
-                argumentPath.indexOf('.') < 0 ? ""
-                    : argumentPath.substring(argumentPath.indexOf('.') + 1))
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_COORDINATE,
+                "INPUT_FIELD_CONDITION".equals(site) ? typeName : typeName + "." + fieldName)
+            .set(GRAPHITRON_ARGMAPPING_ENTRY.CANDIDATE_PATH, argumentPath)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_LINE, location.value1())
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_COLUMN, location.value2())
@@ -1577,11 +1573,11 @@ public final class SeededStore {
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.ARGUMENT_PATH, argumentPath)
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.POSITION, position)
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.SEGMENT_NAME, segments[position])
-                // Derived as capture derives it: the segments after the head up to this one, which
-                // is the path a candidate under this pair's origin would be keyed by.
+                // Derived as capture derives it: the path from the head up to this segment, which
+                // is what a candidate at this entry's coordinate is keyed by.
                 .set(GRAPHITRON_ARGUMENT_PATH_SEGMENT.CANDIDATE_PATH,
                     String.join(".", java.util.Arrays.asList(segments)
-                        .subList(1, position + 1)))
+                        .subList(0, position + 1)))
                 .onDuplicateKeyIgnore()
                 .execute();
         }

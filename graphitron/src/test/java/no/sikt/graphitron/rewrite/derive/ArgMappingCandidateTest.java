@@ -72,12 +72,12 @@ class ArgMappingCandidateTest {
             """;
         try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
             assertThat(rows(store.dsl()))
-                .as("path | parent | element | type | depth, the root's path empty and its parent"
-                    + " absent")
+                .as("path | parent | element | type | depth, the root named by its own head and"
+                    + " told apart by having no parent rather than by an empty path")
                 .containsExactlyInAnyOrder(
-                    "Query.films(input)||<none>|input|Outer|0|false",
-                    "Query.films(input)|inner||inner|Inner|1|false",
-                    "Query.films(input)|inner.code|inner|code|String|2|false");
+                    "Query.films|input|<none>|input|Outer|0|false",
+                    "Query.films|input.inner|input|inner|Inner|1|false",
+                    "Query.films|input.inner.code|input.inner|code|String|2|false");
         }
     }
 
@@ -96,15 +96,15 @@ class ArgMappingCandidateTest {
                     + " nothing below it is written; a reader tells it from a leaf by the column"
                     + " rather than by the absence of children")
                 .containsExactlyInAnyOrder(
-                    "Query.films(filter)||<none>|filter|A|0|false",
-                    "Query.films(filter)|b||b|B|1|false",
-                    "Query.films(filter)|b.a|b|a|A|2|true");
+                    "Query.films|filter|<none>|filter|A|0|false",
+                    "Query.films|filter.b|filter|b|B|1|false",
+                    "Query.films|filter.b.a|filter.b|a|A|2|true");
         }
     }
 
     @Test
-    @DisplayName("an input field is one origin however many arguments reach it")
-    void anInputFieldIsOneOriginHoweverManyArgumentsReachIt() {
+    @DisplayName("an input field is one coordinate however many arguments reach it")
+    void anInputFieldIsOneCoordinateHoweverManyArgumentsReachIt() {
         String sdl = """
             input Termin { arstall: Int }
             input FilterA { termin: Termin }
@@ -114,31 +114,31 @@ class ArgMappingCandidateTest {
             """;
         try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
             var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
-            assertThat(store.dsl().select(c.ORIGIN, c.PATH).from(c)
-                    .where(c.GRAPH_NAME.eq(GRAPH)).and(c.ORIGIN_KIND.eq("INPUT_FIELD"))
+            assertThat(store.dsl().select(c.COORDINATE, c.PATH).from(c)
+                    .where(c.GRAPH_NAME.eq(GRAPH)).and(c.ELEMENT_KIND.eq("INPUT_FIELD"))
                     .and(c.TYPE_NAME.in("FilterA", "FilterB"))
                     .fetch(r -> r.value1() + "|" + r.value2()))
-                .as("one origin per input field coordinate, each carrying its own subtree, and no"
+                .as("one coordinate per input type, its fields written as paths under it, and no"
                     + " row per argument that happens to reach it")
                 .containsExactlyInAnyOrder(
-                    "FilterA.termin|", "FilterA.termin|arstall",
-                    "FilterB.termin|", "FilterB.termin|arstall");
+                    "FilterA|termin", "FilterA|termin.arstall",
+                    "FilterB|termin", "FilterB|termin.arstall");
         }
     }
 
     private static List<String> roots(DSLContext dsl) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
-        return dsl.select(c.ARGUMENT_NAME).from(c)
+        return dsl.select(c.ELEMENT_NAME).from(c)
             .where(c.GRAPH_NAME.eq(GRAPH)).and(c.DEPTH.eq(0))
-            .and(c.ORIGIN_KIND.eq("ARGUMENT"))
-            .fetch(c.ARGUMENT_NAME);
+            .and(c.ELEMENT_KIND.eq("ARGUMENT"))
+            .fetch(c.ELEMENT_NAME);
     }
 
     private static List<String> rows(DSLContext dsl) {
         var c = GRAPHITRON_ARGMAPPING_CANDIDATE;
         return dsl.selectFrom(c).where(c.GRAPH_NAME.eq(GRAPH))
-            .and(c.ORIGIN_KIND.eq("ARGUMENT"))
-            .fetch(r -> r.getOrigin() + "|" + r.getPath() + "|"
+            .and(c.FIELD_NAME.isNotNull())
+            .fetch(r -> r.getCoordinate() + "|" + r.getPath() + "|"
                 + (r.getParentPath() == null ? "<none>" : r.getParentPath()) + "|"
                 + r.getElementName() + "|" + r.getNamedType() + "|" + r.getDepth() + "|"
                 + r.getClosesCycle());

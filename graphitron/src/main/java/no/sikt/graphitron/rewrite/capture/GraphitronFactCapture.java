@@ -1241,10 +1241,10 @@ final class GraphitronFactCapture {
             row.setArgumentPath(path);
             row.setPosition(position);
             row.setSegmentName(entry.segments().get(position));
-            // What this segment completes below the head, spelled as the candidate tree spells it,
-            // so a reader asks how far a written path resolves with an equality rather than a
-            // prefix test. Empty at the head, which is the tree's own root.
-            row.setCandidatePath(String.join(".", entry.segments().subList(1, position + 1)));
+            // The path from the head down to this segment, spelled as the candidate tree spells
+            // its own, so a reader asks how far a written path resolves with an equality rather
+            // than a prefix test. The head is a candidate like any other, so no segment is empty.
+            row.setCandidatePath(String.join(".", entry.segments().subList(0, position + 1)));
             sink.add(row);
         }
         return path;
@@ -1449,15 +1449,15 @@ final class GraphitronFactCapture {
         // column and the site. Neither asserts the head resolves; that is the refusal relation's.
         int dot = argumentPath.indexOf('.');
         row.setHeadSegment(dot < 0 ? argumentPath : argumentPath.substring(0, dot));
-        row.setCandidatePath(dot < 0 ? "" : argumentPath.substring(dot + 1));
-        // The position the right side is written from, spelled as the candidate relation spells it:
-        // the field coordinate with the head as its argument where the head names one, and the
-        // input field coordinate the head names where it does not.
+        // The path is carried whole, head included, because the candidate relation spells its own
+        // that way: every row there is something writable, and a head is writable.
+        row.setCandidatePath(argumentPath);
         row.setHeadKind(argumentPath.startsWith("$") ? "SIGIL"
             : "INPUT_FIELD_CONDITION".equals(site) ? "INPUT_FIELD" : "ARGUMENT");
-        row.setCandidateOrigin("INPUT_FIELD_CONDITION".equals(site)
-            ? type + "." + row.getHeadSegment()
-            : type + "." + field + "(" + row.getHeadSegment() + ")");
+        // The container the right side is written at: the field, whose arguments and admitted
+        // sigils are what a head may name, and the input type at an input-field site, whose fields
+        // are. Never the head itself, which is a path and not a place.
+        row.setCandidateCoordinate("INPUT_FIELD_CONDITION".equals(site) ? type : type + "." + field);
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }
