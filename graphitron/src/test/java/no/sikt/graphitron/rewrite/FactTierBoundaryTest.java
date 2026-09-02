@@ -22,8 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is spelled out rather than derived: it is the plan's move set, and a file joining it is a
  * decision somebody should make deliberately.
  *
- * <p>Three properties, because the boundary can be broken three ways and only the first is visible
- * to a reader scanning imports.
+ * <p>Four properties. Three are about what moves and can be broken three ways, only the first of
+ * them visible to a reader scanning imports; the fourth is about what stays, and is the direction
+ * the whole move exists to establish.
  *
  * <ul>
  *   <li><b>No javapoet.</b> Capture reads a consumer's sources and writes down what it found; how
@@ -44,12 +45,33 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       because the arms sit in the declaring type's own package. This check is why the move set
  *       carries the whole {@link no.sikt.graphitron.rewrite.model.Rejection} closure rather than
  *       {@code Rejection} alone.</li>
+ *   <li><b>Nothing that stays writes.</b> The generator reads facts and writes none, which is what
+ *       the move is for rather than a consequence of it. It holds today for a reason worth stating
+ *       because it makes the rule cheap to keep: no value the generator computes reaches the store
+ *       at all. Capture is handed the registry as it stood before the synthesis rewrites, and it
+ *       re-runs the {@code @asConnection} expansion from its own decoded rows rather than
+ *       inheriting the pipeline's, so even work the generator has already done is refused. The
+ *       plugin's own writers are a separate matter and stay outside this module: they record a
+ *       completed pass, a compile round and the consumer's source tree, which are the plugin's
+ *       observations rather than the generator's account of itself.</li>
  * </ul>
  */
 @UnitTier
 class FactTierBoundaryTest {
 
     private static final Path REWRITE = Path.of("src/main/java/no/sikt/graphitron/rewrite");
+
+    /**
+     * The store's write surface, in the three spellings a writer cannot avoid: the generated table
+     * constants a statement names, the sink every capture write goes through, and the boot package
+     * that opens a store to write to. A read needs none of the three, going through
+     * {@link no.sikt.graphitron.model.read.StoreHandle} and the query classes in the move set, so
+     * naming any of them above the line is a write or the beginning of one.
+     */
+    private static final Set<String> WRITE_SURFACE = Set.of(
+        "no.sikt.graphitron.model.Tables",
+        "FactSink",
+        "no.sikt.graphitron.model.boot");
 
     private static final Pattern IMPORT = Pattern.compile("^\\s*import\\s+(?:static\\s+)?([\\w.]+)\\s*;");
     private static final Pattern PERMITS = Pattern.compile("permits\\s+([^{]+)\\{");
@@ -182,6 +204,44 @@ class FactTierBoundaryTest {
                 + " permitted subclasses of an unnamed-module sealed type must share its package,"
                 + " so the move would not compile")
             .isEmpty();
+    }
+
+    @Test
+    void nothingThatStaysWritesFacts() throws IOException {
+        var violations = new ArrayList<String>();
+        for (Path file : staysAboveTheLine()) {
+            String body = Files.readString(file);
+            for (String surface : WRITE_SURFACE) {
+                if (body.contains(surface)) {
+                    violations.add(rel(file) + "  names  " + surface);
+                }
+            }
+        }
+        assertThat(violations)
+            .as("the generator writing facts; add the query to the fact tier and read what it"
+                + " returns, and if a new fact is wanted, capture is where it is written")
+            .isEmpty();
+    }
+
+    /**
+     * The files that stay above the line: everything under the generator's own tree that the move
+     * set does not claim. The complement of {@link #moveSet()}, and the population the write rule
+     * is asked of.
+     */
+    private static List<Path> staysAboveTheLine() throws IOException {
+        List<Path> staying;
+        try (var paths = Files.walk(REWRITE)) {
+            staying = paths
+                .filter(Files::isRegularFile)
+                .filter(p -> p.getFileName().toString().endsWith(".java"))
+                .filter(p -> !moves(p))
+                .sorted()
+                .toList();
+        }
+        assertThat(staying)
+            .as("the leftovers must be found on disk; an empty walk would pass the check vacuously")
+            .hasSizeGreaterThanOrEqualTo(200);
+        return staying;
     }
 
     private static List<Path> moveSet() throws IOException {

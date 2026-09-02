@@ -76,6 +76,23 @@ demand.
 `render` and `command`, about 14,800 lines. After the move, generator code that calls into capture
 does not compile.
 
+**`graphitron` reads facts and writes none.** This is the boundary the move exists to establish,
+and it is worth stating as the goal rather than leaving it to be inferred from a file list. It also
+already holds, for a reason stronger than the file layout: no value the generator computes reaches
+the store at all. Every one of the ten arguments it hands the capture entry point was produced by
+fact-tier code that the generator happens to be holding, and capture is handed the registry as it
+stood *before* the synthesis rewrites, then re-runs the `@asConnection` expansion from its own
+decoded rows rather than inheriting the pipeline's. Capture refuses the generator's work even where
+the generator has already done it. The one thing the generator alone supplies, `ClassifiedRun`,
+reaches the detections and no writer.
+
+The plugin's four writers are the counter-case that is not one. `RejectionFacts`, `BuildWarningFacts`
+and `CompileFacts` write strictly after a pass, the last of them after javac has compiled what the
+pass emitted; `JavaSourceFacts` is not downstream of a pass at all, seeding at startup and
+refreshing off a `.java` watcher. All four record what the *plugin* observed, a completed pass, a
+compile round, the consumer's source tree. None is the generator writing its own account of itself,
+and all four leave this module with the fact tier anyway.
+
 **The generator is given a store instead of making one.** `GraphQLRewriteGenerator` stops passing a
 directory to capture and starts being handed an open store. That is already how every fact reader in
 `graphitron-lsp` and `graphitron-mcp` works. Opening the store becomes one entry point in the fact
@@ -462,8 +479,10 @@ the port can hold its store open from the moment the goal opens it, and the only
 happen inside a capture call is the swap, a run whose shared write failed twice closing that store
 and recapturing into a private one before the caller's reads run. Nothing outside the call ever
 holds the store that was swapped away from, because what the goal holds is the port, and closing it
-closes whichever store the port ended on. Flagged rather than done, because it changes a step that
-was signed off.
+closes whichever store the port ended on. What argues for it is the write direction stated above: a
+generator that produces no fact has no reason to name the capture entry point beyond argument
+custody, so taking custody away is the whole of the change and nothing has to be relocated to make
+it true. Flagged rather than done, because it changes a step that was signed off.
 
 **5. Hand the store to the generator.** `captureAndRead` and `captureFacts` take the store the entry
 point returned, instead of the directory in `ctx.storeDirectory()`. `RewriteContext` keeps the
@@ -726,10 +745,15 @@ above it.
   build proves this by itself: a circular dependency between modules does not build.
 * **`graphitron-model` declares no dependency on `graphitron-javapoet`**, and no file under it
   imports one. The pom is the check, and it is the whole of what step 2 is for.
-* **`GraphQLRewriteGenerator` no longer imports `FactCapture`**, and nothing in `graphitron`'s
-  shipped code opens a store. Both are tests, not something a reviewer has to check. Keep the second
-  test scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store
-  that this item does not touch, `ModelCodegenDriver` and the store's own startup code.
+* **`GraphQLRewriteGenerator` no longer imports `FactCapture`**, and nothing in `graphitron` writes
+  facts. Both are tests, not something a reviewer has to check. The second is the item's own thesis
+  and is stated on the write surface rather than on store creation, which was only ever a proxy for
+  it: no file above the line may name the generated table constants, the capture sink, or the boot
+  package that opens a store to write to, those being the three spellings a writer cannot avoid
+  while a reader needs none of them. It ships as `FactTierBoundaryTest`'s fourth property, over the
+  complement of the move set, and passes today at 283 files with zero hits on all three. Keep it
+  scoped to that one module: `graphitron-model` legitimately keeps two ways of opening a store that
+  this item does not touch, `ModelCodegenDriver` and the store's own startup code.
 * **Neither `graphitron-lsp` nor `graphitron-mcp` declares a dependency on `graphitron`, at any
   scope.** Both poms lose it entirely. `graphitron-mcp`'s guard test
   `StoreClientBoundaryTest.noGeneratorReferenceInMainSources` widens to cover tests, and
