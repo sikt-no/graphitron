@@ -3632,7 +3632,8 @@ disjoint at a position rather than merely ordered. And an argument binding wins,
 asking the binding map first; that map is an authored `argMapping` pair naming the parameter plus an
 identity entry for every in-scope slot no pair has claimed, so a pair claiming a slot lets a same-
 named parameter fall through to the context key it also is. What is in scope at each spelling is
-read off `intent_argmapping_segment_binding` rather than spelled a fourth time.
+the site's own rule, taken from `intent_argmapping_segment_binding`, which states it for the head of
+an authored path.
 
 **Two things deliberately not taken here.** The read cost is entirely the table exclusion, and the
 lever is a materialization of `intent_condition_table_parameter` rather than of the recursive

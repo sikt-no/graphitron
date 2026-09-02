@@ -3905,6 +3905,45 @@ COMMENT ON COLUMN intent_condition_table_parameter.method_name IS 'the condition
 COMMENT ON COLUMN intent_condition_table_parameter.descriptor IS 'the owning method''s raw JVM descriptor, the census''s own overload discriminator; part of the key, so two overloads are kept apart here exactly as they are on intent_condition_param_extraction';
 COMMENT ON COLUMN intent_condition_table_parameter.position IS 'the parameter''s 0-based position, completing the key. A signature declaring two table parameters draws two rows, the generator passing the alias to each rather than picking one, so this is never a single answer per signature and a reader must not read it as one';
 
+CREATE VIEW intent_condition_slot
+  (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
+   named_type, non_null, is_list, item_non_null) AS
+SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
+       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN graphql_argument a
+    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
+   AND a.field_name = mr.field_name
+ WHERE mr.site = 'FIELD_CONDITION'
+ UNION ALL
+SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
+       mr.type_name, mr.field_name, a.named_type, a.non_null, a.is_list, a.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN graphql_argument a
+    ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
+   AND a.field_name = mr.field_name AND a.argument_name = mr.argument_name
+ WHERE mr.site = 'ARGUMENT_CONDITION'
+ UNION ALL
+SELECT mr.graph_name, mr.site, mr.use_site, f.field_name, 'INPUT_FIELD',
+       mr.type_name, mr.field_name, f.named_type, f.non_null, f.is_list, f.item_non_null
+  FROM graphitron_method_reference mr
+  JOIN graphql_field f
+    ON f.graph_name = mr.graph_name AND f.type_name = mr.type_name
+   AND f.field_name = mr.field_name
+ WHERE mr.site = 'INPUT_FIELD_CONDITION';
+COMMENT ON VIEW intent_condition_slot IS 'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there. For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.';
+COMMENT ON COLUMN intent_condition_slot.graph_name IS 'the owning graph''s partition, carried from the method reference; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_condition_slot.site IS 'which condition spelling the application is, in graphitron_method_reference.site''s own vocabulary; part of the key, and what decides which arm drew the row';
+COMMENT ON COLUMN intent_condition_slot.use_site IS 'the application spelled as one string, in the spelling graphitron_method_reference.use_site and graphitron_arg_mapping_pair.use_site already use';
+COMMENT ON COLUMN intent_condition_slot.slot_name IS 'the slot''s own name, completing the key: the argument name on an ARGUMENT row, the input field''s name on an INPUT_FIELD row. This is the name a parameter matches to bind by identity, and the name an argMapping head segment names';
+COMMENT ON COLUMN intent_condition_slot.slot_kind IS 'ARGUMENT or INPUT_FIELD, the same two-value vocabulary intent_argmapping_segment_binding.bound_kind uses, saying which relation declared the slot';
+COMMENT ON COLUMN intent_condition_slot.container_type_name IS 'the type owning the coordinate the directive sits on, carried so the slot''s declaration is one join away';
+COMMENT ON COLUMN intent_condition_slot.container_field_name IS 'the field owning the coordinate: the field the argument belongs to on an ARGUMENT row, the input field itself on an INPUT_FIELD row';
+COMMENT ON COLUMN intent_condition_slot.named_type IS 'the slot''s named type with every wrapper stripped, as the declaring relation spells it';
+COMMENT ON COLUMN intent_condition_slot.non_null IS 'whether the slot''s outermost wrapper is non-null';
+COMMENT ON COLUMN intent_condition_slot.is_list IS 'whether the slot is list-shaped, which is what a depth-1 descent refuses to walk through';
+COMMENT ON COLUMN intent_condition_slot.item_non_null IS 'whether a list slot''s items are non-null; NULL where the slot is not a list';
+
 CREATE VIEW intent_condition_context_parameter
   (graph_name, site, use_site, descriptor, position) AS
 WITH
@@ -3922,22 +3961,6 @@ declared (graph_name, site, use_site, class_name, method, name) AS (
       ON mr.graph_name = ca.graph_name AND mr.type_name = ca.type_name
      AND mr.field_name = ca.field_name AND mr.argument_name = ca.argument_name
      AND mr.site = 'ARGUMENT_CONDITION'
-),
-slot (graph_name, site, use_site, name) AS (
-  SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name
-    FROM graphitron_method_reference mr
-    JOIN graphql_argument a
-      ON a.graph_name = mr.graph_name AND a.type_name = mr.type_name
-     AND a.field_name = mr.field_name
-   WHERE mr.site = 'FIELD_CONDITION'
-   UNION ALL
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.field_name
-    FROM graphitron_method_reference mr
-   WHERE mr.site = 'INPUT_FIELD_CONDITION'
-   UNION ALL
-  SELECT mr.graph_name, mr.site, mr.use_site, mr.argument_name
-    FROM graphitron_method_reference mr
-   WHERE mr.site = 'ARGUMENT_CONDITION'
 )
 SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
   FROM declared d
@@ -3954,9 +3977,9 @@ SELECT DISTINCT d.graph_name, d.site, d.use_site, p.descriptor, p.position
                     WHERE ap.graph_name = d.graph_name AND ap.site = d.site
                       AND ap.use_site = d.use_site AND ap.param_name = d.name)
    AND (NOT EXISTS (SELECT 1
-                      FROM slot s
+                      FROM intent_condition_slot s
                      WHERE s.graph_name = d.graph_name AND s.site = d.site
-                       AND s.use_site = d.use_site AND s.name = d.name)
+                       AND s.use_site = d.use_site AND s.slot_name = d.name)
         OR EXISTS (SELECT 1
                      FROM graphitron_arg_mapping_pair ap
                     WHERE ap.graph_name = d.graph_name AND ap.site = d.site
@@ -10182,6 +10205,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('condition-site-slot',
+   'one GraphQL slot in scope at one application of a @condition directive, in one graph',
+   'graph_name, site, use_site, slot_name', 'sdl'),
   ('condition-site-parameter',
    'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
    'graph_name, site, use_site, descriptor, position', 'sdl'),
@@ -10396,6 +10422,10 @@ INSERT INTO meta_relation VALUES
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
    'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
+  ('intent_condition_slot', 'condition-site-slot', 'derivation',
+   'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there.',
+   'For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.',
+   'The scope is the site''s rule rather than the method''s: three condition spellings admit three different sets, and every reader that pairs parameters with slots needs the same one. Stated once here so the arms are not respelled per reader. A path-step condition draws no row, its method binding nothing, so silence at that site is the rule and not a gap. The slot''s type rides along because a slot is a name and a type together, and the inference that pairs an unbound parameter with a slot reads both.'),
   ('intent_condition_context_parameter', 'condition-site-parameter', 'derivation',
    'Which of a condition method''s parameters receive a request-context value at one application of the directive: one row per parameter position a context key the application declared reaches.',
    'For example a method taking the source table, a parameter named after an argument the field declares, and a third named after a declared context key draws one row and it is the third position''s, the table being read from the type and the argument binding being asked before the context keys.',

@@ -105,10 +105,11 @@ class DerivedReadCostTest {
     /**
      * Views in the fact schema, of which {@value #READERS_WITH_CELLS} reach a registration.
      *
-     * <p>Raised 116 to 117 by {@code intent_condition_context_parameter}, which reaches no
-     * registration's target, so {@value #READERS_WITH_CELLS} and {@link #CELLS} did not move with it.
+     * <p>Raised to 118 by {@code intent_condition_context_parameter} and {@code intent_condition_slot},
+     * neither of which reaches a registration's target, so {@value #READERS_WITH_CELLS} and
+     * {@link #CELLS} did not move with them.
      */
-    private static final int READERS_IN_SCHEMA = 117;
+    private static final int READERS_IN_SCHEMA = 118;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 65;
