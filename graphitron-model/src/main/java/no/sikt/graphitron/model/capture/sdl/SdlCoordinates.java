@@ -7,7 +7,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
 import no.sikt.graphitron.model.sink.FactSink;
 
-import no.sikt.graphitron.model.catalog.SchemaCoordinate;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 
 /**
  * Writes the SDL coordinate anchors, and owns the first-wins claim on each of them.
@@ -21,7 +21,7 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinate;
  * mints shapes the author never wrote.
  *
  * <p>Each anchor is written with its {@code graphql_coordinate} row, the supertype the four share,
- * and both take the same string from one call to {@link SchemaCoordinate}. Written together for
+ * and both take the same string from one call to {@link SchemaCoordinateSyntax}. Written together for
  * the reason the anchor and the claim are: a caller that took one without the other would leave a
  * row with no parent. One rendering rather than two, so the foreign key between them has nothing
  * to adjudicate and is there to refuse an anchor nobody wrote a coordinate for.
@@ -41,7 +41,7 @@ final class SdlCoordinates {
         if (!sink.claim(GRAPHQL_TYPE_COORDINATE, typeName)) {
             return false;
         }
-        String coordinate = SchemaCoordinate.ofType(typeName);
+        String coordinate = SchemaCoordinateSyntax.ofType(typeName);
         anchor(coordinate, "TYPE");
         var record = sink.dsl().newRecord(GRAPHQL_TYPE_COORDINATE);
         record.setTypeName(typeName);
@@ -54,7 +54,7 @@ final class SdlCoordinates {
         if (!sink.claim(GRAPHQL_FIELD_COORDINATE, typeName, fieldName)) {
             return false;
         }
-        String coordinate = SchemaCoordinate.ofField(typeName, fieldName);
+        String coordinate = SchemaCoordinateSyntax.ofField(typeName, fieldName);
         anchor(coordinate, "FIELD");
         var record = sink.dsl().newRecord(GRAPHQL_FIELD_COORDINATE);
         record.setTypeName(typeName);
@@ -68,7 +68,7 @@ final class SdlCoordinates {
         if (!sink.claim(GRAPHQL_ARGUMENT_COORDINATE, typeName, fieldName, argumentName)) {
             return false;
         }
-        String coordinate = SchemaCoordinate.ofArgument(typeName, fieldName, argumentName);
+        String coordinate = SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName);
         anchor(coordinate, "ARGUMENT");
         var record = sink.dsl().newRecord(GRAPHQL_ARGUMENT_COORDINATE);
         record.setTypeName(typeName);
@@ -83,7 +83,7 @@ final class SdlCoordinates {
         if (!sink.claim(GRAPHQL_ENUM_VALUE_COORDINATE, typeName, valueName)) {
             return false;
         }
-        String coordinate = SchemaCoordinate.ofEnumValue(typeName, valueName);
+        String coordinate = SchemaCoordinateSyntax.ofEnumValue(typeName, valueName);
         anchor(coordinate, "ENUM_VALUE");
         var record = sink.dsl().newRecord(GRAPHQL_ENUM_VALUE_COORDINATE);
         record.setTypeName(typeName);

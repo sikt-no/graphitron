@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp.parsing;
 
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
+
 /**
  * Identifies a unique element of the GraphQL directive schema. The four
  * cases cover everything the LSP's vocabulary needs to key against today:
@@ -8,7 +10,9 @@ package no.sikt.graphitron.lsp.parsing;
  * ({@link InputType}), and a field on such an input type ({@link InputField}).
  *
  * <p>String forms in {@code toString()} follow the GraphQL spec's
- * schema-coordinate syntax, suitable for log and error messages:
+ * schema-coordinate syntax and are rendered by {@link SchemaCoordinateSyntax},
+ * which owns that grammar for every population that spells it rather than each
+ * restating it. Suitable for log and error messages:
  * <ul>
  *   <li>{@code @service}</li>
  *   <li>{@code @service(service:)}</li>
@@ -28,7 +32,7 @@ public sealed interface SchemaCoordinate {
     record Directive(String name) implements SchemaCoordinate {
         @Override
         public String toString() {
-            return "@" + name;
+            return SchemaCoordinateSyntax.ofDirective(name);
         }
     }
 
@@ -36,7 +40,7 @@ public sealed interface SchemaCoordinate {
     record DirectiveArg(String directive, String arg) implements SchemaCoordinate {
         @Override
         public String toString() {
-            return "@" + directive + "(" + arg + ":)";
+            return SchemaCoordinateSyntax.ofDirectiveArgument(directive, arg);
         }
     }
 
@@ -44,7 +48,7 @@ public sealed interface SchemaCoordinate {
     record InputType(String name) implements SchemaCoordinate {
         @Override
         public String toString() {
-            return name;
+            return SchemaCoordinateSyntax.ofType(name);
         }
     }
 
@@ -52,7 +56,7 @@ public sealed interface SchemaCoordinate {
     record InputField(String type, String field) implements SchemaCoordinate {
         @Override
         public String toString() {
-            return type + "." + field;
+            return SchemaCoordinateSyntax.ofField(type, field);
         }
     }
 }

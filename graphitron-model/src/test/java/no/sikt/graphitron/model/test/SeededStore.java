@@ -54,7 +54,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_COORDINATE;
-import no.sikt.graphitron.model.catalog.SchemaCoordinate;
+import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
@@ -430,7 +430,7 @@ public final class SeededStore {
             .set(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME, graphName)
             .set(GRAPHQL_TYPE_COORDINATE.TYPE_NAME, typeName)
             .set(GRAPHQL_TYPE_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinate.ofType(typeName), "TYPE"))
+                SchemaCoordinateSyntax.ofType(typeName), "TYPE"))
             .execute();
         dsl.insertInto(GRAPHQL_TYPE)
             .set(GRAPHQL_TYPE.GRAPH_NAME, graphName)
@@ -489,7 +489,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
             .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
             .set(GRAPHQL_FIELD_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinate.ofField(typeName, fieldName), "FIELD"))
+                SchemaCoordinateSyntax.ofField(typeName, fieldName), "FIELD"))
             .execute();
         dsl.insertInto(GRAPHQL_FIELD)
             .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
@@ -531,7 +531,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
             .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
             .set(GRAPHQL_FIELD_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinate.ofField(typeName, fieldName), "FIELD"))
+                SchemaCoordinateSyntax.ofField(typeName, fieldName), "FIELD"))
             .execute();
         var element = Boolean.TRUE.equals(itemNonNull) ? namedType + "!" : namedType;
         var listed = isList ? "[" + element + "]" : element;
@@ -579,7 +579,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
             .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
             .set(GRAPHQL_ARGUMENT_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinate.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
+                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
@@ -610,7 +610,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
             .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
             .set(GRAPHQL_ARGUMENT_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinate.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
+                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
