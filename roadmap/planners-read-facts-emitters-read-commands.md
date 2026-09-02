@@ -1486,7 +1486,7 @@ the connection pair, both shared with projections.
 
 **Conditions is small and carries the one genuinely new classifier arm.** Its authored half is
 comprehensively there: the `@condition` capture with its context args and argMapping pairs,
-normalised across sites by `intent_argmapping_pair`, resolved by `intent_argmapping_segment_binding`
+normalised across sites by `intent_argmapping_pair`, resolved by `graphitron_argmapping_match`
 and `intent_argmapping_bound_parameter_type`, with the method identity on
 `intent_field_producer_method`; the input-surface expansion and its override cascade on
 `intent_input_occurrence_path` and `intent_input_occurrence_override`; the FK-target reach on the
@@ -3632,8 +3632,8 @@ disjoint at a position rather than merely ordered. And an argument binding wins,
 asking the binding map first; that map is an authored `argMapping` pair naming the parameter plus an
 identity entry for every in-scope slot no pair has claimed, so a pair claiming a slot lets a same-
 named parameter fall through to the context key it also is. What is in scope at each spelling is
-the site's own rule, taken from `intent_argmapping_segment_binding`, which states it for the head of
-an authored path.
+the site's own rule, taken from `intent_condition_slot`, which states every slot a site has in
+scope.
 
 **Two things deliberately not taken here.** The read cost is entirely the table exclusion, and the
 lever is a materialization of `intent_condition_table_parameter` rather than of the recursive
@@ -3673,11 +3673,12 @@ because every branch of that arm needs this set: identity by name is a slot in s
 claimed, the arity and type pairings count the unclaimed ones, and the depth-1 descent walks those
 that are input objects.
 
-**The previous increment's claim, corrected.** It said the scope rule was read off
-`intent_argmapping_segment_binding` rather than spelled a fourth time. It took the rule from there
-and then spelled it inline as a CTE, which is the fourth spelling.
-`intent_condition_context_parameter` reads the relation now, and the write-up above says what it
-did.
+**The previous increment's claim, corrected.** It said the scope rule was read off a relation rather
+than spelled a fourth time. It took the rule from there and then spelled it inline as a CTE, which
+is the fourth spelling. `intent_condition_context_parameter` reads `intent_condition_slot` now, and
+the write-up above says what it did. The relation the claim originally named,
+`intent_argmapping_segment_binding`, has since been retired under R876: its census came back with no
+reader, and this paragraph was one of three places whose prose still pointed at it.
 
 **The population gate decided the input-field arm.** A view naming `graphql_field` owes the choice
 the macro expansion created, the author's transcription or the population the generator works
