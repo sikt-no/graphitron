@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-01
+last-updated: 2026-09-02
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -3662,6 +3662,50 @@ family already decodes, the arity-unique and type-unique pairings, and the depth
 descent, with a reachability search behind two of them over input-object structure against the
 scalar fixed point. Two are relations in all but name already, so the increment's subject is the
 inference. Then the refusal the three arms leave over, then the `ConditionCommands` conversion.
+
+### Conditions, twenty-sixth increment: the site's slot scope, as one relation
+
+**Shipped.** `intent_condition_slot`, keyed on the site plus the slot name: which GraphQL slots a
+condition method's parameters may bind at one application of the directive. Three arms, one per
+spelling; a path-step condition draws no row, and neither does any non-condition site the method
+reference also carries. The slot's declared type rides along. It comes before the argument arm
+because every branch of that arm needs this set: identity by name is a slot in scope no pair
+claimed, the arity and type pairings count the unclaimed ones, and the depth-1 descent walks those
+that are input objects.
+
+**The previous increment's claim, corrected.** It said the scope rule was read off
+`intent_argmapping_segment_binding` rather than spelled a fourth time. It took the rule from there
+and then spelled it inline as a CTE, which is the fourth spelling.
+`intent_condition_context_parameter` reads the relation now, and the write-up above says what it
+did.
+
+**The population gate decided the input-field arm.** A view naming `graphql_field` owes the choice
+the macro expansion created, the author's transcription or the population the generator works
+against. A slot's type is what the pairing inference reads, so this arm wants the second and joins
+`intent_expanded_field`; both condition views moved below it in the DDL, H2 resolving a view at
+create time.
+
+**Read cost: flat, and the reader is where it was.** Against captures scaled to 25, 100 and 400
+applications of the directive, 50 to 800 slots, reading the relation whole costs under a millisecond
+at every size. Its one reader, `intent_condition_context_parameter`, costs 32, 102 and 447
+milliseconds over the same three, which is the anti-join the previous increment priced, unmoved by
+the refactor. So the relation needs no registration of its own and its reader's lever is the one
+already recorded. One qualification on where that store came from, because the procedure's cheapest
+step did not produce it: the store a build leaves in the per-user cache holds one graph at a time
+and a green build unmounts its own, so after a full green reactor the file was 549 MB of free pages
+around one small graph. That step is about a *failing* build, where the graph is still mounted.
+Saying so in the `store-performance` skill is a change outside this item.
+
+**Coverage: nine seeded cases, one over a real capture, three mutations.** The seeded tier carries
+the three arms, the two silences, an argument-less field, the site grain over two applications on
+one field, the type payload and the partition. The capture case asserts all three arms' slot sets
+over a real document, which is where the two readings meet: the site's coordinate from the
+directive's own capture, the slots from the SDL walk. The mutations are an argument condition that
+ignores which argument it sits on, a dropped input-field arm and a field arm admitting every site;
+each fails exactly the cases that name it.
+
+**Next** is the argument arm as the increment above states it, now that the slots it pairs against
+are a relation.
 
 ### Emitter half: family by family
 
