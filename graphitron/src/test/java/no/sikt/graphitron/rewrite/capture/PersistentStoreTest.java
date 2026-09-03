@@ -642,6 +642,54 @@ class PersistentStoreTest {
                 attribution, null, List.of()));
     }
 
+    /**
+     * The last handle to let a file go compacts it, and no earlier one does. This is the whole of
+     * what keeps the file a cache: a plain close leaves H2 its default 200 ms of compaction, which
+     * reclaims nothing once a store has been cleared and rewritten enough times, so the file grows
+     * without bound while the row count does not. The sibling assertion is the one that matters for
+     * correctness: a handle that is not the last must report nothing, because compacting there
+     * would shut the database under whoever still holds it.
+     */
+    @Test
+    @DisplayName("the last handle compacts the file and an earlier one does not")
+    void theLastHandleCompacts(@TempDir Path tmp) {
+        Path directory = tmp.resolve("graphitron-model");
+        captureInto(directory, tmp);
+
+        GraphitronModelStore held = GraphitronModelStore.openAt(directory);
+        GraphitronModelStore second = GraphitronModelStore.openAt(directory);
+        second.close();
+        assertThat(second.compaction())
+            .as("a handle that is not the last leaves the database alone")
+            .isEmpty();
+
+        held.close();
+        assertThat(held.compaction())
+            .as("the last handle to let the file go compacts it")
+            .isPresent();
+    }
+
+    /**
+     * Closing twice is the same as closing once. The handle count cannot survive a double
+     * decrement: the second release would give back a slot this store never held, and the next
+     * close would then compact while another holder still had the database open.
+     */
+    @Test
+    @DisplayName("closing a store twice releases one handle, not two")
+    void closingTwiceReleasesOneHandle(@TempDir Path tmp) {
+        Path directory = tmp.resolve("graphitron-model");
+        captureInto(directory, tmp);
+
+        GraphitronModelStore first = GraphitronModelStore.openAt(directory);
+        try (var second = GraphitronModelStore.openAt(directory)) {
+            first.close();
+            first.close();
+            assertThat(second.dsl().fetchCount(GRAPHQL_TYPE))
+                .as("the surviving handle still has its database")
+                .isNotNegative();
+        }
+    }
+
     private static void captureInto(Path directory, Path scratch) {
         FactCapture.run(directory, graph(scratch), SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,

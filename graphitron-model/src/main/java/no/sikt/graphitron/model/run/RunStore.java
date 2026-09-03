@@ -66,7 +66,15 @@ public sealed interface RunStore extends AutoCloseable {
 
     @Override
     default void close() {
-        store().close();
+        GraphitronModelStore store = store();
+        Optional<Path> home = store.location();
+        store.close();
+        // Said where the sweep's report is said, and for the same reason: a build that spends a
+        // second of its wall-clock inside the store should name the store rather than leave a
+        // developer to find it in a thread dump. Only the handle that actually compacted has one.
+        home.ifPresent(at -> store.compaction()
+            .flatMap(compaction -> compaction.report(at))
+            .ifPresent(log()::info));
     }
 
     /** The run captured into the workspace's shared store, which is what every run wants. */

@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: tooling

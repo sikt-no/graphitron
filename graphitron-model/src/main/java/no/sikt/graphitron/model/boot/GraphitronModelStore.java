@@ -22,6 +22,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -122,6 +123,30 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     private static final Set<Path> SWEPT_HOMES = ConcurrentHashMap.newKeySet();
 
+    /**
+     * How many live stores this JVM holds on each file-backed location, so the last one to let go
+     * can compact it. H2 gives one process one database per file however many connections reach for
+     * it, so the file is JVM-wide state and the count that guards it has to be too.
+     *
+     * <p>A slot is reserved before the connection is opened rather than when the store is
+     * constructed, because the window between the two is exactly where a concurrent close would
+     * otherwise find no holders and compact the database out from under an opener that has already
+     * connected. Every arm of {@link #openAt} that does not go on to hand back a file-backed store
+     * releases its reservation.
+     *
+     * <p>Keyed on the absolute normalised path rather than on the {@link Path} a caller handed in.
+     * Two spellings of one directory are two keys but one file, and that arithmetic is the failure
+     * this count exists to prevent: each spelling would reach zero on its own and compact while the
+     * other still held the database open. {@link #openAt} is public, so the spelling is not this
+     * class's to assume.
+     *
+     * <p>{@link #close} decrements inside {@link Map#compute}, and compacts inside the same call
+     * rather than after it. The lambda holds the map's lock for that key, which is what makes
+     * "nobody else holds this file" still true while the compaction runs: an opener reserving the
+     * same location blocks until it finishes and then connects to a compacted file.
+     */
+    private static final Map<Path, Integer> OPEN_HANDLES = new ConcurrentHashMap<>();
+
     /** Stands in for {@code store_stamp.generator_version} when no manifest declares one. */
     private static final String UNVERSIONED = "dev";
 
@@ -140,6 +165,8 @@ public final class GraphitronModelStore implements AutoCloseable {
     private final boolean dropOnClose;
     private final String url;
     private final Reaped reaped;
+    private boolean closed;
+    private Compaction compaction;
 
     private GraphitronModelStore(Connection connection, boolean warm, Path location,
                                  boolean dropOnClose, String url, Reaped reaped) {
@@ -150,6 +177,51 @@ public final class GraphitronModelStore implements AutoCloseable {
         this.dropOnClose = dropOnClose;
         this.url = url;
         this.reaped = reaped;
+    }
+
+    /**
+     * What the last handle's release cost: how long the compaction took, and the file's size on
+     * either side of it. Reported rather than logged, so the caller that knows which run this was
+     * decides whether an ordinary build hears it.
+     *
+     * @param millis      wall-clock time the compaction took
+     * @param bytesBefore the file's size before it, or {@code -1} where it could not be read
+     * @param bytesAfter  the file's size after it, or {@code -1} where it could not be read
+     */
+    public record Compaction(long millis, long bytesBefore, long bytesAfter) {
+
+        /**
+         * One line naming the store and what it cost, or empty where the sizes could not be read
+         * and the line would say nothing a reader could act on.
+         */
+        public Optional<String> report(Path home) {
+            if (bytesBefore < 0 || bytesAfter < 0) {
+                return Optional.empty();
+            }
+            return Optional.of("Compacted the fact store under " + home + " in " + millis
+                + " ms: " + humanBytes(bytesBefore) + " -> " + humanBytes(bytesAfter));
+        }
+
+        private static String humanBytes(long bytes) {
+            if (bytes < 1024) {
+                return bytes + " B";
+            }
+            if (bytes < 1024 * 1024) {
+                return Math.round(bytes / 1024.0) + " KB";
+            }
+            if (bytes < 1024L * 1024L * 1024L) {
+                return Math.round(bytes / (1024.0 * 1024.0)) + " MB";
+            }
+            return Math.round(bytes / (1024.0 * 1024.0 * 1024.0) * 10) / 10.0 + " GB";
+        }
+    }
+
+    /**
+     * What this store's close spent compacting, present only on the handle that was the last one
+     * on a file-backed location and only after {@link #close} has run.
+     */
+    public Optional<Compaction> compaction() {
+        return Optional.ofNullable(compaction);
     }
 
     /**
@@ -238,6 +310,9 @@ public final class GraphitronModelStore implements AutoCloseable {
         }
         boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
         String url = fileUrl(directory);
+        // Reserved before the connection exists, for the reason OPEN_HANDLES states. Every exit
+        // below that does not hand back a file-backed store releases it again.
+        reserve(directory);
         try {
             Connection connection = connect(url);
             if (stampMatches(connection)) {
@@ -249,6 +324,7 @@ public final class GraphitronModelStore implements AutoCloseable {
                 // by hand. Not this run's to repair, and never its to delete: the sweep above
                 // spares the live segment by name, so this directory is not a candidate either.
                 closeQuietly(connection);
+                release(directory);
                 return open(reaped);
             }
             create(connection);
@@ -257,6 +333,7 @@ public final class GraphitronModelStore implements AutoCloseable {
             markUsed(directory);
             return new GraphitronModelStore(connection, false, directory, false, url, reaped);
         } catch (RuntimeException e) {
+            release(directory);
             // Whatever went wrong is about the file, not the schema: a DDL this module cannot
             // execute fails identically on the in-memory store below, carrying the same message.
             // The ordinary case here is a file another process holds, which H2 refuses in well
@@ -440,6 +517,13 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     @Override
     public void close() {
+        // Idempotent, because the handle count behind a file-backed store cannot survive a double
+        // decrement: a second close would release a slot this store never held and let the next
+        // compaction run under a live holder.
+        if (closed) {
+            return;
+        }
+        closed = true;
         // SHUTDOWN only where the point is to drop the database. An in-memory store is held open by
         // DB_CLOSE_DELAY and needs it; a file-backed one does not, and issuing it there would close
         // the database for every other handle in the JVM, since H2 gives one process one database
@@ -450,8 +534,75 @@ public final class GraphitronModelStore implements AutoCloseable {
             } catch (SQLException e) {
                 // Nothing of record to lose, and nothing a caller could do about it either.
             }
+        } else if (location != null) {
+            compactIfLast();
         }
         closeQuietly(connection);
+    }
+
+    /**
+     * The {@link #OPEN_HANDLES} key for a store location: absolute and normalised, so every
+     * spelling of one directory counts against one file. A path that cannot be normalised is used
+     * as given, which counts it as its own file and costs a compaction rather than risking one.
+     */
+    private static Path handleKey(Path location) {
+        try {
+            return location.toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return location;
+        }
+    }
+
+    /** Reserves a handle on {@code location}, which {@link #release} gives back. */
+    private static void reserve(Path location) {
+        OPEN_HANDLES.merge(handleKey(location), 1, Integer::sum);
+    }
+
+    /** Gives back a handle reserved by {@link #reserve}, compacting nothing. */
+    private static void release(Path location) {
+        OPEN_HANDLES.computeIfPresent(handleKey(location), (key, held) -> held <= 1 ? null : held - 1);
+    }
+
+    /**
+     * Gives this store's handle back and, if it was the last one on the file, compacts before the
+     * connection closes.
+     *
+     * <p>Compacting is what keeps the file a cache rather than a ledger. A plain close gives H2 its
+     * default 200 ms of compaction, which on a store that has been cleared and rewritten a few
+     * hundred times reclaims nothing, so the file grows without bound while the rows in it do not.
+     * {@code SHUTDOWN COMPACT} rewrites the live pages and drops the rest.
+     *
+     * <p>It runs inside {@link Map#compute} deliberately: the lock that call holds for the key is
+     * what stops an opener reserving this location while the database is being shut down. The cost
+     * is recorded rather than logged, because this package reports and its callers log.
+     */
+    private void compactIfLast() {
+        OPEN_HANDLES.compute(handleKey(location), (key, held) -> {
+            if (held != null && held > 1) {
+                return held - 1;
+            }
+            long before = fileBytes();
+            long startedAt = System.nanoTime();
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SHUTDOWN COMPACT");
+            } catch (SQLException e) {
+                // A store that will not compact is a store that keeps its dead pages: worth
+                // nothing to a caller, and never worth failing a build that has already produced
+                // its output.
+            }
+            compaction = new Compaction(
+                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes());
+            return null;
+        });
+    }
+
+    /** The database file's size right now, or {@code -1} where it cannot be read. */
+    private long fileBytes() {
+        try {
+            return Files.size(location.resolve(DATABASE + ".mv.db"));
+        } catch (IOException | RuntimeException e) {
+            return -1L;
+        }
     }
 
     /**
