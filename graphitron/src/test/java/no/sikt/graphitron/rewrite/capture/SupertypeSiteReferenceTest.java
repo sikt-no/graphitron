@@ -90,6 +90,19 @@ class SupertypeSiteReferenceTest {
         """;
 
     /**
+     * The entry's reach back to its owning directive, which now runs through the coordinate rather
+     * than through columns beside it. The entry keeps one spelling of where it sits and the
+     * coordinate relation decomposes it, so a site reference that used to be three column equalities
+     * is one join and then the parts. An argument-sited directive is matched on the argument the
+     * coordinate carries, not on one the entry repeats, which is the whole point of the change:
+     * there is no second copy left to disagree with the first.
+     */
+    private static final String AT_COORDINATE =
+        "c.graph_name = s.graph_name AND c.coordinate = s.coordinate"
+            + " AND d.graph_name = s.graph_name AND d.type_name = c.type_name"
+            + " AND d.field_name = c.field_name";
+
+    /**
      * Each site of {@code graphitron_argmapping_entry} against the relation that owns its rows,
      * as the predicate joining the shared row {@code s} to an owner {@code d}. The two condition
      * sites share an owner, the owning type's kind being what splits them, so both point at the
@@ -98,39 +111,32 @@ class SupertypeSiteReferenceTest {
      */
     private static final Map<String, String> PAIR_OWNERS = new LinkedHashMap<>(Map.of(
         "ROUTINE",
-        "graphitron_routine d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
-            + " AND d.field_name = s.field_name AND d.ordinal = s.ordinal",
+        "graphitron_routine d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+            + " AND d.ordinal = s.ordinal",
         "SERVICE",
-        "graphitron_service d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
-            + " AND d.field_name = s.field_name",
+        "graphitron_service d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
         "FIELD_CONDITION",
-        "graphitron_field_condition d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
+        "graphitron_field_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
         "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
+        "graphitron_field_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
         "ARGUMENT_CONDITION",
-        "graphitron_argument_condition d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name",
+        "graphitron_argument_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+            + " AND d.argument_name = c.argument_name",
         "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
+        "graphitron_field_reference_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
+        "graphitron_argument_reference_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+            + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position",
         "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
+        "graphitron_reference_for_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step d WHERE d.graph_name = s.graph_name"
-            + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
-            + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
+        "graphitron_argument_reference_for_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+            + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position"));
+
 
     /**
      * The same, for {@code graphitron_method_reference}. {@code SOURCE_ROW} is absent by design and
@@ -230,11 +236,17 @@ class SupertypeSiteReferenceTest {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             for (String relation : java.util.List.of(
                     "graphitron_argmapping_entry", "graphitron_method_reference")) {
+                // The entry keeps only the coordinate, so its use-site key is checked against
+                // that spelling instead of against three columns it no longer repeats. The two
+                // grammars differ by one character, the specification writing an argument with a
+                // trailing colon where this key does not, and that is the whole of the conversion.
+                String site = relation.equals("graphitron_argmapping_entry")
+                    ? "REPLACE(coordinate, ':)', ')')"
+                    : "type_name || COALESCE('.' || field_name, '')"
+                        + " || COALESCE('(' || argument_name || ')', '')";
                 var wrong = store.dsl().fetch(
                     "SELECT site, use_site FROM " + relation
-                        + " WHERE use_site <> type_name"
-                        + "   || COALESCE('.' || field_name, '')"
-                        + "   || COALESCE('(' || argument_name || ')', '')"
+                        + " WHERE use_site <> " + site
                         + "   || COALESCE('#' || CAST(ordinal AS VARCHAR), '')"
                         + "   || COALESCE('[' || CAST(step_position AS VARCHAR) || ']', '')");
                 assertThat(wrong)

@@ -114,8 +114,13 @@ class DerivedReadCostTest {
      * had any, and this one reached no registration at all. So a retirement costs this domain
      * nothing beyond the row, which is the opposite of what retiring a registration does, where the
      * view count holds still and the cells fall.
+     *
+     * <p>Raised to 118 again by {@code graphql_coordinate_field}, which decomposes a coordinate into
+     * the field it sits on so that the relations keyed by a coordinate need carry no decomposition
+     * of their own. It reads two transcription tables and reaches no registration, so once more the
+     * two figures below did not move with it.
      */
-    private static final int READERS_IN_SCHEMA = 117;
+    private static final int READERS_IN_SCHEMA = 118;
 
     /** Views whose derivation reaches at least one registration's target. */
     private static final int READERS_WITH_CELLS = 65;

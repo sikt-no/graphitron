@@ -170,7 +170,27 @@ class SupertypeSignatureGateTest {
      * graphql_type_declaration, which is where each was written and not what each is a kind of.
      */
     private static Collection<Set<String>> undeclaredSets(DSLContext dsl) {
-        var undeclared = new ArrayList<Set<String>>();
+        return undeclaredSubtypeSets(dsl).values();
+    }
+
+    /**
+     * The subtype sets that have no supertype, keyed by payload as {@link #subtypeSets} keys them.
+     * A set whose whole payload is a foreign key into one common relation has its supertype already
+     * and is not one of these.
+     *
+     * <p>Both tests read this rather than the raw grouping, and the reconstruction one is why the
+     * distinction has to be made here rather than at each caller. A view unioning members of a set
+     * that has a supertype is not a supertype somebody skipped writing, because nobody skipped it:
+     * it is a projection of a hierarchy that exists, taken because the supertype deliberately does
+     * not carry what the reader wants. The coordinate family is the worked example. Its four
+     * members share {@code graphql_coordinate}, and a reader holding a coordinate and wanting the
+     * field it sits on still has to union the two members that sit on one, because the other two do
+     * not and carrying the columns up would put two nullnesses on the supertype to serve half its
+     * subtypes. Counting that as debt would put a row on the roster that nobody can ever discharge,
+     * which is worse than not counting it: the roster is how a later author decides what to build.
+     */
+    private static Map<String, Set<String>> undeclaredSubtypeSets(DSLContext dsl) {
+        var undeclared = new TreeMap<String, Set<String>>();
         for (var group : subtypeSets(dsl).entrySet()) {
             var payload = Set.of(group.getKey().split(","));
             Set<String> shared = null;
@@ -183,7 +203,7 @@ class SupertypeSignatureGateTest {
                 }
             }
             if (shared == null || shared.isEmpty()) {
-                undeclared.add(group.getValue());
+                undeclared.put(group.getKey(), group.getValue());
             }
         }
         return undeclared;
@@ -247,7 +267,7 @@ class SupertypeSignatureGateTest {
      */
     private static Set<String> reconstructions(DSLContext dsl) {
         var found = new TreeSet<String>();
-        var sets = subtypeSets(dsl);
+        var sets = undeclaredSubtypeSets(dsl);
         for (String view : views(dsl)) {
             String definition = definitionOf(dsl, view);
             if (definition == null || !definition.toUpperCase(Locale.ROOT).contains("UNION")) {

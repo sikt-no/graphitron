@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
@@ -314,14 +315,18 @@ public final class RoutineWriteFacts {
             IntentMutationRoutineSeat s, IntentFieldRoutineMethod rm) {
         var p = SQL_ROUTINE_PARAMETER;
         var m = GRAPHITRON_ARGMAPPING_ENTRY;
+        // A ROUTINE site sits on a field, so the entry's coordinate is that field's own and the
+        // coordinate relation is where its type and field are read back from.
+        var mc = GRAPHQL_FIELD_COORDINATE;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(
                     field(select(m.WRITTEN_PATH)
                         .from(m)
+                        .join(mc).on(mc.GRAPH_NAME.eq(m.GRAPH_NAME), mc.COORDINATE.eq(m.COORDINATE))
                         .where(m.GRAPH_NAME.eq(s.GRAPH_NAME), m.SITE.eq("ROUTINE"),
-                            m.TYPE_NAME.eq(s.TYPE_NAME),
-                            m.FIELD_NAME.eq(s.FIELD_NAME), m.ORDINAL.eq(s.ORDINAL),
+                            mc.TYPE_NAME.eq(s.TYPE_NAME),
+                            mc.FIELD_NAME.eq(s.FIELD_NAME), m.ORDINAL.eq(s.ORDINAL),
                             m.PARAM_NAME.eq(p.JOOQ_NAME))
                         .orderBy(m.POSITION)
                         .limit(1)),

@@ -1400,24 +1400,22 @@ public final class GraphitronFactCapture {
         var row = sink.dsl().newRecord(GRAPHITRON_ARGMAPPING_ENTRY);
         row.setSite(site);
         row.setUseSite(useSite);
-        row.setTypeName(type);
-        row.setFieldName(field);
-        row.setArgumentName(argument);
         row.setOrdinal(ordinal);
         row.setStepPosition(stepPosition);
         row.setPosition(position);
         row.setParamName(paramName);
         row.setWrittenPath(argumentPath);
-        // The coordinate the directive sits on, which is where the candidate relation is keyed and
-        // therefore what an entry meets its candidates on. Three shapes for three placements: an
-        // argument-level condition sits on the argument, an input-field-level one on the input
-        // field, and the other seven sites on the field. Never a container and never the path's
-        // own head, which is a spelling and not a place. The split columns beside this one are the
-        // engine's, computed from the written path, so nothing here decomposes anything.
-        row.setCoordinate(switch (site) {
-            case "ARGUMENT_CONDITION" -> SchemaCoordinateSyntax.ofArgument(type, field, argument);
-            default -> SchemaCoordinateSyntax.ofField(type, field);
-        });
+        // Where the directive sits, and the only spelling of that this relation keeps: a reader
+        // wanting the type, the field or the argument joins the coordinate relation, which is the
+        // same trade the candidate relation beside it makes. Never a container and never the
+        // path's own head, which is a spelling and not a place. Decided by whether the caller
+        // named an argument rather than by which site it is, three of the nine sitting on one and
+        // six on a field; asking the site instead is a second copy of that fact, and the first
+        // version of this writer got it wrong for two of the three. The split columns beside it
+        // are the engine's, computed from the written path, so nothing here decomposes anything.
+        row.setCoordinate(argument == null
+            ? SchemaCoordinateSyntax.ofField(type, field)
+            : SchemaCoordinateSyntax.ofArgument(type, field, argument));
         position(directive, row::setSourceName, row::setSourceLine, row::setSourceColumn);
         sink.add(row);
     }

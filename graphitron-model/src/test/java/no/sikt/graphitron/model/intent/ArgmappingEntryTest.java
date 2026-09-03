@@ -60,7 +60,7 @@ class ArgmappingEntryTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ROUTINE");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Mutation.rentFilm#0");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isZero();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)).isEqualTo("Mutation.rentFilm");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.PARAM_NAME)).isEqualTo("pInventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.WRITTEN_PATH)).isEqualTo("input.inventoryId");
@@ -81,7 +81,7 @@ class ArgmappingEntryTest {
                 .as("@service is not repeatable, so there is no ordinal to carry")
                 .isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isNull();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)).isEqualTo("Query.film");
         });
     }
 
@@ -97,7 +97,7 @@ class ArgmappingEntryTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ARGUMENT_CONDITION");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE))
                 .isEqualTo("Query.films(titleLike)");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isEqualTo("titleLike");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)).isEqualTo("Query.films(titleLike:)");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isNull();
         });
     }
@@ -115,7 +115,7 @@ class ArgmappingEntryTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE)).isEqualTo("Film.actors#1[2]");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isEqualTo(1);
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isEqualTo(2);
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isNull();
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)).isEqualTo("Film.actors");
         });
     }
 
@@ -131,7 +131,7 @@ class ArgmappingEntryTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.SITE)).isEqualTo("ARGUMENT_REFERENCE_STEP");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE))
                 .isEqualTo("Query.films(byActor)#0[1]");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)).isEqualTo("byActor");
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)).isEqualTo("Query.films(byActor:)");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL)).isZero();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION)).isEqualTo(1);
         });
@@ -281,7 +281,7 @@ class ArgmappingEntryTest {
                 .hasSize(rows.size());
 
             var recovered = dsl.select(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL,
-                    GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME)
+                    GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE)
                 .from(GRAPHITRON_ARGMAPPING_ENTRY)
                 .where(GRAPHITRON_ARGMAPPING_ENTRY.GRAPH_NAME.eq(GRAPH))
                 .and(GRAPHITRON_ARGMAPPING_ENTRY.SITE.eq("ARGUMENT_REFERENCE_STEP"))
@@ -290,7 +290,10 @@ class ArgmappingEntryTest {
                 .fetchSingle();
             assertThat(recovered.value1()).isZero();
             assertThat(recovered.value2()).isEqualTo(1);
-            assertThat(recovered.value3()).isEqualTo("byActor");
+            assertThat(recovered.value3())
+                .as("an argument-sited step sits on the argument, so its coordinate says so;"
+                    + " deciding this from the site name instead got it wrong here")
+                .isEqualTo("Query.films(byActor:)");
         });
     }
 

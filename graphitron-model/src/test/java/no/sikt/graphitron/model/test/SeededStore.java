@@ -1260,9 +1260,6 @@ public final class SeededStore {
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SITE, site)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.USE_SITE,
                 useSite(typeName, fieldName, argumentName, ordinal, stepPosition))
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGMAPPING_ENTRY.ARGUMENT_NAME, argumentName)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.ORDINAL, ordinal)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.STEP_POSITION, stepPosition)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.POSITION, position)
@@ -1272,9 +1269,9 @@ public final class SeededStore {
             // coordinate the same site would not produce. The three split columns are not set:
             // the engine computes them off the path, so there is nowhere to disagree with them.
             .set(GRAPHITRON_ARGMAPPING_ENTRY.COORDINATE,
-                "ARGUMENT_CONDITION".equals(site)
-                    ? SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName)
-                    : SchemaCoordinateSyntax.ofField(typeName, fieldName))
+                argumentName == null
+                    ? SchemaCoordinateSyntax.ofField(typeName, fieldName)
+                    : SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName))
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_LINE, location.value1())
             .set(GRAPHITRON_ARGMAPPING_ENTRY.SOURCE_COLUMN, location.value2())

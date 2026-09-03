@@ -344,6 +344,20 @@ COMMENT ON COLUMN graphql_enum_value_coordinate.type_name IS 'the owning ENUM ty
 COMMENT ON COLUMN graphql_enum_value_coordinate.value_name IS 'the enum value name within the owning enum type';
 COMMENT ON COLUMN graphql_enum_value_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_coordinate.kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
 
+CREATE VIEW graphql_coordinate_field
+  (graph_name, coordinate, type_name, field_name, argument_name) AS
+SELECT graph_name, coordinate, type_name, field_name, CAST(NULL AS VARCHAR)
+  FROM graphql_field_coordinate
+ UNION ALL
+SELECT graph_name, coordinate, type_name, field_name, argument_name
+  FROM graphql_argument_coordinate;
+COMMENT ON VIEW graphql_coordinate_field IS 'The field a coordinate sits on, for the two coordinate kinds that sit on one: one row per field coordinate and one per argument coordinate, carrying the parts the spelling is built from. For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.';
+COMMENT ON COLUMN graphql_coordinate_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
+COMMENT ON COLUMN graphql_coordinate_field.coordinate IS 'the coordinate as the specification spells it, unique within the graph and therefore the whole of what a reader joins on; carried from the arm''s own column, which is the same spelling graphql_coordinate anchors';
+COMMENT ON COLUMN graphql_coordinate_field.type_name IS 'the type declaring the field the coordinate sits on';
+COMMENT ON COLUMN graphql_coordinate_field.field_name IS 'the field itself, within that type';
+COMMENT ON COLUMN graphql_coordinate_field.argument_name IS 'the argument on an argument coordinate, NULL on a field coordinate. The discriminator between the two arms, and total against each of them rather than optional within either';
+
 CREATE TABLE graphql_type (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -2418,15 +2432,12 @@ CREATE TABLE graphitron_argmapping_entry (
   graph_name    VARCHAR NOT NULL,
   site          VARCHAR NOT NULL,
   use_site      VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  argument_name VARCHAR,
+  coordinate    VARCHAR NOT NULL,
   ordinal       INT,
   step_position INT,
   position      INT     NOT NULL,
   param_name    VARCHAR NOT NULL,
   written_path  VARCHAR NOT NULL,
-  coordinate    VARCHAR NOT NULL,
   root_name     VARCHAR GENERATED ALWAYS AS (REGEXP_REPLACE(written_path, '\..*$', '')),
   head_path     VARCHAR GENERATED ALWAYS AS
                   (CASE WHEN POSITION('.', written_path) = 0 THEN NULL
@@ -2449,11 +2460,8 @@ CREATE INDEX graphitron_argmapping_entry_use_ix
   ON graphitron_argmapping_entry (graph_name, use_site);
 COMMENT ON TABLE graphitron_argmapping_entry IS 'One entry of one argMapping: a method parameter bound to an argument path, at the position its site lists it. The written member of the argMapping triple, whose other two are graphitron_argmapping_candidate for what a right-hand side may name and graphitron_argmapping_match for where a written one landed. Nine kinds of site can spell an entry and all nine state the same three facts, differing only in the key saying which site owns the row, so this is one relation over them rather than the eight it replaced. The site column is that discriminator, closed, and total against the family rather than the population: one value has no rows because the validator rejects its coordinate, and it is listed so a reader switching on site meets every kind. The collapse cost a foreign key, since one cannot span nine parents chosen by a column. An entry''s reference back to its site is therefore an invariant capture maintains and a test checks over a captured store, not one the engine enforces. That trade runs one way only: a constraint is not data, so losing it does not buy a subtype its table back. Written by capture at the site it came from, so it cannot be stale against that site and needs no refresh.';
 COMMENT ON COLUMN graphitron_argmapping_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argmapping_entry.site IS 'which kind of site declared the pair, in a closed vocabulary of nine, one per directive that can carry argMapping. The whole of what says how to read type_name, field_name, argument_name, ordinal and step_position beside it, exactly as jvm_declared_type_ref.owner_kind does for its three. A reader that means one kind filters on it and owns having chosen';
+COMMENT ON COLUMN graphitron_argmapping_entry.site IS 'which kind of site declared the entry, in a closed vocabulary of nine, one per directive that can carry argMapping. The whole of what says how to read ordinal and step_position beside it, exactly as jvm_declared_type_ref.owner_kind does for its three, and the whole of what says which of the nine a coordinate''s two shapes came from, three of them sitting on an argument and six on a field. A reader that means one kind filters on it and owns having chosen';
 COMMENT ON COLUMN graphitron_argmapping_entry.use_site IS 'the site spelled as one string, in the site''s own grammar: Type.field, Type.field(argument), Type.field#ordinal, or those with the step position appended in brackets. Total by construction, which is what lets it key this relation where the decomposed columns beside it cannot, three of them being null on the sites that have no such part. A reader joining on the parts joins the parts; this column is the key and the thing a diagnostic prints';
-COMMENT ON COLUMN graphitron_argmapping_entry.type_name IS 'the type owning the coordinate the site sits on';
-COMMENT ON COLUMN graphitron_argmapping_entry.field_name IS 'the field owning the coordinate the site sits on';
-COMMENT ON COLUMN graphitron_argmapping_entry.argument_name IS 'the argument the site sits on, null exactly on the sites that sit on a field rather than an argument. Determined entirely by site, the discriminator''s key shape rather than a fact withheld';
 COMMENT ON COLUMN graphitron_argmapping_entry.ordinal IS 'which application of a repeatable directive the site is, null exactly on the sites that are not repeatable. Determined entirely by site, as argument_name is';
 COMMENT ON COLUMN graphitron_argmapping_entry.step_position IS 'the path element''s position within its reference, null exactly on the sites that are not a path element. Determined entirely by site, as the two above are';
 COMMENT ON COLUMN graphitron_argmapping_entry.position IS 'the pair''s own position in the site''s argMapping list, completing the key. Positional because argMapping is a list and the parameter it binds is identified by where it stands';
@@ -5389,11 +5397,13 @@ SELECT p.graph_name, a.named_type, e.element_class
    AND mp.class_name = p.class_name
    AND mp.method_name = p.method_name
    AND mp.descriptor = p.descriptor
+  JOIN graphql_field_coordinate pc
+    ON pc.graph_name = p.graph_name AND pc.type_name = p.type_name
+   AND pc.field_name = p.field_name
   LEFT JOIN graphitron_argmapping_entry m
     ON m.graph_name = p.graph_name
    AND m.site = 'SERVICE'
-   AND m.type_name = p.type_name
-   AND m.field_name = p.field_name
+   AND m.coordinate = pc.coordinate
    AND m.param_name = mp.parameter_name
   JOIN graphql_argument a
     ON a.graph_name = p.graph_name
@@ -6991,9 +7001,11 @@ resolved (graph_name, site, use_site, position, param_name, java_type) AS (
    UNION ALL
   SELECT DISTINCT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, rp.binding_type
     FROM graphitron_argmapping_entry ap
+    JOIN graphql_field_coordinate apc
+      ON apc.graph_name = ap.graph_name AND apc.coordinate = ap.coordinate
     JOIN intent_field_routine_method rm
-      ON rm.graph_name = ap.graph_name AND rm.type_name = ap.type_name
-     AND rm.field_name = ap.field_name AND rm.ordinal = ap.ordinal
+      ON rm.graph_name = ap.graph_name AND rm.type_name = apc.type_name
+     AND rm.field_name = apc.field_name AND rm.ordinal = ap.ordinal
     JOIN sql_routine_parameter rp
       ON rp.source_name = rm.source_name AND rp.table_schema = rm.table_schema
      AND rp.routine_name = rm.routine_name AND rp.jooq_name = ap.param_name
@@ -7015,12 +7027,12 @@ CREATE VIEW graphitron_argmapping_match
   (graph_name, site, use_site, type_name, field_name, position, written_path,
    bound_path, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_id_declared, node_type_ref, trailing_name, leaf_named_type, leaf_is_list) AS
-SELECT p.graph_name, p.site, p.use_site, p.type_name, p.field_name, p.position, p.written_path,
+SELECT p.graph_name, p.site, p.use_site, cf.type_name, cf.field_name, p.position, p.written_path,
        COALESCE(ce.path, ch.path),
        COALESCE(ce.element_kind, ch.element_kind),
-       COALESCE(ce.container_type_name, ch.container_type_name, ac.type_name, fc.type_name),
+       COALESCE(ce.container_type_name, ch.container_type_name, cf.type_name),
        CASE WHEN COALESCE(ce.element_kind, ch.element_kind) = 'ARGUMENT'
-            THEN COALESCE(ac.field_name, fc.field_name)
+            THEN cf.field_name
             ELSE COALESCE(ce.name, ch.name) END,
        CASE WHEN COALESCE(ce.element_kind, ch.element_kind) = 'ARGUMENT'
             THEN COALESCE(ce.name, ch.name) ELSE CAST(NULL AS VARCHAR) END,
@@ -7036,15 +7048,13 @@ SELECT p.graph_name, p.site, p.use_site, p.type_name, p.field_name, p.position, 
   LEFT JOIN graphitron_argmapping_candidate ch
     ON ce.path IS NULL AND ch.graph_name = p.graph_name AND ch.coordinate = p.coordinate
    AND ch.path = p.head_path
-  LEFT JOIN graphql_argument_coordinate ac
-    ON ac.graph_name = p.graph_name AND ac.coordinate = p.coordinate
-  LEFT JOIN graphql_field_coordinate fc
-    ON fc.graph_name = p.graph_name AND fc.coordinate = p.coordinate
+  JOIN graphql_coordinate_field cf
+    ON cf.graph_name = p.graph_name AND cf.coordinate = p.coordinate
   LEFT JOIN graphitron_argument_node_id an
     ON COALESCE(ce.element_kind, ch.element_kind) = 'ARGUMENT'
    AND an.graph_name = p.graph_name
-   AND an.type_name = COALESCE(ac.type_name, fc.type_name)
-   AND an.field_name = COALESCE(ac.field_name, fc.field_name)
+   AND an.type_name = cf.type_name
+   AND an.field_name = cf.field_name
    AND an.argument_name = COALESCE(ce.name, ch.name)
   LEFT JOIN graphitron_field_node_id fn
     ON COALESCE(ce.element_kind, ch.element_kind) = 'INPUT_FIELD'
@@ -7058,7 +7068,7 @@ COMMENT ON VIEW graphitron_argmapping_match IS 'Where a written argMapping right
 COMMENT ON COLUMN graphitron_argmapping_match.graph_name IS 'the owning graph''s partition, carried from the entry';
 COMMENT ON COLUMN graphitron_argmapping_match.site IS 'which SDL site spelled the entry, in graphitron_argmapping_entry''s closed vocabulary of nine; with the use-site key and the position this is the grain, and it is what a consumer switches on to know whether an emitter is wired for the answer';
 COMMENT ON COLUMN graphitron_argmapping_match.use_site IS 'the consuming coordinate, serialized as graphitron_argmapping_entry serializes it; the coordinate a rejection about this entry names, and the key a reader joins that relation on to recover the site''s own components';
-COMMENT ON COLUMN graphitron_argmapping_match.type_name IS 'the spelling site''s owning type, carried from the entry';
+COMMENT ON COLUMN graphitron_argmapping_match.type_name IS 'the spelling site''s owning type, decomposed from the entry''s coordinate rather than kept beside it';
 COMMENT ON COLUMN graphitron_argmapping_match.field_name IS 'the spelling site''s field name within that type';
 COMMENT ON COLUMN graphitron_argmapping_match.position IS 'the entry''s 0-based position within its own argMapping list';
 COMMENT ON COLUMN graphitron_argmapping_match.written_path IS 'the path as written, carried so a message can quote what the author wrote';
@@ -7970,9 +7980,12 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, n
            AND tr.owner_name = mp.method_name AND tr.owner_descriptor = mp.descriptor
            AND tr.owner_position = mp.position AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
          WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_entry x
+                             JOIN graphql_coordinate_field xf
+                               ON xf.graph_name = x.graph_name
+                              AND xf.coordinate = x.coordinate
                             WHERE x.graph_name = r.graph_name
-                              AND x.type_name = r.root_type_name
-                              AND x.field_name = r.root_field_name
+                              AND xf.type_name = r.root_type_name
+                              AND xf.field_name = r.root_field_name
                               AND x.param_name = mp.parameter_name)) arms;
 COMMENT ON VIEW intent_node_id_decode_slot IS 'The Java parameter a decoding @nodeId instruction''s value descends into, where it descends into one at all, and the type that parameter takes. The relation the decode''s destination forks on first, and the fork is not between two shapes of predicate but between a predicate and consumer code: a slot carrying the instruction never delivers the wire format to a consumer, so where the value reaches Java the departing table the endpoint relation resolved receives nothing and no predicate is emitted from it. What decides that is the root of the use site rather than the instruction''s own coordinate, which is the whole reason this relation is cheap and the reason it is correct. An argument''s value reaches Java when a producer parameter is fed from it; an input field''s value reaches Java exactly when the argument its occurrence path descends from does, the field being one step inside a value handed to that parameter. So both sites ask one question at one coordinate, the occurrence path supplies that coordinate for the input-field site and the instruction is its own for the argument site, and no relation about classes, type backings or class members is read at all. An earlier shape asked instead which class member received the value, and it was both slower by an order of magnitude and answering a question one step past the fork. Two carriers, disjoint by construction. MAPPED_PARAMETER is an argMapping pair whose path binds the root argument itself, which is how a bean or a record is fed the whole argument, and it covers both the pair that stops at the argument and the pair that names a key column beyond it, those being one destination differing only in provenance. NAMED_PARAMETER is the producer method declaring a parameter of the root argument''s own name with no pair on that parameter, which is the match the generator itself makes and the coordinate at which the wire format reached consumer code unread. The absence of a pair on the parameter is what makes the two disjoint, and it is read on the parameter rather than on the argument because a pair redirects a parameter to some other argument and the name match must not then claim it. Presence and type are two facts here and keeping them apart is the one place this relation must not inherit its neighbour''s reading. intent_argmapping_bound_parameter_type has no row where the census cannot type a parameter, and its readers are free to treat that absence as no answer. Here absence means something else: no row is "this decode binds a predicate", so an untypeable parameter arriving as absence would route a value bound for Java to a table predicate that has nothing to bind. Both arms therefore reach the type by outer join and an untypeable parameter is a row with a null type, which is what lets a consumer carry the decode out on arity alone and ask for a type only when it is about to refuse. Ambiguity is rows and nothing is preferred: an overloaded method or a class two classpath entries declare resolves more than one row and candidates says so, on the neighbouring relation''s own terms. Which is why an ambiguous producer reference is not filtered out here, where every other reader of that relation demands one candidate. Demanding one would drop the rows entirely, and a use site with no row here reads as binding a table predicate, so an author whose @service names two overloads would get the wire format bound into SQL on the strength of an ambiguity nobody resolved. Keeping the rows makes that use site a decode with several candidate slots, which a consumer refuses to carry out rather than mistaking for a predicate. The stated limit is one shape, and it is the one this relation''s coordinate choice trades away. An argMapping path that descends into the argument and binds one input field below it (a pair spelled arg.field) hands that one field to a parameter while its siblings still bind predicates, and this relation sees no row for either, its arms asking about the root argument and that path binding something under it. Saying which occurrence path such a pair names is a reconciliation between two decompositions of one descent rather than a join, and until that is stated an input field reached only that way is read as binding a predicate.';
 COMMENT ON COLUMN intent_node_id_decode_slot.graph_name IS 'the owning graph''s partition, carried from the instruction';
@@ -10064,6 +10077,9 @@ INSERT INTO meta_grain VALUES
   ('condition-site-parameter',
    'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
    'graph_name, site, use_site, descriptor, position', 'sdl'),
+  ('coordinate-field-site',
+   'one schema coordinate that sits on a field, in one graph',
+   'graph_name, coordinate', 'sdl'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
    'graph_name, coordinate, path', 'sdl'),
@@ -10171,6 +10187,10 @@ INSERT INTO meta_relation VALUES
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries.',
    'For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.',
    'The field-grain half of intent_expanded_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that union is disjoint; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate, and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
+  ('graphql_coordinate_field', 'coordinate-field-site', 'sdl',
+   'The field a coordinate sits on, for the two coordinate kinds that sit on one: one row per field coordinate and one per argument coordinate, carrying the parts the spelling is built from.',
+   'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',
+   'What a reader joins when it holds a coordinate and needs the field, which before this was two left joins and a COALESCE spelled once per reader, and wrongly available to a reader that forgot the second arm. Type and enum-value coordinates are absent and that is the population rather than a gap: neither sits on a field, so a reader asking this question of one is asking something with no answer and gets no row instead of a half-populated one. The argument component is NULL on a field coordinate, which is the one nullness here and is the difference between the two arms rather than a fact withheld. Not columns on graphql_coordinate itself, because a type coordinate has no field and an enum value''s name is not one, so carrying them up would put two nullnesses on the supertype to serve half its subtypes. It reads as a reconstruction and is not one: the supertype exists and every member points at it, so this unions a hierarchy that is already written rather than standing in for one nobody wrote, which is the distinction SupertypeSignatureGateTest draws before it counts a union as debt.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',
