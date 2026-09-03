@@ -1,7 +1,7 @@
 ---
 id: R865
 title: "The generator owns the fact tier it should merely read"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -1447,3 +1447,83 @@ the Javadoc reference gate will say so: `FederationKeyFieldsParser` links `Entit
 and `GraphitronType` links it by fully qualified name from the other direction (that one stays
 above and keeps resolving). Downgrade the moving one to `{@code}`, per CLAUDE.md's rule for a
 target that is genuinely another module's internals.
+
+### Round 4 (2026-09-03, In Review -> Done, reviewer session 01Su5Ybm7WvjmaaTnY7a62tZ)
+
+Verdict: withhold. Two findings, both on question two. Question one is clean.
+
+*What was checked and holds.* `mvn install -Plocal-db` is green across all fourteen modules, about
+7,200 tests, zero failures, with the `capture-only` invoker IT among them. The boundary the item
+exists to create is real and independently checkable: `graphitron-model`'s pom names neither
+`graphitron` nor `graphitron-javapoet`, and the only javapoet tokens under that module are five
+words of javadoc prose explaining why the values are names. Neither client's pom names `graphitron`
+at any scope, and each client's `theReactorDependencySetIsExactlyTheAllowlist` now makes re-adding
+the edge a test failure rather than a review catch, which is more than the criterion asked for. The
+package sets of the two modules, main and test together, intersect in nothing (35 and 31 packages,
+computed rather than taken on trust). `graphitron`'s main sources write no facts: the three
+spellings `FactTierBoundaryTest` scans are absent from all 281 files under `rewrite/`, and the only
+file elsewhere in the module that names a table constant is `plan/RoutineWriteFacts`, reading. The
+capture-only projection is pinned by more than its criterion: `verify.groovy` asserts a store file,
+an absent generated-source root, the report line, and the absence of both the validation failure and
+the rejection text, and `CaptureProjectionPipelineTest` compares row counts over every base relation
+with a floor on the relation count so the comparison cannot pass vacuously. The demotion vocabulary
+is covered case by case in `PersistentStoreTest`, including that the shared file survives each
+refusal. The relocated cross-tier tests are where the plan said, keeping their clients' package
+declarations, and nothing was dropped in the move: the two message-parity assertions still stand in
+`DiagnosticsTest`, re-pointed at `FieldSourceSigilGrammar.notDefinedHereMessage()`, which the lsp's
+own `Diagnostics` also calls, so the parity is stronger than it was. `GathererIsolationTest` rolls
+nine gatherer packages and fails on an unrolled one. The user-facing doc check is clean: the manual
+gained the fourth goal in three places and carries no roadmap-internal marker. The spec body records
+every departure from the plan with its reason, which is what let this review be a check rather than
+a re-derivation.
+
+**Finding 1 (question two). The lent-store arm has no test, and it is the arm the dev-session change
+is made of.** "A dev session opens one store instead of two" is one of the five changes this item
+promises, and the criterion for it is "a generation runs against a store its caller opened". The
+build path is covered: `AbstractRewriteMojo` builds `CapturePort.holding` and the two generating
+invoker ITs drive it end to end. The dev path is not covered at all. `CapturePort.over` has exactly
+one caller, `DevMojo.execute`, and no test calls `execute`; `DevMojoTest` assigns `sessionStore` but
+never `sessionCapture`, so every case that looks like it exercises a session store actually runs
+`captureFor`'s fallback and opens a fresh store per pass. `RunStore.forRunOn` and `RunStore.Borrowed`
+have no reader outside `CapturePort` itself. So the whole path, its demotion branch included, is dead
+to a 7,200-test suite, and the property that makes it safe is the one most easily lost by accident:
+`Borrowed.close()` is a no-op because the lender closes what the lender opened, and a future edit
+making it close the store would take the session's language server and MCP readers down after the
+first pass with nothing going red.
+
+What would satisfy it: a test that builds `CapturePort.over` on an open store, captures twice through
+it, and asserts that both captures' rows are in the lent store and that closing the port leaves that
+store answering. The demotion arm is worth a second case, since `forRunOn` reaches it by a different
+route than `forRun` does. This belongs in `graphitron-model`'s own test tier, where `FactStores` and
+`CapturedStore` already are and no generator is needed, which is itself a thing this item made
+possible.
+
+**Finding 2 (question two, gate obligation). The retirement sweep left two prose citations of step
+2's retired accessors.** Both name accessors that no longer exist and describe them as the javapoet
+types they no longer are, so a reader is told about a mechanism the item removed.
+
+* `graphitron-sakila-example/pom.xml`, the multi-schema fixture comment: "the typed
+  `TableRef.tableClass()` / `ForeignKeyRef.keysClass()` seams: any regression that re-derives a
+  ClassName from the bare jooqPackage". The accessors are `tableClassName` and `keysClassName`, and
+  the seams carry names rather than `ClassName`s. This one is worth more than a token fix, because
+  the comment is the recorded rationale for a fixture in the build: restate what the compile-tier
+  signal is now.
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/model/ProducerBindingDmlEmittedTest.java`,
+  class javadoc and the `STRING_TABLE` comment: "construct a `TableRef` whose
+  `recordClass().reflectionName()` matches a real, loaded `Class`". The component is
+  `recordClassName` and it is a `String`, which is what the test's own constructor call already
+  passes.
+
+Neither is caught by the javadoc reference gate, both being `{@code}` rather than `{@link}`. The
+live `recordClass()` readings elsewhere in the tree are `DomainReturnType.TableRecord`'s and
+`CatalogRefs`', which are above the line and not retired; only these two name the fact tier's.
+
+*Not blocking, and not this item's to fix.* Capture's twenty-five behavioural test files still sit in
+`graphitron/src/test/.../rewrite/capture`, and twenty-three of them reach above the line only for the
+`UnitTier` / `PipelineTier` annotations and the corpus, both of which the spec decided on purpose
+stay above. So the fact tier's own module tests its capture with one file. That is a consequence the
+spec records rather than a gap it hid, and moving the tier annotations is a reactor-wide change with
+no boundary in it. A Backlog item, if anyone wants it. Separately, `GathererIsolationTest` scans only
+`graphitron-model`'s main sources, so a public gatherer helper named from `graphitron` would not fire
+it; the criterion said "from outside the fact tier". The write-surface guard covers the cases that
+matter today, so this is a note rather than a finding.
