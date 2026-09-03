@@ -165,12 +165,16 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | `inMemory()` and `fileBacked(home)`, named rather than selected by a flag.
 
 | A facts writer putting rows in a table at its own cadence
-| `FactWriters` (`graphitron` test-jar)
+| `FactWriters` (`graphitron-model` test-jar)
 | The four shipped writers by name, over a store you opened from `FactStores` and a graph identity given as a name and a directory. A sibling of the capture harness rather than something under it: a writer test has no capture to run, and a captured fixture would have put rows in front of the assertion that the writer did not write.
 
 | A crawler, or agreement between a store-native relation and the classification walk
-| `CapturedStore` (`graphitron` test-jar)
-| A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are.
+| `CapturedStore` (`graphitron-model` test-jar)
+| A real capture over a fixture document, with the fixture file, the caller-supplied graph identity, and named arms saying what each capture's inputs are. Below the line with the capture it drives, so a client can take it without taking the generator.
+
+| A capture behind the generator's own attribution pipeline
+| `PipelineCapturedStore` (`graphitron` test-jar)
+| The same capture, with the pipeline's rewrites run first and both registries handed back, so a test can compare what capture wrote against what the rewrite put in front of it. The one capture arm that needs both tiers, which is why it is the one that stayed above the line.
 
 | The dev loop's own wiring, over rows only a pipeline run can produce
 | `BuiltStore` (`graphitron` test-jar)
@@ -178,8 +182,12 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 
 | Your own module's reads over a populated store
 | A fixture in your own module, over one of the above
-| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `StoreBackedBuild` beside it is the same move over `BuiltStore`. `graphitron-lsp`'s `StoreFixture` is the same shape spanning two levels in one type: a capture for every arm but the one whose rows only a build produces, which takes `BuiltStore` instead.
+| Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `graphitron-lsp`'s `StoreFixture` is the same shape.
 |===
+
+Where a build fixture goes is decided by the same question, one level up.
+A client's fixture that runs a real build spans two tiers, so it lives above both rather than inside the client: `graphitron-maven-plugin` holds `StoreBackedBuild` and `BuiltStoreFixture`, and the tests that read them, because the dev mojo is what wires the generator to the two clients and that wiring is what those tests are about.
+The clients publish test-jars so a relocated test keeps its own module's fixture vocabulary instead of a second copy that drifts, and neither client depends on `graphitron` at any scope; `StoreClientBoundaryTest` in each of them fails the build if one reacquires the edge, in main sources or in tests.
 
 Seeding is the method in exactly one module, the one whose subject is the DDL.
 Above that line capture is the default: the generator, the language server and the MCP server exist to turn real inputs into real rows, so a fixture that skips that step stops testing the thing.
