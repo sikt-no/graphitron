@@ -122,8 +122,16 @@ class DerivedReadCostTest {
      */
     private static final int READERS_IN_SCHEMA = 118;
 
-    /** Views whose derivation reaches at least one registration's target. */
-    private static final int READERS_WITH_CELLS = 65;
+    /**
+     * Views whose derivation reaches at least one registration's target.
+     *
+     * <p>Sixty-five to fifty-eight when the nodehood family stopped reading the type-to-table
+     * binding through a registered target and read the captured one instead. Seven views, and the
+     * fall is exactly seven: none of them reached any other registration, so each left the domain
+     * whole rather than losing a cell. That is what capturing a widely-read relation does to this
+     * measure, where demoting one only moves the cells around.
+     */
+    private static final int READERS_WITH_CELLS = 58;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -177,8 +185,14 @@ class DerivedReadCostTest {
      * in this domain is how many relations reach it, not what its refresh costs or what its rule
      * looks like. Retirements will keep arriving while this item runs, so read these two entries as
      * the shape rather than as a list to extend one paragraph at a time.
+     *
+     * <p>159 to 131 when the nodehood family moved onto the captured type-to-table binding. Twenty
+     * eight cells for seven views, which is the third shape this figure can take and the largest:
+     * not a registration retired and not one arriving, but a set of readers ceasing to reach the
+     * register at all because what they read is a fact now. A demotion moves cells, a retirement
+     * removes the ones that reached one target, and this removes every cell those readers had.
      */
-    private static final int CELLS = 159;
+    private static final int CELLS = 131;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the

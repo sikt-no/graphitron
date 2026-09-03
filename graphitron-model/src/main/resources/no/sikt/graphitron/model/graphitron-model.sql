@@ -3588,12 +3588,11 @@ COMMENT ON COLUMN intent_node_metadata_defect.position IS 'the offending entry''
 CREATE VIEW intent_inferred_node_type
   (graph_name, type_name, table_source_name, table_schema, table_name) AS
 SELECT b.graph_name, b.type_name, b.table_source_name, b.table_schema, b.table_name
-  FROM intent_bound_table b
+  FROM graphitron_tabletype b
   JOIN sql_node_metadata m
     ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
    AND m.table_name = b.table_name
- WHERE b.candidates = 1
-   AND EXISTS (SELECT 1 FROM graphql_poly_member i
+ WHERE EXISTS (SELECT 1 FROM graphql_poly_member i
                 WHERE i.graph_name = b.graph_name AND i.member_type_name = b.type_name
                   AND i.container_name = 'Node' AND i.container_kind = 'INTERFACE')
    AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
@@ -4571,7 +4570,7 @@ SELECT graph_name, type_name, position, column_name, tier
                 SELECT n.graph_name, n.type_name, cc.position, cc.column_name,
                        'CATALOG_PRIMARY_KEY', 2
                   FROM graphitron_node n
-                  JOIN intent_resolved_type_binding b
+                  JOIN graphitron_tabletype b
                     ON b.graph_name = n.graph_name AND b.type_name = n.type_name
                   JOIN sql_primary_key pk
                     ON pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
@@ -4579,8 +4578,7 @@ SELECT graph_name, type_name, position, column_name, tier
                   JOIN sql_constraint_column cc
                     ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
                    AND cc.table_name = pk.table_name
-                   AND cc.constraint_name = pk.constraint_name
-                 WHERE b.candidates = 1) arms) picked
+                   AND cc.constraint_name = pk.constraint_name) arms) picked
  WHERE tier_rank = 1;
 COMMENT ON VIEW intent_resolved_node_key_column IS 'Which columns a node type''s wire id encodes, in the order it encodes them: one row per key position of one node type. A type is a node by implementing Node, and what it is a node by is what names its key columns. An author''s @node names them on the type, or omits them, in which case the manual documents the bound table''s primary key in declaration order as the default, which is the third arm here and is a default under a claim rather than a source of its own. The jOOQ generator''s node metadata names them on a table, and a type reaches them by being bound to that table and implementing Node, which is the inferred nodehood relation''s own rule and is read here rather than restated. That arm used to drive off any bound table carrying the constants, so it answered for hundreds of types that are no node at all; the primary-key arm is scoped to an @node for the same reason, a node inferred from the constants taking its key columns from the constants that inferred it. Where more than one arm speaks the earlier wins, which on the capture this was measured against never changed an answer: the one type with both an @node and metadata stated the same two columns in the same order. That makes the precedence a tie-break between witnesses rather than a cascade, and a disagreement between them is a defect nothing here records, which is a relation this schema still owes.';
 COMMENT ON COLUMN intent_resolved_node_key_column.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
@@ -4597,8 +4595,8 @@ SELECT DISTINCT k.graph_name, k.type_name, k.arity, t.record_class_fqn,
   FROM (SELECT graph_name, type_name, column_name,
                CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name) AS INT) AS arity
           FROM intent_resolved_node_key_column) k
-  LEFT JOIN intent_resolved_type_binding b
-    ON b.graph_name = k.graph_name AND b.type_name = k.type_name AND b.candidates = 1
+  LEFT JOIN graphitron_tabletype b
+    ON b.graph_name = k.graph_name AND b.type_name = k.type_name
   LEFT JOIN sql_table t
     ON t.source_name = b.table_source_name AND t.table_schema = b.table_schema
    AND t.table_name = b.table_name
@@ -4629,9 +4627,8 @@ SELECT graph_name, type_name, type_id, origin
                 UNION ALL
                 SELECT n.graph_name, n.type_name, m.type_id, 'JOOQ_METADATA', 1
                   FROM intent_node_type n
-                  JOIN intent_resolved_type_binding b
+                  JOIN graphitron_tabletype b
                     ON b.graph_name = n.graph_name AND b.type_name = n.type_name
-                   AND b.candidates = 1
                   JOIN sql_node_metadata m
                     ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
                    AND m.table_name = b.table_name
@@ -7418,7 +7415,7 @@ table_node (graph_name, table_source_name, table_schema, table_name, type_name, 
   SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name, bt.type_name,
          CAST(COUNT(*) OVER (PARTITION BY bt.graph_name, bt.table_source_name,
                                           bt.table_schema, bt.table_name) AS INT)
-    FROM intent_resolved_type_binding bt
+    FROM graphitron_tabletype bt
     JOIN intent_node_type nt
       ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
 )
@@ -7657,9 +7654,8 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
    AND sc.type_name = COALESCE(p.root_type_name, i.type_name)
    AND sc.field_name = COALESCE(p.root_field_name, i.field_name)
    AND sc.argument_name = COALESCE(p.root_argument_name, i.argument_name)
-  JOIN intent_resolved_type_binding bt
+  JOIN graphitron_tabletype bt
     ON bt.graph_name = i.graph_name AND bt.type_name = i.node_type_name
-   AND bt.candidates = 1
  WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD');
 COMMENT ON VIEW intent_node_id_decode_endpoint IS 'Where a decode starts and where it has to arrive: for every slot carrying the @nodeId instruction on a decoding site, the table the slot''s own predicate binds on and the table the named node type''s keys live on. The relation the decode''s hop child, its key-column child and the destination over them all read, and it exists because those three would otherwise each resolve the same two tables: the destination is a reduction over the key-column child, the key-column child walks the hops, and the hops need a departure, so the endpoints have to be stated once below all three rather than recomputed inside each. Decoding sites only, which is the direction rule stated as a population rather than as a column: an output field encodes and the two input-side sites decode, so this relation''s WHERE clause is where the direction lives and no reader switches on one. The departure is intent_argument_scope_table''s answer at the consuming argument, which for an argument is its own coordinate and for an input field is the coordinate at the head of its occurrence path, both reached in one pass over the population; that answer is one table per branch where the consuming field returns a multi-table polymorphic container, so such a slot has one endpoint pair per branch and the decode is stated once per branch, which is what the resolver does with it; the two would be a union arm each and each would name the instruction relation again, which is the multiplicity the fact model''s own measurements warn about, so the occurrence path joins outer and the coordinate is picked by COALESCE. The arrival is the node type''s resolved binding, demanded unambiguous for the reason the departure is: two candidate tables are two different key tuples, and a decode against a table the author never named is worse than a decode that does not resolve. The navigation column is the whole reading this relation adds beyond the two tables, and it is a closed vocabulary of three. SAME_TABLE is own-row identity: the slot supplies encoded ids of the very rows it binds on, so the keys land on the row''s own key columns and there is nothing to walk. AUTHORED_PATH is an @reference the author wrote, whose hops the reference-target views resolve, one such view per site. DISCOVERED_KEY is neither written nor identity, where the resolution is the one foreign key declared on the departing table that reaches the arriving one. A fourth value stood here and no longer does. UNRESOLVED_PATH named an input field carrying its own @reference, whose path departs an input type that binds no table, and it existed because no relation walked such a path: the two reference-target views of the time departed from a field''s own binding and from an argument''s scope, and an input field has neither. The value was a statement that the question could not be asked, kept as a value rather than an absence so a consumer could not read it as a chain that legitimately lifted nothing. The input-field walk now exists, departing from the table the consuming field hands the expansion, so the same path resolves the same way an argument''s does and the shape is an AUTHORED_PATH like any other. What the retired value protected against is worth keeping in view, because the protection is now structural rather than nominal: an empty hop set still means own-row identity under one navigation and a chain that stopped under another, and the hop relation states which.';
 COMMENT ON COLUMN intent_node_id_decode_endpoint.graph_name IS 'the owning graph''s partition, carried from the instruction';
@@ -8099,9 +8095,8 @@ SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arit
                   FROM intent_resolved_node_key_column
                  GROUP BY graph_name, type_name) k
             ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
-          LEFT JOIN intent_resolved_type_binding bt
+          LEFT JOIN graphitron_tabletype bt
             ON bt.graph_name = i.graph_name AND bt.type_name = i.type_name
-           AND bt.candidates = 1
           LEFT JOIN (SELECT DISTINCT graph_name, type_name, field_name
                        FROM intent_field_producer_reference) pm
             ON pm.graph_name = i.graph_name AND pm.type_name = i.type_name

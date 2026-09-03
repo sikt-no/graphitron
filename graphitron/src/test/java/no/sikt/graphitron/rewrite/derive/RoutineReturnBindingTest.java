@@ -19,6 +19,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_RETURN_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -96,6 +97,34 @@ class RoutineReturnBindingTest {
             assertThat(derived(dsl))
                 .as("actor_id is not exposed on the result, so the chain lands nowhere")
                 .isEmpty());
+    }
+
+    /**
+     * A {@code @node} on a routine-returned type resolves no key columns, because it is not table
+     * bound: the manual's rule is that {@code @node} only takes effect on a type that also carries
+     * {@code @table}, and the key columns are read off the table the type is bound to.
+     *
+     * <p>This is the case the nodehood family used to answer for and should not have. Its key
+     * columns came through the type-to-table binding, which unions a field's chain landing into a
+     * type-grain relation, so a routine's result stood in for a written {@code @table} and a node
+     * the manual does not admit got a key. Reading the {@code @table} population directly is what
+     * closes it, and this is the only fixture in the tree that can tell the two apart.
+     */
+    @Test
+    void aNodeOnARoutineReturnedTypeIsNotTableBoundAndResolvesNoKeyColumns() {
+        withCaptured(routineReturning("Row @node",
+                "@reference(path: [{table: \"film\"}])"), dsl -> {
+            assertThat(lower(derived(dsl).getFirst().get(INTENT_ROUTINE_RETURN_BINDING.TABLE_NAME)))
+                .as("the chain lands on a real table with a key, which is what makes this fixture"
+                    + " able to falsify: a bare function result has no primary key and no node"
+                    + " metadata, so it could never have yielded a key column either way")
+                .isEqualTo("film");
+            var k = INTENT_RESOLVED_NODE_KEY_COLUMN;
+            assertThat(dsl.selectFrom(k)
+                    .where(k.GRAPH_NAME.eq(CapturedStore.GRAPH)).and(k.TYPE_NAME.eq("Row")).fetch())
+                .as("no @table, so no table boundness, so no key columns to resolve")
+                .isEmpty();
+        });
     }
 
     /** A field with no {@code @routine} is not in this relation's population, whatever it returns. */

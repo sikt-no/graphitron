@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
@@ -191,6 +192,7 @@ public final class SeededStore {
         // idea of the descent.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
+            TableTypes.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
