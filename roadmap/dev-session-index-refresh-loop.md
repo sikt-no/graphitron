@@ -46,9 +46,14 @@ Measured on this repo:
 | Rounds 2 to 5, nothing changed between them | 383 to 476 ms |
 | Stat-only walk of 1,421 reactor `.class` files | 2.9 ms |
 | Read-all walk of the same files | 12.0 ms, before any parsing |
+| Content hash of the same 28.2 MB jar set | 55.2 ms |
 
 The census figure is an upper bound for a classpath that size: the harness presented every entry as
 project-origin, while a real scan skips `TRANSITIVE` entries before opening them.
+
+The last two rows are what the plan trades on. Verifying a jar by hashing it costs about an eighth
+of parsing it, and verifying a directory by stat costs about a quarter of merely reading it, before
+any parsing at all.
 
 ## The three populations
 
@@ -84,9 +89,18 @@ jOOQ catalog load takes the same treatment on the same signal.
 
 This is where the round's cost goes, and it needs no schema change. `store_source`'s own rationale
 sets the terms: the `(path, size, last-modified)` triple is "a heuristic, tolerable while a wrong
-answer dies with the JVM and not tolerable once it survives a build". An in-process census is exactly
-that case, so modification time is the right detector here and a content hash remains the right one
-for anything persisted.
+answer dies with the JVM and not tolerable once it survives a build". An in-process census is that
+case, so modification time is the right detector here and a content hash remains the right one for
+anything persisted.
+
+The substantive argument matters more than the quote, because a dev session can outlive many builds.
+The failure the triple admits is a file whose size and modification time are unchanged while its
+content differs, which is what a restored cache or a normalising image layer produces. A compiler
+writing into `target/classes` does not: it rewrites the file, and the timestamp moves. The cases
+that do move class output underneath a session, a `mvn clean` or a rebuild after a branch switch,
+change the timestamp too, which is the safe direction and costs a re-parse rather than a wrong
+answer. Jars keep the content hash for exactly the reason the rationale gives, and the measurement
+above shows that costs little.
 
 The census is plain data records rather than loaded classes, so holding it across rounds carries none
 of the class-identity hazard that reusing the `URLClassLoader` would. The loader keeps being rebuilt
@@ -101,8 +115,8 @@ file grain instead of wholesale by classpath entry.
 The store already has the shape. `java_file` is keyed on the file path, carries the stamp its rows
 were read at, and is described as "the family's partition dimension and the grain its refresh runs
 at"; `JavaSourceFacts` walks, rewrites what changed, and prunes the files the walk did not see
-because they were deleted or renamed, scoped to the roots it covered. A `jvm_file` relation modelled
-on it gives directory sources the same retention. Keying on the file rather than the class name is
+because they were deleted or renamed, scoped to the roots it covered. A relation for classfiles modelled on it, `jvm_file` say, would give
+directory sources the same retention; no such relation exists today. Keying on the file rather than the class name is
 what keeps it correct across the scan's nested-class exclusion, since a dropped `Foo$Bar.class` has
 no `jvm_class` row to key on.
 
@@ -113,6 +127,26 @@ Whether this phase is worth building is an open question below, not a settled pa
 Log per round what was re-parsed and what was reused, by population. Without it, a regression in the
 invalidation is invisible: the loop still produces correct output, just slowly, which is the failure
 mode this item exists to remove.
+
+## What this does not address
+
+Phase one needs a JVM that survives between rounds, which is `graphitron:dev`. A
+`graphitron:generate` under `quarkus:dev` runs per start in a fresh JVM, with no previous round to
+reuse, and gets nothing from it. That path is phase two's, and phase two is the conditional part of
+this plan. So the item as scoped improves the editing loop and leaves the start-up cost that issue
+544 measures where it is; anyone reading this expecting the reported minute to go away should read
+that expectation against phase two's open question rather than against phase one.
+
+## What Ready covers
+
+Ready authorises phases one and three: hold the census across rounds with per-population
+invalidation, and report per round what was reused and what was re-read. They stand together because
+phase three is what keeps phase one's invalidation honest, and neither touches the schema.
+
+Phase two returns through Spec once phase one has shipped and been measured. Whether reading a
+census out of the store beats parsing it is unanswered, phase one changes what a cold run would even
+need from the store, and the relation it would add is a schema change that should not be authorised
+on an unmeasured premise.
 
 ## Verification
 
@@ -134,6 +168,30 @@ equality check against a freshly scanned census rather than a timing assertion a
   ever read a stat rather than a hash.
 * Whether the two processes in one checkout that R914 describes can share a warm census, or whether
   each keeps its own.
+
+## Self-review
+
+Not a gate review: the reviewer rule requires a different party, and this records what the author
+checked before asking for one.
+
+Verified against the tree: `DevMojo.regeneratePass` and `DevMojo.rebuildCatalog` both reach
+`GraphQLRewriteGenerator.runPipeline`; the two whole-classpath reads open that method;
+`ClasspathScanner.scanDirectory` reads every classfile with `Files.readAllBytes` and the scan skips
+`TRANSITIVE` entries before opening them; `DevMojo.resolveClasspathRoots` keeps only directories;
+`StoreRefresh.prepare` computes fresh sources and pre-claims their classes; `java_file` and
+`JavaSourceFacts` carry the per-file grain and the prune this plan borrows.
+
+Two claims were checked because the plan fails without them. A `.graphqls` save does not invalidate
+the census: the incremental compile writes to `target/graphitron-classes`, which
+`resolveCompileClasspath` does not include, so no byte the census reads changes. And holding the
+census across rounds carries no class-identity hazard: `CompletionData.ExternalReference` and its
+children are strings, booleans and lists, with no `Class` or loader reference anywhere in them.
+
+Three findings, all folded in above. The jar half of phase one rested on a javadoc assertion that
+hashing is cheaper than parsing, which is now measured at 55.2 ms against 383 to 476 ms. The item
+did not say what Ready authorised, which is the shape a reviewer withheld on in R914. And the item
+did not say that phase one leaves issue 544's reported start-up cost untouched, which is the
+scoping a consumer would most want stated.
 
 ## Relationship to R914
 
