@@ -173,6 +173,20 @@ is the same ownership question from the other side, and the plan should answer b
 whether the compaction is per close or once per JVM at the last handle's release, and if the latter,
 what triggers it.
 
+*Reviewer correction, same round.* Withdrawn as a blocking finding; the arithmetic above is wrong
+and nothing is owed on it. The 829 ms priced reclaiming 94% dead space from a 443 MB store, which is
+the cost of clearing days of accumulation once, not a constant per close. Once the first close in a
+reactor has compacted, every later one rewrites an already-compact store holding one module's churn,
+so the sequence is one expensive compaction and then cheap ones rather than twenty of the first.
+Finding 1 also mostly absorbs it: if ownership resolves as a per-file handle count compacting at the
+last handle's release, a reactor compacts once per build by construction.
+
+What survives is a note on Verification rather than on the plan, and the item is free to take it or
+leave it. Both measurements price a *first* compaction of a long-accumulated store, and nothing
+prices the steady state, which is the cost the goal's "seconds rather than minutes" rests on once
+compact-on-close is in place. The growth curve records the store's size after each capture; recording
+the time each close spends alongside it costs nothing and closes that gap.
+
 **Finding 3 (gate two). Step 3's "cache home ... spanning its workspaces" names a level nothing in
 the tree owns, and the word already means the level below it.** In the tree a *home* is
 per-workspace: `resolveStoreDirectory` returns `<cache>/graphitron/model/<workspace-segment>`, its
