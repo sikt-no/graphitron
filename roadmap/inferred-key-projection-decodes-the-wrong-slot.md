@@ -1,7 +1,7 @@
 ---
 id: R884
 title: "An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: nodeid
