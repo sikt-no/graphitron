@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: Ready
+status: Spec
 bucket: dx
 priority: 1
 theme: tooling
@@ -15,9 +15,11 @@ last-updated: 2026-09-03
 
 A workspace's fact store stays a cache: bounded in size, cheap to refresh, and never the reason a
 build waits. When this lands, a consumer running `graphitron:generate` (including Quarkus dev mode,
-which runs the goal on every start) pays seconds for the store rather than minutes, the cache on a
-developer's machine stays a size they would not think to delete, and the log names the store when it
-is the cost. This is [issue 544](https://github.com/sikt-no/graphitron/issues/544).
+which runs the goal on every start) pays seconds for the store rather than minutes, a store file
+stays within a small multiple of the facts in it however many times it is recaptured, and the log
+names the store when it is the cost. This is
+[issue 544](https://github.com/sikt-no/graphitron/issues/544). Bounding what the cache costs a
+machine *across* its workspaces is R918, which this fix takes most of the way on its own.
 
 ## What is wrong
 
@@ -27,16 +29,12 @@ reclaimed. A file-backed store closes with a plain connection close, so H2 gets 
 compaction, which at these sizes reclaims nothing, and every clear-and-recapture cycle leaves more
 behind. On the reporting consumer the file reached 21 GB after nine days.
 
-**The cache is bounded by a count of directories, not by bytes.** `StoreReaper.sweep` keeps
-`RETAINED_STAMPS` (three) stamped directories per workspace, the live one included, and evicts the
-rest by recency. That caps how many stores a workspace holds and says nothing about how large any of
-them may grow. The sweep also runs only on the home the current build opens, so a workspace nobody
-builds in any more is never revisited and keeps its three stores indefinitely.
-
-**A stamp rotation multiplies that across every workspace at once.** `stampSegment()` is the first
-sixteen hex digits of the DDL hash plus the generator version. A consumer rotates it by taking a new
-release; this repo rotates it on any edit to `graphitron-model.sql`. Each rotation pushes a fresh
-full-size store into every workspace's three retained slots.
+**Nothing bounds the cache in bytes.** `StoreReaper.sweep` keeps `RETAINED_STAMPS` (three) stamped
+directories per workspace and evicts the rest by recency, which caps a count and says nothing about
+size; it also runs only on the home the current build opens, so a workspace nobody builds in is never
+revisited. A machine carrying ten workspaces held 7.4 GB across 21 `store.mv.db` files. That axis is
+R918's, and it is recorded here only because compacting each file is most of its answer: at the
+reclamation rates below the same machine holds a few hundred MB.
 
 **A large store costs the build on the write path and the editor on the read path.** On the write
 path, `StoreRefresh.clear` deletes row by row with `SOURCE_NAME IN (...)` per table; on the
@@ -68,8 +66,9 @@ A machine carrying ten workspaces held 7.4 GB across 21 `store.mv.db` files, no 
 more than the three the reaper retains, and 1.81 GB of it in a worktree last built on 2026-08-22.
 
 Compaction cost grows faster than the file does across those two points, so a 21 GB file may still
-cost minutes to compact. That is the reason for the size pre-check below rather than an argument
-against compacting.
+cost minutes to compact. That is not an argument against compacting: a store this fix has been
+compacting all along never reaches that size, and the one that already did is not reopened, for the
+reason the next section gives. A guard for the file that grew before the fix is R917.
 
 ## Plan
 
@@ -95,43 +94,33 @@ against compacting.
    `opptak-subgraph`), so its store is opened once per build. The shapes that do put several handles
    on one file are this repo's own reactor, a `graphitron:dev` session sharing a JVM with the LSP and
    MCP readers, and `PersistentStoreTest`'s holder and writer pairs.
-2. **Fail fast on a store too large to service.** A cheap pre-check on file size sends a run straight
-   to a fresh store rather than attempting a clear, or a compaction, that will not finish in a time a
-   build may spend. Whether the per-source delete should be a partition drop rather than a row-by-row
-   `DELETE` belongs here too.
-3. **Bound the cache root in bytes, and reach the workspaces no build opens.** Two levels have to be
-   kept apart here, because the tree already uses "home" for the lower one.
-   `AbstractRewriteMojo.resolveStoreDirectory` returns
-   `<userCacheRoot>/graphitron/model/<workspace-segment>`, and that per-workspace directory is the
-   home an opener hands `StoreReaper.sweep`. The level that actually held the measured 7.4 GB is its
-   parent, `<userCacheRoot>/graphitron/model`, the *cache root*: a directory no opener is ever given
-   and that `graphitron-model` cannot see, since the only resolver that knows it lives in
-   `graphitron-maven-plugin`. A byte budget over it therefore needs an owner that does not exist
-   today, which is what makes this larger than the sweep it sits beside, and the step has to say
-   which module gets it. It also has to say what the budget means when a consumer pins
-   `-Dgraphitron.store.directory`, which `resolveStoreDirectory` takes verbatim: there is no sibling
-   workspace set under a pinned home, so the budget either degrades to that one home or does not
-   apply.
-4. **Let two processes in one checkout both keep warm.** `graphitron:dev` and `quarkus:dev` (which
-   runs `generate`) lose warm start to each other every round. The second process is already refused
-   in under a second, so the question is whether the loser can keep a warm store of its own, not what
-   the lock budget is. The budget still matters for the in-JVM case where a concurrent or leaked
-   connection holds a table.
-5. **Make the cost visible.** Log time spent in the store per run and the file's size, so a developer
+2. **Make the cost visible.** Log time spent in the store per run and the file's size, so a developer
    reading a slow build sees the store named rather than inferring it from a thread dump.
 
-## What Ready covers
+## Why this is the whole fix
 
-Ready authorises steps 1 and 5: compact at the last handle's release, and report what the store
-cost. They are the smallest pair that changes a consumer's build, and step 5 is what makes step 1's
-effect legible.
+The item ships two steps and nothing else. Three further asks were carried here while the mechanism
+was being diagnosed (a size guard that fails fast on a store too large to service, a byte budget over
+the cache root with a way to reclaim workspaces no build opens, and letting two processes in one
+checkout both keep warm). None of them is needed to close the reported error, and each is filed as
+its own Backlog item with the measurements that motivate it: R917, R918 and R919.
 
-Steps 2 to 4 return through Spec once step 1 has shipped and been measured. They are an axis rather
-than a proposal, and each carries a fork this item does not settle: the threshold that makes a store
-too large to service (step 2), which module owns a cache-root budget (step 3), and whether a second
-process can keep a warm store of its own (step 4). Compact-on-close also moves the ground under all
-three by changing how large a store ever gets, so specifying them now would be specifying against
-the wrong baseline.
+The reported error is a store that grew to 21 GB, a warm clear that took 2 min 18 s and hit the 60 s
+lock budget, and a demotion that then paid another minute capturing cold. Compacting at the last
+handle's release removes the growth that produces all three, and it also settles what happens to the
+21 GB file already on that consumer's disk, which is the part a size guard would otherwise have to
+answer. `generatorVersion()` reads the jar manifest's implementation version and `stampSegment()` is
+the DDL hash plus that version, so a consumer picks this fix up only by taking a release, and taking
+a release rotates the stamp. The run that carries the fix therefore opens a fresh empty directory
+rather than the 21 GB one, captures cold once, and compacts on the way out. The old file is never
+opened again, and `StoreReaper` evicts it once two further stamps have passed it in recency.
+
+That leaves the three cut asks as what they are: a guard against a state this fix stops producing
+(R917), a disk-footprint bound rather than a stall (R918, whose measured 7.4 GB was 21 uncompacted
+files, so compaction alone takes the same machine to a few hundred MB), and a warm-start convenience
+that was never part of the reported failure (R919). Each is worth doing on its own evidence. None is
+worth holding this fix behind, and specifying any of them now would be specifying against a baseline
+this fix moves.
 
 ## Verification
 
@@ -161,13 +150,8 @@ store restarts its retention clock, so the following run reclaims the previous r
 * Which property of a 151-table capture defeats the reclamation that a single-table control shows
   working. Compact-on-close makes this moot for the fix, but the answer decides whether compaction
   must run on every close forever or is covering for something addressable.
-* What threshold makes a store "too large to service", and whether it is stated in bytes or as a
-  multiple of what a cold capture of that graph produces.
-* Whether a bounded reader's budget is the right guard for the editor surface at all, or whether the
-  claim views want their own size guard. Compact-on-close should lift them back under budget, and if
-  it does not, that is a separate item rather than more of this one.
-* Whether the hard-killed-store item (R757), which also ends in "discard a file no run can warm
-  from", shares the discard mechanism this item needs.
+* Whether compacting at every close leaves the editor's claim-view reads back under a bounded
+  reader's budget. If it does not, that is R917's evidence rather than more of this item.
 
 ## Out of scope
 
@@ -351,3 +335,23 @@ since the reader's database goes with the `SHUTDOWN`. `DevMojo` already tears do
 (`lspStore`, then `mcpStore`, then `sessionCapture`, then `sessionStore`), so nothing in the tree is
 broken by this today; it is an invariant the change creates and that the javadoc on `reader` and
 `close` should state once it exists.
+
+### Round 3 (2026-09-03, Ready -> Spec, reviewer session 01NawxZuKWXYC5ik4QRYSyRV)
+
+Not a finding. Recording a scope cut the user directed, and the sign-off it invalidates.
+
+Steps 2 to 4 are struck from the plan and filed as R917 (a guard for a store too large to service),
+R918 (a byte budget over the cache root, and reclaiming quiet workspaces) and R919 (two processes in
+one checkout both keeping warm), each carrying the measurements that motivated it here. The claim the
+cut rests on is that none of the three is needed to close the reported error, and the new "Why this
+is the whole fix" section argues it: `generatorVersion()` reads the jar manifest's implementation
+version and `stampSegment()` is the DDL hash plus that version, so a consumer picks this fix up only
+by taking a release and taking a release rotates the stamp, which means the run carrying the fix
+opens a fresh directory rather than the oversized one. That is what removes the need for a size guard
+in this item rather than merely deferring it.
+
+Round 2's sign-off does not carry to this body. It authorised steps 1 and 5, which is what remains,
+so the cut narrows the item to what was approved rather than widening it; but this session made the
+edits, and a reviewer session that lands substantive edits on a plan body cannot approve the result.
+The new scope argument is also load-bearing prose nobody has reviewed. So the item is back at `Spec`
+and the next `Spec -> Ready` needs a session that is neither the author nor this reviewer.
