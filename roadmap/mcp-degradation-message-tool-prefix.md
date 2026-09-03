@@ -13,8 +13,8 @@ last-updated: 2026-08-06
 # MCP warm-degradation messages carry their tool prefix
 
 The ambient MCP instructions promise an agent that "a paged result's first line summarises the whole
-set, including the total before paging", and `ServerInstructionsTest.everyPagedToolLeadsWithTheUnpagedTotal`
-pins that claim across the six tools that page through `McpWire.page`. The warm-degradation arms of
+set, including the total before paging", and `PagedTotalOverBuildTest.everyPagedToolLeadsWithTheUnpagedTotal`
+(in `graphitron-maven-plugin`, the pin needing a real build) pins that claim across the six tools that page through `McpWire.page`. The warm-degradation arms of
 `docs.search` and `catalog.search` break the surrounding pattern: `WarmState.degradationMessage`
 returns a bare notice carrying neither a tool prefix nor a count, so an agent that has learned to read
 the first line gets a sentence about index warming with no coordinate telling it which call produced

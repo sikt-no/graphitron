@@ -841,6 +841,58 @@ them to shrink rather than to be maintained: once `CatalogBuilder.build` is belo
 `FixtureCatalogTest`'s remaining tie is `RewriteContext`, and step 1's census settles that one by
 moving `RewriteContext` down too, so the test may not need rehoming at all.
 
+**Shipped, and what step 8 found.** Both clients now declare no dependency on `graphitron` at any
+scope, which was the outcome. Five things came out differently from the plan.
+
+**The capture harness had to come down first, and the plan had left that open.** Step 7 recorded
+that `CapturedStore` stays above the line because its `ofPipeline` arm runs the generator, and that
+a split was "step 8's kind of question". It is, and it is a precondition rather than an option:
+both clients' surviving fixtures capture through that harness, so leaving it above the line would
+have kept the generator's test-jar on their classpaths whatever else moved. It splits cleanly.
+`CapturedStore` is now `no.sikt.graphitron.model.test.CapturedStore` with every arm on it a
+capture; the pipeline arm is `PipelineCapturedStore` above the line, read by the two tests that
+compare what capture wrote against what the rewrite put in front of it. The move dropped the
+harness's last reach upward too: attribution went through a helper in the generator's tests that
+only wrapped `SchemaInputAttribution.build`, so the fixture calls the builder directly.
+`CapturedStoreTest` stays above the line for the reason step 7 recorded for the `JooqCatalog`
+white-box tests: its catalog arms name the generated jOOQ fixture package, which
+`graphitron-sakila-db` produces after `graphitron-model` builds.
+
+**The move set is five files and six test methods, not seven files.** Two of the five mcp tests are
+mixed. `GraphitronMcpServerTest` has sixty-two cases, of which five need a build and fifty-seven
+read a captured store; `ServerInstructionsTest` has five, of which one needs a build. Moving those
+files whole would have carried fifty-eight capture-backed cases above two tiers for nothing, so the
+build-backed cases came out into `BuildBackedDiagnosticsTest` and `PagedTotalOverBuildTest` and the
+rest stayed put. `DiagnosticsAggregateTest` (sixteen cases, all build-backed) and both
+`LintSuppressionDiagnosticsParityTest` cases moved whole, as did `R157PipelineTest` and
+`FixtureCatalogTest`. Every assertion survives.
+
+**The test-jars won, and the reason is not fixture duplication.** The plan preferred splitting each
+fixture to publishing two client test-jars, and left the call to the implementer. The split's real
+price turned out to be public API widening: the relocated tests reach their clients'
+package-private surface, `DiagnosticsTool` and `DiagnosticFacets.aggregateResult` and the server's
+endpoint constant among them, so a test in a package of the plugin's own would have meant widening
+three client internals to public to serve a test. The relocated tests keep their clients' package
+declarations instead and the clients publish test-jars, which widens nothing. Two pom stanzas is
+the cheaper price. `WorkspaceFileTestSupport` is the same finding in miniature: the plan had it
+travelling with the lsp-side tests, and it cannot, because it exists to bridge that module's own
+package-private `WorkspaceFile.snapshot()`.
+
+**Three residual edges in lsp's tests were not tests at all.** Four dead `ValidationReport` imports
+left behind by an earlier change, and two message-parity assertions reading a string off the
+generator that both sides already read off `FieldSourceSigilGrammar` below the line. Those two went
+the way the fact tier did rather than moving: the hop through the generator is gone and the
+compiler holds the parity now, which is stronger than the assertion was.
+
+**The widened guard needed one thing the plan did not anticipate.**
+`StoreClientBoundaryTest.noGeneratorReferenceInMainSources` widening to tests is a one-line change
+only if the generator's package name belongs to the generator, and it does not:
+`graphitron-sakila-db` emits the fixture jOOQ models and the fixture services and conditions under
+`no.sikt.graphitron.rewrite`, so a prefix scan over test sources fires on every capture fixture.
+The scan blanks those four package names before it looks, rather than skipping the files that carry
+them, so a fixture naming a generated table and also naming a planner is still the finding.
+`graphitron-lsp` gets the same guard in the same shape.
+
 ## Decisions this spec makes
 
 **One module, not two.** The alternative is a new `graphitron-capture` module between the store and

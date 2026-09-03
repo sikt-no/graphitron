@@ -27,13 +27,13 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 | `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
 
 | `graphitron-maven-plugin`
-| Maven plugin: `generate`, `validate`, `capture` and `dev` Mojos (the dev mojo provides the watch loop).
+| Maven plugin: `generate`, `validate`, `capture` and `dev` Mojos (the dev mojo provides the watch loop). Also the home of the cross-tier tests: the dev mojo is what wires the generator to the two clients, so a test whose subject is the build and a client agreeing lives here, above both, rather than inside a client reaching up.
 
 | `graphitron-sakila-example`
 | End-to-end consumer: compiles emitted Java against a real jOOQ catalog, executes it against Postgres, and serves a runnable Quarkus + JAX-RS reference application from the same module.
 
 | `graphitron-lsp`
-| Editor LSP server for `.graphqls` authoring.
+| Editor LSP server for `.graphqls` authoring. Reads the fact store and the buffer under the cursor; no dependency on `graphitron` at any scope.
 
 | `graphitron-mcp`
 | MCP server embedded in the `dev` Mojo: serves an `about` prompt, a `directives` resource, and read-only catalog / schema / diagnostics / `docs.search` tools to an MCP-aware agent over loopback Streamable HTTP. The dependency-quarantine seam that keeps its heavy semantic-index dependencies off the plugin's own compile surface.
