@@ -15,6 +15,7 @@ import graphql.language.Value;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
+import no.sikt.graphitron.model.derive.NodeHood;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
@@ -183,6 +184,7 @@ public final class GraphitronFactCapture {
         // navigation rule is stated over the population expansion completes.
         sink.flush();
         TableTypes.derive(dsl, graphName);
+        NodeHood.derive(dsl, graphName);
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
         navigation(dsl, graphName);

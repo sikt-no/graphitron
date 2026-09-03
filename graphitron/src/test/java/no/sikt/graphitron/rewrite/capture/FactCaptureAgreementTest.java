@@ -450,6 +450,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("graphql_coordinate_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
+        registrations.put("graphitron_nodehood", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
