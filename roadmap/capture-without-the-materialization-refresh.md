@@ -1,13 +1,13 @@
 ---
 id: R865
 title: "The generator owns the fact tier it should merely read"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-09-02
+last-updated: 2026-09-03
 ---
 
 # The generator owns the fact tier it should merely read
@@ -1059,6 +1059,18 @@ above it.
   rather than just moving files. A single split package would give the leftovers same-package access
   to what moved.
 
+**Checked at the In Review flip.** The criteria that are not already tests were run rather than
+assumed. `graphitron-model`'s pom declares jOOQ, H2, graphql-java, the federation support, slf4j,
+plexus-utils and jooq-codegen, and neither `graphitron` nor `graphitron-javapoet`; no file under it
+imports javapoet. Neither client's pom names `graphitron` at any scope, and both now take
+`graphitron-model`'s test-jar where they took the generator's. The package sets of the two modules,
+main and test sources together, intersect in nothing. The seven cross-tier tests are five files and
+two extracted ones under `graphitron-maven-plugin/src/test`, and the guards the plan promised are in
+the tree: `FactTierBoundaryTest` with its two surviving properties, `GathererIsolationTest` in
+`graphitron-model`'s own tests, and `noGeneratorReferenceInEitherTree` in both clients. The full
+`mvn install -Plocal-db` is green, `graphitron-sakila-example` generates identical files, and the
+`capture-only` plugin integration test is among what passes.
+
 ## Retired vocabulary
 
 Declared for the retirement sweep at the Done gate. Retired by step 2:
@@ -1112,9 +1124,25 @@ Retired by step 5:
 * `RunStore.graphName()`, now `RunStore.graph()`, a recapture needing the whole coordinate rather
   than the name
 
+Retired by step 7:
+
 * `RewriteContext`, now `RunContext`; `RewriteSchemaLoader`, now `SchemaLoader`
-* every `no.sikt.graphitron.rewrite.*` package name for the 89 files that move, now
+* every `no.sikt.graphitron.rewrite.*` package name for the 111 files that moved, now
   `no.sikt.graphitron.model.*`
+* `no.sikt.graphitron.rewrite.FactWriters`, now `no.sikt.graphitron.model.test.FactWriters`
+* `FactTierBoundaryTest`'s javapoet, upward-import and seal-closure properties, now the module
+  edge's: the two remaining properties are the ones a pom cannot state
+
+Retired by step 8:
+
+* `no.sikt.graphitron.rewrite.CapturedStore`, now `no.sikt.graphitron.model.test.CapturedStore`
+  with every arm on it a capture; `CapturedStore.ofPipeline`, now `PipelineCapturedStore` above the
+  line
+* `StoreFixture.ofBuild` and `StoreFixture.built` in `graphitron-lsp`, now `BuiltStoreFixture` in
+  the plugin's tests, the fixture's remaining half being the captured store alone
+* `StoreBackedBuild`'s home in `graphitron-mcp`, now the plugin's tests
+* `StoreClientBoundaryTest.noGeneratorReferenceInMainSources`, now `noGeneratorReferenceInEitherTree`
+  in both clients
 
 ## Reviewer findings
 
