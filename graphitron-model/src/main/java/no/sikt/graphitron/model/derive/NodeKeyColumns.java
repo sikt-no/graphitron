@@ -127,6 +127,7 @@ public final class NodeKeyColumns {
                 .and(folds(c, k.COLUMN_NAME))
                 .where(n.GRAPH_NAME.eq(graphName))
                 .and(resolvesUniquely(b, k.COLUMN_NAME))
+                .and(everyPublishedPositionResolves(b))
                 .and(pinnedNothing(n.GRAPH_NAME, n.TYPE_NAME))
                 .and(notExists(selectOne().from(d)
                     .where(d.SOURCE_NAME.eq(m.SOURCE_NAME), d.TABLE_SCHEMA.eq(m.TABLE_SCHEMA),
@@ -199,6 +200,34 @@ public final class NodeKeyColumns {
         var e = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
         return notExists(selectOne().from(e)
             .where(e.GRAPH_NAME.eq(graph), e.TYPE_NAME.eq(type)));
+    }
+
+    /**
+     * True where every position the bound table's class publishes resolves to exactly one of its
+     * columns, which is what keeps this tier from shipping a key tuple with a hole.
+     *
+     * <p>The defect relation almost covers this and stops one case short. It calls an entry
+     * unresolved when no column answers to it, and a table whose class names a column it does not
+     * have is excluded before this tier is reached; it says nothing about an entry two columns
+     * answer to, which is not a malformed constant but is not a resolution either. Without this the
+     * ambiguous position alone would go missing and the rest of the tuple would ship, which decodes
+     * values into the wrong positions and says nothing about it.
+     *
+     * <p>Failing here declines the whole tier and lets the primary key answer, where the author's
+     * tier writes nothing at all in the same situation. The asymmetry is the point: a pinned key is
+     * a contract someone asked for, and a generated constant that cannot be resolved is the same
+     * kind of problem as one that is malformed, which already falls through.
+     */
+    private static Condition everyPublishedPositionResolves(GraphitronTabletype b) {
+        var k = SQL_NODE_KEY_COLUMN.as("published_probe");
+        var written = field(selectCount().from(k)
+            .where(k.SOURCE_NAME.eq(b.TABLE_SOURCE_NAME), k.TABLE_SCHEMA.eq(b.TABLE_SCHEMA),
+                k.TABLE_NAME.eq(b.TABLE_NAME)));
+        var resolved = field(selectCount().from(k)
+            .where(k.SOURCE_NAME.eq(b.TABLE_SOURCE_NAME), k.TABLE_SCHEMA.eq(b.TABLE_SCHEMA),
+                k.TABLE_NAME.eq(b.TABLE_NAME))
+            .and(resolvesUniquely(b, k.COLUMN_NAME)));
+        return written.eq(resolved);
     }
 
     /**
