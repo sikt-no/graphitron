@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
@@ -355,3 +355,11 @@ so the cut narrows the item to what was approved rather than widening it; but th
 edits, and a reviewer session that lands substantive edits on a plan body cannot approve the result.
 The new scope argument is also load-bearing prose nobody has reviewed. So the item is back at `Spec`
 and the next `Spec -> Ready` needs a session that is neither the author nor this reviewer.
+
+*User decision, same round.* Restored to `Ready` on the user's call. Round 2's sign-off stands: it
+authorised steps 1 and 5, and after the cut the plan is steps 1 and 5 and nothing else, so the body
+an implementer executes is exactly the body that was approved. The paragraph above overstated what
+this session's edits cost. Deleting three steps and arguing why they are not needed changes what the
+implementer does *not* build; it adds no design for a reviewer to check, and "Why this is the whole
+fix" is a scope justification rather than a plan section. This is the existing sign-off surviving a
+narrowing, not a new one, and this session is not claiming to have given it.
