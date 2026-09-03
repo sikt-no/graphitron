@@ -5,13 +5,12 @@ import no.sikt.graphitron.model.jooq.TableRef;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_TYPE_ID;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -95,7 +94,7 @@ public final class StoreNodeTables {
             if (table.isEmpty()) {
                 continue;
             }
-            var keyColumns = keyColumns(dsl, graphName, binding.nodeTypeName(), table.get());
+            var keyColumns = keyColumns(dsl, graphName, binding.nodeTypeName());
             if (keyColumns.isEmpty()) {
                 continue;
             }
@@ -188,33 +187,28 @@ public final class StoreNodeTables {
     }
 
     /**
-     * The node type's key columns in key order, resolved against the bound table's own column list so
-     * the result carries generated field names rather than the key relation's spellings. The match is
-     * case-insensitive on either spelling, which is the convention every crossing between an authored
-     * or stated column name and a catalog column already uses. Empty when any key column fails to
-     * resolve, which drops the node type: a key list with a hole would decode values into the wrong
-     * positions, and there is no partial answer worth handing an emitter.
+     * The node type's key columns in key order, read as columns rather than resolved into them. The
+     * relation names a column of the type's own bound table and carries that table beside it, so the
+     * generated field name and the binding type come off {@code sql_column} in the same read; this
+     * used to be a fetch of names followed by a case-insensitive scan of the table's column list,
+     * because what the relation handed back was a spelling.
+     *
+     * <p>Empty where the type has no key columns at all, which drops the node type. The partial case
+     * the scan used to guard against cannot arise: a key list with a hole would decode values into
+     * the wrong positions, and the relation refuses to write one.
      */
-    private static List<ColumnRef> keyColumns(DSLContext dsl, String graphName, String nodeTypeName,
-                                              TableRef table) {
-        var k = INTENT_RESOLVED_NODE_KEY_COLUMN;
-        var names = dsl.select(k.COLUMN_NAME)
+    private static List<ColumnRef> keyColumns(DSLContext dsl, String graphName,
+                                              String nodeTypeName) {
+        var k = GRAPHITRON_NODE_KEYCOLUMN;
+        var c = SQL_COLUMN;
+        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE)
             .from(k)
+            .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME),
+                c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA), c.TABLE_NAME.eq(k.TABLE_NAME),
+                c.COLUMN_NAME.eq(k.COLUMN_NAME))
             .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeName))
             .orderBy(k.POSITION)
-            .fetch(r -> r.value1());
-        var resolved = new ArrayList<ColumnRef>(names.size());
-        for (String name : names) {
-            var match = table.allColumns().stream()
-                .filter(c -> c.sqlName().equalsIgnoreCase(name)
-                    || c.javaName().equalsIgnoreCase(name))
-                .findFirst();
-            if (match.isEmpty()) {
-                return List.of();
-            }
-            resolved.add(match.get());
-        }
-        return resolved;
+            .fetch(StoreNodeTables::columnOf);
     }
 
     /**

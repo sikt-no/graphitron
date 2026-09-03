@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.derive.ArgmappingProjectionDefects;
 
@@ -263,16 +265,17 @@ class ArgmappingProjectionDefectsTest {
     @Test
     void oneDeferralPerBoundParameterRatherThanPerKeyColumn() {
         var violations = detect("""
-            type Bar implements Node @table(name: "bar") @node(keyColumns: ["bar_id", "foo_id"]) {
+            type Inventory implements Node @table(name: "inventory")
+                    @node(keyColumns: ["inventory_id", "store_id"]) {
                 id: ID! @nodeId
             }
             type Film @table(name: "film") { title: String }
-            type Query { films(in: FilmPick!): [Film!]!, bar: Bar }
+            type Query { films(in: FilmPick!): [Film!]!, inventory: Inventory }
             input FilmPick {
-                barId: ID! @nodeId(typeName: "Bar") @condition(condition: {
+                inventoryId: ID! @nodeId(typeName: "Inventory") @condition(condition: {
                     className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
                     method: "rentalRateRange",
-                    argMapping: "fra: barId.bar_id, til: barId.foo_id"
+                    argMapping: "fra: inventoryId.inventory_id, til: inventoryId.store_id"
                 })
             }
             """);
@@ -373,11 +376,25 @@ class ArgmappingProjectionDefectsTest {
 
     // ===== Helpers =====
 
-    /** Captures {@code sdl} and runs the detection over what the capture wrote. */
+    /**
+     * Captures {@code sdl} against the catalog and runs the detection over what the capture wrote.
+     *
+     * <p>The catalog is not optional here, and these fixtures used to do without one. A node's key
+     * columns are columns of the table it is bound to, so with no catalog nothing binds, nothing is
+     * a node, and every fixture below reported that its type resolves no key columns rather than the
+     * defect it was written for. That was the fixtures being thinner than the situation: the
+     * detection runs only on a classified run, which is a generation run, which has a catalog, so a
+     * store with none is a state this rule never meets in production.
+     */
     private List<ValidationError> detect(String sdl) {
-        try (var store = CapturedStore.of(tmp, sdl)) {
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
             return ArgmappingProjectionDefects.detect(store.dsl(), GRAPH).violations();
         }
+    }
+
+    private static JooqCatalog jooq() {
+        var ctx = testContext();
+        return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 
     /** The violations' messages, the surface an author actually meets. */

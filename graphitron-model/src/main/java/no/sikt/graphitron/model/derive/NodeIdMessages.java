@@ -4,7 +4,7 @@ import org.jooq.DSLContext;
 
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 
 /**
  * The vocabulary the {@code @nodeId} rejection families share, held once so the two cannot drift.
@@ -42,14 +42,16 @@ final class NodeIdMessages {
     /**
      * The node type's resolved key columns, in key order: the candidate list a message offers, read
      * as rows off the relation that resolved them rather than as a render some view joined and a
-     * consumer had to split apart. Empty where the type is unnamed and where no tier answered for
-     * it, which are two different facts the caller tells apart by {@code nodeTypeRef}.
+     * consumer had to split apart. Catalog columns, so a message names what a reader will find in
+     * the table rather than whichever spelling the winning tier happened to carry. Empty where the
+     * type is unnamed and where no tier answered for it, which are two different facts the caller
+     * tells apart by {@code nodeTypeRef}.
      */
     static List<String> keyColumnsOf(DSLContext dsl, String graphName, String nodeTypeRef) {
         if (nodeTypeRef == null) {
             return List.of();
         }
-        var k = INTENT_RESOLVED_NODE_KEY_COLUMN;
+        var k = GRAPHITRON_NODE_KEYCOLUMN;
         return dsl.select(k.COLUMN_NAME)
             .from(k)
             .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeRef))

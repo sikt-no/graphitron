@@ -244,14 +244,19 @@ class ResolvedNodeKeyProjectionTest {
 
     /**
      * The other half, and the one that would have re-broken what the candidate split fixed. A pinned
-     * key column under a node type with no table binding has no catalog column to take a type from,
-     * and the key-column relation admits it on purpose (its own comment: a name resolving against
-     * nothing is a row there and a detection elsewhere). So the candidate stands and the gate stands
-     * aside; had the reach for the type been an inner join, this pair would have been reported as a
+     * key column under a type with no table binding used to stand as a candidate carrying no type,
+     * because the key-column reduction admitted a name that resolved against nothing; the gate had
+     * to stand aside on the missing type, and an inner join there would have reported the pair as a
      * column that does not exist.
+     *
+     * <p>There is no candidate to stand now. A type with no {@code @table} is not a node, so it has
+     * no key columns, so nothing reaches the projection and the gate has nothing to be wrong about.
+     * The property the case guards is the same one, reached one relation earlier: a pin the catalog
+     * cannot answer is never reported as a column that does not exist. Where the author is told is
+     * the anti-join against the entry, which is a diagnostic and not this.
      */
     @Test
-    void aProjectionWhoseColumnTypeIsUnresolvableStillResolves() {
+    void aProjectionWhoseColumnTypeIsUnresolvableDrawsNoCandidate() {
         withSeededStore(GRAPH, dsl -> {
             catalog(dsl);
             seedNode(dsl, GRAPH, "Inventory");
@@ -260,11 +265,9 @@ class ResolvedNodeKeyProjectionTest {
             seedFieldNodeId(dsl, GRAPH, "RentFilmInput", "inventoryId", "Inventory");
             pair(dsl, "pInventoryId", "input.inventoryId.inventory_id");
 
-            var row = only(dsl);
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.TIER)).isEqualTo("SDL_PINNED");
-            assertThat(row.get(INTENT_RESOLVED_NODE_KEY_PROJECTION.COLUMN_JAVA_TYPE))
-                .as("no table binding, so no catalog column to type")
-                .isNull();
+            assertThat(rows(dsl))
+                .as("no table binding, so no nodehood, so no key column and no candidate")
+                .isEmpty();
         });
     }
 

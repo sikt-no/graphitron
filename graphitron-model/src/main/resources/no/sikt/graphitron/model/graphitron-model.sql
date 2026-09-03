@@ -2868,6 +2868,7 @@ CREATE TABLE graphitron_node_keycolumn (
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
+  column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name)),
   PRIMARY KEY (graph_name, type_name, position),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node (graph_name, type_name)
     ON DELETE CASCADE,
@@ -2885,6 +2886,7 @@ COMMENT ON COLUMN graphitron_node_keycolumn.type_name IS 'the node type this col
 COMMENT ON COLUMN graphitron_node_keycolumn.position IS 'the column''s place in the key tuple, numbered from zero in the order ids are built and read. The order is the whole reason this is a relation of its own rather than a list on the node: an id encoded against one order and decoded against another finds the wrong row rather than failing';
 COMMENT ON COLUMN graphitron_node_keycolumn.column_name IS 'the catalog column, spelled as the catalog spells it and not as whoever named it did. A pinned keyColumns entry and a generated class''s constant are both authored spellings that meet a catalog name here, so both are folded to resolve and neither spelling survives into this column; what was written stays in graphitron_node_keycolumn_entry and in sql_node_key_column respectively';
 COMMENT ON COLUMN graphitron_node_keycolumn.column_origin IS 'which of the three populations answered: SDL_PINNED from @node(keyColumns:), JOOQ_METADATA from the backing class''s __NODE_KEY_COLUMNS, CATALOG_PRIMARY_KEY from the bound table''s own key. Repeated on every position rather than held once per type, the tier being uniform across a key tuple by construction: one tier answers for the whole list or none does, so the repetition is a functional dependency inside a derived relation and not a second grain';
+COMMENT ON COLUMN graphitron_node_keycolumn.column_name_upper IS 'the case fold of the column, stored so a reader matching an authored spelling against it compares two stored values and an index can serve. Minted here rather than left to each reader because this is where an authored name meets a catalog one and the crossing happens once: before this relation the answer was a spelling with nowhere to reach, so every consumer folded at its own join. It duplicates sql_column''s own fold of the same value, deliberately, the alternative being a join per reader for a column this relation already carries';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_source_name IS 'the catalog source declaring the table this column belongs to. Carried, with the schema and table beside it, so the row can reference both the type''s binding and the column itself: without them the relation could name a column of some other table and nothing would say so';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s schema, half of the reference that ties this column to the type''s own binding rather than to any table having such a column';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
@@ -4643,18 +4645,16 @@ SELECT DISTINCT k.graph_name, k.type_name, k.arity, t.record_class_fqn,
        CASE WHEN k.arity = 1 THEN k.column_name END,
        CASE WHEN k.arity = 1 THEN c.binding_type END
   FROM (SELECT graph_name, type_name, column_name,
+               table_source_name, table_schema, table_name,
                CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name) AS INT) AS arity
-          FROM intent_resolved_node_key_column) k
-  LEFT JOIN graphitron_tabletype b
-    ON b.graph_name = k.graph_name AND b.type_name = k.type_name
+          FROM graphitron_node_keycolumn) k
   LEFT JOIN sql_table t
-    ON t.source_name = b.table_source_name AND t.table_schema = b.table_schema
-   AND t.table_name = b.table_name
+    ON t.source_name = k.table_source_name AND t.table_schema = k.table_schema
+   AND t.table_name = k.table_name
    AND t.record_class_fqn <> 'org.jooq.Record'
-  LEFT JOIN sql_column c
-    ON c.source_name = b.table_source_name AND c.table_schema = b.table_schema
-   AND c.table_name = b.table_name
-   AND c.column_name_upper = UPPER(k.column_name);
+  JOIN sql_column c
+    ON c.source_name = k.table_source_name AND c.table_schema = k.table_schema
+   AND c.table_name = k.table_name AND c.column_name = k.column_name;
 COMMENT ON VIEW intent_resolved_node_key_shape IS 'A node type''s key reduced to what a slot receiving it has to agree with: how many columns the key has, the row type that carries the whole tuple, and where the key is one column that column''s name and the Java type it binds as. The relation a destination or a refusal reads when the question is not which columns the key is but whether a given slot can hold it. Every value here is a function of the key-column relation beside it and the type''s own table binding, so this states no new fact and exists for one reason: three consumers would otherwise each aggregate the key list and each re-resolve the binding, which is the inline multiplicity the fact model''s own measurements warn about, and a reader that wants the columns themselves still reads the relation this reduces. Arity is a count over the winning tier''s whole list, which is sound only because that relation picks a tier rather than a position; a per-position pick would make this number the count of a spliced list. It is counted before the two catalog reaches below it rather than after, which is not a stylistic ordering: either outer join can in principle match a key column twice, two catalog columns folding to one name being the case, and a count taken after that would report a key longer than the key is. The record class is the generated row type of the type''s own table, absent where the binding is ambiguous, where no table binds at all, and where the catalog answers org.jooq.Record, which sql_table''s own comment says is the catalog reporting no generated record rather than a record named that; the exclusion is a join predicate here so that absence is one thing at every reader instead of two. The two sole_ columns are stated only at arity one and are NULL above it, which is determined by the arity beside them rather than by anything unknown: a composite key has no single column, so a NULL here at arity two is the key''s shape and not a missing reading. Their absence at arity one is the ordinary catalog absence: a pinned key column resolves with no table at all, on the key-column relation''s own rule, so a name that names nothing the table has still has a row there and reaches no type here. A reader gating on type agreement therefore stands aside on the NULL rather than refusing, which is the discipline intent_resolved_node_key_projection already states for its own version of this operand.';
 COMMENT ON COLUMN intent_resolved_node_key_shape.graph_name IS 'the owning graph''s partition, carried from the key-column relation';
 COMMENT ON COLUMN intent_resolved_node_key_shape.type_name IS 'the graph type whose node key this row describes; one row per type that resolved any key column at all, and no row for a type that resolved none';
@@ -7154,28 +7154,24 @@ CREATE VIEW intent_argmapping_key_column_candidate
    leaf_named_type, leaf_is_list, trailing_name) AS
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, e.written_path,
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
-       l.node_type_ref, k.column_name, k.position, k.tier, c.binding_type,
+       l.node_type_ref, k.column_name, k.position, k.column_origin, c.binding_type,
        l.leaf_named_type, l.leaf_is_list, e.tail_name
   FROM graphitron_argmapping_match l
   JOIN graphitron_argmapping_entry e
     ON e.graph_name = l.graph_name AND e.site = l.site AND e.use_site = l.use_site
    AND e.position = l.position
-  JOIN intent_resolved_node_key_column k
+  JOIN graphitron_node_keycolumn k
     ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
-   AND UPPER(k.column_name) = e.tail_name_upper
-  LEFT JOIN intent_resolved_type_binding b
-    ON b.graph_name = k.graph_name AND b.type_name = k.type_name
-   AND b.candidates = 1
-  LEFT JOIN sql_column c
-    ON c.source_name = b.table_source_name AND c.table_schema = b.table_schema
-   AND c.table_name = b.table_name
-   AND c.column_name_upper = UPPER(k.column_name)
+  JOIN sql_column c
+    ON c.source_name = k.table_source_name AND c.table_schema = k.table_schema
+   AND c.table_name = k.table_name AND c.column_name = k.column_name
+   AND (c.column_name_upper = e.tail_name_upper OR c.jooq_name_upper = e.tail_name_upper)
  WHERE l.node_type_ref IS NOT NULL
    AND l.bound_path <> e.written_path
  UNION ALL
 SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, e.written_path,
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
-       l.node_type_ref, k.column_name, k.position, k.tier, s.sole_column_java_type,
+       l.node_type_ref, k.column_name, k.position, k.column_origin, s.sole_column_java_type,
        l.leaf_named_type, l.leaf_is_list, CAST(NULL AS VARCHAR)
   FROM graphitron_argmapping_match l
   JOIN graphitron_argmapping_entry e
@@ -7183,7 +7179,7 @@ SELECT l.graph_name, l.site, l.use_site, l.type_name, l.field_name, l.position, 
    AND e.position = l.position
   JOIN intent_resolved_node_key_shape s
     ON s.graph_name = l.graph_name AND s.type_name = l.node_type_ref AND s.arity = 1
-  JOIN intent_resolved_node_key_column k
+  JOIN graphitron_node_keycolumn k
     ON k.graph_name = l.graph_name AND k.type_name = l.node_type_ref
  WHERE l.node_type_ref IS NOT NULL
    AND l.bound_path = e.written_path;
@@ -7616,7 +7612,7 @@ CREATE VIEW intent_condition_param_decode
 WITH
 key_shape (graph_name, type_name, arity) AS (
   SELECT graph_name, type_name, CAST(COUNT(*) AS INT)
-    FROM intent_resolved_node_key_column
+    FROM graphitron_node_keycolumn
    GROUP BY graph_name, type_name
 )
 SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
@@ -7927,10 +7923,10 @@ WITH RECURSIVE lifted (graph_name, use_site, origin_source_name, origin_schema, 
 )
 SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path, e.use_site,
        e.node_type_name, e.from_source_name, e.from_schema, e.from_table,
-       k.position, k.tier, k.column_name,
+       k.position, k.column_origin, k.column_name,
        CASE WHEN e.navigation = 'SAME_TABLE' THEN k.column_name ELSE l.local_column_name END
   FROM intent_node_id_decode_endpoint e
-  JOIN intent_resolved_node_key_column k
+  JOIN graphitron_node_keycolumn k
     ON k.graph_name = e.graph_name AND k.type_name = e.node_type_name
   LEFT JOIN lifted l
     ON e.navigation <> 'SAME_TABLE'
@@ -7938,7 +7934,7 @@ SELECT e.graph_name, e.site, e.type_name, e.field_name, e.argument_name, e.path,
    AND l.origin_source_name = e.from_source_name AND l.origin_schema = e.from_schema
    AND l.origin_table = e.from_table
    AND l.position = l.last_position
-   AND l.arrived_column_name = UPPER(k.column_name);
+   AND l.arrived_column_name = k.column_name_upper;
 COMMENT ON VIEW intent_node_id_decode_column_live IS 'This states the rule and is evaluated on demand. The canonical name intent_node_id_decode_column beside it is the table this view is materialized into on the capture cadence, which is what every reader spells and what the registration in meta_materialize records; a reader naming this relation instead is asking for on-demand evaluation and will get it. The rule itself, and what each column means, is documented on intent_node_id_decode_column.';
 COMMENT ON COLUMN intent_node_id_decode_column_live.graph_name IS 'the graph_name of a row of this rule, materialized into intent_node_id_decode_column.graph_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_decode_column_live.site IS 'the site of a row of this rule, materialized into intent_node_id_decode_column.site, whose comment carries what the value means';
@@ -8142,7 +8138,7 @@ SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arit
                k.arity
           FROM intent_node_id_instruction i
           JOIN (SELECT graph_name, type_name, CAST(COUNT(*) AS INT) AS arity
-                  FROM intent_resolved_node_key_column
+                  FROM graphitron_node_keycolumn
                  GROUP BY graph_name, type_name) k
             ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
           LEFT JOIN graphitron_tabletype bt

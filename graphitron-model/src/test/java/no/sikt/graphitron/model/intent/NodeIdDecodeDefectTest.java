@@ -160,9 +160,14 @@ class NodeIdDecodeDefectTest {
     // ===== The stand-aside: a refusal needs the operands it names =====
 
     /**
-     * A key column the catalog cannot type draws no type verdict. The decode is carried out on the
-     * arity with javac as the backstop, so refusing here would close a coordinate on the strength of
-     * a fact nobody could read, at the coordinate least able to report it.
+     * A pinned key column the table does not have draws no type verdict, which is the property this
+     * case has always guarded: refusing here would close a coordinate on the strength of a fact
+     * nobody could read, at the coordinate least able to report it.
+     *
+     * <p>What changed underneath is the destination rather than the verdict. Such a pin resolves to
+     * no key column at all, the tier declining whole rather than handing on a name the catalog
+     * cannot answer, so the type it could not be given is a type nothing asks for and there is no
+     * decode to carry out on the arity. Still no verdict, and now nothing to have a verdict about.
      */
     @Test
     void aKeyColumnTheCatalogCannotTypeDrawsNoTypeVerdict() {
@@ -173,9 +178,12 @@ class NodeIdDecodeDefectTest {
             seedArgumentNodeId(dsl, GRAPH, "Query", "films", "ids", "Film");
             seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
 
-            assertThat(rows(dsl)).isEmpty();
+            assertThat(rows(dsl))
+                .as("the stand-aside, which is what this case is for")
+                .isEmpty();
             assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
+                .as("and no destination either, the pin having resolved to no key column")
+                .isEmpty();
         });
     }
 

@@ -130,8 +130,13 @@ class DerivedReadCostTest {
      * fall is exactly seven: none of them reached any other registration, so each left the domain
      * whole rather than losing a cell. That is what capturing a widely-read relation does to this
      * measure, where demoting one only moves the cells around.
+     *
+     * <p>Fifty-eight to fifty-seven when a node's key columns became a captured relation too. One
+     * view left, on the same terms as the seven: its only path to a registration ran through the
+     * reduction the key columns used to be derived by, so reading them off a table takes it out of
+     * the domain rather than making it cheaper inside one.
      */
-    private static final int READERS_WITH_CELLS = 58;
+    private static final int READERS_WITH_CELLS = 57;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -191,8 +196,15 @@ class DerivedReadCostTest {
      * not a registration retired and not one arriving, but a set of readers ceasing to reach the
      * register at all because what they read is a fact now. A demotion moves cells, a retirement
      * removes the ones that reached one target, and this removes every cell those readers had.
+     *
+     * <p>131 to 128 when a node's key columns became a captured relation on the same terms, the
+     * third shape again and much smaller. Three cells for the one view that left the domain and the
+     * paths its neighbours reached only through the reduction; which of the three is which was not
+     * measured, only that the readers of that reduction now read a table. The size difference from
+     * the twenty eight above is the point worth keeping: what a capture is worth to this measure is
+     * how widely the relation it replaces was read, and this one was read by six.
      */
-    private static final int CELLS = 131;
+    private static final int CELLS = 128;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -449,6 +461,15 @@ class DerivedReadCostTest {
      * landed instead of the lever being reverted: 528 scans is what the reader pays for a refresh
      * that evaluates the rule once per capture instead of once per read.
      *
+     * <p>That pair has since gone, and not by anything aimed at it. The reader counts a node type's
+     * key columns, which was a three-arm union with a window function over it and is now a keyed
+     * read of a captured relation; with that much taken out of the surrounding rule the registered
+     * shape stopped costing more than the unregistered one and the pair no longer qualifies. The
+     * scan figures above are left standing because they are what was measured and they are the
+     * record of what an index on a materialized target could and could not buy. What was not
+     * measured again is the new pair of numbers: the claim now is only that the registered shape no
+     * longer exceeds the other, which is what this set is a list of.
+     *
      * <p>A trio left a second way, which is worth knowing because nothing was measured to send it.
      * Three readers of {@code intent_node_id_instruction} stood here charged to
      * {@code intent_argument_scope_table}: the encode, the decode slot, and the decode defect above
@@ -535,9 +556,6 @@ class DerivedReadCostTest {
         // carrier target and the cell does not exist to be non-monotonic in. The column
         // relation names the reference walk on a second path of its own and keeps its cell.
         "intent_field_reference_step_hop|intent_mutation_payload_column_live",
-        // A registered target's rule prunes by site where its table cannot, and an index closes
-        // most but not all of the gap; measured above.
-        "intent_node_id_instruction|intent_condition_param_decode",
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the

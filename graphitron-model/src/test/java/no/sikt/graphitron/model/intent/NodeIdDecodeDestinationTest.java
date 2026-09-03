@@ -323,12 +323,14 @@ class NodeIdDecodeDestinationTest {
     }
 
     /**
-     * A key column the catalog cannot type stands aside exactly as an untypeable parameter does. A
-     * pinned key column resolves without a table having to have it, so the type is missing on the
-     * column's side here, and the decode is still carried out on the arity.
+     * A pinned key column the table does not have is no destination, where an untypeable parameter
+     * stands aside and leaves one. The two used to agree: a pin resolved whether or not the table
+     * had the column, so the only thing missing was the type and the decode went ahead on the arity.
+     * A pin the catalog cannot answer now resolves to no key column at all, so there is no arity to
+     * carry it and nothing to emit against a column that is not there.
      */
     @Test
-    void aKeyColumnTheCatalogCannotTypeStandsAside() {
+    void aKeyColumnTheCatalogCannotTypeIsNoDestination() {
         withCatalog(dsl -> {
             seedNodeType(dsl, "Film", "film");
             seedNodeKeyColumnRef(dsl, GRAPH, "Film", 0, "not_a_column");
@@ -337,7 +339,8 @@ class NodeIdDecodeDestinationTest {
             seedProducer(dsl, "Query", "films", "ids", "java.lang.Long");
 
             assertThat(destinations(dsl))
-                .containsExactly("Query.films(ids) Film SINGLE_KEY_COLUMN 1");
+                .as("the pin resolved to nothing, so there is no key to decode into")
+                .isEmpty();
         });
     }
 

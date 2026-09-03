@@ -206,12 +206,17 @@ class ArgumentFilterRoleTest {
 
     /**
      * A composite key without {@code @lookupKey} is unwired for a filter and rejected, so the site
-     * resolves to nothing. Arity is the whole of the difference from the first implicit case.
+     * resolves to nothing. Arity is the whole of the difference from the first implicit case, which
+     * is why both pinned columns are columns the table has: a pin the catalog cannot answer resolves
+     * to no key at all rather than to a key of two, and the case would be testing arity zero under a
+     * name that says two.
      */
     @Test
     void aCompositeKeyImplicitReadingWithoutALookupKeyResolvesToNothing() {
         withCatalog(dsl -> {
             filmsField(dsl);
+            seedColumn(dsl, PKG, PUBLIC, "film", "film_id", 2, "FILM_ID");
+            seedColumn(dsl, PKG, PUBLIC, "film", "language_id", 3, "LANGUAGE_ID");
             seedNode(dsl, GRAPH, "Film");
             seedNodeKeyColumnRef(dsl, GRAPH, "Film", 0, "film_id");
             seedNodeKeyColumnRef(dsl, GRAPH, "Film", 1, "language_id");
