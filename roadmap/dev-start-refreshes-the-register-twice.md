@@ -5,7 +5,7 @@ status: Spec
 bucket: dx
 priority: 2
 theme: tooling
-depends-on: [capture-without-the-materialization-refresh, warm-capture-empties-unpartitioned-catalog-relations]
+depends-on: [warm-capture-empties-unpartitioned-catalog-relations]
 created: 2026-08-27
 last-updated: 2026-08-28
 ---
@@ -627,13 +627,14 @@ item builds on and what it owes it.
 > the end of this file cite R864 by id where they were written; those are dated records and are left
 > as they stand.
 
-`depends-on` names R865 and R872, and in both cases the reason is a correctness interaction rather
-than a merge conflict. R855's shape is in the tree and nothing is owed there any more; what is owed
-is to the item that changes who owns the store, and to the one that makes the premise true.
+**R865 is Done, and that dependency is discharged.** It shipped the module move, the capture port
+and the store-ownership inversion, so `depends-on` now names R872 alone. The reason for naming
+either was a correctness interaction rather than a merge conflict, and R855's shape was already in
+the tree; what is still owed is to the item that makes the premise true.
 
-**R872 is the hard one of the two.** R865 is an ordering preference: this item is sound either way
-round and only the reconciliation work moves. R872 is different, because the first assertion of the
-gate is red until it lands and the premise it enforces is false until it lands. So this item can be
+**R872 is the hard one, and now the only one.** R865 was an ordering preference: this item is sound
+either way round and only the reconciliation work moves. R872 is different, because the first
+assertion of the gate is red until it lands and the premise it enforces is false until it lands. So this item can be
 specified, and its rule reviewed, ahead of R872; it cannot be marked Done ahead of it. The premise
 section carries the argument for taking it as a dependency instead of as a fourth accepted loss.
 
