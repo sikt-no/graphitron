@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Execution-tier coverage for {@code @service}-backed single-record DML carrier data
- * fields. Exercises the {@code Wrap.TableRecord(target.recordClass())} arm of
+ * fields. Exercises the {@code Wrap.TableRecord(CatalogRefs.recordClass(tableRef))} arm of
  * {@code FetcherEmitter.buildSingleRecordTableFetcherValue} end-to-end: the
  * {@code FilmCarrierService} producer hand-runs a SELECT to return
  * {@code List<FilmRecord>} (MANY) or {@code FilmRecord} (ONE), graphql-java traverses

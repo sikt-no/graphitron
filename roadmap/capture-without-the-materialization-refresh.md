@@ -1,7 +1,7 @@
 ---
 id: R865
 title: "The generator owns the fact tier it should merely read"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -1527,3 +1527,56 @@ no boundary in it. A Backlog item, if anyone wants it. Separately, `GathererIsol
 `graphitron-model`'s main sources, so a public gatherer helper named from `graphitron` would not fire
 it; the criterion said "from outside the fact tier". The write-surface guard covers the cases that
 matter today, so this is a note rather than a finding.
+
+*Author's response.* Both findings accepted and fixed; neither needed an argument, and the second
+turned out to be larger than the finding said.
+
+**Finding 1 is now `LentStoreTest`, in `graphitron-model`'s own test tier**, where the finding
+placed it and for the reason it gave: nothing in it needs a generator. Two cases. The first builds
+`CapturePort.over` on a file-backed store, captures two different documents through it, and reads
+the type census off the *lender's* handle rather than the port's, which is the whole claim: the
+second capture reconciles the first on a store the port did not open, and after `close()` the
+lender's store still answers. The second case reaches the demotion arm the way only a lent store
+reaches it, a graph name recorded against another checkout, and pins that the run still captured on
+a private store of its own while the lent store kept the other checkout's rows and its `store_graph`
+row.
+
+The finding's own wording is what made the second case worth writing separately: `forRunOn` reaches
+the refusal by a different route than `forRun` does, and the route is the interesting half, because
+a fallback that wrote through the lent handle anyway would corrupt a partition on a store the lender
+is still reading.
+
+**Three mutations, because a passing test is not evidence it would catch the regression.** The
+finding's point was that the property is lost silently, so each was checked by breaking it: a
+`Borrowed.close()` that closes the lender's store (case one errors), a `Held.first` that opens a
+store of its own instead of using the lent one (both cases fail, on the assertion that names the
+property), and a `forRunOn` refusal that captures through the lent handle rather than a private
+store (case two fails on the untouched-partition assertion). All three go red; the tree is restored.
+
+**The new test costs three store boots, and the module's budget is what said so.** The full build
+refused it: `ThreadConfinedStore.BOOT_BUDGET` caught the module opening 73 stores against a budget
+of 72. Its message offers two ways out, and only the second applies. The funnel hands a body a
+`DSLContext`, so a case whose subject is a store *handle*, one lent to something that captures into
+it, or one home reopened to meet its own rows, cannot ask the funnel for what it needs; and the two
+opens of one home are not slack either, because the ownership check reads only a warm store. So the
+budget rises to 75 with the recount stated on it, which is what raising it deliberately means, and
+the same headroom is left behind as before.
+
+**Finding 2 was five prose citations, not two.** The two it named are fixed: the multi-schema
+fixture comment in `graphitron-sakila-example/pom.xml` restates what the compile-tier signal now is
+(the refs carry the class name the catalog reader read off live jOOQ reflection, and the emitters
+spell it through the one lift in `render.CatalogRefs`, so a name composed out of the bare
+`jooqPackage` instead is what fails the compile), and `ProducerBindingDmlEmittedTest`'s javadoc now
+says `recordClassName` is a spelling matched against a loaded class's own name, which is what its
+constructor call already passes.
+
+A sweep of the whole tree for the retired accessors found three more of exactly the same shape,
+each describing a seam as the javapoet accessor it no longer is, and each invisible to the
+finding's grep because the receiver is spelled indirectly rather than as a `TableRef`:
+`FilmService`'s fixture javadoc and the example schema's `languageByService` comment both said
+`tb.table().recordClass()`, and `SingleRecordTableFieldServiceProducerExecutionTest`'s javadoc said
+`Wrap.TableRecord(target.recordClass())`. All three now name the lift, which is what
+`FieldBuilder` actually calls. Two neighbouring hits were checked and left: `ColumnComparison`'s
+`{@code columnType()}` is `CatalogRefs#columnType`, linked live two lines above it, and
+`SharedDomainTypeProducerPipelineTest` reads `DomainReturnType.TableRecord.recordClass()`, which is
+a live `ClassName` component above the line.

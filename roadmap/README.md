@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R914` | The fact store cache grows without bound, and a large store stalls every build that opens it | Spec | 2026-09-03 | [plan](fact-store-file-grows-without-bound.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R865` | The generator owns the fact tier it should merely read | In Progress | 2026-09-03 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
+| `R865` | The generator owns the fact tier it should merely read | In Review | 2026-09-03 <sub>created 2026-08-27</sub> | [plan](capture-without-the-materialization-refresh.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [capture-without-the-materialization-refresh](capture-without-the-materialization-refresh.md), [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R916` | The dev session index and refresh loop re-reads only what changed | Spec | 2026-09-03 | [plan](dev-session-index-refresh-loop.md) |
@@ -620,7 +620,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R899` [**A registration's alternative is counted from the schema, so the last lever stops being the first one reached for**](read-budget-with-nothing-materialized.md) — Spec, architecture
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
-- `R865` [**The generator owns the fact tier it should merely read**](capture-without-the-materialization-refresh.md) — In Progress, architecture
+- `R865` [**The generator owns the fact tier it should merely read**](capture-without-the-materialization-refresh.md) — In Review, architecture
 - `R877` [**The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation**](graphitron-model-house-cleaning.md) — In Progress, cleanup
 - `R915` [**A producing field's result is a field-grain fact; it is unioned into a type-grain binding instead**](producer-result-is-a-field-grain-fact.md) — Backlog, architecture
 - `R861` [**Does the carrier producer still want a registration once the duplicated condition is gone**](producer-registration-after-duplication-removal.md) — Backlog, model

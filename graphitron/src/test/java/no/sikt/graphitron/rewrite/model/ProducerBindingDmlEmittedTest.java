@@ -24,15 +24,18 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * invariant carried re-emerges through the existing fold without a dedicated check key.
  *
  * <p>The tests use {@link String} as a stand-in for a jOOQ record class so the test can
- * construct a {@link TableRef} whose {@code recordClass().reflectionName()} matches a real,
- * loaded {@link Class}. The downstream invariant the spec pins is on the FQN match itself, not
- * on the producer being a real jOOQ {@code TableRecord} subtype; using a JDK class here keeps
- * the invariant testable without dragging the generated jOOQ catalog into the unit tier.
+ * construct a {@link TableRef} whose {@code recordClassName} is the spelling of a real, loaded
+ * {@link Class}. The ref carries that spelling rather than a modelled Java type, so what the
+ * constructor enforces is a name against a loaded class's own name, which is what the
+ * constructor call below passes. The downstream invariant the spec pins is on the FQN match
+ * itself, not on the producer being a real jOOQ {@code TableRecord} subtype; using a JDK class
+ * here keeps the invariant testable without dragging the generated jOOQ catalog into the unit
+ * tier.
  */
 @UnitTier
 class ProducerBindingDmlEmittedTest {
 
-    /** Stand-in TableRef whose recordClass FQN matches {@link String}'s. */
+    /** Stand-in TableRef whose recordClassName is {@link String}'s own FQN. */
     private static final TableRef STRING_TABLE = new TableRef(
         "string_table", "STRING_TABLE",
         "java.lang.Object",

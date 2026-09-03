@@ -2248,8 +2248,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     })
     # R177 fixture: child @service with a @table-bound (Language) return. The service method
     # returns Map<Record1<Integer>, LanguageRecord>, which post-R177 matches the rows-method's
-    # narrowed V = tb.table().recordClass() = LanguageRecord. Pre-R177 the validator expected
-    # raw Map<Record1<Integer>, Record> and would have rejected this method as Unclassified;
+    # narrowed V = the record class lifted from the bound table = LanguageRecord. Pre-R177 the
+    # validator expected raw Map<Record1<Integer>, Record> and would have rejected this method
+    # as Unclassified;
     # `mvn compile -pl :graphitron-sakila-example` becomes the compile-tier guarantee against
     # future re-widening of the emit site.
     languageByService: Language @service(service: {

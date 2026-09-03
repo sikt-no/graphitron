@@ -93,9 +93,9 @@ public final class FilmService {
 
     /**
      * Fixture: child {@code @service} with a {@code ReturnTypeRef.TableBoundReturnType}
-     * return ({@code Language}). The rows-method's {@code V} is
-     * {@code tb.table().recordClass()} (here {@link LanguageRecord}), so the structurally-
-     * required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Were {@code V}
+     * return ({@code Language}). The rows-method's {@code V} is the record class the
+     * emitter lifts from the bound table's captured name (here {@link LanguageRecord}), so
+     * the structurally-required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Were {@code V}
      * raw {@code org.jooq.Record}, this signature would be rejected by the
      * validator's strict {@code TypeName.equals}; the fixture compiles (and classifies)
      * only when {@code V} is the specific record class, making

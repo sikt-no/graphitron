@@ -383,11 +383,15 @@
                         in graphitron-sakila-db (the multischema_a / multischema_b two-schema
                         codegen R78 set up) and writes generated emission to its own disjoint
                         subpackage. Compiling against this catalog is the compile-tier signal
-                        that emitters wire schema-segmented FQNs correctly through the typed
-                        TableRef.tableClass() / ForeignKeyRef.keysClass() seams: any regression
-                        that re-derives a ClassName from the bare jooqPackage produces source
-                        that does not exist (root.Keys / root.tables.Widget never resolve under
-                        multi-schema codegen) and the maven-compiler-plugin fails the build.
+                        that emitters wire schema-segmented FQNs correctly. The refs carry the
+                        class name the catalog reader read off live jOOQ reflection
+                        (TableRef.tableClassName, ForeignKeyRef.keysClassName), and the emitters
+                        spell it through the one lift in render.CatalogRefs, so the schema
+                        segment survives only as long as both halves keep going through the
+                        recorded name: any regression that composes a class name out of the bare
+                        jooqPackage instead produces source that does not exist (root.Keys /
+                        root.tables.Widget never resolve under multi-schema codegen) and the
+                        maven-compiler-plugin fails the build.
                     -->
                     <!--
                         Multi-tenant fixture: the same sakila catalog compiled with
