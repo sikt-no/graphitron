@@ -1,13 +1,13 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
 depends-on: []
 created: 2026-09-03
-last-updated: 2026-09-03
+last-updated: 2026-09-04
 ---
 # The fact store cache grows without bound, and a large store stalls every build that opens it
 
@@ -96,6 +96,35 @@ reason the next section gives. A guard for the file that grew before the fix is 
    MCP readers, and `PersistentStoreTest`'s holder and writer pairs.
 2. **Make the cost visible.** Log time spent in the store per run and the file's size, so a developer
    reading a slow build sees the store named rather than inferring it from a thread dump.
+
+## Delivered
+
+Both steps shipped at a870bdf3f.
+
+Step 1 is `GraphitronModelStore.OPEN_HANDLES`, a per-file count of live stores beside
+`SWEPT_HOMES`, with `SHUTDOWN COMPACT` issued by whichever handle takes it to zero. Three details
+the plan left open, each decided the way it is because the alternative is a database closed under a
+live holder: the slot is reserved before the connection is opened rather than when the store is
+constructed, since the gap between the two is where a concurrent close would find no holders; the
+compaction runs inside `Map.compute` so the key's lock keeps "nobody else holds this file" true
+while the shutdown runs; and the key is the absolute normalised path, `openAt` being public and two
+spellings of one directory being two counts of one file. `close()` is idempotent, a second release
+having no slot to give back.
+
+Step 2 is the `Compaction` record, carrying the elapsed milliseconds and the file's size on either
+side, reported rather than logged in keeping with the package, and said by `RunStore.close()` where
+the sweep's report is already said.
+
+The Verification section's curve, run over eight real captures into one file store with a
+same-fixture control: without compaction the file oscillates and trends up, 2.8 MB after the first
+run to 4.2 MB by the eighth; with it, 0.64 MB and flat from the second run onward. The control's
+first attempt was invalid, having failed `-Werror` on an unused statement and silently run against
+the previously installed artifact, so the figures above are from the rebuilt control. Full
+`mvn install` green across all fourteen modules.
+
+Two tests pin the behaviour: the last handle compacts and an earlier one does not, and closing
+twice releases one handle. The pre-existing `aSecondOpenerLeavesTheStoreIntact` is the regression
+guard for the risk step 1 carries.
 
 ## Why this is the whole fix
 
