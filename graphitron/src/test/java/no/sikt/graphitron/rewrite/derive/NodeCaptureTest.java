@@ -12,13 +12,13 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODEHOOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * That the gatherer writes {@code graphitron_nodehood} at all, over SDL an author could have
- * written. Its rules are pinned row by row in {@code NodeHoodTest} against a seeded store; what
+ * That the gatherer writes {@code graphitron_node} at all, over SDL an author could have
+ * written. Its rules are pinned row by row in {@code NodesTest} against a seeded store; what
  * that test cannot reach is the wiring, because it calls the producer itself. A stage ordered
  * before the {@code @node} decode has flushed writes an empty relation and breaks nothing that
  * runs today, no reader having moved onto it yet, so the ordering needs a witness of its own
@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * are asserted, so a fixture that stopped producing the shape fails rather than passes.
  */
 @PipelineTier
-class NodeHoodCaptureTest {
+class NodeCaptureTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
 
@@ -67,9 +67,9 @@ class NodeHoodCaptureTest {
     }
 
     private static List<String> nodes(DSLContext dsl) {
-        return dsl.select(GRAPHITRON_NODEHOOD.TYPE_NAME).from(GRAPHITRON_NODEHOOD)
-            .where(GRAPHITRON_NODEHOOD.GRAPH_NAME.eq(GRAPH))
-            .fetch(GRAPHITRON_NODEHOOD.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE.TYPE_NAME).from(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(GRAPH))
+            .fetch(GRAPHITRON_NODE.TYPE_NAME);
     }
 
     private static List<String> membership(DSLContext dsl) {

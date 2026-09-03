@@ -3,8 +3,8 @@ package no.sikt.graphitron.model.derive;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODEHOOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_METADATA_DEFECT;
@@ -19,15 +19,16 @@ import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The capture-cadence writer of {@code graphitron_nodehood}: which of a graph's types are nodes,
+ * The capture-cadence writer of {@code graphitron_node}: which of a graph's types are nodes,
  * from every source that can make one, and the wire type id each answers to.
  *
  * <p>Two sources and one precondition. A type is a node because it carries {@code @node}, or
  * because it implements the Relay {@code Node} interface over a table whose generated class
  * publishes the node metadata and carries no defect in it. Either way it must be table bound
  * first: {@code @node} only takes effect on a type that also carries {@code @table}, so both arms
- * read {@code graphitron_tabletype} and a {@code @node} on an unbound type is in the decode and not
- * here. Which types those are is the anti-join between the two, and that is where an author is told.
+ * read {@code graphitron_tabletype} and a {@code @node} on an unbound type stays in
+ * {@code graphitron_node_entry} and does not reach here. Which types those are is the anti-join between
+ * the two, and that is where an author is told.
  *
  * <p>The type id is resolved rather than carried as written, in three tiers tried in order: what the
  * author declared, what the backing class publishes, and the type's own name. The last always
@@ -36,24 +37,25 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>The id and the key columns are independent axes and are resolved separately for that reason.
  * An author may declare the id and leave the columns to the catalog, or the reverse, so a single
- * declared-versus-inferred flag over the node would be wrong and neither relation carries one.
+ * declared-versus-inferred flag over the node would be wrong and neither relation carries one. The
+ * columns are {@link NodeKeyColumns}, which runs after this and keys into what it writes.
  *
  * <p>Runs as a stage of the graphitron gatherer, after the table binding it depends on: the catalog
  * crawler is a declared dependency and has flushed, the {@code @node} decode is the gatherer's own,
  * and the binding is the stage before. Stated here rather than inside the gatherer so the seeding
  * harness makes the same call.
  */
-public final class NodeHood {
+public final class Nodes {
 
-    private NodeHood() {}
+    private Nodes() {}
 
     /** Clears and re-derives the graph's nodes; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
-        dsl.deleteFrom(GRAPHITRON_NODEHOOD)
-            .where(GRAPHITRON_NODEHOOD.GRAPH_NAME.eq(graphName)).execute();
+        dsl.deleteFrom(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(graphName)).execute();
 
         var tt = GRAPHITRON_TABLETYPE;
-        var n = GRAPHITRON_NODE;
+        var n = GRAPHITRON_NODE_ENTRY;
         var m = SQL_NODE_METADATA;
         var d = INTENT_NODE_METADATA_DEFECT;
         var i = GRAPHQL_POLY_MEMBER;
@@ -104,9 +106,9 @@ public final class NodeHood {
             .from(arms)
             .asTable("ranked");
 
-        dsl.insertInto(GRAPHITRON_NODEHOOD)
-            .columns(GRAPHITRON_NODEHOOD.GRAPH_NAME, GRAPHITRON_NODEHOOD.TYPE_NAME,
-                GRAPHITRON_NODEHOOD.TYPE_ID, GRAPHITRON_NODEHOOD.TYPE_ID_ORIGIN)
+        dsl.insertInto(GRAPHITRON_NODE)
+            .columns(GRAPHITRON_NODE.GRAPH_NAME, GRAPHITRON_NODE.TYPE_NAME,
+                GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE.TYPE_ID_ORIGIN)
             .select(dsl
                 .select(ranked.field(g), ranked.field(t), ranked.field(n.TYPE_ID),
                     ranked.field("origin", String.class))

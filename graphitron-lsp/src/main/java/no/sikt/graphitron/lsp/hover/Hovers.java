@@ -36,7 +36,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
@@ -211,13 +211,13 @@ public final class Hovers {
         // that named none, whose key-column side is absent rather than empty: the type-name and
         // catalog-primary-key fallbacks are derivations, and a hover reports what was written.
         var rows = store.dsl()
-            .select(GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
-            .from(GRAPHITRON_NODE)
+            .select(GRAPHITRON_NODE_ENTRY.TYPE_ID, GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
+            .from(GRAPHITRON_NODE_ENTRY)
             .leftJoin(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
-            .on(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME))
-            .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
-            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_NODE.TYPE_NAME.eq(typeName))
+            .on(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE_ENTRY.GRAPH_NAME))
+            .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE_ENTRY.TYPE_NAME))
+            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.eq(typeName))
             .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION)
             .fetch();
         if (rows.isEmpty()) return Optional.empty();

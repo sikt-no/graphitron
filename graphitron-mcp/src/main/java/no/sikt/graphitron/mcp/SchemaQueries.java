@@ -18,7 +18,7 @@ import java.util.stream.Stream;
 
 import static java.util.Comparator.comparing;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -615,9 +615,9 @@ final class SchemaQueries {
     /** The type's {@code @node} identity, with its key columns in the order the author wrote them. */
     private static Field<Optional<Node>> node() {
         return multiset(
-            select(GRAPHITRON_NODE.TYPE_ID, nodeKeyColumns())
-                .from(GRAPHITRON_NODE)
-                .where(ofType(GRAPHITRON_NODE.GRAPH_NAME, GRAPHITRON_NODE.TYPE_NAME)))
+            select(GRAPHITRON_NODE_ENTRY.TYPE_ID, nodeKeyColumns())
+                .from(GRAPHITRON_NODE_ENTRY)
+                .where(ofType(GRAPHITRON_NODE_ENTRY.GRAPH_NAME, GRAPHITRON_NODE_ENTRY.TYPE_NAME)))
             .convertFrom(r -> r.map(Records.mapping(Node::new)).stream().findFirst());
     }
 
@@ -626,8 +626,8 @@ final class SchemaQueries {
         return multiset(
             select(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
                 .from(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
-                .where(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME)
-                    .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME)))
+                .where(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE_ENTRY.GRAPH_NAME)
+                    .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE_ENTRY.TYPE_NAME)))
                 .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION.asc()))
             .convertFrom(r -> r.map(Record1::value1));
     }

@@ -27,7 +27,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -703,11 +703,11 @@ final class DiagnosticFacts {
                     .convertFrom(rows -> rows.map(Record1::value1)),
                 censusHolds(selectOne().from(JVM_CLASS).where(store.reads(JVM_CLASS.SOURCE_NAME))),
                 parameterArm(store, questions.methods),
-                multiset(selectDistinct(GRAPHITRON_NODE.TYPE_NAME)
-                    .from(GRAPHITRON_NODE)
-                    .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))
-                    .and(GRAPHITRON_NODE.TYPE_NAME.in(questions.nodeTypeNames))
-                    .orderBy(GRAPHITRON_NODE.TYPE_NAME))
+                multiset(selectDistinct(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
+                    .from(GRAPHITRON_NODE_ENTRY)
+                    .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
+                    .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.in(questions.nodeTypeNames))
+                    .orderBy(GRAPHITRON_NODE_ENTRY.TYPE_NAME))
                     .convertFrom(rows -> rows.map(Record1::value1)),
                 overrideArm(store, questions.memberSites),
                 parentArm(store, questions.memberTypeNames),

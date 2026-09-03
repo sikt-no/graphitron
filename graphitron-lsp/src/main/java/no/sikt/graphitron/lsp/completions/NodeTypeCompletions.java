@@ -9,13 +9,13 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 
 /**
  * Catalog GraphQL-type-name completions for any coordinate the
  * {@link LspVocabulary} overlay declares as a
  * {@link Behavior.NodeTypeBinding}: every GraphQL type in this graph whose SDL
- * carries {@code @node}, which is one row of {@code graphitron_node} each.
+ * carries {@code @node}, which is one row of {@code graphitron_node_entry} each.
  *
  * <p>Graph-keyed all the way down, so the scope is the relation's own
  * {@code graph_name} rather than a membership join: a {@code @node} declaration
@@ -36,10 +36,10 @@ public final class NodeTypeCompletions {
             return List.of();
         }
         var rows = store.dsl()
-            .select(GRAPHITRON_NODE.TYPE_NAME, GRAPHITRON_NODE.TYPE_ID)
-            .from(GRAPHITRON_NODE)
-            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(GRAPHITRON_NODE.TYPE_NAME)
+            .select(GRAPHITRON_NODE_ENTRY.TYPE_NAME, GRAPHITRON_NODE_ENTRY.TYPE_ID)
+            .from(GRAPHITRON_NODE_ENTRY)
+            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());
         for (var row : rows) {

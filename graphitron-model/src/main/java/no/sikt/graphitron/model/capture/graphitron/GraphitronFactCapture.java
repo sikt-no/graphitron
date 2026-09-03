@@ -15,7 +15,7 @@ import graphql.language.Value;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
-import no.sikt.graphitron.model.derive.NodeHood;
+import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
@@ -76,7 +76,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
@@ -185,7 +185,7 @@ public final class GraphitronFactCapture {
         // navigation rule is stated over the population expansion completes.
         sink.flush();
         TableTypes.derive(dsl, graphName);
-        NodeHood.derive(dsl, graphName);
+        Nodes.derive(dsl, graphName);
         NodeKeyColumns.derive(dsl, graphName);
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
@@ -501,8 +501,8 @@ public final class GraphitronFactCapture {
                 }
             }
             case "node" -> {
-                if (!sink.claim(GRAPHITRON_NODE, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_NODE);
+                if (!sink.claim(GRAPHITRON_NODE_ENTRY, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_NODE_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);

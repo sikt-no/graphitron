@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODEHOOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * What {@link NodeHood} writes into {@code graphitron_nodehood}: which of a graph's types are nodes
+ * What {@link Nodes} writes into {@code graphitron_node}: which of a graph's types are nodes
  * and the wire type id each answers to. The relation states what resolved, so both halves are
  * pinned here, the population and the id, and they are pinned separately because they come from
  * different rules over different populations.
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p>The id is a three-tier pick and each tier gets a case that removes the tier above it, since a
  * precedence only holds if the loser was present to lose.
  */
-class NodeHoodTest {
+class NodesTest {
 
     private static final String GRAPH = "g";
     private static final String PKG = "no.example.jooq";
@@ -192,11 +192,11 @@ class NodeHoodTest {
 
     private static List<String> nodes(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_NODEHOOD.TYPE_NAME)
-            .from(GRAPHITRON_NODEHOOD)
-            .where(GRAPHITRON_NODEHOOD.GRAPH_NAME.eq(GRAPH))
-            .orderBy(GRAPHITRON_NODEHOOD.TYPE_NAME)
-            .fetch(GRAPHITRON_NODEHOOD.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE.TYPE_NAME)
+            .from(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_NODE.TYPE_NAME)
+            .fetch(GRAPHITRON_NODE.TYPE_NAME);
     }
 
     private static List<String> membership(DSLContext dsl) {
@@ -211,10 +211,10 @@ class NodeHoodTest {
     /** The id and the tier that answered, as a pair, since neither is worth asserting alone. */
     private static List<Tuple> ids(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(GRAPHITRON_NODEHOOD.TYPE_ID, GRAPHITRON_NODEHOOD.TYPE_ID_ORIGIN)
-            .from(GRAPHITRON_NODEHOOD)
-            .where(GRAPHITRON_NODEHOOD.GRAPH_NAME.eq(GRAPH))
-            .orderBy(GRAPHITRON_NODEHOOD.TYPE_NAME)
+        return dsl.select(GRAPHITRON_NODE.TYPE_ID, GRAPHITRON_NODE.TYPE_ID_ORIGIN)
+            .from(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_NODE.TYPE_NAME)
             .fetch(r -> tuple(r.value1(), r.value2()));
     }
 }

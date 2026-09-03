@@ -6,7 +6,7 @@ import org.jooq.Field;
 import no.sikt.graphitron.model.tables.GraphitronTabletype;
 import no.sikt.graphitron.model.tables.SqlColumn;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODEHOOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -47,7 +47,7 @@ import static org.jooq.impl.DSL.val;
  * resolve, against the column's SQL name and against its generated field name alike. The third
  * needs no fold, reading catalog rows on both sides.
  *
- * <p>Runs as a stage of the graphitron gatherer after {@link NodeHood}, whose rows every tier here
+ * <p>Runs as a stage of the graphitron gatherer after {@link Nodes}, whose rows every tier here
  * stands on. Stated here rather than inside the gatherer so the seeding harness makes the same call.
  */
 public final class NodeKeyColumns {
@@ -82,9 +82,9 @@ public final class NodeKeyColumns {
                 .select(e.GRAPH_NAME, e.TYPE_NAME, e.POSITION, c.COLUMN_NAME, val("SDL_PINNED"),
                     b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
                 .from(e)
-                .join(GRAPHITRON_NODEHOOD)
-                .on(GRAPHITRON_NODEHOOD.GRAPH_NAME.eq(e.GRAPH_NAME),
-                    GRAPHITRON_NODEHOOD.TYPE_NAME.eq(e.TYPE_NAME))
+                .join(GRAPHITRON_NODE)
+                .on(GRAPHITRON_NODE.GRAPH_NAME.eq(e.GRAPH_NAME),
+                    GRAPHITRON_NODE.TYPE_NAME.eq(e.TYPE_NAME))
                 .join(b).on(b.GRAPH_NAME.eq(e.GRAPH_NAME), b.TYPE_NAME.eq(e.TYPE_NAME))
                 .join(c).on(c.SOURCE_NAME.eq(b.TABLE_SOURCE_NAME),
                     c.TABLE_SCHEMA.eq(b.TABLE_SCHEMA), c.TABLE_NAME.eq(b.TABLE_NAME))
@@ -106,7 +106,7 @@ public final class NodeKeyColumns {
         var d = INTENT_NODE_METADATA_DEFECT;
         var b = GRAPHITRON_TABLETYPE;
         var c = SQL_COLUMN;
-        var n = GRAPHITRON_NODEHOOD;
+        var n = GRAPHITRON_NODE;
         dsl.insertInto(GRAPHITRON_NODE_KEYCOLUMN)
             .columns(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME, GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME,
                 GRAPHITRON_NODE_KEYCOLUMN.POSITION, GRAPHITRON_NODE_KEYCOLUMN.COLUMN_NAME,
@@ -143,7 +143,7 @@ public final class NodeKeyColumns {
         var pk = SQL_PRIMARY_KEY;
         var cc = SQL_CONSTRAINT_COLUMN;
         var b = GRAPHITRON_TABLETYPE;
-        var n = GRAPHITRON_NODEHOOD;
+        var n = GRAPHITRON_NODE;
         dsl.insertInto(GRAPHITRON_NODE_KEYCOLUMN)
             .columns(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME, GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME,
                 GRAPHITRON_NODE_KEYCOLUMN.POSITION, GRAPHITRON_NODE_KEYCOLUMN.COLUMN_NAME,

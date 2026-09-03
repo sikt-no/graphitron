@@ -40,7 +40,7 @@ graphitron_link_import
 graphitron_method_reference
 graphitron_multitable_reference
 graphitron_mutation
-graphitron_node
+graphitron_node_entry
 graphitron_node_keycolumn_entry
 graphitron_order
 graphitron_order_by

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.NodeHood;
+import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.Materializations;
@@ -42,7 +42,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
@@ -195,7 +195,7 @@ public final class SeededStore {
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
             TableTypes.derive(dsl, graph);
-            NodeHood.derive(dsl, graph);
+            Nodes.derive(dsl, graph);
             NodeKeyColumns.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
         }
@@ -1595,15 +1595,15 @@ public final class SeededStore {
     public static void seedNodeWithTypeId(DSLContext dsl, String graphName, String typeName,
                                           String typeId) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHITRON_NODE)
-            .set(GRAPHITRON_NODE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_NODE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_NODE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_NODE.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_NODE.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_NODE.SOURCE_LINE, 2)
-            .set(GRAPHITRON_NODE.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_NODE.TYPE_ID, typeId)
+        dsl.insertInto(GRAPHITRON_NODE_ENTRY)
+            .set(GRAPHITRON_NODE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_NODE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_NODE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_NODE_ENTRY.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_NODE_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_NODE_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_NODE_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_NODE_ENTRY.TYPE_ID, typeId)
             .execute();
     }
 
