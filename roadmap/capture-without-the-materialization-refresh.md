@@ -1,7 +1,7 @@
 ---
 id: R865
 title: "The generator owns the fact tier it should merely read"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: model-cleanup
