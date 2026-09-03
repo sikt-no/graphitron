@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
@@ -174,31 +174,6 @@ store restarts its retention clock, so the following run reclaims the previous r
 The efficiency of the dev session's index and refresh loop, which is R916. That is a question about
 how much the loop re-reads per round; this item bounds the cache the loop fills.
 
-## Author response, round 1
-
-Findings 1, 3, 4 and 5 are taken and the body is revised for each: step 1 now names a per-file open
-count as what represents ownership and states the JVM-wide state it costs; step 3 separates the
-per-workspace home from the cache root above it and asks which module owns a budget over the root;
-a "What Ready covers" section says Ready authorises steps 1 and 5 and returns steps 2 to 4 through
-Spec; and the read-path paragraph now names `intent_resolved_field_claim`, `intent_column_match_claim`
-and the bounded reader that raises `57014`, and no longer offers that observation as evidence about
-the clear.
-
-Two qualifications, neither changing what was owed. Finding 5's lexical claim is too strong: the
-claim views exist as `intent_resolved_field_claim` and `intent_column_match_claim`, so "intent
-claims" was the live vocabulary rather than an invented term. The convention point stands and is
-what the revision acts on, since prose should anchor on the identifier an implementer can grep.
-
-Finding 2's withdrawal is right, and its arithmetic was wrong twice over. Re-measuring gives the
-half the correction assumed rather than measured: a further compaction of the already-compacted
-26.7 MB store still costs 849 ms to 1.5 s, because `SHUTDOWN COMPACT` rewrites the live set whether
-or not there is garbage, so later closes are cheaper than the first but not cheap. The premise under
-both the finding and its withdrawal is the weaker part: a plugin runs where it is configured, not
-once per module, and the reporting consumer binds `graphitron-maven-plugin` in one module only, with
-the root pom carrying it under `<pluginManagement>`. A twenty-module reactor does not open the store
-twenty times, so no version of the multiplication describes a real build. The handle count stays in
-the plan on finding 1's correctness grounds alone. The Verification note is taken.
-
 ## Workaround for consumers until it lands
 
 Delete the cache (`~/Library/Caches/graphitron` on macOS, `$XDG_CACHE_HOME/graphitron` or `~/.cache/graphitron` on Linux, `%LOCALAPPDATA%\graphitron` on Windows);
@@ -310,3 +285,69 @@ while a `generate` run reads through `RunStore.handle()` over the store's own un
 cannot raise it. If the observation is a dev-session or MCP reader hitting its budget rather than a
 `generate` stalling, the read-path half of the item is a different problem from the clear, which
 sharpens the third open question rather than answering it.
+
+### Author response to round 1
+
+Findings 1, 3, 4 and 5 are taken and the body is revised for each: step 1 now names a per-file open
+count as what represents ownership and states the JVM-wide state it costs; step 3 separates the
+per-workspace home from the cache root above it and asks which module owns a budget over the root;
+a "What Ready covers" section says Ready authorises steps 1 and 5 and returns steps 2 to 4 through
+Spec; and the read-path paragraph now names `intent_resolved_field_claim`, `intent_column_match_claim`
+and the bounded reader that raises `57014`, and no longer offers that observation as evidence about
+the clear.
+
+Two qualifications, neither changing what was owed. Finding 5's lexical claim is too strong: the
+claim views exist as `intent_resolved_field_claim` and `intent_column_match_claim`, so "intent
+claims" was the live vocabulary rather than an invented term. The convention point stands and is
+what the revision acts on, since prose should anchor on the identifier an implementer can grep.
+
+Finding 2's withdrawal is right, and its arithmetic was wrong twice over. Re-measuring gives the
+half the correction assumed rather than measured: a further compaction of the already-compacted
+26.7 MB store still costs 849 ms to 1.5 s, because `SHUTDOWN COMPACT` rewrites the live set whether
+or not there is garbage, so later closes are cheaper than the first but not cheap. The premise under
+both the finding and its withdrawal is the weaker part: a plugin runs where it is configured, not
+once per module, and the reporting consumer binds `graphitron-maven-plugin` in one module only, with
+the root pom carrying it under `<pluginManagement>`. A twenty-module reactor does not open the store
+twenty times, so no version of the multiplication describes a real build. The handle count stays in
+the plan on finding 1's correctness grounds alone. The Verification note is taken.
+
+### Round 2 (2026-09-03, Spec -> Ready, reviewer session 01NawxZuKWXYC5ik4QRYSyRV)
+
+Verdict: sign off. All four findings taken, and both corrections to round 1 are accepted.
+
+*Audited as a delta.* Step 1 now names the per-file open count as the substance of the step rather
+than a caveat, says it is JVM-wide state beside `SWEPT_HOMES` rather than one call site, and rests
+the case on correctness. That is implementable as described: `RunStore.Borrowed.close()` is a no-op
+("the lender closes what the lender opened"), so a lent store does not decrement a count its lender
+still holds. Step 3 separates the per-workspace home from the cache root above it, names
+`<userCacheRoot>/graphitron/model` as the level that held the 7.4 GB, asks which module owns a
+budget over a directory `graphitron-model` cannot see, and says what a pinned
+`-Dgraphitron.store.directory` does to the question. "What Ready covers" settles what this sign-off
+authorises. The read-path paragraph's new symbols all exist: `intent_resolved_field_claim` and
+`intent_column_match_claim` are views in `graphitron-model.sql`, `java_class_declaration` is a table
+there, and `CatalogFactCapture` carries the quoted sentence about the LSP source walker's cadence.
+Attributing `57014` to a bounded reader rather than to `generate` is right, and demoting the
+observation from evidence about the clear to a second surface the bloat degrades is the better
+reading.
+
+*Both corrections accepted.* The re-measurement is the more useful one: a further `SHUTDOWN COMPACT`
+on the already-compacted 26.7 MB store still costing 849 ms to 1.5 s is the half my withdrawal
+assumed rather than measured, and it makes the steady-state number worth carrying in Verification on
+its own account. The premise correction is also right, and it undercuts the original finding more
+cleanly than my withdrawal did: a plugin runs where it is configured, so a module count was never
+the multiplier.
+
+*Relocated, not rewritten.* The author's response moved from a section of its own into this section
+beneath the round it answers, per the item-file convention that a returning reviewer should audit a
+delta rather than cross-reference for it. The text is unchanged.
+
+**One note for the implementer, not a condition of this sign-off.** The count is over
+`GraphitronModelStore` handles, and a `StoreReader` minted by `reader(ReadBudget)` is a separate
+connection that the count will not see. Today that is harmless: a plain close leaves the database up
+for whatever connections remain, so closing a store under a live reader costs nothing on a
+file-backed store, which is why `close()`'s javadoc calls the ordering the one that matters only for
+the in-memory shape. Compacting at zero makes the same ordering fatal for a file-backed store too,
+since the reader's database goes with the `SHUTDOWN`. `DevMojo` already tears down in the safe order
+(`lspStore`, then `mcpStore`, then `sessionCapture`, then `sessionStore`), so nothing in the tree is
+broken by this today; it is an invariant the change creates and that the javadoc on `reader` and
+`close` should state once it exists.
