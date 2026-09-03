@@ -41,8 +41,12 @@ class StoreClientBoundaryTest {
 
     /**
      * The reactor edges this module may declare, by artifact and scope. Compile scope is the store's
-     * generated query surface; test scope is the capture fixture, which drives the real pipeline
-     * against a jOOQ catalog because rows a test asserts on have to come from a real run.
+     * generated query surface; test scope is the generated jOOQ catalog a fixture captures against
+     * and the shared store harness it captures with.
+     *
+     * <p>The generator is on neither list, at neither scope, and that is the point of the map being
+     * exhaustive: what used to keep the edge alive was a handful of tests that needed a real build,
+     * and a test whose subject is the build and this module agreeing lives above both of them.
      *
      * <p>A test-jar edge is keyed separately from the jar of the same artifact, because the two are
      * different claims: one says what this module compiles against, the other says it takes its test
@@ -51,16 +55,26 @@ class StoreClientBoundaryTest {
      */
     private static final Map<String, String> ALLOWED_REACTOR_DEPENDENCIES = Map.of(
         "graphitron-model", "compile",
-        "graphitron", "test",
         "graphitron-sakila-db", "test",
-        "graphitron-model test-jar", "test",
-        "graphitron test-jar", "test");
+        "graphitron-model test-jar", "test");
 
     /** The language server's package: off limits in both trees, the module having no edge to it. */
     private static final String LSP_PACKAGE = "no.sikt.graphitron.lsp.";
 
-    /** The generator's package: off limits in main sources, where the module has no edge to it. */
+    /** The generator's package: off limits in both trees, the module having no edge to it. */
     private static final String GENERATOR_PACKAGE = "no.sikt.graphitron.rewrite.";
+
+    /**
+     * The generated packages that sit under the generator's package name without being the
+     * generator: {@code graphitron-sakila-db} emits the fixture jOOQ models and the fixture services
+     * and conditions there. A capture fixture names them, so the generator scan discounts them
+     * before it looks, rather than the whole scan stopping at main sources on their account.
+     */
+    private static final List<String> GENERATED_FIXTURE_PACKAGES = List.of(
+        "no.sikt.graphitron.rewrite.test.jooq",
+        "no.sikt.graphitron.rewrite.test.services",
+        "no.sikt.graphitron.rewrite.test.conditions",
+        "no.sikt.graphitron.rewrite.multischemafixture");
 
     /**
      * The store's boot class and the JDBC vocabulary a hand-rolled connection needs. The module is
@@ -79,10 +93,10 @@ class StoreClientBoundaryTest {
     private static final String CONNECTION_OWNERSHIP_EXCLUSION = "DevQueryExecutor.java";
 
     /**
-     * The three classification taxonomies, whose permits the module used to switch over. Main
-     * sources are already covered by the generator-package scan, these being generator types on a
-     * dependency main sources no longer have; tests keep {@code graphitron}, so tests are where a
-     * permit switch can still be written.
+     * The three classification taxonomies, whose permits the module used to switch over. The
+     * generator-package scan above already reaches them by their package, so this is the guard
+     * against a same-named type arriving some other way: a copy under this module's own package, or
+     * a re-export from somewhere the package scan does not name.
      */
     private static final List<String> CLASSIFICATION_TAXONOMIES = List.of(
         "FieldClassification", "TypeClassification", "TypeBackingShape");
@@ -119,13 +133,17 @@ class StoreClientBoundaryTest {
     }
 
     @Test
-    void noGeneratorReferenceInMainSources() throws IOException {
-        var findings = scan(mainSources(), List.of(GENERATOR_PACKAGE), path -> false);
+    void noGeneratorReferenceInEitherTree() throws IOException {
+        var findings = new ArrayList<String>();
+        findings.addAll(scanDiscountingFixturePackages(mainSources(), path -> false));
+        findings.addAll(scanDiscountingFixturePackages(testSources(), StoreClientBoundaryTest::isSelf));
 
         assertThat(findings)
             .as("no tool may name a generator type: an answer assembled from a projection handed in "
                 + "cannot be extended without touching the pipeline, which is the cost reading the "
-                + "store buys out. The generator is a test-scope fixture dependency and nothing more.")
+                + "store buys out. Tests are covered too, and that is the half this module used to "
+                + "be missing: a test-scope edge is how the generator was reachable here at all, and "
+                + "the tests that wanted one were about two tiers agreeing, so they live above both.")
             .isEmpty();
     }
 
@@ -135,9 +153,9 @@ class StoreClientBoundaryTest {
 
         assertThat(findings)
             .as("the classification permits are the generator's vocabulary about itself, and around "
-                + "ninety exhaustive arms of it answered questions the store answers directly. The "
-                + "fixture drives the pipeline to produce a capture; it does not read the taxonomy "
-                + "back out, or the taxonomy returns through the tests.")
+                + "ninety exhaustive arms of it answered questions the store answers directly. A "
+                + "fixture captures a real schema; it does not read the taxonomy back out, or the "
+                + "taxonomy returns through the tests under a name of its own.")
             .isEmpty();
     }
 
@@ -185,6 +203,36 @@ class StoreClientBoundaryTest {
                     if (source.contains(needle)) {
                         findings.add(root.relativize(path) + ": " + needle);
                     }
+                }
+            }
+        }
+        assertThat(scanned)
+            .as("the walk under %s reached too few files to be scanning the module at all", root)
+            .isGreaterThanOrEqualTo(root.endsWith("main/java") ? MIN_MAIN_FILES : MIN_TEST_FILES);
+        return findings;
+    }
+
+    /**
+     * The generator-package scan, with the generated fixture packages taken out of each file first.
+     * Blanking them rather than skipping the files that mention them: a fixture naming a generated
+     * jOOQ table and also naming a planner is exactly the finding, and skipping the file would hide
+     * it.
+     */
+    private static List<String> scanDiscountingFixturePackages(
+        Path root, java.util.function.Predicate<Path> excluded
+    ) throws IOException {
+        var findings = new ArrayList<String>();
+        int scanned = 0;
+        try (Stream<Path> paths = Files.walk(root)) {
+            for (Path path : paths.filter(p -> p.toString().endsWith(".java")).toList()) {
+                scanned++;
+                if (excluded.test(path)) continue;
+                String source = Files.readString(path);
+                for (String generated : GENERATED_FIXTURE_PACKAGES) {
+                    source = source.replace(generated, "");
+                }
+                if (source.contains(GENERATOR_PACKAGE)) {
+                    findings.add(root.relativize(path) + ": " + GENERATOR_PACKAGE);
                 }
             }
         }

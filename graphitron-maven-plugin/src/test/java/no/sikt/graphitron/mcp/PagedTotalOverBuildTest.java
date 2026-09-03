@@ -4,6 +4,7 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import no.sikt.graphitron.mcp.fixtures.PagedCensusFirst;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -70,8 +71,9 @@ class PagedTotalOverBuildTest {
     @Test
     void everyPagedToolLeadsWithTheUnpagedTotal(@TempDir Path tmp) throws Exception {
         // The classpath root is the census half of the fixture: the code tool answers from jvm_class,
-        // and a build with no classpath roots captures no classes at all. This module's own compiled
-        // test classes are more than one, which is what the limit=1 call needs.
+        // and a build with no classpath roots captures no classes at all. What the root has to hold
+        // is more than one class the code tool's population admits, or a limit=1 call cannot tell an
+        // unpaged total from a page size; PagedCensusFirst and PagedCensusSecond are those two.
         try (var build = StoreBackedBuild.run(tmp, "paged", PAGED_SDL, List.of(testClassesRoot()));
              var server = server(build);
              var client = connect(server.port())) {
@@ -152,10 +154,13 @@ class PagedTotalOverBuildTest {
         return m.find() ? Optional.of(Integer.parseInt(m.group(1))) : Optional.empty();
     }
 
-    /** This module's compiled test classes, the one classpath entry the census is taken over. */
+    /**
+     * This module's compiled test classes, the one classpath entry the census is taken over, derived
+     * from a fixture that lives on it rather than spelled as a build path.
+     */
     private static Path testClassesRoot() {
         try {
-            return Path.of(PagedTotalOverBuildTest.class.getProtectionDomain()
+            return Path.of(PagedCensusFirst.class.getProtectionDomain()
                 .getCodeSource().getLocation().toURI());
         } catch (java.net.URISyntaxException e) {
             throw new IllegalStateException("test classes root is not a file path", e);
