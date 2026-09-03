@@ -46,9 +46,11 @@ The comment's three readings were right in kind and the count was the wrong carr
 the coordinate remodelling the candidate relation holds every spelling legal at a coordinate, which
 makes the readings a property of the match rather than an arithmetic:
 
-* zero becomes `trailing_name IS NULL`, the whole path bound;
-* one becomes the name itself, `graphitron_argmapping_match.trailing_name`, which a message quotes
-  instead of recomputing from a position;
+* zero becomes `graphitron_argmapping_match.bound_path` equalling the entry's `written_path`, the
+  whole of what was written having bound;
+* one becomes that comparison coming out unequal, and the name a message quotes is
+  `graphitron_argmapping_entry.tail_name`, read from the relation that owns the spelling rather
+  than copied forward through the resolution;
 * two or more stops being a reading at all. Nothing at the coordinate is spelled that way, so there
   is no match row, and the path is refused with every other unresolvable spelling. The
   `TRAILING_SEGMENTS_BEYOND_ONE` verdict went with it, five verdicts remaining.

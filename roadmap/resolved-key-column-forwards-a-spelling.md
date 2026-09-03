@@ -25,13 +25,20 @@ no single base relation owns it. The comparison is correct and this item is not 
 it.
 
 **Dated 2026-09-03, after the argMapping coordinate remodelling.** The fold used to read
-`UPPER(k.column_name) = sg.segment_name_upper`, with the authored side folded properly on
-`graphitron_argument_path_segment.segment_name_upper`. That relation is gone: the authored name is
-`graphitron_argmapping_match.trailing_name` now, carried up from the entry's generated split rather
-than off a stored decomposition, and the comparison is `UPPER(k.column_name) = UPPER(l.trailing_name)`
-with neither side stored folded. That makes the asymmetry this item is about worse rather than
-better, and it does not change what the item asks: a spelling handed across a crossing is still a
-spelling. Re-read the fold before acting on the prose above.
+`UPPER(k.column_name) = sg.segment_name_upper`, with the authored side folded on
+`graphitron_argument_path_segment.segment_name_upper`. That relation is gone and the fold moved with
+the spelling it folds: it is `graphitron_argmapping_entry.tail_name_upper` now, generated beside the
+authored name on the relation that owns it, and the comparison is
+`UPPER(k.column_name) = e.tail_name_upper`. So the asymmetry this item is about survives unchanged,
+one stored operand against one computed one, and this item's subject is untouched: the key-column
+side is still the one with nowhere to fold, because it comes out of a three-tier pick that no base
+relation owns.
+
+An earlier version of this note said the crossing had lost both folds. That was true for a day and
+is the reason the note exists: the resolution relation was carrying the authored name forward, and a
+value passing through a view has nowhere to store a fold. Removing that pass-through is what put the
+fold back, which is worth recording here because it is the same shape this item is asking about from
+the other end.
 
 The question is whether the view is handing out the wrong thing. The schema has a worked example of
 the other shape: `intent_spelled_table` is a union across five-plus arms with no single owning

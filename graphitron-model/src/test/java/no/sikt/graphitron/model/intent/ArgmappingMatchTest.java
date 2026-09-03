@@ -68,7 +68,6 @@ class ArgmappingMatchTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isTrue();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -93,7 +92,6 @@ class ArgmappingMatchTest {
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_ARGUMENT_NAME)).isNull();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF))
                 .isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("inventory_id");
         });
     }
 
@@ -116,7 +114,6 @@ class ArgmappingMatchTest {
                 .isEqualTo("NestedInput");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_FIELD_NAME))
                 .isEqualTo("inventoryId");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("inventory_id");
         });
     }
 
@@ -187,9 +184,11 @@ class ArgmappingMatchTest {
             pair(dsl, "Mutation", "rentFilm", 0, "pInventoryId", "input.inventoryId");
 
             var row = only(dsl);
+            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH))
+                .as("the whole written path bound, so there is nothing past it")
+                .isEqualTo("input.inventoryId");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isNull();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -272,7 +271,6 @@ class ArgmappingMatchTest {
                 .isEqualTo("input");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_KIND)).isEqualTo("ARGUMENT");
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_ID_DECLARED)).isFalse();
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isEqualTo("nope");
         });
     }
 
@@ -316,7 +314,6 @@ class ArgmappingMatchTest {
                 .as("the @nodeId is on what the path bound, so it is declared")
                 .isTrue();
             assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.NODE_TYPE_REF)).isEqualTo("Inventory");
-            assertThat(row.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)).isNull();
         });
     }
 
@@ -336,9 +333,10 @@ class ArgmappingMatchTest {
 
             var all = rows(dsl);
             assertThat(all).hasSize(2);
-            assertThat(all.stream()
-                .map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.TRAILING_NAME)))
-                .containsExactlyInAnyOrder("inventory_id", null);
+            assertThat(all.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.BOUND_PATH)))
+                .as("both applications bind the same candidate, one having written the whole of"
+                    + " its path and one a name past it; which is which is the entry's to say")
+                .containsExactlyInAnyOrder("input.inventoryId", "input.inventoryId");
             assertThat(all.stream().map(r -> r.get(GRAPHITRON_ARGMAPPING_MATCH.USE_SITE)))
                 .containsExactlyInAnyOrder("Mutation.rentFilm#0", "Mutation.rentFilm#1");
         });

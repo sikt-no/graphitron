@@ -39,8 +39,10 @@ its question against, not on which is fewer tables.
 
 The candidate tree is now keyed by the schema coordinate the directive sits on and holds every legal
 spelling at it, so "one more level than the tree has" is no longer a ranked prefix probe. A written
-path either names a candidate or its head does, and the leftover name is one column,
-`graphitron_argmapping_match.trailing_name`. The trailing count is gone and with it the sixth
+path either names a candidate or its head does. Which of those happened is
+`graphitron_argmapping_match.bound_path` against the entry's own `written_path`, equal or not, and
+the leftover name where there is one is `graphitron_argmapping_entry.tail_name`, on the relation
+that owns the author's spelling. The trailing count is gone and with it the sixth
 verdict, `TRAILING_SEGMENTS_BEYOND_ONE`: a path spelling two names past what it opened is a spelling
 nothing at the coordinate has, so it is refused with every other unresolvable spelling rather than
 carrying a count. That leaves this item one job, which is the one it was always about: making

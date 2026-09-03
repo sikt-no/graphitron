@@ -27,11 +27,11 @@ silent pick.
 argMapping coordinate remodelling deleted `graphitron_argument_path_segment`, and with it the
 `segment_name_upper` column that three passages below cite as the properly-folded authored side of
 `intent_resolved_node_key_projection`'s crossing. The narrative about what R668 decided and why is
-accurate as history and is left standing. What has changed for anyone acting on it: the authored
-name reaches that view as `graphitron_argmapping_match.trailing_name`, folded at the crossing rather
-than stored, so the projection now carries two unfolded operands and not one. That strengthens the
-sibling question this item repeatedly defers to rather than changing this item's own subject, which
-is `intent_node_metadata_defect`.
+accurate as history and is left standing. What has changed for anyone acting on it is only where the
+fold lives: the authored name is `graphitron_argmapping_entry.tail_name` and its fold is
+`tail_name_upper` on that same relation, so the crossing still compares one stored operand against
+one computed one exactly as R668 left it. Neither the count of unfolded operands nor the sibling
+question changed, and this item's own subject, `intent_node_metadata_defect`, is untouched.
 
 ## What the tree settles about the open question
 

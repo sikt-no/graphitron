@@ -218,14 +218,25 @@ window functions, its subquery wrapper, its ranking, and the nine-way `CASE` tha
 repeating spelling; what survives is two left joins and a five-site list, those four of the nine
 sites that bind nothing whatever they spell.
 
-The plan-size figure moved the wrong way and is reported rather than explained away: the shipping
-arm goes 2774 to 2794 instantiations and the heaviest read 349 to 355. The match view itself goes 6
-to 8, having traded one segment join for a second candidate join and two coordinate joins that
-recover what the candidate no longer decomposes. What the measure does not count is what was removed
-from the same view, two window partitions over the entry grain, or that
-`intent_argmapping_projection_defect` lost a third of its text and one of its six verdicts. That is
-worth stating as a limit of the measure rather than as a defence: relation instantiations count
-namings, so a rewrite that replaces a ranked probe with two equalities reads as slightly worse.
+Two relations then shed what they were keeping twice. `graphitron_argmapping_entry` had `type_name`,
+`field_name` and `argument_name` beside the coordinate that spells them, and they are gone; a reader
+wanting the parts joins `graphql_coordinate_field`, the decomposition stated once instead of a
+two-arm COALESCE per reader. And `graphitron_argmapping_match` was carrying `written_path` and
+`trailing_name`, neither of which the resolution decided: a match says which candidate bound, the
+author's spelling is the entry's, and every consumer of a match already holds the entry's key.
+Removing that pass-through is what let the case fold return to a stored column, because a value
+travelling through a view has nowhere to keep one; `graphitron_argmapping_entry.tail_name_upper`
+sits beside the name it folds and the schema's per-row `UPPER` count in views is back to eleven.
+
+The plan-size figure moved the wrong way throughout and is reported rather than explained away: the
+shipping arm goes 2774 to 2842 instantiations across the three commits and the heaviest read 349 to
+372. The match view goes 6 to 9, having traded one segment join for a second candidate join and a
+decomposition it no longer keeps beside itself. What the measure does not count is what left the
+same view, two window partitions over the entry grain, or that
+`intent_argmapping_projection_defect` lost a third of its text and one of its six verdicts, or that
+one per-row fold became a stored one. That is worth stating as a limit of the measure rather than as
+a defence: relation instantiations count namings, so a rewrite that replaces a ranked probe with two
+equalities, and a decomposition kept in four places with one relation, both read as worse.
 
 **The gathering architecture.** `FactSink` buffered every gatherer's rows until one flush at the end,
 so no gatherer could read another's facts and everything crossed as hand-threaded Java parameters.
@@ -743,6 +754,12 @@ the nine sites do not sit under. `graphitron_argmapping_candidate.element_name` 
 `type_name` and `field_name` are gone, a reader wanting the coordinate's parts joining the coordinate
 relation. One verdict, `TRAILING_SEGMENTS_BEYOND_ONE`, from a vocabulary of six now five, along with
 `intent_resolved_node_key_projection.trailing_segment_name`, now `trailing_name`.
+
+Three more columns of `graphitron_argmapping_entry` followed, `type_name`, `field_name` and
+`argument_name`, the coordinate beside them saying the same thing; and two of
+`graphitron_argmapping_match`, `written_path` and `trailing_name`, which were the author's spelling
+passing through a resolution that had not decided them. `graphql_coordinate_field` is new and is
+where a reader now decomposes a coordinate.
 
 **Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
 than by the walk. The `Expansions` record and the five `captureXDirective` callbacks `SdlFactCapture`
