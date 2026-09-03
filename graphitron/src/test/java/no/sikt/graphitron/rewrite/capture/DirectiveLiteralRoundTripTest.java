@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.capture;
 
 import graphql.language.AstPrinter;
 import graphql.parser.Parser;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Table;

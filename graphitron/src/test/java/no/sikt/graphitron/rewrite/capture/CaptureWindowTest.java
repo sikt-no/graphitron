@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;

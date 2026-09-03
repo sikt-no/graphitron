@@ -4,7 +4,7 @@ import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.RunawayRelation;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.capture.FactCapture;

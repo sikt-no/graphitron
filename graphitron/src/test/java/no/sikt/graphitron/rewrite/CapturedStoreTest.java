@@ -19,6 +19,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * The capture-level harness itself, over the arms whose whole point is a shape no single-fixture

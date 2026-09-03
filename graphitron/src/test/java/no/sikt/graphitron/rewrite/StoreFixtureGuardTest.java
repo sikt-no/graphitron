@@ -13,6 +13,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.test.FactWriters;
+import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * Structural guard: a test does not stand a fact store up for itself. It takes one from the
@@ -76,8 +77,11 @@ class StoreFixtureGuardTest {
         new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/ThreadConfinedStore.java",
             "one store per test thread to the seeded cases above it, cleared rather than rebooted "
                 + "between bodies, and never handed out as a lifetime the caller owns"),
-        new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/CapturedStore.java",
+        new Home("graphitron-model/src/test/java/no/sikt/graphitron/model/test/CapturedStore.java",
             "a real capture walk over a fixture document, for tests about the crawlers"),
+        new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/PipelineCapturedStore.java",
+            "the same walk behind the generator's attribution pipeline, for the two tests that "
+                + "compare what capture wrote against what the rewrite put in front of it"),
         new Home("graphitron/src/test/java/no/sikt/graphitron/rewrite/BuiltStore.java",
             "a real generator run into a store on disk, for tests about the dev loop's wiring"));
 

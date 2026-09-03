@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.classifieddsl;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.config.RunContext;

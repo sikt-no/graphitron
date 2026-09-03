@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.facts.GatheredFacts;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.capture.FactCapture;

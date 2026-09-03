@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;

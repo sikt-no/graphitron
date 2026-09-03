@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
@@ -17,7 +17,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
-import static no.sikt.graphitron.rewrite.CapturedStore.withCapturedStore;
+import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;

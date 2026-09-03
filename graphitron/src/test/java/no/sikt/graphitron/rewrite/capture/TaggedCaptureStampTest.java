@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.capture;
 
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +13,7 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.rewrite.PipelineCapturedStore;
 
 /**
  * Capture's stamp lookup has two legitimate misses, and this is the one the suite would otherwise
@@ -34,7 +35,7 @@ class TaggedCaptureStampTest {
     @DisplayName("a tagged capture completes, and stamps the tagged file rather than the sentinel")
     void aTaggedCaptureAbsorbsTheSynthesisedLinkSentinel(@TempDir Path tmp) {
         assertThatCode(() -> {
-            try (var store = CapturedStore.ofPipeline(tmp, SDL, "catalog")) {
+            try (var store = PipelineCapturedStore.of(tmp, SDL, "catalog")) {
                 var registry = store.registry();
                 assertThat(registry.getSchemaExtensionDefinitions())
                     .as("the tag put the synthesiser's @link extension in the registry capture walks, "

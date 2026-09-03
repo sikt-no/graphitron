@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;

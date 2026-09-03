@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;

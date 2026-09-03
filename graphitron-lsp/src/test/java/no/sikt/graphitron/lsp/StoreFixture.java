@@ -8,7 +8,7 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.BuiltStore;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;

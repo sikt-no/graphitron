@@ -12,7 +12,7 @@ import graphql.language.StringValue;
 import graphql.language.TypeDefinition;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.model.classpath.CompletionData;
@@ -119,6 +119,7 @@ import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.capture.config.StoredRecipe;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.rewrite.PipelineCapturedStore;
 
 /**
  * The shadow period's honesty check: the store is filled beside the live pipeline and nobody reads
@@ -859,7 +860,7 @@ class FactCaptureAgreementTest {
     @Test
     @DisplayName("derived federation keys agree with the registry rewrite's, off one pipeline run")
     void federationKeySynthesisAgreesWithTheRewrite(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofPipeline(tmp, FEDERATED_FIXTURE)) {
+        try (var store = PipelineCapturedStore.of(tmp, FEDERATED_FIXTURE)) {
             var composed = new LinkedHashSet<String>();
             store.dsl()
                 .select(INTENT_FEDERATION_KEY.TYPE_NAME, INTENT_FEDERATION_KEY.FIELDS_SDL)

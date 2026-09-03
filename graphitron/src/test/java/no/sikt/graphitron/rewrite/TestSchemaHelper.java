@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * Shared test helper that builds a {@link GraphitronSchema} from inline SDL,

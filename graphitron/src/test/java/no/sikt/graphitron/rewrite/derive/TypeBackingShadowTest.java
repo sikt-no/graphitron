@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.rewrite.CapturedStore;
+import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;

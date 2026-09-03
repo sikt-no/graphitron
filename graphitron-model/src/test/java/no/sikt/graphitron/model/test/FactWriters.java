@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
 import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
 import no.sikt.graphitron.model.diagnostics.RejectionFacts;
+import no.sikt.graphitron.model.test.CapturedStore;
 import org.jooq.DSLContext;
 
 import java.nio.file.Path;

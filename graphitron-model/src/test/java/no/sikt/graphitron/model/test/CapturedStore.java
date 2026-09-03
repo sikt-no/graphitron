@@ -1,11 +1,9 @@
-package no.sikt.graphitron.rewrite;
+package no.sikt.graphitron.model.test;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
-import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -24,10 +22,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Consumer;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.model.config.RunContext;
 
 /**
  * A booted fact store with one or more SDL fixtures captured into it: the capture-level population,
@@ -35,12 +31,15 @@ import no.sikt.graphitron.model.config.RunContext;
  *
  * <p><b>Which harness is this.</b> Rows arrive here only through {@link FactCapture}, so a fixture
  * cannot encode a state capture never produces. That is the property to want when the subject is
- * this module's own code, the crawlers and the writers, or agreement between a store-native relation
- * and the transitional walk. When the subject is instead what a relation <em>returns given rows</em>,
- * a view's joins or a check constraint's boundary, the store's own module owns that question and
- * {@link no.sikt.graphitron.model.test.SeededStore} states the inputs as rows without a pipeline in
- * the way. Seeding above the model line skips the step these modules exist to perform, so a fixture
+ * capture itself, the crawlers and the writers, or agreement between a store-native relation and a
+ * reader above. When the subject is instead what a relation <em>returns given rows</em>, a view's
+ * joins or a check constraint's boundary, {@link SeededStore} beside this one states the inputs as
+ * rows with no pipeline in the way. Seeding skips the step capture exists to perform, so a fixture
  * here that hand-inserts rows owes a reason at the call site.
+ *
+ * <p>Lives here rather than in the generator's tests because every arm on it is a capture, and
+ * capture is this module's. The one arm that was not, a capture behind the generator's own
+ * attribution pipeline, stayed above the line with the two tests that read it.
  *
  * <p><b>Layered.</b> {@link #withCapturedStore} is the closure form and the shortest thing to type;
  * this handle is the primitive underneath it, for a test that needs more than one step against the
@@ -57,9 +56,9 @@ import no.sikt.graphitron.model.config.RunContext;
  * reader to hand the store to. The pipeline's own window is
  * {@link FactCapture#runAndRead}, which keeps the store open across the phases that question it;
  * what this handle adds over that is a lifetime a test controls step by step rather than one
- * continuation's. The store itself comes from
- * {@link FactStores#inMemory()} rather than being booted here, so the module that declares the
- * schema is also the module that says how it is stood up.
+ * continuation's. The store itself comes from {@link FactStores#inMemory()} rather than being
+ * booted here, so how a store is stood up is stated in one place beside the schema that declares
+ * it.
  */
 public final class CapturedStore implements AutoCloseable {
 
@@ -75,16 +74,14 @@ public final class CapturedStore implements AutoCloseable {
     private final Path directory;
     private final Path file;
     private final TypeDefinitionRegistry registry;
-    private final AttributedRegistry attributed;
 
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
-                          TypeDefinitionRegistry registry, AttributedRegistry attributed) {
+                          TypeDefinitionRegistry registry) {
         this.store = store;
         this.graphName = graphName;
         this.directory = directory;
         this.file = file;
         this.registry = registry;
-        this.attributed = attributed;
     }
 
     // ---------------------------------------------------------------------------------------
@@ -143,7 +140,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
         captureFiles(store, files, directory, GRAPH, registry, null, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, null);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
     }
 
     /**
@@ -153,9 +150,8 @@ public final class CapturedStore implements AutoCloseable {
      * <p>The catalog is capture's only catalog-shaped input, so there is no inference axis to arm.
      * Nodehood is derived from the captured facts of both corpora rather than decided during the
      * walk, so a bare arm above differs from this one only in whether the catalog facts are in the
-     * store to derive from; what the derivation makes of them is
-     * {@link no.sikt.graphitron.rewrite.derive.NodeTypeShadowTest}'s subject and not an axis a
-     * fixture arms.
+     * store to derive from; what the derivation makes of them is the shadow tests' subject in the
+     * generator's own module and not an axis a fixture arms.
      */
     public static CapturedStore ofCatalog(Path directory, String sdl, JooqCatalog jooq) {
         return ofCatalog(directory, GRAPH, sdl, jooq);
@@ -170,47 +166,6 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
                                           List<CompletionData.ExternalReference> census) {
         return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"), census);
-    }
-
-    /**
-     * Captures through the attribution pipeline production runs, taking the handle production
-     * captures. The difference matters wherever a rewrite stands between the parse and the capture:
-     * a bare parse would let capture's macro expansion mint what the rewrite has already put there in
-     * the pipeline, and the store would agree with the model for the wrong reason.
-     * {@link #attributed()} exposes both handles so a test can compare the two stages.
-     *
-     * <p>The marked name is the whole of the claim: everything above takes a bare
-     * {@link SchemaLoader#load} registry, so which registry a fixture derived its rows from is
-     * what a {@code grep} for this name separates on.
-     *
-     * <p>The catalog reaches capture, so a rule reading both corpora answers here the way it answers
-     * in production. This arm used to capture no catalog while handing the walk a catalog-bearing
-     * nodehood predicate, which was the shape that let a fixture disagree with production about
-     * nodehood without any assertion noticing.
-     */
-    public static CapturedStore ofPipeline(Path directory, String sdl) {
-        return ofPipeline(directory, sdl, null);
-    }
-
-    /**
-     * {@link #ofPipeline(Path, String)} with a tag on the input, so {@code TagLinkSynthesiser}
-     * fires and its synthesised source name enters the registry capture walks. The only fixture in
-     * the tree that puts that sentinel in front of capture's stamp lookup.
-     */
-    public static CapturedStore ofPipeline(Path directory, String sdl, String tag) {
-        Path file = write(directory, GRAPH, sdl);
-        var input = new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty());
-        var ctx = new RunContext(
-            List.of(input),
-            directory, GRAPH, directory,
-            TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
-        var attributed = TestSchemaHelper.attributedRegistry(ctx);
-        var store = FactStores.inMemory();
-        FactCapture.capture(store.dsl(), graph(directory), SubjectConfig.none(),
-            attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)),
-            new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
-        return new CapturedStore(store, GRAPH, directory, file, attributed.preSynthesisRegistry(),
-            attributed);
     }
 
     /**
@@ -258,7 +213,7 @@ public final class CapturedStore implements AutoCloseable {
         FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), null);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
@@ -268,7 +223,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = FactStores.inMemory();
         captureFile(store, file, directory, graphName, registry, jooq, census, false);
-        return new CapturedStore(store, graphName, directory, file, registry, null);
+        return new CapturedStore(store, graphName, directory, file, registry);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -389,15 +344,17 @@ public final class CapturedStore implements AutoCloseable {
 
     /** {@link #attributionOf(Path)} for a graph the caller names. */
     public static Map<String, SchemaInput> attributionOf(Path directory, String graphName) {
-        return attributionOfFile(fixtureFile(directory, graphName));
+        return attributionOfFiles(List.of(fixtureFile(directory, graphName)));
     }
 
-    private static Map<String, SchemaInput> attributionOfFile(Path file) {
-        return TestSchemaHelper.attribution(file);
-    }
-
+    /**
+     * The attribution map for a fixture that handed the loader exactly {@code files}, as capture's
+     * stamp lookup needs it: a source name the map does not resolve is a gap between the run's inputs
+     * and what the parser handed back, and capture refuses to guess at one. Every file is a
+     * {@code file} arm, because a source that reached a real parse necessarily is one.
+     */
     private static Map<String, SchemaInput> attributionOfFiles(List<Path> files) {
-        return TestSchemaHelper.attribution(files.toArray(Path[]::new));
+        return SchemaInputAttribution.build(files.stream().map(SchemaInput::file).toList());
     }
 
     /**
@@ -464,11 +421,6 @@ public final class CapturedStore implements AutoCloseable {
     /** A reader under a stated budget, for the cases whose subject <em>is</em> the budget. */
     public StoreReader reader(ReadBudget budget) {
         return store.reader(budget);
-    }
-
-    /** The pipeline's own two handles; null unless this store came from {@link #ofPipeline}. */
-    public AttributedRegistry attributed() {
-        return attributed;
     }
 
     @Override

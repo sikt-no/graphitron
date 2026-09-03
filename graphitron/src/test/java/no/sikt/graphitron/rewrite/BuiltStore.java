@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * A fact store filled by a real generator run: the build-level population, for the tests whose
