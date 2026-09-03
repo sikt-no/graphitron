@@ -121,19 +121,9 @@
           which ships in the core `mcp` artifact pulled above; no extra coordinate needed.
         -->
         <!--
-          Test-only, and the pair is one affordance: the store-backed fixture drives the real build
-          pipeline (GraphQLRewriteGenerator.buildOutput) to produce the capture every store-backed
-          case reads, and that pipeline resolves a jOOQ catalog from the sakila generated package.
-          Rows a test asserts on have to come from a real pipeline run, so the generator is a test
-          dependency rather than a projection handed to a tool. Mirrors the catalog dependency
-          graphitron-lsp carries for its pipeline tests.
+          Test-only: the generated jOOQ catalog every captured fixture is captured against, so a
+          @table binding and a column match resolve the way they do in a consumer's editor.
         -->
-        <dependency>
-            <groupId>no.sikt</groupId>
-            <artifactId>graphitron</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-sakila-db</artifactId>
@@ -142,12 +132,14 @@
         </dependency>
 
         <!--
-          The two test-jars carrying the shared fact-store harness: the store's own lifetime and
-          the writer level from the model, and the capture level from the generator, which is where
-          a store filled by a build still comes from. Both are second scopes on edges this module
-          already declares, so neither adds a module dependency; what they buy is that a test here
-          takes its store from the harness that owns its subject rather than standing one up of its
-          own.
+          The fact-store harness, at test scope: the store's own lifetime, the writer level, and the
+          capture level that stands a store up by running real capture rather than by inserting rows.
+          A second scope on an edge this module already declares, so it adds no module dependency.
+
+          There is deliberately no graphitron dependency here, at any scope. Nothing the server ships
+          needs the generator, and nothing it tests does either: the cases that wanted a real build
+          were about the build and the server agreeing, and they moved above both tiers into
+          graphitron-maven-plugin.
         -->
         <dependency>
             <groupId>no.sikt</groupId>
@@ -156,17 +148,29 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>no.sikt</groupId>
-            <artifactId>graphitron</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!--
+                Republish the compiled tests as a test-jar. What the plugin's test scope wants from
+                it is the fixture level this module owns: the captured-store fixture its own tests
+                read, and the support the relocated cross-tier tests still need. Those tests are
+                about this module and the generator agreeing, so they live above both; keeping their
+                fixtures here is what lets them go on being this module's own vocabulary rather than
+                a second copy that drifts.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!--
               R372 — the infrastructure-tier test loads the bge ONNX model through the ONNX Runtime
               JNI binding. Grant native access to the unnamed module so that load runs without the

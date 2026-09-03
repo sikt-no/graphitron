@@ -59,6 +59,40 @@
             <scope>test</scope>
         </dependency>
 
+        <!--
+            The two clients' test-jars. This module is where both tiers meet, DevMojo being what
+            wires the generator to a language server and an MCP server, so it is where a test whose
+            subject is the two agreeing belongs. Those tests carry their clients' own fixture
+            vocabulary rather than a second copy of it, which is what these two scopes buy; neither
+            adds a module dependency, both being second scopes on edges declared above.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-lsp</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-mcp</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            The generated jOOQ catalog the relocated cross-tier tests capture against, so a @table
+            binding and a column match resolve the way they do in a consumer's own build. Test scope
+            only; a consumer brings their own generated model.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-db</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-plugin-api</artifactId>

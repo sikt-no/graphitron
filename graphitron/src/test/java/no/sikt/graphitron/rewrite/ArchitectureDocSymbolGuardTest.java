@@ -155,9 +155,9 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("NativeLibraryBundleTest", "module: graphitron-lsp");
         exempt.put("StoreAccess", "module: graphitron-lsp");
         exempt.put("TriggerDispatchMatrixTest", "module: graphitron-lsp");
-        exempt.put("DiagnosticsAggregateTest", "module: graphitron-mcp");
+        exempt.put("DiagnosticsAggregateTest", "module: graphitron-maven-plugin");
         exempt.put("SchemaQueries", "module: graphitron-mcp");
-        exempt.put("StoreBackedBuild", "module: graphitron-mcp");
+        exempt.put("StoreBackedBuild", "module: graphitron-maven-plugin");
         exempt.put("StoreFixture", "module: graphitron-lsp and graphitron-mcp");
         exempt.put("FieldClassification.Conflicted", "module: the LSP/MCP classification projection");
         exempt.put("CatalogRefreshTest", "module: graphitron-maven-plugin");

@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -270,7 +271,7 @@ class FieldCompletionsTest {
         Point cursor = new Point(line, col);
 
         assertThat(runCaptured(source, cursor)).extracting(CompletionItem::getLabel)
-            .containsExactly(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
+            .containsExactly(FieldSourceSigilGrammar.UPSTREAM_ROOT);
     }
 
     /**

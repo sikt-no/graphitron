@@ -33,37 +33,19 @@
         </dependency>
 
         <!--
-          Test scope only. The language server parses the buffer under the cursor with tree-sitter and
-          reads everything else out of the fact store, so nothing it ships needs the generator; what
-          still needs it is the fixtures, which stand a store up by running real capture rather than by
-          inserting rows. Compile scope here would let a request-path class reach a generator type
-          again without anyone noticing.
-        -->
-        <dependency>
-            <groupId>no.sikt</groupId>
-            <artifactId>graphitron</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
+          The fact-store harness, at test scope: the store's own lifetime, the writer level, and the
+          capture level that stands a store up by running real capture rather than by inserting rows.
+          A second scope on an edge this module already declares, so it adds no module dependency.
 
-        <!--
-          The two test-jars carrying the shared fact-store harness: the store's own lifetime and
-          the writer level from the model, and the capture level from the generator, which is where
-          a store filled by a build still comes from. Both are second scopes on edges this module
-          already declares, so neither adds a module dependency; what they buy is that a test here
-          takes its store from the harness that owns its subject rather than standing one up of its
-          own.
+          There is deliberately no graphitron dependency here, at any scope. The language server
+          parses the buffer under the cursor with tree-sitter and reads everything else out of the
+          fact store, so nothing it ships needs the generator, and nothing it tests does either: the
+          tests that did want a build were about the build and the editor agreeing, and they moved
+          above both tiers into graphitron-maven-plugin.
         -->
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-model</artifactId>
-            <version>${project.version}</version>
-            <type>test-jar</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>no.sikt</groupId>
-            <artifactId>graphitron</artifactId>
             <version>${project.version}</version>
             <type>test-jar</type>
             <scope>test</scope>
@@ -131,6 +113,25 @@
 
     <build>
         <plugins>
+            <!--
+                Republish the compiled tests as a test-jar. What the plugin's test scope wants from
+                it is the fixture level this module owns: the captured-store fixture its own tests
+                read, and the support the relocated cross-tier tests still need. Those tests are
+                about this module and the generator agreeing, so they live above both; keeping their
+                fixtures here is what lets them go on being this module's own vocabulary rather than
+                a second copy that drifts.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

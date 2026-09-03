@@ -2,8 +2,7 @@ package no.sikt.graphitron.lsp.fixtures;
 
 /**
  * Pipeline test fixture: a plain Java class with bean accessors so the
- * classifier produces
- * {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.Backed},
+ * classifier classifies it as a backed POJO result type,
  * and so the store's member-slot rule answers {@code filmId} / {@code title}
  * for it off the accessors rather than off components.
  */

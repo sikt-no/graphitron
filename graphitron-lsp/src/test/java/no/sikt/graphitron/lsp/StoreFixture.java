@@ -7,12 +7,10 @@ import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
-import no.sikt.graphitron.rewrite.BuiltStore;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -37,12 +35,14 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * class list as input today, so a test hands over the same references the projection-era fixtures
  * declared and the store ends up holding what a scan of those classes would have produced.
  *
- * <p>A local layer over the reactor's shared levels: every arm but one is a {@link CapturedStore}
- * capture with this module's vocabulary in front of it, a generated jOOQ package instead of a
- * {@link JooqCatalog} and a scanned census instead of a list the caller assembles, and
- * {@link #ofBuild} is a {@link BuiltStore} run because a build is what its rows come from. The
+ * <p>A local layer over {@link CapturedStore}, the reactor's capture level: every arm here is one of
+ * that level's captures with this module's vocabulary in front of it, a generated jOOQ package
+ * instead of a {@link JooqCatalog} and a scanned census instead of a list the caller assembles. The
  * writers go through {@link FactWriters}. What stays local is what is local: the two generated
  * packages, the placeholder SDL, the backing-class census, and the reads a provider makes.
+ *
+ * <p>Captures only. The arm that ran a real generator pass moved above this module with the one test
+ * that read it, because a build is the generator's and this module does not depend on it.
  *
  * <p>{@link #handle} is over the store's own connection rather than a reader's: what a provider
  * needs is a scoped query surface, and the reader's transaction and graph resolution are
@@ -75,33 +75,20 @@ final class StoreFixture implements AutoCloseable {
     /** SDL for a fixture whose whole subject is the classpath, so its schema is beside the point. */
     private static final String PLACEHOLDER_SDL = "type Query { placeholder: Int }\n";
 
-    /**
-     * The capture level's handle, and null on {@link #ofBuild}, which came from the build level
-     * instead. Two fields rather than a flag: the further-capture arms are the capture level's and a
-     * build has no second graph to take, so what an arm can do afterwards is a matter of which field
-     * it filled.
-     */
     private final CapturedStore captured;
-    private final BuiltStore built;
     private final String graphName;
     private final Path file;
     private final Path directory;
 
     private StoreFixture(CapturedStore captured, Path directory) {
-        this(captured, null, captured.graphName(), captured.file(), directory);
-    }
-
-    private StoreFixture(CapturedStore captured, BuiltStore built, String graphName, Path file,
-                         Path directory) {
         this.captured = captured;
-        this.built = built;
-        this.graphName = graphName;
-        this.file = file;
+        this.graphName = captured.graphName();
+        this.file = captured.file();
         this.directory = directory;
     }
 
     private DSLContext dsl() {
-        return captured != null ? captured.dsl() : built.dsl();
+        return captured.dsl();
     }
 
     /** Captures {@code sdl} alone: the shape for arms answered by SDL-derived facts. */
@@ -198,21 +185,6 @@ final class StoreFixture implements AutoCloseable {
      */
     static StoreFixture ofRefusedSchema(Path directory, String sdl) {
         return new StoreFixture(CapturedStore.ofRefusedSchema(directory, sdl), directory);
-    }
-
-    /**
-     * Runs a real generator pass over {@code sdl} into a store on disk and loads the round's own
-     * findings the way a dev round loads them. The shape for the cases about what an editor shows
-     * after a build, where the finding has to be one the build reached rather than one a test wrote:
-     * the walk's errors and the suppression-filtered warnings, through the loaders the dev goal runs
-     * and in the order it runs them.
-     */
-    static StoreFixture ofBuild(Path directory, String sdl, LintConfig lintConfig) {
-        var built = BuiltStore.run(directory, GRAPH, sdl, lintConfig, JOOQ_PACKAGE, List.of());
-        var output = built.output();
-        FactWriters.rejectionFacts(built.dsl(), GRAPH, directory).write(output.walkErrors());
-        FactWriters.buildWarningFacts(built.dsl(), GRAPH, directory).write(output.warnings());
-        return new StoreFixture(null, built, built.graphName(), built.schemaFile(), directory);
     }
 
     /**
@@ -344,12 +316,12 @@ final class StoreFixture implements AutoCloseable {
      * threshold in a tier that must not fail for being slow.
      */
     StoreReader reader() {
-        return captured != null ? captured.reader() : built.reader();
+        return captured.reader();
     }
 
     /** A reader of this store under a stated budget, for the cases whose subject is the budget. */
     StoreReader reader(ReadBudget budget) {
-        return captured != null ? captured.reader(budget) : built.reader(budget);
+        return captured.reader(budget);
     }
 
     /**
@@ -508,10 +480,6 @@ final class StoreFixture implements AutoCloseable {
 
     @Override
     public void close() {
-        if (captured != null) {
-            captured.close();
-        } else {
-            built.close();
-        }
+        captured.close();
     }
 }

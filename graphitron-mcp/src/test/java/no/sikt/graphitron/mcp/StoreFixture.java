@@ -25,10 +25,10 @@ import java.util.List;
  * assembles. What stays local is what is local: the two generated packages, the placeholder SDL, the
  * fixture census and its walked source root, and the reader a tool's several queries go through.
  *
- * <p>{@link StoreBackedBuild} beside this one runs the whole generator, because the rows its tests
- * read are written by loaders that consume the walk's own streams; a census read needs none of that,
- * and paying for a build to get one prices the generator into every catalog case. What this costs is a
- * schema parse and a walk over the generated jOOQ model.
+ * <p>Captures only. The fixture that ran the whole generator moved above this module with the cases
+ * that read it, their rows being written by loaders that consume the walk's own streams; a census
+ * read needs none of that, and paying for a build to get one would price the generator into every
+ * catalog case. What this costs is a schema parse and a walk over the generated jOOQ model.
  *
  * <p>Rows still arrive only through {@link FactCapture}, so a fixture cannot encode a census capture
  * would never write. That is the property that matters rather than which entry point produced it: a

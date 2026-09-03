@@ -4,8 +4,8 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.FileSnapshot;
 import no.sikt.graphitron.lsp.state.WorkspaceFileTestSupport;
-import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.grammar.FieldSourceSigilGrammar;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -350,7 +350,7 @@ class DiagnosticsTest {
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
-            .isEqualTo(no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage());
+            .isEqualTo(FieldSourceSigilGrammar.notDefinedHereMessage());
     }
 
     /**
@@ -366,7 +366,7 @@ class DiagnosticsTest {
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
-            .isEqualTo(no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage());
+            .isEqualTo(FieldSourceSigilGrammar.notDefinedHereMessage());
     }
 
     /**
@@ -1266,7 +1266,7 @@ class DiagnosticsTest {
     /**
      * Test-only forwarder that omits the URI and validator report. Every test in this class
      * exercises the SDL-only directive walks; the validator slice is covered by
-     * {@link ValidatorDiagnosticsTest}. Threading an empty URI and {@link ValidationReport#empty()}
+     * {@link ValidatorDiagnosticsTest}. Threading an empty URI and an empty validation report
      * here keeps the call sites focused on the directive arm under test without committing
      * production callers to a backward-compat overload.
      */
