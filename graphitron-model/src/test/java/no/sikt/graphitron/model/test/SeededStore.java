@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.NodeHood;
+import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
@@ -42,7 +43,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
@@ -195,6 +196,7 @@ public final class SeededStore {
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
             TableTypes.derive(dsl, graph);
             NodeHood.derive(dsl, graph);
+            NodeKeyColumns.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
@@ -1614,11 +1616,11 @@ public final class SeededStore {
      */
     public static void seedNodeKeyColumnRef(DSLContext dsl, String graphName, String typeName,
                                             int position, String columnRef) {
-        dsl.insertInto(GRAPHITRON_NODE_KEY_COLUMN)
-            .set(GRAPHITRON_NODE_KEY_COLUMN.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, typeName)
-            .set(GRAPHITRON_NODE_KEY_COLUMN.POSITION, position)
-            .set(GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF, columnRef)
+        dsl.insertInto(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
+            .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION, position)
+            .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF, columnRef)
             .execute();
     }
 

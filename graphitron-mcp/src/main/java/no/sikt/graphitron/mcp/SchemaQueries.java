@@ -19,7 +19,7 @@ import java.util.stream.Stream;
 import static java.util.Comparator.comparing;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -624,11 +624,11 @@ final class SchemaQueries {
     /** One {@code @node}'s authored key columns, correlated to the node row being projected. */
     private static Field<List<String>> nodeKeyColumns() {
         return multiset(
-            select(GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF)
-                .from(GRAPHITRON_NODE_KEY_COLUMN)
-                .where(GRAPHITRON_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME)
-                    .and(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME)))
-                .orderBy(GRAPHITRON_NODE_KEY_COLUMN.POSITION.asc()))
+            select(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
+                .from(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
+                .where(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME)
+                    .and(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME)))
+                .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION.asc()))
             .convertFrom(r -> r.map(Record1::value1));
     }
 

@@ -16,6 +16,7 @@ import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.NodeHood;
+import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
@@ -76,7 +77,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD;
@@ -185,6 +186,7 @@ public final class GraphitronFactCapture {
         sink.flush();
         TableTypes.derive(dsl, graphName);
         NodeHood.derive(dsl, graphName);
+        NodeKeyColumns.derive(dsl, graphName);
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
         navigation(dsl, graphName);
@@ -510,7 +512,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> column : list(directive, "keyColumns")) {
                     String name = stringOf(column, directive, "keyColumns");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_NODE_KEY_COLUMN);
+                    var row = sink.dsl().newRecord(GRAPHITRON_NODE_KEYCOLUMN_ENTRY);
                     row.setTypeName(type);
                     row.setPosition(position++);
                     row.setColumnRef(name);

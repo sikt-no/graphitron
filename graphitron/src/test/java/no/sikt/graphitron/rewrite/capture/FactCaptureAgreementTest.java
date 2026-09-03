@@ -46,7 +46,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
@@ -401,7 +401,7 @@ class FactCaptureAgreementTest {
             "graphitron_external_field", "graphitron_connection", "graphitron_facet",
             "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
             "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",
-            "graphitron_error", "graphitron_error_handler", "graphitron_node", "graphitron_node_key_column",
+            "graphitron_error", "graphitron_error_handler", "graphitron_node", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id", "graphitron_argument_node_id", "graphitron_argument_lookup_key",
             "graphitron_field_lookup_key", "graphitron_split_query", "graphitron_tenant_fan_out",
             "graphitron_pivot", "graphitron_routine", "graphitron_routine_column_mapping_pair",
@@ -451,6 +451,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphql_coordinate_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_nodehood", Arm.DERIVED);
+        registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
@@ -1062,9 +1063,9 @@ class FactCaptureAgreementTest {
 
             var captured = new LinkedHashMap<String, List<String>>();
             store.dsl()
-                .select(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, GRAPHITRON_NODE_KEY_COLUMN.COLUMN_REF)
-                .from(GRAPHITRON_NODE_KEY_COLUMN)
-                .orderBy(GRAPHITRON_NODE_KEY_COLUMN.TYPE_NAME, GRAPHITRON_NODE_KEY_COLUMN.POSITION)
+                .select(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME, GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF)
+                .from(GRAPHITRON_NODE_KEYCOLUMN_ENTRY)
+                .orderBy(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME, GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION)
                 .fetch()
                 .forEach(row -> captured.computeIfAbsent(row.value1(), ignored -> new ArrayList<>())
                     .add(row.value2()));

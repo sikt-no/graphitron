@@ -1,6 +1,7 @@
 build_warning_no_rule
 diagnostic
 graphitron_argmapping_entry
+graphitron_argmapping_match
 graphitron_argument_binding
 graphitron_argument_condition
 graphitron_argument_condition_context_arg
@@ -40,7 +41,7 @@ graphitron_method_reference
 graphitron_multitable_reference
 graphitron_mutation
 graphitron_node
-graphitron_node_key_column
+graphitron_node_keycolumn_entry
 graphitron_order
 graphitron_order_by
 graphitron_order_field
@@ -86,7 +87,6 @@ graphql_type_coordinate
 graphql_type_declaration
 graphql_type_directive
 graphql_type_directive_arg
-graphitron_argmapping_match
 intent_argmapping_bound_parameter_type
 intent_argmapping_key_column_candidate
 intent_argmapping_projection_defect
