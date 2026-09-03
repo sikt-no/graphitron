@@ -2822,6 +2822,24 @@ COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states,
 -- declares lives here, and where a declaration is written and what its doc comment says lives in
 -- the java_ family on the source's own cadence, joined by name. That division is why a .java edit
 -- moves a position without a generator round, and why the two populations can disagree.
+CREATE TABLE graphitron_tabletype (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tabletype IS 'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously. For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.';
+COMMENT ON COLUMN graphitron_tabletype.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type_coordinate. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
+COMMENT ON COLUMN graphitron_tabletype.table_source_name IS 'the codegen source the table came from, the first of the three columns naming one catalog table';
+COMMENT ON COLUMN graphitron_tabletype.table_schema IS 'the table''s schema as the catalog spells it';
+COMMENT ON COLUMN graphitron_tabletype.table_name IS 'the table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table, which is what a resolved binding can carry and an unresolved one cannot. The first crossing in this schema from a graph-keyed relation into the source-keyed catalog, and it cascades on delete, which is what makes the crossing sound rather than merely permitted: a catalog source is shared between graphs and recrawled whole, so without the cascade a source could not be recrawled while any graph still named its tables. With it, a recrawled source takes the bindings that named it, and the graphs concerned rebuild theirs the next time they capture. That is the honest outcome of the two available: a reader finds no binding rather than one naming a table the catalog no longer has, which is what the relations this replaces leave behind because they carry no key here at all';
+
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -10087,6 +10105,9 @@ INSERT INTO meta_grain VALUES
   ('coordinate-field-site',
    'one schema coordinate that sits on a field, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('bound-table-type',
+   'one graph type that resolved to exactly one catalog table, in one graph',
+   'graph_name, type_name', 'catalog'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
    'graph_name, coordinate, path', 'sdl'),
@@ -10198,6 +10219,10 @@ INSERT INTO meta_relation VALUES
    'The field a coordinate sits on, for the two coordinate kinds that sit on one: one row per field coordinate and one per argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',
    'What a reader joins when it holds a coordinate and needs the field, which before this was two left joins and a COALESCE spelled once per reader, and wrongly available to a reader that forgot the second arm. Type and enum-value coordinates are absent and that is the population rather than a gap: neither sits on a field, so a reader asking this question of one is asking something with no answer and gets no row instead of a half-populated one. The argument component is NULL on a field coordinate, which is the one nullness here and is the difference between the two arms rather than a fact withheld. Not columns on graphql_coordinate itself, because a type coordinate has no field and an enum value''s name is not one, so carrying them up would put two nullnesses on the supertype to serve half its subtypes. It reads as a reconstruction and is not one: the supertype exists and every member points at it, so this unions a hierarchy that is already written rather than standing in for one nobody wrote, which is the distinction SupertypeSignatureGateTest draws before it counts a union as debt.'),
+  ('graphitron_tabletype', 'bound-table-type', 'graphitron',
+   'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously.',
+   'For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.',
+   'The settled half of the type-to-table binding, and the whole of the relation rather than a column beside an unsettled one. A spelling two schemas both declare resolves to two tables and to no row here; which types those are is the anti-join against the @table decode, so ambiguity stays answerable and is answered where the author''s writing lives. Storing both populations with a count is what the relation this replaces does, and the cost of that is measurable: eleven of its readers spell the same candidates = 1 predicate and four forget to, which on a multi-schema catalog multiplies their rows silently. The key is the graph and the type, and it is the settledness itself; a relation admitting an ambiguous binding could not carry it. It carries a foreign key into sql_table too, cascading on delete, and is the first graph-keyed relation here to point into the source-keyed catalog: the cascade is what makes that sound, a shared source being recrawled whole and taking the bindings that named it with it, where without one it could not be recrawled at all while a graph still referenced it. Written as a stage of the graphitron gatherer because both sides are already in hand there: the catalog crawler runs before it by declared dependency and the @table decode is the gatherer''s own, one flush earlier. The type-name fallback and the exclusion of the three root operation types are resolution rules and live here, the decode being what the author wrote and nothing more.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',

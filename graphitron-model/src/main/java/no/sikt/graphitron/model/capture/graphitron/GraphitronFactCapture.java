@@ -90,6 +90,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
@@ -106,6 +109,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.count;
+import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
@@ -181,10 +186,64 @@ public final class GraphitronFactCapture {
         // driven by the graphitron_connection rows the decode above just produced, and the
         // navigation rule is stated over the population expansion completes.
         sink.flush();
+        tableTypes(dsl, graphName);
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
         navigation(dsl, graphName);
         return edges;
+    }
+
+    /**
+     * Which catalog table each graph type resolves to, for the types where the catalog answered
+     * with exactly one. A stage of this gatherer rather than a rule stated downstream, because
+     * everything it reads has already been written: the {@code @table} decode is this gatherer's
+     * own and has just flushed, and the catalog crawler runs before this gatherer by declared
+     * dependency, so the resolution has both sides in hand at the earliest point either exists.
+     *
+     * <p>Only the settled bindings are rows, and that is the relation's whole claim rather than a
+     * filter its readers apply. A spelling two schemas both declare resolves to two tables and to
+     * no row here; which types those are is the anti-join against the {@code @table} decode, so
+     * ambiguity is still answerable and is answered where it belongs. Storing the unsettled ones
+     * beside the settled ones with a count is what the relation this replaces does, and it is why
+     * eleven of its readers spell the same {@code candidates = 1} predicate and four forget to.
+     *
+     * <p>The key is the graph and the type, which is the settledness. A relation that admitted an
+     * ambiguous binding could not carry that key, and could not carry the foreign key into
+     * {@code sql_table} either: an unresolved row names no table to point at. Both constraints are
+     * available here only because the population is the resolved one.
+     *
+     * <p>A type with no {@code name:} binds by its own name, which is the same rule the spelling
+     * resolution applies and is applied here rather than recorded on the decode, the decode being
+     * what the author wrote. The three root operation types are excluded because a table named
+     * after one of them would otherwise bind it.
+     */
+    private static void tableTypes(DSLContext dsl, String graphName) {
+        var t = GRAPHITRON_TABLE;
+        var m = STORE_GRAPH_SOURCE;
+        var st = SQL_TABLE;
+        var resolved = dsl
+            .select(t.GRAPH_NAME, t.TYPE_NAME, st.SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
+                count().over(partitionBy(t.GRAPH_NAME, t.TYPE_NAME)).as("candidates"))
+            .from(t)
+            .join(m).on(m.GRAPH_NAME.eq(t.GRAPH_NAME))
+            .join(st).on(st.SOURCE_NAME.eq(m.SOURCE_NAME))
+            .and(st.TABLE_NAME_UPPER.eq(coalesce(t.TABLE_REF_NAME_PART_UPPER, t.TYPE_NAME_UPPER)))
+            .and(t.TABLE_REF_NAMESPACE_PART_UPPER.isNull()
+                .or(st.TABLE_SCHEMA_UPPER.eq(t.TABLE_REF_NAMESPACE_PART_UPPER)))
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TYPE_NAME.notIn("Query", "Mutation", "Subscription"))
+            .asTable("resolved");
+        dsl.insertInto(GRAPHITRON_TABLETYPE)
+            .columns(GRAPHITRON_TABLETYPE.GRAPH_NAME, GRAPHITRON_TABLETYPE.TYPE_NAME,
+                GRAPHITRON_TABLETYPE.TABLE_SOURCE_NAME, GRAPHITRON_TABLETYPE.TABLE_SCHEMA,
+                GRAPHITRON_TABLETYPE.TABLE_NAME)
+            .select(dsl
+                .select(resolved.field(t.GRAPH_NAME), resolved.field(t.TYPE_NAME),
+                    resolved.field(st.SOURCE_NAME), resolved.field(st.TABLE_SCHEMA),
+                    resolved.field(st.TABLE_NAME))
+                .from(resolved)
+                .where(resolved.field("candidates", Integer.class).eq(1)))
+            .execute();
     }
 
     /**
