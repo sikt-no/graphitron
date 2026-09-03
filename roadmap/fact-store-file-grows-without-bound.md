@@ -121,3 +121,94 @@ Delete the cache (`~/Library/Caches/graphitron` on macOS, `$XDG_CACHE_HOME/graph
 the store rebuilds on the next run. Or point `-Dgraphitron.store.directory` at a path under the build
 directory so `mvn clean` clears it. A checkout running `graphitron:dev` beside `quarkus:dev` can pass
 `-Dgraphitron.dev.skipInitial=true` to the dev goal so only one of them captures at start.
+
+## Reviewer findings
+
+### Round 1 (2026-09-03, Spec -> Ready, reviewer session 01NawxZuKWXYC5ik4QRYSyRV)
+
+Verdict: withhold. Three findings on gate two (does the plan extend a shape already in the tree),
+one on what Ready would authorise, one on an anchor an implementer cannot re-find.
+
+*What was checked and holds.* Every symbol the item names exists under the name it gives:
+`StoreReaper.sweep`, `GraphitronModelStore.RETAINED_STAMPS` (three), `stampSegment()` (sixteen hex
+digits of the DDL hash plus the generator version), `StoreRefresh.clear`'s per-table
+`SOURCE_NAME IN (...)` deletes with `JVM_METHOD` among them, and `FILE_LOCK_MILLIS` at 60 000. The
+sweep really is opener-driven and per-home (`GraphitronModelStore.sweepOnce` guarded by
+`SWEPT_HOMES`), so a workspace nobody builds in is never revisited, exactly as the item says. The
+consumer workaround's three cache paths match `AbstractRewriteMojo.userCacheRoot`,
+`-Dgraphitron.store.directory` matches `resolveStoreDirectory`, and `-Dgraphitron.dev.skipInitial`
+matches `DevMojo.skipInitial`. R757 and R916 exist and say what this item says they say. The goal
+paragraph stands on its own and gate one passes on it. The diagnosis is the strongest thing here:
+a store file that is dead space rather than facts, a retention shaped as a count over a problem
+shaped as bytes, and a stamp rotation that multiplies it across every workspace at once. The
+measurement discipline behind it (real store copies, the pinned H2, and a control that talks the
+item out of `RETENTION_TIME=0`) is what a spec resting on a performance claim should look like. None
+of that is in dispute below.
+
+**Finding 1 (gate two). The ownership check step 1 rests on is the step's whole risk, and the party
+the item names is not the one at risk.** The item guards `SHUTDOWN COMPACT` with "a check that the
+closing run owns the store ... wrong in the middle of a held dev session". A dev session holds the
+file in its own *process*, and `GraphitronModelStore.openAt` refuses a second process outright and
+falls back in well under a second, so a dev session is never the handle a compacting close would
+shut down. The party at risk is a second `GraphitronModelStore` on the same file *in the same JVM*,
+which is the ordinary shape of a consumer build: `AbstractRewriteMojo.runGenerator` opens one
+`CapturePort.holding(ctx.storeDirectory())` per mojo execution, so a reactor opens the store once
+per module in the Maven JVM, and `SWEPT_HOMES`'s own javadoc records that two modules reach
+`openAt` concurrently under `-T 1C`. `close()` already carries the comment that names this exactly:
+issuing `SHUTDOWN` on a file-backed store "would close the database for every other handle in the
+JVM, since H2 gives one process one database per file however many connections reach for it". The
+plan needs to say what represents ownership, because that is what decides whether step 1 is really
+"one call site, no schema or protocol change": nothing in the tree counts open handles per file
+today, and the shape the tree suggests is a per-file open count living beside `SWEPT_HOMES`, which
+is a new piece of JVM-wide state rather than an edit to one method. This is not hypothetical at the
+test tier either: `PersistentStoreTest`'s `holder` / `writer` pairs open two stores on one directory
+in one JVM, and compact-on-close without a handle count closes the database under them.
+
+**Finding 2 (gate two). Compaction is priced once, and a close-triggered compaction is paid once per
+module.** The measurements price one compaction at 829 ms for a 443 MB store and 4.1 s for an
+864 MB one, and the plan reads as though a build pays that once. With one store open and closed per
+mojo execution it is paid once per module, so a twenty-module consumer reactor pays the 829 ms
+twenty times against a goal sentence that says the store must not be the reason a build waits. This
+is the same ownership question from the other side, and the plan should answer both together: name
+whether the compaction is per close or once per JVM at the last handle's release, and if the latter,
+what triggers it.
+
+**Finding 3 (gate two). Step 3's "cache home ... spanning its workspaces" names a level nothing in
+the tree owns, and the word already means the level below it.** In the tree a *home* is
+per-workspace: `resolveStoreDirectory` returns `<cache>/graphitron/model/<workspace-segment>`, its
+javadoc is explicit that the value means "home", and that is the unit `StoreReaper.sweep` is handed
+along with a live segment. A byte budget "spanning its workspaces" is therefore a budget on
+`<cache>/graphitron/model/`, a directory no opener is ever given and which `graphitron-model` cannot
+see at all, since the only resolver that knows it lives in `graphitron-maven-plugin`. Two things
+follow that the step should settle. Name the root as its own concept rather than reusing "home",
+or the implementer will read the step as a change to `StoreReaper.sweep`'s existing argument. And
+say what the budget means when a consumer pins `-Dgraphitron.store.directory`, which
+`resolveStoreDirectory` takes verbatim as "already scoped to whatever the consumer meant it to be
+scoped to": there is no sibling-workspace set under a pinned home, so either the budget degrades to
+that one home or the step does not apply. The same asymmetry is what makes "reach the workspaces no
+build opens" a larger change than the sweep it sits next to: the current sweep is reachable only
+because an opener hands it the one home it opened.
+
+**Finding 4 (what Ready would authorise). The item pulls in two directions about its own scope.**
+Step 1 says compact-on-close "ships first and alone"; step 3 says the cache bound "is not a
+follow-up to the file-level fix". Both cannot be what Ready means. Two of the four open questions
+are not detail but the central design fork of the step they belong to: what threshold makes a store
+"too large to service" is step 2, and whether the read-path stall is bounded by the same guard is
+what decides whether step 2 and step 3 are one answer or two. Step 1 and step 5 are Ready-shaped
+once findings 1 and 2 land; steps 2 to 4 are an axis rather than a proposal. Either say in the body
+that Ready covers step 1 and step 5 and that steps 2 to 4 return through Spec once step 1 has
+shipped and been measured, or split them into their own items, or settle the two forks here. Which
+of the three is the author's call; leaving it implicit is what I am withholding on.
+
+**Finding 5 (anchoring). "The per-field query that hydrates intent claims" names nothing an
+implementer can find.** `intent claim` appears nowhere in the tree; the live vocabulary is the
+`intent_*` derived view family in `graphitron-model.sql`. The item's own convention (workflow.adoc,
+Item file conventions) is that a code reference is anchored on a greppable identifier, and this one
+carries weight: it is the sole evidence for "a fix aimed only at the clear leaves the read path
+standing", which is the argument that steps 2 and 3 exist. Name the relation and the surface it was
+observed on. The surface matters to the remedy: `57014` is `StoreReader.STATEMENT_CANCELLED`, which
+is a bounded reader's `ReadBudget` expiring (`DevMojo`'s 3 s interactive, 30 s session, 60 s MCP),
+while a `generate` run reads through `RunStore.handle()` over the store's own unbudgeted `dsl()` and
+cannot raise it. If the observation is a dev-session or MCP reader hitting its budget rather than a
+`generate` stalling, the read-path half of the item is a different problem from the clear, which
+sharpens the third open question rather than answering it.
