@@ -1,13 +1,13 @@
 ---
 id: R884
 title: "An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: nodeid
 depends-on: []
 created: 2026-08-31
-last-updated: 2026-09-01
+last-updated: 2026-09-03
 ---
 
 # An argMapping binding that names a node id without naming a key column emits a decode of the wrong slot
@@ -192,13 +192,18 @@ test that reads the rendered method is the tier where they can fail.
 ## Implementation notes
 
 What the delivery did beyond what the plan spelled out, disclosed here rather than left in the diff.
+The delivery landed at `1ac2f89`, already on trunk and so a citation a later reader can resolve; the
+rework round answering the findings below is the commit carrying this sentence.
 
 **The precedence rule became a named predicate, `ProjectedKeyReads.installRailOwns`.** The plan said
 the check is local and available at both render sites. It is, but written twice it would have been the
 same two-spellings-of-one-assumption shape this item exists to remove, so the rule is stated once as a
-static on the sink and asked at both sites. It is asked of the binding's own extraction, which is where
-the install left its mark: at an argument the decode is the extraction itself, and at an input field
-`ConditionResolver.rewrapForNested` carries it as the leaf of the descent.
+static on the sink. The routine site asks it of the binding's own extraction, which is where the
+install left its mark: at an argument the decode is the extraction itself, and at an input field
+`ConditionResolver.rewrapForNested` carries it as the leaf of the descent. The condition glue states
+the same precedence by arm order, its whole-slot arm sitting above the projection lookup and citing
+the predicate for the rule rather than calling it, because that arm destructures the
+`NodeIdDecodeKeys` it matched and needs it to compose the decode, which a boolean predicate discards.
 
 **Where the precedence is actually reachable, stated rather than assumed.** At the `@condition` site
 the install rail and the projection sink do not meet on any SDL today, and the reason is not the
@@ -263,6 +268,12 @@ describes behaviour the delivery removed. Rewrite it to say what the two spellin
 column spelled, or the one-column key naming it), so the three sibling mutations below read as the
 three arms of one rule rather than one working shape and two the comment says cannot work.
 
+*Author's response.* Rewritten. The comment names both spellings that reach the column, the one
+`rentFilmPayloadProjected` spells past the node id and the one `rentFilmPayloadInferred` leaves to
+Customer's one-column key, says the base64 string reaches `p_customer_id` under neither, and points
+at `rentFilmPayloadBareNodeId` as the same closed form spelled at the field's own argument, so the
+three mutations read as three spellings of one rule.
+
 **2. `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/ArgmappingMatchTest.java`,
 the javadoc on `aBareNodeIdArgumentHeadIsTheLeafWithNothingTrailing`.** It reads "This is the arm the
 silently-wrong case runs through: today such a binding hands a routine parameter the base64 wire id
@@ -270,6 +281,10 @@ and nothing says a word". That is the bare-`@nodeId`-argument-at-a-`@routine` sh
 its third broken coordinate and fixes; the sentence's "today" is now wrong. The store fact the test
 pins (zero trailing segments on the leaf) is unaffected and the test itself stays as it is; only the
 javadoc's account of what that fact leads to needs to catch up with the emitter.
+
+*Author's response.* Rewritten, with the test and its assertions untouched. The javadoc now says what
+the absent trailing segment leads to: the projection inferred from the leaf alone where the node
+type's key is one column, and `BARE_NODE_ID` where it is wider.
 
 Both are one- or two-sentence edits. Nothing else was found, and nothing in the code needs to move.
 
@@ -304,11 +319,26 @@ Recorded so the next pass does not repeat it.
   implementation notes describe *two* new descent helpers and two is what the tests use; this is a
   third that shipped unused. Delete it or give it the case its javadoc argues for ("worth asking
   negatively as well as positively") while the file is open.
+
+  *Author's response.* Deleted. The case its javadoc argues for is already asked, and asked more
+  precisely, by the two helpers that name the slot: `materialisationDecodesWireSlot` at the bare
+  binding, where the decode takes the argument read whole, and `materialisationDecodesWireDescent` /
+  `materialisationDecodesDescentTo` at the two dotted ones, where they name the slot descended to.
+  Each of those fails on the wrong-slot emission this item removed, so a negative arity test beside
+  them could not fail where they pass.
 * `ProjectedKeyReads.installRailOwns` is called at one render site, not two. The condition glue
   states the same precedence by arm order instead, at the top-level switch and again as the `if`
   ahead of the projection lookup. That is defensible, the nested arm needing the destructured `nidk`
   the predicate throws away, but the implementation notes' "asked at both sites" is not what shipped
   and the next reader will go looking for the second call.
+
+  *Author's response.* The implementation note now says what shipped, and says why: the sink states
+  the rule once, the routine site asks it, and the glue states the same precedence by arm order for
+  the reason this finding names. No code moved.
 * The spec body was never annotated with a landing SHA before the flip to In Review, the same slip
   the last two Done-gate reviews recorded. It cost nothing here, the item having shipped in one
   commit.
+
+  *Author's response.* Annotated at the head of `## Implementation notes`, where the delivery's own
+  SHA is now cited. It is a resolvable citation rather than the pre-rebase kind the roadmap's own
+  landed-note item warns about, the commit being on trunk already.

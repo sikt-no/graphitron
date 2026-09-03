@@ -217,23 +217,6 @@ public final class TypeSpecAssertions {
             + "\\([^;]*?\\.get\\(" + Pattern.quote("\"" + leafKey + "\"") + "\\)")) > 0;
     }
 
-    /**
-     * True when {@code keyLocal}'s materialisation hands its decode a slot's value whole: the
-     * argument contains no nested key read at all. Correct where the {@code @nodeId} is that slot, and
-     * the wrong-slot emission where it is an input field below it, which is why it is worth asking
-     * negatively as well as positively.
-     */
-    public static boolean materialisationDecodesUndescended(TypeSpec type, String methodName,
-            String keyLocal, String decodeHelper) {
-        var argument = Pattern.compile(
-            Pattern.quote(keyLocal) + "\\s*=\\s*" + Pattern.quote(decodeHelper) + "\\(([^;]*)\\);");
-        return methodBody(type, methodName)
-            .map(argument::matcher)
-            .filter(java.util.regex.Matcher::find)
-            .map(m -> !m.group(1).contains(".get("))
-            .orElse(false);
-    }
-
     /** The number of column reads off {@code keyLocal} ({@code keyLocal.get(…)}) in the body. */
     public static long projectedColumnReads(TypeSpec type, String methodName, String keyLocal) {
         return countIn(type, methodName,

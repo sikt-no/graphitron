@@ -74,10 +74,13 @@ input RentFilmInput {
 }
 
 # The key-column projection fixture: customerId arrives as a Customer node id rather than as the
-# integer key it encodes, and argMapping opens it with the node type's own key column. Without the
-# trailing segment the base64 string would reach p_customer_id verbatim, which is the silence the
-# projection rules close; with it, the fetcher decodes the id once into a CustomerRecord and reads
-# customer_id off it.
+# integer key it encodes, and argMapping opens it with the node type's own key column. Two spellings
+# reach that column and both are consumed here. rentFilmPayloadProjected names it past the node id;
+# rentFilmPayloadInferred stops on the node id and lets Customer's one-column key name itself, there
+# being nothing else such a binding could mean. Either way the fetcher decodes the id once into a
+# CustomerRecord and reads customer_id off it, and p_customer_id never sees the base64 string.
+# rentFilmPayloadBareNodeId is the same closed form spelled at the field's own argument rather than
+# inside this input, so the three of them are three spellings of one rule.
 input RentFilmProjectedInput {
     inventoryId: Int!
     customerId:  ID! @nodeId(typeName: "Customer")

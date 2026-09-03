@@ -47,10 +47,10 @@ class ArgmappingMatchTest {
     // ===== The leaf is where the binding stopped =====
 
     /**
-     * A single-segment path leaves the head as the leaf with nothing trailing. This is the arm the
-     * silently-wrong case runs through: today such a binding hands a routine parameter the base64
-     * wire id and nothing says a word, and a declared node id with zero trailing segments is what a
-     * rejection keys on.
+     * A single-segment path leaves the head as the leaf with nothing trailing. That absence is the
+     * fact both readings of a bare binding turn on: a node type whose key is one column has the
+     * projection inferred from the leaf alone, and one whose key is wider has nothing to infer and
+     * draws {@code BARE_NODE_ID} instead.
      */
     @Test
     void aBareNodeIdArgumentHeadIsTheLeafWithNothingTrailing() {
