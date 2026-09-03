@@ -38,12 +38,22 @@ sixteen hex digits of the DDL hash plus the generator version. A consumer rotate
 release; this repo rotates it on any edit to `graphitron-model.sql`. Each rotation pushes a fresh
 full-size store into every workspace's three retained slots.
 
-**A large store stalls a run in two different ways.** On the write path, `StoreRefresh.clear` deletes
-row by row with `SOURCE_NAME IN (...)` per table; on the reporting consumer that took 2 min 18 s of a
-3 min 28 s run, ended in `Timeout trying to lock table "JVM_METHOD"` at the 60 s `FILE_LOCK_MILLIS`
-budget, and demoted the run to an in-memory capture that then paid another minute capturing cold. On
-the read path, the per-field query that hydrates intent claims fails with H2 `57014` (statement
-cancelled). A fix aimed only at the clear leaves the read path standing.
+**A large store costs the build on the write path and the editor on the read path.** On the write
+path, `StoreRefresh.clear` deletes row by row with `SOURCE_NAME IN (...)` per table; on the
+reporting consumer that took 2 min 18 s of a 3 min 28 s run, ended in `Timeout trying to lock table
+"JVM_METHOD"` at the 60 s `FILE_LOCK_MILLIS` budget, and demoted the run to an in-memory capture
+that then paid another minute capturing cold.
+
+On the read path, a query joining `intent_resolved_field_claim` and `intent_column_match_claim` per
+field, alongside `java_class_declaration`'s javadoc and source positions, ends in H2 `57014`. That
+code is `StoreReader.STATEMENT_CANCELLED`, raised when a bounded reader's `ReadBudget` expires
+(`DevMojo` sets 3 s interactive, 30 s session, 60 s MCP); a `generate` run reads through
+`RunStore.handle()` over the store's unbudgeted `dsl()` and cannot raise it. The javadoc and
+position columns place it further still: `CatalogFactCapture` keeps those out of capture because
+they "live on the LSP source walker's cadence and are joined at request time". So this is an editor
+hover or completion giving up on a bloated store, not a `generate` stalling. It is a second surface
+the same bloat degrades, and it is why bounding the file is not only a build-time concern; it is not
+evidence about the clear.
 
 ## What the measurements show
 
@@ -63,19 +73,45 @@ against compacting.
 
 ## Plan
 
-1. **Compact on close.** Issue `SHUTDOWN COMPACT` when a run closes a file-backed store, in place of
-   the plain close. One call site, no schema or protocol change, and a consumer picks it up by taking
-   the release. This is the smallest change that addresses the root, and it ships first and alone.
-   It needs a check that the closing run owns the store, since `SHUTDOWN COMPACT` closes the database
-   for every connection: correct at the end of a `generate`, wrong in the middle of a held dev
-   session.
+1. **Compact at the last handle's release.** Issue `SHUTDOWN COMPACT` when the final
+   `GraphitronModelStore` on a file lets it go, in place of the plain close. No schema or protocol
+   change, and a consumer picks it up by taking the release.
+
+   What represents ownership is the substance of this step rather than a caveat on it. H2 gives one
+   process one database per file however many connections reach for it, which `close()` already
+   records, so a `SHUTDOWN` from one holder closes the database under every other holder in the JVM.
+   The holders are ordinary: `AbstractRewriteMojo.runGenerator` opens one
+   `CapturePort.holding(ctx.storeDirectory())` per mojo execution, so a reactor opens the store once
+   per module in one Maven JVM, and `SWEPT_HOMES`'s javadoc records two modules reaching `openAt`
+   concurrently under `-T 1C`. `PersistentStoreTest`'s holder and writer pairs are the same shape at
+   the test tier. A separate process is not the risk: `openAt` refuses a second process outright and
+   falls back in well under a second.
+
+   So the step adds a per-file open count as JVM-wide state beside `SWEPT_HOMES`, and compacts when
+   it reaches zero. The case for it is correctness rather than arithmetic: one holder must not close
+   the database under another. How often two holders meet depends on the build's shape rather than
+   on its module count, since a plugin runs where it is configured. A consumer typically binds the
+   goal in one module (opptak declares the plugin under `<pluginManagement>` and binds it only in
+   `opptak-subgraph`), so its store is opened once per build. The shapes that do put several handles
+   on one file are this repo's own reactor, a `graphitron:dev` session sharing a JVM with the LSP and
+   MCP readers, and `PersistentStoreTest`'s holder and writer pairs.
 2. **Fail fast on a store too large to service.** A cheap pre-check on file size sends a run straight
    to a fresh store rather than attempting a clear, or a compaction, that will not finish in a time a
    build may spend. Whether the per-source delete should be a partition drop rather than a row-by-row
    `DELETE` belongs here too.
-3. **Bound the cache in bytes, and reach the workspaces no build opens.** Give the cache home a byte
-   budget spanning its workspaces, and a way to reclaim a workspace that has gone quiet. This is the
-   axis that produced most of the 7.4 GB, so it is not a follow-up to the file-level fix.
+3. **Bound the cache root in bytes, and reach the workspaces no build opens.** Two levels have to be
+   kept apart here, because the tree already uses "home" for the lower one.
+   `AbstractRewriteMojo.resolveStoreDirectory` returns
+   `<userCacheRoot>/graphitron/model/<workspace-segment>`, and that per-workspace directory is the
+   home an opener hands `StoreReaper.sweep`. The level that actually held the measured 7.4 GB is its
+   parent, `<userCacheRoot>/graphitron/model`, the *cache root*: a directory no opener is ever given
+   and that `graphitron-model` cannot see, since the only resolver that knows it lives in
+   `graphitron-maven-plugin`. A byte budget over it therefore needs an owner that does not exist
+   today, which is what makes this larger than the sweep it sits beside, and the step has to say
+   which module gets it. It also has to say what the budget means when a consumer pins
+   `-Dgraphitron.store.directory`, which `resolveStoreDirectory` takes verbatim: there is no sibling
+   workspace set under a pinned home, so the budget either degrades to that one home or does not
+   apply.
 4. **Let two processes in one checkout both keep warm.** `graphitron:dev` and `quarkus:dev` (which
    runs `generate`) lose warm start to each other every round. The second process is already refused
    in under a second, so the question is whether the loser can keep a warm store of its own, not what
@@ -84,11 +120,33 @@ against compacting.
 5. **Make the cost visible.** Log time spent in the store per run and the file's size, so a developer
    reading a slow build sees the store named rather than inferring it from a thread dump.
 
+## What Ready covers
+
+Ready authorises steps 1 and 5: compact at the last handle's release, and report what the store
+cost. They are the smallest pair that changes a consumer's build, and step 5 is what makes step 1's
+effect legible.
+
+Steps 2 to 4 return through Spec once step 1 has shipped and been measured. They are an axis rather
+than a proposal, and each carries a fork this item does not settle: the threshold that makes a store
+too large to service (step 2), which module owns a cache-root budget (step 3), and whether a second
+process can keep a warm store of its own (step 4). Compact-on-close also moves the ground under all
+three by changing how large a store ever gets, so specifying them now would be specifying against
+the wrong baseline.
+
 ## Verification
 
 A growth curve across repeated real captures with compact-on-close enabled, measured on this repo,
 which reproduces the mechanism without any consumer checkout. The store's size after each capture is
 the measurement; a bounded curve is the pass.
+
+Record the time each close spends compacting alongside the size, because the size alone prices the
+wrong thing. Both figures in the table above are a *first* compaction of a long-accumulated store,
+and the steady state is what the goal's "seconds rather than minutes" actually rests on. Measured on
+the already-compacted 26.7 MB store, a further `SHUTDOWN COMPACT` still costs 849 ms to 1.5 s,
+because it rewrites the live set whether or not there is garbage to reclaim. Once per build that is
+affordable, but it is not free and it scales with the live set rather than with the garbage, so a
+graph that grows pays more at every close. That is the number the goal's promise rests on, and
+nothing measures it today.
 
 ## Considered and rejected
 
@@ -105,8 +163,9 @@ store restarts its retention clock, so the following run reclaims the previous r
   must run on every close forever or is covering for something addressable.
 * What threshold makes a store "too large to service", and whether it is stated in bytes or as a
   multiple of what a cold capture of that graph produces.
-* Whether the read-path stall is bounded by the same size guard as the clear. Discard-and-rebuild
-  fixes it only if the rebuilt store is small enough for the query to complete.
+* Whether a bounded reader's budget is the right guard for the editor surface at all, or whether the
+  claim views want their own size guard. Compact-on-close should lift them back under budget, and if
+  it does not, that is a separate item rather than more of this one.
 * Whether the hard-killed-store item (R757), which also ends in "discard a file no run can warm
   from", shares the discard mechanism this item needs.
 
@@ -114,6 +173,31 @@ store restarts its retention clock, so the following run reclaims the previous r
 
 The efficiency of the dev session's index and refresh loop, which is R916. That is a question about
 how much the loop re-reads per round; this item bounds the cache the loop fills.
+
+## Author response, round 1
+
+Findings 1, 3, 4 and 5 are taken and the body is revised for each: step 1 now names a per-file open
+count as what represents ownership and states the JVM-wide state it costs; step 3 separates the
+per-workspace home from the cache root above it and asks which module owns a budget over the root;
+a "What Ready covers" section says Ready authorises steps 1 and 5 and returns steps 2 to 4 through
+Spec; and the read-path paragraph now names `intent_resolved_field_claim`, `intent_column_match_claim`
+and the bounded reader that raises `57014`, and no longer offers that observation as evidence about
+the clear.
+
+Two qualifications, neither changing what was owed. Finding 5's lexical claim is too strong: the
+claim views exist as `intent_resolved_field_claim` and `intent_column_match_claim`, so "intent
+claims" was the live vocabulary rather than an invented term. The convention point stands and is
+what the revision acts on, since prose should anchor on the identifier an implementer can grep.
+
+Finding 2's withdrawal is right, and its arithmetic was wrong twice over. Re-measuring gives the
+half the correction assumed rather than measured: a further compaction of the already-compacted
+26.7 MB store still costs 849 ms to 1.5 s, because `SHUTDOWN COMPACT` rewrites the live set whether
+or not there is garbage, so later closes are cheaper than the first but not cheap. The premise under
+both the finding and its withdrawal is the weaker part: a plugin runs where it is configured, not
+once per module, and the reporting consumer binds `graphitron-maven-plugin` in one module only, with
+the root pom carrying it under `<pluginManagement>`. A twenty-module reactor does not open the store
+twenty times, so no version of the multiplication describes a real build. The handle count stays in
+the plan on finding 1's correctness grounds alone. The Verification note is taken.
 
 ## Workaround for consumers until it lands
 
