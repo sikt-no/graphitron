@@ -709,6 +709,11 @@ class PersistentStoreTest {
      * compaction removed. The unbounded growth this item exists to stop emerges over hundreds of
      * runs, which is not a unit test. What is checkable at every close is that the close reclaims,
      * and a close that reclaims every time is what keeps the long curve flat.
+     *
+     * <p>Halving is the bound because the reclaimable share follows the capture count rather than
+     * the graph: five captures leave roughly five copies of a live set of one, so the ratio sits
+     * near a fifth (measured 643,072 against 2,433,024) whatever the fixture holds. Enlarging the
+     * SDL above moves both sides together and does not eat the margin.
      */
     @Test
     @DisplayName("the last handle's compaction reclaims what recapture left behind")
@@ -719,13 +724,23 @@ class PersistentStoreTest {
         // A handle held across the captures, which is a dev session beside a build and is also what
         // keeps the garbage: no capture's own close is the last one, so none of them compacts.
         GraphitronModelStore held = GraphitronModelStore.openAt(directory);
-        for (int recapture = 1; recapture <= 4; recapture++) {
-            captureInto(directory, tmp);
+        try {
+            for (int recapture = 1; recapture <= 4; recapture++) {
+                captureInto(directory, tmp);
+            }
+        } finally {
+            held.close();
         }
-        held.close();
 
         var compaction = held.compaction().orElseThrow(
             () -> new AssertionError("the only handle on the file reported no compaction"));
+        // Both sizes first, because the record reports an unreadable file as -1 and the ratio below
+        // is satisfied by -1 against -1: a measurement that failed outright would otherwise pass
+        // the assertion that exists to catch a compaction that did nothing.
+        assertThat(compaction.bytesBefore())
+            .as("the file was measured before the shutdown").isPositive();
+        assertThat(compaction.bytesAfter())
+            .as("the file was measured after the shutdown").isPositive();
         assertThat(compaction.bytesAfter())
             .as("the file after the shutdown against before it (before=%d, after=%d): five captures"
                 + " of one small graph leave far more file than facts, and the compaction is what"

@@ -173,16 +173,19 @@ mutation showed why it cannot become one: uncompacted, the file after four captu
 rather than climbing, so at any capture count a unit test can afford the later figure is as likely to
 sit below the earlier one as above it. The unbounded growth is a hundreds-of-runs effect. What is
 checkable at every close is that the close reclaims, and a close that reclaims every time is what
-keeps the long curve flat. The curve stays below as the measurement that motivated the item.
+keeps the long curve flat. The curve itself stays in Delivered, as the measurement that motivated
+the item rather than as the check on it.
 
-Record the time each close spends compacting alongside the size, because the size alone prices the
-wrong thing. Both figures in the table above are a *first* compaction of a long-accumulated store,
-and the steady state is what the goal's "seconds rather than minutes" actually rests on. Measured on
-the already-compacted 26.7 MB store, a further `SHUTDOWN COMPACT` still costs 849 ms to 1.5 s,
-because it rewrites the live set whether or not there is garbage to reclaim. Once per build that is
-affordable, but it is not free and it scales with the live set rather than with the garbage, so a
-graph that grows pays more at every close. That is the number the goal's promise rests on, and
-nothing measures it today.
+The time each close spends compacting is reported alongside the size, because the size alone prices
+the wrong thing, and the `Compaction` record delivers exactly that: `RunStore.close()` says the
+elapsed milliseconds with the before and after. Both figures in the measurements table above are a
+*first* compaction of a long-accumulated store, and the steady state is what the goal's "seconds
+rather than minutes" actually rests on. Measured on the already-compacted 26.7 MB store, a further
+`SHUTDOWN COMPACT` still costs 849 ms to 1.5 s, because it rewrites the live set whether or not
+there is garbage to reclaim. Once per build that is affordable, but it is not free and it scales
+with the live set rather than with the garbage, so a graph that grows pays more at every close. The
+record is what makes that visible to a consumer who starts paying it; no test bounds it, and
+bounding it is R917's question rather than this item's.
 
 ## Considered and rejected
 
@@ -491,3 +494,32 @@ curve is a measurement rather than a test.
 the database rather than a store handle, so it is not counted among the holders the close consults
 and does not hold the compaction off, and a caller holding both owns the order. The finding is right
 that the old reason was complete before this change and not after it.
+
+### Author self-review, after round 4's rework
+
+Not a gate review; the reviewer rule needs a different session. This records what the author found
+checking the rework before asking for one, and the two defects it fixed.
+
+**The new test could pass without measuring anything.** `fileBytes()` reports an unreadable file as
+`-1`, and the reclamation assertion was `bytesAfter() < bytesBefore() / 2`. With both reads failing
+that is `-1 < 0`, which passes. A test whose whole purpose is to fail when the compaction does
+nothing would also have gone green when the measurement never happened, which is the same
+half-delivered shape round 4 caught one level up. Both sizes are now asserted positive before the
+ratio is taken.
+
+**The held handle leaked on failure.** A capture throwing inside the loop left the handle open and
+its slot held for the life of the JVM. The temp directory is unique per test so nothing else was
+affected, but the close belongs in a `finally` and now is.
+
+**The halving bound is scale-stable, which the test now says.** The reclaimable share follows the
+capture count rather than the graph size: five captures leave roughly five copies of a live set of
+one, so the ratio sits near a fifth (measured 643,072 against 2,433,024) whatever the fixture holds.
+Enlarging the SDL moves both sides together. This answers the headroom question the rework left
+open, and it is recorded on the test rather than only here.
+
+Both mutation runs were re-established after these edits, since the evidence is about the test as it
+now stands: with the fix the class passes at 18 tests, and with `SHUTDOWN COMPACT` swapped out the
+new test fails on `before=after=5,234,688` while the two mechanism tests still pass.
+
+Also corrected here: the Verification section still asked for the compaction time to be recorded and
+said nothing measured it, which the `Compaction` record had already delivered.
