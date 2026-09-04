@@ -1,7 +1,7 @@
 ---
 id: R916
 title: "The dev session index and refresh loop re-reads only what changed"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: tooling
