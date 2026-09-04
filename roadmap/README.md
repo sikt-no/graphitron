@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
+| `R914` | The fact store cache grows without bound, and a large store stalls every build that opens it | Ready | 2026-09-04 <sub>created 2026-09-03</sub> | [plan](fact-store-file-grows-without-bound.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-08-31 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R914` | The fact store cache grows without bound, and a large store stalls every build that opens it | In Review | 2026-09-04 <sub>created 2026-09-03</sub> | [plan](fact-store-file-grows-without-bound.md) |
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R916` | The dev session index and refresh loop re-reads only what changed | Spec | 2026-09-03 | [plan](dev-session-index-refresh-loop.md) |
@@ -680,7 +680,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R914` [**The fact store cache grows without bound, and a large store stalls every build that opens it**](fact-store-file-grows-without-bound.md) — In Review, dx
+- `R914` [**The fact store cache grows without bound, and a large store stalls every build that opens it**](fact-store-file-grows-without-bound.md) — Ready, dx
 - `R857` [**A dev start evaluates the whole materialization register twice, the second pass producing identical rows**](dev-start-refreshes-the-register-twice.md) — Spec, dx, blocked by [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
 - `R872` [**A warm capture empties four source-keyed catalog relations for every source, having partitioned only the ten it lists**](warm-capture-empties-unpartitioned-catalog-relations.md) — Backlog, bug
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx

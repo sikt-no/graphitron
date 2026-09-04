@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: In Review
+status: Ready
 bucket: dx
 priority: 1
 theme: tooling
@@ -392,3 +392,53 @@ this session's edits cost. Deleting three steps and arguing why they are not nee
 implementer does *not* build; it adds no design for a reviewer to check, and "Why this is the whole
 fix" is a scope justification rather than a plan section. This is the existing sign-off surviving a
 narrowing, not a new one, and this session is not claiming to have given it.
+
+### Round 4 (2026-09-04, In Review -> Ready, reviewer session 01NawxZuKWXYC5ik4QRYSyRV)
+
+Verdict: withhold, on gate four. One blocking finding, one small one carried over from round 2.
+
+*What was checked and holds.* The implementation is the change the spec approved, and the three
+details it decided beyond the plan are each decided the right way. Reserving before `connect` rather
+than at construction closes the window the plan left open; every arm of `openAt` that does not hand
+back a file-backed store releases again, and I walked all four (the `existing` mismatch, the
+`RuntimeException` catch, and the two success arms that correctly keep their slot). Compacting inside
+`Map.compute` rather than after it is what makes the count's guarantee hold while the shutdown runs,
+and `reserve`'s `merge` on the same key is what blocks against it. Keying on the absolute normalised
+path is right for a public `openAt`. `close()`'s idempotence is real and pinned. Routing the report
+through a `Compaction` record that `RunStore.close()` says, rather than logging inside the boot
+package, follows the seam `Reaped.report` already set. `StoreConsole` is not exposed by any of this:
+it reads relation names off the store's connection and then serves its own in-memory database, so it
+holds no second connection on the file. `PersistentStoreTest` passes, 17 tests, including
+`aSecondOpenerLeavesTheStoreIntact`, which is the regression guard the risk here needed.
+
+**Finding 1 (gate four: how do we know the item is complete). The two new tests pin that the
+mechanism fires, not that the file stays bounded, and the item's own named verification is not in the
+tree.** The Verification section says the pass is a growth curve over repeated captures with a
+bounded curve, and the Delivered section reports one: 2.8 MB to 4.2 MB uncompacted against 0.64 MB
+flat with the fix. That measurement exists only as prose in a commit message and this file. Nothing
+re-runs it. What is committed asserts `compaction()` is present on the last handle and empty on an
+earlier one, and that a double close releases one slot; all three are true of the handle count, and
+none of them is true of compaction. The concrete failure: replace `SHUTDOWN COMPACT` with any
+statement that leaves the file alone, keep the `Compaction` record populated around it, and both new
+tests still pass, the build stays green, and the goal ("a store file stays within a small multiple of
+the facts in it however many times it is recaptured") is entirely undelivered. That is exactly the
+half-delivered state a green build cannot distinguish.
+
+The fix is cheap and the fixture already exists. `theLastHandleCompacts` calls `captureInto` and then
+opens handles; capturing a second time into the same directory and asserting the file after the
+second close is within a small multiple of its size after the first encodes the goal sentence
+directly, at two captures rather than the eight the manual curve used. Asserting
+`bytesAfter < bytesBefore` on the `Compaction` record is the weaker alternative and would also close
+the hole, but it prices one close rather than the growth across closes, which is what the item is
+about. Either is a test; the number in the commit message is not.
+
+**Finding 2 (gate three, carried from round 2's note). The invariant this change creates is still
+undocumented, and the javadoc nearest to it now gives the wrong reason.** `reader(ReadBudget)` mints
+a connection this count does not see, so the last store handle's `SHUTDOWN COMPACT` closes the
+database under any live `StoreReader` on that file. `reader`'s javadoc still says closing the store
+under a live reader is "the one ordering that matters, since an in-memory database goes with its
+owner". That reason was complete before this change and is not now: the file-backed case has the same
+ordering requirement and a different cause. A reader of that sentence would conclude a file-backed
+store is safe to close under a live reader, which this commit made false. Nothing in the tree is
+broken by it, `DevMojo` closing `lspStore` and `mcpStore` before `sessionStore`, which is why this is
+a sentence rather than a defect. Say it on `reader` and on `close`, where round 2 asked for it.
