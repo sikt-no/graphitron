@@ -190,10 +190,13 @@ hand.
 
 `DevMojo` holds the session census in `sessionCensus` and routes all three generator construction
 sites through one `generatorFor(ctx)`, because a site that constructed a generator directly would
-quietly get a census of its own and re-parse the whole classpath. Phase three is
-`ClasspathCensus.Round`, reported by the census and logged by `DevMojo` once per round: the count
-that matters is what was *not* re-read, since a regression here produces correct output slowly and
-is otherwise invisible.
+quietly get a census of its own and re-parse the whole classpath.
+
+Phase three is `ClasspathCensus.Round`, said to a sink the session registers rather than returned
+for the session to ask about. `generatorFor(ctx)` registers it, which is the one place every cadence
+passes through, so the schema cadence, the classpath cadence and the quiet start-up build all report
+without three call sites having to remember to ask. The count that matters is what was *not*
+re-read, since a regression here produces correct output slowly and is otherwise invisible.
 
 Measured on this repo, 13 entries and 3,421 classes, against the cold scan the loop paid before:
 
@@ -216,14 +219,20 @@ recompile re-parses one file. What remains per round is the jar hashing and the 
 which is the floor this design chose. The jOOQ catalog's 36 to 46 ms is untouched and still paid, as
 the plan says it is.
 
-Seven cases in `ClasspathCensusTest` pin it, each pairing a claim about the work with an equality
-check against a freshly scanned census, because the risk here is a stale census rather than a slow
-one. Four mutations were run against them: a directory that ignores the file stamp and a jar reused
+Nine cases in `ClasspathCensusTest` pin it. Seven pair a claim about the work with an equality check
+against a freshly scanned census, because the risk here is a stale census rather than a slow one;
+two cover the reporting, one that every read reaches the sink and one on the sentence itself, since a
+report that said "nothing re-read" on a round that re-read something would satisfy every assertion
+that reads the record instead of the text. `DevMojoTest.runGeneratorPass_reportsWhatTheClasspathCensusCost`
+pins the wiring from the other end, driving two rounds and reading the session's log back: the second
+round reporting "nothing re-read" is also what proves the two rounds shared one census. Five
+mutations were run: a directory that ignores the file stamp and a jar reused
 regardless of its hash are both caught, as is a jar never reused. The fourth, merging a directory's
 new file map into the old instead of rebuilding it, is not caught, and that is correct rather than a
 gap: the census is accumulated from the walk rather than read back out of the cache, so a merge
 costs cache growth and a wider blind spot on a deleted-then-recreated file, not a wrong answer. The
-comment there says so instead of claiming the correctness it does not carry.
+comment there says so instead of claiming the correctness it does not carry. The fifth, dropping the
+sink registration from `generatorFor`, is caught, which is the round-2 finding's own failure mode.
 
 ## What this does not address
 
@@ -485,3 +494,44 @@ question now cites R914's measured 193,863 rows across a whole store, which is t
 actually exists, and states the `jvm_` share as substantial rather than putting a figure on it.
 
 No change to phases two and three, to the verification, or to what the item declines to address.
+
+### Author response to round 2
+
+Both findings accepted and addressed.
+
+**Finding 1.** Correct, and the direction of the gap is the bad one: the reporting was wired into
+`runGeneratorPass` only, so the schema cadence reported reusing everything while the classpath
+cadence, the one that actually re-reads, said nothing. The `LOGGER.debug` line in `runPipeline` fired
+on both and is invisible in a dev session, so phase three was delivered for one of the two cadences.
+
+Wiring the two missing sites would have fixed the symptom and kept the fault: three call sites that
+each have to remember to ask is what produced the miss. So the census now says each round's cost to a
+sink instead, registered in `generatorFor(ctx)`, which is the single place every cadence passes
+through and which the finding itself confirms is exhaustive. `lastRound()` is gone rather than left
+as unused API. A census with no sink says nothing, which keeps a one-shot goal silent: it has one
+round and nothing to compare it against.
+
+**Finding 2.** Also correct, and the comment was the worse half of it. "Package-private so
+DevMojoTest can assert a round's reuse" described a test that did not exist, which is a claim rather
+than a rationale, and the sibling `incrementalCompiler` comment backing its identical phrasing with a
+real assertion is what makes it read as one.
+
+Three tests now, and the comment says what the field is actually for.
+`ClasspathCensusTest.everyRoundIsReported` pins that every read reaches the sink, with the cold, the
+unchanged and the recompile round distinguished. `theReportSaysWhatTheRoundDid` asserts the sentence
+rather than the record, because a report claiming "nothing re-read" on a round that re-read something
+would pass every counter assertion.
+`DevMojoTest.runGeneratorPass_reportsWhatTheClasspathCensusCost` drives two real rounds and reads the
+session's log back, which is the only way to see that a cadence is connected, the census reporting
+from inside the pass. It runs through the malformed-schema arm on purpose: the census is read before
+any schema work, so a failing round still reports, and the test stays independent of everything a
+successful pass needs. Its second round reporting "nothing re-read" is also what proves the two
+rounds shared one census rather than each getting its own.
+
+Removing the sink registration from `generatorFor` fails that test, so the round-2 finding's own
+failure mode is now covered.
+
+Delivered said "logged by `DevMojo` once per round", which the finding is right to call an
+overstatement heading for Done. It now describes the sink and names the cadences it covers.
+
+Nothing about phase one changed. The design the finding explicitly did not dispute is untouched.

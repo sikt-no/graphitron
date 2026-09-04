@@ -12,7 +12,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
@@ -82,8 +82,13 @@ public final class ClasspathCensus {
 
     private final Map<Path, Cached> cached = new HashMap<>();
 
-    /** What the most recent {@link #read} paid, for a caller that logs per round. */
-    private Round lastRound;
+    /**
+     * Where each round's cost is said, or null for a caller that does not want it said. Registered
+     * rather than returned so that every read reports on every cadence: a caller that had to ask
+     * after the fact would have to ask at each of its call sites, and the site that forgot would go
+     * quiet on exactly the rounds that re-read something.
+     */
+    private Consumer<Round> sink;
 
     /**
      * The jOOQ package the cache was built against. It decides which classes the parse admits, so a
@@ -124,17 +129,20 @@ public final class ClasspathCensus {
             counters.jarsReused, counters.jarsRead,
             counters.filesReused, counters.filesRead,
             census.size(), (System.nanoTime() - startedAt) / 1_000_000L);
-        lastRound = round;
+        if (sink != null) {
+            sink.accept(round);
+        }
         return new Reading(census, round);
     }
 
     /**
-     * What the most recent read paid, or empty before the first one. For the session that owns this
-     * census and logs a line per round: the read itself happens inside a generator pass, so the
-     * owner has no other way to say what the round cost.
+     * Says every round's cost to {@code sink}, replacing any previous one. The session that owns
+     * this census registers once and every read reports, including the reads inside a cadence the
+     * owner does not otherwise log. A census with no sink says nothing, which is what a one-shot
+     * goal wants: it has one round and no round to compare it against.
      */
-    public synchronized Optional<Round> lastRound() {
-        return Optional.ofNullable(lastRound);
+    public synchronized void reportTo(Consumer<Round> sink) {
+        this.sink = sink;
     }
 
     private List<CompletionData.ExternalReference> readEntry(

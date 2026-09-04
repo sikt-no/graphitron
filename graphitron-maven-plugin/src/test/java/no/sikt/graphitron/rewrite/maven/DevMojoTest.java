@@ -201,6 +201,37 @@ class DevMojoTest {
                 .contains(broken.toString()));
     }
 
+    /**
+     * Phase three's wiring: a round says what the classpath census cost, in the session's own log.
+     * The claim is about the wiring rather than about the counters, which
+     * {@code ClasspathCensusTest} covers: the census reports from inside the pass, so the only way
+     * to know a cadence is connected is to drive one and read the log back.
+     *
+     * <p>Driven through the malformed-schema arm deliberately. The census is read before any
+     * schema work, so a round that goes on to fail still reports, and using the failing arm keeps
+     * this test independent of everything a successful pass needs.
+     */
+    @Test
+    void runGeneratorPass_reportsWhatTheClasspathCensusCost(@TempDir Path basedir) throws Exception {
+        Path broken = basedir.resolve("broken.graphqls");
+        Files.writeString(broken, "type Query { films: [Film] }\nstrayTokenHere\n");
+
+        var log = new CapturingLog();
+        var mojo = new DevMojo();
+        mojo.setLog(log);
+
+        mojo.runGeneratorPass(contextFor(basedir, broken), "regen");
+        mojo.runGeneratorPass(contextFor(basedir, broken), "regen");
+
+        var reported = log.infos.stream().filter(line -> line.contains("classpath census:")).toList();
+        assertThat(reported)
+            .as("every round says what the census cost, not only the first")
+            .hasSize(2);
+        assertThat(reported.get(1))
+            .as("the second round changed nothing on the classpath, so it re-read nothing")
+            .contains("nothing re-read");
+    }
+
     @Test
     void runGeneratorPass_missingSchema_takesInfrastructureArmWithThrowable(@TempDir Path basedir) {
         // A missing / unreadable file is a bare RuntimeException, not a SchemaParseException,

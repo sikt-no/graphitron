@@ -232,9 +232,9 @@ public class DevMojo extends AbstractRewriteMojo {
     // The session's classpath census, held across rounds so a round re-reads only the entries whose
     // bytes moved. A .graphqls save cannot change a classfile, so those rounds re-read nothing;
     // a one-file recompile re-reads that file. Held here for the same reason sessionCapture is:
-    // only the session knows its process outlives the round. Package-private so DevMojoTest can
-    // assert a round's reuse. Carries no loaded class, so it is safe across the codegen loader
-    // that every round rebuilds and closes.
+    // only the session knows its process outlives the round. Carries no loaded class, so it is
+    // safe across the codegen loader that every round rebuilds and closes. Package-private so
+    // DevMojoTest can hand a round a census of its own and read what it reported back.
     ClasspathCensus sessionCensus = new ClasspathCensus();
     // The language server's own reader over sessionStore, minted once the store opens and closed
     // ahead of it in cleanup(). Null for the bare mojos that never start a session.
@@ -994,6 +994,12 @@ public class DevMojo extends AbstractRewriteMojo {
      * get a census of its own and re-parse the whole classpath.
      */
     private GraphQLRewriteGenerator generatorFor(RunContext ctx) {
+        // Registered here rather than at session start-up because this is the one place every
+        // cadence passes through. The census then says its own cost from inside the pass, so the
+        // schema cadence, the classpath cadence and the quiet start-up build all report without
+        // three call sites having to remember to ask; the classpath cadence is the one that
+        // re-reads, so it is the one a missed site would have silenced.
+        sessionCensus.reportTo(round -> getLog().info("graphitron:dev: " + round.report()));
         return new GraphQLRewriteGenerator(ctx, captureFor(ctx), sessionCensus);
     }
 
@@ -1018,10 +1024,6 @@ public class DevMojo extends AbstractRewriteMojo {
             }
             previousErrorKeys = Set.of();
             getLog().info("graphitron:dev: " + label + " ok");
-            // What the round paid for the classpath, said every round rather than only when it
-            // changes. A regression in the invalidation produces correct output slowly, so the
-            // round that quietly re-reads a population nothing touched is invisible without this.
-            sessionCensus.lastRound().ifPresent(round -> getLog().info("graphitron:dev: " + round.report()));
             return new PassRound(pass.output(), true);
         } catch (SchemaParseException e) {
             // An invalid intermediate schema mid-edit is expected and author-correctable;

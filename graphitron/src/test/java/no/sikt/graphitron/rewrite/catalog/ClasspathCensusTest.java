@@ -197,6 +197,57 @@ class ClasspathCensusTest {
         assertThat(round.references()).isEqualTo(coldScan(entries));
     }
 
+    /**
+     * The report reaches a registered sink on every read, which is what phase three rests on. A
+     * census that computed the round and said it to nobody would leave a regression in the
+     * invalidation invisible: the loop would still produce correct output, only slowly.
+     */
+    @Test
+    @DisplayName("every round is reported to the registered sink")
+    void everyRoundIsReported(@TempDir Path tmp) throws IOException {
+        Path classes = classesWith(tmp, "com.example.own.First", "com.example.own.Second");
+        var entries = entriesOver(classes);
+        var census = new ClasspathCensus();
+        var said = new java.util.ArrayList<ClasspathCensus.Round>();
+        census.reportTo(said::add);
+
+        census.read(entries, JOOQ_PACKAGE);
+        census.read(entries, JOOQ_PACKAGE);
+        recompile(classes, "com.example.own.First");
+        census.read(entries, JOOQ_PACKAGE);
+
+        assertThat(said).as("one report per read, not one per change").hasSize(3);
+        assertThat(said.get(0).filesRead()).as("the cold round read both files").isEqualTo(2);
+        assertThat(said.get(1).reusedEverything()).as("the unchanged round read nothing").isTrue();
+        assertThat(said.get(2).filesRead()).as("the recompile round read one file").isEqualTo(1);
+        assertThat(said.get(2).reusedEverything()).isFalse();
+    }
+
+    /**
+     * The sentence a caller logs has to distinguish the two outcomes, because that is the whole of
+     * what a reader is watching for. Asserted on the text rather than only on the counters: the
+     * counters are already covered above, and a report that said "nothing re-read" on a round that
+     * re-read something would pass every assertion that reads the record instead of the sentence.
+     */
+    @Test
+    @DisplayName("the report says whether the round re-read anything")
+    void theReportSaysWhatTheRoundDid(@TempDir Path tmp) throws IOException {
+        Path classes = classesWith(tmp, "com.example.own.First");
+        Path jar = jarWith(tmp, "com.example.lib.Library");
+        var entries = entriesOver(classes, jar);
+        var census = new ClasspathCensus();
+
+        var cold = census.read(entries, JOOQ_PACKAGE).round();
+        assertThat(cold.report())
+            .contains("2 classes")
+            .contains("1 of 1 jars re-read")
+            .contains("1 of 1 class files re-parsed")
+            .doesNotContain("nothing re-read");
+
+        var warm = census.read(entries, JOOQ_PACKAGE).round();
+        assertThat(warm.report()).contains("nothing re-read").doesNotContain("re-parsed");
+    }
+
     /** The census a cold scan of the same entries produces: the answer every reuse must match. */
     private static List<CompletionData.ExternalReference> coldScan(List<ClasspathEntry> entries) {
         return ClasspathScanner.scan(entries, JOOQ_PACKAGE);
