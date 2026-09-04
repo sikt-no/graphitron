@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-09-03
-last-updated: 2026-09-03
+last-updated: 2026-09-04
 ---
 # The dev session index and refresh loop re-reads only what changed
 
@@ -23,15 +23,22 @@ than the size of the workspace.
 
 Both watch handlers run the same whole-workspace pass. `DevMojo.regeneratePass` (a schema save) and
 `DevMojo.rebuildCatalog` (a `.class` change) each construct a generator and run
-`GraphQLRewriteGenerator.runPipeline`, which opens with two whole-classpath reads: the jOOQ catalog,
-loaded reflectively, and the class census, from `CatalogBuilder.buildExternalReferences`. Those two
-are hoisted so a pass pays for each exactly once, but a pass happens per round, and a schema save
-cannot have invalidated either. `AbstractRewriteMojo.withCodegenScope` also builds a fresh
-`URLClassLoader` per round.
+`GraphQLRewriteGenerator.runPipeline`, which opens with two reads that a schema save cannot have
+invalidated. Both are hoisted so a pass pays for each exactly once, but a pass happens per round.
 
-`ClasspathScanner` reads every classfile in every non-`TRANSITIVE` entry: `Files.readAllBytes` per
-file for a directory root, every `ZipEntry` for a jar. The store's existing retention does not reach
-this. `StoreRefresh.prepare` computes the sources whose content hash still matches
+They are not the same kind of read, and the difference is what this plan turns on. The class census,
+from `CatalogBuilder.buildExternalReferences`, is a genuine whole-classpath read: `ClasspathScanner`
+opens every classfile in every non-`TRANSITIVE` entry, `Files.readAllBytes` per file for a directory
+root and every `ZipEntry` for a jar. The jOOQ catalog is not. It is a single
+`Class.forName(jooqPackage + ".DefaultCatalog", true, codegenLoader)`, and its cost is the static
+initializer cascade that one load triggers: `DefaultCatalog.<clinit>` constructs the schema, whose
+`<clinit>` constructs every generated table class in turn. That cost scales with the number of
+generated tables, not with the size of the classpath, and `AbstractRewriteMojo.withCodegenScope`
+pays it fresh every round because it builds a new `URLClassLoader` per round and closes it at the
+end.
+
+The store's existing retention does not reach that scan.
+`StoreRefresh.prepare` computes the sources whose content hash still matches
 `store_source.stamp` and pre-claims their classes so their rows are not re-inserted, which saves the
 writes and not the reads: capture walks exactly as it would cold, and the rows it would have
 re-inserted are dropped as duplicates. The knowledge also arrives too late to help, being computed
@@ -42,18 +49,25 @@ Measured on this repo:
 | Measurement | Result |
 |---|---|
 | Census over a 25-entry, 28.2 MB classpath | 5,032 classes, 53,279 methods |
-| First round (cold JIT) | 1,348 ms |
-| Rounds 2 to 5, nothing changed between them | 383 to 476 ms |
+| Census, first round (cold JIT) | 1,348 ms |
+| Census, rounds 2 to 5, nothing changed between them | 383 to 476 ms |
+| Catalog load, first round (cold JIT) | 324 ms |
+| Catalog load, rounds 2 to 6, fresh loader each round | 36 to 46 ms, 69 tables |
 | Stat-only walk of 1,421 reactor `.class` files | 2.9 ms |
 | Read-all walk of the same files | 12.0 ms, before any parsing |
 | Content hash of the same 28.2 MB jar set | 55.2 ms |
 
 The census figure is an upper bound for a classpath that size: the harness presented every entry as
-project-origin, while a real scan skips `TRANSITIVE` entries before opening them.
+project-origin, while a real scan skips `TRANSITIVE` entries before opening them. The catalog rows
+come from a harness that rebuilds and closes a `URLClassLoader` per round, as `withCodegenScope`
+does, over this repo's `no.sikt.graphitron.rewrite.test.jooq` fixture; a consumer with more generated
+tables pays proportionally more, and no consumer-scale measurement was taken.
 
-The last two rows are what the plan trades on. Verifying a jar by hashing it costs about an eighth
-of parsing it, and verifying a directory by stat costs about a quarter of merely reading it, before
-any parsing at all.
+Two things follow. The census is where the round's time goes, at roughly ten times the catalog load
+even on a fixture whose table count is modest, which is why the plan below addresses the census and
+leaves the catalog alone. And the last three rows are what the census half trades on: verifying a jar
+by hashing it costs about an eighth of parsing it, and verifying a directory by stat costs about a
+quarter of merely reading it, before any parsing at all.
 
 ## The three populations
 
@@ -84,8 +98,30 @@ of for the directory as a whole.
 
 The dev session is a long-lived JVM, so the census does not need re-deriving from anywhere. Keep it,
 and invalidate it per entry: hash a jar to confirm it is unchanged, stat a directory's files to find
-the ones the compiler rewrote, re-parse only those, and drop the entries whose files are gone. The
-jOOQ catalog load takes the same treatment on the same signal.
+the ones the compiler rewrote, re-parse only those, and drop the entries whose files are gone.
+
+The census only. The jOOQ catalog keeps being loaded fresh every round, and that is a decision rather
+than an omission: it cannot be held across rounds as the code stands, and it is not where the time
+goes. `JooqCatalog` is loader-bound by construction. It takes the `codegenLoader`, keeps it as a
+field, and resolves `Catalog` and every `Table` handle through it, with `keysClass`, `tablesClass`
+and `findRecordClass` calling `Class.forName` against it on demand; `allTableEntries` states the rule
+for callers, that they "must consume them within the same build pass and never retain them past the
+codegen loader's lifetime". That lifetime is one round, because `withCodegenScope` opens the
+`URLClassLoader` in a try-with-resources and closes it deliberately, "to release JAR file
+descriptors, which matters for the dev-mode loop that rebuilds the loader on every regeneration
+cycle". A retained catalog would therefore be reaching into a closed loader on the first `.graphqls`
+save, and would fail rather than degrade.
+
+Making the catalog reusable is a real piece of work with two possible shapes, and this item takes
+neither. Scoping the loader to the session and invalidating it on the classpath signal would trade
+the file descriptors back and raise a class-identity question the census does not have. Turning what
+the pipeline needs into loader-free data, the shape `columnFactsOf` already uses for values
+documented as "resolved-immutable, safe to retain past the codegen loader's lifetime", is the
+tree's own answer to this problem and is larger than the rest of phase one put together. What rules
+both out for now is the measurement rather than the difficulty: the catalog load is 36 to 46 ms
+against the census's 383 to 476 ms, so removing it entirely would buy about a tenth of what phase one
+buys, at several times the cost and risk. If a consumer with many more generated tables shifts that
+ratio, the loader-free-data shape is the arm to reach for, and it belongs in its own item.
 
 This is where the round's cost goes, and it needs no schema change. `store_source`'s own rationale
 sets the terms: the `(path, size, last-modified)` triple is "a heuristic, tolerable while a wrong
@@ -102,9 +138,15 @@ change the timestamp too, which is the safe direction and costs a re-parse rathe
 answer. Jars keep the content hash for exactly the reason the rationale gives, and the measurement
 above shows that costs little.
 
-The census is plain data records rather than loaded classes, so holding it across rounds carries none
-of the class-identity hazard that reusing the `URLClassLoader` would. The loader keeps being rebuilt
-per round.
+The census is safe to hold for the reason the catalog is not. `CompletionData.ExternalReference` and
+its children are strings, booleans and lists throughout, with no `Class` or loader reference
+anywhere in them, so a census outliving the loader that produced it carries none of the
+class-identity hazard, and the loader keeps being rebuilt per round without the census caring.
+
+It lives on `DevMojo`, as a field, handed to the generator per round as a constructor port. That is
+where `sessionCapture` already lives, with javadoc describing it as "the caller's to open, share
+between passes and close", so the shape is established rather than invented here. `RunContext` is
+not an option: it is documented as per-invocation and "never held in a static or `ThreadLocal`".
 
 ### 2. Give the persisted classpath facts per-file grain
 
@@ -143,6 +185,9 @@ Ready authorises phases one and three: hold the census across rounds with per-po
 invalidation, and report per round what was reused and what was re-read. They stand together because
 phase three is what keeps phase one's invalidation honest, and neither touches the schema.
 
+The jOOQ catalog is explicitly not authorised. It keeps loading fresh every round, for the reasons
+phase one gives, and the round after this lands still pays the 36 to 46 ms that load costs.
+
 Phase two returns through Spec once phase one has shipped and been measured. Whether reading a
 census out of the store beats parsing it is unanswered, phase one changes what a cold run would even
 need from the store, and the relation it would add is a schema change that should not be authorised
@@ -159,10 +204,9 @@ equality check against a freshly scanned census rather than a timing assertion a
 ## Open questions
 
 * Whether reading a census from the store beats parsing the jars, which decides whether phase two is
-  worth building. The `jvm_` tree runs to roughly 180,000 rows for a mid-size consumer, so this is
-  not obviously a saving and should be measured before the phase is committed to.
-* Whether the jOOQ catalog can be invalidated on the same signal as the census, or whether its
-  reflective load has to follow the classloader's lifecycle instead.
+  worth building. Reading rows back is not obviously cheaper than parsing classfiles, and R914
+  measured 193,863 rows across 151 tables in a single whole store, so the `jvm_` share alone is
+  substantial. Measure before committing to the phase.
 * What a restored build cache does to modification times under `target/classes`. In-process use is
   covered by the carve-out above, but the answer decides whether phase two's persisted grain can
   ever read a stat rather than a hash.
@@ -285,3 +329,42 @@ to open, share between passes and close". An implementer has a precedent to copy
 measures 193,863 rows across 151 tables for a whole store, which makes the figure plausible without
 establishing it. It sits in an open question, and it argues against building the phase it belongs
 to, so nothing rests on it.
+
+## Author response
+
+### Round 1
+
+Finding accepted, and the fork is settled the first way the findings name: the jOOQ catalog leaves
+phase one and keeps loading fresh every round. The reviewer's reading of the code is right in every
+particular, and re-checked here rather than taken on trust. `JooqCatalog` keeps the `codegenLoader`
+as a field and resolves through it lazily, `allTableEntries` tells callers not to outlive it, and
+`withCodegenScope` closes the loader in a try-with-resources at the end of the round. A held catalog
+would fail on the first save, not degrade.
+
+The findings ask what share of the round that leaves standing, on the grounds that the measurement
+table timed one of the two reads and not the other. That was the right thing to ask, and the missing
+number is now measured. A harness that rebuilds and closes a `URLClassLoader` per round, as
+`withCodegenScope` does, loads this repo's 69-table fixture catalog in 324 ms cold and 36 to 46 ms
+warm, against the census's 383 to 476 ms. The catalog is roughly a tenth of the pair, so phase one
+still addresses the great majority of the round even with the catalog excluded, and the two arms that
+would make the catalog reusable are named in the plan as the separate work they are rather than
+folded in here.
+
+Measuring it also corrected the item's own framing. "Two whole-classpath reads" was wrong about the
+catalog: it is one `Class.forName` whose cost is the static-initializer cascade across the generated
+table classes, so it scales with table count rather than classpath size. The stack trace confirms the
+cascade directly, `DefaultCatalog.<clinit>` to the schema's `<clinit>` to every table's. "What a
+round costs today" now says this, which also makes the exclusion legible where a reader meets the
+cost rather than only where the plan justifies it.
+
+The three sections that disagreed now say the same thing. Plan section one settles it and says why,
+"What Ready covers" states that the catalog is explicitly not authorised and that the round still
+pays for it, and the open question is gone because it is no longer open.
+
+Both non-blocking notes are folded in. The plan now says the census lives on `DevMojo` as a field
+handed over per round, citing `sessionCapture` as the precedent and `RunContext` as the ruled-out
+option, which is the shape the note pointed at. The unsourced 180,000-row figure is removed; the open
+question now cites R914's measured 193,863 rows across a whole store, which is the number that
+actually exists, and states the `jvm_` share as substantial rather than putting a figure on it.
+
+No change to phases two and three, to the verification, or to what the item declines to address.
