@@ -1,16 +1,48 @@
 ---
 id: R857
-title: "A dev start evaluates the whole materialization register twice, the second pass producing identical rows"
+title: "A dev round refreshes what the edit touched"
 status: Spec
 bucket: dx
 priority: 2
 theme: tooling
 depends-on: [warm-capture-empties-unpartitioned-catalog-relations]
 created: 2026-08-27
-last-updated: 2026-08-28
+last-updated: 2026-09-04
 ---
 
-# A dev start evaluates the whole materialization register twice, the second pass producing identical rows
+# A dev round refreshes what the edit touched
+
+## Goal
+
+A `graphitron:dev` round costs work proportional to what the developer changed, on the store side as
+the classpath census now does on the read side. Today a round re-reads nothing it does not need to
+(R916), and then rewrites and re-derives almost everything regardless: it re-parses every schema
+document, deletes and rewrites the whole of its graph's partition, and re-evaluates every registered
+materialization for that graph, whether the round fired because a `.graphqls` file was saved, because
+one consumer class was recompiled, or because a dev session started over a store that was already
+current. When this lands, a save re-parses the documents that moved, rewrites the partitions those
+documents own, and re-derives the registrations whose inputs those partitions feed; a round that
+changed nothing derives nothing.
+
+*Partition* here is the store's word: the rows one graph, or one classpath or schema source, owns in
+a relation that several of them share. A *registration* is one entry in the materialization register,
+a stored view whose rows are maintained in a table so readers do not pay the view's own cost;
+*refreshing* one means deleting its target's rows for a graph and re-running the view to refill them.
+
+> **Reframed and taken over on 2026-09-04**, from "A dev start evaluates the whole materialization
+> register twice, the second pass producing identical rows", filed under the slug
+> `dev-start-refreshes-the-register-twice` until that date. The narrow defect is unchanged and is
+> still here, under "The duplicate pass this item started as", and so is the mechanism five review
+> rounds shaped: a partition's currency is a claim recorded in the store, and whoever falsifies a
+> claim deletes it. What changed is the question the mechanism is pointed at. The duplicate pass is
+> one instance of a round doing work no edit asked for, the reader-side instance; the capture side
+> pays three more of them on every round of both cadences, and the currency claim answers the
+> derive half of those while the rewrite half is what has to move first for it to have anything to
+> answer. The item is now about what needs refreshing when something changes, and the
+> materialization register is one of the things that needs it. Reviewer rounds 1 to 5 at the end
+> of this file were written against the narrower item and are left as written, being a dated record;
+> the reframe is not a response to them and does not retire a single one of their findings.
+
 
 > **Citation redirect, 2026-08-28.** The R856 citations throughout this file name an item dissolved
 > into R876, which takes over the performance narrative; the evidence is in
@@ -26,13 +58,49 @@ last-updated: 2026-08-28
 > the direction, and it makes this item's case stronger: a second identical pass over the register is
 > a duplicate of something that costs hours on a real schema, not of something that costs 199 seconds.
 
+## What a round costs today
+
+Four unconditional passes, and only the first has been addressed.
+
+1. **The classpath census.** Held across rounds and re-read per entry since R916, so a round now
+   re-parses the classfiles a compile rewrote and nothing else. This is the shape the rest of this
+   list does not have yet, and the reason the rest is now visible.
+2. **The schema parse.** `GraphQLRewriteGenerator.runPipeline` calls `SchemaLoader.parsePerSource`
+   over every schema input, every round. There is no per-source cache, though the two populations
+   either side of it have one: `SourceWalker` caches parsed `.java` declarations by modification
+   time, and `ClasspathCensus` caches parsed classfiles by stamp.
+3. **The graph's own partition.** `StoreRefresh` retains partitions by source for the `jvm_` and
+   `sql_` families, and nothing else: the graph-scoped clear deletes every graph-keyed relation for
+   this run's graph and capture rewrites it whole. The store already records a content stamp for
+   each schema file, written by the SDL walk, and `StoreRefresh.freshSources` cannot reach it, the
+   only candidates it tests being names the classpath census produced. So the material for a
+   per-document decision is in the store, recorded every round, and read by nothing.
+4. **The register.** Every capture ends in `Materializations.refresh` over every registration for
+   its graph, and a dev start then calls `refreshAll`, which is the duplicate this item was filed
+   as.
+
+Passes 2 to 4 run on both watch cadences. A `.class`-only recompile re-parses and rewrites every
+schema fact although no schema byte moved; a one-file `.graphqls` save does the same for every
+document except the one that changed.
+
+The costs are not comparable to each other and should not be added up. Pass 4 is the expensive one by
+orders of magnitude: a real consumer capture was measured from inside the refresh at 15477.1 seconds
+over twenty registrations, and even a settled store's price list put fourteen positions at 199
+seconds. Passes 2 and 3 are unmeasured here, and measuring them is part of this item; what makes
+them belong in it is not their present size but that they are what pass 4's saving is gated on. A
+capture that has just deleted and rewritten its graph's whole partition has falsified every claim
+that partition backs, so it must re-derive everything, correctly. Refreshing less is only reachable
+through rewriting less.
+
+## The duplicate pass this item started as
+
 `DevMojo.execute` runs the initial generator pass, whose capture already refills every registered
 materialization for the graph it captured, and then calls `Materializations.refreshAll` on the
 session store. `refreshAll` refills every registration for every graph the store holds,
 unconditionally. On the ordinary case, one graph and an initial run that was not skipped, that is the
 entire register evaluated a second time to produce the rows the first pass just wrote.
 
-## Why nothing flags it
+### Why nothing flags it
 
 `refreshAll` is correct, and its javadoc says why it exists: it is "the entry point for a reader that
 opens a store it did not capture into", correct whether or not a capture ever ran, and idempotent.
@@ -43,7 +111,7 @@ about cannot hold.
 Idempotence is what hides it. The second pass is invisible in the output because it changes nothing,
 and it is invisible in the log because the refresh emits nothing at all, which is a sibling item.
 
-## What it costs
+### What the duplicate pass costs
 
 One full evaluation of the register, on the cadence of every `graphitron:dev` start. What that
 evaluation costs is bounded from below rather than known, and the figure has to be quoted with the
@@ -65,9 +133,9 @@ There is a second-order effect worth stating because it bears on the fix. `refre
 `analyse` inline and the capture path calls it after its transaction closes, so both passes also
 re-gather statistics.
 
-## The pass count is two, and only one of them is this item's
+### The pass count is two, and this item now covers both
 
-Worth stating so the fix is not credited with more than it does. A dev start captures once, and every
+Worth stating so the fix is credited with what it does and no more. A dev start captures once, and every
 generator entry point captures: `runPass` and `buildOutput` both reach
 `GraphQLRewriteGenerator.captureAndRead`, and each capture ends with `Materializations.refresh` for
 its graph inside its own transaction. So a dev start evaluates the register once before `refreshAll`
@@ -78,16 +146,24 @@ It was three until R859 landed, and the arithmetic is worth keeping because it i
 measured against. `DevMojo.execute` used to call `runGeneratorPass` and then `buildOutputQuietly`,
 and `regenerate` the same pair, so a round captured the graph twice milliseconds apart from one
 context. That was a separate defect with a separate fix, and R859 shipped it: the generator carries
-one pipeline body and four projections of it, and each mojo entry point takes exactly one. This item
-is the pass that survives that collapse, the one evaluation no capture asked for, and it is now half
-of a dev start's register work rather than a third of it.
+one pipeline body and four projections of it, and each mojo entry point takes exactly one. The
+reader-side pass is the one that survives that collapse, the one evaluation no capture asked for,
+and it is half of a dev start's register work rather than a third of it.
 
-## What changes for a consumer
+Under the reframe the other half is in scope too, and it is the half a developer feels: the capture's
+own refresh, paid again on every save and every recompile for the rest of the session. The narrow
+item could take that as given, because a capture that rewrites its whole partition has to re-derive
+it. What makes it addressable is rewriting less, which is why passes 2 and 3 of the list above joined
+this item rather than being filed beside it.
+
+## What a reader may observe
 
 A `graphitron:dev` start over a store that already holds the graphs it opens stops re-deriving the
 materialization register at all. The language server and MCP ports bind one full register pass
 sooner, plus one further pass per graph the store holds whose partitions no capture has disturbed.
-Nothing about generated output changes.
+Every round after it re-derives the registrations whose inputs its own edit falsified, which on a
+`.class` recompile or a one-document save is a small fraction of twenty. Nothing about generated
+output changes, on any of the three.
 
 What a reader may observe is worth stating exactly rather than sweepingly, because the first draft
 of this item promised more than it could deliver and four review rounds said so. Within one JVM,
@@ -302,6 +378,85 @@ Note what changed in this argument since the first draft: the keying of the *tar
 the refresh shape, as it always did, and no longer stands in for an argument about what the target's
 view reads. That substitution was the finding.
 
+## The other half: a round that rewrites less
+
+Refreshing less is gated on rewriting less, so this half comes first in the causal order even though
+it comes second in the plan. A capture that deletes and rewrites its graph's whole partition has
+falsified every claim over it and must re-derive the register in full; there is no rule that can
+excuse it, and none should try. The saving is reachable only by making the round's rewrites as
+narrow as its reads now are.
+
+**The store already models the unit, and says so in its own comments.** `graphql_type_declaration`
+is keyed `(graph_name, type_name, source_name, source_line, source_column)`, and its comment states
+what the source column is there for: it "records who contributed what and indexes the
+incremental-refresh unit ('which types does this file touch')". `graphitron_minted_type_site` says
+the same thing from the macro side, that its site count "is the carrier multiplicity an incremental
+refresh refcounts the type by". So the grain this half needs was designed in, twice, and nothing
+reads it that way yet. What is missing is not a schema change but a writer that respects the grain.
+
+**Not every SDL relation is at that grain, and the difference decides the work.** The declaration
+relations are per file and can be retained per file. The coordinate relations are not:
+`graphql_type_coordinate` and `graphql_field_coordinate` are graph-keyed with no source column, being
+what the merge of every declaration site produces, and `graphql_field_coordinate`'s comment says it
+is "written from the declaration sites". A type extended in two files has one coordinate row and two
+declaration rows, so a document's rewrite can change what its *neighbours'* declarations merge into.
+The honest shape is therefore not "skip the files that did not change" but two grains: rewrite the
+declaration rows of the documents whose stamp moved, then re-derive the merged relations for the
+types those documents touch, which is the query the declaration relation's own comment names. Any
+draft of this half that treats the merged rows as retainable per file is wrong, and it is worth
+saying here because it is the mistake the phrase "incremental refresh" invites.
+
+**The currency signal is already recorded.** The SDL walk stamps every schema file that resolves to a
+regular file, through `ClasspathSources.noteRegularFile` and `commitStamps`, precisely so that "a
+currency check can re-hash a cold graph's files without building its module". `StoreRefresh` cannot
+use it: `freshSources` tests only the names the classpath census produced, and no schema path is a
+member of that set, which the method's javadoc states outright as a property it relies on. So the
+material is written every round and read by nothing, and the change on this side is a second
+question asked of the same relation rather than a new fact to record.
+
+**The parse is the same shape one level up.** `SchemaLoader.parsePerSource` already reads per source,
+which is what makes a per-source cache a small change rather than a redesign: hold the parsed
+document per source across rounds in the dev session, keyed by content hash, and re-parse the
+documents whose hash moved. The registry the pipeline needs is assembled from all of them either
+way, so what is saved is the parse and not the assembly, and how much that is worth is unmeasured.
+The population is the same one `ClasspathCensus` holds for classfiles and `SourceWalker` holds for
+`.java` declarations, so this is the third instance of one pattern rather than a new mechanism.
+
+**What this does to the claim rule: nothing, which is the point.** The rule as specified says the
+capture-cadence entry point stays unconditional and records, on the ground that "a writer that has
+just rewritten a partition's inputs knows they changed, and only a reader has a question". That
+ground is exactly what this half removes. A capture that rewrites two documents out of ninety is a
+writer for what it rewrote and a reader for everything else, and it has the reader's question for
+the rest. The rule answers it without amendment: the capture deletes the claims of what it
+falsified, through the two hooks already specified (its own graph's rows ahead of its pass, and
+`ClasspathSources.upsert` for every source it rewrites, which is where a rewritten schema document
+already announces itself), and then refills exactly the partitions left unclaimed. It still never
+consults a claim to decide what *facts* to write. `Materializations.refresh` and the reader-side pass
+converge on one claim-driven body with two callers, which is a simplification of the specified
+design rather than an addition to it.
+
+**The objection this must answer, and does.** R865 dropped every declinable refresh path on R876's
+ground that "a refresh worth skipping is a registration worth retiring", and a reviewer should hold
+this item to that. It survives, because declining and not-recomputing are different acts. A
+declinable refresh lets a caller trade currency for time on its own judgment, and leaves a reader
+unable to tell which it got; that is the shape R876 rejected and this item does not reintroduce, the
+claim being a fact in the store rather than a caller's option. Skipping a partition whose inputs are
+provably untouched computes the identical rows by not computing them, and it is the same trade R916
+already made for the census and the store already makes for the `jvm_` partitions. The register's
+size stays a live question and stays R876's; nothing here is an argument for keeping an expensive
+registration.
+
+**Phasing, and what is measured before what is built.** The reader-side claim mechanism is specified
+below, has five review rounds behind it, and stands on its own: it removes the duplicate pass, and it
+is what puts the currency question in the store where this half can then ask it. The rewriting half
+is second for that reason, and its own first task is measurement, which the four-pass list above does
+not have for passes 2 and 3. What a Spec for it owes: what a round pays today for the schema parse
+and for the graph-partition rewrite, on this repo and on a schema with enough documents for the
+question to be interesting, and what share of a register refresh a one-document edit would actually
+avoid once the merged relations are re-derived for the types that document touches. If the answer is
+that a one-document edit falsifies most registrations anyway, this half is not worth building and the
+measurement says so.
+
 ## The premise, and its enforcer
 
 The premise is now a closure statement rather than a cadence one, which is the second half of what
@@ -448,6 +603,17 @@ load-bearing.
 
 ## Implementation
 
+Everything in this section is the first half, the claim mechanism and the reader-side pass. The
+second half has no implementation section yet on purpose: its first task is the measurement named at
+the end of "The other half" above, and specifying a per-document rewrite before that number exists
+would be the mistake this file's own reviewer rounds kept catching. What it will touch is already
+identifiable, and naming it is not the same as specifying it: `SdlFactCapture` and the graph-scoped
+half of `StoreRefresh.clear` for the declaration grain, a re-derivation of the merged coordinate
+relations for the types a rewritten document touches, `SchemaLoader.parsePerSource` and its caller in
+`GraphQLRewriteGenerator.runPipeline` for the parse cache, and `ClasspathSources.upsert`, which is
+already the invalidation hook and would simply start being reached by a schema document that changed
+rather than by all of them.
+
 **`graphitron-model.sql`.** New table `store_materialized_partition (source_view_name, graph_name)`,
 primary key on both columns, foreign keys to `meta_materialize (source_view_name)` and to
 `store_graph (graph_name)`. Its comment states what a row claims, names the two writers that delete
@@ -530,6 +696,13 @@ refreshes unconditionally.
 
 ## Tests
 
+The first half's tests are below, unchanged. The second half owes one observable of its own, stated
+here so the shape is agreed before the measurement decides whether to build it: a two-document schema
+in a dev session, where saving one document leaves the other's declaration rows in place, by row
+identity and not only by count, and refills only the registrations whose inputs the saved document
+feeds. The failure that assertion is aimed at is a rewrite that returns byte-identical rows, which
+every count-based or output-based assertion passes.
+
 - **`MaterializationOrderTest`**, or a sibling class if that one's fixtures stay graph-free: a
   graph-keyed scratch registration, refreshed at capture cadence, after which `refreshAll` refills
   nothing and returns zero. Then the same store after `Materializations.invalidate` for a source the
@@ -593,11 +766,12 @@ per-registration tier and two counts at the pass boundary, per the Implementatio
 
 ## Out of scope
 
-- **The capture-cadence cost R856 is about.** This item removes an evaluation nobody asked for; it
-  does nothing about the one the capture itself performs, which is where that hour goes.
+- **The register's size**, which is R876's question and stays out of this one. What a round pays is
+  the number of registrations times how often it evaluates them, and this item is entirely about the
+  second factor. (This bullet used to park the capture-cadence pass here as well, on the narrow
+  framing; the reframe moved that pass into scope and "The other half" above is where it now lives.)
+  R848 asks the same question from the schema side and is upstream of both factors.
 - **The double capture per pass**, which R859 has shipped and the pass-count section above accounts for.
-- **Whether the register needs to be this large**, which is R848 and upstream of how many times it is
-  evaluated.
 - **A cadence column on `meta_family`.** The premise gate states the cadence in the test rather than
   in the store. Making it a relational fact is defensible and is a change to the family roster's
   charter, so it wants its own item if the gate's roster ever grows a second reader.
@@ -662,6 +836,20 @@ costs a migration.
 R848 asks whether the register needs to be this large at all, and it is not a dependency. R859 was
 the double capture; it has shipped, so what this item's fix leaves in place is one capture per dev
 round rather than two, and the pass-count section states the arithmetic that follows.
+
+**R916 is why the second half is legible, and is the pattern it copies.** It holds the classpath
+census across a session and re-reads per entry, which took the read side of a round from
+whole-workspace to proportional-to-the-edit and left the write and derive sides where they were.
+Every argument its plan makes about populations, detectors and per-file grain transfers to the schema
+documents, and its report is the shape the second half's own reporting should take: a round that
+regressed into re-deriving everything produces correct output slowly, which is invisible without a
+line saying what was reused.
+
+**Two siblings from the same sweep, neither a dependency.** R620 is the jar set hashed twice per
+round, once for the census and once for the store's retention decision. R921 is the `.java` cadence
+hashing every source file per save. Both are the same shape as this item at a smaller scale, both are
+independent of the claim relation, and all three want the same measurement discipline: a count of
+what was read or re-derived, not a wall-clock number that a fast machine hides.
 
 ## Reviewer findings
 
