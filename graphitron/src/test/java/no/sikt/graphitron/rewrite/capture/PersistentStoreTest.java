@@ -690,6 +690,49 @@ class PersistentStoreTest {
         }
     }
 
+    /**
+     * The compaction reclaims, which is the half the mechanism cases cannot see. They pin that the
+     * last handle compacts and an earlier one does not, and both stay true if
+     * {@code SHUTDOWN COMPACT} is swapped for a statement that leaves the file alone; this one
+     * fails against that swap, because it reads the file on both sides of the shutdown and requires
+     * it to have actually shrunk.
+     *
+     * <p>Recapturing is what makes the garbage to reclaim. Each capture clears the families it
+     * rewrites and writes them again, and H2 appends the new pages rather than overwriting the old,
+     * so a store captured into repeatedly carries every superseded copy until something drops them.
+     *
+     * <p>The assertion is on the reclamation rather than on growth across closes, which is the
+     * shape this file grows in and not a shape a test can hold. An uncompacted store oscillates
+     * within a band rather than climbing: measured over eight captures it ran 2.77, 3.82, 3.62,
+     * 2.17, 4.24 MB and back, so the file after four captures is as likely to sit below the file
+     * after one as above it, and a bound loose enough not to flake is loose enough to pass with the
+     * compaction removed. The unbounded growth this item exists to stop emerges over hundreds of
+     * runs, which is not a unit test. What is checkable at every close is that the close reclaims,
+     * and a close that reclaims every time is what keeps the long curve flat.
+     */
+    @Test
+    @DisplayName("the last handle's compaction reclaims what recapture left behind")
+    void compactionReclaimsWhatRecaptureLeaves(@TempDir Path tmp) {
+        Path directory = tmp.resolve("graphitron-model");
+        captureInto(directory, tmp);
+
+        // A handle held across the captures, which is a dev session beside a build and is also what
+        // keeps the garbage: no capture's own close is the last one, so none of them compacts.
+        GraphitronModelStore held = GraphitronModelStore.openAt(directory);
+        for (int recapture = 1; recapture <= 4; recapture++) {
+            captureInto(directory, tmp);
+        }
+        held.close();
+
+        var compaction = held.compaction().orElseThrow(
+            () -> new AssertionError("the only handle on the file reported no compaction"));
+        assertThat(compaction.bytesAfter())
+            .as("the file after the shutdown against before it (before=%d, after=%d): five captures"
+                + " of one small graph leave far more file than facts, and the compaction is what"
+                + " gives it back", compaction.bytesBefore(), compaction.bytesAfter())
+            .isLessThan(compaction.bytesBefore() / 2);
+    }
+
     private static void captureInto(Path directory, Path scratch) {
         FactCapture.run(directory, graph(scratch), SubjectConfig.none(),
             CapturedStore.registryOf(scratch, SDL), CapturedStore.attributionOf(scratch), null,

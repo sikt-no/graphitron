@@ -415,8 +415,11 @@ public final class GraphitronModelStore implements AutoCloseable {
      *
      * <p>Each call mints a fresh reader, and the caller owns it: readers do not pool, and closing
      * one leaves this store and any sibling reader untouched. Closing <em>this</em> store while a
-     * reader is open is the one ordering that matters, since an in-memory database goes with its
-     * owner.
+     * reader is open is the one ordering that matters, and it matters in both shapes for different
+     * reasons: an in-memory database goes with its owner, and a file-backed one is compacted by
+     * {@link #close()} when this is the last store handle on the file, which shuts the database
+     * under any reader still on it. A reader is a connection off the same database and not a store
+     * handle, so it does not hold that compaction off. Close the readers first.
      *
      * <p>Every reader states a {@link ReadBudget}, and there is deliberately no overload that
      * defaults one. A caller minting a reader knows what its reads answer for (a keystroke, a
@@ -514,6 +517,12 @@ public final class GraphitronModelStore implements AutoCloseable {
     /**
      * Shuts the database down and releases the connection. An in-memory database goes with it; a
      * file-backed one is left on disk for the next run.
+     *
+     * <p>Close every {@link StoreReader} minted from this store first. A reader is a second
+     * connection off the same database rather than a store handle, so it is not counted among the
+     * holders this close consults, and the last handle to let a file go compacts it: that shuts the
+     * database, and a reader still on it fails rather than degrades. Nothing orders this for a
+     * caller, so a caller that holds both owns the order.
      */
     @Override
     public void close() {
