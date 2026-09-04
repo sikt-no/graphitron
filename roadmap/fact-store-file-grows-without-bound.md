@@ -1,7 +1,7 @@
 ---
 id: R914
 title: "The fact store cache grows without bound, and a large store stalls every build that opens it"
-status: Ready
+status: In Review
 bucket: dx
 priority: 1
 theme: tooling
@@ -115,16 +115,24 @@ Step 2 is the `Compaction` record, carrying the elapsed milliseconds and the fil
 side, reported rather than logged in keeping with the package, and said by `RunStore.close()` where
 the sweep's report is already said.
 
-The Verification section's curve, run over eight real captures into one file store with a
-same-fixture control: without compaction the file oscillates and trends up, 2.8 MB after the first
-run to 4.2 MB by the eighth; with it, 0.64 MB and flat from the second run onward. The control's
-first attempt was invalid, having failed `-Werror` on an unused statement and silently run against
-the previously installed artifact, so the figures above are from the rebuilt control. Full
-`mvn install` green across all fourteen modules.
+The measurement that motivated the item, run over eight real captures into one file store with a
+same-fixture control: uncompacted the file oscillates between 2.2 and 4.2 MB with no bound the run
+count reaches; with compaction, 0.64 MB and flat from the second run onward. The control's first
+attempt was invalid, having failed `-Werror` on an unused statement and silently run against the
+previously installed artifact, so the figures are from the rebuilt control. This is a measurement
+and not a test; see Verification for why it cannot become one.
 
-Two tests pin the behaviour: the last handle compacts and an earlier one does not, and closing
-twice releases one handle. The pre-existing `aSecondOpenerLeavesTheStoreIntact` is the regression
-guard for the risk step 1 carries.
+Three tests pin the behaviour, the third added at `fc1259ff1` after round 4. Two are properties of
+the handle count: the last handle compacts and an earlier one does not, and closing twice releases
+one handle. `compactionReclaimsWhatRecaptureLeaves` is the one that carries the goal, reading the
+`Compaction` record on both sides of a close that follows four captures under a held handle and
+requiring the file to have at least halved; it fails when `SHUTDOWN COMPACT` is swapped for a
+statement that leaves the file alone, and the other two do not. The pre-existing
+`aSecondOpenerLeavesTheStoreIntact` is the regression guard for the risk step 1 carries.
+
+Round 4's second finding is delivered in the same commit: `reader(ReadBudget)` and `close()` now say
+that a reader is a connection off the database rather than a store handle, so it does not hold the
+last handle's compaction off and the readers close first.
 
 ## Why this is the whole fix
 
@@ -153,9 +161,19 @@ this fix moves.
 
 ## Verification
 
-A growth curve across repeated real captures with compact-on-close enabled, measured on this repo,
-which reproduces the mechanism without any consumer checkout. The store's size after each capture is
-the measurement; a bounded curve is the pass.
+The pass is a committed test that fails when the compaction stops reclaiming:
+`PersistentStoreTest.compactionReclaimsWhatRecaptureLeaves` holds a handle across four captures so
+none of their closes is the last one, then reads the `Compaction` record on both sides of the held
+handle's close and requires the file to have at least halved. Round 4 was right that the mechanism
+cases could not carry this, and right about the mutation that proves it.
+
+A growth curve across repeated captures was the earlier answer here and is not a test. Running the
+mutation showed why it cannot become one: uncompacted, the file after four captures measured
+2,183,168 bytes against 2,764,800 after the first, having *shrunk*. The file oscillates within a band
+rather than climbing, so at any capture count a unit test can afford the later figure is as likely to
+sit below the earlier one as above it. The unbounded growth is a hundreds-of-runs effect. What is
+checkable at every close is that the close reclaims, and a close that reclaims every time is what
+keeps the long curve flat. The curve stays below as the measurement that motivated the item.
 
 Record the time each close spends compacting alongside the size, because the size alone prices the
 wrong thing. Both figures in the table above are a *first* compaction of a long-accumulated store,
@@ -442,3 +460,34 @@ ordering requirement and a different cause. A reader of that sentence would conc
 store is safe to close under a live reader, which this commit made false. Nothing in the tree is
 broken by it, `DevMojo` closing `lspStore` and `mcpStore` before `sessionStore`, which is why this is
 a sentence rather than a defect. Say it on `reader` and on `close`, where round 2 asked for it.
+
+### Author response to round 4
+
+Both findings accepted and addressed at `fc1259ff1`.
+
+**Finding 1.** The mutation is real, and I ran it rather than reasoning about it: `SELECT 1` in place
+of `SHUTDOWN COMPACT`, with the substitution verified absent from the bytecode of the installed
+artifact before trusting the result. All three tests passed. The two committed cases were properties
+of the handle count, exactly as the finding says.
+
+The finding's suggested shape does not work, and the same run is what showed it. Capturing four times
+and comparing the file against its size after the first gave 2,183,168 bytes against 2,764,800: the
+uncompacted file shrank across the four captures. It oscillates within a band rather than climbing,
+which the item's own eight-run curve already showed and which I had read as growth (2.77, 3.82, 3.62,
+2.17, 4.24 MB). So a bound loose enough not to flake is loose enough to pass with the compaction
+removed, at any capture count a unit test can afford.
+
+The test is therefore the finding's named alternative, on the reclamation. It is not weaker here. A
+handle held across four captures keeps any of their closes from being the last, so the garbage
+accumulates, and the held handle's close is read on both sides: with the fix, 2,433,024 before and
+643,072 after, which is the same 643,072 the eight-run curve settled at; under the mutation,
+3,784,704 on both sides, and the test fails. The other two tests still pass under the mutation, which
+is what makes this the one carrying the goal.
+
+The Verification section is rewritten to name that test as the pass and to record why the growth
+curve is a measurement rather than a test.
+
+**Finding 2.** Said on both `reader(ReadBudget)` and `close()`: a reader is a second connection off
+the database rather than a store handle, so it is not counted among the holders the close consults
+and does not hold the compaction off, and a caller holding both owns the order. The finding is right
+that the old reason was complete before this change and not after it.
