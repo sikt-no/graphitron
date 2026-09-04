@@ -1,7 +1,7 @@
 ---
 id: R916
 title: "The dev session index and refresh loop re-reads only what changed"
-status: In Review
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
@@ -384,6 +384,68 @@ to open, share between passes and close". An implementer has a precedent to copy
 measures 193,863 rows across 151 tables for a whole store, which makes the figure plausible without
 establishing it. It sits in an open question, and it argues against building the phase it belongs
 to, so nothing rests on it.
+
+### Round 2 (2026-09-04, In Review -> Ready, reviewer session 01HHPvdRQsaZKB66My2htu3W)
+
+**Question 3, is this the change the spec approved. Phase three is wired into the schema cadence
+only, so the cadence that actually re-reads is the one that says nothing about what it re-read.**
+
+`ClasspathCensus.lastRound()` has exactly one caller: `DevMojo.runGeneratorPass`, which logs the
+round after a `regenerate` pass. The classpath cadence does not go through it. `rebuildCatalog`
+calls `generatorFor(ctx).buildOutput()` directly and logs "catalog refreshed (n tables, m scalars)"
+and nothing else; `buildOutputQuietly`, the `skipInitial` startup arm, logs nothing either. So a
+`.graphqls` save reports "nothing re-read", which is the round with nothing to report, and a
+`.class` change reports no census line at all, which is the round where the invalidation does its
+work and is the only round that can regress into re-parsing a population nothing touched.
+
+The `LOGGER.debug` line in `GraphQLRewriteGenerator.runPipeline` is not that report. It fires on
+every pass, including the classpath cadence, but at `DEBUG`, which a dev session does not show. A
+developer watching `graphitron:dev` sees the census line on the rounds that reuse everything and
+never on the rounds that re-read.
+
+This bears on the gate rather than on taste because phase three is half of what Ready authorised,
+and "What Ready covers" says why the two stand together: phase three "is what keeps phase one's
+invalidation honest". Section 3 states the failure mode it exists to remove, a loop that "still
+produces correct output, just slowly". The cadence left silent is precisely where that failure
+would appear. The `Delivered` section records it as done, "reported by the census and logged by
+`DevMojo` once per round", so approving as it stands would land a record in `Done` that overstates
+what shipped.
+
+**Question 4, what demonstrates completeness. Phase three has no test, and the comment that
+advertises one names a test that does not exist.**
+
+`DevMojo.sessionCensus` carries "Package-private so DevMojoTest can assert a round's reuse". No such
+assertion exists: nothing under `graphitron-maven-plugin/src/test/` names `sessionCensus` or
+`ClasspathCensus`. The idiom is load-bearing elsewhere in the same field block, `incrementalCompiler`
+saying "Package-private so DevMojoTest can assert the opt-out leaves it unbuilt" against a real
+assertion in `DevMojoTest`, so a reader takes the promise at face value. Nothing anywhere asserts
+`Round.report()` either; `ClasspathCensusTest` calls it only inside AssertJ failure descriptions.
+
+What would satisfy both findings, in the author's choice of shape:
+
+* Report the round on the classpath cadence too, so the observable exists where the re-reading
+  happens, and say in `Delivered` which sites report. If the author judges one cadence enough, say
+  which one phase three covers and why the other does not need it; that is a defensible position
+  but it is not the one the item currently states.
+* Either write the assertion the `sessionCensus` comment promises, which would also pin the reuse
+  end to end through the mojo rather than only through the census, or drop the promise from the
+  comment.
+
+Phase one is the change the spec approved, and the evidence for it is strong. The census is held on
+`DevMojo` and handed over per round as a constructor port, which is the home and the shape the plan
+named; jars take the content hash through `ClasspathSources.hash` and directories take per-file size
+and modification time, which is the split the plan argued; an entry leaving the classpath leaves the
+cache; the jOOQ catalog is not held, as the plan settled it. The `ClasspathScanner` refactor is
+behaviour-preserving: deduplication moved out of `collect` into `compose` over per-entry lists, and
+because entries stay in classpath order and files stay in walk order, the surviving copy of a
+duplicated FQN is the same one. `ClasspathCensusTest`'s seven cases each pair a counter claim with
+an equality check against a cold scan, which is what the Verification asked for and the right test
+for a cache whose risk is staleness. They pass, as do `ClasspathScannerTest` and
+`JarResidentClassCensusTest`.
+
+One non-blocking note. `CatalogBuilder.censusRoots` spells `ClasspathEntry` fully qualified in both
+its return type and its body although the class is imported at the top of the file; it is inherited
+from the code it replaced and bears on nothing.
 
 ## Author response
 
