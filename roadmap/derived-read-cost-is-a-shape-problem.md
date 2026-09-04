@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-08-31
+last-updated: 2026-09-04
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -138,6 +138,38 @@ reconstruct.
 registration can help: materializing a relation whose join key is computed per row moves the
 computation, it does not remove it. That is the case where the lever order below is not a preference
 but the only thing that works.
+
+**The third defect is a relation modelled at the wrong grain, and it is the dearest of the three.**
+An omitted supertype or an expression key makes a correct rule slow. A grain that fuses two facts
+makes the rule wrong, and the wrongness surfaces as cost because a reader that has to undo the fusion
+cannot be cheap. Three measured cases, each found by asking why a relation had been registered.
+
+`intent_resolved_type_binding` keys on the type and counts candidates over the union of two different
+facts: a `@table` spelling that resolved, and a table a `@routine` chain's return landed on. Those
+are not competing answers to one question. A type can be table bound and result bound at once, and it
+can be result bound by several fields whose chains land differently, so the count turns true facts
+into an ambiguity and the `candidates = 1` guard discards them. Captured against the test catalog, a
+`Row` carrying `@table(name: "film")` and also returned by a routine gives `graphitron_tabletype` the
+row `Row -> film` and gives every guarded reader nothing at all: an authored, unambiguous binding
+annihilated by the presence of a routine elsewhere. Eleven view sites read that relation and eight
+spell the guard, so the loss is silent at eight and the other three take the ambiguous rows instead.
+(An older figure on `graphitron_tabletype` says eleven spell it and four forget; this count is
+measured over the shipped DDL today and is the one to trust.)
+
+`intent_argument_scope_table` is `intent_field_scope_table` crossed with the field's arguments and
+nothing else. No argument predicate appears in the rule, so the argument cannot enter the answer, and
+all nine read sites hold the field already. It is a registered materialization of a fan-out that adds
+nothing.
+
+And the written order of a field's directive applications, which the manual states is load-bearing,
+is not captured at all. Ordinals are per directive name, so interleaving `@reference` with `@routine`
+can only be recovered by comparing source line and column, which is what `intent_field_chain_node`
+does. Measured on the manual's own sandwich example, that walk reports a two-node chain where the
+manual describes four: the hop written before the routine is not in it. The terminus it exists to
+compute is still right, which is why nothing has ever failed.
+
+The pattern across the three is one claim, and it is the item's thesis stated from the capture side
+rather than the register side: a materialization is usually the price of a fact nobody captured.
 
 **What the register costs beyond its refresh.** A materialized target is a table with statistics of
 its own, so every planner decision above it bottoms out there and the rule underneath becomes
@@ -283,6 +315,153 @@ The sigil follows from the same rule rather than from a special case: a sigil is
 coordinate, not a coordinate of its own, so it is a root like an argument is, and the only thing that
 distinguishes it is that it names no GraphQL type. What had looked like a subtype needing nullable
 columns was a path modelled as a place.
+
+**The node family became entry and anchor pairs, and the type binding with it.**
+`graphitron_tabletype` holds the settled type-to-table bindings, so eleven readers stop spelling a
+candidate count and four stop forgetting it. `graphitron_node_entry` and `graphitron_node` split what
+an author wrote from what took effect, `graphitron_node_keycolumn_entry` and
+`graphitron_node_keycolumn` do the same for the key tuple, and the key columns resolve against the
+bound table instead of forwarding a spelling, which retired four per-row folds and absorbed R731.
+`graphitron_field` states where a field's rows come from and where the field departs from to reach
+them, which no relation said before: the departure lived in one derivation keyed on the parent type
+and the arrival in another keyed on the field.
+
+## The entry and anchor pattern, and the scope it makes visible
+
+The slices above each fixed a rule. What the node and field arcs added is the shape the fixes have in
+common, and stating it is what turns a sequence of repairs into a scope.
+
+### Four attempts, and what each of them found missing
+
+Not one of the four landed the relation it set out to land without first landing something
+underneath it. The pivots are worth recording because they are not accidents of sequencing: each was
+found by the model refusing rather than by planning, and each turned out to be a fact the store
+should have been holding all along.
+
+[cols="2,4,3"]
+|===
+| the attempt | what refused | what had to be taken first
+
+| the argMapping family
+| `graphitron_argmapping_candidate` rendered a coordinate into a string and met
+  `graphitron_argmapping_entry` on the text, because four relations stated that a coordinate exists,
+  one per grain, and nothing stated that a coordinate exists
+| `graphql_coordinate`, the supertype the family always implied, and the four subtypes pointing at it
+
+| nodehood, first attempt
+| six of the seven nodehood relations read `intent_resolved_type_binding`, which unions the `@table`
+  decode with where a routine chain lands, so a `@node` on a routine-returned type was table bound as
+  far as they could tell and collected a key it had no claim to
+| `graphitron_tabletype`, the settled `@table` binding, and eleven `candidates = 1` predicates with it
+
+| nodehood, second attempt: the node id pair
+| the rule reads scope relations that are registered targets, so a gatherer cannot see them at all,
+  and those in turn read a reference walk that is itself unmigrated
+| `graphitron_field`, the endpoints. The route and the reference decode under it are still owed
+
+| the reference step decode
+| a foreign key into `graphql_field_coordinate` refused `QueryFilmsConnection.nodes`, a field macro
+  expansion minted and the transcription does not hold
+| the macro-aware coordinate anchors, which do not exist yet
+|===
+
+Three things follow that no single slice would have shown.
+
+**The pattern was coined during the work, not designed before it.** Entry and anchor came out of the
+nodehood arc and were then applied backwards to the relations already shipped, which is why the node
+pair carries a rename commit. A shape found this way is worth more than one chosen up front, and it
+is also why the earlier slices above do not describe themselves in its terms.
+
+**A prerequisite is discovered by something refusing.** A foreign key that will not hold, a
+population that turns out fused, a rule whose inputs are empty at the cadence its reader runs at.
+None of the four was visible from reading the schema, and all four were visible within an hour of
+trying to write the relation. The practical consequence is that this arc cannot be planned much
+further ahead than the next relation, and estimating it as a list of relations understates it.
+
+**The witness is the hard part, not the fix.** The nodehood repair's first test would have passed
+against the defect it was written for: a `@node` type with no `@table` returned by a routine resolves
+no key columns under either reading, because a bare function result has no primary key. The fixture
+that separates them puts a `@reference` after the routine so the chain lands on a real table with a
+key. The same failure has recurred since: `TableTypeTest` asserts that the settled bindings equal the
+derivation's unambiguous rows and its fixture contains no routine, so the equality it states cannot
+fail and did not notice the two-grain fusion described in the diagnosis. The rule the arc now works
+under is to build the fixture that can falsify the claim before believing the claim, and to verify it
+by removing the thing under test and watching the test go red.
+
+**An entry holds what the author wrote; an anchor holds what resolved.** The entry is keyed to the
+coordinate the directive sits on, carries unconstrained nullable columns, and holds rows the
+directive did nothing for, which is exactly why it can be keyed there. The anchor carries a primary
+key and foreign keys into what the resolution reached. What an author got wrong is the anti-join
+between the two, and it is the only place a diagnostic can find it.
+
+**An anchor's population is not its entry's.** `graphitron_node` unions a declared arm and a
+published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field` has three disjoint
+target rules and only one of them reads a directive. A pair is not a decode with its resolution
+bolted on; it is two relations answering different questions that happen to meet at an anti-join.
+
+**A graphitron relation cannot key at `graphql_*_coordinate`.** Macro expansion mints coordinates the
+transcription does not hold, so a foreign key there excludes exactly the fields a connection is made
+of. `graphitron_field` was written with one and the build failed on `QueryFilmsConnection.nodes`.
+Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
+and no such anchor exists: `intent_expanded_type` and `intent_expanded_field` are views, so nothing
+can point at them. `graphitron_type_coordinate` and `graphitron_field_coordinate` are what the rest
+of this arc keys through, and they are the next thing owed.
+
+**Lifecycle is provenance and a refcount, not a cascade.** A minted row can be coined by several
+sources: `PageInfo` is minted once and carries one site per `@asConnection` application, two in a
+two-connection schema. There is no single parent for it to cascade from, so the coining direction
+cannot carry `ON DELETE CASCADE` at all, and `graphitron_minted_type_site` is the provenance relation
+whose site count is the refcount. Nothing exercises it today: `StoreRefresh.clear` deletes every
+graph-keyed relation on every capture and derives that set from the presence of a `GRAPH_NAME`
+column, so a new graphitron relation is rebuilt wholesale by default. The sweep is owed the day an
+incremental path exists, and until then what matters is not baking in a cascade that would be wrong
+when it does.
+
+**What the arc still owes**, in the order the dependencies force:
+
+1. `graphitron_type_coordinate` and `graphitron_field_coordinate`, the macro-aware anchors, plus the
+   foreign key `graphitron_minted_type_site` lacks on the carrier that coined it. `graphitron_field`
+   repoints onto the field one.
+2. The join path family, described below. `graphitron_field_joinpath` is its head.
+3. The reference decode on the field sites: `graphitron_field_reference_step` and
+   `graphitron_reference_for_step`, which differ only in the key saying which directive owns the row.
+   The two argument-site relations beside them are item 4's, not this one's.
+4. The argument and input-field sides, deliberately last. Their `@reference` support differs from the
+   output-field side, a routine segment has no meaning there, and the multi-table polymorphic root
+   fans the departure out per branch, so folding them in before the field side is settled would model
+   three unlike things as one.
+
+### The join path family
+
+`graphitron_field` says where a field's rows come from and where it departs from. The route between
+those two endpoints is a family of its own, and it is the largest thing this arc has left.
+
+**A path runs from one source table to one target table.** One source can have many targets: a field
+whose navigated type is a multi-table interface or a union departs once and arrives once per
+participant, and the paths to those participants need not agree, since each is a different join. So
+`graphitron_field_joinpath` is keyed by the whole of `graphitron_field`'s key rather than by the
+coordinate, and the two cannot disagree about which target a path leads to.
+
+**A path's nodes are of two kinds, and that is the manual's own definition rather than a
+convenience.** A field's table chain is the concatenation, in written order, of the enclosing type's
+table and each directive application's contribution: `@reference` contributes hops, and `@routine`
+contributes its result table as a node. A relation holding only the hops would hold half a chain,
+which is what the present walk does. The order across applications is load-bearing and is not
+captured: ordinals are per directive name, so `@reference#0`, `@routine#0` and `@reference#1` carry
+no relative order and the walk recovers it by comparing source line and column. Measured on the
+manual's own sandwich example, that recovery reports two nodes where the manual describes four, the
+hop written before the routine being absent. The chain position therefore has to be minted at
+capture, where the order is known, rather than reconstructed by a reader.
+
+**More relations sit under it.** The reference decode it resolves, the routine decode it interleaves,
+and whatever the resolution of a hop turns out to need, since the hop relation today is a candidate
+enumeration rather than a resolution: it emits both directions and every matching constraint, and two
+separate recursive walks pick between them. How many relations that is, is not yet known, and the
+arc's own history says the number will be discovered by something refusing rather than by planning.
+
+What this reorders in the item as a whole: the register is downstream of all of it. Each of the four
+removes the reason a registration existed rather than arguing the registration down, which is the
+lever order's first rung applied to relations rather than to columns.
 
 ## What the evidence is
 
@@ -706,6 +885,15 @@ What holds this item in the build:
 - `FactSchemaGateTest.everyMaterializedTargetEqualsItsRule` is row identity on the register: a
   registered target equals what its view states. `everyRelationLeadsWithItsPartitionDimension` covers
   the supertype tables this item added.
+- `NodeTypeTest`, `NodesTest`, `NodeKeyColumnTest` and `FieldEndpointsTest` hold the four pairs the
+  capture arc has landed, each stating which rule answered rather than only that an answer came out.
+  `FieldEndpointsTest` additionally pins the two properties the pattern turns on: that a macro-minted
+  connection field has endpoints like any other, which is why the relation keys at no coordinate
+  relation, and that a hop written after a `@routine` moves the target onto the catalog table so the
+  routine rule knows when not to fire.
+- `SchemaIdentifierDriftCheckTest` refuses prose in the store or the architecture pages that names a
+  relation the schema does not declare. It caught this arc citing a relation one increment before it
+  existed, which is the failure mode a spec describing planned relations invites.
 - `DerivedReadCostTest` refuses a change that costs some reader more than it saves. Its
   `KNOWN_NON_MONOTONIC` set now carries thirteen rows: ten are the instrument's own scan floor on
   `intent_field_reference_step_hop`, two are the unindexed named-type join under
