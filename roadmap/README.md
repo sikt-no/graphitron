@@ -20,11 +20,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R916` | The dev session index and refresh loop re-reads only what changed | In Review | 2026-09-04 <sub>created 2026-09-03</sub> | [plan](dev-session-index-refresh-loop.md) |
-| `R905` | A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts | Spec | 2026-09-04 <sub>created 2026-09-01</sub> | [plan](polymorphic-connection-seed-assertion-races-dml-inserts.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
+| `R905` | A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts | Ready | 2026-09-04 <sub>created 2026-09-01</sub> | [plan](polymorphic-connection-seed-assertion-races-dml-inserts.md) |
 | `R890` | A structural guard gives case-folded name comparison one legitimate home | Ready | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](name-case-fold-guard.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -729,7 +729,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R740` [**Retire the oracle-diff shadow tests, and stop the anchor gate from manufacturing them**](retire-oracle-diff-shadow-tests.md) — Backlog, cleanup
 - `R808` [**A bridging-condition split-table execution case returns a second actor only in a full-module run**](bridging-condition-join-execution-flake.md) — Backlog, bug
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
-- `R905` [**A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts**](polymorphic-connection-seed-assertion-races-dml-inserts.md) — Spec, bug
+- `R905` [**A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts**](polymorphic-connection-seed-assertion-races-dml-inserts.md) — Ready, bug
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R809` [**LspTraceTest cases share the trace seams static state and fail each other**](trace-static-state-leaks-between-cases.md) — Backlog, bug

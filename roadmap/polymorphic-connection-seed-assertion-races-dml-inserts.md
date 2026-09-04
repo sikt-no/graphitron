@@ -1,7 +1,7 @@
 ---
 id: R905
 title: "A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: testing
@@ -42,11 +42,13 @@ asserts that every returned `Film` has `summary.releaseYear` equal to 2006.
 `graphitron-sakila-example/src/test/resources/junit-platform.properties` sets
 `junit.jupiter.execution.parallel.config.fixed.parallelism=4` with
 `mode.classes.default=concurrent`, and on the `local-db` path every class shares one PostgreSQL
-instance. Eight test classes in `querydb` write `film` rows, either through jOOQ helpers named
-`insertFilm` / `insertFilmWithYear` or through the `createFilm` / `createFilms` mutations. None of
-them sets `release_year`, so every such row carries `release_year = NULL` for as long as it is
-visible. When one is visible to this case's connection query, the assertion sees an extra `Film`
-with a null `releaseYear` and fails with `expected: 2006 but was: null`.
+instance. Eleven test classes in `querydb` write `film` rows, either through jOOQ helpers named
+`insertFilm` / `insertFilmWithYear` or through the `createFilm` / `createFilms` mutations. All but
+one of those write paths leaves `release_year` unset, so such a row carries `release_year = NULL`
+for as long as it is visible; the exception is `insertFilmWithYear` in
+`DmlBulkMutationsExecutionTest`, which writes 2125. When one is visible to this case's connection
+query, the assertion sees an extra `Film` whose `releaseYear` is not 2006 and fails with
+`expected: 2006 but was: null` (or `2125`).
 
 The writers are not leaking. `DmlBulkMutationsExecutionTest` alone carries more delete sites than
 insert sites, all scoped to rows it can name by id or by a UUID marker in the title. What this case
