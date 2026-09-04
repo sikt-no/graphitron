@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R857` | A dev start evaluates the whole materialization register twice, the second pass producing identical rows <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-08-28 <sub>created 2026-08-27</sub> | [plan](dev-start-refreshes-the-register-twice.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R916` | The dev session index and refresh loop re-reads only what changed | In Review | 2026-09-04 <sub>created 2026-09-03</sub> | [plan](dev-session-index-refresh-loop.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
@@ -683,7 +682,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R872` [**A warm capture empties four source-keyed catalog relations for every source, having partitioned only the ten it lists**](warm-capture-empties-unpartitioned-catalog-relations.md) — Backlog, bug
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R913` [**An agent re-reads every diagnostic to learn what one edit changed**](mcp-diagnostics-delta-and-capture-notification.md) — Backlog, mcp
-- `R916` [**The dev session index and refresh loop re-reads only what changed**](dev-session-index-refresh-loop.md) — In Review, dx
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R917` [**A store too large to service is discarded rather than cleared**](store-too-large-to-service.md) — Backlog, dx
