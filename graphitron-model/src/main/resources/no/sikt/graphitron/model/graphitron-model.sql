@@ -2892,6 +2892,45 @@ COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s 
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
 
 
+CREATE TABLE graphitron_field (
+  graph_name       VARCHAR NOT NULL,
+  type_name        VARCHAR NOT NULL,
+  field_name       VARCHAR NOT NULL,
+  from_source_name VARCHAR,
+  from_schema      VARCHAR,
+  from_table       VARCHAR,
+  to_source_name   VARCHAR NOT NULL,
+  to_schema        VARCHAR NOT NULL,
+  to_table         VARCHAR NOT NULL,
+  target_basis     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table),
+  -- store_graph and not graphql_field_coordinate, which is the population's doing rather than a
+  -- constraint given up lightly: a connection macro mints fields that have a target like any other
+  -- and no coordinate row, minting being graphitron's where that relation is the SDL
+  -- transcription's. graphitron_field_navigation, the population this derives from, spans the same
+  -- two populations and carries the same single foreign key for the same reason.
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (from_source_name, from_schema, from_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (target_basis IN ('NAMED_TYPE_TABLE', 'PARTICIPANT_TABLE', 'ROUTINE_RESULT')),
+  -- The departure is three columns or none of them, never part of one.
+  CHECK ((from_source_name IS NULL) = (from_schema IS NULL)),
+  CHECK ((from_source_name IS NULL) = (from_table IS NULL))
+);
+COMMENT ON TABLE graphitron_field IS 'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field. For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.';
+COMMENT ON COLUMN graphitron_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field.field_name IS 'the field whose endpoints this row states, over the population the generator emits rather than the one the author wrote: a field a connection macro minted has a target like any other and appears here, which is why the key points at no coordinate relation. graphitron_field_navigation spans the same two populations and is where this one gets them';
+COMMENT ON COLUMN graphitron_field.from_source_name IS 'the catalog partition of the table the field departs from, the first column of the sql_table key this row names. Functionally determined by the graph rather than independent of it: a capture reads exactly one jOOQ package, so within a graph the schema and the name already identify a table, which is why @table(name:) can spell one in two parts and needs no third. It is carried all the same because the engine cannot derive it. sql_table is source-keyed and shared between graphs, so without this column the reference here could not be a foreign key and a recrawled source could not take the rows naming it along with it. The same holds of to_source_name beside it';
+COMMENT ON COLUMN graphitron_field.from_schema IS 'the departure table''s SQL schema';
+COMMENT ON COLUMN graphitron_field.from_table IS 'the departure table''s SQL name. Null at a root field, together with the two columns beside it, and that nullness is the fact rather than a gap: a field on Query or Mutation has no enclosing row to depart from, so its statement starts at the target. Null is therefore "this field is the start of its own path", which is also what makes a leading @routine legal only at a root';
+COMMENT ON COLUMN graphitron_field.to_source_name IS 'the catalog partition of the table the field''s rows come from; see from_source_name for why a column the graph already determines is stored';
+COMMENT ON COLUMN graphitron_field.to_schema IS 'the target table''s SQL schema';
+COMMENT ON COLUMN graphitron_field.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
+COMMENT ON COLUMN graphitron_field.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
+
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -10155,6 +10194,9 @@ INSERT INTO meta_grain VALUES
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
+  ('field-target-table',
+   'one table a field''s rows come from, at one field, in one graph',
+   'graph_name, type_name, field_name, to_source_name, to_schema, to_table', 'catalog'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
    'graph_name, coordinate, path', 'sdl'),
@@ -10278,6 +10320,10 @@ INSERT INTO meta_relation VALUES
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
    'Half of a node''s identity as a resolved fact, beside graphitron_node which carries the other. Three populations answer and one wins: what the author pinned, what the bound table''s generated class publishes, and the table''s own primary key. Standing on the nodehood anchor is what makes resolution possible at all. The relation this replaces reaches the pinned tier through a decode keyed by graph and type alone, so that tier had no table to resolve against and forwarded the authored spelling untouched; a node is table bound unambiguously by construction, so the table is in hand and the column is a reference rather than a name. Both authored tiers fold to resolve, against the column''s SQL name and its generated field name alike, and neither spelling survives into the row. A tier that applies and fails to resolve yields nothing rather than falling through: an author who pinned a column the table does not have has made an error, and encoding ids against the primary key instead would publish a wire format nobody asked for, silently. The same holds within a tier, a key list with a hole decoding values into the wrong positions. The bound table rides along in three columns so the row can reference both the type''s binding and the column, which together make a row naming another table''s column impossible. The order is why this is a relation rather than a list: an id encoded against one order and decoded against another finds the wrong row rather than failing.'),
+  ('graphitron_field', 'field-target-table', 'graphitron',
+   'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field.',
+   'For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.',
+   'Where a field''s rows come from and where they depart from, said once and without the route between. Readers wanting the endpoints outnumber readers wanting the hops, and until now both had to walk: the departure lived in one derivation keyed on the parent type, the arrival in another keyed on the field, and neither said the pair. A field with several targets is several rows, which is the whole reason the target is in the key: a polymorphic container binding no table of its own is one statement per participant, and a relation with one row per field would have to pick a branch. Departure is nullable and target is not, and the asymmetry is the domain''s: every row a field returns comes from somewhere, while a root field has no enclosing row to depart from. The route between the two endpoints is a relation of its own, keyed by this one''s key so the two cannot disagree about which target a path leads to. Every table reference is the full sql_table key including the catalog partition; that partition follows from the graph, a capture reading one jOOQ package, and is carried anyway so the reference is a foreign key the engine checks and cascades rather than a convention readers keep. Written as a stage of the graphitron gatherer after the navigation it stands on, every rule it applies reading a captured relation: the bindings, the polymorphic membership, and the routine whose own spelling it resolves.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',

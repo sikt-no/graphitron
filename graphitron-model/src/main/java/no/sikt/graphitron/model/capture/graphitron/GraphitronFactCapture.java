@@ -15,6 +15,7 @@ import graphql.language.Value;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
+import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -190,6 +191,9 @@ public final class GraphitronFactCapture {
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
         navigation(dsl, graphName);
+        // Last, because its target rule reads the navigation the line above writes and its
+        // departure reads the bindings three lines up.
+        FieldEndpoints.derive(dsl, graphName);
         return edges;
     }
 

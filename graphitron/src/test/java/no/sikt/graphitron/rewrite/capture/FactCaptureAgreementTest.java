@@ -452,6 +452,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
+        registrations.put("graphitron_field", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
