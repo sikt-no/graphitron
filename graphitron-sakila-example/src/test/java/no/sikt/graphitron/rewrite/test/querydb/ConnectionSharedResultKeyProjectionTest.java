@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +36,21 @@ class ConnectionSharedResultKeyProjectionTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
+
+    /**
+     * The rows this class can name, from {@code init.sql}; every seeded film is at release year
+     * 2006. Assertions here key off these lists rather than off a row count or a property
+     * quantified over a whole table: on the local-db path the module's test classes share one
+     * PostgreSQL instance, and sibling classes write to the tables these queries read, so a count
+     * or a universal claim can fail on rows this class never wrote. See the concurrency notes in
+     * {@code src/test/resources/junit-platform.properties}.
+     */
+    private static final List<String> SEED_FILM_TITLES = List.of(
+        "ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+
+    /** Store 1 owns Mary, Patricia and Barbara; store 2 owns Linda and Elizabeth. */
+    private static final List<String> SEED_CUSTOMER_FIRST_NAMES = List.of(
+        "Mary", "Patricia", "Linda", "Barbara", "Elizabeth");
 
     @BeforeAll
     static void startDatabase() {
@@ -83,23 +99,41 @@ class ConnectionSharedResultKeyProjectionTest {
             { stores { edges { node { storeId customers { %s } } } nodes { storeId customers { %s } } } }
             """.formatted(edgesSelection, nodesSelection));
 
+        // Both paths are located by storeId rather than by list position, and neither side asserts
+        // how many stores came back: an index and a count are both claims about what `store`
+        // holds, and this helper only ever means store 1. Nothing in the module writes `store`
+        // today, so this is fixing a premise before it bites rather than a live failure.
         var conn = (Map<String, Object>) data.get("stores");
-        var edges = (List<Map<String, Object>>) conn.get("edges");
-        var nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(edges).hasSize(2);
-        assertThat(nodes).hasSize(2);
+        var edgeStore1 = storeById((List<Map<String, Object>>) conn.get("edges"), "node", 1);
+        var nodeStore1 = storeById((List<Map<String, Object>>) conn.get("nodes"), null, 1);
 
-        var edgeCustomers = (List<Map<String, Object>>) ((Map<String, Object>) edges.get(0).get("node")).get("customers");
+        // Store 1's own customer list stays an exact, ordered assertion. It is scoped to one named
+        // store's children rather than to a table, and nothing in the module writes `customer`.
+        var edgeCustomers = (List<Map<String, Object>>) edgeStore1.get("customers");
         assertThat(edgeCustomers).extracting(c -> c.get(expectedEdgeField))
             .containsExactly(expectedEdgeField.equals("firstName")
                 ? new Object[] {"Mary", "Patricia", "Barbara"}
                 : new Object[] {"Smith", "Johnson", "Jones"});
 
-        var nodeCustomers = (List<Map<String, Object>>) nodes.get(0).get("customers");
+        var nodeCustomers = (List<Map<String, Object>>) nodeStore1.get("customers");
         assertThat(nodeCustomers).extracting(c -> c.get(expectedNodeField))
             .containsExactly(expectedNodeField.equals("firstName")
                 ? new Object[] {"Mary", "Patricia", "Barbara"}
                 : new Object[] {"Smith", "Johnson", "Jones"});
+    }
+
+    /**
+     * Picks the store carrying {@code storeId} out of one connection path, unwrapping {@code node}
+     * first when {@code nodeKey} is given, so neither path depends on how many stores the table
+     * holds or on where in the page store 1 lands.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> storeById(List<Map<String, Object>> path, String nodeKey, int storeId) {
+        return path.stream()
+            .map(row -> nodeKey == null ? row : (Map<String, Object>) row.get(nodeKey))
+            .filter(store -> Integer.valueOf(storeId).equals(store.get("storeId")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no store with storeId " + storeId + " in the page"));
     }
 
     @Test
@@ -129,21 +163,22 @@ class ConnectionSharedResultKeyProjectionTest {
     void deepNesting_divergenceOneLevelDown_bothSidesResolve() {
         // The diverging bucket is `address` inside the merged `location` descent: edges asks for
         // district, nodes for the street address. Store 1 -> address 1 (47 MySakila Drive, Alberta).
+        // storeId is selected on both paths so each side can locate store 1 by id rather than by
+        // list position; `location` stays the only diverging bucket.
         Map<String, Object> data = execute("""
             { stores {
-                edges { node { location { address { district } } } }
-                nodes { location { address { address } } }
+                edges { node { storeId location { address { district } } } }
+                nodes { storeId location { address { address } } }
             } }
             """);
 
         var conn = (Map<String, Object>) data.get("stores");
-        var edges = (List<Map<String, Object>>) conn.get("edges");
         var edgeAddress = (Map<String, Object>) ((Map<String, Object>)
-            ((Map<String, Object>) edges.get(0).get("node")).get("location")).get("address");
+            storeById((List<Map<String, Object>>) conn.get("edges"), "node", 1).get("location")).get("address");
         assertThat(edgeAddress.get("district")).isEqualTo("Alberta");
 
-        var nodes = (List<Map<String, Object>>) conn.get("nodes");
-        var nodeAddress = (Map<String, Object>) ((Map<String, Object>) nodes.get(0).get("location")).get("address");
+        var nodeAddress = (Map<String, Object>) ((Map<String, Object>)
+            storeById((List<Map<String, Object>>) conn.get("nodes"), null, 1).get("location")).get("address");
         assertThat(nodeAddress.get("address")).isEqualTo("47 MySakila Drive");
     }
 
@@ -153,33 +188,66 @@ class ConnectionSharedResultKeyProjectionTest {
     @SuppressWarnings("unchecked")
     void polymorphicConnection_divergentNestedSelections_bothSidesResolve() {
         // The diverging bucket is Film's `summary` NestingField inside the restrictTo-filtered
-        // selection: edges asks for summary.title, nodes for summary.releaseYear (all seed films
-        // are 2006). The restrictTo view preserves full occurrence lists per key, so one fix at
-        // the $project loop covers this path too. The page is wide enough to hold both branches
-        // whatever the film and actor tables hold; a page sized to the seed drops rows the moment
-        // either table grows.
+        // selection: edges asks for summary.title, nodes for summary.releaseYear. The restrictTo
+        // view preserves full occurrence lists per key, so one fix at the $project loop covers
+        // this path too.
+        //
+        // Both paths also select the outer `title`, which is what keys the assertions below to the
+        // films this case can name. Sibling classes in this module write `film` rows whose
+        // release_year this case never chose, and on the local-db path they share one PostgreSQL
+        // instance with it, so an assertion quantified over whatever `film` holds fails on rows
+        // the case never wrote. Keyed by title, a stray row is simply never looked up. The outer
+        // `title` is itself a two-occurrence bucket with identical selections, the shape
+        // referenceUnderBothPaths_identicalSelections_behaviourUnchanged pins, so adding it leaves
+        // the divergence under test on `summary` alone.
         Map<String, Object> data = execute("""
             { searchConnection(first: 100) {
-                edges { node { __typename ... on Film { summary { title } } } }
-                nodes { __typename ... on Film { summary { releaseYear } } }
+                edges { node { __typename ... on Film { title summary { title } } } }
+                nodes { __typename ... on Film { title summary { releaseYear } } }
             } }
             """);
 
         var conn = (Map<String, Object>) data.get("searchConnection");
-        var edgeFilmSummaries = ((List<Map<String, Object>>) conn.get("edges")).stream()
-            .map(e -> (Map<String, Object>) e.get("node"))
-            .filter(n -> n.get("__typename").equals("Film"))
-            .map(n -> (Map<String, Object>) n.get("summary"))
-            .toList();
-        assertThat(edgeFilmSummaries).hasSizeGreaterThanOrEqualTo(5)
-            .allSatisfy(s -> assertThat(s.get("title")).isNotNull());
 
-        var nodeFilmSummaries = ((List<Map<String, Object>>) conn.get("nodes")).stream()
-            .filter(n -> n.get("__typename").equals("Film"))
-            .map(n -> (Map<String, Object>) n.get("summary"))
-            .toList();
-        assertThat(nodeFilmSummaries).hasSizeGreaterThanOrEqualTo(5)
-            .allSatisfy(s -> assertThat(s.get("releaseYear")).isEqualTo(2006));
+        // summary.title remaps to the same FILM.TITLE column as the outer title, so the edges
+        // side is pinned as an equality rather than a non-null check: a projection that reached
+        // the right column for the wrong row would pass the weaker form.
+        var edgeSummaryTitles = seedFilmSummaryLeaf(
+            ((List<Map<String, Object>>) conn.get("edges")).stream()
+                .map(e -> (Map<String, Object>) e.get("node"))
+                .toList(),
+            "title");
+        assertThat(edgeSummaryTitles)
+            .as("edges path: summary.title per seed film")
+            .containsOnlyKeys(SEED_FILM_TITLES)
+            .allSatisfy((outerTitle, summaryTitle) -> assertThat(summaryTitle).isEqualTo(outerTitle));
+
+        var nodeReleaseYears = seedFilmSummaryLeaf(
+            (List<Map<String, Object>>) conn.get("nodes"), "releaseYear");
+        assertThat(nodeReleaseYears)
+            .as("nodes path: summary.releaseYear per seed film")
+            .containsOnlyKeys(SEED_FILM_TITLES)
+            .allSatisfy((outerTitle, releaseYear) -> assertThat(releaseYear).isEqualTo(2006));
+    }
+
+    /**
+     * Reads one leaf out of each seed film's {@code summary} bucket, keyed by the film's outer
+     * {@code title} and dropping every film this case did not seed, so a sibling class's in-flight
+     * {@code film} row cannot reach the assertion. Nulls are kept rather than dropped: a
+     * regression that leaves the diverging leaf out of the SELECT must fail an assertion, not a
+     * collector.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> seedFilmSummaryLeaf(List<Map<String, Object>> films, String leaf) {
+        var bySeedTitle = new LinkedHashMap<String, Object>();
+        films.stream()
+            .filter(f -> "Film".equals(f.get("__typename")))
+            .filter(f -> SEED_FILM_TITLES.contains(f.get("title")))
+            .forEach(f -> {
+                var summary = (Map<String, Object>) f.get("summary");
+                bySeedTitle.put((String) f.get("title"), summary == null ? null : summary.get(leaf));
+            });
+        return bySeedTitle;
     }
 
     // ===== Fail-loud guards =====
@@ -210,19 +278,18 @@ class ConnectionSharedResultKeyProjectionTest {
         // canonical occurrence's limit.
         Map<String, Object> data = execute("""
             { stores {
-                edges { node { customersFirstN(first: 1) { firstName } } }
-                nodes { customersFirstN(first: 1) { lastName } }
+                edges { node { storeId customersFirstN(first: 1) { firstName } } }
+                nodes { storeId customersFirstN(first: 1) { lastName } }
             } }
             """);
 
         var conn = (Map<String, Object>) data.get("stores");
-        var edges = (List<Map<String, Object>>) conn.get("edges");
         var edgeCustomers = (List<Map<String, Object>>)
-            ((Map<String, Object>) edges.get(0).get("node")).get("customersFirstN");
+            storeById((List<Map<String, Object>>) conn.get("edges"), "node", 1).get("customersFirstN");
         assertThat(edgeCustomers).extracting(c -> c.get("firstName")).containsExactly("Mary");
 
-        var nodes = (List<Map<String, Object>>) conn.get("nodes");
-        var nodeCustomers = (List<Map<String, Object>>) nodes.get(0).get("customersFirstN");
+        var nodeCustomers = (List<Map<String, Object>>)
+            storeById((List<Map<String, Object>>) conn.get("nodes"), null, 1).get("customersFirstN");
         assertThat(nodeCustomers).extracting(c -> c.get("lastName")).containsExactly("Smith");
     }
 
@@ -254,15 +321,24 @@ class ConnectionSharedResultKeyProjectionTest {
     void nonConnectionQuery_singleOccurrencePath_behaviourUnchanged() {
         // Plain (non-connection) queries produce single-occurrence buckets everywhere; the
         // restructured shared path must behave exactly as before.
+        //
+        // Keyed to the seed customers rather than asserted as a count of five. The count was a
+        // claim about what `customer` holds, and what the case means is that each customer it
+        // seeded projects both a firstName and a district through the single-occurrence path.
         Map<String, Object> data = execute("""
             { customers { firstName address { district } } }
             """);
 
-        var customers = (List<Map<String, Object>>) data.get("customers");
-        assertThat(customers).hasSize(5)
-            .allSatisfy(c -> {
-                assertThat(c.get("firstName")).isNotNull();
-                assertThat(((Map<String, Object>) c.get("address")).get("district")).isNotNull();
+        var districtsBySeedCustomer = new LinkedHashMap<String, Object>();
+        ((List<Map<String, Object>>) data.get("customers")).stream()
+            .filter(c -> SEED_CUSTOMER_FIRST_NAMES.contains(c.get("firstName")))
+            .forEach(c -> {
+                var address = (Map<String, Object>) c.get("address");
+                districtsBySeedCustomer.put((String) c.get("firstName"),
+                    address == null ? null : address.get("district"));
             });
+        assertThat(districtsBySeedCustomer)
+            .containsOnlyKeys(SEED_CUSTOMER_FIRST_NAMES)
+            .allSatisfy((firstName, district) -> assertThat(district).isNotNull());
     }
 }

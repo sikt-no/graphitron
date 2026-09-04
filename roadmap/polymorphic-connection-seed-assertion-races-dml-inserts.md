@@ -33,7 +33,7 @@ under both `edges { node { ... } }` and `nodes`, which is the projection behavio
 class exists to pin. The *`local-db` path* is the build arm that talks to a native PostgreSQL server
 (`-Plocal-db`) instead of starting a container per test class.
 
-## Why it fails today, stated as the premise the fix rests on
+## Why it failed, stated as the premise the fix rests on
 
 The case queries `searchConnection(first: 100)`, an unfiltered root field over the multi-table
 `Searchable` interface (`Film` and `Actor`, heterogeneous tables, no shared discriminator), and
@@ -66,87 +66,89 @@ Two facts narrow the fix and are worth having before the implementer starts:
   `film.title` is `NOT NULL`. A regression to first-occurrence projection nulls the diverging side
   regardless, so the case's *sensitivity* does not depend on the stray rows either way.
 
-## Implementation
+## Implementation (delivered)
 
-Keep the fixture and make the query name its rows. Select `title` alongside the diverging bucket on
-both paths, and assert only over the five seed titles:
+`ConnectionSharedResultKeyProjectionTest.polymorphicConnection_divergentNestedSelections_bothSidesResolve`
+now selects the outer `title` alongside the diverging bucket on both paths and keys its assertions
+to the five seed titles through a `seedFilmSummaryLeaf` helper, which reads one leaf out of each
+seed film's `summary` and drops every film the case did not seed. The helper keeps nulls rather
+than dropping them, so a regression that leaves the diverging leaf out of the SELECT fails an
+assertion instead of a collector. The edges side is pinned as an equality (`summary.title` remaps
+to the same `FILM.TITLE` column as the outer title) rather than as a non-null check, which is the
+strength the rejected `NOT NULL` alternative below would have given up.
 
-```graphql
-{ searchConnection(first: 100) {
-    edges { node { __typename ... on Film { title summary { title } } } }
-    nodes { __typename ... on Film { title summary { releaseYear } } }
-} }
-```
+The page-window premise the plan flagged for confirmation did not need its fallback: the seed is
+five films and four actors, so `first: 100` holds the whole population.
 
-`title` is a single-occurrence key on neither path and a two-occurrence identical-selection bucket
-across both, which the class already covers in
-`referenceUnderBothPaths_identicalSelections_behaviourUnchanged`; it does not weaken the divergence
-under test, which stays on the `summary` bucket (`title` on one path, `releaseYear` on the other).
-The Java side then keys both paths by the outer `title`, looks up the five titles `init.sql` seeds
-(`ACADEMY DINOSAUR`, `ACE GOLDFINGER`, `ADAPTATION HOLES`, `AFFAIR PREJUDICE`, `AGENT TRUMAN`),
-and asserts `releaseYear` is 2006 on each of those and that all five were found. Rows a sibling
-class has in flight carry UUID-marked titles and are never looked up.
+## The sibling cases in the same class (delivered)
 
-The assertion stays as strong as it is today in the direction that matters: under a regression to
-first-occurrence projection the `nodes` path yields a null `releaseYear` for the seed films
-themselves, so the case still fails, and it now fails only for that reason.
+Every case in the class that reached into a connection page by list position now locates its
+subject by id through a `storeById` helper, and the two exact row counts are gone:
 
-One premise the implementer should confirm rather than assume: that the five seed films are inside
-the `first: 100` window. They hold the lowest primary keys in `film` and concurrent inserts take
-higher ones, so page ordering should keep them, but the polymorphic connection orders on the
-`pages` derived table's `__sort__` rather than on a raw key, and that is worth reading before
-relying on it. If it does not hold, drop to keying the lookup off whatever the page does return and
-assert over the intersection with the seed titles, requiring a non-empty intersection.
+* `assertStore1CustomersBothSides` (four cases) dropped `hasSize(2)` on both paths and locates
+  store 1 by `storeId` rather than at index 0.
+* `deepNesting_divergenceOneLevelDown_bothSidesResolve` and
+  `argumentAgreement_onArgConsumingArm_passesGuardAndResolves` now select `storeId` on both paths
+  so they can do the same. In both, `location` and `customersFirstN` remain the only diverging
+  buckets; the added `storeId` is a two-occurrence bucket with identical selections, the shape
+  `referenceUnderBothPaths_identicalSelections_behaviourUnchanged` already pins.
+* `nonConnectionQuery_singleOccurrencePath_behaviourUnchanged` dropped `hasSize(5)` on the
+  unfiltered `customers` root field and keys to the five seed first names instead.
 
-The replacement comment on the case states the invariant it now rests on (the query names its rows,
-so a concurrent writer cannot reach the assertion) without citing this item, per the transient
-citation rule in `CLAUDE.md`.
+Store 1's own customer list stays an exact, ordered `containsExactly`. It is scoped to one named
+store's children rather than to a table, and nothing in the module writes `customer`. Making that
+assertion stray-immune too would mean giving up the value equality that is the case's whole point,
+which is the wrong trade for an exposure that does not exist.
 
-## The sibling cases in the same class
+## The module-wide audit (delivered)
 
-Audit the other cases in `ConnectionSharedResultKeyProjectionTest` for the same shape while here.
-The known one is `nonConnectionQuery_singleOccurrencePath_behaviourUnchanged`, which reads the
-unfiltered `customers` root field and asserts `hasSize(5)`, an exact count over a table. It cannot
-fail today because nothing writes `customer`, so this is a latent instance rather than a live one:
-fix it by construction (assert over named rows, or drop the exact count) and say so, rather than
-leaving the next contributor to rediscover that the count is load-bearing. The four
-`assertStore1CustomersBothSides` cases read the unfiltered `stores` field and assert
-`hasSize(2)` plus store 1's customer names; same reasoning, same treatment. The two fail-loud guards
-assert only on errors and are not exposed.
+Scoped as the plan directed, to the readers of the film-family root fields, `film` being the only
+seed table any test class writes. The result: the primary case was the outlier, and no live
+exposure remains.
 
-## The module-wide audit
+The polymorphic readers in `GraphQLQueryTest` were already swept before this item, and their
+comments state the same convention this item applies: `search_returnsAllParticipantTypes` asserts
+the film count as a floor and the actor count exactly, "because nothing in this module writes
+`actor`"; `searchConnection_inlineFragmentsResolvePerTypeOnConnectionPath` and
+`searchConnection_totalCount_returnsTotalRowCountAcrossParticipants` do the same, the latter
+noting what a floor still discriminates (a count over one branch reports 3 or 5, an unwired count
+reports null); `filmsFaceted_noFacetFilter_countsMatchPlainAggregates` and its siblings bound the
+facet base with `extra: {lengthIs: [...]}` precisely so a film another class inserts falls outside
+the bound. `ConnectionSharedResultKeyProjectionTest` sat in a different class and was missed by
+that sweep.
 
-The failure's cost was diagnostic, so the deliverable includes knowing where else it can happen.
-Scope it by the narrowing fact above: `film` is the only written seed table, so audit the readers of
-the film-family root fields (`films`, `filmsFaceted`, `search`, `searchConnection`, `documents`,
-`documentsConnection`). A grep for those keys across `src/test/java` currently names fourteen files,
-several of which are the writers themselves or SQL-baseline tests that assert on emitted SQL rather
-than on rows.
+The remaining readers are sound for reasons that do not depend on writer habits:
+`documentsConnection_unionVariant_works` and `searchConnection_firstPage_...` assert a page size,
+not a table count; `TenantDivinedRoutingExecutionTest` and `RootLauncherSqlBaselineTest` filter by
+`filmId` or `rating`; `RoutineFieldExecutionTest` keys nested reads by `filmId`;
+`AccessorDerivedSourceTest` reads a mutation payload's `films`, not the root field;
+`ConnectionLifecycleExecutionTest` and `DevExecuteExecutionTest` use `{ films { filmId } }` as a
+vehicle and assert on connection pinning and rejection messages rather than on rows; the SQL
+baseline classes assert emitted SQL.
 
-For each reader, classify the assertion shape: an exact count or a universally quantified property
-over an unfiltered root field is exposed; an assertion over rows the case names, or over a column
-that is `NOT NULL` by construction, is not. Fix the exposed ones the same way as the primary case.
-Record the outcome in this item's body as the audit's result, so the Done gate can see what was
-checked rather than inferring it from the diff.
+One candidate was tested and refuted rather than assumed.
+`filmsFaceted_selectionGate_unselectedFacetContributesNoArm` asserts exactly three rating groups
+over an unbounded `filmsFaceted`, which reads like the same defect. It is not: the non-null-element
+facet appends `AND col IS NOT NULL` to its arm, so a stray film's NULL rating cannot open a fourth
+group, and no write path in the module sets `rating` at all. Verified by inserting a
+null-`release_year`, null-`rating` film and watching the case pass.
 
-If the audit turns up enough instances that fixing them all belongs elsewhere, split the remainder
-into a follow-up Backlog item and say which readers it covers; do not silently narrow this item's
-scope to the one case that failed.
+## Tests (delivered)
 
-## Tests
+The acceptance was deliberately not "a green build", which the case already produced most of the
+time. What was run:
 
-This item is a test fix, so the acceptance is not "a green build", which the case already produces
-most of the time. It is:
-
-* The primary case, run concurrently with a class that holds an uncommitted null-`release_year`
-  film row, passes. The cheap form of this is to insert such a row directly against the local
-  database, leave it there, run the case, and see it pass; then delete the row. That demonstrates
-  the property the fix claims, which the ordinary suite run cannot.
-* The primary case, run against a tree with the `$project` occurrence-list union reverted, still
-  fails. This is the sensitivity check, and it is the one that proves the fix did not buy stability
-  by weakening the assertion. Reverting is not required if the diverging column's absence can be
-  demonstrated more cheaply.
-* The full verification build (`mvn install -Plocal-db`) passes.
+* **The failure reproduces.** With a null-`release_year` film row left live in the local database,
+  the pre-fix case fails exactly as reported: `expected: 2006 but was: null`, at the `allSatisfy`
+  on the nodes side.
+* **The fix holds against it.** The same stray row live, the delivered case passes, all ten cases
+  in the class green.
+* **The fix did not weaken the assertion.** With a seed film's `release_year` set to NULL, the
+  delivered case fails on the nodes side, carrying its own description
+  (`[nodes path: summary.releaseYear per seed film] expected: 2006 but was: null`). Stability came
+  from naming the rows, not from asserting less.
+* The seed was restored to its five 2006 films after each probe, and the full verification build
+  (`mvn install -Plocal-db`) passes.
 
 ## Other solutions we've considered
 
