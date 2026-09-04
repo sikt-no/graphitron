@@ -111,22 +111,80 @@ public final class ClasspathScanner {
      * anything.
      */
     public static List<CompletionData.ExternalReference> scan(List<ClasspathEntry> classpathEntries, String jooqPackage) {
-        var jooqPrefix = jooqPackage.isEmpty() ? null : jooqPackage + ".";
-        var seen = new LinkedHashSet<String>();
-        var refs = new ArrayList<CompletionData.ExternalReference>();
+        var perEntry = new ArrayList<List<CompletionData.ExternalReference>>();
         for (ClasspathEntry classified : classpathEntries) {
             if (classified.origin() == ClasspathEntry.Origin.TRANSITIVE) {
                 continue;
             }
-            Path entry = classified.path();
-            String source = entry.toString();
-            if (Files.isDirectory(entry)) {
-                scanDirectory(entry, jooqPrefix, source, seen, refs);
-            } else if (isJar(entry)) {
-                scanJar(entry, jooqPrefix, source, seen, refs);
+            perEntry.add(scanEntry(classified.path(), jooqPackage));
+        }
+        return compose(perEntry);
+    }
+
+    /**
+     * One entry's references in walk order, <em>not</em> deduplicated. The caller composes; see
+     * {@link #compose}. A path that is neither a directory nor a readable jar yields nothing,
+     * which is the normal pre-{@code mvn compile} state rather than an error.
+     *
+     * <p>Exposed for {@link ClasspathCensus}, which holds one entry's result across rounds and
+     * re-reads only the entries whose bytes moved. Deduplicating here would make that impossible:
+     * a class dropped from the first entry has to surface from the second, so an entry cannot be
+     * recomputed alone once it has been folded against its neighbours.
+     */
+    public static List<CompletionData.ExternalReference> scanEntry(Path entry, String jooqPackage) {
+        var jooqPrefix = jooqPrefix(jooqPackage);
+        String source = entry.toString();
+        var refs = new ArrayList<CompletionData.ExternalReference>();
+        if (Files.isDirectory(entry)) {
+            scanDirectory(entry, jooqPrefix, source, refs);
+        } else if (isJar(entry)) {
+            scanJar(entry, jooqPrefix, source, refs);
+        }
+        return List.copyOf(refs);
+    }
+
+    /**
+     * One classfile's reference, or empty where the file is not a candidate: an excluded name, an
+     * unparseable file, or a class the census does not carry. {@code source} is the classpath entry
+     * the file was found under rather than the file itself, so a reference reads the same whether
+     * the whole entry was scanned or this one file was re-read.
+     *
+     * <p>Exposed for {@link ClasspathCensus}, which re-reads the classfiles a compile rewrote and
+     * keeps the rest.
+     */
+    public static Optional<CompletionData.ExternalReference> readClassFile(
+            Path file, String jooqPackage, String source) {
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException("failed to read " + file, e);
+        }
+        return Optional.ofNullable(readIfCandidate(
+            file.getFileName().toString(), bytes, jooqPrefix(jooqPackage), source));
+    }
+
+    /**
+     * Flattens per-entry references into the census, keeping the first occurrence of each FQN.
+     * Entry order is classpath order, so the copy that survives is the one a classloader would
+     * resolve, and the census and the codegen loader agree on which copy is the one.
+     */
+    public static List<CompletionData.ExternalReference> compose(
+            List<List<CompletionData.ExternalReference>> perEntry) {
+        var seen = new LinkedHashSet<String>();
+        var refs = new ArrayList<CompletionData.ExternalReference>();
+        for (List<CompletionData.ExternalReference> entry : perEntry) {
+            for (CompletionData.ExternalReference ref : entry) {
+                if (seen.add(ref.className())) {
+                    refs.add(ref);
+                }
             }
         }
         return List.copyOf(refs);
+    }
+
+    private static String jooqPrefix(String jooqPackage) {
+        return jooqPackage.isEmpty() ? null : jooqPackage + ".";
     }
 
     /** A classpath entry that is a jar file present on disk. */
@@ -137,7 +195,6 @@ public final class ClasspathScanner {
     }
 
     private static void scanDirectory(Path root, String jooqPrefix, String source,
-                                      LinkedHashSet<String> seen,
                                       List<CompletionData.ExternalReference> refs) {
         try (Stream<Path> walk = Files.walk(root)) {
             walk.filter(Files::isRegularFile)
@@ -149,7 +206,7 @@ public final class ClasspathScanner {
                     } catch (IOException e) {
                         throw new UncheckedIOException("failed to read " + p, e);
                     }
-                    collect(p.getFileName().toString(), bytes, jooqPrefix, source, seen, refs);
+                    collect(p.getFileName().toString(), bytes, jooqPrefix, source, refs);
                 });
         } catch (IOException e) {
             throw new UncheckedIOException("classpath scan failed at " + root, e);
@@ -163,7 +220,6 @@ public final class ClasspathScanner {
      * classes with it.
      */
     private static void scanJar(Path jar, String jooqPrefix, String source,
-                                LinkedHashSet<String> seen,
                                 List<CompletionData.ExternalReference> refs) {
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             var entries = zip.entries();
@@ -183,7 +239,7 @@ public final class ClasspathScanner {
                 } catch (IOException e) {
                     continue;
                 }
-                collect(fileName, bytes, jooqPrefix, source, seen, refs);
+                collect(fileName, bytes, jooqPrefix, source, refs);
             }
         } catch (IOException e) {
             // Not a readable jar. See the method comment.
@@ -191,10 +247,9 @@ public final class ClasspathScanner {
     }
 
     private static void collect(String fileName, byte[] bytes, String jooqPrefix, String source,
-                                LinkedHashSet<String> seen,
                                 List<CompletionData.ExternalReference> refs) {
         var ref = readIfCandidate(fileName, bytes, jooqPrefix, source);
-        if (ref != null && seen.add(ref.className())) {
+        if (ref != null) {
             refs.add(ref);
         }
     }

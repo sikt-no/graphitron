@@ -14,6 +14,7 @@ import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.rewrite.compile.CompileDependencyGraph;
 import no.sikt.graphitron.rewrite.compile.PlanCompileGraph;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
+import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
@@ -117,6 +118,14 @@ public class GraphQLRewriteGenerator {
     private final CapturePort capture;
 
     /**
+     * The classpath census, which this generator reads and never writes. A one-shot goal gets a
+     * fresh one and pays a full scan, as it always did; a session hands the same one to every
+     * round, and the round re-reads only the entries whose bytes moved. Holding it here rather
+     * than deriving it per pass is what lets the caller decide which of those it is.
+     */
+    private final ClasspathCensus census;
+
+    /**
      * Constructs a generator driven by the supplied {@link RunContext}. The context's
      * {@code schemaInputs} drive schema loading; {@link TagApplier} and
      * {@link DescriptionNoteApplier} run between parse and classification.
@@ -140,8 +149,23 @@ public class GraphQLRewriteGenerator {
      * facts and never a writer.
      */
     public GraphQLRewriteGenerator(RunContext ctx, CapturePort capture) {
+        this(ctx, capture, new ClasspathCensus());
+    }
+
+    /**
+     * Constructs a generator that reads the classpath census through the caller's {@code census},
+     * so a caller running more than one round reuses what has not changed between them instead of
+     * re-parsing the whole compile classpath per round.
+     *
+     * <p>The census is the caller's to hold, for the same reason the capture port is: only the
+     * caller knows whether its process outlives the round. A session holds one across rounds; a
+     * one-shot goal takes the overload above and gets a fresh one, which behaves exactly as a
+     * direct scan does.
+     */
+    public GraphQLRewriteGenerator(RunContext ctx, CapturePort capture, ClasspathCensus census) {
         this.ctx = ctx;
         this.capture = Objects.requireNonNull(capture, "capture");
+        this.census = Objects.requireNonNull(census, "census");
     }
 
     /**
@@ -635,7 +659,9 @@ public class GraphQLRewriteGenerator {
         // every consumer class). Both feed @key synthesis, the capture, the completion catalog and
         // the detections, which used to load one apiece.
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var census = CatalogBuilder.buildExternalReferences(ctx);
+        var reading = CatalogBuilder.readExternalReferences(ctx, this.census);
+        var census = reading.references();
+        LOGGER.debug("{}", reading.round().report());
 
         var attributed = loadAttributedRegistry(jooq);
         var read = assembleAndCaptureVerdicts(attributed, jooq, census);

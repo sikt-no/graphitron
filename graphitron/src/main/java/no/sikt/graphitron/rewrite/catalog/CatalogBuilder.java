@@ -46,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
 
@@ -269,13 +270,34 @@ public final class CatalogBuilder {
      * {@code extension_} family; {@link #build} keeps reading it as one part of the LSP catalog.
      */
     public static List<CompletionData.ExternalReference> buildExternalReferences(RunContext ctx) {
-        var roots = ctx.classpathRoots().isEmpty()
+        // Bytecode-derived structure only; the class / method Javadoc the hover
+        // path renders is overlaid from the LSP source index at request time.
+        return ClasspathScanner.scan(censusRoots(ctx), ctx.jooqPackage());
+    }
+
+    /**
+     * The same census through a caller's {@link ClasspathCensus}, which is what makes a round cost
+     * work proportional to what changed: an entry whose bytes have not moved is not re-read. The
+     * reading carries what the round paid, for the caller to log.
+     *
+     * <p>{@link #buildExternalReferences} remains the scan-it-now form, for the test sites and the
+     * capture load that hold no census.
+     */
+    public static ClasspathCensus.Reading readExternalReferences(RunContext ctx,
+                                                                 ClasspathCensus census) {
+        return census.read(censusRoots(ctx), ctx.jooqPackage());
+    }
+
+    /**
+     * The classpath the census reads. Falls back to {@code <basedir>/target/classes} as a single
+     * root where the context carries none, so unit-tier callers built off {@link RunContext}'s
+     * six-arg overload get the single-root scope.
+     */
+    private static List<no.sikt.graphitron.model.config.ClasspathEntry> censusRoots(RunContext ctx) {
+        return ctx.classpathRoots().isEmpty()
             ? List.of(no.sikt.graphitron.model.config.ClasspathEntry.project(
                 ctx.basedir().resolve("target/classes")))
             : ctx.classpathRoots();
-        // Bytecode-derived structure only; the class / method Javadoc the hover
-        // path renders is overlaid from the LSP source index at request time.
-        return ClasspathScanner.scan(roots, ctx.jooqPackage());
     }
 
     private static List<CompletionData.Table> buildTables(JooqCatalog jooq, String keysClassFqn) {

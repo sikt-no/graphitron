@@ -170,6 +170,61 @@ Log per round what was re-parsed and what was reused, by population. Without it,
 invalidation is invisible: the loop still produces correct output, just slowly, which is the failure
 mode this item exists to remove.
 
+## Delivered
+
+Phases one and three shipped. Phase two stays out of scope, returning through Spec if it is ever
+measured to be worth building.
+
+`ClasspathCensus` is the held census: one instance per session, keyed per classpath entry, handed to
+each round's generator as a constructor port beside `CapturePort`. Jars are verified by content hash
+through `ClasspathSources.hash`, the same function the store's persisted stamps use; directories are
+verified per file by size and modification time, and only the files whose stamp moved are re-parsed.
+An entry that leaves the classpath leaves the cache, and a directory's entry is rebuilt from each
+walk rather than merged into the previous one.
+
+`ClasspathScanner` was refactored so the cold and incremental paths cannot diverge: `scanEntry`
+reads one entry without deduplicating, `readClassFile` reads one classfile, and `compose` does the
+FQN deduplication that `scan` used to do inline. `scan` is now `scanEntry` over the entries plus
+`compose`, so both callers share one parse and one deduplication rather than keeping two in step by
+hand.
+
+`DevMojo` holds the session census in `sessionCensus` and routes all three generator construction
+sites through one `generatorFor(ctx)`, because a site that constructed a generator directly would
+quietly get a census of its own and re-parse the whole classpath. Phase three is
+`ClasspathCensus.Round`, reported by the census and logged by `DevMojo` once per round: the count
+that matters is what was *not* re-read, since a regression here produces correct output slowly and
+is otherwise invisible.
+
+Measured on this repo, 13 entries and 3,421 classes, against the cold scan the loop paid before:
+
+[cols="1,1"]
+|===
+| Round | Cost
+
+| Cold scan, steady state over five rounds
+| 279 to 359 ms, every class file re-parsed every round
+
+| Held census, rounds two to five, nothing changed
+| 60 to 86 ms, nothing re-read
+
+| Held census, one class file touched
+| 63 ms, 1 of 2,717 class files re-parsed, 0 of 11 jars
+|===
+
+That is the Verification's pass: a round that changes nothing re-parses nothing, and a one-file
+recompile re-parses one file. What remains per round is the jar hashing and the directory stat walk,
+which is the floor this design chose. The jOOQ catalog's 36 to 46 ms is untouched and still paid, as
+the plan says it is.
+
+Seven cases in `ClasspathCensusTest` pin it, each pairing a claim about the work with an equality
+check against a freshly scanned census, because the risk here is a stale census rather than a slow
+one. Four mutations were run against them: a directory that ignores the file stamp and a jar reused
+regardless of its hash are both caught, as is a jar never reused. The fourth, merging a directory's
+new file map into the old instead of rebuilding it, is not caught, and that is correct rather than a
+gap: the census is accumulated from the walk rather than read back out of the cache, so a merge
+costs cache growth and a wider blind spot on a deleted-then-recreated file, not a wrong answer. The
+comment there says so instead of claiming the correctness it does not carry.
+
 ## What this does not address
 
 Phase one needs a JVM that survives between rounds, which is `graphitron:dev`. A

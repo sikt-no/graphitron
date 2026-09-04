@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.boot.ReadBudget;
@@ -228,6 +229,13 @@ public class DevMojo extends AbstractRewriteMojo {
     // Closed ahead of the store in cleanup(); closing it gives back nothing, the port never owning
     // a store it was lent, unless a refusal demoted it to one of its own.
     CapturePort sessionCapture;
+    // The session's classpath census, held across rounds so a round re-reads only the entries whose
+    // bytes moved. A .graphqls save cannot change a classfile, so those rounds re-read nothing;
+    // a one-file recompile re-reads that file. Held here for the same reason sessionCapture is:
+    // only the session knows its process outlives the round. Package-private so DevMojoTest can
+    // assert a round's reuse. Carries no loaded class, so it is safe across the codegen loader
+    // that every round rebuilds and closes.
+    ClasspathCensus sessionCensus = new ClasspathCensus();
     // The language server's own reader over sessionStore, minted once the store opens and closed
     // ahead of it in cleanup(). Null for the bare mojos that never start a session.
     StoreAccess lspStore;
@@ -868,7 +876,7 @@ public class DevMojo extends AbstractRewriteMojo {
         try {
             withCodegenScope(ctx -> {
                 try {
-                    var output = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).buildOutput();
+                    var output = generatorFor(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
                     var catalog = output.catalog();
@@ -907,7 +915,7 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private InitialOutput buildOutputQuietly(RunContext ctx) {
         try {
-            var output = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).buildOutput();
+            var output = generatorFor(ctx).buildOutput();
             return new InitialOutput(output.catalog(), true, output.walkErrors(), output.warnings());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
@@ -980,6 +988,15 @@ public class DevMojo extends AbstractRewriteMojo {
         return sessionCapture != null ? sessionCapture : CapturePort.forContext(ctx);
     }
 
+    /**
+     * A generator for one round, reading the classpath through the session's census so the round
+     * pays for what changed. Every construction site goes through this, or a round would quietly
+     * get a census of its own and re-parse the whole classpath.
+     */
+    private GraphQLRewriteGenerator generatorFor(RunContext ctx) {
+        return new GraphQLRewriteGenerator(ctx, captureFor(ctx), sessionCensus);
+    }
+
     PassRound runGeneratorPass(RunContext ctx, String label) {
         // Cleared up front so a failed pass never leaves a stale generation for the compile driver to
         // act on; reassigned from the pass below, which returns one only when it emitted.
@@ -988,7 +1005,7 @@ public class DevMojo extends AbstractRewriteMojo {
             // One pass: the emitted tree, the compile graph the incremental driver reads, and the
             // editor-facing catalog and diagnostics, from a single read of the schema and a single
             // capture of the graph's partition.
-            var pass = new GraphQLRewriteGenerator(ctx, captureFor(ctx)).runPass();
+            var pass = generatorFor(ctx).runPass();
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
             if (!errors.isEmpty()) {
@@ -1001,6 +1018,10 @@ public class DevMojo extends AbstractRewriteMojo {
             }
             previousErrorKeys = Set.of();
             getLog().info("graphitron:dev: " + label + " ok");
+            // What the round paid for the classpath, said every round rather than only when it
+            // changes. A regression in the invalidation produces correct output slowly, so the
+            // round that quietly re-reads a population nothing touched is invisible without this.
+            sessionCensus.lastRound().ifPresent(round -> getLog().info("graphitron:dev: " + round.report()));
             return new PassRound(pass.output(), true);
         } catch (SchemaParseException e) {
             // An invalid intermediate schema mid-edit is expected and author-correctable;
