@@ -199,3 +199,89 @@ R914 bounds the fact store: it stops the file growing without limit and stops a 
 the run that opens it. This item is about the loop that fills the store, and the two meet at phase
 two, which would put more load on exactly the store read path R914 found stalling. Phase one is
 independent of both.
+
+## Reviewer findings
+
+### Round 1, Spec -> Ready declined
+
+**Question 2, architecture fit. Phase one instructs the implementer to hold the jOOQ catalog across
+rounds while rebuilding the codegen loader per round, and the tree says those two cannot both
+happen.** Phase one is what Ready authorises, so this is not a detail the implementer can defer.
+
+`JooqCatalog` is loader-bound by construction and says so. Its constructor takes the
+`codegenLoader`, keeps it as a field, and resolves `Catalog` and every `Table` handle through it;
+`allTableEntries` states the rule for callers: "callers must consume them within the same build pass
+and never retain them past the codegen loader's lifetime". `keysClass`, `tablesClass` and
+`findRecordClass` call `Class.forName(..., codegenLoader)` on demand, so a retained catalog keeps
+calling a loader it was told not to outlive.
+
+The lifetime is shorter than "per round" suggests. `AbstractRewriteMojo.withCodegenScope` opens the
+`URLClassLoader` in a try-with-resources and closes it at the end of the round, deliberately: "the
+loader closed to release JAR file descriptors, which matters for the dev-mode loop that rebuilds the
+loader on every regeneration cycle". A catalog held into round two therefore holds handles from a
+closed loader, and its next reflective resolve fails rather than degrades. This is a concrete
+failure on the first `.graphqls` save, not a hazard to keep an eye on.
+
+So the sentence "The jOOQ catalog load takes the same treatment on the same signal" has no reading
+that survives the sentence three paragraphs later, "The loader keeps being rebuilt per round". The
+plan forecloses the one option that would make the catalog half work, which is scoping the loader to
+the session on the same invalidation signal, and it does so without noting that it is a choice.
+
+The item is also internally split on whether the catalog is in scope at all. Plan section one
+includes it. "What Ready covers" restates phase one as "hold the census across rounds with
+per-population invalidation" and does not mention it. Open question two asks "whether the jOOQ
+catalog can be invalidated on the same signal as the census, or whether its reflective load has to
+follow the classloader's lifecycle instead", which reads as unsettled. Three sections, three
+positions.
+
+What would satisfy this finding: settle the fork in the plan body, and make the three sections say
+the same thing. Any of the arms is a legitimate answer, and each is a different piece of work worth
+naming as such:
+
+* Drop the catalog from phase one and reload it per round. Then say what share of the round that
+  leaves standing, because "What a round costs today" names two whole-classpath reads and the
+  measurement table times only one of them. Today's numbers cannot tell a reader whether a save
+  that re-parses no classfiles still pays most of its 383 to 476 ms.
+* Scope the loader to the session and invalidate it on the classpath signal. That contradicts the
+  current text and brings its own class-identity question, which the item would then have to argue
+  rather than set aside.
+* Turn what the pipeline needs from the catalog into loader-free data, the way `columnFactsOf`
+  already produces values documented as "resolved-immutable, safe to retain past the codegen
+  loader's lifetime". That is the shape the tree already uses for this exact problem, and it is a
+  larger change than the rest of phase one put together.
+
+Question 1 is otherwise answered. What changes for a consumer is legible from the goal alone: a
+developer in `graphitron:dev` stops paying a whole-classpath re-parse on every save, a `.graphqls`
+save re-parses no classfiles, a one-file recompile re-parses one, and the round's log says what was
+reused. The item is also unusually clear about what it does not do, naming the `quarkus:dev`
+start-up cost as untouched by the authorised phases.
+
+Everything else checked out against the tree. `DevMojo.regeneratePass` and `DevMojo.rebuildCatalog`
+both reach `GraphQLRewriteGenerator.runPipeline`, whose first two statements are the catalog load
+and `CatalogBuilder.buildExternalReferences` under a comment naming them the two hoisted
+whole-classpath reads. `ClasspathScanner.scan` skips `TRANSITIVE` entries before opening anything
+and `scanDirectory` reads every classfile with `Files.readAllBytes`. `DevMojo.resolveClasspathRoots`
+keeps only directories. `StoreRefresh.prepare` takes the already-scanned census as a parameter and
+pre-claims the classes of hash-fresh sources, so it saves writes and not reads, and it cannot inform
+a scan that has already run. Both quoted rationales are verbatim: `ClasspathSources` on the
+unstamped directory root and on the triple being "tolerable while a wrong answer dies with the JVM",
+and `java_file.file` on being "the family's partition dimension and the grain its refresh runs at".
+`JavaSourceFacts` walks, rewrites by content hash, and prunes unseen files scoped to the roots it
+covered. No `jvm_file` relation exists. `CompletionData.ExternalReference` is strings, booleans and
+lists throughout, so the census carries no class identity. The incremental compile writes to
+`target/graphitron-classes`, which `resolveCompileClasspath` does not assemble, so the claim that a
+schema save cannot invalidate the census holds. R914's step four is where the shared-warm-census
+open question points, as described.
+
+Two non-blocking notes, neither bearing on the gate.
+
+The plan does not say where the retained census lives, and `RunContext` is documented as
+per-invocation and "never held in a static or ThreadLocal", so it cannot be the home. This did not
+count against the gate because the tree already has the shape: `sessionCapture` is a `DevMojo` field
+handed to the generator per round as a constructor port, whose javadoc describes it as "the caller's
+to open, share between passes and close". An implementer has a precedent to copy.
+
+"The `jvm_` tree runs to roughly 180,000 rows for a mid-size consumer" carries no source. R914
+measures 193,863 rows across 151 tables for a whole store, which makes the figure plausible without
+establishing it. It sits in an open question, and it argues against building the phase it belongs
+to, so nothing rests on it.
