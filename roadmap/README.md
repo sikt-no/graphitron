@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | In Review | 2026-09-01 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
-| `R905` | A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts | In Review | 2026-09-05 <sub>created 2026-09-01</sub> | [plan](polymorphic-connection-seed-assertion-races-dml-inserts.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -735,7 +734,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R740` [**Retire the oracle-diff shadow tests, and stop the anchor gate from manufacturing them**](retire-oracle-diff-shadow-tests.md) — Backlog, cleanup
 - `R808` [**A bridging-condition split-table execution case returns a second actor only in a full-module run**](bridging-condition-join-execution-flake.md) — Backlog, bug
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
-- `R905` [**A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts**](polymorphic-connection-seed-assertion-races-dml-inserts.md) — In Review, bug
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R809` [**LspTraceTest cases share the trace seams static state and fail each other**](trace-static-state-leaks-between-cases.md) — Backlog, bug
