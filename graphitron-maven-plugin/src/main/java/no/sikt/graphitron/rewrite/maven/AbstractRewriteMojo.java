@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.config.DependencyVersions;
 import no.sikt.graphitron.model.config.ObservedVersion;
 import no.sikt.graphitron.model.config.WatchedDependency;
 import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -62,6 +63,13 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /** Sentinel used for validate-only invocations that do not emit code. */
     private static final String VALIDATE_ONLY_PACKAGE = RunContext.NO_OUTPUT_PACKAGE;
+
+    /**
+     * The largest a Maven checksum sidecar can be and still be read. A real one is 40 bytes and a
+     * newline; the cap is what stops a file that merely ends in {@code .sha1} from being loaded
+     * into memory because it happened to sit beside a jar.
+     */
+    private static final long MAX_CHECKSUM_SIDECAR_BYTES = 256;
 
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
@@ -790,26 +798,76 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         Path path, Path projectOutputDirectory, Map<Path, Artifact> artifactByPath,
         Set<String> declaredKeys, Map<Path, String> reactorOutputs
     ) {
+        // Taken once per element and attached to whichever arm claims it: the stamp is a fact
+        // about the file, and none of the four origins below changes what the bytes are.
+        String stamp = resolvedIdentity(path);
         if (path.equals(projectOutputDirectory)) {
-            return new ClasspathEntry(path, Origin.PROJECT, null);
+            return new ClasspathEntry(path, Origin.PROJECT, null, stamp);
         }
         Artifact artifact = artifactByPath.get(path);
         if (artifact != null && isDirect(artifact, declaredKeys)) {
             return new ClasspathEntry(path, Origin.DECLARED,
-                artifact.getGroupId() + ":" + artifact.getArtifactId());
+                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp);
         }
         String reactorCoordinate = reactorOutputs.get(path);
         if (reactorCoordinate != null) {
             // A reactor module's output this module did not declare, whether it arrived through
             // the reactor fold or transitively through another dependency: offerable in the
             // census, rejected by the build naming the module, which is SIBLING's whole point.
-            return new ClasspathEntry(path, Origin.SIBLING, reactorCoordinate);
+            return new ClasspathEntry(path, Origin.SIBLING, reactorCoordinate, stamp);
         }
         if (artifact != null) {
             return new ClasspathEntry(path, Origin.TRANSITIVE,
-                artifact.getGroupId() + ":" + artifact.getArtifactId());
+                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp);
         }
-        return new ClasspathEntry(path, Origin.DECLARED, null);
+        return new ClasspathEntry(path, Origin.DECLARED, null, stamp);
+    }
+
+    /**
+     * The content identity a repository already established for {@code path}, read off the Maven
+     * checksum sidecar Maven wrote beside it at download, or null where there is nothing to read.
+     * This is the only code in the tree that knows what a checksum sidecar is; everything
+     * downstream sees a stamp or sees none.
+     *
+     * <p>What the sidecar's <em>presence</em> means is the point, not that SHA-1 is a good hash. A
+     * jar with one was resolved from a repository, and repositories do not republish a coordinate
+     * under new bytes, so the path is the identity and re-hashing it every round re-establishes
+     * something already established. A locally installed artifact gets {@code _remote.repositories}
+     * and no checksum sidecar, which is exactly the population that can change underneath a running
+     * session, so it keeps being hashed.
+     *
+     * <p>One way that inference breaks: the sidecar is written once at download and never
+     * maintained, so installing over a release coordinate leaves it vouching for bytes that are
+     * gone. Two stats close it. A sidecar older than the jar it describes is not trusted, and the
+     * jar falls back to hashing. The whole check is re-taken every round, the classpath being
+     * resolved per round, so a jar overwritten mid-session stops being trusted on the next one.
+     */
+    private static String resolvedIdentity(Path path) {
+        Path sidecar = path.resolveSibling(path.getFileName() + ".sha1");
+        try {
+            if (!Files.isRegularFile(path) || !Files.isRegularFile(sidecar)
+                || Files.size(sidecar) > MAX_CHECKSUM_SIDECAR_BYTES
+                || Files.getLastModifiedTime(sidecar)
+                    .compareTo(Files.getLastModifiedTime(path)) < 0) {
+                return null;
+            }
+            // Maven writes the bare digest; the sha1sum form ("<hex>  <name>") is tolerated by
+            // taking the first token, and anything that is not a hex digest is rejected by
+            // SourceStamp, which owns how the second scheme is spelled.
+            String text = Files.readString(sidecar, StandardCharsets.UTF_8).trim();
+            int end = text.length();
+            for (int i = 0; i < text.length(); i++) {
+                if (Character.isWhitespace(text.charAt(i))) {
+                    end = i;
+                    break;
+                }
+            }
+            return SourceStamp.ofSha1(text.substring(0, end));
+        } catch (IOException | RuntimeException e) {
+            // An unreadable or undecodable sidecar is one we have no identity from, which is the
+            // same answer as having none at all: the jar gets hashed.
+            return null;
+        }
     }
 
     /**

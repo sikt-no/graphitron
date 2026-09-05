@@ -147,7 +147,7 @@ public final class FactCapture {
                            SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
         CapturePort.perRun(storeDirectory).capture(new CaptureRequest(graph, config, registry,
-            assembly, verdicts, attribution, jooq, extensions, ClassifiedRun.absent()));
+            assembly, verdicts, attribution, jooq, extensions, Map.of(), ClassifiedRun.absent()));
     }
 
     /**
@@ -180,7 +180,8 @@ public final class FactCapture {
                                    ClassifiedRun classified,
                                    CapturePort.AfterCapture<T> after) {
         return CapturePort.perRun(storeDirectory).captureAndRead(new CaptureRequest(graph, config,
-            registry, assembly, verdicts, attribution, jooq, extensions, classified), after);
+            registry, assembly, verdicts, attribution, jooq, extensions, Map.of(), classified),
+            after);
     }
 
     /**
@@ -303,12 +304,37 @@ public final class FactCapture {
                                SchemaAssembly assembly, SdlVerdicts verdicts,
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions) {
+        capture(dsl, warm, graph, config, registry, assembly, verdicts, attribution, jooq,
+            extensions, Map.of());
+    }
+
+    /**
+     * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
+     * SchemaAssembly, SdlVerdicts, Map, JooqCatalog, List)} for a caller that already established
+     * what each classpath jar hashes to, which is every caller reading its census through a
+     * {@link no.sikt.graphitron.model.classpath.ClasspathCensus}. The retention decision and the
+     * commit-time stamping both go through the same memo, so supplying it means each jar of a
+     * round is identified once rather than once per consumer.
+     *
+     * <p>The values have to be <em>this</em> round's. What the seeded memo asserts is that the
+     * bytes the census parsed are the bytes the partition describes; a value from any other moment
+     * would record a stamp for bytes nobody read.
+     *
+     * @param classpathStamps the round's per-jar identities keyed by path, empty where a caller
+     *                        has none and every source is hashed here exactly as before
+     */
+    public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
+                               SubjectConfig config, TypeDefinitionRegistry registry,
+                               SchemaAssembly assembly, SdlVerdicts verdicts,
+                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                               List<CompletionData.ExternalReference> extensions,
+                               Map<String, String> classpathStamps) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
         Objects.requireNonNull(assembly, "assembly");
         boolean firstGraph = !dsl.fetchExists(STORE_GRAPH);
-        var sources = new ClasspathSources();
+        var sources = new ClasspathSources(classpathStamps);
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());

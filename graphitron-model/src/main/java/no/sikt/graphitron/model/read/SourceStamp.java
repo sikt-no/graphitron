@@ -9,12 +9,14 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
- * The content stamp {@code store_source.stamp} holds: the SHA-256 of a source's bytes, hex-encoded.
+ * The content stamp {@code store_source.stamp} holds: a source's identity as
+ * {@code <scheme>:<hex>}, where the scheme names how the hex was arrived at.
  *
  * <p>One home for the algorithm because two sides compute it. Capture stamps a source it has read in
  * full, so an unchanged source is read once and a currency check can re-hash a cold graph's files
@@ -23,11 +25,34 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * is the question an editor has to answer before applying a stored position to a live buffer. Two
  * spellings of one hash would agree until one of them changed, and nothing would notice.
  *
+ * <p>Two schemes, and the tag is what keeps them from being confused for one another. {@link #of}
+ * and {@link #ofFile} read the bytes and produce {@code sha256:}. {@link #ofSha1} takes an identity
+ * a resolver already established for an artifact it downloaded, which the Maven plugin reads off a
+ * checksum sidecar, and produces {@code sha1:}: the value is not recomputed here and could not be,
+ * the whole point of accepting it being that nothing reads the bytes. A column holding two
+ * algorithms without saying which is exactly the trap the paragraph above describes, so the tag is
+ * part of the stamp rather than something a reader has to infer from a length.
+ *
+ * <p>Comparison stays string equality throughout, which is what makes the tag load-bearing rather
+ * than decorative: a {@code sha1:} value never compares equal to a {@code sha256:} one, so a source
+ * whose scheme changed reads as changed and is re-walked. That is the conservative direction, and
+ * it is what makes an existing store's untagged values migrate by one re-walk rather than by a
+ * false match.
+ *
  * <p>Comparing content rather than a timestamp is deliberate: an unsaved buffer identical to the
  * captured file matches, an edited buffer does not, and a file saved with no change matches. What is
  * being asked is whether the text is the same text, never whether a write happened.
  */
 public final class SourceStamp {
+
+    /** The scheme {@link #of} and {@link #ofFile} produce: this class reading the bytes itself. */
+    private static final String SHA256 = "sha256:";
+
+    /** The scheme {@link #ofSha1} produces: an identity a repository established at download. */
+    private static final String SHA1 = "sha1:";
+
+    /** How long a hex-encoded SHA-1 is, which is the only shape {@link #ofSha1} accepts. */
+    private static final int SHA1_HEX_LENGTH = 40;
 
     private SourceStamp() {}
 
@@ -35,7 +60,7 @@ public final class SourceStamp {
     public static String of(byte[] content) {
         MessageDigest digest = digest();
         digest.update(content);
-        return HexFormat.of().formatHex(digest.digest());
+        return SHA256 + HexFormat.of().formatHex(digest.digest());
     }
 
     /**
@@ -54,7 +79,30 @@ public final class SourceStamp {
         } catch (IOException e) {
             return null;
         }
-        return HexFormat.of().formatHex(digest.digest());
+        return SHA256 + HexFormat.of().formatHex(digest.digest());
+    }
+
+    /**
+     * The stamp for a SHA-1 identity someone else established, {@code hex} being the bare
+     * hex-encoded digest. Null when it is not one: an unparseable value is not an identity, and
+     * supplying none costs a hash rather than a wrong answer.
+     *
+     * <p>Nothing here verifies that {@code hex} describes the file it will be attached to. The
+     * caller supplying it is asserting provenance, and a caller that cannot assert it supplies
+     * nothing; this method's job is only that the second scheme is spelled where the first one is.
+     */
+    public static String ofSha1(String hex) {
+        if (hex == null || hex.length() != SHA1_HEX_LENGTH) {
+            return null;
+        }
+        String lowered = hex.toLowerCase(Locale.ROOT);
+        for (int i = 0; i < lowered.length(); i++) {
+            char c = lowered.charAt(i);
+            if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) {
+                return null;
+            }
+        }
+        return SHA1 + lowered;
     }
 
     /**

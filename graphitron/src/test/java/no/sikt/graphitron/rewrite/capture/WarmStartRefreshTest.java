@@ -8,7 +8,11 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
+import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
@@ -207,6 +211,65 @@ class WarmStartRefreshTest {
                 .as("the retained partition is the one the first run wrote, untouched")
                 .isEqualTo("INTERFACE");
         }
+    }
+
+    /**
+     * The retention decision reads what the round established, and does not go back to the jar.
+     *
+     * <p>The two consumers of a jar's identity used to ask independently: the census hashed it to
+     * decide whether to re-parse, and the refresh hashed it again to decide whether to retain the
+     * partition. Two reads of one file is the cost; the correctness is the reason the second one
+     * cannot simply be dropped. The window between them is real, and this case opens it as wide as
+     * it goes: the jar is replaced after the census parsed it. The rows in the store describe the
+     * bytes the census read, so the stamp recorded beside them must describe those bytes too, and
+     * the partition must be retained rather than judged against bytes nobody parsed.
+     *
+     * <p>A stopwatch cannot see any of this. The witness is the tampered {@code class_kind}, which
+     * only a rewrite puts back, so dropping the seed fails the case on every machine rather than
+     * on a slow one.
+     */
+    @Test
+    @DisplayName("the retention decision uses the round's stamps, not a fresh read of the jar")
+    void retentionUsesTheRoundsStamps(@TempDir Path tmp) throws IOException {
+        Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
+        Path directory = tmp.resolve("graphitron-model");
+        var reading = new ClasspathCensus().read(
+            List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library")),
+            DEFAULT_JOOQ_PACKAGE);
+        capture(directory, tmp, reading.references());
+
+        try (var tampered = GraphitronModelStore.openAt(directory)) {
+            tampered.dsl().update(JVM_CLASS).set(JVM_CLASS.CLASS_KIND, "INTERFACE")
+                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass")).execute();
+        }
+
+        // The jar moves after the census parsed it. Every later question about it has a different
+        // answer than the rows do, which is exactly why the round's own answer has to travel.
+        Files.delete(jar);
+        jarWith(tmp, "com.example.lib.Rewritten");
+        String roundStamp = reading.stamps().get(jar.toString());
+        assertThat(roundStamp)
+            .as("the bytes on disk now hash differently, so a fresh read would rewrite")
+            .isNotNull()
+            .isNotEqualTo(hash(jar));
+
+        var registry = CapturedStore.registryOf(tmp, SDL);
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            FactCapture.capture(store.dsl(), true, graph(tmp), SubjectConfig.none(), registry,
+                SchemaAssembly.of(registry), SdlVerdicts.none(),
+                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps());
+        }
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            assertThat(store.dsl().select(JVM_CLASS.CLASS_KIND).from(JVM_CLASS)
+                .where(JVM_CLASS.CLASS_NAME.eq("com.example.lib.LibraryClass"))
+                .fetchOne(0, String.class))
+                .as("retained against the round's own answer, so the partition was left alone")
+                .isEqualTo("INTERFACE");
+        }
+        assertThat(stampOf(directory, jar))
+            .as("and the recorded stamp still describes the bytes the rows came from")
+            .isEqualTo(roundStamp);
     }
 
     @Test
@@ -467,7 +530,9 @@ class WarmStartRefreshTest {
     private static String hash(Path file) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file)));
+            // Recomputed here rather than delegated, the point being that a reader with only the
+            // file can arrive at the recorded value; the scheme tag is part of what it arrives at.
+            return "sha256:" + HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required of every JVM", e);
         }

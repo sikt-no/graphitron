@@ -34,7 +34,10 @@ import java.util.stream.Stream;
  *       another checkout. A jar is verified by content hash, through
  *       {@link ClasspathSources#hash}, which is the same function the store's persisted stamps use.
  *       Hashing a jar set costs roughly an eighth of parsing it, so the whole population is
- *       verified for a fraction of one round's parse.
+ *       verified for a fraction of one round's parse. Cheaper still where the producer already
+ *       knows the answer: an entry carrying a {@link ClasspathEntry#suppliedStamp()} is verified
+ *       against that instead, and most of a classpath is release artifacts whose identity the
+ *       resolver established once and whose coordinate cannot be republished under new bytes.
  *   <li><b>Directories</b> are {@code target/classes}, a few bytes that the compiler rewrites on
  *       every save. A directory is verified per file by size and modification time, and only the
  *       files whose stamp moved are re-parsed. Hashing a directory would require reading the bytes
@@ -113,14 +116,14 @@ public final class ClasspathCensus {
 
         var counters = new Counters();
         var live = new ArrayList<Path>();
+        var stamps = new LinkedHashMap<String, String>();
         var perEntry = new ArrayList<List<CompletionData.ExternalReference>>();
         for (ClasspathEntry classified : entries) {
             if (classified.origin() == ClasspathEntry.Origin.TRANSITIVE) {
                 continue;
             }
-            Path path = classified.path();
-            live.add(path);
-            perEntry.add(readEntry(path, jooqPackage, counters));
+            live.add(classified.path());
+            perEntry.add(readEntry(classified, jooqPackage, counters, stamps));
         }
         cached.keySet().retainAll(live);
 
@@ -132,7 +135,7 @@ public final class ClasspathCensus {
         if (sink != null) {
             sink.accept(round);
         }
-        return new Reading(census, round);
+        return new Reading(census, round, stamps);
     }
 
     /**
@@ -146,12 +149,14 @@ public final class ClasspathCensus {
     }
 
     private List<CompletionData.ExternalReference> readEntry(
-            Path path, String jooqPackage, Counters counters) {
+            ClasspathEntry classified, String jooqPackage, Counters counters,
+            Map<String, String> stamps) {
+        Path path = classified.path();
         if (Files.isDirectory(path)) {
             return readDirectory(path, jooqPackage, counters);
         }
         if (ClasspathScanner.isJar(path)) {
-            return readJar(path, jooqPackage, counters);
+            return readJar(classified, jooqPackage, counters, stamps);
         }
         // Neither a directory nor a readable jar: the pre-compile state, which the scanner also
         // passes over. Nothing is cached for it, so it costs one existence check per round and
@@ -161,11 +166,25 @@ public final class ClasspathCensus {
     }
 
     private List<CompletionData.ExternalReference> readJar(
-            Path jar, String jooqPackage, Counters counters) {
+            ClasspathEntry classified, String jooqPackage, Counters counters,
+            Map<String, String> stamps) {
+        Path jar = classified.path();
+        // The producer's identity for this entry where it has one, and the bytes otherwise. A
+        // supplied stamp is what makes the whole population question answerable: most of a
+        // classpath is release artifacts a repository resolved, and hashing those re-establishes
+        // something already established. Whichever value this round used is what the entry is
+        // verified against next round and what the capture is handed, so the two consumers can
+        // never disagree about which bytes a partition describes.
+        //
         // Null where the jar could not be read. That must not compare equal to a previous null, or
         // an unreadable jar would pin whatever it was cached with; it is re-read instead, which is
         // cheap because the scanner passes over a jar it cannot open.
-        String hash = ClasspathSources.hash(jar);
+        String hash = classified.suppliedStamp() != null
+            ? classified.suppliedStamp()
+            : ClasspathSources.hash(jar);
+        if (hash != null) {
+            stamps.put(jar.toString(), hash);
+        }
         if (hash != null
             && cached.get(jar) instanceof CachedJar previous
             && hash.equals(previous.hash())) {
@@ -237,10 +256,22 @@ public final class ClasspathCensus {
         return List.copyOf(references);
     }
 
-    /** The census and what the round paid for it. */
-    public record Reading(List<CompletionData.ExternalReference> references, Round round) {
+    /**
+     * The census, what the round paid for it, and the identity this round verified each jar
+     * against, keyed by {@link Path#toString()} to match {@code store_source.source_name}.
+     *
+     * <p>The stamps ride here because the capture needs exactly them and cannot recompute them
+     * safely. The retention decision compares a jar against what the store recorded for it, and
+     * the answer has to describe the bytes this round parsed: the store outlives the build, so a
+     * partition retained against a later read keeps rows nothing will recompute. Directories carry
+     * no entry, being verified per file rather than whole, which is the same population the
+     * retention decision already skips.
+     */
+    public record Reading(List<CompletionData.ExternalReference> references, Round round,
+                          Map<String, String> stamps) {
         public Reading {
             references = List.copyOf(references);
+            stamps = Map.copyOf(stamps);
         }
     }
 

@@ -21,8 +21,17 @@ import java.util.Objects;
  *                   Carried for the rejection messages: "declare a dependency on module X" and
  *                   "the class is in org.foo:bar, which this module does not declare" both need a
  *                   name no {@code target/classes} path can supply
+ * @param suppliedStamp the entry's content identity where the producer already knows it, spelled
+ *                   by {@link no.sikt.graphitron.model.read.SourceStamp}; {@code null} where it
+ *                   does not, which is every caller that resolved nothing and every entry whose
+ *                   bytes could still move. Same doctrine as {@code coordinate}: the producer
+ *                   resolved this classpath and knows things about it that no consumer can
+ *                   recover from a path, so it says them once here instead of every consumer
+ *                   re-deriving them. What a consumer saves is the read, a jar being verified by
+ *                   content hash on every round of a session; what it must not do is treat an
+ *                   absent stamp as a claim, since none is the answer for "ask the bytes"
  */
-public record ClasspathEntry(Path path, Origin origin, String coordinate) {
+public record ClasspathEntry(Path path, Origin origin, String coordinate, String suppliedStamp) {
 
     /** How an entry reached the compile classpath. */
     public enum Origin {
@@ -47,6 +56,15 @@ public record ClasspathEntry(Path path, Origin origin, String coordinate) {
     public ClasspathEntry {
         Objects.requireNonNull(path, "path");
         Objects.requireNonNull(origin, "origin");
+    }
+
+    /**
+     * An entry whose producer has no content identity to supply, which is every caller that did
+     * not resolve the classpath from a repository. Keeps the three-argument shape the record had
+     * before the stamp existed, so a producer opts into supplying one rather than opting out.
+     */
+    public ClasspathEntry(Path path, Origin origin, String coordinate) {
+        this(path, origin, coordinate, null);
     }
 
     /** Wraps a bare path as this module's own output, for callers with no classification to give. */

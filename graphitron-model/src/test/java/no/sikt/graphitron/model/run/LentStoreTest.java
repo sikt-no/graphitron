@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -128,7 +129,7 @@ class LentStoreTest {
         var registry = CapturedStore.registryOf(baseDir, sdl);
         return new CaptureRequest(CapturedStore.graph(baseDir), SubjectConfig.none(), registry,
             SchemaAssembly.of(registry), SdlVerdicts.none(), CapturedStore.attributionOf(baseDir),
-            null, List.of(), ClassifiedRun.absent());
+            null, List.of(), Map.of(), ClassifiedRun.absent());
     }
 
     /** The captured type census, which is the cheapest fact that says which document landed. */

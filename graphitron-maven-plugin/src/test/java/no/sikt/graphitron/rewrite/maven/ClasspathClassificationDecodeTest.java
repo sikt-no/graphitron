@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 
@@ -165,6 +167,90 @@ class ClasspathClassificationDecodeTest {
         assertThat(entries)
             .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
             .containsExactly(tuple(Origin.PROJECT, null), tuple(Origin.DECLARED, null));
+    }
+
+    /**
+     * The supplied stamp, which is the one thing in the tree that knows what a Maven checksum
+     * sidecar is. Its <em>presence</em> is the signal, not its algorithm: a jar with one was
+     * resolved from a repository, and a repository does not republish a coordinate under new
+     * bytes, so the entry carries an identity and no consumer has to re-establish it. A locally
+     * installed artifact gets no sidecar and keeps being hashed, which is exactly the population
+     * that can change underneath a running session.
+     */
+    @Test
+    void aResolvedJarCarriesItsSidecarsIdentity(@TempDir Path tmp) throws IOException {
+        Path own = Files.createDirectories(tmp.resolve("target/classes")).toAbsolutePath().normalize();
+        Path resolved = touch(tmp.resolve("repo"), "resolved.jar");
+        Path installed = touch(tmp.resolve("repo"), "installed.jar");
+        sidecar(resolved, "b".repeat(40));
+
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), resolved.toString(), installed.toString()),
+            own,
+            List.of(),
+            List.of(),
+            Map.of());
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::path, ClasspathEntry::suppliedStamp)
+            .containsExactly(
+                tuple(own, null),
+                tuple(resolved, "sha1:" + "b".repeat(40)),
+                tuple(installed, null));
+    }
+
+    /**
+     * A stale sidecar is not trusted. Maven writes one once at download and never maintains it, so
+     * installing over a release coordinate leaves it vouching for bytes that are gone; two stats
+     * close that, and the jar falls back to being hashed. Rejecting is the only safe direction
+     * here: a wrongly trusted stamp does not merely cost a read, it lets a partition be retained
+     * against a jar whose classes have changed, and nothing later recomputes it.
+     */
+    @Test
+    void aSidecarOlderThanItsJarIsNotTrusted(@TempDir Path tmp) throws IOException {
+        Path own = Files.createDirectories(tmp.resolve("target/classes")).toAbsolutePath().normalize();
+        Path overwritten = touch(tmp.resolve("repo"), "overwritten.jar");
+        sidecar(overwritten, "c".repeat(40));
+        // The install that makes the sidecar a lie: same path, new bytes, later modification time.
+        Files.write(overwritten, "rebuilt".getBytes(StandardCharsets.UTF_8));
+        Files.setLastModifiedTime(overwritten, FileTime.fromMillis(
+            Files.getLastModifiedTime(overwritten).toMillis() + 60_000L));
+
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), overwritten.toString()), own, List.of(), List.of(), Map.of());
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::path, ClasspathEntry::suppliedStamp)
+            .containsExactly(tuple(own, null), tuple(overwritten, null));
+    }
+
+    /**
+     * A sidecar holding something other than a digest supplies nothing. The plugin decides what a
+     * sidecar is; what a stamp may be spelled as is {@code SourceStamp}'s, so an unparseable value
+     * is rejected there and arrives here as the absence it is.
+     */
+    @Test
+    void anUnparseableSidecarSuppliesNothing(@TempDir Path tmp) throws IOException {
+        Path own = Files.createDirectories(tmp.resolve("target/classes")).toAbsolutePath().normalize();
+        Path jar = touch(tmp.resolve("repo"), "garbled.jar");
+        sidecar(jar, "not-a-digest");
+
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), jar.toString()), own, List.of(), List.of(), Map.of());
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::suppliedStamp)
+            .containsExactly(null, null);
+    }
+
+    /**
+     * Writes the sidecar Maven writes, and dates it the way Maven dates it: within a millisecond
+     * or two of the download, which is to say not older than the jar.
+     */
+    private static void sidecar(Path jar, String digest) throws IOException {
+        Path sidecar = jar.resolveSibling(jar.getFileName() + ".sha1");
+        Files.writeString(sidecar, digest + "\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(sidecar, Files.getLastModifiedTime(jar));
     }
 
     @Test

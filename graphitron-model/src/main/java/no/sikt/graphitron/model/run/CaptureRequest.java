@@ -35,6 +35,10 @@ import java.util.Objects;
  * @param attribution which input each source name came from
  * @param jooq        the catalog to walk, or {@code null} for a pass with none in hand
  * @param extensions  the classpath census this pass scanned
+ * @param classpathStamps what the census verified each jar of that scan against, keyed by path,
+ *                    empty for a caller whose census carries none. The retention decision reads
+ *                    these instead of re-hashing: they have to describe the bytes the rows came
+ *                    from, and a value read later describes bytes nobody parsed
  * @param classified  whether the pass has a classified model for the detections to run against;
  *                    {@link ClassifiedRun.Absent} is the failure arm's, where a stage refused the
  *                    document and there is no walk to gate a detection on
@@ -43,6 +47,7 @@ public record CaptureRequest(GraphIdentity graph, SubjectConfig config,
                              TypeDefinitionRegistry registry, SchemaAssembly assembly,
                              SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                              JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
+                             Map<String, String> classpathStamps,
                              ClassifiedRun classified) {
     public CaptureRequest {
         Objects.requireNonNull(graph, "graph");
@@ -52,12 +57,13 @@ public record CaptureRequest(GraphIdentity graph, SubjectConfig config,
         Objects.requireNonNull(verdicts, "verdicts");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(extensions, "extensions");
+        Objects.requireNonNull(classpathStamps, "classpathStamps");
         Objects.requireNonNull(classified, "classified");
     }
 
     /** What this request writes, against whichever store a port hands it. */
     RunStore.CaptureBody body() {
         return (dsl, warm) -> FactCapture.capture(dsl, warm, graph, config, registry, assembly,
-            verdicts, attribution, jooq, extensions);
+            verdicts, attribution, jooq, extensions, classpathStamps);
     }
 }

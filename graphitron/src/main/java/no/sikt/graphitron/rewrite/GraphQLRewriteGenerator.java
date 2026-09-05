@@ -427,7 +427,7 @@ public class GraphQLRewriteGenerator {
      * emptiness this method would have recorded, derived from the stages rather than assumed.
      */
     private ReadSchema assembleAndCaptureVerdicts(AttributedRegistry attributed, JooqCatalog jooq,
-                                                  List<CompletionData.ExternalReference> census) {
+                                                  ClasspathCensus.Reading census) {
         // The assembly that judges the document is the one over the registry the store transcribes,
         // before the synthesis rewrites. Judging the post-synthesis registry instead let a verdict
         // blame the author for a declaration graphitron's own rewrite injected; a verdict is a fact
@@ -529,7 +529,7 @@ public class GraphQLRewriteGenerator {
      */
     private <T> T captureAndRead(
             AttributedRegistry attributed, ReadSchema read,
-            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
+            JooqCatalog jooq, ClasspathCensus.Reading extensions,
             CapturePort.AfterCapture<T> after) {
         return capture.captureAndRead(
             request(attributed, read.preSynthesisAssembly(), read.verdicts(), jooq, extensions,
@@ -545,7 +545,7 @@ public class GraphQLRewriteGenerator {
      */
     private void captureFacts(AttributedRegistry attributed, SchemaAssembly assembly,
                               SdlVerdicts verdicts, JooqCatalog jooq,
-                              List<CompletionData.ExternalReference> census) {
+                              ClasspathCensus.Reading census) {
         capture.capture(
             request(attributed, assembly, verdicts, jooq, census, ClassifiedRun.absent()));
     }
@@ -558,11 +558,12 @@ public class GraphQLRewriteGenerator {
      */
     private CaptureRequest request(AttributedRegistry attributed, SchemaAssembly assembly,
                                    SdlVerdicts verdicts, JooqCatalog jooq,
-                                   List<CompletionData.ExternalReference> census,
+                                   ClasspathCensus.Reading census,
                                    ClassifiedRun classified) {
         return new CaptureRequest(graphIdentity(), subjectConfig(),
             attributed.preSynthesisRegistry(), assembly, verdicts,
-            SchemaInputAttribution.build(ctx.schemaInputs()), jooq, census, classified);
+            SchemaInputAttribution.build(ctx.schemaInputs()), jooq, census.references(),
+            census.stamps(), classified);
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */
@@ -664,7 +665,7 @@ public class GraphQLRewriteGenerator {
         LOGGER.debug("{}", reading.round().report());
 
         var attributed = loadAttributedRegistry(jooq);
-        var read = assembleAndCaptureVerdicts(attributed, jooq, census);
+        var read = assembleAndCaptureVerdicts(attributed, jooq, reading);
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();
         var assembled = bundle.assembled();
@@ -692,7 +693,7 @@ public class GraphQLRewriteGenerator {
         // generators run: the launcher relation's rows are read by the fetcher generator (a root
         // coordinate with a row gets the launcher emission, one without falls through to its
         // legacy builder), and those generators need no store, so the window closes here.
-        var captured = captureAndRead(attributed, read, jooq, census,
+        var captured = captureAndRead(attributed, read, jooq, reading,
             (store, storeFacts) -> {
                 // The handle is what the window exists to hand over, and the plan tier holds it:
                 // the producers convert onto the store one family at a time, and each conversion

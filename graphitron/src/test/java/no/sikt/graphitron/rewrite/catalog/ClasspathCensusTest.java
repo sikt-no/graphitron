@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.classpath.ClasspathCensus;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 /**
  * The census held across a session's rounds: what a round re-reads, and that reusing costs the
@@ -246,6 +248,67 @@ class ClasspathCensusTest {
 
         var warm = census.read(entries, JOOQ_PACKAGE).round();
         assertThat(warm.report()).contains("nothing re-read").doesNotContain("re-parsed");
+    }
+
+    /**
+     * An entry whose producer supplied an identity is verified against that identity, and the jar
+     * is never opened to compute one. Decided by value rather than by instrumentation: the
+     * supplied stamp here is deliberately not what these bytes hash to, so a round that computed
+     * one would put a different value in the reading, and the second round's reuse would need a
+     * read that the rewritten jar would then have noticed.
+     *
+     * <p>Rewriting the jar under an unchanged supplied stamp is a lie this test tells in order to
+     * observe silence. In production the claim is kept true by the producer: the plugin trusts a
+     * checksum sidecar only while it is not older than the jar beside it, so a jar overwritten
+     * mid-session supplies nothing on the next round and goes back to being hashed. The census
+     * never learns any of that, which is the layering the supplied stamp exists to keep, and it is
+     * why the staleness rule is pinned in the plugin's own tier instead of here.
+     */
+    @Test
+    @DisplayName("a supplied stamp is used as given, and the jar is not opened to compute one")
+    void aSuppliedStampIsNotRecomputed(@TempDir Path tmp) throws IOException {
+        Path jar = jarWith(tmp, "com.example.lib.Library");
+        String supplied = SourceStamp.ofSha1("a".repeat(40));
+        var entries = List.of(new ClasspathEntry(
+            jar, ClasspathEntry.Origin.DECLARED, "com.example:library", supplied));
+        var census = new ClasspathCensus();
+
+        var cold = census.read(entries, JOOQ_PACKAGE);
+        assertThat(cold.stamps())
+            .as("the reading carries what the round verified against, which is what was supplied")
+            .containsExactly(entry(jar.toString(), supplied));
+        assertThat(supplied)
+            .as("and it is not what the bytes hash to, so computing one would have been visible")
+            .isNotEqualTo(SourceStamp.ofFile(jar));
+        assertThat(cold.references()).isEqualTo(coldScan(entries));
+
+        writeJar(jar, "com.example.lib.Replacement");
+        var warm = census.read(entries, JOOQ_PACKAGE);
+        assertThat(warm.round().jarsRead())
+            .as("the identity did not move, so nothing asked the bytes: %s", warm.round().report())
+            .isZero();
+        assertThat(classNames(warm))
+            .as("the parse the supplied identity vouches for, held across the round")
+            .containsExactly("com.example.lib.Library");
+    }
+
+    /**
+     * An entry with nothing supplied hashes as it always did, and the reading says so. The stamps
+     * are what the capture is handed in place of a second pass over the same jars, so a computed
+     * one has to reach it exactly as a supplied one does; a map that carried only supplied values
+     * would leave the locally built jars, which are the ones that actually change, paying twice.
+     */
+    @Test
+    @DisplayName("an unsupplied jar contributes the hash the round computed for it")
+    void anUnsuppliedJarContributesItsComputedHash(@TempDir Path tmp) throws IOException {
+        Path classes = classesWith(tmp, "com.example.own.First");
+        Path jar = jarWith(tmp, "com.example.lib.Library");
+        var entries = entriesOver(classes, jar);
+
+        var reading = new ClasspathCensus().read(entries, JOOQ_PACKAGE);
+        assertThat(reading.stamps())
+            .as("jars only: a directory is verified per file, and the retention decision skips it")
+            .containsExactly(entry(jar.toString(), SourceStamp.ofFile(jar)));
     }
 
     /** The census a cold scan of the same entries produces: the answer every reuse must match. */

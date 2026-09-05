@@ -51,6 +51,35 @@ public final class ClasspathSources {
     private final Map<String, String> stamps = new HashMap<>();
     private final Set<Path> recorded = new LinkedHashSet<>();
 
+    /** An instance that hashes every source it is asked about, for a caller holding no identities. */
+    public ClasspathSources() {
+        this(Map.of());
+    }
+
+    /**
+     * An instance that already knows what {@code seedStamps} says, keyed by
+     * {@link Path#toString()} exactly as {@link #stamp} keys its memo. The round hands over what it
+     * established for this classpath, and {@link #stamp} then answers those entries without
+     * opening them: the census verified every jar it read, and re-verifying the same bytes in the
+     * same round buys nothing but a second pass over them.
+     *
+     * <p>It must be <em>this</em> round's values and never a cache held across rounds. The recorded
+     * stamp outlives the build, so a partition retained against a stale value would keep rows
+     * describing a jar that has since changed and nothing would recompute them. What the seed also
+     * fixes is the reverse hazard, which predates it: {@link #commitStamps} hashes at commit time,
+     * so a jar rewritten between the parse and the flush used to be stamped with the hash of bytes
+     * nobody parsed. Seeded, the recorded stamp describes the bytes the rows actually came from.
+     *
+     * <p>A null value is skipped rather than stored, a source with no identity being one to hash.
+     */
+    public ClasspathSources(Map<String, String> seedStamps) {
+        seedStamps.forEach((name, stamp) -> {
+            if (stamp != null) {
+                stamps.put(name, stamp);
+            }
+        });
+    }
+
     /**
      * Claims the row for {@code sourceName} if this is the first class read from it, and returns
      * the name so the caller can hang its class row off it. A reference no scan produced carries no
@@ -125,8 +154,9 @@ public final class ClasspathSources {
 
     /**
      * The entry's content hash, memoised for the process so a classpath shared by several
-     * generator passes is hashed once. This is the in-process degenerate case of the per-source
-     * invalidation the recorded stamp buys; the recorded value is what survives the JVM.
+     * generator passes is hashed once, and seeded by the constructor with whatever the round
+     * already established. This is the in-process degenerate case of the per-source invalidation
+     * the recorded stamp buys; the recorded value is what survives the JVM.
      */
     public String stamp(Path entry) {
         return stamps.computeIfAbsent(entry.toString(), ignored -> hash(entry));
