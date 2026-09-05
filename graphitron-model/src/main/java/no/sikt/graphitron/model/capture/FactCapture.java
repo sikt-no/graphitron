@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -329,12 +330,35 @@ public final class FactCapture {
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions,
                                Map<String, String> classpathStamps) {
+        capture(dsl, warm, graph, config, registry, assembly, verdicts, attribution, jooq,
+            extensions, classpathStamps, LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /**
+     * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
+     * SchemaAssembly, SdlVerdicts, Map, JooqCatalog, List, Map)} for a caller that also took the
+     * instant its {@code classpathStamps} describe, before it read the bytes they identify.
+     *
+     * <p>The pair travels together everywhere, and this is why: the stamp says what the bytes were
+     * and {@code readAt} says when reading them began, so {@code store_source.read_at} dates the
+     * read rather than the write. The overload above takes the instant here instead, which is
+     * correct for a caller handing over no stamps: with nothing seeded every source is hashed
+     * inside this capture, so entry is before the read it dates.
+     *
+     * @param readAt when the round began reading the sources it hands over
+     */
+    public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
+                               SubjectConfig config, TypeDefinitionRegistry registry,
+                               SchemaAssembly assembly, SdlVerdicts verdicts,
+                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                               List<CompletionData.ExternalReference> extensions,
+                               Map<String, String> classpathStamps, LocalDateTime readAt) {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
         Objects.requireNonNull(assembly, "assembly");
         boolean firstGraph = !dsl.fetchExists(STORE_GRAPH);
-        var sources = new ClasspathSources(classpathStamps);
+        var sources = new ClasspathSources(classpathStamps, readAt);
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name());

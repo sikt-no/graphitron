@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
+import no.sikt.graphitron.rewrite.maven.watch.WatchedCorpus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -113,7 +114,8 @@ class CatalogRefreshTest {
         };
 
         debounce = new DebounceExecutor(DEBOUNCE_MS);
-        watcher = new SchemaWatcher(Set.of(classesDir), debounce, rebuilder, ".class");
+        watcher = new SchemaWatcher(Set.of(classesDir), debounce, rebuilder, ".class",
+            WatchedCorpus.unobserved("classpath"));
 
         DispatchTestSupport.dispatch(watcher, classesDir, entryCreateEvent(Path.of("Tables.class")));
 
@@ -134,7 +136,7 @@ class CatalogRefreshTest {
 
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(Set.of(classesDir), debounce,
-            rebuilds::incrementAndGet, ".class");
+            rebuilds::incrementAndGet, ".class", WatchedCorpus.unobserved("classpath"));
 
         DispatchTestSupport.dispatch(watcher, classesDir, entryModifyEvent(Path.of("schema.graphqls")));
 
@@ -172,7 +174,8 @@ class CatalogRefreshTest {
             };
 
             debounce = new DebounceExecutor(DEBOUNCE_MS);
-            watcher = new SchemaWatcher(Set.of(srcDir), debounce, refresher, ".java");
+            watcher = new SchemaWatcher(Set.of(srcDir), debounce, refresher, ".java",
+                WatchedCorpus.unobserved("java-source"));
 
             DispatchTestSupport.dispatch(watcher, javaFile.getParent(),
                 entryModifyEvent(Path.of("PriceService.java")));

@@ -671,6 +671,42 @@ class FactSchemaGateTest {
     }
 
     /**
+     * A content stamp says what an input's bytes were; it cannot say when they were read, and a
+     * reader deciding whether it may skip re-reading needs both. The two therefore travel as a
+     * pair: a relation that partitions by input and records a stamp records a {@code read_at}
+     * beside it.
+     *
+     * <p>Stated as a gate rather than left to each family, because the failure mode is silent. A
+     * family that gains a stamp later and no currency column beside it does not break: it simply
+     * falls outside the mechanism, is re-read on every round for the life of every session, and
+     * nothing says so.
+     */
+    @Test
+    @DisplayName("every relation carrying a content stamp carries a read_at beside it")
+    void currencyAccompaniesEveryStamp() {
+        var offenders = new java.util.ArrayList<String>();
+        for (org.jooq.Table<?> table : no.sikt.graphitron.model.Public.PUBLIC.getTables()) {
+            if (column(table, "stamp") && !column(table, "read_at")) {
+                offenders.add(table.getName());
+            }
+        }
+        assertThat(offenders)
+            .as("relations whose stamp has no currency beside it, so nothing can ever skip"
+                + " re-reading them")
+            .isEmpty();
+    }
+
+    /** Whether {@code table} declares a column of that name, however the dialect cases it. */
+    private static boolean column(org.jooq.Table<?> table, String name) {
+        for (org.jooq.Field<?> field : table.fields()) {
+            if (field.getName().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * A {@code graph_name} column with no foreign-key path to {@code store_graph} is a column the
      * database will not defend: it admits rows naming a graph that was never captured, and the
      * ownership-scoped delete would rely on a value nothing constrains. The presence gate above

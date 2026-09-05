@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.rewrite.maven.watch.RecentChanges;
+import no.sikt.graphitron.rewrite.maven.watch.WatchedCorpus;
 import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
@@ -163,7 +165,8 @@ class DevMojoTest {
             Consumer<String> listener = DevMojo.buildSaveListener(
                 Set.of(".graphqls", ".graphql"),
                 debounce,
-                regens::incrementAndGet);
+                regens::incrementAndGet,
+                WatchedCorpus.unobserved("sdl"));
 
             listener.accept("file:///path/to/schema.graphqls");
             listener.accept("file:///readme.md");
@@ -171,6 +174,63 @@ class DevMojoTest {
             Thread.sleep(150);
             assertThat(regens).hasValue(1);
         }
+    }
+
+    /**
+     * The strongest of the three places the dev loop used to drop what it knew: the editor passes
+     * the saved document in as an argument, and the listener used it as a predicate and dropped it.
+     */
+    @Test
+    void saveListener_marksTheSavedDocumentBeforeScheduling(@TempDir Path dir) throws Exception {
+        try (var store = FactStores.inMemory(); var debounce = new DebounceExecutor(20)) {
+            var observation = new no.sikt.graphitron.model.sources.Observation(store.dsl());
+            observation.register("sdl", List.of(dir), java.nio.file.Path::toString);
+            observation.observing("sdl");
+            var schema = dir.resolve("schema.graphqls");
+            var listener = DevMojo.buildSaveListener(Set.of(".graphqls"), debounce, () -> { },
+                new WatchedCorpus(observation, "sdl", RecentChanges.none()));
+            // Between the two events, because a minute-away instant would sit above the mark and
+            // the case would pass on the floor alone.
+            Thread.sleep(5);
+            var readBeforeTheSave = java.time.LocalDateTime.now();
+            Thread.sleep(5);
+            assertThat(observation.trusts("sdl", schema.toString(), readBeforeTheSave)).isTrue();
+
+            listener.accept(schema.toUri().toString());
+
+            assertThat(observation.trusts("sdl", schema.toString(), readBeforeTheSave))
+                .as("the document the editor named is the instance a reader will distrust")
+                .isFalse();
+        }
+    }
+
+    @Test
+    void saveListener_unresolvableUri_losesTheCorpus(@TempDir Path dir) throws Exception {
+        try (var store = FactStores.inMemory(); var debounce = new DebounceExecutor(20)) {
+            var observation = new no.sikt.graphitron.model.sources.Observation(store.dsl());
+            observation.register("sdl", List.of(dir), java.nio.file.Path::toString);
+            observation.observing("sdl");
+            var listener = DevMojo.buildSaveListener(Set.of(".graphqls"), debounce, () -> { },
+                new WatchedCorpus(observation, "sdl", RecentChanges.none()));
+
+            // A document the editor names by something other than a file: there is no instance to
+            // mark, so the corpus stops being observed rather than the save being forgotten.
+            listener.accept("untitled:Untitled-1.graphqls");
+
+            assertThat(observation.lossReason("sdl")).contains("unresolvable document URI");
+        }
+    }
+
+    @Test
+    void rediscoverAlways_registersNothing() {
+        var mojo = new DevMojo();
+        mojo.rediscover = "always";
+        assertThat(mojo.rediscoverAlways())
+            .as("the escape hatch is one flag, and it turns every answer back into read it")
+            .isTrue();
+
+        mojo.rediscover = "observed";
+        assertThat(mojo.rediscoverAlways()).isFalse();
     }
 
     @Test
@@ -304,6 +364,42 @@ class DevMojoTest {
             assertThat(log.errors)
                 .as("one message for the round, the grouped tree rather than a line per error")
                 .anySatisfy(line -> assertThat(line).contains("regenerate failed validation"));
+        }
+    }
+
+    /**
+     * The half of this item a developer actually sees. A round used to announce that it happened
+     * and nothing else, which is enough while the guess about why is right and useless exactly when
+     * it is wrong: an editor writing a stray file, or another terminal's build, produces a round
+     * that looks like it came from the save just made.
+     */
+    @Test
+    void regeneratePass_namesTheFileTheRoundWasToldAbout(@TempDir Path basedir) throws Exception {
+        Path schema = basedir.resolve("schema.graphqls");
+        Files.writeString(schema, """
+            type Film @table(name: "film") { title: String }
+            type Query { film: Film }
+            """);
+
+        try (var store = FactStores.inMemory()) {
+            var mojo = new DevMojo();
+            var log = new CapturingLog();
+            mojo.setLog(log);
+            mojo.sessionStore = store;
+            mojo.rejectionFacts = FactWriters.rejectionFacts(store.dsl(), "DevMojoTest", basedir);
+            mojo.warningFacts = FactWriters.buildWarningFacts(store.dsl(), "DevMojoTest", basedir);
+            mojo.recentChanges = new RecentChanges(basedir);
+            mojo.recentChanges.record("sdl", schema);
+
+            mojo.regeneratePass(jooqContextFor(basedir, schema), new Workspace());
+
+            assertThat(log.infos)
+                .as("the round names what it was told, beside the banner it already prints")
+                .anySatisfy(line -> assertThat(line)
+                    .contains("told about").contains("schema.graphqls"));
+            assertThat(mojo.recentChanges.drain("sdl"))
+                .as("and the round after it does not repeat what this one said")
+                .isEmpty();
         }
     }
 

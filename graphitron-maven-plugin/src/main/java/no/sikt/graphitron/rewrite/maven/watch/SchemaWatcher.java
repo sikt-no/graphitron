@@ -13,6 +13,7 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
@@ -43,6 +44,7 @@ public final class SchemaWatcher implements AutoCloseable {
     private final WatchService watchService;
     private final DebounceExecutor debounce;
     private final Runnable onTrigger;
+    private final WatchedCorpus watched;
     private final Set<String> filenameSuffixes;
     /**
      * Shared between the watch-loop thread (reads in {@link #run()}, writes from
@@ -54,34 +56,46 @@ public final class SchemaWatcher implements AutoCloseable {
      */
     private final Map<WatchKey, Path> registry = new ConcurrentHashMap<>();
 
-    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger) throws IOException {
-        this(roots, debounce, onTrigger, Set.of(GRAPHQLS_SUFFIX));
+    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger,
+                         WatchedCorpus watched) throws IOException {
+        this(roots, debounce, onTrigger, Set.of(GRAPHQLS_SUFFIX), watched);
     }
 
     /**
      * Single-suffix variant. Used by the dev goal's catalog-refresh watcher to listen on
      * {@code .class} files under the consumer's compiled jOOQ output.
      */
-    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger, String filenameSuffix) throws IOException {
-        this(roots, debounce, onTrigger, Set.of(filenameSuffix));
+    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger,
+                         String filenameSuffix, WatchedCorpus watched) throws IOException {
+        this(roots, debounce, onTrigger, Set.of(filenameSuffix), watched);
     }
 
     /**
      * Same watch contract, parameterised by a set of filename suffixes. An event fires when the
      * filename ends in any one of the configured suffixes. Used by the schema-input watcher to
      * accept the configured set of schema file extensions.
+     *
+     * <p>{@code watched} is where the event's own information goes, which this loop used to drop:
+     * the resolved path is marked before the trigger is scheduled, and a dropped or unresolvable
+     * event says so instead of passing silently. {@link WatchedCorpus#observing()} is called last,
+     * once every registration below is in place, because that call is what makes a later read
+     * trustworthy and a read taken while this constructor was still walking was taken while the
+     * subtree it covers was not yet watched.
      */
-    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger, Set<String> filenameSuffixes) throws IOException {
+    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger,
+                         Set<String> filenameSuffixes, WatchedCorpus watched) throws IOException {
         if (filenameSuffixes == null || filenameSuffixes.isEmpty()) {
             throw new IllegalArgumentException("filenameSuffixes must contain at least one entry");
         }
         this.watchService = FileSystems.getDefault().newWatchService();
         this.debounce = debounce;
         this.onTrigger = onTrigger;
+        this.watched = Objects.requireNonNull(watched, "watched");
         this.filenameSuffixes = Set.copyOf(filenameSuffixes);
         for (Path root : roots) {
             registerRecursive(root);
         }
+        watched.observing();
     }
 
     /** Registers {@code root} and every existing subdirectory beneath it. */
@@ -118,6 +132,10 @@ public final class SchemaWatcher implements AutoCloseable {
     public void addRoot(Path root) throws IOException {
         if (registry.containsValue(root)) return;
         registerRecursive(root);
+        // A subtree that arrives mid-session was unwatched until this line, so anything read from
+        // it before now was read blind. Raising the corpus's floor says so; trust rebuilds under
+        // it as the next pass verifies each instance.
+        watched.lost("watch root added: " + root);
     }
 
     /**
@@ -161,6 +179,9 @@ public final class SchemaWatcher implements AutoCloseable {
         WatchEvent.Kind<?> kind = event.kind();
         if (kind == StandardWatchEventKinds.OVERFLOW) {
             LOGGER.info("graphitron:dev: OVERFLOW; rescheduling regeneration");
+            // The events this loop did not receive are exactly the ones nothing can name, so the
+            // corpus stops being observed rather than being reported as unchanged.
+            watched.lost("OVERFLOW");
             debounce.schedule(onTrigger);
             return;
         }
@@ -170,14 +191,22 @@ public final class SchemaWatcher implements AutoCloseable {
         if (kind == StandardWatchEventKinds.ENTRY_CREATE && Files.isDirectory(resolved)) {
             try {
                 registerRecursive(resolved);
+                // Whatever the new subtree already contains arrived unwatched, and the create
+                // events for its files may have been delivered before this registration.
+                watched.lost("new directory: " + resolved);
             } catch (IOException e) {
                 LOGGER.warn("graphitron:dev: failed to register new directory {}: {}", resolved, e.getMessage());
+                watched.lost("unregistrable directory: " + resolved);
             }
             return;
         }
         String name = relative.toString();
         for (String suffix : filenameSuffixes) {
             if (name.endsWith(suffix)) {
+                // Before the schedule, and unconditionally: a delete is a change like any other,
+                // and a mark that always advances cannot form the hole a skipped second mark would
+                // (a change arriving after a read, against an instance already marked before it).
+                watched.changed(resolved);
                 debounce.schedule(onTrigger);
                 return;
             }

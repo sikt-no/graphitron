@@ -8,9 +8,11 @@ import org.jooq.DSLContext;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -50,6 +52,7 @@ public final class ClasspathSources {
 
     private final Map<String, String> stamps = new HashMap<>();
     private final Set<Path> recorded = new LinkedHashSet<>();
+    private final LocalDateTime readAt;
 
     /** An instance that hashes every source it is asked about, for a caller holding no identities. */
     public ClasspathSources() {
@@ -73,6 +76,22 @@ public final class ClasspathSources {
      * <p>A null value is skipped rather than stored, a source with no identity being one to hash.
      */
     public ClasspathSources(Map<String, String> seedStamps) {
+        this(seedStamps, LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /**
+     * The same, for a caller that took an instant before the reads its {@code seedStamps} describe.
+     * That instant is what {@link #commitStamps} writes into {@code store_source.read_at}, and the
+     * two travel together because they are one fact seen twice: what the bytes were, and when the
+     * reading of them began. A value taken any later would date rows for a read that had already
+     * happened, and a change arriving in between would be swallowed instead of read as a change.
+     *
+     * <p>A caller with no earlier instant takes the constructor above, which is correct for it:
+     * with no seeds every source is hashed by {@link #commitStamps} itself, so construction is
+     * before the read it dates.
+     */
+    public ClasspathSources(Map<String, String> seedStamps, LocalDateTime readAt) {
+        this.readAt = Objects.requireNonNull(readAt, "readAt");
         seedStamps.forEach((name, stamp) -> {
             if (stamp != null) {
                 stamps.put(name, stamp);
@@ -119,10 +138,15 @@ public final class ClasspathSources {
             .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
             .set(STORE_SOURCE.STAMP, (String) null)
             .set(STORE_SOURCE.LAST_SEEN, now)
+            .set(STORE_SOURCE.READ_AT, (LocalDateTime) null)
             .onDuplicateKeyUpdate()
             .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
             .set(STORE_SOURCE.STAMP, (String) null)
             .set(STORE_SOURCE.LAST_SEEN, now)
+            // Cleared with the stamp it dates, and restored with it: a row whose partition is
+            // being rewritten vouches for nothing, so a currency it kept from the last run would
+            // outlive the rows that read established.
+            .set(STORE_SOURCE.READ_AT, (LocalDateTime) null)
             .execute();
     }
 
@@ -136,8 +160,13 @@ public final class ClasspathSources {
     }
 
     /**
-     * Stamps every source this load wrote in full. Called after the flush, which is what makes the
-     * stamp mean "these rows are all here" rather than "these rows were started".
+     * Stamps every source this load wrote in full, and dates each stamp with the instant its
+     * reading began. Called after the flush, which is what makes the stamp mean "these rows are
+     * all here" rather than "these rows were started".
+     *
+     * <p>The date is the constructor's rather than this method's clock. The stamp says what the
+     * bytes were and the date says when reading them began, so a value taken here would claim a
+     * currency for the interval this load spent writing, in which the source may have moved.
      */
     public void commitStamps(DSLContext dsl) {
         for (Path entry : recorded) {
@@ -145,6 +174,7 @@ public final class ClasspathSources {
             if (stamp != null) {
                 dsl.update(STORE_SOURCE)
                     .set(STORE_SOURCE.STAMP, stamp)
+                    .set(STORE_SOURCE.READ_AT, readAt)
                     .where(STORE_SOURCE.SOURCE_NAME.eq(entry.toString()))
                     .execute();
             }

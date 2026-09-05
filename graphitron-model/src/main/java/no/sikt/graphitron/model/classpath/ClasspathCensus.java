@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -109,6 +111,11 @@ public final class ClasspathCensus {
      */
     public synchronized Reading read(List<ClasspathEntry> entries, String jooqPackage) {
         long startedAt = System.nanoTime();
+        // Before the first entry is opened, which is what makes it usable as a read_at: an entry
+        // rewritten after this instant and before the row lands is later than the value the row
+        // carries, so it reads as a change rather than being swallowed. Truncated to the store's
+        // own TIMESTAMP resolution so the value written and the value read back compare equal.
+        var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         if (!jooqPackage.equals(cachedJooqPackage)) {
             cached.clear();
             cachedJooqPackage = jooqPackage;
@@ -135,7 +142,7 @@ public final class ClasspathCensus {
         if (sink != null) {
             sink.accept(round);
         }
-        return new Reading(census, round, stamps);
+        return new Reading(census, round, stamps, readAt);
     }
 
     /**
@@ -266,9 +273,14 @@ public final class ClasspathCensus {
      * partition retained against a later read keeps rows nothing will recompute. Directories carry
      * no entry, being verified per file rather than whole, which is the same population the
      * retention decision already skips.
+     *
+     * <p>{@code readAt} rides beside them for the same reason and travels with them everywhere: it
+     * is when this round began reading, so it dates the identities above rather than the moment
+     * they reach a row. Whoever establishes the stamps takes the instant, which is what keeps the
+     * pair honest wherever it is threaded to.
      */
     public record Reading(List<CompletionData.ExternalReference> references, Round round,
-                          Map<String, String> stamps) {
+                          Map<String, String> stamps, LocalDateTime readAt) {
         public Reading {
             references = List.copyOf(references);
             stamps = Map.copyOf(stamps);

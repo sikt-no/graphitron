@@ -563,7 +563,7 @@ public class GraphQLRewriteGenerator {
         return new CaptureRequest(graphIdentity(), subjectConfig(),
             attributed.preSynthesisRegistry(), assembly, verdicts,
             SchemaInputAttribution.build(ctx.schemaInputs()), jooq, census.references(),
-            census.stamps(), classified);
+            census.stamps(), census.readAt(), classified);
     }
 
     /** The coordinate this run writes under, assembled from the context's identity fields. */

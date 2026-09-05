@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
 import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
@@ -65,7 +66,12 @@ public final class FactWriters {
      * driving it looks like unless a case needs the walk and the write to disagree.
      */
     public static JavaSourceFacts javaSourceFacts(DSLContext dsl) {
-        return new JavaSourceFacts(dsl);
+        return new JavaSourceFacts(dsl, null);
+    }
+
+    /** The same writer under an observation, which is what a dev session hands it. */
+    public static JavaSourceFacts javaSourceFacts(DSLContext dsl, Observation observation) {
+        return new JavaSourceFacts(dsl, observation);
     }
 
     /**
@@ -78,9 +84,25 @@ public final class FactWriters {
      * and passes its own walk.
      */
     public static List<SourceWalker.ParsedFile> refreshJavaSources(DSLContext dsl, List<Path> roots) {
+        var facts = javaSourceFacts(dsl);
+        var readAt = facts.beginPass();
         var walk = new SourceWalker().walkFiles(roots);
-        javaSourceFacts(dsl).refresh(roots, walk);
+        facts.refresh(roots, walk, readAt);
         return walk;
+    }
+
+    /**
+     * One refresh through {@code walker} under {@code observation}, in the order a production
+     * caller uses it: register, take the instant, walk, write. The order is the point rather than
+     * a detail, the instant having to precede the walk that reads the files it dates.
+     */
+    public static JavaSourceFacts.Round refreshJavaSources(DSLContext dsl, List<Path> roots,
+                                                           SourceWalker walker,
+                                                           Observation observation) {
+        var facts = javaSourceFacts(dsl, observation);
+        facts.register(roots);
+        var readAt = facts.beginPass();
+        return facts.refresh(roots, walker.walkFiles(roots), readAt);
     }
 
     private static GraphIdentity identity(String graphName, Path baseDir) {

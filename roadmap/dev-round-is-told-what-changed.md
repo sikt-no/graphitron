@@ -1,7 +1,7 @@
 ---
 id: R922
 title: "A dev round is told what changed instead of rediscovering it"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: dev-loop
@@ -337,6 +337,59 @@ when this one reaches Done.
 not say which registrations, derived rows or generated units must re-run because of it. That is R924, which
 walks the foreign keys the schema declares, an edge naming the column tuple on both ends so it says which
 rows of the child a given set of parent rows reaches.
+
+## What shipped
+
+The mechanism, the adoption and the console line are all in the tree, and the sections below are
+the plan they were built from rather than a record of it. Seven places where the delivery differs
+from the plan, none of them a design change and all of them worth naming so a reader is not left
+diffing:
+
+* **Three new types, not one.** `Observation` is the one the plan named, in
+  `no.sikt.graphitron.model.sources`. Two more sit in the plugin beside it, because the plan asked
+  for what they hold without saying where: `RecentChanges` is the bounded ring of recent paths the
+  announcement reads, and `WatchedCorpus` is one watcher's handle on the session, pairing the
+  observation with the corpus that watcher covers and the ring. The pairing is what let
+  `SchemaWatcher` take one parameter rather than three, and it keeps the two sinks separate on
+  purpose: a mark is folded to an instance key and is what correctness reads, while the ring holds
+  the path itself and is what a console line reads.
+* **`SchemaWatcher` takes a `WatchedCorpus`** rather than the observation directly, for the reason
+  above. Its three public constructors keep their shapes with that one parameter added, and the
+  constructor calls `observing()` last, once its own registrations are in place.
+* **The `store_source` instant is taken by the census.** The plan said `ClasspathSources` carries
+  the instant its caller took before the round's reads and left the caller unnamed. It is
+  `ClasspathCensus.Reading`, which gained a `readAt` component taken before the first entry is
+  opened, threaded through `CaptureRequest` and a new `FactCapture.capture` arity beside the
+  classpath stamps. The two travel together everywhere because they are one fact seen twice: what
+  the bytes were, and when reading them began. A caller handing over no stamps takes the instant at
+  capture entry, which is correct for it, since with nothing seeded every source is hashed inside
+  the capture. This is the one place the delivery contradicts the plan's own sentence that the
+  census is untouched: `ClasspathCensus` gained a record component and one clock reading, and its
+  cache, its reuse decision and every count it reports are exactly as they were. The census is
+  still not a client of the observation, which is what that sentence was about, and
+  `ClasspathCensusTest` is unchanged.
+* **The escape hatch is an observation, not an absence of one.** `Observation.rediscovering()`
+  registers nothing, watches nothing and trusts nothing, so `-Dgraphitron.dev.rediscover=always`
+  takes the same code path as a corpus nobody has begun watching rather than a second mode through
+  null handling.
+* **The gatherer's two entry points are explicit.** `JavaSourceFacts.register(sourceRoots)`
+  declares the corpus and the fold, `beginPass()` hands out the instant, and `refresh` takes that
+  instant as a parameter and returns a `Round` carrying what it hashed, skipped and rewrote. The
+  caller runs the walk, so the caller takes the instant; the order register, date, walk, write is
+  stated where `DevMojo` uses it.
+* **All three corpora are registered and watched**, not only `java-source`. Nothing reads the
+  currency of `sdl` or `classpath` yet, which is unchanged from the plan, but their watchers mark
+  and their rounds announce, so the console line works on every cadence rather than one.
+* **Three package-private seams on `Observation`** (`floorOf`, `markOf`, `markCount`) exist for the
+  cases that pin the comparison's strictness, which need an instant equal to one the observation
+  holds and cannot construct one from outside.
+
+One test-side note, because it is the kind of thing that goes quietly wrong. Every case about a
+mark or a loss asserts that an instant is trusted *before* the event and distrusted after it, and
+takes that instant from a clock reading inside a deliberate gap. A case that reached for an instant
+a minute away instead would pass on the floor alone and never exercise the mark it claims to; the
+first draft of these cases did exactly that, and it is why the two-sided assertion is the shape
+throughout.
 
 ## Implementation
 

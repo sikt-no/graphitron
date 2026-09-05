@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.capture;
 
+import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.FactWriters;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
@@ -37,6 +39,9 @@ import no.sikt.graphitron.model.sources.SourceWalker;
  */
 @UnitTier
 class JavaSourceFactsTest {
+
+    /** The corpus this family crawls, as {@code meta_gatherer_corpus} names it. */
+    private static final String JAVA_SOURCE = "java-source";
 
     private static final String WIDGETS = """
         package com.example;
@@ -231,6 +236,148 @@ class JavaSourceFactsTest {
                 .fetch(0, String.class))
                 .as("one row for the name, the first declaration's")
                 .containsExactly("The first.");
+        }
+    }
+
+    /**
+     * The arm the observation is judged on, because it is the arm a developer is actually in: a
+     * session whose store is already warm, where the first refresh rewrites nothing at all. Written
+     * against a cold store the same assertions would pass for the wrong reason, every file having
+     * been rewritten and dated on the way through, which is why the seeding is the test rather than
+     * a detail of it.
+     */
+    @Test
+    @DisplayName("over a warm store, a verified file is trusted and the next pass hashes nothing")
+    void aWarmStoreIsCheapFromTheFirstPass(@TempDir Path root) throws IOException {
+        write(root, "com/example/Widgets.java", WIDGETS);
+        write(root, "com/example/Gadgets.java", GADGETS);
+        var roots = List.of(root);
+
+        try (var store = FactStores.inMemory()) {
+            // A previous session's store: the rows are current and their dates are that session's,
+            // which this session's floor outranks.
+            refreshJavaSources(store.dsl(), roots);
+
+            var observation = new Observation(store.dsl());
+            observation.observing(JAVA_SOURCE);
+            var walker = new SourceWalker();
+
+            var seed = refreshJavaSources(store.dsl(), roots, walker, observation);
+            assertThat(tuple(seed.hashed(), seed.skipped(), seed.rewritten()))
+                .as("the seed cannot trust what a previous session read, so it hashes everything;"
+                    + " it rewrites nothing, the store already agreeing")
+                .isEqualTo(tuple(2, 0, 0));
+
+            var steady = refreshJavaSources(store.dsl(), roots, walker, observation);
+            assertThat(tuple(steady.hashed(), steady.skipped(), steady.rewritten()))
+                .as("and the pass after it hashes nothing: verification is the read rather than the"
+                    + " rewrite, so the seed's own reads are what established this")
+                .isEqualTo(tuple(0, 2, 0));
+        }
+    }
+
+    @Test
+    @DisplayName("a marked file is hashed and its neighbours are not")
+    void onlyTheMarkedFileIsHashed(@TempDir Path root) throws IOException {
+        Path widgets = write(root, "com/example/Widgets.java", WIDGETS);
+        write(root, "com/example/Gadgets.java", GADGETS);
+        var roots = List.of(root);
+
+        try (var store = FactStores.inMemory()) {
+            var observation = new Observation(store.dsl());
+            observation.observing(JAVA_SOURCE);
+            var walker = new SourceWalker();
+            refreshJavaSources(store.dsl(), roots, walker, observation);
+            refreshJavaSources(store.dsl(), roots, walker, observation);
+
+            Files.writeString(widgets, WIDGETS.replace("A widget service.", "A widget shop."));
+            observation.mark(widgets);
+            var round = refreshJavaSources(store.dsl(), roots, walker, observation);
+
+            assertThat(tuple(round.hashed(), round.skipped(), round.rewritten()))
+                .as("the edit costs one hash and one rewrite, where before it cost the tree")
+                .isEqualTo(tuple(1, 1, 1));
+            assertThat(classRows(store.dsl()))
+                .as("and the rewritten rows are the edited file's")
+                .contains(tuple(widgets.toString(), "com.example.Widgets", 3, 1, "A widget shop."));
+        }
+    }
+
+    @Test
+    @DisplayName("a false mark costs one hash, not the rest of the session")
+    void aMarkOnAnUnchangedFileIsCheap(@TempDir Path root) throws IOException {
+        Path widgets = write(root, "com/example/Widgets.java", WIDGETS);
+        var roots = List.of(root);
+
+        try (var store = FactStores.inMemory()) {
+            var observation = new Observation(store.dsl());
+            observation.observing(JAVA_SOURCE);
+            var walker = new SourceWalker();
+            refreshJavaSources(store.dsl(), roots, walker, observation);
+
+            // A save that changed nothing: an editor writing the buffer back unmodified, or a
+            // build touching a generated source it regenerated identically.
+            observation.mark(widgets);
+            var marked = refreshJavaSources(store.dsl(), roots, walker, observation);
+            assertThat(tuple(marked.hashed(), marked.rewritten()))
+                .as("distrust discards no stamp, so the file is hashed, compared and skipped")
+                .isEqualTo(tuple(1, 0));
+
+            var after = refreshJavaSources(store.dsl(), roots, walker, observation);
+            assertThat(after.hashed())
+                .as("and it is trusted again straight afterwards, the hash having verified it")
+                .isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("a file the pass could not read keeps the date it had and is read again")
+    void anUnreadableFileIsNotDated(@TempDir Path root) throws IOException {
+        Path widgets = write(root, "com/example/Widgets.java", WIDGETS);
+        write(root, "com/example/Gadgets.java", GADGETS);
+        var roots = List.of(root);
+
+        try (var store = FactStores.inMemory()) {
+            var observation = new Observation(store.dsl());
+            observation.observing(JAVA_SOURCE);
+            var facts = FactWriters.javaSourceFacts(store.dsl(), observation);
+            facts.register(roots);
+            var walk = new SourceWalker().walkFiles(roots);
+            facts.refresh(roots, walk, facts.beginPass());
+
+            // The walk read it and the hash cannot: the file left between the two. The same walk
+            // is replayed both times, so the subject is the writer's own answer rather than the
+            // walker's, and the mark is what puts the file on the hashing arm at all.
+            Files.delete(widgets);
+            observation.mark(widgets);
+            var attempt = facts.refresh(roots, walk, facts.beginPass());
+            assertThat(tuple(attempt.hashed(), attempt.rewritten()))
+                .as("the file is read and cannot be, so nothing about it is established")
+                .isEqualTo(tuple(1, 0));
+
+            var next = facts.refresh(roots, walk, facts.beginPass());
+            assertThat(next.hashed())
+                .as("so it is read again next pass rather than skipped for the rest of the"
+                    + " session; its neighbour, which was verified, is not")
+                .isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("with no observation every walked file is hashed, which is the one-shot path")
+    void withoutAnObservationEverythingIsHashed(@TempDir Path root) throws IOException {
+        write(root, "com/example/Widgets.java", WIDGETS);
+        write(root, "com/example/Gadgets.java", GADGETS);
+        var roots = List.of(root);
+
+        try (var store = FactStores.inMemory()) {
+            var walker = new SourceWalker();
+            refreshJavaSources(store.dsl(), roots, walker, null);
+            var round = refreshJavaSources(store.dsl(), roots, walker, null);
+
+            assertThat(tuple(round.hashed(), round.skipped()))
+                .as("a caller watching nothing can vouch for nothing, so it reads the bytes")
+                .isEqualTo(tuple(2, 0));
         }
     }
 

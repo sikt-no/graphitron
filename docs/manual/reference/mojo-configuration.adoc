@@ -139,7 +139,7 @@ The following parameters apply to every goal:
 
 == `dev`-goal parameters
 
-Four watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
+Five watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
 
 [cols="1,1,1,1,3",options="header"]
 |===
@@ -168,6 +168,12 @@ Four watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
 | `true`
 | `graphitron.dev.compile`
 | Compile the generated sources in-process into `target/graphitron-classes/<outputPackage>/` (a Graphitron-exclusive directory), incrementally on every save. This runnable image is what the in-process MCP query tools execute against. Set to `false` to fall back to generate-only behaviour (giving up the query tools). No fail-fast: because the output directory is Graphitron's alone, any misconfiguration degrades to generate-only rather than corrupting bytecode. See xref:../how-to/dev-loop.adoc#compiled-classes[Compiled generated classes].
+
+| `rediscover`
+| `String`
+| `observed`
+| `graphitron.dev.rediscover`
+| How a round decides what to re-read. `observed`, the default, lets the session skip re-reading an input it has watched continuously since the store last read it, so a save costs work proportional to the edit rather than to the workspace. `always` turns that off: nothing is trusted and every round rediscovers what changed by reading bytes, exactly as the loop behaved before the mechanism existed. Reach for `always` when the session appears not to notice edits, which happens where a filesystem watcher under-reports: bind mounts, some network shares, and container-mounted working trees. It costs the saving and nothing else, an unobserved round being a correct round, so it is also the one-line bisect for a bug report.
 |===
 
 The CLI properties take precedence over `<configuration>` values, so `mvn graphitron:dev -Dgraphitron.dev.port=9090` works without editing the POM.

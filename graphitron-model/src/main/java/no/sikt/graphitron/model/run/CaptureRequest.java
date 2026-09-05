@@ -9,6 +9,8 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,6 +41,11 @@ import java.util.Objects;
  *                    empty for a caller whose census carries none. The retention decision reads
  *                    these instead of re-hashing: they have to describe the bytes the rows came
  *                    from, and a value read later describes bytes nobody parsed
+ * @param readAt      when the round began reading those sources, which is what the store records
+ *                    beside each stamp as the currency of the rows that read produced. It rides
+ *                    with the stamps because it dates them: taken before the read, so a source
+ *                    that moves while the pass is running is later than the value its row carries
+ *                    and reads as moved
  * @param classified  whether the pass has a classified model for the detections to run against;
  *                    {@link ClassifiedRun.Absent} is the failure arm's, where a stage refused the
  *                    document and there is no walk to gate a detection on
@@ -47,7 +54,7 @@ public record CaptureRequest(GraphIdentity graph, SubjectConfig config,
                              TypeDefinitionRegistry registry, SchemaAssembly assembly,
                              SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                              JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-                             Map<String, String> classpathStamps,
+                             Map<String, String> classpathStamps, LocalDateTime readAt,
                              ClassifiedRun classified) {
     public CaptureRequest {
         Objects.requireNonNull(graph, "graph");
@@ -58,12 +65,27 @@ public record CaptureRequest(GraphIdentity graph, SubjectConfig config,
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(extensions, "extensions");
         Objects.requireNonNull(classpathStamps, "classpathStamps");
+        Objects.requireNonNull(readAt, "readAt");
         Objects.requireNonNull(classified, "classified");
+    }
+
+    /**
+     * A request whose sources are read inside the capture rather than before it: the arms that
+     * hand over no census stamps, where nothing has been read yet when the request is built, so
+     * now is genuinely before the read.
+     */
+    public CaptureRequest(GraphIdentity graph, SubjectConfig config,
+                          TypeDefinitionRegistry registry, SchemaAssembly assembly,
+                          SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
+                          JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
+                          Map<String, String> classpathStamps, ClassifiedRun classified) {
+        this(graph, config, registry, assembly, verdicts, attribution, jooq, extensions,
+            classpathStamps, LocalDateTime.now().truncatedTo(ChronoUnit.MICROS), classified);
     }
 
     /** What this request writes, against whichever store a port hands it. */
     RunStore.CaptureBody body() {
         return (dsl, warm) -> FactCapture.capture(dsl, warm, graph, config, registry, assembly,
-            verdicts, attribution, jooq, extensions, classpathStamps);
+            verdicts, attribution, jooq, extensions, classpathStamps, readAt);
     }
 }

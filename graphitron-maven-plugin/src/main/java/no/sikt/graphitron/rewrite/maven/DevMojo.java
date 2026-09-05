@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
@@ -37,7 +38,9 @@ import no.sikt.graphitron.mcp.rag.docs.DocsIndex;
 import no.sikt.graphitron.mcp.rag.docs.DocsRag;
 import no.sikt.graphitron.rewrite.maven.watch.CompileErrorFormatter;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
+import no.sikt.graphitron.rewrite.maven.watch.RecentChanges;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
+import no.sikt.graphitron.rewrite.maven.watch.WatchedCorpus;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -47,6 +50,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import java.io.IOException;
 import java.net.BindException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -109,6 +113,17 @@ public class DevMojo extends AbstractRewriteMojo {
     static final int DEFAULT_MCP_PORT = 8488;
     static final String LOOPBACK_HOST = "127.0.0.1";
 
+    // The corpora this session's three watchers cover, as meta_gatherer_corpus names them: the
+    // schema documents, the compiled classpath output, and the consumer's .java sources. Spelled
+    // once here because a watcher, its round's announcement and the gatherer that reads the corpus
+    // all have to agree on the name, and the roster refuses one that does not exist.
+    static final String SDL_CORPUS = "sdl";
+    static final String CLASSPATH_CORPUS = "classpath";
+    static final String JAVA_SOURCE_CORPUS = "java-source";
+
+    /** The {@code rediscover} arm that trusts nothing; anything else is the observed default. */
+    static final String REDISCOVER_ALWAYS = "always";
+
     /**
      * The budget every keystroke-grain store read runs under: hovers, completions,
      * goto-definition, inlay hints, lint quick-fixes. Named rather than spelled at the mint so the
@@ -162,6 +177,20 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     @Parameter(property = "graphitron.dev.compile", defaultValue = "true")
     boolean compile = true;
+
+    /**
+     * How a round decides what to re-read. The default, {@code observed}, lets the session skip
+     * re-reading an input it watched continuously since the store last read it; {@code always}
+     * registers no corpus at all, so nothing is ever trusted and every round rediscovers what
+     * changed by reading bytes, exactly as it did before the mechanism existed.
+     *
+     * <p>The escape hatch exists because filesystem watchers do lie. On a bind mount or a network
+     * share where events are under-reported, a session can be told less than happened; this turns
+     * that class of trouble into one flag and gives a bug report a one-line bisect. It costs the
+     * saving and nothing else: an unobserved round is a correct round.
+     */
+    @Parameter(property = "graphitron.dev.rediscover", defaultValue = "observed")
+    String rediscover = "observed";
 
     /**
      * The dev database the MCP {@code execute} tool runs queries against. Optional: with no
@@ -255,6 +284,16 @@ public class DevMojo extends AbstractRewriteMojo {
     // it owns the watcher that triggers it, and the store is where the walk's product goes: one
     // parse per changed file, one sink.
     JavaSourceFacts javaSourceFacts;
+    // What this session is watching and what it has seen move: the in-memory half of the currency
+    // comparison whose other half is the read_at each stamped row carries. Held here because it is
+    // per process by nature (no other process can act on our watcher's coverage) and has to outlive
+    // any one round, which is what rules out hanging it off RunContext. Package-private so
+    // DevMojoTest can assert what a watcher told it.
+    Observation observation = Observation.rediscovering();
+    // The paths the watchers saw, per corpus, so each round can name what it was told instead of
+    // announcing only that it ran. Diagnostic: it holds paths where the observation holds folded
+    // instance keys, and nothing decides anything from it.
+    RecentChanges recentChanges = RecentChanges.none();
     // The walk itself, held across refreshes so its per-file cache stays warm. One instance per
     // session, which is what keeps the .java cadence from sharing state with anything else.
     private final SourceWalker sourceWalker = new SourceWalker();
@@ -365,9 +404,20 @@ public class DevMojo extends AbstractRewriteMojo {
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.warningFacts = new BuildWarningFacts(sessionStore.dsl(),
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
+        // What the session watches. Constructed once the store is open, because registering a
+        // corpus reads the roster to refuse one no crawler declares, and before the save listener
+        // is built below, which marks through it. Registering this early is harmless: registration
+        // establishes no floor, so nothing is trusted until a watcher says it is up.
+        this.observation = rediscoverAlways()
+            ? Observation.rediscovering()
+            : new Observation(sessionStore.dsl());
+        this.recentChanges = new RecentChanges(project.getBasedir().toPath());
         // No graph identity: a .java file's declarations are facts about the file, and a file
         // belongs to whoever compiles it rather than to a graph.
-        this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl());
+        this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl(), observation);
+        // The fold before the watcher, so a save arriving while the first walk is running has an
+        // instance to land on. It is re-declared on every refresh, the roots being the walk's.
+        this.javaSourceFacts.register(initialCtx.compileSourceRoots());
 
         // Vocabulary-less until the store arrives on the next line: the directive vocabulary is
         // read out of the session's graph now, so there is nothing to hand the constructor.
@@ -403,7 +453,8 @@ public class DevMojo extends AbstractRewriteMojo {
         // filesystem watcher uses, so the two paths coalesce on a single regen.
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         Consumer<String> saveListener = buildSaveListener(
-            initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
+            initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace),
+            watched(SDL_CORPUS));
         try {
             bindServer(workspace, saveListener,
                 new RagConfig(resolveRagCacheDirectory(initialCtx.basedir())),
@@ -420,10 +471,6 @@ public class DevMojo extends AbstractRewriteMojo {
             }
             throw e;
         }
-        // Seed the source facts so goto-definition / hover work before the first .java edit; the
-        // source watcher refreshes them on the source cadence thereafter. Path-only read on
-        // initialCtx (no loader).
-        refreshSourceFacts(initialCtx, false);
         // Diagnostic so a "completion works but goto-definition returns nothing"
         // report can be traced to a module whose classes are scanned but whose
         // source root is not walked: the two counts should track each other.
@@ -462,6 +509,18 @@ public class DevMojo extends AbstractRewriteMojo {
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
         startSourceWatcher(initialCtx);
+        // Seed the source facts so goto-definition / hover work before the first .java edit; the
+        // source watcher refreshes them on the source cadence thereafter. Path-only read on
+        // initialCtx (no loader).
+        //
+        // After the watcher rather than before it, which is a scheduling choice and not a
+        // correctness one. A seed that runs while nothing is watching its corpus writes currency
+        // below the floor and establishes nothing, so the session pays for a second full walk on
+        // its first save; running it here means a warm store's session is cheap from that first
+        // save. Both orders are safe, which is the point of hanging the floor on the watcher, and
+        // both sit inside startup before the "LSP listening" line, so nothing a developer waits on
+        // moves.
+        refreshSourceFacts(initialCtx, false);
 
         Thread shutdown = new Thread(this::cleanup, "graphitron-dev-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdown);
@@ -732,8 +791,12 @@ public class DevMojo extends AbstractRewriteMojo {
                 "graphitron:dev: no watch directories resolved from <schemaInputs>");
         }
         try {
+            // The corpus is declared before the watcher is constructed, because the constructor
+            // is what says a watcher is up for it and a fold has to exist by then.
+            registerCorpus(SDL_CORPUS, roots);
             this.schemaWatcher = new SchemaWatcher(
-                roots, schemaDebounce, () -> regenerate(workspace), ctx.schemaFileExtensions());
+                roots, schemaDebounce, () -> regenerate(workspace), ctx.schemaFileExtensions(),
+                watched(SDL_CORPUS));
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
@@ -751,8 +814,13 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         this.classpathDebounce = new DebounceExecutor(debounceMs);
         try {
+            // Root grain, not file grain: the classpath corpus partitions at the entry a
+            // store_source row names, so a mark on a root covers every class beneath it. Coarser
+            // than its events, which is the safe side of the grain law.
+            registerCorpus(CLASSPATH_CORPUS, roots, rootFold(roots));
             this.classpathWatcher = new SchemaWatcher(
-                roots, classpathDebounce, () -> rebuildCatalog(workspace), ".class");
+                roots, classpathDebounce, () -> rebuildCatalog(workspace), ".class",
+                watched(CLASSPATH_CORPUS));
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
@@ -781,8 +849,11 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         this.sourceDebounce = new DebounceExecutor(debounceMs);
         try {
+            // The java-source corpus is registered by its own gatherer, which owns the fold: the
+            // instance key is the key of the row JavaSourceFacts stamps, and only it knows that.
             this.sourceWatcher = new SchemaWatcher(
-                roots, sourceDebounce, () -> refreshSourceFacts(ctx, true), ".java");
+                roots, sourceDebounce, () -> refreshSourceFacts(ctx, true), ".java",
+                watched(JAVA_SOURCE_CORPUS));
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(
@@ -803,13 +874,25 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     private void refreshSourceFacts(RunContext ctx, boolean announce) {
         try {
-            var walk = sourceWalker.walkFiles(ctx.compileSourceRoots());
-            if (javaSourceFacts != null) {
-                javaSourceFacts.refresh(ctx.compileSourceRoots(), walk);
-            }
             if (announce) {
                 getLog().info(
-                    "graphitron:dev: source change detected; refreshed goto-definition positions");
+                    "graphitron:dev: source change detected; refreshing goto-definition positions");
+                announce(JAVA_SOURCE_CORPUS);
+            }
+            // Declared, then dated, then walked, in that order and never another: the fold has to
+            // exist before a save can land on it, and the instant has to precede the walk whose
+            // parse is a read of the same content the rows describe.
+            JavaSourceFacts.Round round = null;
+            if (javaSourceFacts != null) {
+                javaSourceFacts.register(ctx.compileSourceRoots());
+                var readAt = javaSourceFacts.beginPass();
+                var walk = sourceWalker.walkFiles(ctx.compileSourceRoots());
+                round = javaSourceFacts.refresh(ctx.compileSourceRoots(), walk, readAt);
+            } else {
+                sourceWalker.walkFiles(ctx.compileSourceRoots());
+            }
+            if (announce && round != null) {
+                getLog().info("graphitron:dev: " + round.report());
             }
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: source-position refresh failed; keeping previous: "
@@ -838,6 +921,7 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     void regeneratePass(RunContext ctx, Workspace workspace) {
         getLog().info(banner("regenerate"));
+        announce(SDL_CORPUS);
         var round = runGeneratorPass(ctx, "regenerate");
         // A clean regen produces the writer's delta + this schema's compile graph; recompile
         // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
@@ -873,6 +957,7 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private void rebuildCatalog(Workspace workspace) {
         getLog().info("graphitron:dev: classpath change detected; rebuilding catalog");
+        announce(CLASSPATH_CORPUS);
         try {
             withCodegenScope(ctx -> {
                 try {
@@ -1169,6 +1254,62 @@ public class DevMojo extends AbstractRewriteMojo {
         return "── graphitron:dev: " + label + " ──";
     }
 
+    /** Whether the escape hatch is on, in which case no corpus is registered and nothing trusted. */
+    boolean rediscoverAlways() {
+        return REDISCOVER_ALWAYS.equalsIgnoreCase(rediscover);
+    }
+
+    /** One watcher's handle on the session: its corpus, the observation, and the diagnostic ring. */
+    private WatchedCorpus watched(String corpus) {
+        return new WatchedCorpus(observation, corpus, recentChanges);
+    }
+
+    /** Declares {@code corpus} over {@code roots} at file grain, an instance being one path. */
+    private void registerCorpus(String corpus, Set<Path> roots) {
+        registerCorpus(corpus, roots, Path::toString);
+    }
+
+    /**
+     * Declares {@code corpus} over {@code roots} with the fold its readers work at. A corpus the
+     * store's roster does not declare is a wiring defect here rather than a session-ending one:
+     * the corpus goes unregistered, so every round over it reads exactly as it does today.
+     */
+    private void registerCorpus(String corpus, Set<Path> roots, Observation.Fold fold) {
+        try {
+            observation.register(corpus, List.copyOf(roots), fold);
+        } catch (IllegalArgumentException e) {
+            getLog().warn("graphitron:dev: not observing " + corpus + "; " + e.getMessage());
+        }
+    }
+
+    /**
+     * The fold for a corpus the store partitions by root: every path under a root folds to that
+     * root, so one mark covers everything beneath it. Coarser than the events that produce it,
+     * which is the direction the grain law allows, because the consumer's unit of work here is the
+     * whole entry.
+     */
+    private static Observation.Fold rootFold(Set<Path> roots) {
+        var normalised = roots.stream()
+            .map(root -> root.toAbsolutePath().normalize())
+            .toList();
+        return path -> normalised.stream()
+            .filter(path::startsWith)
+            .findFirst()
+            .map(Path::toString)
+            .orElseGet(path::toString);
+    }
+
+    /**
+     * Says what the session was told since {@code corpus}'s round last spoke, beside the banner the
+     * round already prints. A developer otherwise sees that a round happened and has to guess why,
+     * which matters most when the guess is wrong: an editor writing a stray file, or another
+     * terminal's build, produces a round that looks like it came from the save just made.
+     */
+    private void announce(String corpus) {
+        recentChanges.drain(corpus)
+            .ifPresent(told -> getLog().info("graphitron:dev: told about " + told));
+    }
+
     /**
      * Listener fed to {@link DevServer} and through it to each
      * {@link no.sikt.graphitron.lsp.server.GraphitronLanguageServer}. Fires
@@ -1177,11 +1318,24 @@ public class DevMojo extends AbstractRewriteMojo {
      * The LSP module stays suffix-agnostic — extension-set ownership lives
      * here, in the Mojo, alongside {@link RunContext#schemaFileExtensions()}.
      */
-    static Consumer<String> buildSaveListener(Set<String> suffixes, DebounceExecutor debounce, Runnable regen) {
+    static Consumer<String> buildSaveListener(Set<String> suffixes, DebounceExecutor debounce,
+                                              Runnable regen, WatchedCorpus watched) {
         return uri -> {
-            if (suffixes.stream().anyMatch(uri::endsWith)) {
-                debounce.schedule(regen);
+            if (!suffixes.stream().anyMatch(uri::endsWith)) {
+                return;
             }
+            // The strongest case of the three the dev loop had for carrying this: the document is
+            // not merely knowable here, the editor passed it in. Marked before the schedule, so a
+            // save landing while a round is mid-read is later than that round's own instant.
+            try {
+                watched.changed(Path.of(URI.create(uri)));
+            } catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException e) {
+                // A document the editor names by something other than a resolvable file: there is
+                // no instance to mark, so the corpus stops being observed rather than the save
+                // being silently forgotten.
+                watched.lost("unresolvable document URI: " + uri);
+            }
+            debounce.schedule(regen);
         };
     }
 
