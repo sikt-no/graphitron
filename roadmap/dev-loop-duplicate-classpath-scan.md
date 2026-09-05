@@ -244,3 +244,115 @@ The measurement and the sidecar split were taken while specifying this item, and
 it from "hash once instead of twice" into "mostly do not hash". The observation that a classpath is
 overwhelmingly immutable artifacts whose identity Maven has already recorded is the user's; the item
 had stood for a month framed around the duplication alone.
+
+## Reviewer findings
+
+### Round 1 (2026-09-05, Spec -> Ready, reviewer session 01GD61Lm13gxXbuPS6LqHTUK)
+
+Verdict: withhold. One blocking finding on question one, one smaller finding wanted in the same
+pass. Question two passes without reservation, and I would hand the plan to an implementer as
+written once question one is settled.
+
+What holds up, checked rather than taken on report. Every class, method, record and test the spec
+names exists under that name. The structural claims the plan actually rests on are all true at
+trunk: `ClasspathCensus.Reading` is constructed in exactly one place; `CaptureRequest` has exactly
+four construction sites, exactly two of them `FactCapture`'s own convenience entry points;
+`SourceStamp.recordedMatches` has exactly one caller, `LintFixes`, and it passes an editor buffer;
+`new ClasspathSources()` appears once, inside `FactCapture.capture`, so the memo is empty when
+`StoreRefresh.freshSources` reaches it; `freshSources` really does test only census-named sources
+carrying a non-null recorded stamp behind a `Files.isRegularFile` filter, so the second site's
+population is the subset the spec claims; `RunStore.reconciles` is `warm() ||` the anchor row
+existing, so every round after the first is warm; `commitStamps` really does hash at commit time for
+a source whose stamp was null, which is the latent bug the spec claims to fix in passing; and
+`ClasspathCensusTest` really does pair every case with a `coldScan` equality, so the census test the
+spec proposes extends a pattern rather than inventing one. The census-to-capture path is as
+described and is the strongest part of the plan: `runPipeline` already holds `reading` at the top
+and already threads `reading.references()` into `request(...)`, so the per-entry stamps ride an
+existing channel and invent none. The cross-references resolve: R609 does cite this item by slug as
+well as by id, which is what the slug-retention note claims; R922 exists, is Backlog, and its own
+"What it does not do" hands the cold round to this item in the same terms this item uses.
+
+On question two: supplying the stamp on `ClasspathEntry` extends the doctrine that record's own
+javadoc already states, the plugin classifying once and every consumer projecting, and it keeps
+`graphitron-model` ignorant of `.m2`, which is the capture-boundary principle applied exactly.
+Seeding the existing memo rather than adding a channel, and the explicit rejection of a second
+`store_source` column as a parallel mechanism, both land on the right side of the principles.
+
+**Finding 1 (question one: is the goal well communicated). The Goal's magnitude claim mixes two
+measurement populations, in the one sentence a reader uses to judge whether the item is worth
+building, and the arithmetic contradicts itself.**
+
+The Goal closes: "that is about 7 ms of hashing per round where a warm round pays 67 ms today,
+against a round whose whole steady-state floor is 60 to 86 ms."
+
+The 67 ms is population A: this workstation, `graphitron-sakila-example`, fifteen jars, 12.6 MB, two
+passes of 33 to 34 ms. The 7 ms is derived from the same population and checks out arithmetically
+(2.8 MB of 12.6 at 33.5 ms per pass gives 7.4 ms). The 60 to 86 ms floor is population B: R916's
+figure over this repo's own thirteen-entry classpath on different hardware, as `roadmap/changelog.md`
+records it. "What a round pays for a jar today" then declares, one section later, that population A
+is "stated as its own population rather than reconciled against" population B, and that "neither
+figure supersedes the other". The Goal performs precisely the reconciliation the plan forbids, and
+uses population B as the denominator for a numerator from population A.
+
+The arithmetic makes it visible rather than merely methodological: 67 ms of hashing cannot sit
+inside a 60 to 86 ms round. Taken at face value the sentence says jar hashing is between 78% and
+112% of a warm round, and that removing 60 ms of it makes the loop roughly twice as fast. Taken as
+the modest framing the surrounding prose suggests, it says about 7 ms comes off a 60 to 86 ms round,
+a tenth. A reader cannot tell which, and the two readings would justify very different priorities
+for the item. The same tension exists inside population B on its own terms, since R916's 55.2 ms
+single hash pass also does not fit twice inside a 60 to 86 ms round, so this is not a defect the
+spec inherited quietly; it is one the Goal amplifies by making it the headline.
+
+What would satisfy the finding: state the saving against a denominator from the same population.
+Either measure a warm steady-state round on this workstation over `graphitron-sakila-example` and
+use that as the floor, which also settles whether jar hashing dominates the round or is a tenth of
+it, or drop the cross-population denominator and let the Goal say what was actually measured (jar
+hashing per warm round falls from about 67 ms to about 7 ms over this jar set), leaving the
+fraction-of-a-round claim out until one population supports it. Either is fine; the plan body and
+the implementation are untouched by the choice, which is why this is the author's sentence to write
+and not mine.
+
+**Finding 2 (question one: the declared consequence is narrower than the change). Scheme-tagging
+`SourceStamp` migrates three stamp populations, and the spec declares one.**
+
+The Implementation section declares the migration cost deliberately, "One consequence to declare
+rather than discover", and scopes it to "every classpath partition". Two other columns are written
+through the same spellings and inherit the tag:
+
+`JavaSourceFacts.refresh` stamps each parsed `.java` file with `ClasspathSources.hash`, which is
+`SourceStamp.ofFile`, and compares that against the recorded `java_file.stamp` to decide whether to
+rewrite the file's rows. Both sides tag consistently, so the behaviour is the same one-time re-walk
+the spec already describes, but it is a second population and a second re-walk.
+
+`FactCapture` writes `store_graph.build_file_stamp` through `sources.stamp(buildFile)`, so it tags
+too. Nothing in the tree reads that column back today, so this one is inert, but R643 is specified
+against it as a fitness signal that "rides beside every peer answer", and a reader arriving from
+there should not have to rediscover which spelling the column holds.
+
+Both are benign and neither changes the design. What would satisfy the finding is the declared
+consequence naming its real scope, so the Done-gate changelog entry and anyone reading the migration
+note afterwards get the whole of it.
+
+**Non-blocking, no response needed unless you want one.**
+
+Two counts in the Implementation section do not match the tree, and neither is load-bearing, since
+the substance in both cases (existing sites keep compiling) holds regardless of the number. I have
+left them rather than guessing at the measure you used. "All twenty-four existing construction
+sites" of `ClasspathEntry`: I count 14 `new ClasspathEntry(` sites, 13 of them outside the record
+itself, or 28 outside it if the `project` / `projectRoots` / `ClasspathEntry::project` factory uses
+count as construction sites. No reading gives 24. "The roughly twenty test call sites" of
+`FactCapture.capture`: there are 57 in test sources across all six overloads; if the twenty means
+callers of the current widest overload specifically, saying so would keep the claim checkable.
+
+The sidecar test as described spans two tiers in one bullet. "A jar with a valid sidecar contributes
+the sidecar's value to the reading and is never opened for hashing" is a census-level assertion that
+`ClasspathCensusTest` can make with a hand-built entry, while "the same jar touched so that it is
+newer than its sidecar falls back to a computed stamp" exercises `AbstractRewriteMojo`'s staleness
+rule and needs the plugin's own test tier. An implementer will split it without difficulty; flagging
+it only so the split is expected rather than discovered.
+
+`SourceStamp` is named as "the one home for how a stamp is spelled", and the plan has the plugin
+supplying a `sha1:` value. Whether the plugin writes that prefix itself or goes through a
+`SourceStamp` factory is unstated. The doctrine the spec already cites answers it, so this is a
+seam an implementer closes rather than a fork, but a named factory would keep the spelling where the
+plan says it lives.
