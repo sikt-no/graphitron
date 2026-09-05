@@ -1,13 +1,13 @@
 ---
 id: R905
 title: "A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: testing
 depends-on: []
 created: 2026-09-01
-last-updated: 2026-09-04
+last-updated: 2026-09-05
 ---
 
 # A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts
@@ -176,3 +176,65 @@ make the reader's query mean its own rows. Serialising trades the module's measu
 a defect that is local to one assertion.
 
 ## Reviewer findings
+
+### Round 1 (2026-09-05, In Review -> Done, reviewer session 017tdhXkyu8F4FJ1UPekfr5L)
+
+Verdict: withhold. One finding, on question four. Question three passes and is not in doubt: the
+delivered change is the change the plan approved, and where it goes past the plan it goes in the
+direction the plan argued for. `mvn install -Plocal-db` is green on the current head.
+
+**Finding 1 (question four: how we know the item is complete). The audit's one
+tested-and-refuted entry is refuted against a row shape no writer in this module can produce, so
+it does not establish what it reports.**
+
+The audit says of `filmsFaceted_selectionGate_unselectedFacetContributesNoArm`: "the
+non-null-element facet appends `AND col IS NOT NULL` to its arm, so a stray film's NULL rating
+cannot open a fourth group, and no write path in the module sets `rating` at all. Verified by
+inserting a null-`release_year`, null-`rating` film and watching the case pass."
+
+A stray film does not carry a NULL rating. `init.sql` declares `rating mpaa_rating DEFAULT 'G'`,
+and `createFilm_omittedFieldUsesColumnDefault` pins that an omitted input field binds
+`DSL.defaultValue()` rather than a typed null, so every film another class inserts without naming
+a rating is G-rated. The `IS NOT NULL` scrub is real, `FilmFacetFilter.rating` has non-null
+elements and the SDL comment beside it says exactly that, but it never fires on a row this module
+writes; the probe reached the shape it tested only by explicitly overriding the column default.
+
+The verdict is right. `G` is already one of the seed's three groups, so `hasSize(3)` holds. But it
+is right for a reason the entry does not give, and the reason it does give generalises wrongly:
+what protects this case is that no fixture names a rating, and the day one does with `R` or
+`PG-13`, a fourth group opens and the case goes red. Nothing in the recorded reasoning would warn
+that contributor.
+
+This is the same error class the item exists to fix. The defect in the primary case is a comment
+stating a premise about the seed under an assertion quantified over the table; the defect here is
+an audit entry reasoning from a row shape the table cannot hold. An audit delivered as this
+item's own goal ("the module carries an audited answer") should not repeat it.
+
+`GraphQLQueryTest` already carries the form this entry should take, twice in the same file:
+`filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate` reasons from the default and
+names the standing constraint out loud ("film.rating carries DEFAULT 'G' ... No fixture sets
+rating explicitly, so PG bounds the count to the seed. A writer that starts inserting PG films has
+to revisit this"), and `filmsFaceted_noFacetFilter_countsMatchPlainAggregates` bounds its base off
+"film.length has no default". The audit entry is the odd one out against the module's own
+established form.
+
+What would satisfy it: state the governing fact, that `rating` carries a column default so a
+stray film lands in a group the seed already has, and the standing constraint that leaves, that no
+fixture names a rating; then either re-run the probe with a default-rating film, which is the
+shape a writer actually produces, or drop the probe claim rather than let it stand as evidence for
+something it did not test. Enforcing that constraint mechanically rather than documenting it would
+be a fresh Backlog item, not this one.
+
+Verified along the way and not in question: the primary case keys both paths to the five seed
+titles through `seedFilmSummaryLeaf` and keeps nulls, so a missing diverging leaf fails an
+assertion rather than a collector; the edges side is an equality against the outer title, which is
+stronger than the `isNotNull` it replaced and stronger than the plan asked for; no writer in the
+module uses a seed title, so the keying map cannot be collided; the sibling sweep reached both
+cases the Spec round flagged as unlisted (`deepNesting_divergenceOneLevelDown_bothSidesResolve`
+and `argumentAgreement_onArgConsumingArm_passesGuardAndResolves`), and both added `storeId` as an
+identical-selection bucket that leaves their diverging bucket alone; every method the audit names
+exists and behaves as described, including the floor-versus-exact split in
+`search_returnsAllParticipantTypes` and the `extra: {lengthIs: [...]}` bound in
+`filmsFaceted_noFacetFilter_countsMatchPlainAggregates`. No `docs/` changes, so the
+user-facing-doc check does not apply; no `Retired vocabulary` section, so the retirement sweep
+does not apply.
