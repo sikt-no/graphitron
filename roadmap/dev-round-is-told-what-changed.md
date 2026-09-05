@@ -325,13 +325,12 @@ holds no claim. R921 becomes a Backlog tombstone naming this item, and its file 
 reaches Done.
 
 **It does not do propagation.** Marking an instance says its crawler is behind; it does not say which
-registrations, partitions or generated units must re-run because of it. That is the next item, and the
-edges it needs are already in the store: `store_graph_source` records which sources each graph read,
-`meta_gatherer_dependency` declares which gatherers may read which others' rows, and
-`meta_materialize_dependency` carries transitive reach through the registered views. With
-`gatherer_current` beside them, "what must run" is a join. Putting the claims anywhere but the store
-would have made that join hand-written Java over data that is already relational, which is the whole
-reason this item pays the schema cost rather than deferring it.
+registrations, partitions or generated units must re-run because of it. That is R924, which walks the
+205 foreign keys the schema declares: an edge names the column tuple on both ends, so it says which
+rows of the child a given set of parent rows reaches, not merely which relations depend on which. With
+`gatherer_current` in the store beside them, "what must run" is a query over declared keys. Putting
+the claims anywhere else would have made it hand-written Java over data that is already relational,
+which is the whole reason this item pays the schema cost rather than deferring it.
 
 ## Implementation
 
