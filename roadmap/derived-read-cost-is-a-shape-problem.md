@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-04
+last-updated: 2026-09-05
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -240,7 +240,7 @@ the candidate tree by the path it resolves, and the resolution is a prefix match
 
 **The argMapping family put on schema coordinates.** The candidate tree is keyed by the coordinate
 the directive carrying the argMapping sits on, spelled as the GraphQL specification spells one and
-anchored by `graphql_coordinate`: `Type.field`, `Type.field(argument:)`, `InputType.field`. It holds
+anchored by `graphql_element`: `Type.field`, `Type.field(argument:)`, `InputType.field`. It holds
 every spelling an author may legally write at that coordinate, including the one that repeats the
 coordinate's own name, marked `deprecated`. `graphitron_argmapping_entry` carries `written_path` and
 three generated readings of it, and `graphitron_argument_path_segment` is deleted: the stored
@@ -252,7 +252,7 @@ sites that bind nothing whatever they spell.
 
 Two relations then shed what they were keeping twice. `graphitron_argmapping_entry` had `type_name`,
 `field_name` and `argument_name` beside the coordinate that spells them, and they are gone; a reader
-wanting the parts joins `graphql_coordinate_field`, the decomposition stated once instead of a
+wanting the parts joins `graphql_element_field`, the decomposition stated once instead of a
 two-arm COALESCE per reader. And `graphitron_argmapping_match` was carrying `written_path` and
 `trailing_name`, neither of which the resolution decided: a match says which candidate bound, the
 author's spelling is the entry's, and every consumer of a match already holds the entry's key.
@@ -326,6 +326,28 @@ bound table instead of forwarding a spelling, which retired four per-row folds a
 them, which no relation said before: the departure lived in one derivation keyed on the parent type
 and the arrival in another keyed on the field.
 
+**The coordinate family took the specification's vocabulary.** The specification defines a schema
+element and a schema coordinate as two different things: an element is a named type, a field, an
+input field, an enum value, a field argument, a directive or a directive argument, and a coordinate
+is the string that identifies one. The store had named the relations after the string. So
+`graphql_coordinate` is `graphql_element` over `graphql_type_element`, `graphql_field_element`,
+`graphql_argument_element` and `graphql_enum_value_element`, with `graphql_coordinate_field`
+following as `graphql_element_field`. The `coordinate` columns are untouched, being the one thing
+that genuinely is a coordinate. The supertype's discriminator is `element_kind` and takes five of the
+specification's seven values, `TYPE` widening to `NAMED_TYPE`, `ARGUMENT` narrowing to
+`FIELD_ARGUMENT` so the directive argument has a name to take later, and `FIELD` splitting from
+`INPUT_FIELD`, which the walk settles at the write because it already knows which body it is in.
+Nothing read the column, so the widening cost nothing; what it bought is that the agreement test's
+field arm now joins the declaring type's kind instead of asserting a literal, which is a rule that
+can fail where the literal agreed with whatever capture wrote.
+
+Two findings came out of reading the specification against the family rather than out of the rename.
+Directives and directive arguments are schema elements with coordinate forms of their own and the
+store holds no anchor for either, which is the same shape of gap the minted types had and is left
+for the pass that needs it. And union members and interface implementations have no coordinate at
+all, which the specification states directly and gives a reason for, so `graphql_poly_member` sitting
+outside the family is conformance rather than an omission.
+
 ## The entry and anchor pattern, and the scope it makes visible
 
 The slices above each fixed a rule. What the node and field arcs added is the shape the fixes have in
@@ -346,7 +368,7 @@ should have been holding all along.
 | `graphitron_argmapping_candidate` rendered a coordinate into a string and met
   `graphitron_argmapping_entry` on the text, because four relations stated that a coordinate exists,
   one per grain, and nothing stated that a coordinate exists
-| `graphql_coordinate`, the supertype the family always implied, and the four subtypes pointing at it
+| `graphql_element`, the supertype the family always implied, and the four subtypes pointing at it
 
 | nodehood, first attempt
 | six of the seven nodehood relations read `intent_resolved_type_binding`, which unions the `@table`
@@ -360,7 +382,7 @@ should have been holding all along.
 | `graphitron_field`, the endpoints. The route and the reference decode under it are still owed
 
 | the reference step decode
-| a foreign key into `graphql_field_coordinate` refused `QueryFilmsConnection.nodes`, a field macro
+| a foreign key into `graphql_field_element` refused `QueryFilmsConnection.nodes`, a field macro
   expansion minted and the transcription does not hold
 | the macro-aware coordinate anchors, which do not exist yet
 |===
@@ -404,24 +426,31 @@ transcription does not hold, so a foreign key there excludes exactly the fields 
 of. `graphitron_field` was written with one and the build failed on `QueryFilmsConnection.nodes`.
 Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
 and no such anchor exists: `intent_expanded_type` and `intent_expanded_field` are views, so nothing
-can point at them. `graphitron_type_coordinate` and `graphitron_field_coordinate` are what the rest
-of this arc keys through, and they are the next thing owed.
+can point at them. The element family below is what the rest of this arc keys through, and it is the
+next thing owed.
 
-**Lifecycle is provenance and a refcount, not a cascade.** A minted row can be coined by several
-sources: `PageInfo` is minted once and carries one site per `@asConnection` application, two in a
-two-connection schema. There is no single parent for it to cascade from, so the coining direction
-cannot carry `ON DELETE CASCADE` at all, and `graphitron_minted_type_site` is the provenance relation
-whose site count is the refcount. Nothing exercises it today: `StoreRefresh.clear` deletes every
-graph-keyed relation on every capture and derives that set from the presence of a `GRAPH_NAME`
-column, so a new graphitron relation is rebuilt wholesale by default. The sweep is owed the day an
-incremental path exists, and until then what matters is not baking in a cascade that would be wrong
-when it does.
+**Lifecycle is a cascade at the minted grain and a refcount at the anchor grain.** A minted row can
+be coined by several sources: `PageInfo` is one type in the schema however many `@asConnection`
+applications called for it, two in a two-connection schema. This arc first read that as proof the
+coining direction could carry no `ON DELETE CASCADE` at all. It is not, and the whole of the
+difference is where the provenance sits. Held in a relation beside the minted row, the coining is a
+set with no single parent and nothing to cascade from. Held in the minted row's own key, every minted
+row has exactly one parent, the coordinate whose directive coined it, and cascades from it cleanly.
+What still cannot cascade is the anchor, whose row must survive while any source still coins it, so
+that grain is refcounted and swept. The two mechanisms answer different questions rather than
+competing, which is only visible once the key carries the source. Neither is exercised today:
+`StoreRefresh.clear` deletes every graph-keyed relation on every capture and derives that set from
+the presence of a `GRAPH_NAME` column, so a new graphitron relation is rebuilt wholesale by default.
+The sweep is owed the day an incremental path exists, and what matters until then is that the cascade
+declared now is the one that will still be right.
 
 **What the arc still owes**, in the order the dependencies force:
 
-1. `graphitron_type_coordinate` and `graphitron_field_coordinate`, the macro-aware anchors, plus the
-   foreign key `graphitron_minted_type_site` lacks on the carrier that coined it. `graphitron_field`
-   repoints onto the field one.
+1. The element family, described below: the anchors `graphitron_type`, `graphitron_field` and
+   `graphitron_argument` under the supertype `graphitron_element`, fed by three minted relations that
+   carry the coining coordinate in their key. The relation that shipped as `graphitron_field` is
+   renamed `graphitron_field_table` to free the name, and repoints onto the field anchor along with
+   `graphitron_field_navigation`.
 2. The join path family, described below. `graphitron_field_joinpath` is its head.
 3. The reference decode on the field sites: `graphitron_field_reference_step` and
    `graphitron_reference_for_step`, which differ only in the key saying which directive owns the row.
@@ -431,16 +460,139 @@ when it does.
    fans the departure out per branch, so folding them in before the field side is settled would model
    three unlike things as one.
 
+### The element family, and what minting writes into it
+
+**The anchor is the element family mirrored, one relation per element kind.** `graphitron_element`
+carries the graph, the coordinate and the element kind over `graphitron_type`, `graphitron_field` and
+`graphitron_argument`, which is `graphql_element` and its subtypes with one difference, and it takes
+that relation's vocabulary rather than a second one. The graphql side splits the anchor from its
+payload because the two sit at different cadences, the coordinate settled by the per-file parse and
+the payload only once the document composes. The graphitron side is derived at one cadence, so anchor
+and payload are one relation and `graphitron_type` carries the kind and the description that
+`graphql_type` carries beside `graphql_type_element`.
+
+**The anchors carry the payload rather than joining the twin for it.** A minted row has no twin, so a
+reader that joins `graphql_field` for the details is reading a union again, which is the shape this
+item exists to remove. The copy is bounded by schema size and not by data. The line it draws is that
+the anchor carries what rendering needs and the twin keeps what only the transcription can assert,
+which is why `graphql_field.declaration_line` and its foreign key into `graphql_type_declaration` do
+not come across: a minted field has no declaration site to point at.
+
+**Three element kinds are minted, and the third was missed by reading the store.** `@asConnection`
+mints types and their fields, which the store records, and it mints the `first` and `after` arguments
+on the carrier when the author has not written them, which the store does not record at all. This
+item asserted the opposite in an earlier draft, on the evidence that `MacroCapture` writes no argument
+row, and the evidence was the defect: `ConnectionPromoter.rewriteCarrierField` builds both arguments
+against the assembled graphql-java schema, with `first` carrying the page size that
+`PaginationResolver` resolves from the authored default or the fallback. So the expansion has two
+halves in two modules, one writing facts and one writing schema objects, and nothing holds them to
+each other. The argument relation below is where that stops being possible, and it is the reason the
+macro unification is part of this slice rather than a later tidy.
+
+**Three minted relations, each keyed by the coordinate that coined the row.** The source coordinate
+leads the key, so a cascade from it is a seek and "what did this application mint" is one range scan.
+
+[cols="2,3,4"]
+|===
+| relation | key after the graph | payload
+
+| `graphitron_minted_type`
+| source coordinate, type name
+| coining directive, precedence, kind, description
+
+| `graphitron_minted_field`
+| source coordinate, type name, field name
+| coining directive, precedence, ordinal, the type expression and its four decomposed wrappers,
+  description
+
+| `graphitron_minted_argument`
+| source coordinate, type name, field name, argument name
+| the same, plus the default value literal
+|===
+
+The source coordinate is the field the directive sits on, and it carries one foreign key, into
+`graphql_element`, with `ON DELETE CASCADE`. Positions are not carried: the coordinate reaches the
+field's own position through `graphql_field` and the application's through `graphql_field_directive`,
+which is strictly more than a flattened site row holds.
+
+**The coining directive replaces the closed macro vocabulary.** A `macro` column with a CHECK is a
+list that has to be edited every time an expansion is added, and it names something the schema
+already describes. The directive is an element of the graph with a definition and a description of
+what it does, so the minted row points at it and a reader asking why a coordinate exists gets the
+documentation rather than an enum label. Today that is a foreign key into `graphql_directive`; it
+becomes a directive coordinate when the graphql family's own conformance work lands.
+
+**Four relations become three, and the shared-machinery rule stops existing.** `graphitron_minted_type`
+and `graphitron_minted_field` keep their names and change their keys.
+`graphitron_minted_type_site` dissolves, because the site is now the source coordinate in the key.
+`graphitron_field_synthesis` dissolves into a `graphitron_minted_field` row whose coordinate and
+source coordinate are both the carrier. What goes with them is machinery, not just tables: `PageInfo`
+is currently defined by the first carrier and extended by the rest, which needs `merge_ordinal`,
+`is_extension`, a site counter and a minted-name set inside `MacroCapture`. Under a key that already
+carries the source, every carrier writes its whole contribution and the primary key is the only
+dedupe, so the sharing case is not a case. `intent_expanded_type` and `intent_expanded_field` go with
+them, being exactly the union the anchors now hold as rows, and `ExpandedPopulationReaderGateTest`'s
+frozen roster is what makes moving their readers a decision somebody records rather than a drift.
+
+**Precedence is a column on the minted row, and it is not derivable.** Whether a mint beats the
+author's declaration is a property of what the macro is doing rather than of whether a collision
+happened, and `@asConnection`'s two cases settle it: rewriting `Query.films` replaces the authored
+field, while minting `PageInfo` yields to an author who declared that name. Both are collisions with
+an authored coordinate and they resolve opposite ways, so no predicate over the two populations can
+tell them apart. A replacing row states its whole row, copying the ordinal and description it does not
+change, so the winner is taken wholesale and neither side coalesces.
+
+**Capture writes the minted row whether or not it wins**, and that is worth more than the tidiness.
+Today the expansion reads every declared type name in the schema into a set and each mint returns
+early against it, while `PageInfo`'s minting additionally turns on a counter of how many carriers came
+before. So the expansion is not a function of one carrier's own declaration, which is the
+qualification rule this family's own comment gives as the reason `@asConnection` may run inside
+capture at all. Writing unconditionally makes the stated rule true: the whole-schema lookup and the
+cross-carrier counter both go. It also gains the store rows it does not have today, a suppressed mint
+being silence at present and becoming a row saying which application would have minted what and stood
+down, which is what a diagnostic about a shadowed `PageInfo` would need.
+
+**The population is two statements per grain, each with an anti-join.** The minted arm takes the rows
+that replace, plus the rows that yield where the transcription holds no such coordinate; the
+transcription's arm takes the rows no replacing mint covers. `SELECT DISTINCT` on the minted arm,
+because two sources minting one coordinate with disagreeing payload should be a primary key violation
+and not an arbitrary winner. Both exclusions are anti-joins rather than insert order, so the
+precedence is readable in the statement.
+
+**A field the macro wrote while minting a type shares that type's fate**, which is the one rule the
+row's own precedence cannot carry. An author declaring `type PageInfo { foo: String }` collides with
+the minted type, and the four machinery fields collide with nothing, so a field-grain anti-join alone
+would let `hasNextPage` land on the author's type and fuse two types nobody asked to merge. The
+machinery fields are told from a rewritten carrier by their source: a machinery field shares a source
+coordinate with a minted type row for its own owning type, where `Query.films` has no minted `Query`.
+So the field arm carries a second anti-join, dropping a minted field whose owning type was minted from
+the same source and lost.
+
+**Minting is single level, and the foreign key says so.** Every source coordinate is one the author
+wrote, so nothing mints off a minted thing. That is an assumption the cascade into `graphql_element`
+encodes rather than states, and it is worth a test of its own, because the day a macro expands into
+another macro's output the constraint fails at capture rather than in a reader.
+
+**What this section leaves parked.** The graphql family took the specification's vocabulary ahead of
+this work, recorded above, and it left one thing this section will eventually want: directives and
+directive arguments are schema elements with coordinate forms of their own and the store holds no
+anchor for either, which is why a minted row points at `graphql_directive` by name rather than at a
+directive coordinate. Nothing here is blocked on that. The other finding closes a question this
+section had open rather than opening one: union members and interface implementations have no
+coordinate at all by the specification's own note, so a macro that adds one could never be modelled
+at this grain, and `graphql_poly_member` sitting outside the family is conformance rather than a
+gap.
+
 ### The join path family
 
-`graphitron_field` says where a field's rows come from and where it departs from. The route between
-those two endpoints is a family of its own, and it is the largest thing this arc has left.
+`graphitron_field_table` says where a field's rows come from and where it departs from. The route
+between those two endpoints is a family of its own, and it is the largest thing this arc has left.
 
 **A path runs from one source table to one target table.** One source can have many targets: a field
 whose navigated type is a multi-table interface or a union departs once and arrives once per
 participant, and the paths to those participants need not agree, since each is a different join. So
-`graphitron_field_joinpath` is keyed by the whole of `graphitron_field`'s key rather than by the
-coordinate, and the two cannot disagree about which target a path leads to.
+`graphitron_field_joinpath` is keyed by the whole of `graphitron_field_table`'s key rather than by
+the coordinate, and the two cannot disagree about which target a path leads to.
 
 **A path's nodes are of two kinds, and that is the manual's own definition rather than a
 convenience.** A field's table chain is the concatenation, in written order, of the enclosing type's
@@ -946,7 +1098,7 @@ relation. One verdict, `TRAILING_SEGMENTS_BEYOND_ONE`, from a vocabulary of six 
 Three more columns of `graphitron_argmapping_entry` followed, `type_name`, `field_name` and
 `argument_name`, the coordinate beside them saying the same thing; and two of
 `graphitron_argmapping_match`, `written_path` and `trailing_name`, which were the author's spelling
-passing through a resolution that had not decided them. `graphql_coordinate_field` is new and is
+passing through a resolution that had not decided them. `graphql_element_field` is new and is
 where a reader now decomposes a coordinate.
 
 **Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
