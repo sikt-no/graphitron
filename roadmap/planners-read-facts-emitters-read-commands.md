@@ -3762,6 +3762,9 @@ and its type from the previous increment, the parameter and its type from
 branches, and the reachability search behind two of them reads input-object structure, which
 `intent_input_occurrence_path` already carries.
 
+Its placement is settled before it is written, by "Where a relation this item authors lands" above:
+it reads three `intent_` relations, so it lands in `intent_` and moves with them.
+
 ### Emitter half: family by family
 
 The recipe per family: mint the command relation in `plan` from the leaves it covers, move the
@@ -4020,6 +4023,48 @@ are enumerated under "The facts to plan against are available" above, and the va
 detections land under the same rule: a check's relation states the defect at the defect's grain,
 never a validator-shaped payload.
 
+### Where a relation this item authors lands
+
+R876 is collapsing `intent_` into `graphitron_`: every rule gets an owner, and the derivation
+gatherer turns out to be unearned because nothing it owns needs a gatherer that runs after every
+corpus gatherer. This item authors relations faster than any other, so what it does between now and
+that collapse decides how much of the collapse is its own doing.
+
+**The owner every relation here computes to is the graphitron gatherer.** It depends on `sdl` and on
+`catalog`, and `catalog` carries the classpath corpus, so it reaches `graphql_`, `graphitron_`,
+`sql_` and `jvm_`: every family the condition rules read. Nothing here reaches the configuration
+corpus, Java sources or the compiler, which are three of the six dependencies the derivation
+gatherer declares. `graphitron_argmapping_match` is the precedent that a relation in that family may
+be stated in SQL rather than written from Java.
+
+**A relation whose inputs are all base facts lands there now,** owner `graphitron` and prefix
+`graphitron_`, with no coordination needed: every family it reads is one that gatherer reads, so the
+ownership gate passes.
+
+**A relation reading another `intent_` relation cannot, and that is an ordering constraint rather
+than an exemption.** The gate holds a declared view to relations its owner owns or depends on, and
+`graphitron` cannot depend on `derivation` without reversing an edge that already runs the other
+way. So a rule reading `intent_expanded_type`, `intent_expanded_field`,
+`intent_condition_param_extraction` or `intent_condition_table_parameter` stays in `intent_` until
+those move, which is R876's sweep to sequence. The three relations landed here since the direction
+was set, `intent_condition_context_parameter`, `intent_condition_slot` and
+`intent_scalar_java_type`, are each blocked that way and each moves with the collapse rather than
+ahead of it. This item renames nothing it did not author.
+
+**What it owes the collapse is relations that are ready for it.** Three things, which increments 25
+through 27 already do. State a grain and carry it as the key: R876's evidence is that every
+registered target was a relation with no primary key and every keyless relation was a registered
+target, so a keyed relation is one the sweep has nothing to fix. Declare the relation in
+`meta_relation`, so its owner is a fact rather than a prefix. And take no new registration, a rule
+with an owner having no use for one. Where a base relation and an `intent_` one answer the same
+question, read the base one, so a new relation is not gratuitously blocked behind the sweep. That
+choice is not always available: a view naming `graphql_type` or `graphql_field` owes the population
+question the macro expansion created, and the answer a rule usually needs is the expanded one, which
+is itself an `intent_` relation.
+
+The increment log below predates this and argues registrations at length. Those passages are the
+record of what each increment decided at the time, not instructions to the next one.
+
 The two halves carry opposite instructions about store views (the validator half adds them, the
 planner half is banned from asking for them), and the discriminator is worth stating once so the
 item reads as one architecture. A defect is a fact about the *schema*: permanent, many-consumer,
@@ -4119,6 +4164,14 @@ derivation lives.
   connection synthesis and tenant bindings, with the consuming slice's own test as the
   specification. Its design analysis, in particular which relation each delivery arm joins,
   survives in git history as the starting point for whoever writes that view.
+* **R876 (`derived-read-cost-is-a-shape-problem`, In Progress) sets where the relations this item
+  authors live**, and "Where a relation this item authors lands" above is this item's side of it.
+  Not a declared dependency in either direction: that item's collapse does not wait on this one, and
+  this one keeps authoring relations while the collapse is pending. The edge that matters is that
+  neither renames the other's relations. Increment 27 also reached one of that item's two named
+  defects independently, an equi-join written as a comparison against a concatenation, and priced it
+  at 48 milliseconds against 1.5 on the same fixture; the fix was the one it prescribes, correcting
+  the model at the source rather than storing the result.
 * `roadmap/retire-oracle-diff-shadow-tests.md` (R740) is the doctrine this item's verification
   stance applies, stated in "What output identity is, and what it is not" above: no oracle-diff
   scaffolding is built here.
