@@ -24,9 +24,13 @@ from the schema rather than from a list somebody maintains.
 
 ## Why the declared keys are the right source
 
-The schema declares 205 foreign keys across roughly 250 relations, and they are already the store's
+The schema declares foreign keys in the low two hundreds across roughly 250 relations, and they are
+already the store's
 statement of what depends on what: a child row cannot exist without its parent, so a parent row that
-stops being trustworthy takes its children with it.
+stops being trustworthy takes its children with it. The count is deliberately not spelled out to the
+unit here: a grep of the DDL and a review's own count of the same schema came out one apart, and the
+number this item should quote is whatever `meta_relation_reference` returns, that view being the source
+of truth the argument below rests on anyway. Spec states it from the view.
 
 What makes them better than any list we could write is not that they exist but that they carry the
 *join predicate*. A hand-maintained dependency list gives relation names, so the coarsest thing it

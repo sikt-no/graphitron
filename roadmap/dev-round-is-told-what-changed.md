@@ -119,7 +119,13 @@ Neither row says *when* the content behind that stamp began being read. `store_s
 comes closest and is explicitly not it: its comment calls itself "the age half of the age/currency
 distinction", recording when a run last named the source in its input set rather than when its bytes
 were read. This item writes the currency half. Both relations gain `read_at`, taken *before* the
-content is read and committed with the rows and the stamp it vouches for.
+content is read and written for every instance the pass verified, whether or not its rows changed.
+
+Verification is the read, not the rewrite. A file hashed and found equal to the stamp the store holds
+has had its content read as surely as one that was rewritten, and the rows it already carries are what
+that read vouches for. A mechanism that moved `read_at` only where rows moved would establish trust for
+nothing at all over a store that already agrees, which is every dev session after the first on a
+workspace, and it is the arm every later adopter will also take most of the time.
 
 Before rather than at commit, because that is the whole of the concurrency argument. A change landing
 between the read and the commit is later than `read_at` and is correctly distrusted; a `read_at`
@@ -129,6 +135,14 @@ taken at commit would swallow that window in silence.
 to now whenever observation breaks. And a mark per instance, the instant a watcher saw it move. Both
 are in memory, and both are per process by nature: no other process can act on our watcher's
 coverage, and a gap between sessions is a gap nobody observed.
+
+Declaring a corpus and beginning to watch it are two events, and the floor belongs to the second. A
+gatherer declares its corpus and its fold when it is constructed, which is early in a session's
+startup; the floor is raised when that corpus's watcher starts, which is later. Between the two the
+corpus has no floor, so nothing in it is trusted and a pass that runs there costs exactly what it
+costs today. Hanging the floor on the declaration instead would let a read taken while nothing was
+watching be believed for the rest of the session, which is the between-sessions hole reappearing
+inside one session, and with an editor already attached to answer from it.
 
 **The comparison.**
 
@@ -143,6 +157,11 @@ What the mechanism claims follows from that rather than being asserted beside it
   needs no initialisation. A workspace edited while the loop was down is re-read for the same
   reason, and that case, a `git pull` or a branch switch between sessions, is the one the rule exists
   to get right.
+* **Trust is only ever established under a running watcher.** A pass establishes trust for a corpus
+  only where that corpus's watcher was already running when the pass began, because only then is the
+  `read_at` it writes above the floor. That falls out of the comparison rather than being a rule
+  somebody has to remember, so a startup wired in the wrong order loses the saving and never the
+  soundness.
 * **"I cannot say" is not a state.** An overflow, a subtree registered mid-session, or a watcher that
   cannot resolve an event raises that corpus's floor, which is the same as being cold for it. Trust
   then rebuilds instance by instance as the next verifying pass writes fresh `read_at` values, so an
@@ -259,9 +278,13 @@ and rewrites the ones that differ. Measured on this workstation over `graphitron
 reactor source roots, generated sources included, which is what `AbstractRewriteMojo.compileSourceRootsOf`
 walks: 1,316 `.java` files and 6.0 MiB, 151 ms on the first pass and 30 to 46 ms warm over twenty-five
 consecutive passes, on every debounced save. Under observation the refresh hashes only the files the comparison
-distrusts and skips the rest, and it writes each file's `read_at` inside the transaction `rewrite`
-already opens, so a file whose write the store refused keeps the `read_at` it had and is re-read next
-save rather than silently skipped for the rest of the session.
+distrusts and skips the rest, and every file it did hash carries away a fresh `read_at`. On the
+mismatched arm that rides the transaction `rewrite` already opens; on the matched arm, which is the
+common one and the only one a warm store takes, it is one batched update at the end of the pass. A file
+whose rewrite the store refused is on neither arm, so it keeps the `read_at` it had and is re-read next
+save rather than silently skipped for the rest of the session. The pass's instant is taken once, before
+`SourceWalker.walkFiles` runs, because the walk's parse is a read of the same content the rows
+describe.
 
 It is the right first client for three reasons: it is a declared crawler, so the soundness condition
 applies to it by roster; its corpus is at file grain with no graph dimension, so its instance is the
@@ -312,8 +335,8 @@ when this one reaches Done.
 
 **It does not do propagation.** The comparison says an instance's partition is not trustworthy; it does
 not say which registrations, derived rows or generated units must re-run because of it. That is R924, which
-walks the 205 declared foreign keys, an edge naming the column tuple on both ends so it says which rows of
-the child a given set of parent rows reaches.
+walks the foreign keys the schema declares, an edge naming the column tuple on both ends so it says which
+rows of the child a given set of parent rows reaches.
 
 ## Implementation
 
@@ -332,83 +355,114 @@ the child a given set of parent rows reaches.
 * The observation, new, and the only new type in the item. Holds each corpus's floor, the roots it
   covers, the registered folds, and the marks. `register(corpus, scope, fold)` validates the corpus
   against `meta_gatherer_corpus` read from the store, so only a corpus some crawler declares can be
-  observed, and establishes its floor. `mark(Path)` folds a path to an instance and records the
-  instant, on the watch thread, with no store access. `lose(corpus, reason)` raises the floor and
-  records why. `trusts(corpus, instanceKey, readAt)` is the comparison. `readAt()` hands out the
-  instant a gatherer is to write, so "before the content is read" has one implementation rather than
-  one per caller. The grain law goes on `register`, where a later reader meets it before choosing a
-  fold.
+  observed, and records its scope and fold. It establishes no floor: `observing(corpus)` does, called
+  when that corpus's watcher starts, and until it is called `trusts` answers false for everything in
+  the corpus. `mark(Path)` folds a path to an instance and records the instant, on the watch thread,
+  with no store access. `lose(corpus, reason)` raises the floor and records why.
+  `trusts(corpus, instanceKey, readAt)` is the comparison. `pass(corpus)` hands out the instant a pass
+  writes into every row it verifies, taken before any of that pass's reads, so "before the content is
+  read" has one implementation rather than one per caller. The grain law goes on `register`, where a
+  later reader meets it before choosing a fold.
+* `ClasspathSources` writes `store_source.read_at` beside the stamp, carrying the instant its caller
+  took before the round's reads rather than the clock at commit. No reader consults the column until
+  R857 adopts it, and writing it here rather than there is what makes that adoption a reader-side
+  change against a column populated all along; taking the instant correctly here is what stops the
+  column being born holding the value the read-window test exists to forbid.
 
 `graphitron-model`, `no.sikt.graphitron.model.capture.java`:
 
-* `JavaSourceFacts` takes an optional observation, registers the `java-source` corpus at file grain,
-  selects `read_at` beside the stamp it already selects, hashes only the files the comparison
-  distrusts, and writes the new `read_at` through the transaction `rewrite` already opens. `prune`
-  keeps taking the whole walked set, which the walk supplies regardless of what was hashed. The class
-  javadoc's sentence about recomputing the hash for every walked file deliberately is rewritten rather
-  than deleted: it is the right argument about the persisted stamp and the wrong one about this
-  cadence, and the next reader needs both halves stated.
-
-`graphitron-model`, `no.sikt.graphitron.model.capture`:
-
-* `ClasspathSources` writes `store_source.read_at` where it writes the stamp, which does not change
-  what any capture decides. No reader consults it until R857 adopts it, and writing it here rather
-  than there is what makes that adoption a reader-side change against a column that has been
-  populated all along.
+* `JavaSourceFacts` takes an optional observation and the pass instant, registers the `java-source`
+  corpus at file grain, selects `read_at` beside the stamp it already selects, and hashes only the
+  files the comparison distrusts. A hashed file whose content differed is rewritten as today, with
+  `read_at` set inside the transaction `rewrite` already opens; the hashed files whose content matched
+  their stamp are collected and given the same instant in one batched update at the end of the walk.
+  The instant is a parameter rather than something `refresh` takes for itself, because the walk that
+  produced its input has already read the files, so it belongs to the caller that ran the walk.
+  `prune` keeps taking the whole walked set, which the walk supplies regardless of what was hashed.
+  The class javadoc's sentence about recomputing the hash for every walked file deliberately is
+  rewritten rather than deleted: it is the right argument about the persisted stamp and the wrong one
+  about this cadence, and the next reader needs both halves stated.
 
 `graphitron-maven-plugin`:
 
 * `SchemaWatcher` takes the observation beside its `DebounceExecutor` and marks before it schedules: the
   resolved path on a suffix match or a delete, `lose` on `OVERFLOW` and where it registers a new
-  subdirectory. `addRoot` calls `lose` too. The four existing constructors keep their shapes with the
-  parameter added; `SchemaWatcherTest` and `CatalogRefreshTest` are the two other construction sites.
+  subdirectory. `addRoot` calls `lose` too. The three existing public constructors keep their shapes with
+  the parameter added; `SchemaWatcherTest` and `CatalogRefreshTest` are the two other construction sites.
+  A watcher calls `observing` for its corpus once its `WatchService` registrations are in place, which
+  is the event the floor is hung on.
 * `DevMojo.buildSaveListener` takes it and marks the saved document before scheduling, resolving the LSP's
   URI with `Path.of(URI.create(uri))` and calling `lose` for a URI that is not a resolvable `file:` path.
 * `DevMojo` constructs the observation once the store is open, since registration reads the roster, and
-  before `bindServer`, since the save listener is built there. It also holds the bounded ring of recent
-  paths the announcement reads. `graphitron.dev.rediscover` is a `@Parameter`.
+  before `bindServer`, since the save listener is built there. Registering that early is harmless now
+  that the floor is the watcher's to raise. It also holds the bounded ring of recent paths the
+  announcement reads. `graphitron.dev.rediscover` is a `@Parameter`.
+* `DevMojo` moves the seed refresh after `startSourceWatcher`. Today `refreshSourceFacts(initialCtx,
+  false)` runs at startup so goto-definition answers before the first edit, and `startSourceWatcher`
+  runs later, after the warm compiler is built. In that order the seed reads a corpus nothing is
+  watching, so its `read_at` values fall below the floor and a warm store's session establishes no
+  trust until its first save has paid for it. After the move both still sit inside startup and before
+  the "LSP listening" line, so nothing a developer waits on changes, and the warm session is cheap from
+  its first save. This is a scheduling choice, not a correctness one: the previous order is safe and
+  merely slower, which is the point of hanging the floor on the watcher.
 * The three round entry points announce, as described above.
 
 Documentation: `docs/manual/reference/mojo-configuration.adoc` gains the `graphitron.dev.rediscover` row,
 and `docs/architecture/how-to/dev-loop-internals.adoc`'s component list gains the observation, since that
 list is where a contributor learns what the dev JVM is made of and it currently describes the watchers as
-signalling the dispatch and nothing more.
+signalling the dispatch and nothing more. That document opens "The dev goal runs five cooperating
+components", a count in prose beside the list, so the sentence moves with the list.
 
 Nothing is written to the store off the round's thread, so the session's single shared connection is
 used exactly as it is today.
 
 ## Tests
 
-`ObservationTest`, `graphitron-model` unit tier. A cold session trusts nothing, its floor outranking
-every `read_at` a previous session wrote, which is the case the mechanism's correctness turns on. An
-instance read above the floor and unmarked is trusted; a mark after its `read_at` distrusts it; a mark
-*before* its `read_at` does not, which is what proves marks are not sticky and that a corpus recovers.
-Equal timestamps distrust. `lose` raises the floor, so everything read before it is distrusted and an
-instance read after it is trusted again, which is the recovery an overflow needs. A corpus no crawler
-declares is refused at `register`. An instance outside the registered scope is never trusted. A fold at
-root grain maps every path under the root to the root. A thousand marks under one root cost one entry
-and no store access.
+`ObservationTest`, in `graphitron-model`, whose own tests carry no tier annotation. A cold session
+trusts nothing, its floor outranking every `read_at` a previous session wrote, which is the case the
+mechanism's correctness turns on. An instance read above the floor and unmarked is trusted; a mark
+after its `read_at` distrusts it; a mark *before* its `read_at` does not, which is what proves marks are
+not sticky and that a corpus recovers. Equal timestamps distrust. `lose` raises the floor, so everything
+read before it is distrusted and an instance read after it is trusted again, which is the recovery an
+overflow needs. A corpus no crawler declares is refused at `register`. An instance outside the
+registered scope is never trusted. A fold at root grain maps every path under the root to the root. A
+thousand marks under one root cost one entry and no store access.
+
+**A registered corpus that nothing is watching yet trusts nothing**, however recent its rows'
+`read_at`, and starts trusting only once `observing` has been called. That is the startup window's
+case, and it is the one that separates declaring a corpus from watching it.
 
 **The read window gets its own case, because it is the one place a wrong answer is reachable**: an
 instance whose `read_at` was taken before its content was read, marked while that read was in flight,
 is distrusted afterwards. The test asserts that ordering rather than the outcome alone, so a later
 simplification that stamps `read_at` at commit fails here instead of passing quietly.
 
-`JavaSourceFactsTest`, `graphitron-model` unit tier, beside its existing lifecycle anchors. A second
-refresh over an unchanged walk under observation hashes nothing and writes nothing, where today it
-hashes everything. An edited file whose instance was marked is hashed and rewritten while its
-neighbours are not. A marked file whose content did not actually change is hashed, compared to the
-stamp it still carries, and not rewritten, which is the property that keeps a false mark cheap. A file
-whose rewrite the store refused keeps its old `read_at` and is hashed again on the next refresh, which
-is the finding absorbed from R921. A refresh with no observation hashes everything, which is the
-existing behaviour and the one-shot path.
+`JavaSourceFactsTest`, in `graphitron` at
+`graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/JavaSourceFactsTest.java` and carrying
+`@UnitTier`, beside its existing lifecycle anchors.
+
+**The warm-store arm is the one the adoption is judged on**, because it is the arm a developer is
+actually in and the arm on which an earlier draft of this item saved nothing. The fixture seeds the
+store so that the first refresh rewrites no file, and then asserts that the refresh still leaves every
+file trusted and that one save afterwards hashes the saved file alone. Written against a cold store the
+same assertions pass for the wrong reason, every file having been rewritten, which is why the seeding
+is the test rather than a detail of it.
+
+Beside it: a second refresh over an unchanged walk under observation hashes nothing and writes nothing,
+where today it hashes everything. An edited file whose instance was marked is hashed and rewritten while
+its neighbours are not. A marked file whose content did not actually change is hashed, compared to the
+stamp it still carries, not rewritten, and left trusted again, which is the property that keeps a false
+mark cheap rather than permanent. A file whose rewrite the store refused keeps its old `read_at` and is
+hashed again on the next refresh, which is the finding absorbed from R921. A refresh with no observation
+hashes everything, which is the existing behaviour and the one-shot path.
 
 `ClasspathCensusTest` and the census are untouched, which is the evidence that the mechanism is additive.
 
 `SchemaWatcherTest`, plugin unit tier: a suffix-matching modify marks the resolved absolute path before
 scheduling; a delete marks it; `OVERFLOW` loses the corpus and still schedules; registering a new
-subdirectory loses it. `DevMojoTest`: `buildSaveListener` marks the saved document before scheduling, and a
-non-`file:` URI loses the corpus.
+subdirectory loses it; and a watcher calls `observing` once its registrations are in place, not before.
+`DevMojoTest`: `buildSaveListener` marks the saved document before scheduling, and a non-`file:` URI
+loses the corpus.
 
 `DevMojoTest`, driving a round through `regeneratePass` as it already does, asserts the console names the
 file the round was told about. That is the completeness evidence for the visible half of the goal; the
@@ -619,3 +673,30 @@ goal runs five cooperating components", a count in prose beside the list the ite
 while the item's own rule takes the instant before the read; nothing reads that column until R857 adopts
 it, so it is inert here, but the column would be born holding the value `ObservationTest`'s read-window
 case exists to forbid.
+
+### Round 1, author response (2026-09-05)
+
+Both findings accepted, and neither needed a design fork to answer.
+
+Finding 1 is answered by moving `read_at` off the rewrite and onto the verification: every file a pass
+hashed carries the pass's instant, through `rewrite`'s transaction on the mismatched arm and through one
+batched update on the matched arm. "The mechanism" now states the general form, that verification is the
+read and not the rewrite, because the same slip is available to every later adopter and stating it only
+in the adoption would leave it there. The instant moved with it. It is taken before
+`SourceWalker.walkFiles`, the walk's parse being a read of the same content, and it is a parameter of
+`refresh` rather than something `refresh` takes for itself.
+
+Finding 2 is answered by splitting the two events the item had wired as one. `register` declares a
+corpus's scope and fold and establishes no floor; `observing(corpus)` does, called by a watcher once its
+registrations are in place. Correctness now holds under any startup order, since a pass that runs before
+a watcher is up writes `read_at` below the floor and establishes nothing. That leaves the startup order
+as a scheduling choice, and the item makes it: the seed refresh moves after `startSourceWatcher`, so a
+warm store's session is cheap from its first save rather than from its second.
+
+The four slips are corrected, and the two smaller notes with them: `dev-loop-internals.adoc`'s "five
+cooperating components" is named as prose that moves with the list, and `ClasspathSources` carries the
+instant its caller took rather than the clock at commit. The foreign-key count is now stated without a
+bare number here; R924 carries the count and is repointed at `meta_relation_reference`, since a DDL grep
+and the review's figure disagree by one and the view is that item's own source of truth either way.
+
+The warm-store arm the finding named is now the case the adoption is judged on.
