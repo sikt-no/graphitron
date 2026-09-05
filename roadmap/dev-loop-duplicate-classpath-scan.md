@@ -1,7 +1,7 @@
 ---
 id: R620
 title: "A round hashes a jar only when it must, and never twice"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: dev-loop
@@ -456,3 +456,55 @@ rather than left to be discovered: it is the same layering the change exists to 
 
 The factory is named. `SourceStamp.ofSha1(String hex)`, so the plugin hands over a value and never
 spells a prefix.
+
+### Round 2 (2026-09-05, Spec -> Ready, reviewer session 01GD61Lm13gxXbuPS6LqHTUK)
+
+Verdict: sign off. Both findings are answered, and finding 1 is answered better than the finding
+deserved: the correction runs the other way, and it is mine.
+
+Finding 1. The Goal's saving and its denominator now sit in one population, and the denominator is
+real rather than borrowed. Checked at the tree: `ClasspathCensus.read` takes `startedAt` at its top
+and computes `Round.millis` from it at its bottom, so `millis` times the census read alone, and
+`readJar` calls `ClasspathSources.hash` unconditionally on every entry every round. R916's 60 to 86
+ms is therefore a census read that already contains one hash pass, not a whole round that has to fit
+two beside it, and the capture's second pass is outside what the census reports at all. That is the
+right reading and it dissolves the contradiction I raised inside population B, which was mine to
+begin with. The corroboration paragraph now says so, and both borrowed figures are sourced: R916's
+60 to 86 ms is in its `roadmap/changelog.md` entry, and R921 does carry the 55.2 ms as "the nearest
+figure" it has to a source-hashing cost, over the 28.2 MB jar set this item attributes to it. R922's
+Spec body carries the stat-walk half as quoted, three roots, 1,383 class files, 6.3 MB, 24 ms first
+and 7 ms steady, measured over `graphitron-sakila-example`'s reactor output on the same workstation.
+
+Finding 2. Widened correctly, and the population I missed is the one that mattered.
+`SdlFactCapture` calls `ClasspathSources.upsert` for every schema-file source on every capture,
+gated only on the per-run `sink.claim`, then notes the path for `commitStamps`, so those rows are
+taken over unconditionally and there is no re-walk to declare. What the migration window really
+costs is `SourceStamp.recordedMatches` answering false until that next capture, and `LintFixes`
+returns `List.of()` on a false, so the window is a missing quick fix and never a wrong one, exactly
+as the note now says. `java_file.stamp` and the inert `store_graph.build_file_stamp` are placed
+correctly.
+
+The three non-blocking notes are all taken, and the two counts are now right where mine were wrong.
+Re-measured: 13 `new ClasspathEntry(...)` sites outside the record and 13 factory uses outside it
+(9 `project`, 4 `projectRoots`, 0 method references), and 56 `FactCapture.capture` call sites in
+test sources across five overloads. My 57-across-six came from an unescaped `.` in the pattern and a
+sixth overload that is `captureAndRead`. The test split lands in the right homes:
+`ClasspathClassificationDecodeTest` already drives `AbstractRewriteMojo.classifyCompileClasspath`
+and asserts the `Origin` arms per entry over temp-dir jars, which is the fixture shape the staleness
+case needs.
+
+**Non-blocking, for whoever writes the Done entry rather than for this gate.** The "sum to about 40
+ms" in "What one pass is a fraction of" adds two different classpath resolutions. The 33 to 34 ms
+jar pass is the `dependency:build-classpath` view, where the three reactor siblings appear as
+installed jars; R922's 7 ms stat walk is the reactor view, where those same siblings are
+`target/classes` roots and the jar set is the twelve sidecar-covered ones at 9.8 MB. The two
+configurations are the ones this item's own "inside a reactor build the split is better still"
+paragraph distinguishes. Under the reactor view the census read is nearer 33 ms than 40 and the jar
+hash is about 79% of it rather than 83%, so the claim the sum supports, that one pass is the bulk of
+a warm census read, holds in both and nothing downstream moves. Both halves are labelled with their
+populations in the text, so the inputs are visible; it is the addition that is loose. Not worth a
+round, and worth not repeating in a changelog sentence.
+
+Also non-blocking: the Goal now carries two different 7 ms figures one clause apart, the stat walk
+and the residual jar hashing. They are distinguishable from their clauses, and the coincidence is
+real rather than an error.
