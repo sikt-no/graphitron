@@ -13,7 +13,7 @@ package no.sikt.graphitron.model.catalog;
  * </ul>
  *
  * <p>One owner because the spelling is stated in more than one population and is one rule in all of
- * them. {@code graphql_coordinate} is keyed by it over the author's own graph, and the LSP keys its
+ * them. {@code graphql_element} is keyed by it over the author's own graph, and the LSP keys its
  * directive vocabulary by it over graphitron's directive schema; those are different documents and
  * the grammar is the specification's either way. A second statement of it would be a rule two
  * modules agree on until one of them changes.

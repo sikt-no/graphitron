@@ -7,9 +7,9 @@ import java.util.ArrayList;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import no.sikt.graphitron.model.tables.GraphitronArgmappingCandidate;
 import org.jooq.Condition;
@@ -120,9 +120,9 @@ public final class ArgMappingCandidates {
      */
     private static Table<?> carrier(DSLContext dsl) {
         var a = GRAPHQL_ARGUMENT;
-        var ac = GRAPHQL_ARGUMENT_COORDINATE;
+        var ac = GRAPHQL_ARGUMENT_ELEMENT;
         var f = GRAPHQL_FIELD;
-        var fc = GRAPHQL_FIELD_COORDINATE;
+        var fc = GRAPHQL_FIELD_ELEMENT;
         return dsl.select(a.GRAPH_NAME.as("graph_name"), ac.COORDINATE.as("coordinate"),
                     a.ARGUMENT_NAME.as("carrier_name"), a.NAMED_TYPE.as("carrier_type"),
                     a.IS_LIST.as("carrier_is_list"), inline((String) null).as("declaring_type"))
@@ -157,7 +157,7 @@ public final class ArgMappingCandidates {
      */
     private static void seedFieldCoordinateArguments(DSLContext dsl, String graphName) {
         var a = GRAPHQL_ARGUMENT;
-        var fc = GRAPHQL_FIELD_COORDINATE;
+        var fc = GRAPHQL_FIELD_ELEMENT;
         dsl.insertInto(GRAPHITRON_ARGMAPPING_CANDIDATE, columns())
             .select(dsl.select(a.GRAPH_NAME, fc.COORDINATE, a.ARGUMENT_NAME,
                     inline((String) null), a.ARGUMENT_NAME, val("ARGUMENT"),

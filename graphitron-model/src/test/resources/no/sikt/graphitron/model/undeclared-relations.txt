@@ -60,7 +60,7 @@ graphitron_table
 graphitron_tenant_fan_out
 graphitron_undecoded_argument
 graphql_argument
-graphql_argument_coordinate
+graphql_argument_element
 graphql_argument_directive
 graphql_argument_directive_arg
 graphql_directive
@@ -69,11 +69,11 @@ graphql_directive_location
 graphql_directive_site
 graphql_duplicate_declaration
 graphql_enum_value
-graphql_enum_value_coordinate
+graphql_enum_value_element
 graphql_enum_value_directive
 graphql_enum_value_directive_arg
 graphql_field
-graphql_field_coordinate
+graphql_field_element
 graphql_field_directive
 graphql_field_directive_arg
 graphql_poly_member
@@ -83,7 +83,7 @@ graphql_schema_directive_arg
 graphql_schema_error
 graphql_syntax_error
 graphql_type
-graphql_type_coordinate
+graphql_type_element
 graphql_type_declaration
 graphql_type_directive
 graphql_type_directive_arg

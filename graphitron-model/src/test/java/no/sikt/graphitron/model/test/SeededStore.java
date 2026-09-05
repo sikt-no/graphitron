@@ -54,15 +54,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -402,17 +402,17 @@ public final class SeededStore {
     // ===== The SDL families =====
 
     /**
-     * The graphql_coordinate row an anchor hangs off, written before it as capture writes it and
+     * The graphql_element row an anchor hangs off, written before it as capture writes it and
      * returning the spelling so the anchor beside it carries the same string. Ignores a duplicate
      * because the seeders are idempotent and two of them may reach the same coordinate, where
      * capture instead claims each coordinate once and never arrives twice.
      */
     private static String anchorCoordinate(DSLContext dsl, String graphName, String coordinate,
-                                           String kind) {
-        dsl.insertInto(GRAPHQL_COORDINATE)
-            .set(GRAPHQL_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_COORDINATE.COORDINATE, coordinate)
-            .set(GRAPHQL_COORDINATE.KIND, kind)
+                                           String elementKind) {
+        dsl.insertInto(GRAPHQL_ELEMENT)
+            .set(GRAPHQL_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ELEMENT.COORDINATE, coordinate)
+            .set(GRAPHQL_ELEMENT.ELEMENT_KIND, elementKind)
             .onDuplicateKeyIgnore()
             .execute();
         return coordinate;
@@ -431,11 +431,11 @@ public final class SeededStore {
                 .and(GRAPHQL_TYPE.TYPE_NAME.eq(typeName)))) {
             return;
         }
-        dsl.insertInto(GRAPHQL_TYPE_COORDINATE)
-            .set(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_TYPE_COORDINATE.TYPE_NAME, typeName)
-            .set(GRAPHQL_TYPE_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinateSyntax.ofType(typeName), "TYPE"))
+        dsl.insertInto(GRAPHQL_TYPE_ELEMENT)
+            .set(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_TYPE_ELEMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_TYPE_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
+                SchemaCoordinateSyntax.ofType(typeName), "NAMED_TYPE"))
             .execute();
         dsl.insertInto(GRAPHQL_TYPE)
             .set(GRAPHQL_TYPE.GRAPH_NAME, graphName)
@@ -489,11 +489,11 @@ public final class SeededStore {
     public static void seedField(DSLContext dsl, String graphName, String typeName, String fieldName,
                                  String namedType, boolean isList) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHQL_FIELD_COORDINATE)
-            .set(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
-            .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
-            .set(GRAPHQL_FIELD_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
+        dsl.insertInto(GRAPHQL_FIELD_ELEMENT)
+            .set(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD_ELEMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_FIELD_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofField(typeName, fieldName), "FIELD"))
             .execute();
         dsl.insertInto(GRAPHQL_FIELD)
@@ -531,12 +531,12 @@ public final class SeededStore {
                                       String fieldName, String namedType, int ordinal,
                                       boolean nonNull, boolean isList, Boolean itemNonNull) {
         seedDeclaredType(dsl, graphName, typeName, "INPUT_OBJECT");
-        dsl.insertInto(GRAPHQL_FIELD_COORDINATE)
-            .set(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, typeName)
-            .set(GRAPHQL_FIELD_COORDINATE.FIELD_NAME, fieldName)
-            .set(GRAPHQL_FIELD_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinateSyntax.ofField(typeName, fieldName), "FIELD"))
+        dsl.insertInto(GRAPHQL_FIELD_ELEMENT)
+            .set(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_FIELD_ELEMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_FIELD_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
+                SchemaCoordinateSyntax.ofField(typeName, fieldName), "INPUT_FIELD"))
             .execute();
         var element = Boolean.TRUE.equals(itemNonNull) ? namedType + "!" : namedType;
         var listed = isList ? "[" + element + "]" : element;
@@ -578,13 +578,13 @@ public final class SeededStore {
     public static void seedArgument(DSLContext dsl, String graphName, String typeName,
                                     String fieldName, String argumentName, String namedType,
                                     int ordinal, int sourceLine) {
-        dsl.insertInto(GRAPHQL_ARGUMENT_COORDINATE)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, typeName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
+        dsl.insertInto(GRAPHQL_ARGUMENT_ELEMENT)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME, argumentName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
+                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "FIELD_ARGUMENT"))
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
@@ -609,13 +609,13 @@ public final class SeededStore {
      */
     public static void seedListArgument(DSLContext dsl, String graphName, String typeName,
                                         String fieldName, String argumentName, String namedType) {
-        dsl.insertInto(GRAPHQL_ARGUMENT_COORDINATE)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME, graphName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, typeName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, fieldName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME, argumentName)
-            .set(GRAPHQL_ARGUMENT_COORDINATE.COORDINATE, anchorCoordinate(dsl, graphName,
-                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "ARGUMENT"))
+        dsl.insertInto(GRAPHQL_ARGUMENT_ELEMENT)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME, graphName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME, typeName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, fieldName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME, argumentName)
+            .set(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
+                SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "FIELD_ARGUMENT"))
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
@@ -663,7 +663,7 @@ public final class SeededStore {
      * reader that admits authored and minted types alike must be stated against both, and the two
      * live in different relations precisely so that a reader can tell them apart when it needs to.
      *
-     * <p>No {@code graphql_type_coordinate} row comes with it, and that is the point rather than an
+     * <p>No {@code graphql_type_element} row comes with it, and that is the point rather than an
      * omission. The transcription holds what the author wrote, so a name nobody wrote has no
      * coordinate to claim, which is why the domain relation over the expanded population carries no
      * key into the coordinates.

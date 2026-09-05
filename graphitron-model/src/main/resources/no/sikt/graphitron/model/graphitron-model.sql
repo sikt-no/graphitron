@@ -258,8 +258,8 @@ COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s i
 -- stamp sits on its declaration rows); consumers wanting user-authored declarations filter on
 -- it.
 --
--- The family splits a coordinate's existence from its attributes, and the reference web anchors on
--- the existence half. The graphql_*_coordinate relations carry a key and nothing else, and every
+-- The family splits an element's existence from its attributes, and the reference web anchors on
+-- the existence half. The graphql_*_element relations carry a key and nothing else, and every
 -- foreign key in this file that names an SDL coordinate names one of them; the attribute relations
 -- beside them (graphql_type, graphql_field, graphql_argument, graphql_enum_value) are referenced by
 -- nothing. That is the file's answer to a cadence problem, not tidiness: a coordinate's existence is
@@ -268,49 +268,49 @@ COMMENT ON COLUMN store_stamp.generator_version IS 'the capturing generator''s i
 -- existence conditional on a stage it owes nothing to. Reading it: join the coordinate to ask what
 -- exists, join the attribute relation to ask what it is, and expect the two populations to agree
 -- wherever no later stage has taken an attribute over.
-CREATE TABLE graphql_coordinate (
+CREATE TABLE graphql_element (
   graph_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
-  kind       VARCHAR NOT NULL,
+  element_kind VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (kind IN ('TYPE', 'FIELD', 'ARGUMENT', 'ENUM_VALUE'))
+  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT'))
 );
-COMMENT ON TABLE graphql_coordinate IS 'A schema coordinate exists in this graph: the supertype of the four coordinate relations beside it, keyed by the coordinate spelled as the GraphQL specification spells one. For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.';
-COMMENT ON COLUMN graphql_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_coordinate.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
-COMMENT ON COLUMN graphql_coordinate.kind IS 'which of the four coordinate relations this row was written from, and so which one a reader joins to get the parts. Stored rather than read off the spelling because Type.field spells both a field and an enum value, the two being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
+COMMENT ON TABLE graphql_element IS 'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.';
+COMMENT ON COLUMN graphql_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_element.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one, for an input field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
+COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds appear here; the two directive kinds are schema elements this store holds no anchor for yet, which is scope and not a reading of the grammar. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
 
-CREATE TABLE graphql_type_coordinate (
+CREATE TABLE graphql_type_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
-COMMENT ON TABLE graphql_type_coordinate IS 'A type name exists in this graph: the anchor every SDL fact, every directive decode and every type-keyed derivation hangs off. It carries the key and nothing else, which is what a coordinate relation is for: existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have. A name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed and before assembly has judged anything; a relation on a later cadence can then be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead makes every per-site fact''s existence conditional on the whole document assembling, and an author mid-edit is exactly the reader who has no assembled document and every per-site fact. The declared-or-extended reading is what makes the site rows'' foreign keys structural (capture writes this row before any site row), and on a base-less extension chain (an author error a detection reports) the row still exists, anchored by the extension sites.';
-COMMENT ON COLUMN graphql_type_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_type_coordinate.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
-COMMENT ON COLUMN graphql_type_coordinate.coordinate IS 'this row as graphql_coordinate spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
+COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every SDL fact, every directive decode and every type-keyed derivation hangs off. It carries the key and nothing else, which is what a coordinate relation is for: existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have. A name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed and before assembly has judged anything; a relation on a later cadence can then be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead makes every per-site fact''s existence conditional on the whole document assembling, and an author mid-edit is exactly the reader who has no assembled document and every per-site fact. The declared-or-extended reading is what makes the site rows'' foreign keys structural (capture writes this row before any site row), and on a base-less extension chain (an author error a detection reports) the row still exists, anchored by the extension sites.';
+COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_type_element.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
+COMMENT ON COLUMN graphql_type_element.coordinate IS 'this row as graphql_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
 
-CREATE TABLE graphql_field_coordinate (
+CREATE TABLE graphql_field_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
-COMMENT ON TABLE graphql_field_coordinate IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_coordinate''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join to the parent''s kind decides, and this relation asserts neither.';
-COMMENT ON COLUMN graphql_field_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_field_coordinate.type_name IS 'the owning type, anchored by graphql_type_coordinate';
-COMMENT ON COLUMN graphql_field_coordinate.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_field_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
+COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_element''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field, which the specification counts as two kinds of schema element sharing one coordinate form. This relation asserts neither and holds both, the two differing in nothing it carries; the supertype settles it, graphql_element.element_kind saying FIELD or INPUT_FIELD from the parent''s kind at the moment the walk writes the row.';
+COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_field_element.type_name IS 'the owning type, anchored by graphql_type_element';
+COMMENT ON COLUMN graphql_field_element.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphql_field_element.coordinate IS 'this row as graphql_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
 
-CREATE TABLE graphql_argument_coordinate (
+CREATE TABLE graphql_argument_element (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
@@ -319,44 +319,44 @@ CREATE TABLE graphql_argument_coordinate (
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
-COMMENT ON TABLE graphql_argument_coordinate IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_coordinate''s terms and for its reason.';
-COMMENT ON COLUMN graphql_argument_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_argument_coordinate.type_name IS 'owning type of the field the argument sits on';
-COMMENT ON COLUMN graphql_argument_coordinate.field_name IS 'the field the argument sits on, anchored by graphql_field_coordinate';
-COMMENT ON COLUMN graphql_argument_coordinate.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphql_argument_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
+COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_element''s terms and for its reason.';
+COMMENT ON COLUMN graphql_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_argument_element.type_name IS 'owning type of the field the argument sits on';
+COMMENT ON COLUMN graphql_argument_element.field_name IS 'the field the argument sits on, anchored by graphql_field_element';
+COMMENT ON COLUMN graphql_argument_element.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphql_argument_element.coordinate IS 'this row as graphql_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
 
-CREATE TABLE graphql_enum_value_coordinate (
+CREATE TABLE graphql_enum_value_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   value_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
-COMMENT ON TABLE graphql_enum_value_coordinate IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_coordinate''s terms and for its reason.';
-COMMENT ON COLUMN graphql_enum_value_coordinate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_value_coordinate.type_name IS 'the owning ENUM type, anchored by graphql_type_coordinate';
-COMMENT ON COLUMN graphql_enum_value_coordinate.value_name IS 'the enum value name within the owning enum type';
-COMMENT ON COLUMN graphql_enum_value_coordinate.coordinate IS 'this row as graphql_coordinate spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_coordinate.kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_coordinate.coordinate''s terms and written the same way';
+COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_element''s terms and for its reason.';
+COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
+COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
+COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
 
-CREATE VIEW graphql_coordinate_field
+CREATE VIEW graphql_element_field
   (graph_name, coordinate, type_name, field_name, argument_name) AS
 SELECT graph_name, coordinate, type_name, field_name, CAST(NULL AS VARCHAR)
-  FROM graphql_field_coordinate
+  FROM graphql_field_element
  UNION ALL
 SELECT graph_name, coordinate, type_name, field_name, argument_name
-  FROM graphql_argument_coordinate;
-COMMENT ON VIEW graphql_coordinate_field IS 'The field a coordinate sits on, for the two coordinate kinds that sit on one: one row per field coordinate and one per argument coordinate, carrying the parts the spelling is built from. For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.';
-COMMENT ON COLUMN graphql_coordinate_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
-COMMENT ON COLUMN graphql_coordinate_field.coordinate IS 'the coordinate as the specification spells it, unique within the graph and therefore the whole of what a reader joins on; carried from the arm''s own column, which is the same spelling graphql_coordinate anchors';
-COMMENT ON COLUMN graphql_coordinate_field.type_name IS 'the type declaring the field the coordinate sits on';
-COMMENT ON COLUMN graphql_coordinate_field.field_name IS 'the field itself, within that type';
-COMMENT ON COLUMN graphql_coordinate_field.argument_name IS 'the argument on an argument coordinate, NULL on a field coordinate. The discriminator between the two arms, and total against each of them rather than optional within either';
+  FROM graphql_argument_element;
+COMMENT ON VIEW graphql_element_field IS 'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from. For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.';
+COMMENT ON COLUMN graphql_element_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
+COMMENT ON COLUMN graphql_element_field.coordinate IS 'the coordinate as the specification spells it, unique within the graph and therefore the whole of what a reader joins on; carried from the arm''s own column, which is the same spelling graphql_element anchors';
+COMMENT ON COLUMN graphql_element_field.type_name IS 'the type declaring the field the coordinate sits on';
+COMMENT ON COLUMN graphql_element_field.field_name IS 'the field itself, within that type';
+COMMENT ON COLUMN graphql_element_field.argument_name IS 'the argument on an argument coordinate, NULL on a field coordinate. The discriminator between the two arms, and total against each of them rather than optional within either';
 
 CREATE TABLE graphql_type (
   graph_name    VARCHAR NOT NULL,
@@ -364,12 +364,12 @@ CREATE TABLE graphql_type (
   kind          VARCHAR NOT NULL,
   description   VARCHAR,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
-COMMENT ON TABLE graphql_type IS 'What a named type is: the two attributes of the type itself, hanging off graphql_type_coordinate, which is where the name''s existence now lives and where everything else in the schema anchors. Read from whichever site capture meets first in merge order (macro-contributed sites included), which on a well-formed schema is the base definition; graphql_type_declaration carries every site and the kind each one wrote. Nothing references this relation, deliberately: the split exists so that what a later cadence owns cannot drag the reference web with it, and holding the reference web off the attribute relation is that split doing its job rather than an omission.';
+COMMENT ON TABLE graphql_type IS 'What a named type is: the two attributes of the type itself, hanging off graphql_type_element, which is where the name''s existence now lives and where everything else in the schema anchors. Read from whichever site capture meets first in merge order (macro-contributed sites included), which on a well-formed schema is the base definition; graphql_type_declaration carries every site and the kind each one wrote. Nothing references this relation, deliberately: the split exists so that what a later cadence owns cannot drag the reference web with it, and holding the reference web off the attribute relation is that split doing its job rather than an omission.';
 COMMENT ON COLUMN graphql_type.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_type.type_name IS 'the type these attributes describe, anchored by graphql_type_coordinate';
+COMMENT ON COLUMN graphql_type.type_name IS 'the type these attributes describe, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_type.kind IS 'the first declaration site''s form in merge order (the base definition''s, on a well-formed schema)';
 COMMENT ON COLUMN graphql_type.description IS 'SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition''s when one exists';
 
@@ -383,7 +383,7 @@ CREATE TABLE graphql_type_declaration (
   is_extension  BOOLEAN NOT NULL,
   kind          VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
 COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). Engine-provided types (built-in scalars) have no declaration rows.';
@@ -416,12 +416,12 @@ CREATE TABLE graphql_field (
   field_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(field_name)),
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
+    REFERENCES graphql_field_element (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it, hanging off graphql_field_coordinate. OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join decides. Nothing references this relation, on graphql_type''s terms: the field-keyed reference web anchors on the coordinate instead.';
+COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it, hanging off graphql_field_element. OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join decides. Nothing references this relation, on graphql_type''s terms: the field-keyed reference web anchors on the coordinate instead.';
 COMMENT ON COLUMN graphql_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_field.type_name IS 'owning type';
 COMMENT ON COLUMN graphql_field.field_name IS 'the field name within the owning type';
@@ -459,10 +459,10 @@ CREATE TABLE graphql_argument (
   argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name),
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name),
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphql_argument IS 'What an argument on a field is, hanging off graphql_argument_coordinate. Net-new coordinate: today arguments are classified per-field and mostly projected away, with no location kept. Nothing references this relation, on graphql_type''s terms.';
+COMMENT ON TABLE graphql_argument IS 'What an argument on a field is, hanging off graphql_argument_element. Net-new coordinate: today arguments are classified per-field and mostly projected away, with no location kept. Nothing references this relation, on graphql_type''s terms.';
 COMMENT ON COLUMN graphql_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_argument.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphql_argument.field_name IS 'the field name within the owning type';
@@ -493,11 +493,11 @@ CREATE TABLE graphql_enum_value (
   source_column       INT,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name)
-    REFERENCES graphql_enum_value_coordinate (graph_name, type_name, value_name),
+    REFERENCES graphql_enum_value_element (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is, hanging off graphql_enum_value_coordinate. Net-new coordinate; deprecation is not a column because @deprecated is an ordinary applied directive. Nothing references this relation, on graphql_type''s terms.';
+COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is, hanging off graphql_enum_value_element. Net-new coordinate; deprecation is not a column because @deprecated is an ordinary applied directive. Nothing references this relation, on graphql_type''s terms.';
 COMMENT ON COLUMN graphql_enum_value.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_enum_value.type_name IS 'the owning ENUM type';
 COMMENT ON COLUMN graphql_enum_value.value_name IS 'the enum value name within the owning enum type';
@@ -522,7 +522,7 @@ CREATE TABLE graphql_poly_member (
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (graph_name, container_name, member_type_name),
-  FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, declared_on, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
   CHECK (container_kind IN ('UNION', 'INTERFACE')),
@@ -714,7 +714,7 @@ CREATE TABLE graphql_type_directive (
   source_line         INT,
   source_column       INT,
   PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -758,7 +758,7 @@ CREATE TABLE graphql_field_directive (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphql_field_directive IS 'A directive is applied to a field (output or input-object; the parent type''s kind decides which SDL location this was).';
 COMMENT ON COLUMN graphql_field_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -803,7 +803,7 @@ CREATE TABLE graphql_argument_directive (
   source_column  INT,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphql_argument_directive IS 'A directive is applied to a field argument (ARGUMENT_DEFINITION site).';
 COMMENT ON COLUMN graphql_argument_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -849,7 +849,7 @@ CREATE TABLE graphql_enum_value_directive (
   source_line    INT,
   source_column  INT,
   PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_coordinate (graph_name, type_name, value_name)
+  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
 );
 COMMENT ON TABLE graphql_enum_value_directive IS 'A directive is applied to an enum value (@deprecated lives here, and so does the graphitron enum-value inventory, which is additionally decoded).';
 COMMENT ON COLUMN graphql_enum_value_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -937,7 +937,7 @@ CREATE TABLE graphitron_argmapping_candidate (
   ambiguous     BOOLEAN NOT NULL,
   PRIMARY KEY (graph_name, coordinate, path),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate),
   FOREIGN KEY (graph_name, coordinate, parent_path)
     REFERENCES graphitron_argmapping_candidate (graph_name, coordinate, path) ON DELETE CASCADE,
   CHECK (path <> ''),
@@ -952,7 +952,7 @@ CREATE INDEX graphitron_argmapping_candidate_parent_ix
   ON graphitron_argmapping_candidate (graph_name, coordinate, parent_path);
 COMMENT ON TABLE graphitron_argmapping_candidate IS 'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on. For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.';
 COMMENT ON COLUMN graphitron_argmapping_candidate.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_argmapping_candidate.coordinate IS 'the schema coordinate the argMapping is written at, spelled as the GraphQL specification spells one and anchored by graphql_coordinate: Type.field where a directive sits on a field, Type.field(argument:) where it sits on an argument, and InputType.field where it sits on an input field. A directive location and never a container, which is the difference from what this column held before: the three shapes are the three placements argMapping reaches capture from, so a reader wanting the parts joins the coordinate relation rather than reading a decomposition kept beside the spelling.';
+COMMENT ON COLUMN graphitron_argmapping_candidate.coordinate IS 'the schema coordinate the argMapping is written at, spelled as the GraphQL specification spells one and anchored by graphql_element: Type.field where a directive sits on a field, Type.field(argument:) where it sits on an argument, and InputType.field where it sits on an input field. A directive location and never a container, which is the difference from what this column held before: the three shapes are the three placements argMapping reaches capture from, so a reader wanting the parts joins the coordinate relation rather than reading a decomposition kept beside the spelling.';
 COMMENT ON COLUMN graphitron_argmapping_candidate.path IS 'the right-hand side an author writes to name this element at this coordinate, from its head down, dot-separated. Every row is something writable, so no path is empty: a root is a row whose parent_path is null, not one whose path is blank. An entry''s written path meets its candidate on this column exactly, with no head to strip first and no prefix probe to rank.';
 COMMENT ON COLUMN graphitron_argmapping_candidate.parent_path IS 'the path one segment shorter, NULL at a root; a foreign key back to this relation, so a subtree is deleted by deleting what it hangs from. This is what says a row is a root, and no blank path stands in for it';
 COMMENT ON COLUMN graphitron_argmapping_candidate.name IS 'the last segment of the path, which is what this row''s own element is called. At a root it is the whole path. An entry naming one thing below a resolved position meets this column, so the completion set at a position is the names of that position''s children';
@@ -980,7 +980,7 @@ CREATE TABLE graphitron_table (
   table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
   table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -1009,7 +1009,7 @@ CREATE TABLE graphitron_field_binding (
   name_ref      VARCHAR NOT NULL,
   name_ref_upper VARCHAR GENERATED ALWAYS AS (UPPER(name_ref)),
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_field_binding IS '@field on an output or input-object field: the slot''s bound name. A column, a Java accessor, or a Java member depending on the backing, which is classification''s business; the $source / $errors sigil forms are stored as written, their recognition being a prefix test SQL can express.';
 COMMENT ON COLUMN graphitron_field_binding.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1033,7 +1033,7 @@ CREATE TABLE graphitron_argument_binding (
   name_ref_upper VARCHAR GENERATED ALWAYS AS (UPPER(name_ref)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_binding IS '@field on an argument: the filter argument''s bound column.';
 COMMENT ON COLUMN graphitron_argument_binding.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1055,7 +1055,7 @@ CREATE TABLE graphitron_enum_value_binding (
   source_column INT,
   name_ref      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_coordinate (graph_name, type_name, value_name)
+  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
 );
 COMMENT ON TABLE graphitron_enum_value_binding IS '@field on an enum value: the database string (or Java constant) the value maps to. The pivot vocabulary decode reads this relation too.';
 COMMENT ON COLUMN graphitron_enum_value_binding.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1076,7 +1076,7 @@ CREATE TABLE graphitron_scalar_type (
   source_column    INT,
   scalar_ref       VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -1102,7 +1102,7 @@ CREATE TABLE graphitron_enum (
   method           VARCHAR,
   argmapping      VARCHAR,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -1130,7 +1130,7 @@ CREATE TABLE graphitron_field_condition (
   argmapping   VARCHAR,
   override      BOOLEAN,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_field_condition IS '@condition on a field or input field (shared coordinate; the parent kind decides which SDL site this was).';
 COMMENT ON COLUMN graphitron_field_condition.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1175,7 +1175,7 @@ CREATE TABLE graphitron_argument_condition (
   override      BOOLEAN,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_condition IS '@condition on an argument: the same decode over the three-part coordinate.';
 COMMENT ON COLUMN graphitron_argument_condition.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1218,7 +1218,7 @@ CREATE TABLE graphitron_field_reference (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_field_reference IS '@reference on a field or input field: one row per application, because an application is a fact of its own. An empty path means FK auto-discovery between the endpoints, and the rule that every application in a multi-application chain must carry an element is per-application; both are invisible in a flat concatenated chain. The effective chain the consumers read is the steps ordered by (ordinal, position), and the written-order interleaving with @routine applications on the same field is an ORDER BY over the two relations'' source positions.';
 COMMENT ON COLUMN graphitron_field_reference.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1283,7 +1283,7 @@ CREATE TABLE graphitron_argument_reference (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_reference IS '@reference on an argument: the same family over the three-part coordinate.';
 COMMENT ON COLUMN graphitron_argument_reference.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1350,7 +1350,7 @@ CREATE TABLE graphitron_reference_for (
   source_column        INT,
   participant_type_ref VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_reference_for IS '@referenceFor at a field coordinate: an explicit join path for one participant of a multi-table interface or union. Two populations share the relation, and they share it because graphql_field spans both: an output field, where the path runs from the parent''s table to the participant''s, and a @nodeId filter input field, where it runs from the participant''s own table to the decoded target''s. Which of the two a row is about is a fact of the owning coordinate''s type kind and is not restated as a column here, on graphql_field''s own terms: the join decides. Keyed by ordinal per the repeatable rule; the consumption-side keying by participant makes a repeated participant a detection, never a collision.';
 COMMENT ON COLUMN graphitron_reference_for.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1417,7 +1417,7 @@ CREATE TABLE graphitron_argument_reference_for (
   participant_type_ref VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_reference_for IS '@referenceFor on an argument: the same family over the four-part coordinate. A sibling relation rather than an argument_name column on graphitron_reference_for, on the discipline the argument-site @reference family already keeps: the two coordinates are different lengths, so one relation over both would carry a column NULL by kind on half its rows and every reader would have to say which kind it meant. The participant set this row''s spelling is checked against is the consuming field''s own, which at this coordinate is the field the argument sits on rather than a set reached through the occurrence paths, so the whole-schema detection the input-field population needs is a local join here.';
 COMMENT ON COLUMN graphitron_argument_reference_for.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1486,7 +1486,7 @@ CREATE TABLE graphitron_service (
   method        VARCHAR,
   argmapping   VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_service IS '@service on a field: the external service reference.';
 COMMENT ON COLUMN graphitron_service.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1526,7 +1526,7 @@ CREATE TABLE graphitron_external_field (
   method        VARCHAR,
   argmapping   VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_external_field IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered).';
 COMMENT ON COLUMN graphitron_external_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1550,7 +1550,7 @@ CREATE TABLE graphitron_connection (
   default_first_value INT,
   connection_name     VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_connection IS '@asConnection on a field: the macro''s spec, as authored. The expansion''s output is provenance-marked rows in the graphql_ tables, below.';
 COMMENT ON COLUMN graphitron_connection.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1570,7 +1570,7 @@ CREATE TABLE graphitron_facet (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_facet IS '@asFacet on an input field: a marker; the bound column comes from graphitron_field_binding, and every misuse arm is a detection.';
 COMMENT ON COLUMN graphitron_facet.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1590,7 +1590,7 @@ CREATE TABLE graphitron_order_by (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_order_by IS '@orderBy on an argument: a marker; the input shape rules are detections.';
 COMMENT ON COLUMN graphitron_order_by.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1611,7 +1611,7 @@ CREATE TABLE graphitron_order (
   index_ref     VARCHAR,
   primary_key   BOOLEAN,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_coordinate (graph_name, type_name, value_name)
+  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
 );
 COMMENT ON TABLE graphitron_order IS '@order on an enum value: a sorting specification. The exactly-one-of rule over index, fields, and primaryKey is a detection.';
 COMMENT ON COLUMN graphitron_order.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1652,7 +1652,7 @@ CREATE TABLE graphitron_index (
   source_column INT,
   index_ref     VARCHAR,
   PRIMARY KEY (graph_name, type_name, value_name),
-  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_coordinate (graph_name, type_name, value_name)
+  FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
 );
 COMMENT ON TABLE graphitron_index IS '@index on an enum value: the deprecated alias of @order(index:), still honoured when @order is absent; the deprecation is a lint detection.';
 COMMENT ON COLUMN graphitron_index.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1674,7 +1674,7 @@ CREATE TABLE graphitron_default_order (
   primary_key   BOOLEAN,
   direction     VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_default_order IS '@defaultOrder on a field: the same specification shape plus the directive-level direction that serves as the per-entry fallback.';
 COMMENT ON COLUMN graphitron_default_order.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1722,7 +1722,7 @@ CREATE TABLE graphitron_mutation (
   table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
   table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_mutation IS '@mutation on a field: the DML statement spec.';
 COMMENT ON COLUMN graphitron_mutation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1748,7 +1748,7 @@ CREATE TABLE graphitron_error (
   source_line      INT,
   source_column    INT,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -1795,7 +1795,7 @@ CREATE TABLE graphitron_node_entry (
   source_column    INT,
   type_id          VARCHAR,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -1832,7 +1832,7 @@ CREATE TABLE graphitron_field_node_id (
   source_column INT,
   node_type_ref VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_field_node_id IS '@nodeId on a field or input field.';
 COMMENT ON COLUMN graphitron_field_node_id.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1854,7 +1854,7 @@ CREATE TABLE graphitron_argument_node_id (
   node_type_ref VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_node_id IS '@nodeId on an argument.';
 COMMENT ON COLUMN graphitron_argument_node_id.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1876,7 +1876,7 @@ CREATE TABLE graphitron_argument_lookup_key (
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE graphitron_argument_lookup_key IS '@lookupKey on an argument: the live site, a marker.';
 COMMENT ON COLUMN graphitron_argument_lookup_key.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1895,7 +1895,7 @@ CREATE TABLE graphitron_field_lookup_key (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_field_lookup_key IS '@lookupKey on an input field: the retired site; the sole consumer is the located migration rejection.';
 COMMENT ON COLUMN graphitron_field_lookup_key.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1913,7 +1913,7 @@ CREATE TABLE graphitron_split_query (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_split_query IS '@splitQuery on a field: a marker.';
 COMMENT ON COLUMN graphitron_split_query.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1931,7 +1931,7 @@ CREATE TABLE graphitron_tenant_fan_out (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_tenant_fan_out IS '@tenantFanOut on a field: a marker; its many conflict arms are detections.';
 COMMENT ON COLUMN graphitron_tenant_fan_out.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1952,7 +1952,7 @@ CREATE TABLE graphitron_pivot (
   value_column   VARCHAR NOT NULL,
   vocabulary_ref VARCHAR,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_pivot IS '@pivot on a field: the aggregate-projection spec.';
 COMMENT ON COLUMN graphitron_pivot.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1981,7 +1981,7 @@ CREATE TABLE graphitron_routine (
   routine_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_namespace_part)),
   routine_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_name_part)),
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_routine IS '@routine on a field: one row per application (repeatable). The table chain interleaves these with graphitron_field_reference rows in written order.';
 COMMENT ON COLUMN graphitron_routine.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2037,7 +2037,7 @@ CREATE TABLE graphitron_discriminate (
   source_column    INT,
   on_column        VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -2061,7 +2061,7 @@ CREATE TABLE graphitron_discriminator (
   source_column       INT,
   discriminator_value VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -2087,7 +2087,7 @@ CREATE TABLE graphitron_federation_key (
   fields_sdl       VARCHAR NOT NULL,
   resolvable       BOOLEAN,
   PRIMARY KEY (graph_name, type_name, ordinal),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -2187,7 +2187,7 @@ CREATE TABLE graphitron_multitable_reference (
   source_line   INT,
   source_column INT,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE graphitron_multitable_reference IS '@multitableReference (removed) on a field; routes is never read.';
 COMMENT ON COLUMN graphitron_multitable_reference.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2207,7 +2207,7 @@ CREATE TABLE graphitron_record (
   source_column    INT,
   class_name       VARCHAR,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
@@ -2351,7 +2351,7 @@ CREATE TABLE graphitron_field_synthesis (
   is_list       BOOLEAN NOT NULL,
   item_non_null BOOLEAN,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_coordinate (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name),
   CHECK (macro IN ('CONNECTION')),
   CHECK (is_list OR item_non_null IS NULL)
 );
@@ -2449,7 +2449,7 @@ CREATE TABLE graphitron_argmapping_entry (
   source_column INT,
   PRIMARY KEY (graph_name, site, use_site, position),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_coordinate (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate),
   CHECK (site IN ('ROUTINE', 'SERVICE', 'FIELD_CONDITION', 'INPUT_FIELD_CONDITION',
                   'ARGUMENT_CONDITION', 'FIELD_REFERENCE_STEP', 'ARGUMENT_REFERENCE_STEP',
                   'REFERENCE_FOR_STEP', 'ARGUMENT_REFERENCE_FOR_STEP')),
@@ -2468,7 +2468,7 @@ COMMENT ON COLUMN graphitron_argmapping_entry.step_position IS 'the path element
 COMMENT ON COLUMN graphitron_argmapping_entry.position IS 'the pair''s own position in the site''s argMapping list, completing the key. Positional because argMapping is a list and the parameter it binds is identified by where it stands';
 COMMENT ON COLUMN graphitron_argmapping_entry.param_name IS 'the method parameter name the pair binds';
 COMMENT ON COLUMN graphitron_argmapping_entry.written_path IS 'the right-hand side as the author wrote it, verbatim. Named for what it is rather than for an argument, which the two site kinds that sit below one do not have: an argument-level condition writes a path relative to its own argument and an input-field-level one relative to its own field, so the leading name is not always an argument and the column no longer says it is. The three split columns beside it are the engine''s reading of this one and nothing else is stored twice.';
-COMMENT ON COLUMN graphitron_argmapping_entry.coordinate IS 'the schema coordinate the site sits on, spelled as the specification spells one and anchored by graphql_coordinate: Type.field at the seven sites that sit on a field, Type.field(argument:) at an argument-level condition, and InputType.field at an input-field-level one. What the candidate relation is keyed by, so an entry meets what it may name on an equality over this column and the path, and the scope test two readers used to spell as a comparison against argument_name or field_name is that equality now.';
+COMMENT ON COLUMN graphitron_argmapping_entry.coordinate IS 'the schema coordinate the site sits on, spelled as the specification spells one and anchored by graphql_element: Type.field at the seven sites that sit on a field, Type.field(argument:) at an argument-level condition, and InputType.field at an input-field-level one. What the candidate relation is keyed by, so an entry meets what it may name on an equality over this column and the path, and the scope test two readers used to spell as a comparison against argument_name or field_name is that equality now.';
 COMMENT ON COLUMN graphitron_argmapping_entry.root_name IS 'the first segment of the written path, which at the sites rooted on a field is the argument the value enters through. Generated, so nothing writes it and nothing can. Read by the two relations that ask which argument feeds a parameter; it is not what resolution joins on, resolution being against the whole path.';
 COMMENT ON COLUMN graphitron_argmapping_entry.head_path IS 'the written path with its last segment removed, NULL where the path is a single segment and there is nothing above it. Generated. The position an author had resolved when the whole path does not: a path whose head is a candidate and whose whole is not names one thing beyond a position that exists, which is the key-column projection and the unknown-column defect, and this column is how both are found without a stored decomposition of the path.';
 COMMENT ON COLUMN graphitron_argmapping_entry.tail_name IS 'the last segment of the written path, which is the whole of it where there is only one. Generated. With head_path beside it this is the one name past a resolved position, and it is what a key column is matched against.';
@@ -2829,7 +2829,7 @@ CREATE TABLE graphitron_tabletype (
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (table_source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   -- Free, the primary key already implying it, and what lets a relation carrying both a type and
@@ -2838,7 +2838,7 @@ CREATE TABLE graphitron_tabletype (
 );
 COMMENT ON TABLE graphitron_tabletype IS 'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously. For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.';
 COMMENT ON COLUMN graphitron_tabletype.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type_coordinate. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
+COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type_element. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
 COMMENT ON COLUMN graphitron_tabletype.table_source_name IS 'the codegen source the table came from, the first of the three columns naming one catalog table';
 COMMENT ON COLUMN graphitron_tabletype.table_schema IS 'the table''s schema as the catalog spells it';
 COMMENT ON COLUMN graphitron_tabletype.table_name IS 'the table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table, which is what a resolved binding can carry and an unresolved one cannot. The first crossing in this schema from a graph-keyed relation into the source-keyed catalog, and it cascades on delete, which is what makes the crossing sound rather than merely permitted: a catalog source is shared between graphs and recrawled whole, so without the cascade a source could not be recrawled while any graph still named its tables. With it, a recrawled source takes the bindings that named it, and the graphs concerned rebuild theirs the next time they capture. That is the honest outcome of the two available: a reader finds no binding rather than one naming a table the catalog no longer has, which is what the relations this replaces leave behind because they carry no key here at all';
@@ -2904,7 +2904,7 @@ CREATE TABLE graphitron_field (
   to_table         VARCHAR NOT NULL,
   target_basis     VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table),
-  -- store_graph and not graphql_field_coordinate, which is the population's doing rather than a
+  -- store_graph and not graphql_field_element, which is the population's doing rather than a
   -- constraint given up lightly: a connection macro mints fields that have a target like any other
   -- and no coordinate row, minting being graphitron's where that relation is the SDL
   -- transcription's. graphitron_field_navigation, the population this derives from, spans the same
@@ -5503,7 +5503,7 @@ SELECT p.graph_name, a.named_type, e.element_class
    AND mp.class_name = p.class_name
    AND mp.method_name = p.method_name
    AND mp.descriptor = p.descriptor
-  JOIN graphql_field_coordinate pc
+  JOIN graphql_field_element pc
     ON pc.graph_name = p.graph_name AND pc.type_name = p.type_name
    AND pc.field_name = p.field_name
   LEFT JOIN graphitron_argmapping_entry m
@@ -5539,7 +5539,7 @@ CREATE TABLE intent_type_backing_class (
   class_name VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, class_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_coordinate (graph_name, type_name)
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
 );
 COMMENT ON TABLE intent_type_backing_class IS 'A graph''s type is backed by a class: the reachability of intent_field_accessor_hop''s edges from the classes the graph''s producer methods deliver. The seeds are intent_type_backing_seed, which states both axes and says which of this relation''s rows a producer grounded rather than a hop reached; the closure then reads each backed type''s fields off its class and backs what they return with what the member delivers. Objects and input objects only, on both ends. A class stands for a composite type by answering its fields, and an interface''s implementors and a union''s members are not what a hop lands on, so an SDL name of any other kind is where the closure stops rather than a row it declines to write; a field typed by a scalar therefore falls away here without any reject list over Java classes, which is the population the walk this replaces excludes by naming String, Boolean, the java packages and the rest one at a time. One closure condition is applied and it is not a hop''s property: a coordinate that has a producer of its own is not read off its parent, its value coming from the method rather than from the member, so the hop over it is no edge of this closure. Materialized, not a view, for intent_type_domain''s reason exactly: the closure is over the SDL type graph, which is cyclic, and H2 has no safe recursive view form for one. Written by a capture-cadence derivation writer that clears its own graph partition and re-derives after every flush, so on any settled store these rows are current for every captured graph. Ambiguity is rows and there is no first-wins. A type two seeds answer differently is two rows and intent_type_backing_conflict names it, where the walk suppresses the second observation to protect the first and leaves the disagreement unobservable. A type a seed and a hop answer differently is two rows here as well, and there the walk''s suppression is doing more than ordering: a hop reads the parent''s member type without checking it against the child''s own grounding, so it can land on a class that is wrong rather than merely second. Which of those two rows to believe is intent_type_backing_seed''s to tell a reader, not this relation''s to decide. How a binding was reached is deliberately not a column: a class reached by two routes is one backing, so a route column would key the relation by path and multiply every reader''s rows by however many routes converged; the routes are the seed and hop relations'' own rows for a reader that wants them. An arity is absent for a different reason: it is an aggregate over this relation''s own rows, so storing it beside them would put a function of the relation inside the relation, which a materialization has to earn and this one cannot. Both axes seed it, on intent_type_backing_seed''s terms: a producer''s return backs the type the field names and a producer''s parameter backs the type of the argument it is fed from, and that is one closure rather than two, an input object seeded from a parameter having its own fields read off that class by the frontier that reads an output type''s. Three populations remain absent while the derivation is built out, each queued for adjudication against the walk''s shadow rather than assumed harmless. A @table-bound type seeds nothing here: that population is intent_bound_table''s, and the classes it would seed are the generated jOOQ records the classpath census excludes by design, so the subtree below one is unreachable from the store rather than merely unwritten; intent_type_backing is where the two populations meet. The walk''s cardinality guard is not applied, so a single-object field produced by a collection return backs its type here where the walk reads a carrier and declines. And the two-level carrier fork is not applied, so a payload wrapper backs itself here where the walk reaches past it to the data field it wraps; both of those are the cardinality reading, which is its own fact and not a clause of this one.';
 COMMENT ON COLUMN intent_type_backing_class.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -6729,7 +6729,7 @@ CREATE TABLE intent_input_occurrence_path (
   PRIMARY KEY (graph_name, path),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, root_type_name, root_field_name, root_argument_name)
-    REFERENCES graphql_argument_coordinate (graph_name, type_name, field_name, argument_name)
+    REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
 );
 COMMENT ON TABLE intent_input_occurrence_path IS 'One occurrence of the input surface under a use site: an argument whose named type is an input object, or a nested input field reached from one by descending through input-object-typed fields. The key is the serialized path, <root type>.<root field>(<argument>)[/<input field>...]: an occurrence path is its own identity (no minted coordinate is involved), the relation is re-derived each run so the value key costs nothing, and the step child carries the same data relationally so no consumer parses the key. Every prefix of a path is itself a row. Materialized by a capture-cadence derivation writer for the same reason as intent_type_domain (cyclic input nesting is legal GraphQL and has no safe recursive H2 view form); the expansion stops descending when the leaf type is already visited on the path, which is the classification walk''s own first-visit guard (ClassifyContext.expandingTypes) restated, so the row population equals the recursion tree the build already walks and simple-path enumeration adds no new asymptotic class here.';
 COMMENT ON COLUMN intent_input_occurrence_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -6751,7 +6751,7 @@ CREATE TABLE intent_input_occurrence_path_step (
   PRIMARY KEY (graph_name, path, ordinal),
   FOREIGN KEY (graph_name, path) REFERENCES intent_input_occurrence_path (graph_name, path),
   FOREIGN KEY (graph_name, container_type_name, field_name)
-    REFERENCES graphql_field_coordinate (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
 COMMENT ON TABLE intent_input_occurrence_path_step IS 'The ordinal-keyed decomposition of an occurrence path: one row per input-field step, 1-based, so no consumer parses the serialized key. Homogeneous over input-field steps only: the use-site field and argument are fixed by construction (every path has exactly one of each) and live on the parent row, so no column here is nullable by kind. The row at ordinal = depth is the path''s leaf.';
 COMMENT ON COLUMN intent_input_occurrence_path_step.graph_name IS 'the owning graph''s partition, anchored through the parent path; the leading key dimension that keeps one workspace''s graphs apart';
@@ -7107,7 +7107,7 @@ resolved (graph_name, site, use_site, position, param_name, java_type) AS (
    UNION ALL
   SELECT DISTINCT ap.graph_name, ap.site, ap.use_site, ap.position, ap.param_name, rp.binding_type
     FROM graphitron_argmapping_entry ap
-    JOIN graphql_field_coordinate apc
+    JOIN graphql_field_element apc
       ON apc.graph_name = ap.graph_name AND apc.coordinate = ap.coordinate
     JOIN intent_field_routine_method rm
       ON rm.graph_name = ap.graph_name AND rm.type_name = apc.type_name
@@ -7153,7 +7153,7 @@ SELECT p.graph_name, p.site, p.use_site, cf.type_name, cf.field_name, p.position
   LEFT JOIN graphitron_argmapping_candidate ch
     ON ce.path IS NULL AND ch.graph_name = p.graph_name AND ch.coordinate = p.coordinate
    AND ch.path = p.head_path
-  JOIN graphql_coordinate_field cf
+  JOIN graphql_element_field cf
     ON cf.graph_name = p.graph_name AND cf.coordinate = p.coordinate
   LEFT JOIN graphitron_argument_node_id an
     ON COALESCE(ce.element_kind, ch.element_kind) = 'ARGUMENT'
@@ -8086,7 +8086,7 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, n
            AND tr.owner_name = mp.method_name AND tr.owner_descriptor = mp.descriptor
            AND tr.owner_position = mp.position AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'
          WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_entry x
-                             JOIN graphql_coordinate_field xf
+                             JOIN graphql_element_field xf
                                ON xf.graph_name = x.graph_name
                               AND xf.coordinate = x.coordinate
                             WHERE x.graph_name = r.graph_name
@@ -9923,7 +9923,7 @@ COMMENT ON COLUMN meta_family.definition IS 'the family''s charter: whose vocabu
 
 CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
-  ('graphql_type_coordinate', 0), ('graphql_field', 1), ('graphql_directive_site', 2),
+  ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_site', 2),
   ('graphitron_table', 0), ('graphitron_field_reference', 1), ('graphitron_undecoded_argument', 2),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
   ('jvm_class', 0), ('jvm_method', 1), ('jvm_record_component', 2),
@@ -10173,8 +10173,8 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
-  ('schema-coordinate',
-   'one schema coordinate in one graph, spelled as the GraphQL specification spells one',
+  ('schema-element',
+   'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
   ('condition-site-slot',
    'one GraphQL slot in scope at one application of a @condition directive, in one graph',
@@ -10182,8 +10182,8 @@ INSERT INTO meta_grain VALUES
   ('condition-site-parameter',
    'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
    'graph_name, site, use_site, descriptor, position', 'sdl'),
-  ('coordinate-field-site',
-   'one schema coordinate that sits on a field, in one graph',
+  ('element-field-site',
+   'one schema element whose coordinate sits on a field, in one graph',
    'graph_name, coordinate', 'sdl'),
   ('bound-table-type',
    'one graph type that resolved to exactly one catalog table, in one graph',
@@ -10280,10 +10280,10 @@ INSERT INTO meta_grain VALUES
    'graph_name, file, line_number, column_number, ordinal', 'javac');
 
 INSERT INTO meta_relation VALUES
-  ('graphql_coordinate', 'schema-coordinate', 'sdl',
-   'A schema coordinate exists in this graph: the supertype of the four coordinate relations beside it, keyed by the coordinate spelled as the GraphQL specification spells one.',
+  ('graphql_element', 'schema-element', 'sdl',
+   'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
-   'The coordinate family states a coordinate''s existence at four grains and states nowhere that a coordinate exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The kind says which of the four a row was written from, so a reader wanting the parts joins that relation instead of splitting the spelling.'),
+   'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
    'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph.',
    'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.',
@@ -10304,10 +10304,10 @@ INSERT INTO meta_relation VALUES
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries.',
    'For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.',
    'The field-grain half of intent_expanded_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that union is disjoint; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate, and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
-  ('graphql_coordinate_field', 'coordinate-field-site', 'sdl',
-   'The field a coordinate sits on, for the two coordinate kinds that sit on one: one row per field coordinate and one per argument coordinate, carrying the parts the spelling is built from.',
+  ('graphql_element_field', 'element-field-site', 'sdl',
+   'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',
-   'What a reader joins when it holds a coordinate and needs the field, which before this was two left joins and a COALESCE spelled once per reader, and wrongly available to a reader that forgot the second arm. Type and enum-value coordinates are absent and that is the population rather than a gap: neither sits on a field, so a reader asking this question of one is asking something with no answer and gets no row instead of a half-populated one. The argument component is NULL on a field coordinate, which is the one nullness here and is the difference between the two arms rather than a fact withheld. Not columns on graphql_coordinate itself, because a type coordinate has no field and an enum value''s name is not one, so carrying them up would put two nullnesses on the supertype to serve half its subtypes. It reads as a reconstruction and is not one: the supertype exists and every member points at it, so this unions a hierarchy that is already written rather than standing in for one nobody wrote, which is the distinction SupertypeSignatureGateTest draws before it counts a union as debt.'),
+   'What a reader joins when it holds a coordinate and needs the field, which before this was two left joins and a COALESCE spelled once per reader, and wrongly available to a reader that forgot the second arm. Named-type and enum-value elements are absent and that is the population rather than a gap: neither sits on a field, so a reader asking this question of one is asking something with no answer and gets no row instead of a half-populated one. The argument component is NULL on a field coordinate, which is the one nullness here and is the difference between the two arms rather than a fact withheld. Not columns on graphql_element itself, because a type coordinate has no field and an enum value''s name is not one, so carrying them up would put two nullnesses on the supertype to serve half its subtypes. It reads as a reconstruction and is not one: the supertype exists and every member points at it, so this unions a hierarchy that is already written rather than standing in for one nobody wrote, which is the distinction SupertypeSignatureGateTest draws before it counts a union as debt.'),
   ('graphitron_tabletype', 'bound-table-type', 'graphitron',
    'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously.',
    'For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.',

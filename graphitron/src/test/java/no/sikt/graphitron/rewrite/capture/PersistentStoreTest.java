@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.StoreAnswers.answered;
@@ -230,8 +230,8 @@ class PersistentStoreTest {
         try (var reopened = GraphitronModelStore.openAt(directory)) {
             assertThat(reopened.warm())
                 .as("the holder's file is intact and warm for the next run").isTrue();
-            assertThat(reopened.dsl().select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
-                .from(GRAPHQL_TYPE_COORDINATE).fetch(0, String.class))
+            assertThat(reopened.dsl().select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
+                .from(GRAPHQL_TYPE_ELEMENT).fetch(0, String.class))
                 .as("the holder's own write survived the run that could not have the file")
                 .contains("HolderWritten");
         }
@@ -252,9 +252,9 @@ class PersistentStoreTest {
                 // The coordinate anchor and the supertype row above it, which is the shallowest
                 // pair this store admits: the probe's subject is that the holder's write survives,
                 // so it writes the least that a coordinate needs and nothing else.
-                store.dsl().execute("INSERT INTO graphql_coordinate (graph_name, coordinate, kind) "
-                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'TYPE')");
-                store.dsl().execute("INSERT INTO graphql_type_coordinate "
+                store.dsl().execute("INSERT INTO graphql_element (graph_name, coordinate, element_kind) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'NAMED_TYPE')");
+                store.dsl().execute("INSERT INTO graphql_type_element "
                     + "(graph_name, type_name, coordinate) "
                     + "VALUES ('" + args[1] + "', 'HolderWritten', 'HolderWritten')");
                 System.out.println("HELD");

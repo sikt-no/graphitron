@@ -115,7 +115,7 @@ class DerivedReadCostTest {
      * nothing beyond the row, which is the opposite of what retiring a registration does, where the
      * view count holds still and the cells fall.
      *
-     * <p>Raised to 118 again by {@code graphql_coordinate_field}, which decomposes a coordinate into
+     * <p>Raised to 118 again by {@code graphql_element_field}, which decomposes a coordinate into
      * the field it sits on so that the relations keyed by a coordinate need carry no decomposition
      * of their own. It reads two transcription tables and reaches no registration, so once more the
      * two figures below did not move with it.

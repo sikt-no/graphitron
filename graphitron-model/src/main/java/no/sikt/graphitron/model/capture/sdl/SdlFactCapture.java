@@ -111,7 +111,7 @@ public final class SdlFactCapture {
     private final FactSink sink;
     private final TypeDefinitionRegistry registry;
 
-    /** The coordinate anchors, and the first-wins claim on every one of them. */
+    /** The element anchors, and the first-wins claim on every one of them. */
     private final SdlCoordinates coordinates;
 
 
@@ -644,7 +644,7 @@ public final class SdlFactCapture {
     private void captureFields(SiteRef site, List<FieldDefinition> fields, ElementOrdinals ordinals) {
         for (FieldDefinition field : fields) {
             String name = field.getName();
-            if (!coordinates.claimField(site.typeName(), name)) {
+            if (!coordinates.claimOutputField(site.typeName(), name)) {
                 quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }
@@ -682,7 +682,7 @@ public final class SdlFactCapture {
     private void captureInputFields(SiteRef site, List<InputValueDefinition> fields, ElementOrdinals ordinals) {
         for (InputValueDefinition field : fields) {
             String name = field.getName();
-            if (!coordinates.claimField(site.typeName(), name)) {
+            if (!coordinates.claimInputField(site.typeName(), name)) {
                 quarantine("FIELD", site.typeName() + "." + name, field);
                 continue;
             }

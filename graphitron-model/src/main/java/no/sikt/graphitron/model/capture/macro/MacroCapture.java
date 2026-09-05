@@ -17,7 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 
 /**
  * The {@code @asConnection} expansion: the Relay machinery it mints, and the rewrite it performs on
@@ -79,10 +79,10 @@ public final class MacroCapture {
      * the schema the store describes.
      */
     public static Map<String, Set<String>> expand(FactSink sink, DSLContext dsl, String graphName) {
-        var declared = Set.copyOf(dsl.select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
-            .from(GRAPHQL_TYPE_COORDINATE)
-            .where(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME.eq(graphName))
-            .fetch(GRAPHQL_TYPE_COORDINATE.TYPE_NAME));
+        var declared = Set.copyOf(dsl.select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
+            .from(GRAPHQL_TYPE_ELEMENT)
+            .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(graphName))
+            .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME));
         var expansion = new MacroCapture(sink, declared);
         List<Carrier> carriers = expansion.carriers(dsl, graphName);
         for (Carrier carrier : carriers) {

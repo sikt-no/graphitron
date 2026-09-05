@@ -45,7 +45,7 @@ import static org.jooq.impl.DSL.table;
  *
  * <p>Grouping on the payload alone would report two large sets that are not sets at all. Every
  * captured row carries where it was read from, so {@link #PROVENANCE} is shared by everything that
- * shares nothing, and the coordinate relations carry no payload whatever. Both fall out on a rule
+ * shares nothing, and the element relations carry no payload whatever. Both fall out on a rule
  * rather than by exemption: a set's payload must be non-empty and must hold at least one column
  * that is not provenance. Sharing only where you came from is not sharing a fact.
  *
@@ -182,8 +182,8 @@ class SupertypeSignatureGateTest {
      * distinction has to be made here rather than at each caller. A view unioning members of a set
      * that has a supertype is not a supertype somebody skipped writing, because nobody skipped it:
      * it is a projection of a hierarchy that exists, taken because the supertype deliberately does
-     * not carry what the reader wants. The coordinate family is the worked example. Its four
-     * members share {@code graphql_coordinate}, and a reader holding a coordinate and wanting the
+     * not carry what the reader wants. The element family is the worked example. Its four
+     * members share {@code graphql_element}, and a reader holding a coordinate and wanting the
      * field it sits on still has to union the two members that sit on one, because the other two do
      * not and carrying the columns up would put two nullnesses on the supertype to serve half its
      * subtypes. Counting that as debt would put a row on the roster that nobody can ever discharge,

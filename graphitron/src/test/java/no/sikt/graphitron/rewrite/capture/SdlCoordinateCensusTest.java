@@ -23,12 +23,12 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -285,38 +285,38 @@ class SdlCoordinateCensusTest {
     // ===== The store side =====
 
     private static Set<String> typeCoordinates(DSLContext dsl) {
-        return new LinkedHashSet<>(dsl.select(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
-            .from(GRAPHQL_TYPE_COORDINATE)
-            .where(GRAPHQL_TYPE_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(GRAPHQL_TYPE_COORDINATE.TYPE_NAME)
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
+            .from(GRAPHQL_TYPE_ELEMENT)
+            .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
             .fetch(0, String.class));
     }
 
     private static Set<String> fieldCoordinates(DSLContext dsl) {
-        return new LinkedHashSet<>(dsl.select(GRAPHQL_FIELD_COORDINATE.TYPE_NAME,
-                GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
-            .from(GRAPHQL_FIELD_COORDINATE)
-            .where(GRAPHQL_FIELD_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(GRAPHQL_FIELD_COORDINATE.TYPE_NAME, GRAPHQL_FIELD_COORDINATE.FIELD_NAME)
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_FIELD_ELEMENT.TYPE_NAME,
+                GRAPHQL_FIELD_ELEMENT.FIELD_NAME)
+            .from(GRAPHQL_FIELD_ELEMENT)
+            .where(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, GRAPHQL_FIELD_ELEMENT.FIELD_NAME)
             .fetch(r -> r.value1() + "." + r.value2()));
     }
 
     private static Set<String> argumentCoordinates(DSLContext dsl) {
-        return new LinkedHashSet<>(dsl.select(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME,
-                GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME, GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME)
-            .from(GRAPHQL_ARGUMENT_COORDINATE)
-            .where(GRAPHQL_ARGUMENT_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(GRAPHQL_ARGUMENT_COORDINATE.TYPE_NAME, GRAPHQL_ARGUMENT_COORDINATE.FIELD_NAME,
-                GRAPHQL_ARGUMENT_COORDINATE.ARGUMENT_NAME)
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME,
+                GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME)
+            .from(GRAPHQL_ARGUMENT_ELEMENT)
+            .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME, GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME,
+                GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME)
             .fetch(r -> r.value1() + "." + r.value2() + "(" + r.value3() + ":)"));
     }
 
     private static Set<String> enumValueCoordinates(DSLContext dsl) {
-        return new LinkedHashSet<>(dsl.select(GRAPHQL_ENUM_VALUE_COORDINATE.TYPE_NAME,
-                GRAPHQL_ENUM_VALUE_COORDINATE.VALUE_NAME)
-            .from(GRAPHQL_ENUM_VALUE_COORDINATE)
-            .where(GRAPHQL_ENUM_VALUE_COORDINATE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(GRAPHQL_ENUM_VALUE_COORDINATE.TYPE_NAME, GRAPHQL_ENUM_VALUE_COORDINATE.VALUE_NAME)
+        return new LinkedHashSet<>(dsl.select(GRAPHQL_ENUM_VALUE_ELEMENT.TYPE_NAME,
+                GRAPHQL_ENUM_VALUE_ELEMENT.VALUE_NAME)
+            .from(GRAPHQL_ENUM_VALUE_ELEMENT)
+            .where(GRAPHQL_ENUM_VALUE_ELEMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(GRAPHQL_ENUM_VALUE_ELEMENT.TYPE_NAME, GRAPHQL_ENUM_VALUE_ELEMENT.VALUE_NAME)
             .fetch(r -> r.value1() + "." + r.value2()));
     }
 
@@ -355,7 +355,7 @@ class SdlCoordinateCensusTest {
         return names;
     }
 
-    /** Output-field arguments only, the population {@code graphql_argument_coordinate} holds. */
+    /** Output-field arguments only, the population {@code graphql_argument_element} holds. */
     private static Set<String> assembledArguments(GraphQLSchema schema) {
         var names = new TreeSet<String>();
         authored(schema).forEach(type -> {

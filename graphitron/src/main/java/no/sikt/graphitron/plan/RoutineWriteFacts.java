@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
@@ -317,7 +317,7 @@ public final class RoutineWriteFacts {
         var m = GRAPHITRON_ARGMAPPING_ENTRY;
         // A ROUTINE site sits on a field, so the entry's coordinate is that field's own and the
         // coordinate relation is where its type and field are read back from.
-        var mc = GRAPHQL_FIELD_COORDINATE;
+        var mc = GRAPHQL_FIELD_ELEMENT;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(

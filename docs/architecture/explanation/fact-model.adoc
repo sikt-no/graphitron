@@ -252,19 +252,19 @@ The four anchors and what hangs off each:
 | Element | Anchor relation | Attributes and dependents keyed on the anchor
 
 | type
-| `graphql_type_coordinate`
+| `graphql_type_element`
 | `graphql_type` (kind and description), `graphql_type_declaration` (every declaration site), `graphql_poly_member`, `graphql_type_directive`, the type-keyed `graphitron_` decodes, `intent_type_domain`, `intent_type_backing_class`
 
 | field
-| `graphql_field_coordinate`
+| `graphql_field_element`
 | `graphql_field` (type expression, description, default, contributing site), `graphql_field_directive`, the field-keyed `graphitron_` decodes, `intent_input_occurrence_path_step`
 
 | argument
-| `graphql_argument_coordinate`
+| `graphql_argument_element`
 | `graphql_argument`, `graphql_argument_directive`, the argument-keyed `graphitron_` decodes, `intent_input_occurrence_path`
 
 | enum value
-| `graphql_enum_value_coordinate`
+| `graphql_enum_value_element`
 | `graphql_enum_value`, `graphql_enum_value_directive`, `graphitron_enum_value_binding`, `graphitron_order`, `graphitron_index`
 |===
 

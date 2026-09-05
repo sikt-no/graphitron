@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_COORDINATE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
@@ -488,10 +488,10 @@ class ArgumentReferenceStepTargetTest {
     /** The field-site path the agreement case compares against. */
     private static void seedFieldKeyPath(DSLContext dsl, String typeName, String fieldName,
                                          String... keyRefs) {
-        if (!dsl.fetchExists(GRAPHQL_FIELD_COORDINATE,
-                GRAPHQL_FIELD_COORDINATE.GRAPH_NAME.eq(GRAPH)
-                    .and(GRAPHQL_FIELD_COORDINATE.TYPE_NAME.eq(typeName))
-                    .and(GRAPHQL_FIELD_COORDINATE.FIELD_NAME.eq(fieldName)))) {
+        if (!dsl.fetchExists(GRAPHQL_FIELD_ELEMENT,
+                GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(GRAPH)
+                    .and(GRAPHQL_FIELD_ELEMENT.TYPE_NAME.eq(typeName))
+                    .and(GRAPHQL_FIELD_ELEMENT.FIELD_NAME.eq(fieldName)))) {
             seedField(dsl, GRAPH, typeName, fieldName);
         }
         seedFieldReference(dsl, GRAPH, typeName, fieldName, 0);

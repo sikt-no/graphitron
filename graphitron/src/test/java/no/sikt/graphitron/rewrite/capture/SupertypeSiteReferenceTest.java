@@ -111,29 +111,29 @@ class SupertypeSiteReferenceTest {
      */
     private static final Map<String, String> PAIR_OWNERS = new LinkedHashMap<>(Map.of(
         "ROUTINE",
-        "graphitron_routine d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_routine d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal",
         "SERVICE",
-        "graphitron_service d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
+        "graphitron_service d, graphql_element_field c WHERE " + AT_COORDINATE,
         "FIELD_CONDITION",
-        "graphitron_field_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
+        "graphitron_field_condition d, graphql_element_field c WHERE " + AT_COORDINATE,
         "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE,
+        "graphitron_field_condition d, graphql_element_field c WHERE " + AT_COORDINATE,
         "ARGUMENT_CONDITION",
-        "graphitron_argument_condition d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_condition d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name",
         "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_field_reference_step d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_reference_step d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position",
         "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_reference_for_step d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step d, graphql_coordinate_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_reference_for_step d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position"));
 
