@@ -63,6 +63,15 @@ public class JooqCatalog {
     }
 
     /**
+     * The classloader this catalog was loaded through: the run's codegen classpath. Exposed so a
+     * capture pass that has to resolve a consumer class by name reads the same classpath the
+     * catalog came from rather than assembling a second one.
+     */
+    public ClassLoader codegenLoader() {
+        return codegenLoader;
+    }
+
+    /**
      * Build-time precondition: every schema in the live jOOQ catalog must publish a generated
      * {@code Tables} class. A missing {@code Tables} class is a degenerate codegen state (jOOQ's
      * {@code <tables>false</tables>} flag, or equivalent) that breaks every per-table emit site;

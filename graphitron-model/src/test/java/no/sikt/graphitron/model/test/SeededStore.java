@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
@@ -51,6 +52,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
@@ -71,6 +73,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
+import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
@@ -784,6 +787,48 @@ public final class SeededStore {
             .set(GRAPHITRON_TABLE.TABLE_REF, tableRef)
             .set(GRAPHITRON_TABLE.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
             .set(GRAPHITRON_TABLE.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .execute();
+    }
+
+    /**
+     * A {@code @scalarType} application on a scalar: the Java constant reference as the author
+     * spelled it, unresolved. Whether that spelling reaches a constant the census holds is what
+     * the resolution answers, so a reference matching nothing is a state this helper reaches.
+     */
+    public static void seedScalarType(DSLContext dsl, String graphName, String typeName,
+                                      String scalarRef) {
+        seedDeclaredType(dsl, graphName, typeName, "SCALAR");
+        dsl.insertInto(GRAPHITRON_SCALAR_TYPE)
+            .set(GRAPHITRON_SCALAR_TYPE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SCALAR_TYPE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SCALAR_TYPE.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_SCALAR_TYPE.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_LINE, 1)
+            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_COLUMN, 14)
+            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF, scalarRef)
+            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF_CLASS_PART,
+                ConstantReferenceGrammar.split(scalarRef)
+                    instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.classFqn() : null)
+            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF_FIELD_PART,
+                ConstantReferenceGrammar.split(scalarRef)
+                    instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.fieldName() : null)
+            .execute();
+    }
+
+    /**
+     * One {@code public static GraphQLScalarType} constant the census reached, and the Java type
+     * it coerces a value to. A null {@code inputType} is the census's own answer for a constant it
+     * could not read one off, which the resolution treats as no answer at all.
+     */
+    public static void seedScalarConstant(DSLContext dsl, String sourceName, String className,
+                                          String fieldName, String inputType) {
+        seedClass(dsl, sourceName, className, "CLASS");
+        dsl.insertInto(JVM_SCALAR_TYPE_FIELD)
+            .set(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME, sourceName)
+            .set(JVM_SCALAR_TYPE_FIELD.CLASS_NAME, className)
+            .set(JVM_SCALAR_TYPE_FIELD.FIELD_NAME, fieldName)
+            .set(JVM_SCALAR_TYPE_FIELD.INPUT_TYPE, inputType)
             .execute();
     }
 

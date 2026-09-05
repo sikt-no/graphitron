@@ -468,6 +468,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_jvm_ancestor", Arm.DERIVED);
         registrations.put("intent_condition_table_parameter", Arm.DERIVED);
         registrations.put("intent_condition_slot", Arm.DERIVED);
+        registrations.put("intent_scalar_java_type", Arm.DERIVED);
         registrations.put("intent_condition_context_parameter", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);

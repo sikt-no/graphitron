@@ -23,6 +23,7 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
+import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
@@ -454,6 +455,11 @@ public final class GraphitronFactCapture {
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
                 record.setScalarRef(scalar);
+                if (ConstantReferenceGrammar.split(scalar)
+                        instanceof ConstantReferenceGrammar.Reference.Parsed parsed) {
+                    record.setScalarRefClassPart(parsed.classFqn());
+                    record.setScalarRefFieldPart(parsed.fieldName());
+                }
                 sink.add(record);
             }
             case "enum" -> {

@@ -1075,6 +1075,8 @@ CREATE TABLE graphitron_scalar_type (
   source_line      INT,
   source_column    INT,
   scalar_ref       VARCHAR NOT NULL,
+  scalar_ref_class_part VARCHAR,
+  scalar_ref_field_part VARCHAR,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
@@ -1089,6 +1091,8 @@ COMMENT ON COLUMN graphitron_scalar_type.declaration_column IS 'column of the co
 COMMENT ON COLUMN graphitron_scalar_type.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_scalar_type.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_scalar_type.scalar_ref IS 'the fully-qualified Java constant reference as written';
+COMMENT ON COLUMN graphitron_scalar_type.scalar_ref_class_part IS 'the class half of the reference, split on its last period by ConstantReferenceGrammar; NULL where the reference names no class at all, which is that grammar''s malformed arm rather than a missing class';
+COMMENT ON COLUMN graphitron_scalar_type.scalar_ref_field_part IS 'the field half beside it, on the same split and null in the same case; the pair is stored rather than computed so a reader joining the census probes its key instead of comparing against a concatenation';
 
 CREATE TABLE graphitron_enum (
   graph_name       VARCHAR NOT NULL,
@@ -3067,13 +3071,15 @@ CREATE TABLE jvm_scalar_type_field (
   source_name VARCHAR NOT NULL,
   class_name VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
+  input_type VARCHAR,
   PRIMARY KEY (source_name, class_name, field_name),
   FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name)
 );
-COMMENT ON TABLE jvm_scalar_type_field IS 'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType. For example a DATE_TIME field an author names in @scalarType.';
+COMMENT ON TABLE jvm_scalar_type_field IS 'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType, and the Java type it coerces a value to. For example a DATE_TIME field an author names in @scalarType, coercing to java.time.OffsetDateTime.';
 COMMENT ON COLUMN jvm_scalar_type_field.source_name IS 'the owning class''s classpath entry, as on jvm_class; the key''s leading dimension';
 COMMENT ON COLUMN jvm_scalar_type_field.class_name IS 'the fully-qualified Java class name as written';
 COMMENT ON COLUMN jvm_scalar_type_field.field_name IS 'the field name, matched on the exact GraphQLScalarType descriptor';
+COMMENT ON COLUMN jvm_scalar_type_field.input_type IS 'the fully-qualified Java type a value of this constant''s scalar arrives as, the input parameter of the Coercing it holds; NULL where the constant does not resolve to one, which folds four cases the census does not tell apart: the class does not load, the field is not a public static GraphQLScalarType, its initialiser throws, or the coercing''s input parameter is erased. Read by loading the class rather than by parsing it, the declared type of every such constant being the same one';
 
 -- ==== Java source declaration facts ===============================================
 -- What the consumer's .java sources declare, in the source language's vocabulary: where each
@@ -4445,6 +4451,36 @@ COMMENT ON COLUMN intent_expanded_field.is_list IS 'whether the expression is a 
 COMMENT ON COLUMN intent_expanded_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list';
 COMMENT ON COLUMN intent_expanded_field.default_value_sdl IS 'the authored default literal where the coordinate is an argument-bearing input field with one; display material, never a dimension';
 COMMENT ON COLUMN intent_expanded_field.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+
+CREATE VIEW intent_scalar_java_type (graph_name, type_name, java_type) AS
+SELECT t.graph_name, t.type_name, engine.java_type
+  FROM intent_expanded_type t
+  JOIN (VALUES ('Int', 'java.lang.Integer'),
+               ('Float', 'java.lang.Double'),
+               ('String', 'java.lang.String'),
+               ('Boolean', 'java.lang.Boolean'),
+               ('ID', 'java.lang.String'),
+               ('federation__FieldSet', 'java.lang.String'),
+               ('federation__Scope', 'java.lang.String'),
+               ('federation__Policy', 'java.lang.String'),
+               ('federation__ContextFieldValue', 'java.lang.String'),
+               ('_FieldSet', 'java.lang.String'),
+               ('link__Import', 'java.lang.String'),
+               ('link__Purpose', 'java.lang.String')) engine (scalar_name, java_type)
+    ON engine.scalar_name = t.type_name
+ WHERE t.kind = 'SCALAR'
+ UNION ALL
+SELECT s.graph_name, s.type_name, f.input_type
+  FROM graphitron_scalar_type s
+  JOIN store_graph_source g ON g.graph_name = s.graph_name
+  JOIN jvm_scalar_type_field f
+    ON f.source_name = g.source_name AND f.class_name = s.scalar_ref_class_part
+   AND f.field_name = s.scalar_ref_field_part
+ WHERE f.input_type IS NOT NULL;
+COMMENT ON VIEW intent_scalar_java_type IS 'The Java type a value of one of a graph''s scalars arrives as: one row per scalar a Java type was reached for, whether the engine provides the scalar or a @scalarType names the constant carrying it. For example a graph declaring scalar DateTime @scalarType(scalar: "com.example.Scalars.DATE_TIME") draws a row saying java.time.OffsetDateTime, beside the row Int draws for java.lang.Integer.';
+COMMENT ON COLUMN intent_scalar_java_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_scalar_java_type.type_name IS 'the scalar''s name as the graph spells it, completing the key';
+COMMENT ON COLUMN intent_scalar_java_type.java_type IS 'the fully-qualified Java type a value of the scalar arrives as, boxed where the coercing accepts a primitive; the same spelling intent_condition_param_extraction.java_type carries for a parameter''s declared type, which is what makes the two comparable';
 
 CREATE VIEW intent_condition_slot
   (graph_name, site, use_site, slot_name, slot_kind, container_type_name, container_field_name,
@@ -10179,6 +10215,9 @@ INSERT INTO meta_grain VALUES
   ('condition-site-slot',
    'one GraphQL slot in scope at one application of a @condition directive, in one graph',
    'graph_name, site, use_site, slot_name', 'sdl'),
+  ('graph-scalar',
+   'one scalar type of one graph',
+   'graph_name, type_name', 'sdl'),
   ('condition-site-parameter',
    'one parameter position of one condition method, at one application of the directive that names the method, in one graph',
    'graph_name, site, use_site, descriptor, position', 'sdl'),
@@ -10409,9 +10448,9 @@ INSERT INTO meta_relation VALUES
    'For example the filmId component at position 0 of a record an author names in @record.',
    'Record mapping needs the components in their header order, and the header is what a constructor call has to match. Read from the record attribute rather than from the accessor methods the record generates, the component being where the declaration is and the accessor being a consequence of it.'),
   ('jvm_scalar_type_field', 'scalar-type-field', 'catalog',
-   'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType.',
-   'For example a DATE_TIME field an author names in @scalarType.',
-   '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants.'),
+   'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType, and the Java type it coerces a value to.',
+   'For example a DATE_TIME field an author names in @scalarType, coercing to java.time.OffsetDateTime.',
+   '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants. What a field coerces to sits here rather than in a relation of its own because it is a fact about the field and nothing else can be keyed by one: every such field declares the same type, so the answer is only readable off a loaded class, which is why the classfile scan records the field and this column is filled beside it rather than by it.'),
   ('java_file', 'source-file', 'java-source',
    'One .java file whose declarations this store holds, and the stamp they were read at.',
    'For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.',
@@ -10432,6 +10471,10 @@ INSERT INTO meta_relation VALUES
    'One javac diagnostic from the latest compile round over a graph''s emitted sources.',
    'For example an ERROR at line 42 of a generated FilmResolver.java, carrying the compiler''s own code and rendered message.',
    'The compile oracle''s verdict on what a run emitted, which nothing in the store can derive: whether javac accepts the output is a fact about the compiler rather than about the schema. Graph-keyed and graph-private, a sibling graph''s compile errors being its internals rather than its schema contract, and a round replaces the graph''s rows wholesale so the relation''s content is exactly the published round. Only a dev session ever writes here: in the batch pipeline javac runs in the consumer''s own build after the generator exits, so a batch run''s partition stays empty rather than claiming what it cannot know.'),
+  ('intent_scalar_java_type', 'graph-scalar', 'derivation',
+   'The Java type a value of one of a graph''s scalars arrives as: one row per scalar a Java type was reached for, whether the engine provides the scalar or a @scalarType names the constant carrying it.',
+   'For example a graph declaring scalar DateTime @scalarType(scalar: "com.example.Scalars.DATE_TIME") draws a row saying java.time.OffsetDateTime, beside the row Int draws for java.lang.Integer.',
+   'The pairing a @condition''s parameters go through compares a Java type against a slot''s, so a store that cannot name a scalar''s Java type cannot state that rule at all. One relation for both populations because a reader asks what type, not which rule found it: the engine''s scalars are a closed list here and a consumer''s is a classpath read. The two cannot collide, @scalarType being refused on a name the engine provides. Absence means no Java type was reached, and for a consumer scalar that is the classpath census''s own silence: a constant on an entry the census skips draws no row here while the generator, resolving through its codegen loader, finds it.'),
   ('intent_condition_slot', 'condition-site-slot', 'derivation',
    'One GraphQL slot in scope at one application of a @condition: one row per argument or input field a parameter of the named method may bind there.',
    'For example a field condition on films(rating: String, first: Int) draws two rows, one per argument, while a condition written on the rating argument itself draws only that one.',

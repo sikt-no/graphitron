@@ -450,6 +450,22 @@ public final class ScalarTypeResolver {
     }
 
     /**
+     * The five GraphQL spec built-in scalar names, in the table's own order. Exposed so a check
+     * over the recognised scalar space can enumerate it rather than probe it name by name.
+     */
+    public static Set<String> specBuiltInNames() {
+        return SPEC_BUILT_INS.keySet();
+    }
+
+    /**
+     * The federation-namespace scalar names, the second closed half of the recognised scalar
+     * space; sibling to {@link #specBuiltInNames}.
+     */
+    public static Set<String> federationNamespaceScalarNames() {
+        return FEDERATION_NAMESPACE_SCALARS;
+    }
+
+    /**
      * Inverse of {@link #builtInJavaType}: true when {@code javaTypeFqn} is the Java type FQN
      * any GraphQL spec built-in scalar maps to ({@code java.lang.String},
      * {@code java.lang.Integer}, {@code java.lang.Double}, {@code java.lang.Boolean}). Used as

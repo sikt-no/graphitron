@@ -119,8 +119,13 @@ class DerivedReadCostTest {
      * the field it sits on so that the relations keyed by a coordinate need carry no decomposition
      * of their own. It reads two transcription tables and reaches no registration, so once more the
      * two figures below did not move with it.
+     *
+     * <p>Raised to 119 by {@code intent_scalar_java_type}, which names the Java type a value of a
+     * scalar arrives as. It reads the expanded type population, one directive relation and the
+     * classpath census, none of which is a registration's target, so the two figures below held
+     * again.
      */
-    private static final int READERS_IN_SCHEMA = 118;
+    private static final int READERS_IN_SCHEMA = 119;
 
     /**
      * Views whose derivation reaches at least one registration's target.
