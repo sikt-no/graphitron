@@ -23,8 +23,10 @@ content-hashes every jar on the compile classpath twice, once for the census's o
 the store's retention decision, and neither hash knows the other ran. When this lands, the twelve of
 fifteen jars that a repository resolved, and that therefore cannot have changed, are not hashed at
 all, and the three a local build wrote get hashed once. Measured on this workstation over
-`graphitron-sakila-example`, that is about 7 ms of hashing per round where a warm round pays 67 ms
-today, against a round whose whole steady-state floor is 60 to 86 ms.
+`graphitron-sakila-example`: one pass over the fifteen jars costs 33 to 34 ms, against the 7 ms the
+census's other half costs to stat-walk the reactor's own `target/classes`, so hashing is the bulk of
+what a warm census read pays and the capture buys a second pass outside it. That is about 67 ms of
+jar hashing per warm round today, and about 7 ms when this lands.
 
 > **Reframed on 2026-09-05**, from "A dev round content-hashes the jar set twice, and R916 left it
 > that way", itself a reframe of "The dev loop reads the whole classpath twice per pass". The
@@ -65,6 +67,24 @@ costing 33 to 34 ms warm and 61 ms on the first pass over a cold page cache. A w
 twice. Stated as its own population rather than reconciled against R916's 55.2 ms over a 28.2 MB
 eleven-jar set, which is different hardware and a different classpath; neither figure supersedes the
 other.
+
+**What one pass is a fraction of**, in this same population. R922 measured the other half of the
+same census read on this workstation over this project: three `target/classes` roots, 1,383 class
+files, 6.3 MB, one `Files.walk` with a size and a modification-time stat per file, costing 24 ms on
+the first pass and 7 ms steady over thirty consecutive passes. The two halves are measured
+separately and sum to about 40 ms for a warm census read, of which the jar hash is 33 to 34. The
+capture's second pass is outside that figure altogether, being work the census never reports, so a
+warm round spends about 67 ms hashing jars against a census read of about 40.
+
+**R916's 60 to 86 ms is that same quantity on its own population**, and this item first misread it
+as a whole round. `ClasspathCensus.Round.millis` times `read` alone, and `readJar` hashes every jar
+on every round because comparing current bytes against a remembered hash is the census's change
+detector, so R916's 55.2 ms hash pass sits *inside* the 60 to 86 ms rather than needing to fit twice
+beside it, and a round its report calls "nothing re-read" still paid one. Both populations therefore
+have the same shape, which is the claim: one pass is most of a census read, and a warm round pays
+two. Neither figure is divided into the other. The 60 to 86 ms is quoted from R916's
+`roadmap/changelog.md` entry and the 55.2 ms from R921, which cites it as the nearest figure it has
+to a source-hashing cost.
 
 **The population splits, and it splits in the useful direction.** Twelve of the fifteen carry a Maven
 checksum sidecar (`<jar>.sha1`); three do not. The three without are exactly the reactor snapshots
@@ -132,9 +152,11 @@ recorded stamp describe the bytes the rows actually came from.
 ## Implementation
 
 **`ClasspathEntry`.** A fourth component, `String suppliedStamp`, null where none. The record keeps a
-three-argument constructor delegating to the canonical one with null, so all twenty-four existing
-construction sites compile untouched and the real blast radius is the five in `AbstractRewriteMojo`
-that have something to supply.
+three-argument constructor delegating to the canonical one with null, so the thirteen
+`new ClasspathEntry(...)` sites outside the record compile untouched, as do the thirteen that reach
+it through the `project` / `projectRoots` factories. The real blast radius is the five arms of
+`AbstractRewriteMojo.classifyElement`, which are the only sites with anything to supply; the mojo's
+sixth construction site is the reactor-outputs loop, which builds directory entries.
 
 **`AbstractRewriteMojo.classifyElement`.** For a jar entry, resolve `<jar>.sha1`, and where it
 exists, is readable, parses as hex, and is not older than the jar, supply it as that entry's stamp.
@@ -142,11 +164,37 @@ Anything else supplies null. This is the only code in the tree that knows what a
 sidecar is.
 
 **`SourceStamp`.** Stamps become scheme-tagged, `<scheme>:<hex>`, with `ofFile` and `of` producing
-`sha256:` and a supplied value arriving as `sha1:`. The class already claims to be the one home for
-how a stamp is spelled, and a column holding two algorithms without saying which is exactly the trap
-its javadoc warns about. One consequence to declare rather than discover: an existing store's
-untagged stamps match nothing after this lands, so the first round against a pre-existing store
-re-walks every classpath partition once and is current from then on.
+`sha256:` and a supplied value arriving through a named `ofSha1(String hex)` rather than through a
+prefix the plugin spells for itself. A column holding two algorithms without saying which is exactly
+the trap this class's javadoc warns about, and the class already claims to be the one home for how a
+stamp is spelled, so the spelling of the second scheme belongs here too.
+
+The consequence to declare rather than discover is the migration, and it is wider than the column
+this item is about: every stamp written through those two methods inherits the tag. Three
+populations move, and the first is the only one this item's own change is for.
+
+*`store_source.stamp` for classpath partitions.* An existing store's untagged values match nothing,
+so the first round against a pre-existing store re-walks every classpath partition once and is
+current from then on.
+
+*`store_source.stamp` for schema-file sources*, which `ClasspathSources.commitStamps` writes through
+the same call for every path `noteRegularFile` collected. No re-walk here, because the SDL walk
+takes those rows over by upsert on every capture regardless. What does move for one capture's worth
+of time is `SourceStamp.recordedMatches`, which reads that column and compares it against a freshly
+computed `of(content)`: against a pre-existing store it answers false until the next capture
+rewrites the row. Its one caller, `LintFixes`, offers no fix on a false, so the migration window
+costs a missing quick fix and never a wrong one.
+
+*`java_file.stamp`.* `JavaSourceFacts.refresh` stamps each parsed file with `ClasspathSources.hash`,
+which is `ofFile`, and compares that against the recorded value to decide whether to rewrite the
+file's rows. Both sides tag consistently, so the shape is the first population's: against a
+pre-existing store the next walk rewrites every file's rows once and is current from then on, over
+the Java-source population and on the `.java` cadence rather than the round's.
+
+`store_graph.build_file_stamp` inherits the tag as well, being written through `sources.stamp`.
+Nothing in the tree reads it back today, so nothing changes; it is named because R643 is specified
+against that column, and a reader arriving from there should not have to rediscover which spelling
+it holds.
 
 **`ClasspathSources`.** A constructor taking seed stamps, pre-populating the memo that `stamp`
 already reads. `StoreRefresh.freshSources` and `commitStamps` are then untouched: both call
@@ -158,7 +206,8 @@ gains the per-entry stamps this round used, jars only. `Reading` is constructed 
 **`CaptureRequest` and `FactCapture`.** The request gains the stamp map; four construction sites, two
 of which are `FactCapture`'s own convenience entry points passing an empty map. `FactCapture` gains
 one new widest `capture` overload taking the map, and the existing widest delegates with an empty
-one, so the roughly twenty test call sites stay untouched.
+one, so all fifty-six `FactCapture.capture` call sites in test sources, spread across the five
+existing overloads, stay untouched.
 
 The two changes are independently landable, in this order: supplied stamps shrink the population,
 sharing removes the duplication over whatever population remains. Either alone is an improvement, and
@@ -181,11 +230,17 @@ because the stamps describe the bytes the census parsed; without it `freshSource
 new bytes and rewrites. The mutation that fails this test is dropping the seed, and it cannot pass by
 accident on fast hardware.
 
-**A sidecar entry is not hashed, and a stale sidecar is.** Over a temp-dir fixture: a jar with a
-valid sidecar contributes the sidecar's value to the reading and is never opened for hashing; the
-same jar touched so that it is newer than its sidecar falls back to a computed stamp. Asserting "not
-opened" wants a sidecar whose value differs from what the bytes would hash to, so the two cases are
-distinguishable by value rather than by instrumentation.
+**A supplied stamp is not recomputed**, in `ClasspathCensusTest` over a temp-dir fixture. A
+hand-built entry carrying a supplied stamp contributes that value to the reading, and the jar is
+never opened for hashing. Asserting "not opened" wants a supplied value that differs from what the
+bytes would hash to, so the case is decided by value rather than by instrumentation.
+
+**A stale sidecar is not trusted**, in `ClasspathClassificationDecodeTest`, which is the plugin's own
+tier and already the home of `classifyElement`'s arms. A jar with a valid sidecar is classified with
+that sidecar's value supplied; the same jar touched so that it is newer than its sidecar is
+classified with none and hashes exactly as today. The two assertions sit in different modules
+because their subjects do: the census never learns what a sidecar is, which is the layering the
+whole first change exists to keep.
 
 **Census equality against a cold scan**, as every case in `ClasspathCensusTest` already pairs with
 its count claim: the risk a cache carries is a stale answer, not a slow one.
@@ -312,6 +367,23 @@ fraction-of-a-round claim out until one population supports it. Either is fine; 
 the implementation are untouched by the choice, which is why this is the author's sentence to write
 and not mine.
 
+**Response.** Taken, and the finding's closing observation turned out to be the way through it. The
+tension you found inside population B is not a defect in R916's numbers; it is this item misreading
+what they measure. `ClasspathCensus.Round.millis` times `read` alone, so R916's 60 to 86 ms is the
+census read and not a whole round, and since `readJar` hashes every jar on every round as its change
+detector, the 55.2 ms hash pass sits inside that figure rather than needing to fit twice beside it.
+A round the report calls "nothing re-read" still paid one pass, and the capture's second pass is
+outside what the census reports at all. So both halves are now stated where they were measured. The
+fraction claim now has a population-A denominator, which arrived on trunk while I was revising:
+R922's Spec body measures the other half of the same census read on this workstation over this
+project, the `target/classes` stat walk at 7 ms steady. One 33 to 34 ms jar pass beside a 7 ms walk
+is the bulk of a warm census read, and the capture's second pass is outside it, so the Goal states
+both the saving and its denominator without leaving population A. Population B is kept as the
+corroboration it is, one paragraph down, with its misreading corrected and its two figures sourced.
+Nothing divides across the two. No new measurement was taken here: this session is a different
+container from the one that measured on 2026-09-04, so a third population would have widened the
+problem rather than closed it.
+
 **Finding 2 (question one: the declared consequence is narrower than the change). Scheme-tagging
 `SourceStamp` migrates three stamp populations, and the spec declares one.**
 
@@ -332,6 +404,16 @@ there should not have to rediscover which spelling the column holds.
 Both are benign and neither changes the design. What would satisfy the finding is the declared
 consequence naming its real scope, so the Done-gate changelog entry and anyone reading the migration
 note afterwards get the whole of it.
+
+**Response.** Taken, and widened by one you did not name. The Implementation section's `SourceStamp`
+bullet now declares three populations rather than one: the classpath partitions of
+`store_source.stamp`, the schema-file rows of that same column, and `java_file.stamp`. The second is
+the one your finding did not reach and is the only one with a behavioural window rather than a
+re-walk, because `commitStamps` stamps every path `noteRegularFile` collected, so a pre-existing
+store's untagged schema stamp makes `recordedMatches` answer false until the next capture rewrites
+the row. `LintFixes` withholds a fix on a false, so the window costs a missing quick fix and never a
+wrong one, and one capture closes it. `store_graph.build_file_stamp` is named after the three as
+inert, with your R643 reason for naming it anyway.
 
 **Non-blocking, no response needed unless you want one.**
 
@@ -356,3 +438,21 @@ supplying a `sha1:` value. Whether the plugin writes that prefix itself or goes 
 `SourceStamp` factory is unstated. The doctrine the spec already cites answers it, so this is a
 seam an implementer closes rather than a fork, but a named factory would keep the spelling where the
 plan says it lives.
+
+**Response.** All three taken.
+
+The counts are replaced with ones I re-took and stated in a checkable measure. `ClasspathEntry`: 13
+`new ClasspathEntry(...)` sites outside the record, plus 13 that reach it through the `project` /
+`projectRoots` factories, all compiling untouched; the blast radius is named as the five arms of
+`classifyElement` specifically, with the mojo's sixth site identified as the reactor-outputs loop so
+6-against-5 is not a discrepancy a later reader has to resolve. `FactCapture.capture`: 56 call sites
+in test sources across five overloads, counting occurrences of the qualified call outside `target/`.
+Where you counted 57 across six I cannot see the extra one, so I have stated my measure rather than
+splitting the difference; the substance holds at either number.
+
+The sidecar test is now two bullets in two modules, `ClasspathCensusTest` for the census half and
+`ClasspathClassificationDecodeTest` for the staleness rule, with the reason for the split written in
+rather than left to be discovered: it is the same layering the change exists to keep.
+
+The factory is named. `SourceStamp.ofSha1(String hex)`, so the plugin hands over a value and never
+spells a prefix.
