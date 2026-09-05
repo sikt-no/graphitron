@@ -70,7 +70,7 @@ class ExpandedPopulationReaderGateTest {
             assertThat(observedReadings(dsl))
                 .as("views naming graphql_type or graphql_field, against the frozen roster;"
                     + " a missing entry is a view that must declare which population it means, by"
-                    + " joining the roster with a reason or by reading intent_expanded_*;"
+                    + " joining the roster with a reason or by reading the graphitron_ anchors;"
                     + " an extra entry is a reading already repointed, whose line is now stale")
                 .containsExactlyInAnyOrderElementsOf(frozenRoster()));
     }

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -278,6 +279,35 @@ class MacroCaptureTest {
                 .fetch(0, String.class))
                 .as("and the emitted argument list is the author's with the mint appended")
                 .containsExactly("genre", "first", "after");
+        }
+    }
+
+    /**
+     * The fallback page size is spelled twice and has to stay one number. Capture writes it into the
+     * minted argument's default and the generator reads {@link FieldWrapper#DEFAULT_PAGE_SIZE} when
+     * it builds the schema object, and the two live in different modules at different tiers, so
+     * neither can hold the other's constant. This is the test that stands in for the constant they
+     * cannot share, and it compares the emitted row against the field rather than one literal
+     * against another: a capture that stopped writing the default at all would still pass a literal
+     * comparison and fails here.
+     *
+     * <p>It sits in this module because this is the lowest one that can see both.
+     */
+    @Test
+    @DisplayName("the minted page size is the generator's own fallback")
+    void theMintedPageSizeAgreesWithTheGenerator(@TempDir Path tmp) {
+        String sdl = """
+            type Query { films: [Film!]! @asConnection }
+            type Film { title: String }
+            """;
+        try (var store = CapturedStore.of(tmp, sdl)) {
+            assertThat(store.dsl()
+                .select(GRAPHITRON_MINTED_ARGUMENT.DEFAULT_VALUE_SDL)
+                .from(GRAPHITRON_MINTED_ARGUMENT)
+                .where(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME.eq("first"))
+                .fetchOne(0, String.class))
+                .as("the default capture wrote, against the constant the generator emits")
+                .isEqualTo(String.valueOf(FieldWrapper.DEFAULT_PAGE_SIZE));
         }
     }
 

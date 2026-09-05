@@ -2389,6 +2389,12 @@ COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or
 -- graphql_field and the application's through graphql_field_directive, which is strictly more than
 -- a flattened site row held.
 --
+-- Each carries an index on its own coordinate tuple, which the key leads with the source instead of.
+-- Both directions of the precedence resolution need it: the transcription's arm anti-joins these
+-- relations on the coordinate it holds, once per authored element, and a reader asking whether one
+-- coordinate was minted has no other way in. The key answers "what did this application mint" and
+-- the index answers "who minted this", and the family is read both ways.
+--
 -- The coining directive is a directive and not an enum. A macro vocabulary with a CHECK is a list
 -- that has to be edited every time an expansion is added, and it names something the schema already
 -- describes: the directive is an element of the graph with a definition and a description of what it
@@ -2433,6 +2439,8 @@ CREATE TABLE graphitron_minted_type (
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (kind IN ('OBJECT'))
 );
+CREATE INDEX graphitron_minted_type_coordinate_ix
+  ON graphitron_minted_type (graph_name, type_name);
 COMMENT ON TABLE graphitron_minted_type IS 'A type one macro application would add to the schema: one row per minted type name per coining coordinate. For example @asConnection on Query.films mints QueryFilmsConnection and PageInfo under the coordinate Query.films, and a second carrier mints its own connection and its own PageInfo row beside them, the shared type being one row per carrier here and one row in graphitron_type.';
 COMMENT ON COLUMN graphitron_minted_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_minted_type.source_coordinate IS 'the coordinate whose directive application coined this row, which is the field the directive sits on. Leads the key after the graph, so the cascade from it is a seek and one application''s whole contribution is one range scan. The one foreign key here, into graphql_element rather than into the emitted anchor, which is what says minting is single level: every source is a coordinate an author wrote, and a macro expanding into another macro''s output would fail at capture instead of surprising a reader';
@@ -2464,6 +2472,8 @@ CREATE TABLE graphitron_minted_field (
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
+CREATE INDEX graphitron_minted_field_coordinate_ix
+  ON graphitron_minted_field (graph_name, type_name, field_name);
 COMMENT ON TABLE graphitron_minted_field IS 'A field one macro application would put on a type: one row per minted field coordinate per coining coordinate, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, and the carrier the expansion rewrote has a row whose own coordinate and coining coordinate are the same, which is what a rewrite is at this grain.';
 COMMENT ON COLUMN graphitron_minted_field.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_minted_field.source_coordinate IS 'the coordinate whose directive application coined this row, on graphitron_minted_type.source_coordinate''s terms. Equal to this row''s own coordinate exactly where the expansion rewrote the field it sits on rather than minting a new one, which is how a rewrite and a mint are told apart without a discriminator column';
@@ -2503,6 +2513,8 @@ CREATE TABLE graphitron_minted_argument (
   CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
+CREATE INDEX graphitron_minted_argument_coordinate_ix
+  ON graphitron_minted_argument (graph_name, type_name, field_name, argument_name);
 COMMENT ON TABLE graphitron_minted_argument IS 'An argument one macro application would put on a field: one row per minted argument coordinate per coining coordinate, carrying the same wrapping columns graphql_argument carries. For example @asConnection on a carrier whose author wrote no pagination argument mints first and after on that carrier, first carrying the resolved page size as its default.';
 COMMENT ON COLUMN graphitron_minted_argument.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_minted_argument.source_coordinate IS 'the coordinate whose directive application coined this row, on graphitron_minted_type.source_coordinate''s terms; for every argument minted today it is the field the argument lands on';

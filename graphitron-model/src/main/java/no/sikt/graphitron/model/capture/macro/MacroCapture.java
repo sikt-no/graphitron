@@ -71,9 +71,10 @@ public final class MacroCapture {
 
     /**
      * The pagination arguments, and the names whose presence stands the whole mint down. The
-     * generator's own fallback page size is the one value here that also lives in the generator
-     * module, on {@code FieldWrapper.DEFAULT_PAGE_SIZE}; the two are held equal by a test rather
-     * than by a shared constant, the modules running at different tiers.
+     * fallback page size is the one value here that is also spelled in the generator module, on
+     * {@code FieldWrapper.DEFAULT_PAGE_SIZE}, which this module cannot see; {@code MacroCaptureTest}
+     * holds the two equal by comparing the emitted row against that field, which is the nearest
+     * thing to a shared constant two tiers can have.
      */
     private static final int DEFAULT_PAGE_SIZE = 100;
     private static final Set<String> PAGINATION_ARGUMENTS = Set.of("first", "last", "after", "before");
@@ -143,6 +144,7 @@ public final class MacroCapture {
      */
     private List<Carrier> carriers(DSLContext dsl, String graphName) {
         var carriers = new ArrayList<Carrier>();
+        var argumentsByField = argumentsByField(dsl, graphName);
         for (var row : dsl
                 .select(GRAPHITRON_CONNECTION.TYPE_NAME, GRAPHITRON_CONNECTION.FIELD_NAME,
                     GRAPHITRON_CONNECTION.CONNECTION_NAME,
@@ -165,7 +167,8 @@ public final class MacroCapture {
             String connectionName = row.value3() != null && !row.value3().isEmpty()
                 ? row.value3()
                 : ConnectionNaming.defaultConnectionName(row.value1(), row.value2());
-            var arguments = authoredArguments(dsl, graphName, row.value1(), row.value2());
+            var arguments = argumentsByField.getOrDefault(
+                List.of(row.value1(), row.value2()), List.of());
             carriers.add(new Carrier(row.value1(), row.value2(), connectionName,
                 connectionName.replace(CONNECTION_SUFFIX, EDGE_SUFFIX),
                 element.name(), element.nullable(), row.value6(), row.value7(),
@@ -176,15 +179,25 @@ public final class MacroCapture {
         return carriers;
     }
 
-    /** The carrier's own argument names, which is the whole of what the argument mint consults. */
-    private static List<String> authoredArguments(DSLContext dsl, String graphName,
-                                                  String typeName, String fieldName) {
-        return dsl.select(GRAPHQL_ARGUMENT.ARGUMENT_NAME)
-            .from(GRAPHQL_ARGUMENT)
-            .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName))
-            .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq(typeName))
-            .and(GRAPHQL_ARGUMENT.FIELD_NAME.eq(fieldName))
-            .fetch(GRAPHQL_ARGUMENT.ARGUMENT_NAME);
+    /**
+     * Every field's authored argument names, in one read. Per carrier this is a lookup rather than
+     * a query: a schema with two hundred carriers would otherwise make two hundred round trips to
+     * ask each one a question about itself, which is the shape this whole line of work exists to
+     * stop, and it would be the more embarrassing for sitting inside the expansion rather than in a
+     * view somebody could blame on the planner.
+     */
+    private static Map<List<String>, List<String>> argumentsByField(DSLContext dsl, String graphName) {
+        var byField = new LinkedHashMap<List<String>, List<String>>();
+        for (var row : dsl
+                .select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
+                    GRAPHQL_ARGUMENT.ARGUMENT_NAME)
+                .from(GRAPHQL_ARGUMENT)
+                .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName))
+                .fetch()) {
+            byField.computeIfAbsent(List.of(row.value1(), row.value2()), key -> new ArrayList<>())
+                .add(row.value3());
+        }
+        return byField;
     }
 
     /** The element of a bare list of a named type, or null where the application expands nothing. */

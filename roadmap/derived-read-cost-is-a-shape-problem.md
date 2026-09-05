@@ -415,6 +415,14 @@ rewritten `Query.films` coined no minted `Query`. The case asserts all three hal
 author's type is whole, that the mint is recorded standing down, and that its fields are recorded and
 reach no anchor.
 
+**The key leads with the source, so each relation carries an index on its own coordinate.** The
+family is read both ways: the key answers what one application minted, and the transcription's arm
+of every precedence resolution asks the opposite question once per authored element, which the key
+cannot serve. `intent_connection_facet` asks it too. Three indexes, argued where they sit. The
+expansion also stopped asking the store one question per carrier about that carrier's own arguments
+and asks it once for the graph, which is the shape this item is about and would have been worse for
+sitting inside capture rather than in a view.
+
 **One thing the design said and the implementation could not keep.** Two carriers minting one
 coordinate with disagreeing payload was to be a primary key violation rather than an arbitrary
 winner. The fill upserts, for the cascade reason above, so it takes the last row instead of refusing;
