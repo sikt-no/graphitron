@@ -1,7 +1,7 @@
 ---
 id: R922
 title: "A dev round is told what changed instead of rediscovering it"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: dev-loop
