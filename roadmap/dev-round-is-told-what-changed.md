@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 2
 theme: dev-loop
-depends-on: []
+depends-on: [grain-declares-its-corpora]
 created: 2026-09-04
 last-updated: 2026-09-05
 ---
@@ -187,10 +187,18 @@ into it, and the extension is small and motivated. `gatherer_current` gets a new
 corpus, and crossing corpora is exactly what a gatherer with no corpus row is for.
 `MetaDeclarationGateTest.ownerAndGrainAgreeAboutTheCorpus` exempts such an owner in those words,
 "an owner with no corpus rows is exempt, crossing being its job", so the declaration lands inside the
-gate rather than beside it. The one genuine gap is `meta_grain.corpus_name`, which is NOT NULL and has
-no honest value for a grain that spans corpora; this item makes it nullable and has the corpus check
-skip a null, which is the same exemption the owner side already carries, stated once more on the grain
-side where the roster had not yet needed it.
+gate rather than beside it.
+
+The grain side is where the declared model genuinely cannot hold this relation yet, and that is R923's
+to fix rather than this item's to work around. `meta_grain.corpus_name` is NOT NULL, and the claim's
+grain names its corpus per row, so it has no single corpus to declare. Admitting it by making the
+column nullable would be the model saying the column does not belong on the relation, and an audit of
+the roster says the same thing from the other direction: 12 of the 40 declared relations are owned by a
+corpus-less gatherer, so their grain's corpus is never checked, and at least two of those values are
+not true. R923 replaces the column with a `meta_grain_corpus` junction, the same shape
+`meta_gatherer_corpus` already uses for the same question on the gatherer side, and this item declares
+its grain with no corpus row. That is why this item depends on R923 and does not touch `meta_grain`
+itself.
 
 ## Grain, and the one law that is easy to lose
 
@@ -333,10 +341,9 @@ reason this item pays the schema cost rather than deferring it.
 * A `meta_gatherer` row, `('observation', '<the observation class>')`, and no `meta_gatherer_corpus`
   row for it. `meta_gatherer_dependency`'s comment says "there are two of those" about corpus-less
   gatherers and becomes wrong with a third; it is rewritten in the same commit.
-* A `meta_grain` row for the claim's grain and a `meta_relation` row owning the relation to
-  `observation`. `meta_grain.corpus_name` becomes nullable, and
-  `MetaDeclarationGateTest.ownerAndGrainAgreeAboutTheCorpus` skips a null grain corpus, matching the
-  exemption its owner side already carries.
+* A `meta_grain` row for the claim's grain, with no `meta_grain_corpus` row, and a `meta_relation` row
+  owning the relation to `observation`. Both the junction and the empty-declaration reading arrive
+  with R923, which is why this item depends on it; nothing here edits `meta_grain` itself.
 
 The relation rosters a new base table has to join, each of which fails the build if missed:
 `StoreRefresh.wholesale()`'s exemption list (it is written in exemption polarity, so a relation nobody
