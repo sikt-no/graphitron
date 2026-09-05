@@ -49,7 +49,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
@@ -453,7 +459,11 @@ class FactCaptureAgreementTest {
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
+        registrations.put("graphitron_field_table", Arm.DERIVED);
+        registrations.put("graphitron_element", Arm.DERIVED);
+        registrations.put("graphitron_type", Arm.DERIVED);
         registrations.put("graphitron_field", Arm.DERIVED);
+        registrations.put("graphitron_argument", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
@@ -661,10 +671,16 @@ class FactCaptureAgreementTest {
         input FilmFilter { title: String = "any" }
         """;
 
-    /** A directive-driven carrier and a plain list, so the expansion has something to skip. */
+    /**
+     * A directive-driven carrier and a plain list, so the expansion has something to skip. The
+     * carrier takes an input-object argument it does not otherwise need, so that the element kinds
+     * this fixture reaches are all four the emitted family holds: without it the argument anchor is
+     * empty and the field kind has one branch, and every claim about either passes on a population
+     * of nothing.
+     */
     private static final String CONNECTION_FIXTURE = """
         type Query {
-          films: [Film!]! @asConnection
+          films(filter: FilmFilter): [Film!]! @asConnection
           languages: [Language!]!
         }
 
@@ -676,6 +692,8 @@ class FactCaptureAgreementTest {
         type Language @table(name: "language") {
           name: String @field(name: "name")
         }
+
+        input FilmFilter { title: String = "any" }
         """;
 
     /**
@@ -844,6 +862,91 @@ class FactCaptureAgreementTest {
                 .fetchSet(GRAPHQL_ELEMENT.ELEMENT_KIND))
                 .as("the fixture has to reach every kind, or the equality above is partly vacuous")
                 .contains("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE", "FIELD_ARGUMENT");
+        }
+    }
+
+    /**
+     * The element family the generator emits, against the two populations it is the union of. Every
+     * relation here is filled by an insert-select over relations this class already pins, so what
+     * this adds is that the union was taken and that it was taken at every grain: an arm dropped
+     * from one of the four statements empties nothing and fails nothing else, the anchors being
+     * total by construction and read by consumers that cannot tell a short population from a small
+     * schema.
+     *
+     * <p>The last two assertions are the ones that keep the rest from being vacuous. A fixture with
+     * no macro application makes every union a copy of its first arm, so the mint has to be shown to
+     * happen: a type no author declared, and a coordinate where the expression the generator reads
+     * differs from the one the author wrote.
+     */
+    @Test
+    @DisplayName("the emitted element family is the transcription unioned with what expansion minted")
+    void theEmittedElementFamilyIsTheUnion(@TempDir Path tmp) {
+        try (var store = CapturedStore.of(tmp, CONNECTION_FIXTURE)) {
+            var dsl = store.dsl();
+            assertThat(dsl.select(GRAPHITRON_TYPE.TYPE_NAME).from(GRAPHITRON_TYPE).fetch())
+                .as("the emitted type anchor against the transcription and the mint")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+                        .unionAll(dsl.select(GRAPHITRON_MINTED_TYPE.TYPE_NAME)
+                            .from(GRAPHITRON_MINTED_TYPE))
+                        .fetch());
+            assertThat(dsl.select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
+                .from(GRAPHITRON_FIELD).fetch())
+                .as("the emitted field anchor against the transcription and the mint")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME).from(GRAPHQL_FIELD)
+                        .unionAll(dsl.select(GRAPHITRON_MINTED_FIELD.TYPE_NAME,
+                                GRAPHITRON_MINTED_FIELD.FIELD_NAME).from(GRAPHITRON_MINTED_FIELD))
+                        .fetch());
+            // No second arm yet: the expansion mints two arguments on a carrier whose author wrote
+            // no pagination argument and the store does not record them, which is the gap the
+            // minted-argument relation closes. This assertion is what will fail on the day it does,
+            // which is the point of stating it now rather than after.
+            assertThat(dsl.select(GRAPHITRON_ARGUMENT.TYPE_NAME, GRAPHITRON_ARGUMENT.FIELD_NAME,
+                    GRAPHITRON_ARGUMENT.ARGUMENT_NAME).from(GRAPHITRON_ARGUMENT).fetch())
+                .as("the emitted argument anchor against the transcription")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
+                        GRAPHQL_ARGUMENT.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT).fetch());
+            // The supertype against the three under it, on the transcription family's terms: a
+            // foreign key refuses an anchor with no supertype row and nothing refuses a supertype
+            // row no anchor claimed. The field arm derives its kind from the declaring type rather
+            // than asserting a literal, exactly as the transcription's own arm does.
+            assertThat(dsl.select(GRAPHITRON_ELEMENT.COORDINATE, GRAPHITRON_ELEMENT.ELEMENT_KIND)
+                .from(GRAPHITRON_ELEMENT).fetch())
+                .as("the emitted element supertype against the union of its three anchors")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHITRON_TYPE.COORDINATE, val("NAMED_TYPE")).from(GRAPHITRON_TYPE)
+                    .unionAll(dsl.select(GRAPHITRON_FIELD.COORDINATE,
+                            when(GRAPHITRON_TYPE.KIND.eq("INPUT_OBJECT"), val("INPUT_FIELD"))
+                                .otherwise(val("FIELD")))
+                        .from(GRAPHITRON_FIELD)
+                        .join(GRAPHITRON_TYPE)
+                        .on(GRAPHITRON_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
+                        .and(GRAPHITRON_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME)))
+                    .unionAll(dsl.select(GRAPHITRON_ARGUMENT.COORDINATE, val("FIELD_ARGUMENT"))
+                        .from(GRAPHITRON_ARGUMENT))
+                    .fetch());
+            assertThat(dsl.select(GRAPHITRON_ELEMENT.ELEMENT_KIND).from(GRAPHITRON_ELEMENT)
+                .fetchSet(GRAPHITRON_ELEMENT.ELEMENT_KIND))
+                .as("the fixture has to reach every kind this family holds, or the supertype"
+                    + " equality above is partly vacuous")
+                .containsExactlyInAnyOrder("NAMED_TYPE", "FIELD", "INPUT_FIELD", "FIELD_ARGUMENT");
+            assertThat(dsl.select(GRAPHITRON_MINTED_TYPE.TYPE_NAME).from(GRAPHITRON_MINTED_TYPE)
+                .fetch(0, String.class))
+                .as("the fixture has to mint a type, or every union above is a copy of one arm")
+                .isNotEmpty();
+            assertThat(dsl.select(GRAPHITRON_FIELD.TYPE_NAME, GRAPHITRON_FIELD.FIELD_NAME)
+                .from(GRAPHITRON_FIELD)
+                .join(GRAPHQL_FIELD)
+                .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
+                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_FIELD.TYPE_NAME))
+                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_FIELD.FIELD_NAME))
+                .where(GRAPHQL_FIELD.TYPE_SDL.ne(GRAPHITRON_FIELD.TYPE_SDL))
+                .fetch())
+                .as("the fixture has to rewrite a carrier, or the field anchor's expression is"
+                    + " the author's everywhere and the rewrite it carries is untested")
+                .isNotEmpty();
         }
     }
 

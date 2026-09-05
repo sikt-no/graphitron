@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -132,7 +132,7 @@ class FieldEndpointsTest {
                 .select(s.TYPE_NAME, s.FIELD_NAME, s.TABLE_NAME).from(s)
                 .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .fetch(r -> r.value1() + "." + r.value2() + " -> " + r.value3());
-            var f = GRAPHITRON_FIELD;
+            var f = GRAPHITRON_FIELD_TABLE;
             List<String> captured = dsl
                 .select(f.TYPE_NAME, f.FIELD_NAME, f.TO_TABLE).from(f)
                 .where(f.GRAPH_NAME.eq(CapturedStore.GRAPH))
@@ -185,7 +185,7 @@ class FieldEndpointsTest {
     }
 
     private static List<String> rows(DSLContext dsl) {
-        var f = GRAPHITRON_FIELD;
+        var f = GRAPHITRON_FIELD_TABLE;
         return dsl.select(f.TYPE_NAME, f.FIELD_NAME, f.FROM_TABLE, f.TO_TABLE, f.TARGET_BASIS)
             .from(f).where(f.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(f.TYPE_NAME, f.FIELD_NAME, f.TO_TABLE)

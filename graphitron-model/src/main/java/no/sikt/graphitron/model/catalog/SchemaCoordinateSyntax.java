@@ -1,5 +1,10 @@
 package no.sikt.graphitron.model.catalog;
 
+import org.jooq.Field;
+
+import static org.jooq.impl.DSL.concat;
+import static org.jooq.impl.DSL.val;
+
 /**
  * The GraphQL specification's schema-coordinate grammar, as the one place that spells it.
  *
@@ -25,6 +30,12 @@ package no.sikt.graphitron.model.catalog;
  *
  * <p>It sits beside {@link GrainSentence} for the same reason that does: a convention of the
  * store's own text belongs with the catalog it describes rather than in whichever walk writes it.
+ *
+ * <p>Each form is spelled twice, once over strings a walk holds and once as an expression over
+ * columns, because both callers exist: a walk writing one row at a time renders the text in Java,
+ * and a derivation filling an anchor from a relation renders it in the statement. The pairs sit
+ * beside each other here for the reason the class exists at all, the alternative being one of them
+ * written out at whichever call site needed it.
  */
 public final class SchemaCoordinateSyntax {
 
@@ -58,5 +69,21 @@ public final class SchemaCoordinateSyntax {
     /** {@code @directive(argument:)}, on {@link #ofArgument}'s terms. */
     public static String ofDirectiveArgument(String directiveName, String argumentName) {
         return "@" + directiveName + "(" + argumentName + ":)";
+    }
+
+    /** {@link #ofType} over a column: the type's own name, so the column stands as it is. */
+    public static Field<String> typeCoordinate(Field<String> typeName) {
+        return typeName;
+    }
+
+    /** {@link #ofField} over columns. */
+    public static Field<String> fieldCoordinate(Field<String> typeName, Field<String> fieldName) {
+        return concat(typeName, val("."), fieldName);
+    }
+
+    /** {@link #ofArgument} over columns. */
+    public static Field<String> argumentCoordinate(Field<String> typeName, Field<String> fieldName,
+                                                   Field<String> argumentName) {
+        return concat(typeName, val("."), fieldName, val("("), argumentName, val(":)"));
     }
 }

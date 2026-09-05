@@ -15,6 +15,7 @@ import graphql.language.Value;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
+import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -68,6 +69,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
@@ -109,7 +111,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
@@ -191,6 +192,9 @@ public final class GraphitronFactCapture {
         NodeKeyColumns.derive(dsl, graphName);
         var edges = MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
+        // The anchors before every stage that keys at a coordinate, because the expansion above is
+        // the second arm of their population and everything below reads them rather than the union.
+        ElementAnchors.derive(dsl, graphName);
         navigation(dsl, graphName);
         // Last, because its target rule reads the navigation the line above writes and its
         // departure reads the bindings three lines up.
@@ -201,7 +205,8 @@ public final class GraphitronFactCapture {
 
     /**
      * Which type each field's own generated SQL navigates as, over the population the generator
-     * emits rather than over the document: the connection's element where the field's named type is
+     * emits rather than over the document, which is {@code graphitron_field} and the reason the
+     * anchor above it is derived first: the connection's element where the field's named type is
      * a connection, and the named type itself otherwise.
      *
      * <p>Two rungs and not the three this rule used to carry. The retired one took the expression
@@ -218,17 +223,17 @@ public final class GraphitronFactCapture {
                 GRAPHITRON_FIELD_NAVIGATION.FIELD_NAME, GRAPHITRON_FIELD_NAVIGATION.BASIS,
                 GRAPHITRON_FIELD_NAVIGATION.NAVIGATED_TYPE_NAME)
             .select(dsl
-                .select(INTENT_EXPANDED_FIELD.GRAPH_NAME, INTENT_EXPANDED_FIELD.TYPE_NAME,
-                    INTENT_EXPANDED_FIELD.FIELD_NAME,
+                .select(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
+                    GRAPHITRON_FIELD.FIELD_NAME,
                     when(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME.isNull(),
                         val("NAMED_TYPE")).otherwise(val("CONNECTION_ELEMENT")),
                     coalesce(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME,
-                        INTENT_EXPANDED_FIELD.NAMED_TYPE))
-                .from(INTENT_EXPANDED_FIELD)
+                        GRAPHITRON_FIELD.NAMED_TYPE))
+                .from(GRAPHITRON_FIELD)
                 .leftJoin(INTENT_CONNECTION_ELEMENT_TYPE)
-                .on(INTENT_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(INTENT_EXPANDED_FIELD.GRAPH_NAME))
-                .and(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(INTENT_EXPANDED_FIELD.NAMED_TYPE))
-                .where(INTENT_EXPANDED_FIELD.GRAPH_NAME.eq(graphName)))
+                .on(INTENT_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
+                .and(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.NAMED_TYPE))
+                .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName)))
             .execute();
     }
 

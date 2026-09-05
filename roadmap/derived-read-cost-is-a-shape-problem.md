@@ -322,7 +322,7 @@ candidate count and four stop forgetting it. `graphitron_node_entry` and `graphi
 an author wrote from what took effect, `graphitron_node_keycolumn_entry` and
 `graphitron_node_keycolumn` do the same for the key tuple, and the key columns resolve against the
 bound table instead of forwarding a spelling, which retired four per-row folds and absorbed R731.
-`graphitron_field` states where a field's rows come from and where the field departs from to reach
+`graphitron_field_table` states where a field's rows come from and where the field departs from to reach
 them, which no relation said before: the departure lived in one derivation keyed on the parent type
 and the arrival in another keyed on the field.
 
@@ -379,7 +379,7 @@ should have been holding all along.
 | nodehood, second attempt: the node id pair
 | the rule reads scope relations that are registered targets, so a gatherer cannot see them at all,
   and those in turn read a reference walk that is itself unmigrated
-| `graphitron_field`, the endpoints. The route and the reference decode under it are still owed
+| `graphitron_field_table`, the endpoints. The route and the reference decode under it are still owed
 
 | the reference step decode
 | a foreign key into `graphql_field_element` refused `QueryFilmsConnection.nodes`, a field macro
@@ -417,13 +417,13 @@ key and foreign keys into what the resolution reached. What an author got wrong 
 between the two, and it is the only place a diagnostic can find it.
 
 **An anchor's population is not its entry's.** `graphitron_node` unions a declared arm and a
-published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field` has three disjoint
+published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field_table` has three disjoint
 target rules and only one of them reads a directive. A pair is not a decode with its resolution
 bolted on; it is two relations answering different questions that happen to meet at an anti-join.
 
 **A graphitron relation cannot key at `graphql_*_coordinate`.** Macro expansion mints coordinates the
 transcription does not hold, so a foreign key there excludes exactly the fields a connection is made
-of. `graphitron_field` was written with one and the build failed on `QueryFilmsConnection.nodes`.
+of. `graphitron_field_table` was written with one and the build failed on `QueryFilmsConnection.nodes`.
 Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
 and no such anchor exists: `intent_expanded_type` and `intent_expanded_field` are views, so nothing
 can point at them. The element family below is what the rest of this arc keys through, and it is the

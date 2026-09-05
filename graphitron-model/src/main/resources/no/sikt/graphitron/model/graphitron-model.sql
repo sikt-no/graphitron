@@ -2245,6 +2245,134 @@ COMMENT ON COLUMN graphitron_undecoded_argument.directive_name IS 'the applied o
 COMMENT ON COLUMN graphitron_undecoded_argument.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphitron_undecoded_argument.value_sdl IS 'the literal as written, rendered from the AST';
 
+-- ==== The element family the generator emits ======================================
+-- Every schema element the generator works with, the author's and the ones macro expansion minted,
+-- at one key and at the grain each kind is asked about. graphitron_element is the supertype over
+-- graphitron_type, graphitron_field and graphitron_argument, which is graphql_element and its
+-- subtypes with one difference. The graphql side splits an element's existence from its attributes
+-- because the two sit at different cadences, a coordinate settled by the per-file parse and a
+-- payload only once the document composes; this family is derived at one cadence, so anchor and
+-- payload are one relation and graphitron_type carries the kind and the description that
+-- graphql_type carries beside graphql_type_element.
+--
+-- The anchors carry the payload rather than joining the twin for it. A minted element has no twin,
+-- so a reader that joins graphql_field for the details is reading a union again, which is the shape
+-- this family exists to remove; the copy is bounded by schema size and not by data. The line it
+-- draws is that the anchor carries what rendering needs and the twin keeps what only the
+-- transcription can assert, which is why graphql_field.declaration_line and its foreign key into
+-- graphql_type_declaration do not come across: a minted field has no declaration site to point at,
+-- and a reader asking where an element was written is asking the transcription's question and reads
+-- it there.
+--
+-- This is where a graphitron relation keys. A foreign key into graphql_*_element excludes exactly
+-- the coordinates macro expansion minted, which is what a connection is made of, so a graphitron
+-- relation naming a coordinate names one of these instead; graphitron_field was written with the
+-- other key once and the build failed on QueryFilmsConnection.nodes.
+--
+-- Three subtypes and not the transcription's four. Enum values are minted by nothing and asked for
+-- by no reader here, so an anchor over them would be a copy of graphql_enum_value with no question
+-- to answer; the CHECK on element_kind is where that boundary is stated rather than left to the
+-- population, and an emitter reading this family for a whole schema is what would move it.
+
+CREATE TABLE graphitron_element (
+  graph_name   VARCHAR NOT NULL,
+  coordinate   VARCHAR NOT NULL,
+  element_kind VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'FIELD_ARGUMENT'))
+);
+COMMENT ON TABLE graphitron_element IS 'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.';
+COMMENT ON COLUMN graphitron_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_element.coordinate IS 'the coordinate itself, in the specification''s own grammar and spelled exactly as graphql_element spells it: Type for a named type, Type.field for a field or an input field of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot';
+COMMENT ON COLUMN graphitron_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Four of the specification''s seven kinds, the vocabulary being narrower than graphql_element''s by exactly the enum value this family holds no anchor for';
+
+CREATE TABLE graphitron_type (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  coordinate  VARCHAR NOT NULL,
+  kind        VARCHAR NOT NULL,
+  description VARCHAR,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
+  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
+);
+COMMENT ON TABLE graphitron_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.';
+COMMENT ON COLUMN graphitron_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites or minting sites contributed to it';
+COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling';
+COMMENT ON COLUMN graphitron_type.kind IS 'the type''s kind in graphql_type''s vocabulary, carried across rather than restated so a reader joins one column whichever arm supplied its row';
+COMMENT ON COLUMN graphitron_type.description IS 'the docstring, authored on an authored type and written by the macro on a minted one; display material, never a dimension';
+
+CREATE TABLE graphitron_field (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  type_sdl          VARCHAR NOT NULL,
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
+  default_value_sdl VARCHAR,
+  description       VARCHAR,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  UNIQUE (graph_name, coordinate),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
+  CHECK (is_list OR item_non_null IS NULL)
+);
+COMMENT ON TABLE graphitron_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries. For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.';
+COMMENT ON COLUMN graphitron_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
+COMMENT ON COLUMN graphitron_field.type_name IS 'the type owning the field, anchored by graphitron_type';
+COMMENT ON COLUMN graphitron_field.field_name IS 'the field''s name within the owning type; with the two columns above, the grain';
+COMMENT ON COLUMN graphitron_field.coordinate IS 'this row as graphitron_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphitron_type.coordinate''s terms';
+COMMENT ON COLUMN graphitron_field.ordinal IS 'the field''s position within its type, merge-ordered across declaration sites exactly as graphql_field numbers it, and the order the macro wrote them in on a minted type';
+COMMENT ON COLUMN graphitron_field.type_sdl IS 'the type expression as the generator reads it: the authored literal on an ordinary field, and the macro''s rewrite where one happened';
+COMMENT ON COLUMN graphitron_field.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
+COMMENT ON COLUMN graphitron_field.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
+COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal where the coordinate is an input field with one; display material, never a dimension';
+COMMENT ON COLUMN graphitron_field.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+
+CREATE TABLE graphitron_argument (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  coordinate        VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  type_sdl          VARCHAR NOT NULL,
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
+  default_value_sdl VARCHAR,
+  description       VARCHAR,
+  PRIMARY KEY (graph_name, type_name, field_name, argument_name),
+  UNIQUE (graph_name, coordinate),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
+  CHECK (is_list OR item_non_null IS NULL)
+);
+COMMENT ON TABLE graphitron_argument IS 'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries. For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.';
+COMMENT ON COLUMN graphitron_argument.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
+COMMENT ON COLUMN graphitron_argument.type_name IS 'owning type of the field the argument sits on';
+COMMENT ON COLUMN graphitron_argument.field_name IS 'the field the argument sits on, anchored by graphitron_field';
+COMMENT ON COLUMN graphitron_argument.argument_name IS 'the argument''s name within the owning field; with the three columns above, the grain';
+COMMENT ON COLUMN graphitron_argument.coordinate IS 'this row as graphitron_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it';
+COMMENT ON COLUMN graphitron_argument.ordinal IS 'the argument''s position within its field, declaration order on an authored one and the order the macro appended on a minted one, which is after every authored argument';
+COMMENT ON COLUMN graphitron_argument.type_sdl IS 'the type expression as the generator reads it';
+COMMENT ON COLUMN graphitron_argument.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
+COMMENT ON COLUMN graphitron_argument.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_argument.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_argument.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
+COMMENT ON COLUMN graphitron_argument.default_value_sdl IS 'the default literal where the argument has one, authored or written by the macro; display material, never a dimension';
+COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or macro-written; display material, never a dimension';
+
 -- ==== Macro synthesis provenance ==================================================
 -- The connection expansion's own record: which graphql_ rows it added, and the written expression
 -- where it rewrote one. Synthesized rows inherit the causing application's source position; these
@@ -2420,12 +2548,13 @@ CREATE TABLE graphitron_field_navigation (
   basis               VARCHAR NOT NULL,
   navigated_type_name VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   CHECK (basis IN ('CONNECTION_ELEMENT', 'NAMED_TYPE'))
 );
 CREATE INDEX graphitron_field_navigation_type_ix
   ON graphitron_field_navigation (graph_name, navigated_type_name);
-COMMENT ON TABLE graphitron_field_navigation IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Two rungs: the connection''s element where the field''s named type is a connection, and the named type itself otherwise. Total over intent_expanded_field, minted machinery fields included, so a consumer joins this rather than left-joining it. Stored rather than stated as a view because a reader joins on the answer: a view is seekable on the coordinate it is keyed by and not on a name it projects, so as a column here the navigated type is a value an index leads with. This relation is the correction of a resolution that had five spellings, all of which read the same way and all of which were wrong at the same half: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it, the second being a silence rather than a rule. Every site that needs a field''s navigated type reads this, and the rule to hold it to is not a count of those sites but that the next spelling is the one nobody has written yet.';
+COMMENT ON TABLE graphitron_field_navigation IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Two rungs: the connection''s element where the field''s named type is a connection, and the named type itself otherwise. Total over graphitron_field, minted machinery fields included, so a consumer joins this rather than left-joining it. Stored rather than stated as a view because a reader joins on the answer: a view is seekable on the coordinate it is keyed by and not on a name it projects, so as a column here the navigated type is a value an index leads with. This relation is the correction of a resolution that had five spellings, all of which read the same way and all of which were wrong at the same half: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it, the second being a silence rather than a rule. Every site that needs a field''s navigated type reads this, and the rule to hold it to is not a count of those sites but that the next spelling is the one nobody has written yet.';
 COMMENT ON COLUMN graphitron_field_navigation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_navigation.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_navigation.field_name IS 'the field whose navigation this row states; with the two columns above the whole key, one row per field of the graph';
@@ -2896,7 +3025,7 @@ COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s 
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
 
 
-CREATE TABLE graphitron_field (
+CREATE TABLE graphitron_field_table (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
   field_name       VARCHAR NOT NULL,
@@ -2908,12 +3037,13 @@ CREATE TABLE graphitron_field (
   to_table         VARCHAR NOT NULL,
   target_basis     VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table),
-  -- store_graph and not graphql_field_element, which is the population's doing rather than a
-  -- constraint given up lightly: a connection macro mints fields that have a target like any other
-  -- and no coordinate row, minting being graphitron's where that relation is the SDL
-  -- transcription's. graphitron_field_navigation, the population this derives from, spans the same
-  -- two populations and carries the same single foreign key for the same reason.
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- graphitron_field and not graphql_field_element, which is the population's doing: a connection
+  -- macro mints fields that have a target like any other and no transcribed coordinate, minting
+  -- being graphitron's where that relation is the SDL transcription's. The anchor is the
+  -- transcription widened by exactly those, so it is the key this relation always wanted and could
+  -- not have; graphitron_field_navigation, the population this derives from, keys there too.
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
@@ -2923,17 +3053,17 @@ CREATE TABLE graphitron_field (
   CHECK ((from_source_name IS NULL) = (from_schema IS NULL)),
   CHECK ((from_source_name IS NULL) = (from_table IS NULL))
 );
-COMMENT ON TABLE graphitron_field IS 'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field. For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.';
-COMMENT ON COLUMN graphitron_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field.field_name IS 'the field whose endpoints this row states, over the population the generator emits rather than the one the author wrote: a field a connection macro minted has a target like any other and appears here, which is why the key points at no coordinate relation. graphitron_field_navigation spans the same two populations and is where this one gets them';
-COMMENT ON COLUMN graphitron_field.from_source_name IS 'the catalog partition of the table the field departs from, the first column of the sql_table key this row names. Functionally determined by the graph rather than independent of it: a capture reads exactly one jOOQ package, so within a graph the schema and the name already identify a table, which is why @table(name:) can spell one in two parts and needs no third. It is carried all the same because the engine cannot derive it. sql_table is source-keyed and shared between graphs, so without this column the reference here could not be a foreign key and a recrawled source could not take the rows naming it along with it. The same holds of to_source_name beside it';
-COMMENT ON COLUMN graphitron_field.from_schema IS 'the departure table''s SQL schema';
-COMMENT ON COLUMN graphitron_field.from_table IS 'the departure table''s SQL name. Null at a root field, together with the two columns beside it, and that nullness is the fact rather than a gap: a field on Query or Mutation has no enclosing row to depart from, so its statement starts at the target. Null is therefore "this field is the start of its own path", which is also what makes a leading @routine legal only at a root';
-COMMENT ON COLUMN graphitron_field.to_source_name IS 'the catalog partition of the table the field''s rows come from; see from_source_name for why a column the graph already determines is stored';
-COMMENT ON COLUMN graphitron_field.to_schema IS 'the target table''s SQL schema';
-COMMENT ON COLUMN graphitron_field.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
-COMMENT ON COLUMN graphitron_field.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
+COMMENT ON TABLE graphitron_field_table IS 'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field. For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.';
+COMMENT ON COLUMN graphitron_field_table.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_table.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_table.field_name IS 'the field whose endpoints this row states, over the population the generator emits rather than the one the author wrote: a field a connection macro minted has a target like any other and appears here, which is why the key points at graphitron_field and not at the transcription''s own anchor. graphitron_field_navigation spans the same two populations and is where this one gets them';
+COMMENT ON COLUMN graphitron_field_table.from_source_name IS 'the catalog partition of the table the field departs from, the first column of the sql_table key this row names. Functionally determined by the graph rather than independent of it: a capture reads exactly one jOOQ package, so within a graph the schema and the name already identify a table, which is why @table(name:) can spell one in two parts and needs no third. It is carried all the same because the engine cannot derive it. sql_table is source-keyed and shared between graphs, so without this column the reference here could not be a foreign key and a recrawled source could not take the rows naming it along with it. The same holds of to_source_name beside it';
+COMMENT ON COLUMN graphitron_field_table.from_schema IS 'the departure table''s SQL schema';
+COMMENT ON COLUMN graphitron_field_table.from_table IS 'the departure table''s SQL name. Null at a root field, together with the two columns beside it, and that nullness is the fact rather than a gap: a field on Query or Mutation has no enclosing row to depart from, so its statement starts at the target. Null is therefore "this field is the start of its own path", which is also what makes a leading @routine legal only at a root';
+COMMENT ON COLUMN graphitron_field_table.to_source_name IS 'the catalog partition of the table the field''s rows come from; see from_source_name for why a column the graph already determines is stored';
+COMMENT ON COLUMN graphitron_field_table.to_schema IS 'the target table''s SQL schema';
+COMMENT ON COLUMN graphitron_field_table.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
+COMMENT ON COLUMN graphitron_field_table.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
 
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
@@ -10248,6 +10378,12 @@ INSERT INTO meta_grain VALUES
   ('minted-type-site',
    'one declaration site a macro contributed for one minted type in one graph',
    'graph_name, type_name, source_name, source_line, source_column', 'sdl'),
+  ('expanded-element',
+   'one schema element the generator emits in one graph, identified by the coordinate the GraphQL specification spells for it',
+   'graph_name, coordinate', 'sdl'),
+  ('expanded-argument',
+   'one field-argument coordinate the generator works with in one graph',
+   'graph_name, type_name, field_name, argument_name', 'sdl'),
   ('database-schema',
    'one schema of one generated catalog source',
    'source_name, table_schema', 'catalog'),
@@ -10343,6 +10479,22 @@ INSERT INTO meta_relation VALUES
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries.',
    'For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.',
    'The field-grain half of intent_expanded_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that union is disjoint; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate, and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
+  ('graphitron_element', 'expanded-element', 'graphitron',
+   'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
+   'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
+   'A graphitron relation naming a coordinate has nowhere to key. graphql_element holds what the document declares, so a foreign key there excludes exactly the coordinates macro expansion minted, which is what a connection is made of; the relation that shipped as graphitron_field was written with that key and the build failed on a minted connection''s own field. The union views that answered for the expanded population could not stand in, a view being no key''s target. So this is that population written down, at the grain the specification already gives it, with the same spelling and the same kind vocabulary graphql_element uses so that a reader holding a coordinate from either family holds the same string. The three subtypes beside it carry the parts and the payload together, which is where this family parts company with the transcription: an element the expansion minted has no twin to join for its details, so an anchor that carried only a key would send every reader back through a union.'),
+  ('graphitron_type', 'expanded-type', 'graphitron',
+   'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
+   'For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',
+   'The type grain of the emitted population, as a table where it was a view. Two things follow from being a table and neither is available to a union: a relation about a minted type can key here, and a reader can be given an index. The payload is carried rather than joined from graphql_type because a minted type has no row there, so the join would be a left join whose null arm is the whole reason this relation exists. What it does not carry is the declaration site, that being a fact only the transcription can assert.'),
+  ('graphitron_field', 'expanded-field', 'graphitron',
+   'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries.',
+   'For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.',
+   'The field grain of graphitron_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that population is a disjoint union; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
+  ('graphitron_argument', 'expanded-argument', 'graphitron',
+   'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries.',
+   'For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.',
+   'The argument grain, and the one this family gained rather than inherited. The connection expansion mints two arguments on a carrier whose author wrote no pagination argument, and until this relation the store recorded nothing about them: the expansion has two halves in two modules, one writing facts and one building schema objects, and only the second knew the arguments existed. So an argument the generator emits was reachable from the emitted schema and from no relation, which is the gap this closes. Total over the emitted population on graphitron_type''s terms.'),
   ('graphql_element_field', 'element-field-site', 'sdl',
    'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',
    'For example Query.films draws a row naming the type and the field, and Query.films(filter:) draws another naming those and the argument, so a reader holding either spelling reaches the field with one join.',
@@ -10359,7 +10511,7 @@ INSERT INTO meta_relation VALUES
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
    'Half of a node''s identity as a resolved fact, beside graphitron_node which carries the other. Three populations answer and one wins: what the author pinned, what the bound table''s generated class publishes, and the table''s own primary key. Standing on the nodehood anchor is what makes resolution possible at all. The relation this replaces reaches the pinned tier through a decode keyed by graph and type alone, so that tier had no table to resolve against and forwarded the authored spelling untouched; a node is table bound unambiguously by construction, so the table is in hand and the column is a reference rather than a name. Both authored tiers fold to resolve, against the column''s SQL name and its generated field name alike, and neither spelling survives into the row. A tier that applies and fails to resolve yields nothing rather than falling through: an author who pinned a column the table does not have has made an error, and encoding ids against the primary key instead would publish a wire format nobody asked for, silently. The same holds within a tier, a key list with a hole decoding values into the wrong positions. The bound table rides along in three columns so the row can reference both the type''s binding and the column, which together make a row naming another table''s column impossible. The order is why this is a relation rather than a list: an id encoded against one order and decoded against another finds the wrong row rather than failing.'),
-  ('graphitron_field', 'field-target-table', 'graphitron',
+  ('graphitron_field_table', 'field-target-table', 'graphitron',
    'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field.',
    'For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.',
    'Where a field''s rows come from and where they depart from, said once and without the route between. Readers wanting the endpoints outnumber readers wanting the hops, and until now both had to walk: the departure lived in one derivation keyed on the parent type, the arrival in another keyed on the field, and neither said the pair. A field with several targets is several rows, which is the whole reason the target is in the key: a polymorphic container binding no table of its own is one statement per participant, and a relation with one row per field would have to pick a branch. Departure is nullable and target is not, and the asymmetry is the domain''s: every row a field returns comes from somewhere, while a root field has no enclosing row to depart from. The route between the two endpoints is a relation of its own, keyed by this one''s key so the two cannot disagree about which target a path leads to. Every table reference is the full sql_table key including the catalog partition; that partition follows from the graph, a capture reading one jOOQ package, and is carried anyway so the reference is a foreign key the engine checks and cascades rather than a convention readers keep. Written as a stage of the graphitron gatherer after the navigation it stands on, every rule it applies reading a captured relation: the bindings, the polymorphic membership, and the routine whose own spelling it resolves.'),

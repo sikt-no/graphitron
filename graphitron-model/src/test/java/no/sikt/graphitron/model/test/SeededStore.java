@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
+import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -190,6 +191,13 @@ public final class SeededStore {
      * did.
      */
     public static void derive(DSLContext dsl) {
+        // The element anchors first, because every relation keyed at an emitted coordinate points
+        // at them and the supertype transcription below is the first of those. By the production
+        // call, so a fixture cannot hold its own idea of what the emitted population is.
+        for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
+                .fetch(STORE_GRAPH.GRAPH_NAME)) {
+            ElementAnchors.derive(dsl, graph);
+        }
         transcribeSupertypes(dsl);
         // The candidate tree, by the same call capture makes. Stated here rather than seeded row by
         // row because the rule is pure SQL over rows a case has already seeded, so running it is
@@ -270,7 +278,7 @@ public final class SeededStore {
             SELECT f.graph_name, f.type_name, f.field_name,
                    CASE WHEN ce.type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
                    COALESCE(ce.element_type_name, f.named_type)
-              FROM intent_expanded_field f
+              FROM graphitron_field f
               LEFT JOIN intent_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
             """);

@@ -6,7 +6,7 @@ import org.jooq.Field;
 import org.jooq.Record10;
 import org.jooq.Select;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -24,7 +24,7 @@ import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The capture-cadence writer of {@code graphitron_field}: where a field's rows come from, and where
+ * The capture-cadence writer of {@code graphitron_field_table}: where a field's rows come from, and where
  * the field departs from to reach them.
  *
  * <p>Called as a stage of the graphitron gatherer after the navigation it stands on, and everything
@@ -56,8 +56,8 @@ public final class FieldEndpoints {
     public static void derive(DSLContext dsl, String graphName) {
         // Cleared first so the call is idempotent: capture makes it once per graph, and a caller
         // re-deriving in order to read the result makes it as often as it likes.
-        dsl.deleteFrom(GRAPHITRON_FIELD)
-            .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName)).execute();
+        dsl.deleteFrom(GRAPHITRON_FIELD_TABLE)
+            .where(GRAPHITRON_FIELD_TABLE.GRAPH_NAME.eq(graphName)).execute();
         insert(dsl, namedType(dsl, graphName));
         insert(dsl, participants(dsl, graphName));
         insert(dsl, routineResult(dsl, graphName));
@@ -65,13 +65,13 @@ public final class FieldEndpoints {
 
     private static void insert(DSLContext dsl, Select<? extends Record10<
             String, String, String, String, String, String, String, String, String, String>> rows) {
-        dsl.insertInto(GRAPHITRON_FIELD)
-            .columns(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
-                GRAPHITRON_FIELD.FIELD_NAME,
-                GRAPHITRON_FIELD.FROM_SOURCE_NAME, GRAPHITRON_FIELD.FROM_SCHEMA,
-                GRAPHITRON_FIELD.FROM_TABLE,
-                GRAPHITRON_FIELD.TO_SOURCE_NAME, GRAPHITRON_FIELD.TO_SCHEMA,
-                GRAPHITRON_FIELD.TO_TABLE, GRAPHITRON_FIELD.TARGET_BASIS)
+        dsl.insertInto(GRAPHITRON_FIELD_TABLE)
+            .columns(GRAPHITRON_FIELD_TABLE.GRAPH_NAME, GRAPHITRON_FIELD_TABLE.TYPE_NAME,
+                GRAPHITRON_FIELD_TABLE.FIELD_NAME,
+                GRAPHITRON_FIELD_TABLE.FROM_SOURCE_NAME, GRAPHITRON_FIELD_TABLE.FROM_SCHEMA,
+                GRAPHITRON_FIELD_TABLE.FROM_TABLE,
+                GRAPHITRON_FIELD_TABLE.TO_SOURCE_NAME, GRAPHITRON_FIELD_TABLE.TO_SCHEMA,
+                GRAPHITRON_FIELD_TABLE.TO_TABLE, GRAPHITRON_FIELD_TABLE.TARGET_BASIS)
             .select(rows)
             .execute();
     }

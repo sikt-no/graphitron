@@ -80,6 +80,19 @@ class SupertypeSignatureGateTest {
      * deliberately unconverted, the {@code sql_} column groups are reference lists rather than
      * subtypes, and the argument-site twins are the tranche the reconstruction roster below
      * measures.
+     *
+     * <p>Two rows are neither a supertype owed nor a reference list, and both come from the element
+     * family the generator emits. {@code graphitron_element} and {@code graphql_element} carry one
+     * column apiece and it is the same column, because the second is the first's population widened
+     * by what macro expansion minted: two populations of one shape, which is the whole point of the
+     * pair, where a supertype over them would say an element exists in one graph twice.
+     * {@code graphitron_field} and {@code graphitron_argument} share a payload for a reason the
+     * specification already gives: a field and a field argument both carry a type expression, its
+     * four decomposed wrappers, a default and a description, and the specification declares no
+     * element they are both kinds of. The supertype they do share is written, and it is
+     * {@code graphitron_element}, which carries what the two have in common at the grain they have
+     * it in common at: the coordinate and the kind. Lifting the type expression up there would put
+     * eight nullable columns on a supertype whose type rows can never fill them.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphitron_undecoded_argument", "graphql_argument_directive_arg",
@@ -96,7 +109,9 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_error", "graphql_type_directive"),
         Set.of("graphitron_argument_binding", "graphitron_field_binding"),
         Set.of("graphitron_argument_node_id", "graphitron_field_node_id"),
-        Set.of("graphitron_argument_reference_for", "graphitron_reference_for"));
+        Set.of("graphitron_argument_reference_for", "graphitron_reference_for"),
+        Set.of("graphitron_element", "graphql_element"),
+        Set.of("graphitron_argument", "graphitron_field"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as
