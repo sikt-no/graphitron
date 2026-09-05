@@ -505,9 +505,13 @@ class AccessorHopTest {
 
             seedType(dsl, GRAPH, "Film", "OBJECT");
             seedField(dsl, GRAPH, "Store", "node", "Film", false);
+            // The carrier the mint is coined under. It has to be a field the author wrote, the
+            // minted rows keying into the transcription, which is what says minting is single level.
+            seedField(dsl, GRAPH, "Store", "films", "Film", true);
 
             seedMintedType(dsl, GRAPH, "FilmEdge", "Store", "films");
-            seedMintedField(dsl, GRAPH, "FilmEdge", "node", "Film", 0, false, false, null);
+            seedMintedField(dsl, GRAPH, "FilmEdge", "node", "Store", "films", "Film", 0,
+                false, false, null);
 
             assertThat(hops(dsl, GRAPH, "Store", "node"))
                 .as("the authored coordinate, which is the control: empty here means the case is"

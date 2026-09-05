@@ -158,7 +158,7 @@ class FieldNavigatedTypeTest {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "FilmConnection");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "FilmConnection");
 
             assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
         });
@@ -192,7 +192,7 @@ class FieldNavigatedTypeTest {
         withCatalog(dsl -> {
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "FilmConnection");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "FilmConnection");
 
             assertThat(navigatedRows(dsl)).contains("Query.films CONNECTION_ELEMENT Film");
             assertThat(elementRows(dsl)).contains("FilmConnection Film");
@@ -222,7 +222,7 @@ class FieldNavigatedTypeTest {
             seedConnection(dsl, "FilmsConnection", "FilmsEdge", "Film");
             seedField(dsl, GRAPH, "Query", "filmsConnection", "FilmsConnection", false);
             seedField(dsl, GRAPH, "Query", "films", "Film", true);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
 
             derive(dsl);
             long fields = dsl.fetchCount(no.sikt.graphitron.model.Tables.GRAPHQL_FIELD,
@@ -262,7 +262,7 @@ class FieldNavigatedTypeTest {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedConnection(dsl, "FilmConnection", "FilmEdge", "Film");
             seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
 
             assertThat(scopeRows(dsl)).contains("Query.films NAMED_TYPE_TABLE film");
         });

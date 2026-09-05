@@ -73,7 +73,7 @@ class FieldScopeTableTest {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
             seedField(dsl, GRAPH, "Query", "films", "FilmConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
 
             assertThat(rows(dsl).map(FieldScopeTableTest::render))
                 .containsExactly("Query.films NAMED_TYPE_TABLE film");

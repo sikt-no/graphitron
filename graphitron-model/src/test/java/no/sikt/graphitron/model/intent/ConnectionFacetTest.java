@@ -220,7 +220,7 @@ class ConnectionFacetTest {
         seedType(dsl, GRAPH, "FilmConnection", "OBJECT");
         seedField(dsl, GRAPH, "Query", fieldName, "FilmConnection", false);
         seedConnection(dsl, GRAPH, "Query", fieldName);
-        seedFieldSynthesis(dsl, GRAPH, "Query", fieldName, "CONNECTION", "[Film!]!");
+        seedFieldSynthesis(dsl, GRAPH, "Query", fieldName, "[Film!]!");
         argument(dsl, fieldName, argumentName, inputTypeName, ordinal);
     }
 

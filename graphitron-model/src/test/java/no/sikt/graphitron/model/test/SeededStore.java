@@ -38,11 +38,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
@@ -58,6 +56,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -126,6 +125,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * that quietly disagree is not.
  */
 public final class SeededStore {
+
+    /** The directive every minted row this fixture writes points at. */
+    private static final String CONNECTION_DIRECTIVE = "asConnection";
 
     /**
      * The declaration site every seeded type carries. One spelling, so the composite foreign keys
@@ -646,101 +648,124 @@ public final class SeededStore {
     }
 
     /**
-     * What a macro put at a field it rewrote: the field's own row still carries the type the author
-     * wrote and this one carries the expansion's replacement. A case about the reading the generator
-     * takes states both spellings, and the two deliberately disagree.
+     * What a macro put at a field it rewrote, which at this grain is a minted field whose coining
+     * coordinate is its own: the field's own row still carries the type the author wrote and this
+     * one carries the expansion's replacement. A case about the reading the generator takes states
+     * both spellings, and the two deliberately disagree.
      *
-     * @param macro the expansion that rewrote it; {@code CONNECTION} is the only one the DDL accepts
+     * <p>REPLACE, because a rewrite is exactly a mint that takes the author's place, and the whole
+     * row is stated including the ordinal and description the expansion did not change.
+     *
      * @param typeSdl the expression the macro put there, a bare type name for every macro today
      */
     public static void seedFieldSynthesis(DSLContext dsl, String graphName, String typeName,
-                                          String fieldName, String macro, String typeSdl) {
-        dsl.insertInto(GRAPHITRON_FIELD_SYNTHESIS)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.MACRO, macro)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.TYPE_SDL, typeSdl)
-            .set(GRAPHITRON_FIELD_SYNTHESIS.NAMED_TYPE, typeSdl.replace("[", "")
+                                          String fieldName, String typeSdl) {
+        seedCoiningDirective(dsl, graphName);
+        dsl.insertInto(GRAPHITRON_MINTED_FIELD)
+            .set(GRAPHITRON_MINTED_FIELD.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE,
+                SchemaCoordinateSyntax.ofField(typeName, fieldName))
+            .set(GRAPHITRON_MINTED_FIELD.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MINTED_FIELD.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MINTED_FIELD.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
+            .set(GRAPHITRON_MINTED_FIELD.PRECEDENCE, "REPLACE")
+            .set(GRAPHITRON_MINTED_FIELD.ORDINAL, 0)
+            .set(GRAPHITRON_MINTED_FIELD.TYPE_SDL, typeSdl)
+            .set(GRAPHITRON_MINTED_FIELD.NAMED_TYPE, typeSdl.replace("[", "")
                 .replace("]", "").replace("!", ""))
-            .set(GRAPHITRON_FIELD_SYNTHESIS.NON_NULL, typeSdl.endsWith("!"))
-            .set(GRAPHITRON_FIELD_SYNTHESIS.IS_LIST, typeSdl.startsWith("["))
+            .set(GRAPHITRON_MINTED_FIELD.NON_NULL, typeSdl.endsWith("!"))
+            .set(GRAPHITRON_MINTED_FIELD.IS_LIST, typeSdl.startsWith("["))
             .execute();
     }
 
     /**
-     * A type the expansion minted rather than the author declared, with the one site that minted
-     * it. The counterpart to {@link #seedType} on the other side of the expanded population: a
-     * reader that admits authored and minted types alike must be stated against both, and the two
-     * live in different relations precisely so that a reader can tell them apart when it needs to.
+     * The directive a minted row points at. Every minted relation keys into graphql_directive by
+     * name, capture always having the definition because the bundled directives.graphqls is injected
+     * before parse; a fixture that seeds a mint has to stand in for that too. Idempotent, so a case
+     * minting several things asks for it as often as it likes.
+     */
+    private static void seedCoiningDirective(DSLContext dsl, String graphName) {
+        dsl.insertInto(GRAPHQL_DIRECTIVE)
+            .set(GRAPHQL_DIRECTIVE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
+            .set(GRAPHQL_DIRECTIVE.REPEATABLE, false)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
+
+    /**
+     * A type one macro application would mint, under the coordinate that coined it. The counterpart
+     * to {@link #seedType} on the other side of the emitted population: a reader that admits
+     * authored and minted types alike must be stated against both, and the two live in different
+     * relations precisely so that a reader can tell them apart when it needs to.
      *
      * <p>No {@code graphql_type_element} row comes with it, and that is the point rather than an
-     * omission. The transcription holds what the author wrote, so a name nobody wrote has no
-     * coordinate to claim, which is why the domain relation over the expanded population carries no
-     * key into the coordinates.
+     * omission: the transcription holds what the author wrote, so a name nobody wrote has no
+     * coordinate there to claim, and a relation over the emitted population keys into
+     * {@code graphitron_element} instead.
+     *
+     * <p>YIELD, which is what every type mint carries: adding machinery to a type the author wrote
+     * would merge two types nobody asked to merge, so where the name is taken the row records an
+     * application that stood down. A case wanting the suppressed reading seeds the authored type
+     * beside this.
      *
      * <p>Idempotent, on {@link #seedType}'s terms, so a case that mints an Edge and a Connection
-     * naming the same carrier can ask for either without tracking which came first.
+     * from one carrier can ask for either without tracking which came first.
      *
-     * @param carrierTypeName the type whose field carried the macro application, or {@code null}
-     *                        for a type minted once and shared, as {@code PageInfo} is
-     * @param carrierFieldName that field's name, {@code null} on the same terms
+     * @param carrierTypeName the type whose field carried the macro application
+     * @param carrierFieldName that field's name; the two together are the coining coordinate, which
+     *                         has to be a field the case has seeded, the key being into the
+     *                         transcription and minting being single level
      */
     public static void seedMintedType(DSLContext dsl, String graphName, String typeName,
                                       String carrierTypeName, String carrierFieldName) {
-        if (dsl.fetchExists(GRAPHITRON_MINTED_TYPE, GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName)
-                .and(GRAPHITRON_MINTED_TYPE.TYPE_NAME.eq(typeName)))) {
-            return;
-        }
+        seedCoiningDirective(dsl, graphName);
         dsl.insertInto(GRAPHITRON_MINTED_TYPE)
             .set(GRAPHITRON_MINTED_TYPE.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_TYPE.SOURCE_COORDINATE,
+                SchemaCoordinateSyntax.ofField(carrierTypeName, carrierFieldName))
             .set(GRAPHITRON_MINTED_TYPE.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MINTED_TYPE.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
+            .set(GRAPHITRON_MINTED_TYPE.PRECEDENCE, "YIELD")
             .set(GRAPHITRON_MINTED_TYPE.KIND, "OBJECT")
-            .set(GRAPHITRON_MINTED_TYPE.MACRO, "CONNECTION")
-            .execute();
-        dsl.insertInto(GRAPHITRON_MINTED_TYPE_SITE)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_LINE, SEED_LINE)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.SOURCE_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.MERGE_ORDINAL, 0)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.IS_EXTENSION, false)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.CARRIER_TYPE_NAME, carrierTypeName)
-            .set(GRAPHITRON_MINTED_TYPE_SITE.CARRIER_FIELD_NAME, carrierFieldName)
+            .onDuplicateKeyIgnore()
             .execute();
     }
 
     /**
-     * One field on a minted type, with its wrapping stated the way {@link #seedInputField} states
-     * an input field's: a minted field's cardinality is what a reader of the expanded population
-     * compares against, so it cannot be a default here.
+     * One field one macro application would put on a type it minted, with its wrapping stated the
+     * way {@link #seedInputField} states an input field's: a minted field's cardinality is what a
+     * reader of the emitted population compares against, so it cannot be a default here.
      *
-     * <p>The owning type is the case's to mint, because only the case knows which carrier it came
-     * from; a field on a type nothing minted is a foreign key violation rather than a silent row.
+     * <p>The coining coordinate is the case's to give, and it must be the one that minted the
+     * owning type: a machinery field is told from a rewritten carrier by sharing its type's source,
+     * and a field whose source disagrees with its type's would survive its type losing.
      *
      * @param itemNonNull the element's non-nullability when {@code isList}, and {@code null}
      *                    otherwise, which the DDL checks rather than tolerates
      */
     public static void seedMintedField(DSLContext dsl, String graphName, String typeName,
-                                       String fieldName, String namedType, int ordinal,
+                                       String fieldName, String carrierTypeName,
+                                       String carrierFieldName, String namedType, int ordinal,
                                        boolean nonNull, boolean isList, Boolean itemNonNull) {
+        seedCoiningDirective(dsl, graphName);
         var wrapped = isList
             ? "[" + namedType + (Boolean.TRUE.equals(itemNonNull) ? "!" : "") + "]"
             : namedType;
         dsl.insertInto(GRAPHITRON_MINTED_FIELD)
             .set(GRAPHITRON_MINTED_FIELD.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE,
+                SchemaCoordinateSyntax.ofField(carrierTypeName, carrierFieldName))
             .set(GRAPHITRON_MINTED_FIELD.TYPE_NAME, typeName)
             .set(GRAPHITRON_MINTED_FIELD.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MINTED_FIELD.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
+            .set(GRAPHITRON_MINTED_FIELD.PRECEDENCE, "YIELD")
             .set(GRAPHITRON_MINTED_FIELD.ORDINAL, ordinal)
             .set(GRAPHITRON_MINTED_FIELD.TYPE_SDL, wrapped + (nonNull ? "!" : ""))
             .set(GRAPHITRON_MINTED_FIELD.NAMED_TYPE, namedType)
             .set(GRAPHITRON_MINTED_FIELD.NON_NULL, nonNull)
             .set(GRAPHITRON_MINTED_FIELD.IS_LIST, isList)
             .set(GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL, itemNonNull)
-            .set(GRAPHITRON_MINTED_FIELD.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_MINTED_FIELD.SOURCE_LINE, SEED_LINE)
-            .set(GRAPHITRON_MINTED_FIELD.SOURCE_COLUMN, SEED_COLUMN)
             .execute();
     }
 

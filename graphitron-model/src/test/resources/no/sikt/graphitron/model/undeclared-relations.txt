@@ -33,7 +33,6 @@ graphitron_field_navigation
 graphitron_field_node_id
 graphitron_field_reference
 graphitron_field_reference_step
-graphitron_field_synthesis
 graphitron_index
 graphitron_link
 graphitron_link_import

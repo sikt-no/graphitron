@@ -103,7 +103,7 @@ class FieldParticipantScopeTableTest {
             seedUnionMember(dsl, GRAPH, "Document", "Film", 1);
             seedType(dsl, GRAPH, "DocumentConnection", "OBJECT");
             seedField(dsl, GRAPH, "Query", "documents", "DocumentConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Query", "documents", "CONNECTION", "[Document!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "documents", "[Document!]!");
 
             assertThat(rows(dsl).map(FieldParticipantScopeTableTest::render))
                 .containsExactly("Query.documents Film film");

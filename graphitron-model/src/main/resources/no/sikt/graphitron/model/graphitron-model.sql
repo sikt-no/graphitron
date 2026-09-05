@@ -2374,129 +2374,151 @@ COMMENT ON COLUMN graphitron_argument.default_value_sdl IS 'the default literal 
 COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or macro-written; display material, never a dimension';
 
 -- ==== Macro synthesis provenance ==================================================
--- The connection expansion's own record: which graphql_ rows it added, and the written expression
--- where it rewrote one. Synthesized rows inherit the causing application's source position; these
--- relations are what say a position means "caused here" rather than "written here".
+-- What macro expansion mints, one row per minted element per minting site. Three relations, one per
+-- element kind, and the anchors above are the union of these with the transcription.
 --
--- Both residents are @asConnection's, and the family is closed at that. A macro qualifies to run in
--- capture only when its contribution is a function of one carrier's own declaration, reading nothing
--- outside the SDL corpus. @asConnection qualifies: its element type enters as a name and nothing
--- reads the type that name resolves to. Two do not, for two different reasons. @asFacet reads
--- through the carrier's arguments into the filter input type's fields, so it is an aggregate over
--- the whole schema rather than a local expansion, which is why no FACET value appears here. And
--- federation's key synthesis fires on nodehood, which conjoins the SDL claim with metadata a
--- generated jOOQ class publishes: a second corpus, so the rule is a derivation
--- (intent_synthesized_federation_key) and its rows are their own provenance, which is why no
--- FEDERATION_KEY value appears here either and why this family holds no relation about @key.
+-- The key leads with the coordinate that coined the row. A minted coordinate is not unique here and
+-- must not be: the shared PageInfo is minted by every carrier, so each carrier writes its own whole
+-- contribution and the primary key is the only dedupe there is. Leading with the source makes a
+-- cascade from it a seek and "what did this application mint" one range scan, and it is the one
+-- foreign key each relation carries: into graphql_element, ON DELETE CASCADE. Minting is single
+-- level, every source being a coordinate an author wrote, and that key is where the day a macro
+-- expands into another macro's output fails, at capture rather than in a reader.
 --
--- What survives here is what a derived relation cannot hold. A macro that adds a declaration site
--- adds it to graphql_type_declaration, because a minted type has to be a type every reader of the
--- transcription sees; that addition is marked rather than excluded. And a macro that rewrites a
--- captured value overwrites one, so the authored expression survives only in the relation that
--- stashed it. Both are the cost of an expansion running inside the walk, and both are payable
--- exactly because @asConnection reads one corpus.
+-- Positions are not carried. The source coordinate reaches the field's own position through
+-- graphql_field and the application's through graphql_field_directive, which is strictly more than
+-- a flattened site row held.
+--
+-- The coining directive is a directive and not an enum. A macro vocabulary with a CHECK is a list
+-- that has to be edited every time an expansion is added, and it names something the schema already
+-- describes: the directive is an element of the graph with a definition and a description of what it
+-- does, so a reader asking why a coordinate exists gets the documentation rather than a label. Today
+-- that is a key into graphql_directive by name; it becomes a directive coordinate when the graphql
+-- family gains an anchor for one.
+--
+-- Precedence is a column because it is not derivable. Whether a mint beats the author's declaration
+-- is a property of what the expansion is doing rather than of whether a collision happened, and
+-- @asConnection settles it both ways at once: rewriting Query.films replaces the authored field,
+-- while minting PageInfo yields to an author who declared that name. Both are collisions with an
+-- authored coordinate and they resolve opposite ways, so no predicate over the two populations can
+-- tell them apart. A replacing row states its whole row, copying the ordinal and the description it
+-- does not change, so the winner is taken wholesale and neither side coalesces.
+--
+-- Capture writes the row whether or not it wins, and that is worth more than the tidiness. The
+-- expansion used to read every declared type name in the schema into a set and return early against
+-- it, so it was not a function of one carrier's own declaration, which is the qualification rule
+-- this family's own comment gives as the reason @asConnection may run inside capture at all. Writing
+-- unconditionally makes the stated rule true, and it gains the rows a suppressed mint used to leave
+-- as silence: which application would have minted what, and stood down.
+--
+-- Two macros still do not qualify and neither appears here. @asFacet reads through the carrier's
+-- arguments into the filter input type's fields, so it is an aggregate over the whole schema rather
+-- than a local expansion. And federation's key synthesis conjoins the SDL claim with metadata a
+-- generated jOOQ class publishes, a second corpus, so it is a derivation
+-- (intent_synthesized_federation_key) whose rows are their own provenance.
+
 CREATE TABLE graphitron_minted_type (
-  graph_name  VARCHAR NOT NULL,
-  type_name   VARCHAR NOT NULL,
-  kind        VARCHAR NOT NULL,
-  description VARCHAR,
-  macro       VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (kind IN ('OBJECT')),
-  CHECK (macro IN ('CONNECTION'))
+  graph_name        VARCHAR NOT NULL,
+  source_coordinate VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  directive_name    VARCHAR NOT NULL,
+  precedence        VARCHAR NOT NULL,
+  kind              VARCHAR NOT NULL,
+  description       VARCHAR,
+  PRIMARY KEY (graph_name, source_coordinate, type_name),
+  FOREIGN KEY (graph_name, source_coordinate)
+    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive (graph_name, directive_name),
+  CHECK (precedence IN ('REPLACE', 'YIELD')),
+  CHECK (kind IN ('OBJECT'))
 );
-COMMENT ON TABLE graphitron_minted_type IS 'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph. For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads graphitron_type.';
+COMMENT ON TABLE graphitron_minted_type IS 'A type one macro application would add to the schema: one row per minted type name per coining coordinate. For example @asConnection on Query.films mints QueryFilmsConnection and PageInfo under the coordinate Query.films, and a second carrier mints its own connection and its own PageInfo row beside them, the shared type being one row per carrier here and one row in graphitron_type.';
 COMMENT ON COLUMN graphitron_minted_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_minted_type.type_name IS 'the minted type''s name; with the graph, the grain, and one row however many carriers caused it, which is how the shared PageInfo is one type';
+COMMENT ON COLUMN graphitron_minted_type.source_coordinate IS 'the coordinate whose directive application coined this row, which is the field the directive sits on. Leads the key after the graph, so the cascade from it is a seek and one application''s whole contribution is one range scan. The one foreign key here, into graphql_element rather than into the emitted anchor, which is what says minting is single level: every source is a coordinate an author wrote, and a macro expanding into another macro''s output would fail at capture instead of surprising a reader';
+COMMENT ON COLUMN graphitron_minted_type.type_name IS 'the minted type''s name; with the source, the grain. Not unique on its own and deliberately so, shared machinery being minted once per carrier';
+COMMENT ON COLUMN graphitron_minted_type.directive_name IS 'the directive whose application coined this row, by name, anchored by graphql_directive. A directive rather than a macro label from a closed list: the definition carries a description of what the expansion does, so a reader asking why a coordinate exists reads that instead of an enum';
+COMMENT ON COLUMN graphitron_minted_type.precedence IS 'what this row does at a coordinate the author also declared: REPLACE takes the author''s place, YIELD stands down and leaves the declaration alone. Not derivable from the collision, @asConnection replacing at its carrier and yielding at PageInfo, so it is stated by whichever expansion wrote the row';
 COMMENT ON COLUMN graphitron_minted_type.kind IS 'the type''s kind in graphql_type''s vocabulary, always OBJECT: the macros mint nothing else, and the CHECK holds them to it';
 COMMENT ON COLUMN graphitron_minted_type.description IS 'the docstring the macro wrote, matching what the assembled-schema synthesis emits; display material, never a dimension';
-COMMENT ON COLUMN graphitron_minted_type.macro IS 'which macro minted the type, from the closed vocabulary the CHECK states';
-
-CREATE TABLE graphitron_minted_type_site (
-  graph_name         VARCHAR NOT NULL,
-  type_name          VARCHAR NOT NULL,
-  source_name        VARCHAR NOT NULL,
-  source_line        INT     NOT NULL,
-  source_column      INT     NOT NULL,
-  merge_ordinal      INT     NOT NULL,
-  is_extension       BOOLEAN NOT NULL,
-  carrier_type_name  VARCHAR,
-  carrier_field_name VARCHAR,
-  PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name, type_name)
-    REFERENCES graphitron_minted_type (graph_name, type_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_minted_type_site IS 'One declaration site a macro contributed for a minted type: the position an author can edit to make the type go away, and which carrier put it there. For example the shared PageInfo carries one site per @asConnection application, the first defining it and the rest extending, so the site count is the carrier multiplicity an incremental refresh refcounts the type by.';
-COMMENT ON COLUMN graphitron_minted_type_site.graph_name IS 'the owning graph''s partition, carried from the minted type''s own row';
-COMMENT ON COLUMN graphitron_minted_type_site.type_name IS 'the minted type this site declares or extends';
-COMMENT ON COLUMN graphitron_minted_type_site.source_name IS 'the file the causing application sits in; a minted row points at a line the author can edit rather than at an invented position';
-COMMENT ON COLUMN graphitron_minted_type_site.source_line IS 'the causing application''s line, or the carrier field''s where the application has no position of its own';
-COMMENT ON COLUMN graphitron_minted_type_site.source_column IS 'the causing application''s column, on the same terms';
-COMMENT ON COLUMN graphitron_minted_type_site.merge_ordinal IS 'the site''s place among this type''s sites, 0-based, mirroring how graphql_type_declaration numbers an authored type''s';
-COMMENT ON COLUMN graphitron_minted_type_site.is_extension IS 'whether the site extends a type already minted rather than defining it; false on exactly the merge_ordinal 0 row';
-COMMENT ON COLUMN graphitron_minted_type_site.carrier_type_name IS 'the type owning the field whose application caused this site; NULL where a macro mints without a carrier, which nothing does today';
-COMMENT ON COLUMN graphitron_minted_type_site.carrier_field_name IS 'that field''s name, so a reader reaches the application from the minted type in one join';
 
 CREATE TABLE graphitron_minted_field (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  ordinal       INT     NOT NULL,
-  type_sdl      VARCHAR NOT NULL,
-  named_type    VARCHAR NOT NULL,
-  non_null      BOOLEAN NOT NULL,
-  is_list       BOOLEAN NOT NULL,
-  item_non_null BOOLEAN,
-  description   VARCHAR,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT,
-  source_column INT,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name)
-    REFERENCES graphitron_minted_type (graph_name, type_name) ON DELETE CASCADE,
+  graph_name        VARCHAR NOT NULL,
+  source_coordinate VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  directive_name    VARCHAR NOT NULL,
+  precedence        VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  type_sdl          VARCHAR NOT NULL,
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
+  description       VARCHAR,
+  PRIMARY KEY (graph_name, source_coordinate, type_name, field_name),
+  FOREIGN KEY (graph_name, source_coordinate)
+    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive (graph_name, directive_name),
+  CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphitron_minted_field IS 'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is graphitron_field.';
-COMMENT ON COLUMN graphitron_minted_field.graph_name IS 'the owning graph''s partition, carried from the minted type';
-COMMENT ON COLUMN graphitron_minted_field.type_name IS 'the minted type owning this field';
-COMMENT ON COLUMN graphitron_minted_field.field_name IS 'the field''s name, one of the Relay machinery names the macro writes; with the two columns above, the grain';
-COMMENT ON COLUMN graphitron_minted_field.ordinal IS 'the field''s position within its minted type, dense from 0 in the order the macro writes them, which is the emission order';
-COMMENT ON COLUMN graphitron_minted_field.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_field renders an authored one';
+COMMENT ON TABLE graphitron_minted_field IS 'A field one macro application would put on a type: one row per minted field coordinate per coining coordinate, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, and the carrier the expansion rewrote has a row whose own coordinate and coining coordinate are the same, which is what a rewrite is at this grain.';
+COMMENT ON COLUMN graphitron_minted_field.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_minted_field.source_coordinate IS 'the coordinate whose directive application coined this row, on graphitron_minted_type.source_coordinate''s terms. Equal to this row''s own coordinate exactly where the expansion rewrote the field it sits on rather than minting a new one, which is how a rewrite and a mint are told apart without a discriminator column';
+COMMENT ON COLUMN graphitron_minted_field.type_name IS 'the type this field sits on, minted or authored: a machinery field sits on a minted type and a rewritten carrier sits on the author''s own';
+COMMENT ON COLUMN graphitron_minted_field.field_name IS 'the field''s name; with the two columns above and the source, the grain';
+COMMENT ON COLUMN graphitron_minted_field.directive_name IS 'the directive whose application coined this row, on graphitron_minted_type.directive_name''s terms';
+COMMENT ON COLUMN graphitron_minted_field.precedence IS 'what this row does at a coordinate the author also declared, on graphitron_minted_type.precedence''s terms. REPLACE on a rewritten carrier, whose whole row is stated here including the ordinal and description the expansion did not change, so the winner is taken wholesale';
+COMMENT ON COLUMN graphitron_minted_field.ordinal IS 'the field''s position within its type: dense from 0 in the order the macro writes them on a minted type, and the authored field''s own position on a rewritten carrier, copied rather than recomputed';
+COMMENT ON COLUMN graphitron_minted_field.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_field renders an authored one; on a rewritten carrier this is the expansion''s replacement and the author''s stays in graphql_field where it was written';
 COMMENT ON COLUMN graphitron_minted_field.named_type IS 'that expression''s named type with its wrappers stripped, the column readers join on';
 COMMENT ON COLUMN graphitron_minted_field.non_null IS 'whether the outermost wrapper is non-null';
 COMMENT ON COLUMN graphitron_minted_field.is_list IS 'whether the expression is a list';
 COMMENT ON COLUMN graphitron_minted_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
-COMMENT ON COLUMN graphitron_minted_field.description IS 'the docstring the macro wrote; display material, never a dimension';
-COMMENT ON COLUMN graphitron_minted_field.source_name IS 'the file the causing application sits in, inherited from the minting site';
-COMMENT ON COLUMN graphitron_minted_field.source_line IS 'the causing application''s line, inherited from the minting site';
-COMMENT ON COLUMN graphitron_minted_field.source_column IS 'the causing application''s column, inherited from the minting site';
+COMMENT ON COLUMN graphitron_minted_field.description IS 'the docstring the macro wrote, or the authored one carried across on a rewritten carrier; display material, never a dimension';
 
-CREATE TABLE graphitron_field_synthesis (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  field_name    VARCHAR NOT NULL,
-  macro         VARCHAR NOT NULL,
-  type_sdl      VARCHAR NOT NULL,
-  named_type    VARCHAR NOT NULL,
-  non_null      BOOLEAN NOT NULL,
-  is_list       BOOLEAN NOT NULL,
-  item_non_null BOOLEAN,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name),
-  CHECK (macro IN ('CONNECTION')),
+CREATE TABLE graphitron_minted_argument (
+  graph_name        VARCHAR NOT NULL,
+  source_coordinate VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  directive_name    VARCHAR NOT NULL,
+  precedence        VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  type_sdl          VARCHAR NOT NULL,
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
+  default_value_sdl VARCHAR,
+  description       VARCHAR,
+  PRIMARY KEY (graph_name, source_coordinate, type_name, field_name, argument_name),
+  FOREIGN KEY (graph_name, source_coordinate)
+    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive (graph_name, directive_name),
+  CHECK (precedence IN ('REPLACE', 'YIELD')),
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro: one row per carrier coordinate, holding the expression the macro put there. The authored expression stays in graphql_field where it was written, so the two readings are two relations rather than one value and a stash, and graphitron_field is where they meet.';
-COMMENT ON COLUMN graphitron_field_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_synthesis.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_field_synthesis.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_field_synthesis.macro IS 'which expansion rewrote the type expression';
-COMMENT ON COLUMN graphitron_field_synthesis.type_sdl IS 'the type expression the macro rewrote the field to, rendered the way graphql_field renders an authored one; the authored expression it replaced stays in that relation rather than being stashed here';
-COMMENT ON COLUMN graphitron_field_synthesis.named_type IS 'that expression''s named type with its wrappers stripped, which for every macro today is the expression itself, a mint returning a bare type name';
-COMMENT ON COLUMN graphitron_field_synthesis.non_null IS 'whether the macro''s expression is non-null; false for every macro today, an expansion putting no wrapper on a carrier';
-COMMENT ON COLUMN graphitron_field_synthesis.is_list IS 'whether the macro''s expression is a list; false for every macro today, on the same terms';
-COMMENT ON COLUMN graphitron_field_synthesis.item_non_null IS 'whether a list expression''s item is non-null; NULL where the expression is not a list, which the CHECK holds and which is every row today';
+COMMENT ON TABLE graphitron_minted_argument IS 'An argument one macro application would put on a field: one row per minted argument coordinate per coining coordinate, carrying the same wrapping columns graphql_argument carries. For example @asConnection on a carrier whose author wrote no pagination argument mints first and after on that carrier, first carrying the resolved page size as its default.';
+COMMENT ON COLUMN graphitron_minted_argument.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_minted_argument.source_coordinate IS 'the coordinate whose directive application coined this row, on graphitron_minted_type.source_coordinate''s terms; for every argument minted today it is the field the argument lands on';
+COMMENT ON COLUMN graphitron_minted_argument.type_name IS 'owning type of the field the argument sits on';
+COMMENT ON COLUMN graphitron_minted_argument.field_name IS 'the field the argument sits on';
+COMMENT ON COLUMN graphitron_minted_argument.argument_name IS 'the argument''s name within the owning field; with the three columns above and the source, the grain';
+COMMENT ON COLUMN graphitron_minted_argument.directive_name IS 'the directive whose application coined this row, on graphitron_minted_type.directive_name''s terms';
+COMMENT ON COLUMN graphitron_minted_argument.precedence IS 'what this row does at a coordinate the author also declared, on graphitron_minted_type.precedence''s terms. YIELD for every argument minted today, an author who wrote their own pagination keeping it';
+COMMENT ON COLUMN graphitron_minted_argument.ordinal IS 'the argument''s position within its field, counted after every authored argument, which is where the expansion appends';
+COMMENT ON COLUMN graphitron_minted_argument.type_sdl IS 'the type expression the macro wrote, rendered the way graphql_argument renders an authored one';
+COMMENT ON COLUMN graphitron_minted_argument.named_type IS 'that expression''s named type with its wrappers stripped, the column readers join on';
+COMMENT ON COLUMN graphitron_minted_argument.non_null IS 'whether the outermost wrapper is non-null';
+COMMENT ON COLUMN graphitron_minted_argument.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_minted_argument.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
+COMMENT ON COLUMN graphitron_minted_argument.default_value_sdl IS 'the default literal the macro wrote, which for the connection page size is the value the author declared on the application or the generator''s own fallback; NULL where the minted argument has no default';
+COMMENT ON COLUMN graphitron_minted_argument.description IS 'the docstring the macro wrote; display material, never a dimension';
 
 -- ---- supertypes over the directive families ----------------------------------------
 -- Where one fact is authored at several kinds of site, the relations here are that fact, written
@@ -4680,7 +4702,7 @@ CREATE VIEW intent_field_navigated_type
   (graph_name, type_name, field_name, basis, navigated_type_name) AS
 SELECT graph_name, type_name, field_name, basis, navigated_type_name
   FROM graphitron_field_navigation;
-COMMENT ON VIEW intent_field_navigated_type IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Three rungs in precedence. The expression the author wrote, where a macro rewrote the field''s type: graphitron_field_synthesis holds that expression and its list and non-null wrappers are stripped here, so a field the CONNECTION macro expanded navigates as the element the author named. Below it the structural connection, intent_connection_element_type keyed by the field''s current named type, which is what answers for a connection type the author declared in the SDL and the generator therefore synthesised nothing for. Below that the field''s own named type, which is the ordinary case and every field that returns what it says it returns. The upper two rungs agree wherever both fire, a synthesised connection''s edges.node being the element the authored expression named, so the precedence between them is a tie-break rather than a disagreement; it is stated as a precedence anyway because the authored expression is the more direct evidence and because a macro that expanded to something other than a connection would need it. This relation is the correction of a resolution that had five spellings. The COALESCE over the synthesis record was written out at five sites, and all five read the same way: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it. The second half of that sentence is a silence and not a rule. A field returning an author-declared connection type resolved to a type binding no table, so it had no scope table, so its arguments had no scope, so a filter argument on it resolved no column and the condition membership fold could not see it, all from a rule that claims to navigate connections and only navigated the ones with a synthesis row. All five sites read this relation now and are correct at both halves: intent_field_scope_table, intent_field_participant_scope_table, intent_routine_return_binding, intent_mutation_routine_seat and intent_field_column_scope''s named-type arm. The rule to hold this relation to is not a count, which has been wrong twice by construction and is what an unguarded inventory does: every site that needs a field''s navigated type reads this relation, and the next spelling it exists to prevent is the one nobody has written yet. One thing a new reader owes itself, learned at the last site to arrive: join what this relation projects, and join it directly. A reader that takes the navigated type from here and then joins a binding onto some other relation''s echo of that name hands the planner a cheaper driver than this one, and a view is seekable on the coordinate it is keyed by rather than on a name it projects, so the relation lands on the probed side and is evaluated once per driving row. That is a property of every projection in this store and not of this arm, which is why it is stated here rather than only there. The basis column says which rung answered, so a test can pin the rule rather than only the answer. What this relation does not do is resolve anything: it names a type, and whether that type binds a table, holds polymorphic members or declares columns is each consumer''s own join. Nor does it look through a polymorphic container; a field returning a union navigates as the union, and the members are intent_poly_member''s answer read from that name. Declared before intent_routine_return_binding because that is the first of its readers, and the ordering here is a dependency rather than a reading order.';
+COMMENT ON VIEW intent_field_navigated_type IS 'Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Two rungs, and the relation is a projection of graphitron_field_navigation, which is where they are computed and where the rules are stated. The connection''s element where the field''s named type is a connection, and the named type itself otherwise. A third rung is retired and worth naming because its absence is a result rather than a simplification: it read the expression the author wrote wherever a macro had rewritten the field, and measured over a consumer-size schema every row it answered is the row the two rungs below it answer, a synthesised connection''s edges.node being the element the authored expression named. It was also the only rung needing something no relation held, and therefore the only reason this rule had to be computed where the parse was. This relation is the correction of a resolution that had five spellings. The COALESCE over the synthesis record was written out at five sites, and all five read the same way: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it. The second half of that sentence is a silence and not a rule. A field returning an author-declared connection type resolved to a type binding no table, so it had no scope table, so its arguments had no scope, so a filter argument on it resolved no column and the condition membership fold could not see it, all from a rule that claims to navigate connections and only navigated the ones with a synthesis row. All five sites read this relation now and are correct at both halves: intent_field_scope_table, intent_field_participant_scope_table, intent_routine_return_binding, intent_mutation_routine_seat and intent_field_column_scope''s named-type arm. The rule to hold this relation to is not a count, which has been wrong twice by construction and is what an unguarded inventory does: every site that needs a field''s navigated type reads this relation, and the next spelling it exists to prevent is the one nobody has written yet. One thing a new reader owes itself, learned at the last site to arrive: join what this relation projects, and join it directly. A reader that takes the navigated type from here and then joins a binding onto some other relation''s echo of that name hands the planner a cheaper driver than this one, and a view is seekable on the coordinate it is keyed by rather than on a name it projects, so the relation lands on the probed side and is evaluated once per driving row. That is a property of every projection in this store and not of this arm, which is why it is stated here rather than only there. The basis column says which rung answered, so a test can pin the rule rather than only the answer. What this relation does not do is resolve anything: it names a type, and whether that type binds a table, holds polymorphic members or declares columns is each consumer''s own join. Nor does it look through a polymorphic container; a field returning a union navigates as the union, and the members are intent_poly_member''s answer read from that name. Declared before intent_routine_return_binding because that is the first of its readers, and the ordering here is a dependency rather than a reading order.';
 COMMENT ON COLUMN intent_field_navigated_type.graph_name IS 'the owning graph''s partition, carried from graphql_field; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_field_navigated_type.type_name IS 'the type owning the field';
 COMMENT ON COLUMN intent_field_navigated_type.field_name IS 'the field whose navigation this row states; with the two columns above, the grain, and one row per field of the graph';
@@ -5130,12 +5152,16 @@ SELECT graph_name, type_name, field_name,
           FROM intent_facet_binding fb
           JOIN graphql_argument a
             ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
-          JOIN graphitron_field_synthesis c
+          -- The carriers the expansion actually rewrote, which is a minted field whose coining
+          -- coordinate is its own: a mint puts a field somewhere else, a rewrite puts one where it
+          -- already was, and that equality is the difference without a discriminator column.
+          JOIN graphitron_minted_field c
             ON c.graph_name = a.graph_name AND c.type_name = a.type_name
            AND c.field_name = a.field_name
-           AND c.macro = 'CONNECTION') carrier_facet
+           AND c.source_coordinate = c.type_name || '.' || c.field_name
+           AND c.directive_name = 'asConnection') carrier_facet
  WHERE rn = 1;
-COMMENT ON VIEW intent_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. The use-keyed half of the facet reading, and what a consumer emitting a faceted connection reads. The carrier population is the expansion rather than the directive. graphitron_field_synthesis holds a row exactly where the CONNECTION macro rewrote a field''s type expression, which is @asConnection on a bare list with a named element and nothing else, so @asConnection that expanded nothing carries no facets here and neither does a structural Connection return type, whose shape is the author''s and which the promoter appends no facets field to. That is the spec''s "inert at the others" reading, held by construction rather than by an arm. Reachability is one hop: the facet field is declared on a type an argument of the carrier names, which is the promoter''s own walk and not a transitive closure through nested input objects. position is dense per carrier and is the emission order, argument declaration order then facet field declaration order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A facet name repeated across one carrier''s filter inputs collapses to its first occurrence, transcribing the promoter''s first-wins dedup; that is a backstop and not a rule, a duplicate being rejected with a named diagnostic before it can reach an accepted schema, and it sits after the definition-keyed gate so a malformed duplicate never consumes the name a well-formed one would take. Two carriers sharing one connection name each read their own filter arguments here rather than one reconciled registry entry, which agrees with that registry on every schema that assembles: carriers minting one connection name must project the same facets, and a disagreement is a rejection naming both. What this relation does not state is whether the emitter serves the carrier it resolves. That a faceted carrier must be a root Query connection over a table-backed element is a limit of the emitter that exists today, enforced as a rejection, and putting it here would make an emitter''s reach a fact about the schema.';
+COMMENT ON VIEW intent_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. The use-keyed half of the facet reading, and what a consumer emitting a faceted connection reads. The carrier population is the expansion rather than the directive. graphitron_minted_field holds a row at a field''s own coordinate exactly where @asConnection rewrote that field''s type expression, which is the directive on a bare list with a named element and nothing else, so @asConnection that expanded nothing carries no facets here and neither does a structural Connection return type, whose shape is the author''s and which the promoter appends no facets field to. That is the spec''s "inert at the others" reading, held by construction rather than by an arm. Reachability is one hop: the facet field is declared on a type an argument of the carrier names, which is the promoter''s own walk and not a transitive closure through nested input objects. position is dense per carrier and is the emission order, argument declaration order then facet field declaration order, which is what lets a consumer fold these rows into a file and get the same bytes twice. A facet name repeated across one carrier''s filter inputs collapses to its first occurrence, transcribing the promoter''s first-wins dedup; that is a backstop and not a rule, a duplicate being rejected with a named diagnostic before it can reach an accepted schema, and it sits after the definition-keyed gate so a malformed duplicate never consumes the name a well-formed one would take. Two carriers sharing one connection name each read their own filter arguments here rather than one reconciled registry entry, which agrees with that registry on every schema that assembles: carriers minting one connection name must project the same facets, and a disagreement is a rejection naming both. What this relation does not state is whether the emitter serves the carrier it resolves. That a faceted carrier must be a root Query connection over a table-backed element is a limit of the emitter that exists today, enforced as a rejection, and putting it here would make an emitter''s reach a fact about the schema.';
 COMMENT ON COLUMN intent_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
 COMMENT ON COLUMN intent_connection_facet.type_name IS 'the type owning the carrier field';
 COMMENT ON COLUMN intent_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
@@ -5320,7 +5346,7 @@ SELECT graph_name, type_name, field_name,
            AND departing.table_name = bt.table_name
          WHERE sc.basis = 'NAMED_TYPE_TABLE'
            AND arriving.table_name_upper <> departing.table_name_upper) endpoints;
-COMMENT ON VIEW intent_field_reference_discovery IS 'The foreign key an omitted @reference path discovers: for a field whose parent type and named type are each bound to a table, every foreign key connecting those two tables in either direction. This is the resolution the walk runs where a field carries no path element, and sql_referential_constraint''s own comment defers it here, "exactly one foreign key between these two tables" being a derivation over that relation rather than a captured fact. Separate from intent_field_reference_step_hop because that view resolves what an author wrote and this one answers where nothing was written; the hop view names this as a resolution it deliberately does not perform, so its silence is not the absence of a discovery. Neither endpoint is re-derived here. The arriving table is intent_field_column_scope''s named-type rule, which reads the written type expression through graphitron_field_synthesis so a synthesised connection field navigates as its element type, demands an OBJECT named type and an unambiguous binding, and excludes the coordinates an authored claim, a @pivot or an authored path diverts; restating any of that would be a second spelling of the navigation that view exists to state once. That rule''s own comment carries what it does not answer for, an author-declared connection, and why it alone among its siblings still spells the navigation rather than reading intent_field_navigated_type. The departing table is the parent''s own binding, demanded unambiguous for the reason the arriving one is: a discovery between endpoints that are not certain is not the pair the walk would have had in hand. One row per connecting key and not two, a foreign key connecting a pair once whichever end declares it, and fk_on_from says which end that is; a self-referential key therefore needs no special case, the same-table pair being excluded outright. Excluded because the walk excludes it, comparing the two table names case-insensitively and nothing else, so two like-named tables in different schemas are one table to this rule as they are to the walk. Both names are catalog values reached through derived views, and a derived view does not forward a fold, so the comparison joins sql_table on its key at each end and reads the fold there; that costs two lookups on a primary key and keeps the fold a property of the relation that owns the spelling. The self-referencing field states its key explicitly or is rejected with that advice. Absence covers several things and none of them is "the discovery found nothing in particular": no foreign key connects the endpoints, or an endpoint is unbound or ambiguously bound, or the coordinate is one the named-type rule excludes. The walk''s other element-less arm needs no exclusion here: where the departing table is a table-valued function the walk name-matches instead of discovering, and a routine result declares no foreign keys, so such a coordinate contributes no rows on its own. The departing endpoint reads intent_resolved_type_binding, as the arriving one already does through the navigation view, so a parent bound by a @routine chain''s return rather than by a written @table is the same endpoint here; where that chain landed on a function result the sentence above is why the pair still finds nothing, and where it landed on a stored table through a hop the discovery is the ordinary one.';
+COMMENT ON VIEW intent_field_reference_discovery IS 'The foreign key an omitted @reference path discovers: for a field whose parent type and named type are each bound to a table, every foreign key connecting those two tables in either direction. This is the resolution the walk runs where a field carries no path element, and sql_referential_constraint''s own comment defers it here, "exactly one foreign key between these two tables" being a derivation over that relation rather than a captured fact. Separate from intent_field_reference_step_hop because that view resolves what an author wrote and this one answers where nothing was written; the hop view names this as a resolution it deliberately does not perform, so its silence is not the absence of a discovery. Neither endpoint is re-derived here. The arriving table is intent_field_column_scope''s named-type rule, which reads the navigation so a synthesised connection field navigates as its element type, demands an OBJECT named type and an unambiguous binding, and excludes the coordinates an authored claim, a @pivot or an authored path diverts; restating any of that would be a second spelling of the navigation that view exists to state once. That rule''s own comment carries what it does not answer for, an author-declared connection, and why it alone among its siblings still spells the navigation rather than reading intent_field_navigated_type. The departing table is the parent''s own binding, demanded unambiguous for the reason the arriving one is: a discovery between endpoints that are not certain is not the pair the walk would have had in hand. One row per connecting key and not two, a foreign key connecting a pair once whichever end declares it, and fk_on_from says which end that is; a self-referential key therefore needs no special case, the same-table pair being excluded outright. Excluded because the walk excludes it, comparing the two table names case-insensitively and nothing else, so two like-named tables in different schemas are one table to this rule as they are to the walk. Both names are catalog values reached through derived views, and a derived view does not forward a fold, so the comparison joins sql_table on its key at each end and reads the fold there; that costs two lookups on a primary key and keeps the fold a property of the relation that owns the spelling. The self-referencing field states its key explicitly or is rejected with that advice. Absence covers several things and none of them is "the discovery found nothing in particular": no foreign key connects the endpoints, or an endpoint is unbound or ambiguously bound, or the coordinate is one the named-type rule excludes. The walk''s other element-less arm needs no exclusion here: where the departing table is a table-valued function the walk name-matches instead of discovering, and a routine result declares no foreign keys, so such a coordinate contributes no rows on its own. The departing endpoint reads intent_resolved_type_binding, as the arriving one already does through the navigation view, so a parent bound by a @routine chain''s return rather than by a written @table is the same endpoint here; where that chain landed on a function result the sentence above is why the pair still finds nothing, and where it landed on a stored table through a hop the discovery is the ordinary one.';
 COMMENT ON COLUMN intent_field_reference_discovery.graph_name IS 'the owning graph''s partition, carried from the navigation view';
 COMMENT ON COLUMN intent_field_reference_discovery.type_name IS 'the type owning the field the path was omitted on; also the type whose binding is the departing end';
 COMMENT ON COLUMN intent_field_reference_discovery.field_name IS 'the field name within the owning type';
@@ -10335,9 +10361,14 @@ INSERT INTO meta_grain VALUES
   ('expanded-field',
    'one field coordinate the generator works with in one graph, at the type expression the generator reads there',
    'graph_name, type_name, field_name', 'sdl'),
-  ('minted-type-site',
-   'one declaration site a macro contributed for one minted type in one graph',
-   'graph_name, type_name, source_name, source_line, source_column', 'sdl'),
+  ('minted-type', 'one type one macro application would add to one graph',
+   'graph_name, source_coordinate, type_name', 'sdl'),
+  ('minted-field',
+   'one field one macro application would put on one type in one graph',
+   'graph_name, source_coordinate, type_name, field_name', 'sdl'),
+  ('minted-argument',
+   'one argument one macro application would put on one field in one graph',
+   'graph_name, source_coordinate, type_name, field_name, argument_name', 'sdl'),
   ('expanded-element',
    'one schema element the generator emits in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
@@ -10419,18 +10450,18 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
-  ('graphitron_minted_type', 'expanded-type', 'graphitron',
-   'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph.',
-   'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads graphitron_type.',
-   'The transcription is what the author declared and only that, so a type this expansion minted cannot live in it. Keeping it here rather than there is what makes the rewrite recoverable in both directions and what lets the SDL crawler stay a crawler: the expansion is a stage of the graphitron gatherer, reading the decode''s own connection rows, and it writes nothing another gatherer owns. One row per name however many carriers caused it, which is how the shared PageInfo is one type with a site apiece.'),
-  ('graphitron_minted_type_site', 'minted-type-site', 'graphitron',
-   'One declaration site a macro contributed for a minted type: the position an author can edit to make the type go away, and which carrier put it there.',
-   'For example the shared PageInfo carries one site per @asConnection application, the first defining it and the rest extending, so the site count is the carrier multiplicity an incremental refresh refcounts the type by.',
-   'Separate from the minted type because the multiplicity is the point: a type minted once per carrier would be indistinguishable from shared machinery if the sites were folded into it, and refcounting is what tells an incremental refresh when the last carrier naming PageInfo went away. The site carries a position rather than inventing one, so a diagnostic about a minted shape points at the application that caused it.'),
-  ('graphitron_minted_field', 'expanded-field', 'graphitron',
-   'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one.',
-   'For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is graphitron_field.',
-   'The field-grain half of graphitron_minted_type''s argument. The columns mirror graphql_field''s deliberately: the union that puts the two populations back together is a projection and not a translation, so a reader joining named_type joins one column whichever arm supplied its row.'),
+  ('graphitron_minted_type', 'minted-type', 'graphitron',
+   'A type one macro application would add to the schema: one row per minted type name per coining coordinate.',
+   'For example @asConnection on Query.films mints QueryFilmsConnection and PageInfo under the coordinate Query.films, and a second carrier mints its own connection and its own PageInfo row beside them, the shared type being one row per carrier here and one row in graphitron_type.',
+   'What one application would mint, as against what the schema ends up with, which is graphitron_type. Keying the source first is what turns shared machinery from a special case into the primary key: PageInfo used to be defined by the first carrier and extended by the rest, needing a merge ordinal, an extension flag, a site counter and a minted-name set inside the expansion, and under a key carrying the source every carrier states its whole contribution and the key is the only dedupe. The row is written whether or not it wins, which is what makes the expansion a function of one carrier''s own declaration for the first time, that being the rule this family''s comment gives as the reason the expansion may run inside capture at all; and a suppressed mint becomes a row saying which application stood down where it used to be silence.'),
+  ('graphitron_minted_field', 'minted-field', 'graphitron',
+   'A field one macro application would put on a type: one row per minted field coordinate per coining coordinate, carrying the same wrapping columns graphql_field carries for an authored one.',
+   'For example a minted Connection''s edges field has a row here naming its Edge type, and the carrier the expansion rewrote has a row whose own coordinate and coining coordinate are the same, which is what a rewrite is at this grain.',
+   'The field grain of graphitron_minted_type''s argument, and the relation that absorbed the rewrite. A field whose type expression a macro replaced used to be its own relation beside the mint, which stated the same thing at a different shape; here it is a row whose coining coordinate is its own, so a reader wanting the rewritten carriers asks for that equality rather than joining a second table. A replacing row states its whole row, the ordinal and description included, so the winner is taken wholesale and no reader coalesces two arms.'),
+  ('graphitron_minted_argument', 'minted-argument', 'graphitron',
+   'An argument one macro application would put on a field: one row per minted argument coordinate per coining coordinate, carrying the same wrapping columns graphql_argument carries.',
+   'For example @asConnection on a carrier whose author wrote no pagination argument mints first and after on that carrier, first carrying the resolved page size as its default.',
+   'The grain this family gained rather than inherited, and it closes a real gap. The connection expansion has two halves in two modules, one writing facts and one building schema objects, and only the second knew these arguments existed: an argument the generator emits was reachable from the emitted schema and from no relation at all. Its mint is the one that stays conditional, and the condition is not a per-name collision: an author who writes any pagination argument keeps all of them, so a carrier with only last written on it gets neither first nor after though neither name collides. A precedence column cannot state that, being a property of the row, so the expansion asks the carrier''s own argument list, which is a lookup at the coordinate it sits on and leaves the family''s qualification rule intact.'),
   ('graphitron_element', 'expanded-element', 'graphitron',
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',

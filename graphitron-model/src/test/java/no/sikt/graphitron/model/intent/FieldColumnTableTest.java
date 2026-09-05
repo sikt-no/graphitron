@@ -205,7 +205,7 @@ class FieldColumnTableTest {
         withBoundTypes(dsl -> {
             seedType(dsl, GRAPH, "LanguageConnection", "OBJECT");
             seedField(dsl, GRAPH, "Film", "languages", "LanguageConnection", false);
-            seedFieldSynthesis(dsl, GRAPH, "Film", "languages", "CONNECTION", "[Language!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Film", "languages", "[Language!]!");
 
             var row = row(dsl, "Film", "languages").orElseThrow();
             assertThat(row.get(INTENT_FIELD_COLUMN_TABLE.BASIS)).isEqualTo("NAMED_TYPE_TABLE");

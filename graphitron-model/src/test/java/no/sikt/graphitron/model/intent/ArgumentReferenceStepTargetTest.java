@@ -142,7 +142,7 @@ class ArgumentReferenceStepTargetTest {
         withCatalog(dsl -> {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedQueryField(dsl, "films", "FilmConnection");
-            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "CONNECTION", "[Film!]!");
+            seedFieldSynthesis(dsl, GRAPH, "Query", "films", "[Film!]!");
             seedKeyPath(dsl, "Query", "films", "inActor", "film_actor_film_id_fkey");
 
             var rows = chain(dsl, GRAPH);

@@ -377,6 +377,50 @@ derivation between the two where a view needed none. Two test classes read the e
 without deriving and were silently reading a view before; both now derive, which is what every other
 reading helper in that fixture already did.
 
+**The minting family is three relations keyed by what coined them, and it landed whole.**
+`graphitron_minted_type`, `graphitron_minted_field` and `graphitron_minted_argument` each lead their
+key with the source coordinate and carry one foreign key, into `graphql_element` with
+`ON DELETE CASCADE`. `graphitron_minted_type_site` and `graphitron_field_synthesis` are gone: the
+site is the source coordinate in the key, and a rewrite is a minted field whose coining coordinate
+is its own, which is a difference a reader spells as an equality rather than by joining a second
+table. `intent_connection_facet` is the one view that read the synthesis and it reads that equality
+now.
+
+What went with those two tables is machinery rather than only rows. `PageInfo` was defined by the
+first carrier and extended by the rest, which needed `merge_ordinal`, `is_extension`, a site counter
+and a minted-name set inside `MacroCapture`; under a key that already carries the source, every
+carrier states the whole of `PageInfo` and the primary key is the only dedupe. The whole-schema set
+of declared type names went too, and that is the one worth naming: the expansion returned early
+against it, so it was never the function of one carrier's own declaration that this family's comment
+gives as the reason a macro may run inside capture at all. Writing the row unconditionally with a
+precedence column makes the stated rule true for the first time, and it gains the row a suppressed
+mint used to leave as silence, saying which application would have minted what and stood down.
+
+**The argument mint closed the gap it was found in.** The connection expansion mints `first` and
+`after` on a carrier whose author wrote no pagination argument, and until now the store recorded
+nothing about them, the expansion having two halves in two modules and only the schema-building half
+knowing they existed. They are rows now. The condition on them is the one thing that could not become
+a precedence column, and the reason is worth keeping: it is not a per-name collision. An author who
+writes any pagination argument keeps their pagination whole, so a carrier carrying only `last` gets
+neither `first` nor `after` though neither name is taken. That is a property of the carrier and not
+of the row, so it stays in capture, where it reads the carrier's own argument list and nothing wider
+and therefore leaves the qualification rule intact.
+
+**The anti-join a precedence column cannot carry has a test of its own.** An author who declares
+`type QueryFilmsConnection { mine: String }` collides with the minted type, and the four machinery
+fields collide with nothing, so the field-grain rule alone would land `edges` and `pageInfo` on the
+author's type and fuse two types nobody asked to merge. Machinery is told from a rewritten carrier by
+its source: it shares a source coordinate with a minted type row for its own owning type, where a
+rewritten `Query.films` coined no minted `Query`. The case asserts all three halves, that the
+author's type is whole, that the mint is recorded standing down, and that its fields are recorded and
+reach no anchor.
+
+**One thing the design said and the implementation could not keep.** Two carriers minting one
+coordinate with disagreeing payload was to be a primary key violation rather than an arbitrary
+winner. The fill upserts, for the cascade reason above, so it takes the last row instead of refusing;
+the agreement test is what asserts the carriers agree. That is weaker than a constraint and it is
+recorded rather than hidden.
+
 ## The entry and anchor pattern, and the scope it makes visible
 
 The slices above each fixed a rule. What the node and field arcs added is the shape the fixes have in
