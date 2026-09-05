@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -279,6 +280,62 @@ class MacroCaptureTest {
                 .fetch(0, String.class))
                 .as("and the emitted argument list is the author's with the mint appended")
                 .containsExactly("genre", "first", "after");
+        }
+    }
+
+    /**
+     * Two carriers naming one connection over different element types. The author can write this,
+     * assembly rejects it with a diagnostic naming both carriers, and capture runs before assembly
+     * and for readers that never run it, so capture has to produce a store rather than refuse one.
+     *
+     * <p>Neither reading wins. Picking one would put a shape in the emitted population that no
+     * application asked for and nothing records, so the coordinate is withheld and
+     * {@code graphitron_minted_conflict} is what says why. Both contributions stay in the minted
+     * relation, which is keyed by the coordinate that coined each, so what each application would
+     * have written is still there to be read.
+     *
+     * <p>Only the contested coordinates are withheld. The connection type itself is agreed on by
+     * both carriers, so it lands, and what an author gets is a type with a hole in it rather than no
+     * type at all; that is the honest reading of a schema that disagrees with itself at exactly
+     * those fields.
+     */
+    @Test
+    @DisplayName("two carriers disagreeing at one coordinate get neither, and the conflict is a row")
+    void carriersSharingOneConnectionNameDisagree(@TempDir Path tmp) {
+        String sdl = """
+            type Query {
+              films: [Film!]! @asConnection(connectionName: "SharedConnection")
+              actors: [Actor] @asConnection(connectionName: "SharedConnection")
+            }
+            type Film { title: String }
+            type Actor { name: String }
+            """;
+        try (var store = CapturedStore.of(tmp, sdl)) {
+            assertThat(store.dsl()
+                .select(GRAPHITRON_MINTED_FIELD.SOURCE_COORDINATE,
+                    GRAPHITRON_MINTED_FIELD.TYPE_SDL)
+                .from(GRAPHITRON_MINTED_FIELD)
+                .where(GRAPHITRON_MINTED_FIELD.TYPE_NAME.eq("SharedConnection"))
+                .and(GRAPHITRON_MINTED_FIELD.FIELD_NAME.eq("nodes"))
+                .fetch(r -> r.value1() + "=" + r.value2()))
+                .as("both contributions are kept, which is what the source in the key is for")
+                .containsExactlyInAnyOrder("Query.actors=[Actor]!", "Query.films=[Film!]!");
+
+            assertThat(store.dsl()
+                .select(GRAPHITRON_MINTED_CONFLICT.COORDINATE,
+                    GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND,
+                    GRAPHITRON_MINTED_CONFLICT.VARIANTS)
+                .from(GRAPHITRON_MINTED_CONFLICT)
+                .fetch(r -> r.value1() + ":" + r.value2() + "x" + r.value3()))
+                .as("the contested coordinates are exactly the two the element types reach:"
+                    + " the connection's own nodes and its edge's node")
+                .containsExactlyInAnyOrder(
+                    "SharedConnection.nodes:FIELDx2", "SharedEdge.node:FIELDx2");
+
+            assertThat(fieldsOf(store, "SharedConnection"))
+                .as("neither reading lands, and the fields both carriers agree on still do")
+                .containsExactly("edges=[SharedEdge!]!", "pageInfo=PageInfo!", "totalCount=Int");
+            assertThat(fieldsOf(store, "SharedEdge")).containsExactly("cursor=String!");
         }
     }
 

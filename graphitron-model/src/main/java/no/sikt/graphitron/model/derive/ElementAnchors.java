@@ -2,11 +2,13 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -21,12 +23,14 @@ import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.argumentCo
 import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.fieldCoordinate;
 import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.typeCoordinate;
 import static org.jooq.impl.DSL.castNull;
+import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.DSL.when;
 
 /**
  * The capture-cadence writer of the element family the generator emits: {@code graphitron_element}
@@ -54,9 +58,9 @@ import static org.jooq.impl.DSL.val;
  * and it does it in the right order.
  *
  * <p>The minted arms are {@code DISTINCT}, because shared machinery is minted once per carrier and
- * every carrier states the whole of it. Two carriers that minted one coordinate with disagreeing
- * payload would be a capture bug, and the upsert takes the last of them rather than refusing;
- * {@code FactCaptureAgreementTest} is what asserts they agree.
+ * every carrier states the whole of it, so the readings collapse. Where they do not collapse the
+ * applications disagree, and neither of them wins: {@link #conflicts} is where that is found, and
+ * every arm withholds what it finds.
  */
 public final class ElementAnchors {
 
@@ -66,13 +70,119 @@ public final class ElementAnchors {
 
     /** Derives the graph's element anchors; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
+        // First, because every arm below withholds what this finds.
+        conflicts(dsl, graphName);
         elements(dsl, graphName);
         types(dsl, graphName);
         fields(dsl, graphName);
         arguments(dsl, graphName);
     }
 
-    // ---------------------------------------------------------------- the precedence conditions
+    /**
+     * A coordinate several applications would mint and disagree about, which neither of them gets.
+     *
+     * <p>Two applications minting one coordinate the same way are the ordinary case: shared
+     * machinery is stated whole by every carrier and the readings collapse. Two that disagree are
+     * the author's to write, {@code connectionName} naming one connection from two carriers over
+     * different element types, so this is not a capture bug and must not be refused as one: capture
+     * runs before assembly and for readers that never run it, so throwing would leave an author
+     * mid-edit with no store rather than with a store and a diagnostic.
+     *
+     * <p>Nor may one of them be picked. That would put a shape in the emitted population no
+     * application asked for and nothing records. So the coordinate is withheld from every arm below
+     * and a row here says why, on {@code intent_authored_claim_conflict}'s terms. What each
+     * application would have written is not copied: the minted relations keep it, keyed by the
+     * coordinate that coined each.
+     *
+     * <p>Cleared and refilled rather than upserted, which the anchors themselves cannot be: nothing
+     * keys into this relation, so emptying it takes nothing with it, and a conflict an edit resolved
+     * has to stop being a row.
+     */
+    private static void conflicts(DSLContext dsl, String graphName) {
+        dsl.deleteFrom(GRAPHITRON_MINTED_CONFLICT)
+            .where(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME.eq(graphName)).execute();
+
+        var types = dsl.selectDistinct(GRAPHITRON_MINTED_TYPE.GRAPH_NAME,
+                GRAPHITRON_MINTED_TYPE.TYPE_NAME, GRAPHITRON_MINTED_TYPE.KIND,
+                GRAPHITRON_MINTED_TYPE.DESCRIPTION)
+            .from(GRAPHITRON_MINTED_TYPE)
+            .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName))
+            .and(mintedTypeTakesEffect())
+            .asTable("m");
+        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
+            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
+                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
+            .select(dsl
+                .select(types.field(GRAPHITRON_MINTED_TYPE.GRAPH_NAME),
+                    typeCoordinate(types.field(GRAPHITRON_MINTED_TYPE.TYPE_NAME)),
+                    val("NAMED_TYPE"), count())
+                .from(types)
+                .groupBy(types.field(GRAPHITRON_MINTED_TYPE.GRAPH_NAME),
+                    types.field(GRAPHITRON_MINTED_TYPE.TYPE_NAME))
+                .having(count().gt(1)))
+            .execute();
+
+        var fields = dsl.selectDistinct(GRAPHITRON_MINTED_FIELD.GRAPH_NAME,
+                GRAPHITRON_MINTED_FIELD.TYPE_NAME, GRAPHITRON_MINTED_FIELD.FIELD_NAME,
+                GRAPHITRON_MINTED_FIELD.ORDINAL, GRAPHITRON_MINTED_FIELD.TYPE_SDL,
+                GRAPHITRON_MINTED_FIELD.NAMED_TYPE, GRAPHITRON_MINTED_FIELD.NON_NULL,
+                GRAPHITRON_MINTED_FIELD.IS_LIST, GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL,
+                GRAPHITRON_MINTED_FIELD.DESCRIPTION)
+            .from(GRAPHITRON_MINTED_FIELD)
+            .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
+            .and(mintedFieldTakesEffect())
+            .asTable("m");
+        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
+            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
+                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
+            .select(dsl
+                .select(fields.field(GRAPHITRON_MINTED_FIELD.GRAPH_NAME),
+                    fieldCoordinate(fields.field(GRAPHITRON_MINTED_FIELD.TYPE_NAME),
+                        fields.field(GRAPHITRON_MINTED_FIELD.FIELD_NAME)),
+                    val("FIELD"), count())
+                .from(fields)
+                .groupBy(fields.field(GRAPHITRON_MINTED_FIELD.GRAPH_NAME),
+                    fields.field(GRAPHITRON_MINTED_FIELD.TYPE_NAME),
+                    fields.field(GRAPHITRON_MINTED_FIELD.FIELD_NAME))
+                .having(count().gt(1)))
+            .execute();
+
+        var arguments = dsl.selectDistinct(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME,
+                GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME, GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME,
+                GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME, GRAPHITRON_MINTED_ARGUMENT.ORDINAL,
+                GRAPHITRON_MINTED_ARGUMENT.TYPE_SDL, GRAPHITRON_MINTED_ARGUMENT.NAMED_TYPE,
+                GRAPHITRON_MINTED_ARGUMENT.NON_NULL, GRAPHITRON_MINTED_ARGUMENT.IS_LIST,
+                GRAPHITRON_MINTED_ARGUMENT.ITEM_NON_NULL,
+                GRAPHITRON_MINTED_ARGUMENT.DEFAULT_VALUE_SDL,
+                GRAPHITRON_MINTED_ARGUMENT.DESCRIPTION)
+            .from(GRAPHITRON_MINTED_ARGUMENT)
+            .where(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME.eq(graphName))
+            .and(mintedArgumentTakesEffect())
+            .asTable("m");
+        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
+            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
+                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
+            .select(dsl
+                .select(arguments.field(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME),
+                    argumentCoordinate(arguments.field(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME),
+                        arguments.field(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME),
+                        arguments.field(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)),
+                    val("FIELD_ARGUMENT"), count())
+                .from(arguments)
+                .groupBy(arguments.field(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME),
+                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME),
+                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME),
+                    arguments.field(GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME))
+                .having(count().gt(1)))
+            .execute();
+    }
+
+    /** The coordinate is not one the applications minting it disagreed about. */
+    private static Condition uncontested(Field<String> graph, Field<String> coordinate) {
+        return notExists(selectOne().from(GRAPHITRON_MINTED_CONFLICT)
+            .where(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME.eq(graph))
+            .and(GRAPHITRON_MINTED_CONFLICT.COORDINATE.eq(coordinate)));
+    }
 
     /**
      * A minted type takes effect: it replaces, or it yields to nobody. Stated once because the
@@ -195,6 +305,8 @@ public final class ElementAnchors {
                     .from(GRAPHITRON_MINTED_TYPE)
                     .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName))
                     .and(mintedTypeTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_TYPE.GRAPH_NAME,
+                        typeCoordinate(GRAPHITRON_MINTED_TYPE.TYPE_NAME)))
                     .and(notExists(selectOne().from(GRAPHQL_TYPE_ELEMENT)
                         .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME
                             .eq(GRAPHITRON_MINTED_TYPE.GRAPH_NAME))
@@ -208,6 +320,9 @@ public final class ElementAnchors {
                     .from(GRAPHITRON_MINTED_FIELD)
                     .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
                     .and(mintedFieldTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_FIELD.GRAPH_NAME,
+                        fieldCoordinate(GRAPHITRON_MINTED_FIELD.TYPE_NAME,
+                            GRAPHITRON_MINTED_FIELD.FIELD_NAME)))
                     .and(notExists(selectOne().from(GRAPHQL_FIELD_ELEMENT)
                         .where(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME
                             .eq(GRAPHITRON_MINTED_FIELD.GRAPH_NAME))
@@ -224,6 +339,10 @@ public final class ElementAnchors {
                     .from(GRAPHITRON_MINTED_ARGUMENT)
                     .where(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME.eq(graphName))
                     .and(mintedArgumentTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME,
+                        argumentCoordinate(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME,
+                            GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME,
+                            GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)))
                     .and(notExists(selectOne().from(GRAPHQL_ARGUMENT_ELEMENT)
                         .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME
                             .eq(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME))
@@ -259,7 +378,9 @@ public final class ElementAnchors {
                         GRAPHITRON_MINTED_TYPE.KIND, GRAPHITRON_MINTED_TYPE.DESCRIPTION)
                     .from(GRAPHITRON_MINTED_TYPE)
                     .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName))
-                    .and(mintedTypeTakesEffect())))
+                    .and(mintedTypeTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_TYPE.GRAPH_NAME,
+                        typeCoordinate(GRAPHITRON_MINTED_TYPE.TYPE_NAME)))))
             .onDuplicateKeyUpdate()
             .set(GRAPHITRON_TYPE.COORDINATE, excluded(GRAPHITRON_TYPE.COORDINATE))
             .set(GRAPHITRON_TYPE.KIND, excluded(GRAPHITRON_TYPE.KIND))
@@ -304,7 +425,10 @@ public final class ElementAnchors {
                         GRAPHITRON_MINTED_FIELD.DESCRIPTION)
                     .from(GRAPHITRON_MINTED_FIELD)
                     .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
-                    .and(mintedFieldTakesEffect())))
+                    .and(mintedFieldTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_FIELD.GRAPH_NAME,
+                        fieldCoordinate(GRAPHITRON_MINTED_FIELD.TYPE_NAME,
+                            GRAPHITRON_MINTED_FIELD.FIELD_NAME)))))
             .onDuplicateKeyUpdate()
             .set(GRAPHITRON_FIELD.COORDINATE, excluded(GRAPHITRON_FIELD.COORDINATE))
             .set(GRAPHITRON_FIELD.ORDINAL, excluded(GRAPHITRON_FIELD.ORDINAL))
@@ -356,7 +480,11 @@ public final class ElementAnchors {
                         GRAPHITRON_MINTED_ARGUMENT.DESCRIPTION)
                     .from(GRAPHITRON_MINTED_ARGUMENT)
                     .where(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME.eq(graphName))
-                    .and(mintedArgumentTakesEffect())))
+                    .and(mintedArgumentTakesEffect())
+                    .and(uncontested(GRAPHITRON_MINTED_ARGUMENT.GRAPH_NAME,
+                        argumentCoordinate(GRAPHITRON_MINTED_ARGUMENT.TYPE_NAME,
+                            GRAPHITRON_MINTED_ARGUMENT.FIELD_NAME,
+                            GRAPHITRON_MINTED_ARGUMENT.ARGUMENT_NAME)))))
             .onDuplicateKeyUpdate()
             .set(GRAPHITRON_ARGUMENT.COORDINATE, excluded(GRAPHITRON_ARGUMENT.COORDINATE))
             .set(GRAPHITRON_ARGUMENT.ORDINAL, excluded(GRAPHITRON_ARGUMENT.ORDINAL))

@@ -2423,6 +2423,22 @@ COMMENT ON COLUMN graphitron_argument.description IS 'the docstring, authored or
 -- generated jOOQ class publishes, a second corpus, so it is a derivation
 -- (intent_synthesized_federation_key) whose rows are their own provenance.
 
+CREATE TABLE graphitron_minted_conflict (
+  graph_name   VARCHAR NOT NULL,
+  coordinate   VARCHAR NOT NULL,
+  element_kind VARCHAR NOT NULL,
+  variants     INT     NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'FIELD_ARGUMENT')),
+  CHECK (variants >= 2)
+);
+COMMENT ON TABLE graphitron_minted_conflict IS 'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph. For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.';
+COMMENT ON COLUMN graphitron_minted_conflict.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_minted_conflict.coordinate IS 'the contested coordinate, spelled as graphitron_element spells one. No foreign key there, and the absence is the fact: a contested coordinate is exactly the one the anchor declined to hold, so a key into the anchor could never be satisfied by a row of this relation';
+COMMENT ON COLUMN graphitron_minted_conflict.element_kind IS 'which kind of schema element the contested coordinate names, which is also which minted relation a reader joins to see what each application would have written. Three of the four the emitted family holds, an input field being minted by nothing today';
+COMMENT ON COLUMN graphitron_minted_conflict.variants IS 'how many distinct payloads were minted here, always at least two, which the CHECK holds. A count of readings and not of applications: two carriers minting one coordinate the same way are no conflict and draw no row, and three carriers holding two opinions between them are two. Carried rather than left to a reader''s own count, on intent_bound_table.candidates'' terms, so a message can say how many ways the schema disagrees with itself';
+
 CREATE TABLE graphitron_minted_type (
   graph_name        VARCHAR NOT NULL,
   source_coordinate VARCHAR NOT NULL,
@@ -10373,6 +10389,9 @@ INSERT INTO meta_grain VALUES
   ('expanded-field',
    'one field coordinate the generator works with in one graph, at the type expression the generator reads there',
    'graph_name, type_name, field_name', 'sdl'),
+  ('minted-conflict',
+   'one coordinate several macro applications would mint and disagree about, in one graph',
+   'graph_name, coordinate', 'sdl'),
   ('minted-type', 'one type one macro application would add to one graph',
    'graph_name, source_coordinate, type_name', 'sdl'),
   ('minted-field',
@@ -10462,6 +10481,10 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
+  ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
+   'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
+   'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',
+   'Two applications minting one coordinate the same way are the ordinary case and the whole reason the minted relations key by their source, shared machinery being stated whole by every carrier. Two that disagree are not, and neither of them may win. Picking one would put a shape in the emitted population that no application asked for and that nothing records, which is the class of silence this line of work exists to remove; refusing outright would be worse, because the schema is one an author can write and capture runs before assembly and for readers that never run it, so the store has to exist for the diagnostic to sit in. So the coordinate is withheld and this row is what says why, on intent_authored_claim_conflict''s terms, which is the same shape one increment earlier: a contested coordinate, neither claimant, and a relation naming it. What each application would have written is not copied here; the minted relations keep it, keyed by the coordinate that coined each, so the readings are a join away rather than a duplicate.'),
   ('graphitron_minted_type', 'minted-type', 'graphitron',
    'A type one macro application would add to the schema: one row per minted type name per coining coordinate.',
    'For example @asConnection on Query.films mints QueryFilmsConnection and PageInfo under the coordinate Query.films, and a second carrier mints its own connection and its own PageInfo row beside them, the shared type being one row per carrier here and one row in graphitron_type.',

@@ -423,11 +423,63 @@ expansion also stopped asking the store one question per carrier about that carr
 and asks it once for the graph, which is the shape this item is about and would have been worse for
 sitting inside capture rather than in a view.
 
-**One thing the design said and the implementation could not keep.** Two carriers minting one
-coordinate with disagreeing payload was to be a primary key violation rather than an arbitrary
-winner. The fill upserts, for the cascade reason above, so it takes the last row instead of refusing;
-the agreement test is what asserts the carriers agree. That is weaker than a constraint and it is
-recorded rather than hidden.
+**Two carriers minting one coordinate with disagreeing payload get neither, and the coordinate is
+marked.** The design asked for a primary key violation here, on the reasoning that a disagreement is
+a capture bug. It is not. `@asConnection(connectionName: ...)` names a shared connection, and two
+carriers naming one over different element types disagree about that connection's own `nodes` and
+its edge's `node`. Assembly already rejects that schema with a diagnostic naming both carriers, and
+capture runs before assembly and for readers that never run it at all, so refusing leaves an author
+mid-edit with no store rather than with a store and a diagnostic.
+
+The refusal was not hypothetical, which is how this was found. This item recorded that the upsert
+took an arbitrary winner; the probe written to confirm that produced a constraint violation instead,
+because H2 matches a MERGE's source against the pre-statement target and therefore never sees the
+row it just inserted. `WHEN MATCHED THEN DELETE` was measured for the same reason and fails
+identically: both source rows are unmatched, both insert, and the second violates the key.
+
+So `graphitron_minted_conflict` holds one row per contested coordinate, every arm withholds what it
+finds, and neither reading lands. Two things follow that are worth stating. Absence could not have
+carried this on its own: a machinery field whose owning type lost is also minted and also missing
+from the anchor, and its owning type is present, so it is indistinguishable by anti-join from a
+contested coordinate; the only fact that separates them is whether the mints agree, which is a
+grouping and not a join. And withholding is per coordinate, not per type, so a contested connection
+lands as a type with a hole where the carriers disagreed rather than not at all, which is the honest
+reading of a schema that disagrees with itself at exactly those fields.
+
+What each application would have written is not copied into the conflict row. The minted relations
+keep it, keyed by the coordinate that coined each, so a rejection derived from the store is a later
+item's to write and this resolution destroys nothing it would need.
+
+**The key leads with the source, so each relation carries an index on its own coordinate.** The
+family is read both ways: the key answers what one application minted, and the transcription's arm
+of every precedence resolution asks the opposite question once per authored element, which the key
+cannot serve. `intent_connection_facet` asks it too. Three indexes, argued where they sit. The
+expansion also stopped asking the store one question per carrier about that carrier's own arguments
+and asks it once for the graph, which is the shape this item is about and would have been worse for
+sitting inside capture rather than in a view.
+
+**Two carriers minting one coordinate with disagreeing payload is the author's to write, so the
+anchor chooses rather than refuses.** The design asked for a primary key violation here, on the
+reasoning that a disagreement is a capture bug. It is not. `@asConnection(connectionName: ...)` names
+a shared connection, and two carriers naming one over different element types disagree about that
+connection's own `nodes` and its edge's `node`. Assembly already rejects that schema with a
+diagnostic naming both carriers, and capture runs before assembly and for readers that never run it
+at all, so refusing leaves an author mid-edit with no store rather than with a store and a
+diagnostic.
+
+The refusal was not hypothetical, which is how this was found: H2's `MERGE` raises on a source that
+yields two rows for one target key, so the upsert already refused, and a schema the generator has a
+diagnostic for became a capture that produced nothing. This item recorded the opposite in an earlier
+draft, that the upsert took an arbitrary winner, and the probe that was meant to confirm it produced
+the constraint violation instead.
+
+So the minted arms rank rather than deduplicate: a replacing row first, then the lowest coining
+coordinate, which is a total order over a set that is never empty. Nothing is lost by choosing.
+Both contributions stay in the minted relation, which is keyed by the coordinate that coined each,
+so the disagreement is a group-by away and a rejection derived from the store is a later item's to
+write rather than something this resolution destroys. The window costs nothing that this item worries
+about: it runs once per graph inside an insert, not per driving row inside a relation somebody
+reads.
 
 ## The entry and anchor pattern, and the scope it makes visible
 
