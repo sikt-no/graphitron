@@ -21,22 +21,31 @@ writes facts into the store, the per-workspace cache of what a consumer's schema
 classpath contain, and the store already rosters the seven of them by name. Today every watcher knows
 exactly which file fired it and discards that before calling anything, so five separate stages
 downstream each rediscover the same answer by reading bytes: hashing, stat-walking or re-parsing
-whole populations to find the one file that moved. When this lands, a watcher that sees a file move
-nulls the recorded stamp of the input it belongs to, which is the store's existing way of saying that
-an input's rows are not to be trusted, and an input whose stamp still stands is not read again. Two
-things change for a developer in a session. A `.java` save stops
-content-hashing every source file under the module's compile roots to find the one that was saved,
-measured below at 30 to 46 ms of every debounced save on this repo's own example consumer and
-proportional to the consumer's sources rather than to the edit; and the console names the file that
-triggered each round instead of saying only that a round happened.
+whole populations to find the one file that moved.
 
-The mechanism is a dirty flag, and taking that literally is what kept it small: the flag turns out to
-be a column the schema already has. Marks are idempotent, so a burst of twenty thousand events is one
-write; a null stamp is already the stale state, so a cold start needs no initialisation; and "I cannot
-say what moved" is not a third state but a corpus dropping out of observation, which is the same as
-being cold. A gatherer can only ever be told to do *less* than it does today, never something
-different, so this is adoptable one gatherer at a time and a wrong mark costs a re-read rather than a
-wrong answer.
+What this item delivers is the mechanism that carries the answer across, one gatherer converted to it
+as proof that it holds against a real crawler, and the one change a developer sees from either: the
+console names the file that triggered a round instead of saying only that a round happened. The
+mechanism is two timestamps and one comparison. The store records, on the row it already keeps per
+input, when the content behind that row began being read. A session records when it began watching
+each population, and which instances it has seen move since. An input is re-read unless it was read
+after this session began watching and has not moved since, and the fallback wherever that cannot be
+said is exactly today's behaviour, hashing the bytes.
+
+The converted gatherer is `java-source`, which stops content-hashing every source file under the
+module's compile roots to find the one that was saved: 30 to 46 ms of every debounced save on this
+repo's own example consumer, measured below, and proportional to the consumer's sources rather than
+to the edit. That figure is real and it is not the case for this item, because the pass it comes off
+is not one a developer waits on. The case is that the same comparison serves the passes they do wait
+on, and that those are specified elsewhere and shrink to adoptions of this once it exists.
+
+Three properties keep it small. Stale is what a session starts in, because a floor written at boot
+outranks every timestamp a previous session left, so nothing needs initialising and a workspace
+edited while the loop was down is re-read rather than believed. "I cannot say what moved" is not a
+third state but a population dropping out of observation, which raises its floor and is the same as
+being cold. And a gatherer can only ever be told to do *less* than it does today, never something
+different, so this is adoptable one gatherer at a time and an answer wrong in the safe direction
+costs a re-read.
 
 The larger change is what it lets the *next* item do. Three filed items each propose their own private
 cache to remove their own stage's rediscovery, and each has to argue a fresh invalidation heuristic to
@@ -102,45 +111,61 @@ under "What this item adopts" below.
 
 ## The mechanism
 
-The store already records, per instance, whether its rows can be trusted. `store_source.stamp` is the
-content hash the capture wrote once the instance's rows were all in, and its own comment says a null
-is what "keeps a killed run re-walked"; `ClasspathSources.upsert` nulls it "from the moment its old
-partition stops being trustworthy"; `StoreRefresh.freshSources` selects `WHERE stamp IS NOT NULL` and
-skips a null, because "a source whose stamp is null never qualifies". `java_file.stamp` is the same
-column one corpus over. That is a dirty flag, already in the schema, already at the grain the store
-partitions those families at.
+Two timestamps, one comparison, and a session that holds the observation.
 
-So this item adds no relation. It adds one write and one condition.
+**What the store records.** Each family that partitions by input keeps a row per instance carrying a
+content stamp: `store_source` for schema files, jars and jOOQ packages, `java_file` for source files.
+Neither row says *when* the content behind that stamp began being read. `store_source.last_seen`
+comes closest and is explicitly not it: its comment calls itself "the age half of the age/currency
+distinction", recording when a run last named the source in its input set rather than when its bytes
+were read. This item writes the currency half. Both relations gain `read_at`, taken *before* the
+content is read and committed with the rows and the stamp it vouches for.
 
-**The write.** A watcher that sees an instance move nulls that instance's stamp, in its own committed
-transaction, on the watch thread. One statement, one row, and repeating it is a no-op, which is the
-idempotence a flag needs: twenty thousand `.class` events under one root are twenty thousand attempts
-to null one already-null column, and the watcher skips the ones it has already written since that
-instance was last stamped. Nothing is buffered and nothing is ordered against anything else, because
-the write is complete when it commits.
+Before rather than at commit, because that is the whole of the concurrency argument. A change landing
+between the read and the commit is later than `read_at` and is correctly distrusted; a `read_at`
+taken at commit would swallow that window in silence.
 
-**The condition.** A recorded stamp is trusted without re-reading the bytes only where this process
-has watched the instance's corpus continuously since the store was opened. That predicate is a fact
-about *this process*, not about the store: no other process can act on our watcher's coverage, and a
-gap between sessions is a gap nobody observed. So it lives in the session, as a set of corpora under
-continuous observation plus the roots that observation actually covers. Outside it, a stamp is verified
-by hashing exactly as today.
+**What the session records.** A floor per corpus, the instant this process began watching it, raised
+to now whenever observation breaks. And a mark per instance, the instant a watcher saw it move. Both
+are in memory, and both are per process by nature: no other process can act on our watcher's
+coverage, and a gap between sessions is a gap nobody observed.
 
-Those two together are the whole mechanism:
+**The comparison.**
 
-* **Stale is the initial state.** A cold session observes nothing yet, so every stamp is verified,
-  which is today's behaviour and needs no initialisation.
+> An instance is trusted without re-reading its bytes exactly when its `read_at` is above its
+> corpus's floor and above every mark against it. Comparisons are strict, so two events inside one
+> clock tick resolve to distrust.
+
+What the mechanism claims follows from that rather than being asserted beside it.
+
+* **Stale is the initial state.** A session's floor is later than every `read_at` a previous session
+  wrote, so a cold session trusts nothing and verifies everything, which is today's behaviour and
+  needs no initialisation. A workspace edited while the loop was down is re-read for the same
+  reason, and that case, a `git pull` or a branch switch between sessions, is the one the rule exists
+  to get right.
 * **"I cannot say" is not a state.** An overflow, a subtree registered mid-session, or a watcher that
-  cannot resolve an event drops the corpus out of continuous observation, which is the same as being
-  cold. The reason is carried as a diagnostic string for the console line, not as a case any consumer
-  switches on.
-* **An unobserved instance is permanently verified.** No watcher covers the local Maven repository, so
-  a jar's stamp is never trusted on observation alone and is always checked. That arrives without an
-  exception being written for it.
-* **A stamp is written only for content that was read.** The capture stamps after its rows are in, and
-  R620 has already made the stamp describe the bytes the rows came from by seeding
-  `ClasspathSources` with the round's own hashes. The remaining ordering hazard is local and stated
-  under "The one race" below.
+  cannot resolve an event raises that corpus's floor, which is the same as being cold for it. Trust
+  then rebuilds instance by instance as the next verifying pass writes fresh `read_at` values, so an
+  overflow costs one pass rather than the rest of the session. The reason is carried as a diagnostic
+  string for the console line, not as a case any consumer switches on.
+* **An unobserved instance is permanently verified.** No watcher covers the local Maven repository,
+  so nothing there is ever read under an established floor and a jar's stamp is never trusted on
+  observation alone. That arrives without an exception being written for it.
+* **A mark cannot fail.** It is a map write on the watch thread. There is no store transaction to
+  block on the round's, no second connection to open, and no error path in which a lost mark leaves
+  an instance reading current for the rest of the session.
+* **A crash cannot leave a wrong answer behind.** A session that dies between a mark and the re-read
+  it should have caused leaves no durable mark and needs none: the next session's floor outranks the
+  `read_at` that mark was about.
+* **A false mark is cheap.** Distrust does not discard the stamp, so an instance marked by a save
+  that changed nothing is hashed, compared to the stamp it still carries, and skipped. That is what
+  keeps a coarse fold adoptable later, and it is the property an earlier draft lost by expressing the
+  mark as a null stamp.
+
+Cross-process, the rule is sound rather than merely conservative. If another process captured an
+instance while we were watching its corpus, that `read_at` is above our floor, and any change since
+would have reached our watcher, so its work counts as ours without either process knowing about the
+other.
 
 ## Why there is no relation of its own
 
@@ -154,11 +179,13 @@ they are worth recording because each one is a general test rather than a detail
 `gatherer_name` in that key asserted something the roster already implies, and a key with a functional
 dependency inside it is a normalisation defect however good the prose around it reads.
 
-**It duplicated a fact the schema already carried.** With the gatherer dimension gone the key is
-`(corpus_name, instance_key)`, which is `store_source`'s key with the corpus spelled out, and the
-column beside it would say what `stamp`'s nullity already says. A second relation recording the same
-predicate is a second thing to keep in step, and the store's own doctrine is that a hand-written
-derivation must argue that no simpler form expresses its rule. This one cannot.
+**It duplicated a fact the instance's own row carries.** With the gatherer dimension gone the key is
+`(corpus_name, instance_key)`, which is the key of the row the store already keeps for that instance.
+Currency is an attribute of the instance rather than a relationship between two things, so it belongs
+beside the stamp whose content it dates, which is what `read_at` is: one column on a relation that
+already exists. A second relation recording the same predicate is a second thing to keep in step, and
+the store's own doctrine is that a hand-written derivation must argue that no simpler form expresses
+its rule. This one cannot.
 
 **Its owner did not exist.** The `observation` gatherer needed to own the relation was a gatherer that
 transcribes no corpus and reads no captured rows, which satisfies
@@ -167,20 +194,23 @@ sentence about what a corpus-less gatherer is. Needing to invent a roster entry 
 the roster saying the relation does not belong. It also forced `meta_grain` to admit a grain with no
 corpus, which is R923; that item stands on its own evidence and this one no longer depends on it.
 
-## The one race
+## Why there is no race to arbitrate
 
-A watcher can null a stamp while a gatherer is mid-read of the same instance. If the gatherer then
-writes its stamp at commit, the mark is lost and the instance reads current although it changed.
+A watcher can see an instance move while a gatherer is mid-read of it. An earlier draft arbitrated
+that with a token handed out when a read began and a stamp write made conditional on no mark having
+landed since. The machinery is gone, and it is worth saying why rather than leaving a reader to
+wonder whether the race was noticed: the comparison already resolves it.
 
-The gatherer therefore stamps only if the instance has not been marked since it began reading it. The
-observation hands out a token when a read starts and refuses the stamp if a mark landed against that
-instance afterwards; the stamp write and the rows it vouches for are in one transaction, so a refused
-stamp leaves the rows written and the instance stale, which costs a re-read next round and never a
-wrong answer.
+`read_at` is taken before the content is read, so a change during the read carries a mark above it
+and the instance is distrusted next round. A change *before* the read whose event arrives after it is
+distrusted too, on the same comparison, and costs one unnecessary re-read. Both directions err
+towards reading, which is the direction that is never wrong.
 
-This is the whole of the concurrency argument, and it is deliberately one row wide. Nothing here needs
-a global ordering between the watch threads and the round, because a mark is complete when its
-transaction commits and a stamp is conditional on the marks that preceded it.
+What went with that machinery was a hole in it. The watcher was to skip marking an instance it had
+already marked, which is a sound thing to do to a write and an unsound thing to do to an observation:
+a second change arriving after a read, against an instance already marked before it, leaves the
+arbitration nothing to see and the stamp is written as current. A timestamp the watcher always
+advances cannot form that hole, because advancing it is the mark.
 
 ## Grain, and the one law that is easy to lose
 
@@ -211,8 +241,8 @@ the OS drops, and the recovery for those is the escape hatch below, since a coar
 re-read the whole population and buy nothing.
 
 **And an escape hatch, because filesystem watchers do lie.**
-`-Dgraphitron.dev.rediscover=always` keeps every corpus out of continuous observation, so every stamp
-is verified and the session behaves exactly as it does today. A developer on a bind mount or a network
+`-Dgraphitron.dev.rediscover=always` registers no corpus at all, so no floor is ever established,
+nothing is ever trusted and the session behaves exactly as it does today. A developer on a bind mount or a network
 share where the watcher under-reports gets a working session back with one flag, and a bug report has a
 one-line bisect. It joins the documented `graphitron.dev.*` property table in
 `docs/manual/reference/mojo-configuration.adoc` beside `port`, `debounceMs`, `skipInitial` and
@@ -228,10 +258,10 @@ neither client can produce a wrong generated file.
 and rewrites the ones that differ. Measured on this workstation over `graphitron-sakila-example`'s
 reactor source roots, generated sources included, which is what `AbstractRewriteMojo.compileSourceRootsOf`
 walks: 1,316 `.java` files and 6.0 MiB, 151 ms on the first pass and 30 to 46 ms warm over twenty-five
-consecutive passes, on every debounced save. Under observation the refresh hashes the files whose stamp
-is null and skips the rest, and it stamps inside the transaction `rewrite` already opens, so a file whose
-write the store refused keeps a null stamp and is re-read next save rather than silently skipped for the
-rest of the session.
+consecutive passes, on every debounced save. Under observation the refresh hashes only the files the comparison
+distrusts and skips the rest, and it writes each file's `read_at` inside the transaction `rewrite`
+already opens, so a file whose write the store refused keeps the `read_at` it had and is re-read next
+save rather than silently skipped for the rest of the session.
 
 It is the right first client for three reasons: it is a declared crawler, so the soundness condition
 applies to it by roster; its corpus is at file grain with no graph dimension, so its instance is the
@@ -260,7 +290,7 @@ what the one-shot goals get.
 ## What this item does not do
 
 **It does not adopt the class census.** The census is an in-process cache rather than a stamp writer, and
-it feeds the `catalog` gatherer without being it, so nulling a stamp on its behalf would assert something
+it feeds the `catalog` gatherer without being it, so dating a read on its behalf would assert something
 about rows `CatalogFactCapture` may not have written. Its directory walk, measured above at 7 ms per
 round, is left where it is.
 
@@ -277,37 +307,54 @@ is this same shape one corpus over.
 
 **It absorbs R921**, which is this adoption reached as a private cache keyed on modification time. Its
 central finding survives and is answered by the schema rather than by a second record: a file whose store
-write failed is a file whose stamp is still null. R921 is a Backlog tombstone naming this item and deletes
+write failed is a file whose `read_at` did not move. R921 is a Backlog tombstone naming this item and deletes
 when this one reaches Done.
 
-**It does not do propagation.** A null stamp says an instance's partition is not trustworthy; it does not
-say which registrations, derived rows or generated units must re-run because of it. That is R924, which
+**It does not do propagation.** The comparison says an instance's partition is not trustworthy; it does
+not say which registrations, derived rows or generated units must re-run because of it. That is R924, which
 walks the 205 declared foreign keys, an edge naming the column tuple on both ends so it says which rows of
 the child a given set of parent rows reaches.
 
 ## Implementation
 
+`graphitron-model`, the store schema:
+
+* `store_source` and `java_file` each gain `read_at TIMESTAMP`, nullable, with a column comment
+  naming `last_seen` as the other half of the age/currency distinction so neither drifts into the
+  other's job. Null reads as never, which is the conservative answer for a row that exists before
+  anything has read its content. This is a DDL change, so `store_stamp.ddl_hash` moves and every
+  persisted store is rebuilt once. That is the store's designed response to a schema change and costs
+  one cold capture per workspace; it is also the reason the mark is not a null stamp, which
+  "Other solutions" states.
+
 `graphitron-model`, `no.sikt.graphitron.model.sources`:
 
-* The observation, new, and the only new type in the item. Holds the corpora under continuous observation,
-  the roots each covers, the registered folds, and the read tokens the race above needs. `register(corpus,
-  scope, fold)` validates the corpus against `meta_gatherer_corpus` read from the store, so only a corpus
-  some crawler declares can be observed. `mark(Path)` folds to an instance and nulls its stamp in its own
-  transaction, skipping an instance already marked since it was last stamped. `lose(corpus, reason)` drops
-  a corpus out of continuous observation and records why. `trusts(corpus, instanceKey)` answers whether a
-  non-null stamp may be believed without hashing. `beginRead(instanceKey)` and
-  `stampIfUnmarked(dsl, instanceKey, stamp)` are the race's two halves. The grain law goes on `register`,
-  where a later reader meets it before choosing a fold.
+* The observation, new, and the only new type in the item. Holds each corpus's floor, the roots it
+  covers, the registered folds, and the marks. `register(corpus, scope, fold)` validates the corpus
+  against `meta_gatherer_corpus` read from the store, so only a corpus some crawler declares can be
+  observed, and establishes its floor. `mark(Path)` folds a path to an instance and records the
+  instant, on the watch thread, with no store access. `lose(corpus, reason)` raises the floor and
+  records why. `trusts(corpus, instanceKey, readAt)` is the comparison. `readAt()` hands out the
+  instant a gatherer is to write, so "before the content is read" has one implementation rather than
+  one per caller. The grain law goes on `register`, where a later reader meets it before choosing a
+  fold.
 
 `graphitron-model`, `no.sikt.graphitron.model.capture.java`:
 
 * `JavaSourceFacts` takes an optional observation, registers the `java-source` corpus at file grain,
-  hashes only the walked files whose `java_file.stamp` is null or whose instance is not trusted, and stamps
-  through `stampIfUnmarked` inside the `dsl.transaction` that `rewrite` already opens. `prune` keeps taking
-  the whole walked set, which the walk supplies regardless of what was hashed. The class javadoc's sentence
-  about recomputing the hash for every walked file deliberately is rewritten rather than deleted: it is the
-  right argument about the persisted stamp and the wrong one about this cadence, and the next reader needs
-  both halves stated.
+  selects `read_at` beside the stamp it already selects, hashes only the files the comparison
+  distrusts, and writes the new `read_at` through the transaction `rewrite` already opens. `prune`
+  keeps taking the whole walked set, which the walk supplies regardless of what was hashed. The class
+  javadoc's sentence about recomputing the hash for every walked file deliberately is rewritten rather
+  than deleted: it is the right argument about the persisted stamp and the wrong one about this
+  cadence, and the next reader needs both halves stated.
+
+`graphitron-model`, `no.sikt.graphitron.model.capture`:
+
+* `ClasspathSources` writes `store_source.read_at` where it writes the stamp, which does not change
+  what any capture decides. No reader consults it until R857 adopts it, and writing it here rather
+  than there is what makes that adoption a reader-side change against a column that has been
+  populated all along.
 
 `graphitron-maven-plugin`:
 
@@ -327,28 +374,34 @@ and `docs/architecture/how-to/dev-loop-internals.adoc`'s component list gains th
 list is where a contributor learns what the dev JVM is made of and it currently describes the watchers as
 signalling the dispatch and nothing more.
 
-No DDL change, no new relation, no `meta_` edit, and therefore no `store_stamp.ddl_hash` bump and no
-persisted store invalidated.
+Nothing is written to the store off the round's thread, so the session's single shared connection is
+used exactly as it is today.
 
 ## Tests
 
-`ObservationTest`, `graphitron-model` unit tier. A corpus not under observation trusts nothing, so a cold
-session verifies every stamp; a marked instance has its stamp nulled and the mark is idempotent, so a
-thousand marks under one root leave one null and one write; `lose` drops the corpus and carries its
-reason; a corpus no crawler declares is refused at `register`; an instance outside the registered scope is
-never trusted; a fold at root grain maps every path under the root to the root.
+`ObservationTest`, `graphitron-model` unit tier. A cold session trusts nothing, its floor outranking
+every `read_at` a previous session wrote, which is the case the mechanism's correctness turns on. An
+instance read above the floor and unmarked is trusted; a mark after its `read_at` distrusts it; a mark
+*before* its `read_at` does not, which is what proves marks are not sticky and that a corpus recovers.
+Equal timestamps distrust. `lose` raises the floor, so everything read before it is distrusted and an
+instance read after it is trusted again, which is the recovery an overflow needs. A corpus no crawler
+declares is refused at `register`. An instance outside the registered scope is never trusted. A fold at
+root grain maps every path under the root to the root. A thousand marks under one root cost one entry
+and no store access.
 
-**The race gets its own case, because it is the one place a wrong answer is reachable**: a mark that lands
-between `beginRead` and `stampIfUnmarked` leaves the stamp null, so the instance is read again next round;
-a read with no intervening mark stamps normally; and a rolled-back transaction leaves the stamp null
-either way.
+**The read window gets its own case, because it is the one place a wrong answer is reachable**: an
+instance whose `read_at` was taken before its content was read, marked while that read was in flight,
+is distrusted afterwards. The test asserts that ordering rather than the outcome alone, so a later
+simplification that stamps `read_at` at commit fails here instead of passing quietly.
 
 `JavaSourceFactsTest`, `graphitron-model` unit tier, beside its existing lifecycle anchors. A second
-refresh over an unchanged walk under observation hashes nothing and writes nothing, where today it hashes
-everything. An edited file whose stamp was nulled is hashed and rewritten while its neighbours are not. A
-file whose rewrite the store refused is hashed again on the next refresh, which is the finding absorbed
-from R921. A refresh with no observation hashes everything, which is the existing behaviour and the
-one-shot path.
+refresh over an unchanged walk under observation hashes nothing and writes nothing, where today it
+hashes everything. An edited file whose instance was marked is hashed and rewritten while its
+neighbours are not. A marked file whose content did not actually change is hashed, compared to the
+stamp it still carries, and not rewritten, which is the property that keeps a false mark cheap. A file
+whose rewrite the store refused keeps its old `read_at` and is hashed again on the next refresh, which
+is the finding absorbed from R921. A refresh with no observation hashes everything, which is the
+existing behaviour and the one-shot path.
 
 `ClasspathCensusTest` and the census are untouched, which is the evidence that the mechanism is additive.
 
@@ -363,6 +416,10 @@ file the round was told about. That is the completeness evidence for the visible
 timing assertion passes on hardware fast enough to hide the regression, and the hashed-versus-skipped
 counts are the same fact stated as counts.
 
+Beside the store's existing schema gates, one case holds `read_at` to the relations that carry a stamp,
+so a family that gains a stamp later and no currency column beside it fails rather than quietly falling
+outside the mechanism.
+
 ## Why this is worth building rather than fixing five times
 
 Each of the five stages can be fixed alone, and three items already propose to. The reason to build the
@@ -370,7 +427,7 @@ shared mechanism is that each local fix buys a cache whose invalidation is a sec
 heuristics do not compose: R921 has to argue modification times are safe, R857 has to argue a recorded
 stamp can be read for a population it was not written for, and R620 had to thread one round's hashes
 from one consumer to another and to argue that a resolver's record may stand in for the bytes. Against
-a claim none of those arguments is needed, and the condition that replaces them is not a fourth
+this comparison none of those arguments is needed, and the condition that replaces them is not a fourth
 heuristic but the crawler property the store already declares and gates.
 
 There is also a pattern here worth naming, because it predicts where the next instance appears. Every
@@ -386,24 +443,38 @@ cached is the next one of these.
 **A claim relation of its own.** `gatherer_current (gatherer_name, corpus_name, instance_key)` in a new
 `gatherer_` family, owned by a minted `observation` gatherer. Rejected under "Why there is no relation
 of its own" above, on three counts that are each a general test: the key carried a column
-`meta_gatherer_corpus` already determines, the relation restated what `store_source.stamp`'s nullity
-already says, and it needed a roster entry invented to house it. The last is the one worth carrying
+`meta_gatherer_corpus` already determines, it restated a currency that belongs beside the stamp on the
+instance's own row, and it needed a roster entry invented to house it. The last is the one worth carrying
 forward as a habit: a relation that has to mint an owner is a relation the model is refusing.
 
-**Keep every mark in memory instead.** A field on the Mojo, no store write at all. Rejected because the
-per-instance fact is durable by nature and already durable in fact: `store_source.stamp` outlives the
-process, is shared between the graphs of one workspace, and is what `StoreRefresh.freshSources` already
-reads. A parallel in-memory copy would be a second record of the same predicate, disagreeing with the
-first whenever a capture ran in another process. What genuinely is per-process is the *continuity* of
-observation, and that is the only part this item keeps in the session.
+**Express the mark as a null stamp.** The store already reads a null stamp as "not to be trusted":
+`ClasspathSources.upsert` nulls it while a partition is being rewritten and `StoreRefresh.freshSources`
+skips a null. An earlier draft of this item took that as the mark itself, which made the mechanism a
+schema change of no columns at all. Rejected on three counts, in increasing order of severity. It is
+lossy: nulling discards the content identity, so an instance marked by a save that changed nothing must
+be rewritten where a surviving stamp would have let it be skipped, which is what would have made a
+coarse fold unadoptable. It puts a store write on the watch thread, where the store is one JDBC
+connection shared with the round, so the mark either joins the round's open transaction or waits behind
+it on a minute-long lock budget, and a watcher that waits is a watcher whose queue overflows, costing
+the observation the mark was there to protect. And for the client this item actually adopts it cannot be
+done at all: `java_file.stamp` is NOT NULL, and its comment argues the constraint.
+
+**Keep the whole record in memory, the currency included.** A field on the Mojo and no schema change:
+the session remembers what it verified as well as what moved. Rejected because the verification is not
+the session's to own. The stamp it dates outlives the process and is shared between the graphs of one
+workspace and between processes over one workspace, so a capture in another process is work this
+session should be able to count, and a `read_at` on the row is what lets it. What genuinely is
+per-process is the *continuity* of observation and the marks it produces, and those are the only parts
+this item keeps in the session.
 
 **An event log with a per-consumer cursor.** Record every path a watcher sees, let each reader fold the
 events after its own position, and advance the position on success. Strictly more informative than a
-claim, and strictly more machinery for information no planned consumer reads: sequence numbers, a trim
+mark, and strictly more machinery for information no planned consumer reads: sequence numbers, a trim
 below the minimum committed position, and a cap that collapses the log when a burst outruns it. All
-three exist to bound a per-event record, and a claim is idempotent. The cursor's two real properties,
-that two readers over one population stay independent and that a failed reader loses nothing, are
-properties of a per-gatherer claim too.
+three exist to bound a per-event record, where a mark is one instant per instance that a later event
+simply overwrites. The cursor's two real properties, that two readers over one population stay
+independent and that a failed reader loses nothing, hold here too: a reader that failed wrote no
+`read_at`, so it is distrusted next round without anything having to remember that it failed.
 
 **A destructive drain.** A round takes the accumulated changes and resets. Rejected because the class
 census reads the `classpath` corpus from both cadences, so a drain by whichever round arrives first
@@ -423,8 +494,8 @@ surface is that the debounce sits in the wrong place relative to the marking, wh
 whoever owns it.
 
 **Carry the marks on `RunContext`.** It is the value a round already threads everywhere. Rejected on
-lifetimes: `RunContext` is rebuilt per round from configuration, while a claim has to outlive any one
-round to mean anything.
+lifetimes: `RunContext` is rebuilt per round from configuration, while the floors and the marks have to
+outlive any one round to mean anything.
 
 **Watch the local Maven repository too.** Registering the classpath jars' parent directories would let
 jars be observed, and a steady round would hash nothing. Rejected for now on two grounds: it makes the
@@ -437,8 +508,8 @@ reading the identity the resolver recorded beside the artifact instead of watchi
 propose in their own scopes, and it works: it is strictly more trustworthy than an observation, because
 it reads the bytes. It is also strictly more expensive, because it reads the bytes, and on the cadences
 those items are about the read is the whole cost. The two are complementary rather than exclusive,
-which is why the fallback here *is* the per-source check: an instance with no claim is read exactly as
-it is read today.
+which is why the fallback here *is* the per-source check: an instance the comparison distrusts is read
+exactly as it is read today.
 
 ## Provenance
 
