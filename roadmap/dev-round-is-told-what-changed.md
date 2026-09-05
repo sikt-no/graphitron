@@ -189,16 +189,20 @@ corpus, and crossing corpora is exactly what a gatherer with no corpus row is fo
 "an owner with no corpus rows is exempt, crossing being its job", so the declaration lands inside the
 gate rather than beside it.
 
-The grain side is where the declared model genuinely cannot hold this relation yet, and that is R923's
-to fix rather than this item's to work around. `meta_grain.corpus_name` is NOT NULL, and the claim's
-grain names its corpus per row, so it has no single corpus to declare. Admitting it by making the
-column nullable would be the model saying the column does not belong on the relation, and an audit of
-the roster says the same thing from the other direction: 12 of the 40 declared relations are owned by a
-corpus-less gatherer, so their grain's corpus is never checked, and at least two of those values are
-not true. R923 replaces the column with a `meta_grain_corpus` junction, the same shape
-`meta_gatherer_corpus` already uses for the same question on the gatherer side, and this item declares
-its grain with no corpus row. That is why this item depends on R923 and does not touch `meta_grain`
-itself.
+The grain side is where the declared model genuinely cannot hold this relation yet, and R923 is the
+item that fixes it. `meta_grain.corpus_name` is NOT NULL, and the claim's grain names its corpus per
+row, so it has no single corpus to declare. Admitting it by making the column nullable would be the
+model saying the column does not belong on the relation, and an audit of the roster says the same from
+the other direction: 12 of the 40 declared relations are owned by a corpus-less gatherer, so their
+grain's corpus is never checked, and at least two of those values are not true. R923 replaces the
+column with a `meta_grain_corpus` junction and rephrases the gate against a gatherer's *reach*, the
+union of its own corpora and those of everything it depends on, which removes the exemption entirely.
+
+That matters here for more than admission. Under the reach gate the `observation` gatherer reads no
+corpus and depends on none, so its reach is empty and its grain is *required* to declare no corpus.
+This relation is then correct by gate rather than by exemption, which is the difference between the
+model tolerating it and the model asserting it. That is why this item depends on R923 and edits
+`meta_grain` not at all.
 
 ## Grain, and the one law that is easy to lose
 
