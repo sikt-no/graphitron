@@ -12,6 +12,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_EXEMPTION;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConnection;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedError;
@@ -600,8 +601,12 @@ class DemandRuleTest {
     }
 
     // ===== Readings =====
+    // Each derives first. These rules read the emitted element anchors, which are tables a
+    // derivation fills rather than the union views they used to read, so a case that has only
+    // seeded has nothing to read yet.
 
     private static List<String> fieldDemand(DSLContext dsl, String typeName) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_DEMAND_RULE.RULE)
             .from(INTENT_FIELD_DEMAND_RULE)
             .where(INTENT_FIELD_DEMAND_RULE.GRAPH_NAME.eq(GRAPH))
@@ -610,6 +615,7 @@ class DemandRuleTest {
     }
 
     private static List<String> fieldExemption(DSLContext dsl, String typeName) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_EXEMPTION_RULE.REASON)
             .from(INTENT_FIELD_EXEMPTION_RULE)
             .where(INTENT_FIELD_EXEMPTION_RULE.GRAPH_NAME.eq(GRAPH))
@@ -618,6 +624,7 @@ class DemandRuleTest {
     }
 
     private static List<String> typeDemand(DSLContext dsl, String typeName) {
+        derive(dsl);
         return dsl.select(INTENT_TYPE_DEMAND.RULE)
             .from(INTENT_TYPE_DEMAND)
             .where(INTENT_TYPE_DEMAND.GRAPH_NAME.eq(GRAPH))
@@ -626,6 +633,7 @@ class DemandRuleTest {
     }
 
     private static List<String> typeExemption(DSLContext dsl, String typeName) {
+        derive(dsl);
         return dsl.select(INTENT_TYPE_EXEMPTION.REASON)
             .from(INTENT_TYPE_EXEMPTION)
             .where(INTENT_TYPE_EXEMPTION.GRAPH_NAME.eq(GRAPH))
@@ -635,6 +643,7 @@ class DemandRuleTest {
 
     /** Which types an exemption arm named, for the arms whose subject is the population itself. */
     private static List<String> typesWithReason(DSLContext dsl, String reason) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_EXEMPTION_RULE.TYPE_NAME)
             .from(INTENT_FIELD_EXEMPTION_RULE)
             .where(INTENT_FIELD_EXEMPTION_RULE.GRAPH_NAME.eq(GRAPH))
@@ -644,6 +653,7 @@ class DemandRuleTest {
 
     /** The same reading on the demand side. */
     private static List<String> payloadsWithRule(DSLContext dsl, String rule) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_DEMAND_RULE.TYPE_NAME)
             .from(INTENT_FIELD_DEMAND_RULE)
             .where(INTENT_FIELD_DEMAND_RULE.GRAPH_NAME.eq(GRAPH))
@@ -652,6 +662,7 @@ class DemandRuleTest {
     }
 
     private static String resolvedField(DSLContext dsl, String typeName, String fieldName) {
+        derive(dsl);
         return dsl.select(INTENT_RESOLVED_FIELD_DEMAND.VERDICT, INTENT_RESOLVED_FIELD_DEMAND.RULE)
             .from(INTENT_RESOLVED_FIELD_DEMAND)
             .where(INTENT_RESOLVED_FIELD_DEMAND.GRAPH_NAME.eq(GRAPH))
@@ -661,6 +672,7 @@ class DemandRuleTest {
     }
 
     private static List<String> allResolvedTypes(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_RESOLVED_TYPE_DEMAND.TYPE_NAME, INTENT_RESOLVED_TYPE_DEMAND.VERDICT,
                 INTENT_RESOLVED_TYPE_DEMAND.RULE)
             .from(INTENT_RESOLVED_TYPE_DEMAND)
@@ -670,6 +682,7 @@ class DemandRuleTest {
 
     /** Every graph's rows, for the partition cases, the graph name being the assertion itself. */
     private static List<String> allResolvedFields(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_RESOLVED_FIELD_DEMAND.GRAPH_NAME,
                 INTENT_RESOLVED_FIELD_DEMAND.TYPE_NAME, INTENT_RESOLVED_FIELD_DEMAND.FIELD_NAME,
                 INTENT_RESOLVED_FIELD_DEMAND.VERDICT, INTENT_RESOLVED_FIELD_DEMAND.RULE)
@@ -679,6 +692,7 @@ class DemandRuleTest {
     }
 
     private static List<String> allMachinery(DSLContext dsl) {
+        derive(dsl);
         return dsl.select(INTENT_FIELD_EXEMPTION_RULE.GRAPH_NAME, INTENT_FIELD_EXEMPTION_RULE.TYPE_NAME)
             .from(INTENT_FIELD_EXEMPTION_RULE)
             .where(INTENT_FIELD_EXEMPTION_RULE.REASON.eq("CONNECTION_MACHINERY"))

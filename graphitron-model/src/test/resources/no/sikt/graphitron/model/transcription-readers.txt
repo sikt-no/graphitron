@@ -6,14 +6,16 @@
 # readings got the expanded population for free and none of them chose it. Splitting the two made
 # each one a decision, and this roster is the list of decisions still owed.
 #
-# A line leaves when its reading is adjudicated: repointed to intent_expanded_type or
-# intent_expanded_field where the rule is about the schema the generator works against, or kept and
-# moved under a reason heading below where the rule is genuinely about what an author wrote. A
-# reading kept for a reason is still a reading of the transcription, so it stays on the roster with
-# its reason beside it rather than disappearing from the count.
+# A line leaves when its reading is adjudicated: repointed to graphitron_type or graphitron_field
+# where the rule is about the schema the generator works against, or kept and moved under a reason
+# heading below where the rule is genuinely about what an author wrote. A reading kept for a reason
+# is still a reading of the transcription, so it stays on the roster with its reason beside it
+# rather than disappearing from the count.
 #
-# The two union views are not here. Their reading of the transcription is the seam this roster
-# protects, and theExpandedViewsReadBothArms holds it.
+# The expanded population was a pair of union views and is two tables now, filled by an
+# insert-select no view definition mentions, so nothing about it is excluded here any more. That the
+# union is taken is pinned where the rows are, in the capture agreement's emitted-element-family
+# arm.
 
 intent_argument_column_match_live graphql_type
 intent_argument_filter_role graphql_type

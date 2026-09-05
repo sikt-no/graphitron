@@ -28,7 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.val;
@@ -129,10 +129,10 @@ public final class ClassificationDomainCapture {
         // than checked: a name graphql-java added itself, or one the expansion states over a type
         // no document declares, is simply not a row.
         dsl.insertInto(INTENT_TYPE_DOMAIN, INTENT_TYPE_DOMAIN.GRAPH_NAME, INTENT_TYPE_DOMAIN.TYPE_NAME)
-            .select(select(val(graphName), INTENT_EXPANDED_TYPE.TYPE_NAME)
-                .from(INTENT_EXPANDED_TYPE)
-                .where(INTENT_EXPANDED_TYPE.GRAPH_NAME.eq(graphName))
-                .and(INTENT_EXPANDED_TYPE.TYPE_NAME.in(reached)))
+            .select(select(val(graphName), GRAPHITRON_TYPE.TYPE_NAME)
+                .from(GRAPHITRON_TYPE)
+                .where(GRAPHITRON_TYPE.GRAPH_NAME.eq(graphName))
+                .and(GRAPHITRON_TYPE.TYPE_NAME.in(reached)))
             .execute();
     }
 

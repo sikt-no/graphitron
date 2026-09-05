@@ -27,9 +27,9 @@ import static org.jooq.impl.DSL.table;
  * <p>Those used to be the same relation. The expansion wrote what it minted into {@code graphql_type}
  * and {@code graphql_field} beside the author's own declarations, so a reader naming either got the
  * expanded population whether or not it had decided it wanted it. The transcription now holds only
- * what the author declared and {@code intent_expanded_type} and {@code intent_expanded_field} union
- * it with what the expansion minted, which turns one relation into two and every naming of the old
- * one into a decision.
+ * what the author declared and {@code graphitron_type} and {@code graphitron_field} carry it beside
+ * what the expansion minted, which turns one relation into two and every naming of the old one into
+ * a decision.
  *
  * <p>The decision is real in both directions and neither answer is the safe default. A rule
  * reporting a source position, an authored description or a declaration site wants the
@@ -47,6 +47,13 @@ import static org.jooq.impl.DSL.table;
  * roster as each reading is adjudicated and repointed, and the roster is the reviewer's grep query
  * in the meantime.
  *
+ * <p>The seam itself is no longer visible to this gate, and that is the one thing it lost. The
+ * expanded population was a pair of union views and this class held their arms; it is two tables
+ * now, filled by an insert-select that no view definition mentions, so the claim that the union was
+ * taken moved to where the rows are, which is the capture agreement's own arm over the emitted
+ * element family. That is the stronger statement of the two: it compares populations rather than
+ * definition text.
+ *
  * <p>Read off the booted schema through {@link ViewReferences}, which parses the definition the
  * engine stored rather than the source text, so a reading reached through another view is not
  * counted here and a comment naming a relation is not mistaken for a reading of it.
@@ -55,16 +62,6 @@ class ExpandedPopulationReaderGateTest {
 
     /** The two transcription relations the expansion used to write into. */
     private static final Set<String> TRANSCRIPTION = Set.of("graphql_type", "graphql_field");
-
-    /**
-     * The union views themselves, whose reading of the transcription is the seam rather than a
-     * decision pending about it. They are excluded from the roster instead of sitting on it, so
-     * that "the roster only shrinks" keeps meaning "one more reading has been adjudicated": an
-     * entry here could only ever be removed by breaking the union, and
-     * {@link #theExpandedViewsReadBothArms} is what holds them.
-     */
-    private static final Set<String> THE_UNIONS =
-        Set.of("intent_expanded_type", "intent_expanded_field");
 
     @Test
     @DisplayName("every reading of the transcription is on the roster, and the roster only shrinks")
@@ -78,27 +75,9 @@ class ExpandedPopulationReaderGateTest {
                 .containsExactlyInAnyOrderElementsOf(frozenRoster()));
     }
 
-    /**
-     * The union views are the seam this whole gate exists to protect, so their own arms are pinned
-     * rather than left to the roster: each must read the transcription relation it unions and the
-     * minted relation beside it. A union that lost an arm would empty the roster's justification
-     * without failing anything above.
-     */
-    @Test
-    @DisplayName("each expanded view unions the transcription with what the expansion minted")
-    void theExpandedViewsReadBothArms() {
-        withStore(dsl -> {
-            assertThat(ViewReferences.relationsReadBy(dsl, "intent_expanded_type"))
-                .contains("graphql_type", "graphitron_minted_type");
-            assertThat(ViewReferences.relationsReadBy(dsl, "intent_expanded_field"))
-                .contains("graphql_field", "graphitron_minted_field", "graphitron_field_synthesis");
-        });
-    }
-
     /** Every view in the schema, paired with each transcription relation its definition names. */
     private static List<String> observedReadings(DSLContext dsl) {
         return views(dsl).stream()
-            .filter(view -> !THE_UNIONS.contains(view))
             .flatMap(view -> ViewReferences.relationsReadBy(dsl, view).stream()
                 .filter(TRANSCRIPTION::contains)
                 .sorted()

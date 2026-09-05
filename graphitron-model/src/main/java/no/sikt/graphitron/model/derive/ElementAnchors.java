@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.fieldCoord
 import static no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax.typeCoordinate;
 import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
@@ -32,9 +33,15 @@ import static org.jooq.impl.DSL.when;
  * key's target at all.
  *
  * <p>Written in parent order, the supertype first and the argument last, because each anchor's
- * foreign keys are the family's own. Every statement is restricted to one graph and clears that
- * graph first, so a caller may derive as often as it likes and the second call writes what the first
- * one did.
+ * foreign keys are the family's own. Every statement is restricted to one graph and lands on the
+ * key it already holds, so a caller may derive as often as it likes: a coordinate already anchored
+ * takes the payload this pass computed and a new one is inserted beside it.
+ *
+ * <p>Upserting rather than clearing and refilling, which is a correctness point and not a
+ * performance one. Relations key into these anchors with {@code ON DELETE CASCADE}, so emptying one
+ * takes their rows with it, and a re-derive that cleared first would wipe a classification domain or
+ * a navigation nothing in this class refills. Clearing a graph outright is the refresh's business
+ * and it does it in the right order.
  *
  * <p>Called as a stage of the graphitron gatherer after macro expansion has flushed, because the
  * minted arm is exactly what that stage wrote. Everything else it reads is the SDL crawler's and has
@@ -44,25 +51,12 @@ public final class ElementAnchors {
 
     private ElementAnchors() {}
 
-    /** Clears and re-derives the graph's element anchors; see the class javadoc. */
+    /** Derives the graph's element anchors; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
-        clear(dsl, graphName);
         elements(dsl, graphName);
         types(dsl, graphName);
         fields(dsl, graphName);
         arguments(dsl, graphName);
-    }
-
-    /** Children first, which is the reverse of the order the fills run in. */
-    private static void clear(DSLContext dsl, String graphName) {
-        dsl.deleteFrom(GRAPHITRON_ARGUMENT)
-            .where(GRAPHITRON_ARGUMENT.GRAPH_NAME.eq(graphName)).execute();
-        dsl.deleteFrom(GRAPHITRON_FIELD)
-            .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName)).execute();
-        dsl.deleteFrom(GRAPHITRON_TYPE)
-            .where(GRAPHITRON_TYPE.GRAPH_NAME.eq(graphName)).execute();
-        dsl.deleteFrom(GRAPHITRON_ELEMENT)
-            .where(GRAPHITRON_ELEMENT.GRAPH_NAME.eq(graphName)).execute();
     }
 
     /**
@@ -100,6 +94,8 @@ public final class ElementAnchors {
                         val("FIELD"))
                     .from(GRAPHITRON_MINTED_FIELD)
                     .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))))
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_ELEMENT.ELEMENT_KIND, excluded(GRAPHITRON_ELEMENT.ELEMENT_KIND))
             .execute();
     }
 
@@ -120,6 +116,10 @@ public final class ElementAnchors {
                         GRAPHITRON_MINTED_TYPE.KIND, GRAPHITRON_MINTED_TYPE.DESCRIPTION)
                     .from(GRAPHITRON_MINTED_TYPE)
                     .where(GRAPHITRON_MINTED_TYPE.GRAPH_NAME.eq(graphName))))
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_TYPE.COORDINATE, excluded(GRAPHITRON_TYPE.COORDINATE))
+            .set(GRAPHITRON_TYPE.KIND, excluded(GRAPHITRON_TYPE.KIND))
+            .set(GRAPHITRON_TYPE.DESCRIPTION, excluded(GRAPHITRON_TYPE.DESCRIPTION))
             .execute();
     }
 
@@ -169,6 +169,16 @@ public final class ElementAnchors {
                         GRAPHITRON_MINTED_FIELD.DESCRIPTION)
                     .from(GRAPHITRON_MINTED_FIELD)
                     .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))))
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_FIELD.COORDINATE, excluded(GRAPHITRON_FIELD.COORDINATE))
+            .set(GRAPHITRON_FIELD.ORDINAL, excluded(GRAPHITRON_FIELD.ORDINAL))
+            .set(GRAPHITRON_FIELD.TYPE_SDL, excluded(GRAPHITRON_FIELD.TYPE_SDL))
+            .set(GRAPHITRON_FIELD.NAMED_TYPE, excluded(GRAPHITRON_FIELD.NAMED_TYPE))
+            .set(GRAPHITRON_FIELD.NON_NULL, excluded(GRAPHITRON_FIELD.NON_NULL))
+            .set(GRAPHITRON_FIELD.IS_LIST, excluded(GRAPHITRON_FIELD.IS_LIST))
+            .set(GRAPHITRON_FIELD.ITEM_NON_NULL, excluded(GRAPHITRON_FIELD.ITEM_NON_NULL))
+            .set(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, excluded(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL))
+            .set(GRAPHITRON_FIELD.DESCRIPTION, excluded(GRAPHITRON_FIELD.DESCRIPTION))
             .execute();
     }
 
@@ -197,6 +207,17 @@ public final class ElementAnchors {
                     GRAPHQL_ARGUMENT.DEFAULT_VALUE_SDL, GRAPHQL_ARGUMENT.DESCRIPTION)
                 .from(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_ARGUMENT.COORDINATE, excluded(GRAPHITRON_ARGUMENT.COORDINATE))
+            .set(GRAPHITRON_ARGUMENT.ORDINAL, excluded(GRAPHITRON_ARGUMENT.ORDINAL))
+            .set(GRAPHITRON_ARGUMENT.TYPE_SDL, excluded(GRAPHITRON_ARGUMENT.TYPE_SDL))
+            .set(GRAPHITRON_ARGUMENT.NAMED_TYPE, excluded(GRAPHITRON_ARGUMENT.NAMED_TYPE))
+            .set(GRAPHITRON_ARGUMENT.NON_NULL, excluded(GRAPHITRON_ARGUMENT.NON_NULL))
+            .set(GRAPHITRON_ARGUMENT.IS_LIST, excluded(GRAPHITRON_ARGUMENT.IS_LIST))
+            .set(GRAPHITRON_ARGUMENT.ITEM_NON_NULL, excluded(GRAPHITRON_ARGUMENT.ITEM_NON_NULL))
+            .set(GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL,
+                excluded(GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL))
+            .set(GRAPHITRON_ARGUMENT.DESCRIPTION, excluded(GRAPHITRON_ARGUMENT.DESCRIPTION))
             .execute();
     }
 }

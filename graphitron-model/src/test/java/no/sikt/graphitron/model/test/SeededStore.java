@@ -2719,8 +2719,14 @@ public final class SeededStore {
      * seeding a member the seeds could not have reached, or leaving out one they would have, is how
      * a case tells a gate on this relation apart from a gate on anything the members happen to
      * carry.
+     *
+     * <p>The element anchor is derived first, because this relation keys into it: a domain member is
+     * a type the generator emits, and production writes the anchor before the domain for the same
+     * reason. Idempotent and cheap on a fixture, so it costs the case nothing to have the ordering
+     * done for it rather than remembered.
      */
     public static void seedTypeDomain(DSLContext dsl, String graphName, String typeName) {
+        ElementAnchors.derive(dsl, graphName);
         dsl.insertInto(INTENT_TYPE_DOMAIN)
             .set(INTENT_TYPE_DOMAIN.GRAPH_NAME, graphName)
             .set(INTENT_TYPE_DOMAIN.TYPE_NAME, typeName)

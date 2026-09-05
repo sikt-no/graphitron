@@ -279,10 +279,10 @@ SDL walk called and became a gatherer with three stages that read each other thr
 **The macro expansion left the transcription.** `graphql_type`, `graphql_type_declaration` and
 `graphql_field` hold what the author declared and nothing else. What `@asConnection` mints is
 `graphitron_minted_type`, `graphitron_minted_type_site` and `graphitron_minted_field`;
-`graphitron_field_synthesis` holds the macro's replacement expression;
-`intent_expanded_type` and `intent_expanded_field` union the two. Both readings of a rewritten field
-are now rows at one coordinate, where before the authored expression survived only in a text column
-no anti-join could recover.
+`graphitron_field_synthesis` holds the macro's replacement expression; `graphitron_type` and
+`graphitron_field` carry the two together. Both readings of a rewritten field are now rows at one
+coordinate, where before the authored expression survived only in a text column no anti-join could
+recover.
 
 **Two registrations retired**, one on a structural argument and one on the blindfold argument: a
 registration standing over a rule hides what the rule costs.
@@ -347,6 +347,35 @@ store holds no anchor for either, which is the same shape of gap the minted type
 for the pass that needs it. And union members and interface implementations have no coordinate at
 all, which the specification states directly and gives a reason for, so `graphql_poly_member` sitting
 outside the family is conformance rather than an omission.
+
+**The element family the generator emits is written, and the two union views are gone.**
+`graphitron_element` over `graphitron_type`, `graphitron_field` and `graphitron_argument` is the
+transcription's element family widened by what macro expansion minted, as tables where
+`intent_expanded_type` and `intent_expanded_field` were views. Three things follow that a view could
+not give. Four relations key into the anchors now: `graphitron_field_navigation` and
+`graphitron_field_table`, which both carried a foreign key on the graph alone and said in their own
+comments that they would rather have keyed at a coordinate; and `intent_type_domain`, whose comment
+said the same and which is exact again. The relation that shipped as `graphitron_field` is renamed
+`graphitron_field_table` to free the name, since the anchor is what a field is.
+
+Three subtypes and not four. Enum values are minted by nothing and read by nobody at this grain, so
+an anchor over them would be a copy of `graphql_enum_value` with no question to answer; the CHECK on
+`element_kind` states that boundary in four values rather than five, and an emitter reading this
+family for a whole schema is what would move it. `graphitron_argument` has one arm today for the
+reason the section below gives: the two pagination arguments the expansion mints are not in the store
+at all yet, and the anchor's own agreement assertion is what will fail on the day they are.
+
+The fill is an insert-select with `ON CONFLICT`, which is what the anchors were designed around, and
+the reason is not speed. Relations key into them with `ON DELETE CASCADE`, so a re-derive that
+cleared first would take a classification domain along with it and refill neither; clearing a graph
+whole is the refresh's business and it already knows the order. That was found by a fixture, not by
+reading: the clear-then-fill version passed the model's own suite until `intent_type_domain` gained
+its key back.
+
+What the anchors cost is that a fixture seeding rows and reading a derived relation now has a
+derivation between the two where a view needed none. Two test classes read the emitted population
+without deriving and were silently reading a view before; both now derive, which is what every other
+reading helper in that fixture already did.
 
 ## The entry and anchor pattern, and the scope it makes visible
 
@@ -425,9 +454,9 @@ bolted on; it is two relations answering different questions that happen to meet
 transcription does not hold, so a foreign key there excludes exactly the fields a connection is made
 of. `graphitron_field_table` was written with one and the build failed on `QueryFilmsConnection.nodes`.
 Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
-and no such anchor exists: `intent_expanded_type` and `intent_expanded_field` are views, so nothing
-can point at them. The element family below is what the rest of this arc keys through, and it is the
-next thing owed.
+and for a while no such anchor existed: `intent_expanded_type` and `intent_expanded_field` were
+views, so nothing could point at them. The element family below is what the rest of this arc keys
+through, and it is where those two went.
 
 **Lifecycle is a cascade at the minted grain and a refcount at the anchor grain.** A minted row can
 be coined by several sources: `PageInfo` is one type in the schema however many `@asConnection`
@@ -530,9 +559,10 @@ source coordinate are both the carrier. What goes with them is machinery, not ju
 is currently defined by the first carrier and extended by the rest, which needs `merge_ordinal`,
 `is_extension`, a site counter and a minted-name set inside `MacroCapture`. Under a key that already
 carries the source, every carrier writes its whole contribution and the primary key is the only
-dedupe, so the sharing case is not a case. `intent_expanded_type` and `intent_expanded_field` go with
-them, being exactly the union the anchors now hold as rows, and `ExpandedPopulationReaderGateTest`'s
-frozen roster is what makes moving their readers a decision somebody records rather than a drift.
+dedupe, so the sharing case is not a case. `intent_expanded_type` and `intent_expanded_field` went
+with them, being exactly the union the anchors now hold as rows, and
+`ExpandedPopulationReaderGateTest`'s frozen roster is what made moving their readers a decision
+somebody records rather than a drift.
 
 **Precedence is a column on the minted row, and it is not derivable.** Whether a mint beats the
 author's declaration is a property of what the macro is doing rather than of whether a collision
@@ -723,7 +753,6 @@ last.
 
 | `intent_jvm_ancestor` | 1, `jvm_` | belongs to the `jvm_` family; needs no registration
 | `intent_spelled_table` | 2 | crossing
-| `intent_expanded_type`, `intent_expanded_field` | 2 | crossing
 | `intent_condition_table_parameter` | 3 | crossing
 | `intent_field_reference_step_hop` | 3 | crossing
 | `intent_resolved_type_binding` | 4 | crossing

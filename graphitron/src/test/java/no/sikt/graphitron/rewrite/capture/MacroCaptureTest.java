@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SYNTHESIS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_EXPANDED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -77,9 +77,9 @@ class MacroCaptureTest {
     void theCarrierFieldIsRewritten(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             var effective = store.dsl()
-                .select(INTENT_EXPANDED_FIELD.FIELD_NAME, INTENT_EXPANDED_FIELD.TYPE_SDL)
-                .from(INTENT_EXPANDED_FIELD)
-                .where(INTENT_EXPANDED_FIELD.TYPE_NAME.eq("Query"))
+                .select(GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.TYPE_SDL)
+                .from(GRAPHITRON_FIELD)
+                .where(GRAPHITRON_FIELD.TYPE_NAME.eq("Query"))
                 .fetch()
                 .intoMap(r -> r.value1(), r -> r.value2());
             assertThat(effective).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
@@ -187,10 +187,10 @@ class MacroCaptureTest {
 
     private static java.util.List<String> fieldsOf(CapturedStore store, String typeName) {
         return store.dsl()
-            .select(INTENT_EXPANDED_FIELD.FIELD_NAME, INTENT_EXPANDED_FIELD.TYPE_SDL)
-            .from(INTENT_EXPANDED_FIELD)
-            .where(INTENT_EXPANDED_FIELD.TYPE_NAME.eq(typeName))
-            .orderBy(INTENT_EXPANDED_FIELD.ORDINAL)
+            .select(GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.TYPE_SDL)
+            .from(GRAPHITRON_FIELD)
+            .where(GRAPHITRON_FIELD.TYPE_NAME.eq(typeName))
+            .orderBy(GRAPHITRON_FIELD.ORDINAL)
             .fetch()
             .map(r -> r.value1() + "=" + r.value2());
     }

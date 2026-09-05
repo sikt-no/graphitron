@@ -13,6 +13,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_DECLARED_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ACCESSOR_HOP;
+import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
@@ -736,6 +737,9 @@ class AccessorHopTest {
 
     private static List<IntentFieldAccessorHopRecord> hops(DSLContext dsl, String graphName,
                                                            String typeName, String fieldName) {
+        // This rule reads the emitted field anchor, which is a table a derivation fills rather than
+        // the union view it used to read, so a case that only seeded is not yet readable here.
+        derive(dsl);
         return dsl.selectFrom(INTENT_FIELD_ACCESSOR_HOP)
             .where(INTENT_FIELD_ACCESSOR_HOP.GRAPH_NAME.eq(graphName)
                 .and(INTENT_FIELD_ACCESSOR_HOP.TYPE_NAME.eq(typeName))

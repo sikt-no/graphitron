@@ -124,8 +124,16 @@ class DerivedReadCostTest {
      * scalar arrives as. It reads the expanded type population, one directive relation and the
      * classpath census, none of which is a registration's target, so the two figures below held
      * again.
+     *
+     * <p>Lowered to 117 by {@code intent_expanded_type} and {@code intent_expanded_field} becoming
+     * the tables {@code graphitron_type} and {@code graphitron_field}. This is the first move in
+     * this history that takes a view out of the domain by writing its rows down rather than by
+     * retiring the question, and the two figures below did not move with it either: neither view
+     * reached a registration's target, being the union two strata meet at rather than a rule over
+     * one. What their readers gained is not in this count at all, a table being seekable where a
+     * union is re-evaluated per reader.
      */
-    private static final int READERS_IN_SCHEMA = 119;
+    private static final int READERS_IN_SCHEMA = 117;
 
     /**
      * Views whose derivation reaches at least one registration's target.

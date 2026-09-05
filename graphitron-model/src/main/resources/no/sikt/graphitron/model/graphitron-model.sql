@@ -2406,7 +2406,7 @@ CREATE TABLE graphitron_minted_type (
   CHECK (kind IN ('OBJECT')),
   CHECK (macro IN ('CONNECTION'))
 );
-COMMENT ON TABLE graphitron_minted_type IS 'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph. For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.';
+COMMENT ON TABLE graphitron_minted_type IS 'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph. For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads graphitron_type.';
 COMMENT ON COLUMN graphitron_minted_type.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_minted_type.type_name IS 'the minted type''s name; with the graph, the grain, and one row however many carriers caused it, which is how the shared PageInfo is one type';
 COMMENT ON COLUMN graphitron_minted_type.kind IS 'the type''s kind in graphql_type''s vocabulary, always OBJECT: the macros mint nothing else, and the CHECK holds them to it';
@@ -2457,7 +2457,7 @@ CREATE TABLE graphitron_minted_field (
     REFERENCES graphitron_minted_type (graph_name, type_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphitron_minted_field IS 'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is intent_expanded_field.';
+COMMENT ON TABLE graphitron_minted_field IS 'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one. For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is graphitron_field.';
 COMMENT ON COLUMN graphitron_minted_field.graph_name IS 'the owning graph''s partition, carried from the minted type';
 COMMENT ON COLUMN graphitron_minted_field.type_name IS 'the minted type owning this field';
 COMMENT ON COLUMN graphitron_minted_field.field_name IS 'the field''s name, one of the Relay machinery names the macro writes; with the two columns above, the grain';
@@ -2487,7 +2487,7 @@ CREATE TABLE graphitron_field_synthesis (
   CHECK (macro IN ('CONNECTION')),
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro: one row per carrier coordinate, holding the expression the macro put there. The authored expression stays in graphql_field where it was written, so the two readings are two relations rather than one value and a stash, and intent_expanded_field is where they meet.';
+COMMENT ON TABLE graphitron_field_synthesis IS 'A field''s type expression was rewritten by a macro: one row per carrier coordinate, holding the expression the macro put there. The authored expression stays in graphql_field where it was written, so the two readings are two relations rather than one value and a stash, and graphitron_field is where they meet.';
 COMMENT ON COLUMN graphitron_field_synthesis.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_synthesis.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_synthesis.field_name IS 'the field name within the owning type';
@@ -4541,50 +4541,9 @@ COMMENT ON COLUMN intent_field_chain_terminus.table_name IS 'the landing table''
 COMMENT ON COLUMN intent_field_chain_terminus.table_type IS 'the landing''s kind, carried from sql_table: FUNCTION where the chain ends on the routine''s own result, whatever the hopped-to table declares otherwise. The column every axis over this relation actually turns on, because a function result has no primary key and no foreign keys, so an ordering there cannot fall back on a key and must be authored. Always FUNCTION on a ROUTINE row, which is worth carrying rather than leaving to the via column: a reader asks one column whichever arm answered, and the day a non-function callable reaches a chain the answer changes here instead of at every reader';
 COMMENT ON COLUMN intent_field_chain_terminus.candidates IS 'how many distinct tables this field''s chain lands on, this row''s landing being one of them; 1 where the terminus is certain. Distinct landings and not routes, which is the arity a reader of a terminus needs and the reason this relation counts differently from the hop and target views; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
 
-CREATE VIEW intent_expanded_type (graph_name, type_name, kind, description) AS
-SELECT graph_name, type_name, kind, description
-  FROM graphql_type
- UNION ALL
-SELECT graph_name, type_name, kind, description
-  FROM graphitron_minted_type;
-COMMENT ON VIEW intent_expanded_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the CONNECTION macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.';
-COMMENT ON COLUMN intent_expanded_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN intent_expanded_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites contributed to it';
-COMMENT ON COLUMN intent_expanded_type.kind IS 'the type''s kind from the same vocabulary graphql_type uses; a minted type is always OBJECT, the macros minting nothing else';
-COMMENT ON COLUMN intent_expanded_type.description IS 'the docstring, authored on an authored type and written by the macro on a minted one; display material, never a dimension';
-
-CREATE VIEW intent_expanded_field
-  (graph_name, type_name, field_name, ordinal, type_sdl, named_type, non_null, is_list,
-   item_non_null, default_value_sdl, description) AS
-SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
-       COALESCE(x.type_sdl, f.type_sdl), COALESCE(x.named_type, f.named_type),
-       COALESCE(x.non_null, f.non_null), COALESCE(x.is_list, f.is_list),
-       CASE WHEN x.type_name IS NULL THEN f.item_non_null ELSE x.item_non_null END,
-       f.default_value_sdl, f.description
-  FROM graphql_field f
-  LEFT JOIN graphitron_field_synthesis x
-    ON x.graph_name = f.graph_name AND x.type_name = f.type_name
-   AND x.field_name = f.field_name
- UNION ALL
-SELECT graph_name, type_name, field_name, ordinal, type_sdl, named_type, non_null, is_list,
-       item_non_null, CAST(NULL AS VARCHAR), description
-  FROM graphitron_minted_field;
-COMMENT ON VIEW intent_expanded_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries. For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.';
-COMMENT ON COLUMN intent_expanded_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
-COMMENT ON COLUMN intent_expanded_field.type_name IS 'the type owning the field';
-COMMENT ON COLUMN intent_expanded_field.field_name IS 'the field''s name; with the two columns above, the grain';
-COMMENT ON COLUMN intent_expanded_field.ordinal IS 'the field''s position within its type, merge-ordered across declaration sites exactly as graphql_field numbers it';
-COMMENT ON COLUMN intent_expanded_field.type_sdl IS 'the type expression as the generator reads it: the authored literal on an ordinary field, and the macro''s rewrite where one happened';
-COMMENT ON COLUMN intent_expanded_field.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
-COMMENT ON COLUMN intent_expanded_field.non_null IS 'whether the outermost wrapper is non-null';
-COMMENT ON COLUMN intent_expanded_field.is_list IS 'whether the expression is a list';
-COMMENT ON COLUMN intent_expanded_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list';
-COMMENT ON COLUMN intent_expanded_field.default_value_sdl IS 'the authored default literal where the coordinate is an argument-bearing input field with one; display material, never a dimension';
-COMMENT ON COLUMN intent_expanded_field.description IS 'the docstring, authored or macro-written; display material, never a dimension';
-
 CREATE VIEW intent_scalar_java_type (graph_name, type_name, java_type) AS
 SELECT t.graph_name, t.type_name, engine.java_type
-  FROM intent_expanded_type t
+  FROM graphitron_type t
   JOIN (VALUES ('Int', 'java.lang.Integer'),
                ('Float', 'java.lang.Double'),
                ('String', 'java.lang.String'),
@@ -4634,7 +4593,7 @@ SELECT mr.graph_name, mr.site, mr.use_site, a.argument_name, 'ARGUMENT',
 SELECT mr.graph_name, mr.site, mr.use_site, f.field_name, 'INPUT_FIELD',
        mr.type_name, mr.field_name, f.named_type, f.non_null, f.is_list, f.item_non_null
   FROM graphitron_method_reference mr
-  JOIN intent_expanded_field f
+  JOIN graphitron_field f
     ON f.graph_name = mr.graph_name AND f.type_name = mr.type_name
    AND f.field_name = mr.field_name
  WHERE mr.site = 'INPUT_FIELD_CONDITION';
@@ -4701,14 +4660,14 @@ COMMENT ON COLUMN intent_condition_context_parameter.position IS 'the parameter'
 CREATE VIEW intent_connection_element_type
   (graph_name, type_name, element_type_name) AS
 SELECT c.graph_name, c.type_name, n.named_type
-  FROM intent_expanded_type c
-  JOIN intent_expanded_field e
+  FROM graphitron_type c
+  JOIN graphitron_field e
     ON e.graph_name = c.graph_name AND e.type_name = c.type_name
    AND e.field_name = 'edges'
-  JOIN intent_expanded_type et
+  JOIN graphitron_type et
     ON et.graph_name = e.graph_name AND et.type_name = e.named_type
    AND et.kind = 'OBJECT'
-  JOIN intent_expanded_field n
+  JOIN graphitron_field n
     ON n.graph_name = et.graph_name AND n.type_name = et.type_name
    AND n.field_name = 'node'
  WHERE c.kind = 'OBJECT';
@@ -5009,7 +4968,7 @@ SELECT nv.graph_name, nv.type_name, nv.field_name,
     ON claimed.graph_name = nv.graph_name AND claimed.type_name = nv.type_name
    AND claimed.field_name = nv.field_name
  WHERE nv.type_name NOT IN ('Query', 'Mutation', 'Subscription')
-   AND EXISTS (SELECT 1 FROM intent_expanded_type nt
+   AND EXISTS (SELECT 1 FROM graphitron_type nt
                 WHERE nt.graph_name = nv.graph_name
                   AND nt.type_name = nv.navigated_type_name
                   AND nt.kind = 'OBJECT')
@@ -5026,8 +4985,8 @@ UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name,
        'PARENT_BINDING',
        bt.table_source_name, bt.table_schema, bt.table_name
-  FROM intent_expanded_field f
-  JOIN intent_expanded_type leaf
+  FROM graphitron_field f
+  JOIN graphitron_type leaf
     ON leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
    AND leaf.kind IN ('SCALAR', 'ENUM')
   JOIN intent_resolved_type_binding bt
@@ -5037,7 +4996,7 @@ SELECT f.graph_name, f.type_name, f.field_name,
                     WHERE s.graph_name = f.graph_name
                       AND s.type_name = f.type_name
                       AND s.field_name = f.field_name);
-COMMENT ON TABLE intent_field_column_scope IS 'Which table the column names written at a field''s site resolve against: the field''s own navigation, answered at every site where a column name resolves at all. A row means "resolve names against this table"; absence means no column name resolves here, which is what a field of an unbound parent and a field whose authored path reaches no single table both get. The relation exists because two consumers were deriving the same navigation apart from each other. The structural column-match classifier read the parent''s binding directly, so a name at a site an authored path had moved still resolved against the parent, and intent_field_column_table restated the same two navigation rules to answer the narrower question of when the resolved table is not the parent''s own. Both read this now, so the navigation is derived once and the consumers differ only in what each adds to it. Three rules, and they are disjoint rather than ranked, which is what lets this relation be a plain union with no windowed collapse over it. A collapse would be a cost multiplier and not a small one: the column-match classifier joins this view per coordinate, and a window inside it forces the whole relation to materialize on every read, over a store that holds every graph of a workspace. Disjointness carries the one-row-per-site property instead, so state the rules with their boundaries. An authored @reference path resolves to its terminal element''s table: the first application''s last element, the repeatable directive''s ordinal grain collapsed the way the authored-claim view collapses @routine''s, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination. An element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table, which is exactly what demanding a single target makes safe. A field with no path whose named type is itself bound to a table resolves to that table, which is where an ordering column named on a list field lives; the type read is the one intent_field_navigated_type states, so a connection field''s columns are the element type''s rather than the wrapper''s, whether the generator synthesised that connection or the author declared it in the SDL. This arm is the last of the five sites that spelled that navigation to stop spelling it. How it reads the relation is load-bearing and not incidental, because the arm''s earlier shape is what made reading it look unaffordable. The binding is joined on the navigated type this relation projects and not on intent_expanded_type''s echo of it: hung off intent_expanded_type, the binding is a legal driver and the cheapest relation in the join graph, so H2 drives from it and the navigation ends up on the probed side of a join on a column it cannot be sought by, which is an evaluation of the navigation per driving row. Joined on the projection directly the navigation drives, every other term is a seek, and the arm costs what its own shape costs rather than what a plan happened to pick. With the binding read from the navigation, intent_expanded_type contributes no column to this arm at all, so its OBJECT test is spelled as the existence test it had become. And the authored-claim anti-join is paired on its key rather than correlated per row, which is what the reader rule at the head of this file asks of a view carrying a recursive term. A leaf field with no path resolves in its own parent''s binding, which is the scope every column-bound field of a table-bound type resolves in, and the leaf guard is what keeps this rule clear of the one above rather than a ranking between them: that rule reads an OBJECT named type and this one reads a SCALAR or ENUM. The two read the named type at different stages, this rule the field''s current one and that rule the expression the field was written with, so a macro that turned an object-typed field into a scalar-typed one would let both fire at a coordinate. None does, and if one ever did it would announce itself as two rows at one site, which the anchor test asserts against, rather than as a silent pick. Both binding rules read intent_resolved_type_binding rather than the @table population, because a column name resolves against whatever table stands for the type and a type standing for a @routine chain''s result has one; that is what lets a routine-returned type''s own scalar fields resolve without the author restating the routine as a @table. The resolution is also what keeps the rules one row per site: it collapses a type its @table and its routine return agree on to one binding, where a provenance-keyed relation would hand this view two. The single-table demand each rule already carries is unchanged, an ambiguous binding staying a site with no answer here. A field whose named type is an unbound object resolves nowhere, so a column name written at a nesting type''s site has no answer here yet; no consumer asks one, and the rule that would answer it is the type-grain nesting question rather than a fourth rule at this grain. A field carrying reference steps takes the first rule or nothing: a path reaching no single table must not fall back on the parent, because resolving a name against the parent there points the author at the wrong end of a join. The three rules do not carry the same guards and that is not an inconsistency. The named-type rule guards against a root parent, a named type of any kind but OBJECT, an ambiguous binding, an authored claim and a @pivot, because navigating to another type''s binding is exactly what an authored claim diverts. @pivot is the one claim that rule names directly, because the claim vocabulary has no arm for it yet and a pivoted field reads its columns from the pivot rather than from the type it names; the explicit guard folds into the anti-join the day that arm lands. The parent rule guards against none of those, because a field''s own parent scope exists whatever claims the field, and the structural classifier reads it precisely so a diagnostic can say "would classify as a table column; @service overrides it". A consumer joining this relation puts it first in its own FROM clause; intent_column_match_claim''s comment carries the measurement, and the shape it warns against is the one a reader reaches for. Masking is a consumer''s join and never a rule here: the authored-conflict silence intent_field_column_table adds sits in that view, and folding it in would silence the column-match classifier at a contested coordinate, where its raw reading is the whole point. Materialized: this relation is a table refilled from intent_field_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON TABLE intent_field_column_scope IS 'Which table the column names written at a field''s site resolve against: the field''s own navigation, answered at every site where a column name resolves at all. A row means "resolve names against this table"; absence means no column name resolves here, which is what a field of an unbound parent and a field whose authored path reaches no single table both get. The relation exists because two consumers were deriving the same navigation apart from each other. The structural column-match classifier read the parent''s binding directly, so a name at a site an authored path had moved still resolved against the parent, and intent_field_column_table restated the same two navigation rules to answer the narrower question of when the resolved table is not the parent''s own. Both read this now, so the navigation is derived once and the consumers differ only in what each adds to it. Three rules, and they are disjoint rather than ranked, which is what lets this relation be a plain union with no windowed collapse over it. A collapse would be a cost multiplier and not a small one: the column-match classifier joins this view per coordinate, and a window inside it forces the whole relation to materialize on every read, over a store that holds every graph of a workspace. Disjointness carries the one-row-per-site property instead, so state the rules with their boundaries. An authored @reference path resolves to its terminal element''s table: the first application''s last element, the repeatable directive''s ordinal grain collapsed the way the authored-claim view collapses @routine''s, demanding the terminal reach exactly one table rather than exactly one row, so an element joining two tables by three keys still names its destination. An element that resolved to several rows all reaching one table is one row here, the arm taking DISTINCT over a projection that keeps only the table, which is exactly what demanding a single target makes safe. A field with no path whose named type is itself bound to a table resolves to that table, which is where an ordering column named on a list field lives; the type read is the one intent_field_navigated_type states, so a connection field''s columns are the element type''s rather than the wrapper''s, whether the generator synthesised that connection or the author declared it in the SDL. This arm is the last of the five sites that spelled that navigation to stop spelling it. How it reads the relation is load-bearing and not incidental, because the arm''s earlier shape is what made reading it look unaffordable. The binding is joined on the navigated type this relation projects and not on graphitron_type''s echo of it: hung off graphitron_type, the binding is a legal driver and the cheapest relation in the join graph, so H2 drives from it and the navigation ends up on the probed side of a join on a column it cannot be sought by, which is an evaluation of the navigation per driving row. Joined on the projection directly the navigation drives, every other term is a seek, and the arm costs what its own shape costs rather than what a plan happened to pick. With the binding read from the navigation, graphitron_type contributes no column to this arm at all, so its OBJECT test is spelled as the existence test it had become. And the authored-claim anti-join is paired on its key rather than correlated per row, which is what the reader rule at the head of this file asks of a view carrying a recursive term. A leaf field with no path resolves in its own parent''s binding, which is the scope every column-bound field of a table-bound type resolves in, and the leaf guard is what keeps this rule clear of the one above rather than a ranking between them: that rule reads an OBJECT named type and this one reads a SCALAR or ENUM. The two read the named type at different stages, this rule the field''s current one and that rule the expression the field was written with, so a macro that turned an object-typed field into a scalar-typed one would let both fire at a coordinate. None does, and if one ever did it would announce itself as two rows at one site, which the anchor test asserts against, rather than as a silent pick. Both binding rules read intent_resolved_type_binding rather than the @table population, because a column name resolves against whatever table stands for the type and a type standing for a @routine chain''s result has one; that is what lets a routine-returned type''s own scalar fields resolve without the author restating the routine as a @table. The resolution is also what keeps the rules one row per site: it collapses a type its @table and its routine return agree on to one binding, where a provenance-keyed relation would hand this view two. The single-table demand each rule already carries is unchanged, an ambiguous binding staying a site with no answer here. A field whose named type is an unbound object resolves nowhere, so a column name written at a nesting type''s site has no answer here yet; no consumer asks one, and the rule that would answer it is the type-grain nesting question rather than a fourth rule at this grain. A field carrying reference steps takes the first rule or nothing: a path reaching no single table must not fall back on the parent, because resolving a name against the parent there points the author at the wrong end of a join. The three rules do not carry the same guards and that is not an inconsistency. The named-type rule guards against a root parent, a named type of any kind but OBJECT, an ambiguous binding, an authored claim and a @pivot, because navigating to another type''s binding is exactly what an authored claim diverts. @pivot is the one claim that rule names directly, because the claim vocabulary has no arm for it yet and a pivoted field reads its columns from the pivot rather than from the type it names; the explicit guard folds into the anti-join the day that arm lands. The parent rule guards against none of those, because a field''s own parent scope exists whatever claims the field, and the structural classifier reads it precisely so a diagnostic can say "would classify as a table column; @service overrides it". A consumer joining this relation puts it first in its own FROM clause; intent_column_match_claim''s comment carries the measurement, and the shape it warns against is the one a reader reaches for. Masking is a consumer''s join and never a rule here: the authored-conflict silence intent_field_column_table adds sits in that view, and folding it in would silence the column-match classifier at a contested coordinate, where its raw reading is the whole point. Materialized: this relation is a table refilled from intent_field_column_scope_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_field_column_scope.graph_name IS 'the owning graph''s partition, carried from every rule''s base relation';
 COMMENT ON COLUMN intent_field_column_scope.type_name IS 'the site''s owning type, the field''s parent';
 COMMENT ON COLUMN intent_field_column_scope.field_name IS 'the site''s field name within the owning type';
@@ -5596,7 +5555,7 @@ CREATE VIEW intent_field_accessor_hop
 SELECT f.graph_name, f.type_name, f.field_name, e.source_name, e.class_name,
        e.origin, e.slot_name, e.accessor_method_name,
        e.element_class, e.element_path, e.variance
-  FROM intent_expanded_field f
+  FROM graphitron_field f
   JOIN store_graph_source g ON g.graph_name = f.graph_name
   LEFT JOIN graphitron_field_binding b
     ON b.graph_name = f.graph_name AND b.type_name = f.type_name
@@ -5605,7 +5564,7 @@ SELECT f.graph_name, f.type_name, f.field_name, e.source_name, e.class_name,
     ON e.source_name = g.source_name
    AND e.slot_name = COALESCE(b.name_ref, f.field_name);
 COMMENT ON VIEW intent_field_accessor_hop IS 'Where an accessor hop lands: for a field coordinate and a class its parent might stand on, the class the member reading that field delivers. One edge of the walk that binds SDL types to backing classes, stated as a fact instead of as a step, so the closure over these edges is a reader''s recursion rather than a rule buried inside one. The slot a coordinate reads is the @field(name:) override where the field carries one and the field''s own name otherwise, which is the resolution the emission side makes; an output field and an input-object field resolve it identically and are one population here, that directive landing on both. The population is the expanded one rather than the transcription, so a coordinate on a type the expansion minted hops on the same terms as one an author declared: reading the transcription here would leave a minted Edge''s node field with no rows, which is the one edge that says what a connection''s element stands on. Total over standing classes by construction. Nothing here says which class a parent actually stands on, so a coordinate pairs with every class in the graph''s sources offering a slot of that name, and a row is a conditional rather than an answer. That totality is what makes this an edge relation instead of another copy of the binding, and it is why this is a view that is never materialized: the product is large wherever a slot name is common and small wherever a reader binds the standing class before asking. Ambiguity is rows and no count. Two spellings of one property are two slots on intent_class_member_slot''s stated terms, and that relation already declines to choose between them, so a count here would be a second stance on a question one relation has settled. Two departures from the walk this replaces, both to be adjudicated against its shadow rather than assumed harmless. The first is that an SDL field''s arguments are not read at all. The walk probes for an accessor whose parameters match them, and a slot is a no-argument member by definition, so this relation hops where the walk would not (an argument-taking field standing on a no-argument accessor of the same name) and stays silent where the walk would hop (a field whose accessor takes those arguments). Reading the shape here would mean a slot relation holding parameterised members, which is a different question from the one that relation answers, so the difference is recorded rather than quietly closed. The second is that the walk skips a field carrying @service and skips a child type already bound; both are conditions on the closure rather than properties of an edge, and neither belongs here.';
-COMMENT ON COLUMN intent_field_accessor_hop.graph_name IS 'the owning graph''s partition, carried from intent_expanded_field';
+COMMENT ON COLUMN intent_field_accessor_hop.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
 COMMENT ON COLUMN intent_field_accessor_hop.type_name IS 'the coordinate''s owning type: the type whose standing class the hop departs from';
 COMMENT ON COLUMN intent_field_accessor_hop.field_name IS 'the coordinate''s field name within that type';
 COMMENT ON COLUMN intent_field_accessor_hop.source_name IS 'the departing class''s classpath entry, as on jvm_class; the census partition the graph reached through store_graph_source, and the reason another graph''s entries offer no hops here';
@@ -5744,7 +5703,7 @@ CREATE VIEW intent_field_payload_producer
   (graph_name, type_name, field_name, family, payload_type_name, root_operation) AS
 SELECT f.graph_name, f.type_name, f.field_name, 'SERVICE', f.named_type, ro.operation
   FROM graphitron_service s
-  JOIN intent_expanded_field f
+  JOIN graphitron_field f
     ON f.graph_name = s.graph_name AND f.type_name = s.type_name
    AND f.field_name = s.field_name
   LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
@@ -5753,7 +5712,7 @@ SELECT f.graph_name, f.type_name, f.field_name, 'SERVICE', f.named_type, ro.oper
  UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name, 'DML', f.named_type, ro.operation
   FROM graphitron_mutation m
-  JOIN intent_expanded_field f
+  JOIN graphitron_field f
     ON f.graph_name = m.graph_name AND f.type_name = m.type_name
    AND f.field_name = m.field_name
   LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
@@ -5762,7 +5721,7 @@ SELECT f.graph_name, f.type_name, f.field_name, 'DML', f.named_type, ro.operatio
  UNION ALL
 SELECT DISTINCT f.graph_name, f.type_name, f.field_name, 'ROUTINE', f.named_type, ro.operation
   FROM graphitron_routine rt
-  JOIN intent_expanded_field f
+  JOIN graphitron_field f
     ON f.graph_name = rt.graph_name AND f.type_name = rt.type_name
    AND f.field_name = rt.field_name
   LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
@@ -6044,14 +6003,14 @@ SELECT graph_name, type_name, field_name, basis,
                        'PAYLOAD_TABLE', bt.table_source_name, bt.table_schema,
                        bt.table_name, 1
                   FROM graphitron_mutation m
-                  JOIN intent_expanded_field mf
+                  JOIN graphitron_field mf
                     ON mf.graph_name = m.graph_name AND mf.type_name = m.type_name
                    AND mf.field_name = m.field_name
                   JOIN intent_carrier_data_field cd
                     ON cd.graph_name = m.graph_name AND cd.type_name = mf.named_type
                    AND cd.family = 'DML' AND cd.element_kind = 'TABLE'
                    AND cd.data_fields = 1
-                  JOIN intent_expanded_field df
+                  JOIN graphitron_field df
                     ON df.graph_name = cd.graph_name AND df.type_name = cd.type_name
                    AND df.field_name = cd.field_name
                   JOIN intent_resolved_type_binding bt
@@ -6503,7 +6462,7 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
                              AND c.type_name = s.return_type_name
                              AND c.family = 'ROUTINE' AND c.data_fields = 1)
                THEN 'REFERENCE_ON_CARRIER_RETURN'
-             WHEN EXISTS (SELECT 1 FROM intent_expanded_field cf
+             WHEN EXISTS (SELECT 1 FROM graphitron_field cf
                            JOIN intent_connection_element_type ce
                              ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
                            WHERE cf.graph_name = s.graph_name AND cf.type_name = s.type_name
@@ -6639,11 +6598,12 @@ CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-  -- No key on the type: this relation's population is the authored types and the ones macro
-  -- expansion minted, which is intent_expanded_type, and a view is no key's target. The anchor
-  -- moved when the minted types did; before that the SDL coordinate held every name in the graph
-  -- and the key was exact.
+  -- graphitron_type and not graphql_type_element: this relation's population is the authored types
+  -- and the ones macro expansion minted, which for a while was a view and therefore no key's
+  -- target. The anchor moved when the minted types did and moved back when the union became a
+  -- table, so the key is exact again.
+  FOREIGN KEY (graph_name, type_name)
+    REFERENCES graphitron_type (graph_name, type_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE intent_type_domain IS 'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds. Named for the assertion, not the graph operation, because the seeds are generator policy rather than neutral schema reachability: root operation bindings, @node carriers, types declaring implements Node, authored @key carriers, and the argument types of directive definitions that survive into the emitted schema, where survivorship is read from each definition''s own source (graphitron''s bundled directive vocabulary is build-time only) rather than from a name set held in Java, so the seeds are a function of the captured document throughout. Every seed is an SDL fact, which is what makes this a one-corpus derivation: the node arm seeds on the declaration alone, deliberately over-approximating node inference, whose other two conjuncts (a @table binding, well-formed node metadata on the bound table) decide what nodehood means and never whether the author declared it. Seeding is monotone, so the superset answers membership correctly, and a type declaring the Relay contract over no table or over defective metadata is a member that gains diagnostics instead of vanishing. Materialized, not a view: the closure over cyclic type graphs has no safe H2 view form (a recursive UNION does not terminate on cycles, and the path-guarded form enumerates simple paths), and the descent rule is graphql-java''s own child semantics rather than something SQL should restate edge kind by edge kind. Written by the SDL gatherer''s rooted traversal over the schema its assembly stage produced, inside the capture transaction, so on any settled store these rows are current for every captured graph. A run whose registry did not assemble has no schema to traverse and leaves this partition empty; that emptiness is read together with the ASSEMBLY verdict in graphql_schema_error, never alone.';
 COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -6694,51 +6654,51 @@ COMMENT ON COLUMN intent_field_demand_rule.rule IS 'why the fields are demanded;
 
 CREATE VIEW intent_field_exemption_rule (graph_name, type_name, reason) AS
 SELECT t.graph_name, t.type_name, 'INTERFACE_TYPE'
-  FROM intent_expanded_type t WHERE t.kind = 'INTERFACE'
+  FROM graphitron_type t WHERE t.kind = 'INTERFACE'
 UNION
 SELECT t.graph_name, t.type_name, 'INPUT_TYPE'
-  FROM intent_expanded_type t WHERE t.kind = 'INPUT_OBJECT'
+  FROM graphitron_type t WHERE t.kind = 'INPUT_OBJECT'
 UNION
 SELECT t.graph_name, t.type_name, 'UNDERSCORE_TYPE'
-  FROM intent_expanded_type t
+  FROM graphitron_type t
  WHERE t.kind = 'OBJECT' AND t.type_name LIKE '\_%' ESCAPE '\'
 UNION
 SELECT machinery.graph_name, machinery.type_name, 'CONNECTION_MACHINERY'
   FROM (SELECT ef.graph_name, ef.type_name
-          FROM intent_expanded_field ef
-          JOIN intent_expanded_type et ON et.graph_name = ef.graph_name
+          FROM graphitron_field ef
+          JOIN graphitron_type et ON et.graph_name = ef.graph_name
            AND et.type_name = ef.named_type AND et.kind = 'OBJECT'
-          JOIN intent_expanded_field nf ON nf.graph_name = ef.graph_name
+          JOIN graphitron_field nf ON nf.graph_name = ef.graph_name
            AND nf.type_name = ef.named_type AND nf.field_name = 'node'
          WHERE ef.field_name = 'edges'
-           AND EXISTS (SELECT 1 FROM intent_expanded_field cf
+           AND EXISTS (SELECT 1 FROM graphitron_field cf
                         WHERE cf.graph_name = ef.graph_name
                           AND cf.named_type = ef.type_name)
         UNION
         SELECT ef.graph_name, ef.named_type
-          FROM intent_expanded_field ef
-          JOIN intent_expanded_type et ON et.graph_name = ef.graph_name
+          FROM graphitron_field ef
+          JOIN graphitron_type et ON et.graph_name = ef.graph_name
            AND et.type_name = ef.named_type AND et.kind = 'OBJECT'
-          JOIN intent_expanded_field nf ON nf.graph_name = ef.graph_name
+          JOIN graphitron_field nf ON nf.graph_name = ef.graph_name
            AND nf.type_name = ef.named_type AND nf.field_name = 'node'
          WHERE ef.field_name = 'edges'
-           AND EXISTS (SELECT 1 FROM intent_expanded_field cf
+           AND EXISTS (SELECT 1 FROM graphitron_field cf
                         WHERE cf.graph_name = ef.graph_name
                           AND cf.named_type = ef.type_name)
         UNION
         SELECT t.graph_name, t.type_name
-          FROM intent_expanded_type t
+          FROM graphitron_type t
          WHERE t.type_name = 'PageInfo' AND t.kind = 'OBJECT'
            AND (EXISTS (SELECT 1 FROM graphitron_connection c
                          WHERE c.graph_name = t.graph_name)
-                OR EXISTS (SELECT 1 FROM intent_expanded_field ef2
-                             JOIN intent_expanded_field nf2 ON nf2.graph_name = ef2.graph_name
+                OR EXISTS (SELECT 1 FROM graphitron_field ef2
+                             JOIN graphitron_field nf2 ON nf2.graph_name = ef2.graph_name
                               AND nf2.type_name = ef2.named_type AND nf2.field_name = 'node'
                             WHERE ef2.graph_name = t.graph_name
                               AND ef2.field_name = 'edges'))) machinery
 UNION
 SELECT t.graph_name, t.type_name, 'NESTING_TARGET'
-  FROM intent_expanded_type t
+  FROM graphitron_type t
  WHERE t.kind = 'OBJECT'
    AND t.type_name NOT LIKE '\_%' ESCAPE '\'
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
@@ -6748,17 +6708,17 @@ SELECT t.graph_name, t.type_name, 'NESTING_TARGET'
    AND NOT EXISTS (SELECT 1 FROM graphitron_error ge
                     WHERE ge.graph_name = t.graph_name AND ge.type_name = t.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_service s
-                    JOIN intent_expanded_field f ON f.graph_name = s.graph_name
+                    JOIN graphitron_field f ON f.graph_name = s.graph_name
                      AND f.type_name = s.type_name AND f.field_name = s.field_name
                     WHERE s.graph_name = t.graph_name AND f.named_type = t.type_name
                       AND s.class_name IS NOT NULL AND s.method IS NOT NULL)
    AND NOT EXISTS (SELECT 1 FROM graphitron_external_field e
-                    JOIN intent_expanded_field f ON f.graph_name = e.graph_name
+                    JOIN graphitron_field f ON f.graph_name = e.graph_name
                      AND f.type_name = e.type_name AND f.field_name = e.field_name
                     WHERE e.graph_name = t.graph_name AND f.named_type = t.type_name
                       AND e.class_name IS NOT NULL)
    AND NOT EXISTS (SELECT 1 FROM graphitron_mutation m
-                    JOIN intent_expanded_field f ON f.graph_name = m.graph_name
+                    JOIN graphitron_field f ON f.graph_name = m.graph_name
                      AND f.type_name = m.type_name AND f.field_name = m.field_name
                     WHERE m.graph_name = t.graph_name AND f.named_type = t.type_name);
 COMMENT ON VIEW intent_field_exemption_rule IS 'The types whose fields are intentionally not demanded, a reason per arm, type-keyed like the demand rules. Arms are unmasked against each other and against demand, so overlapping readings survive as rows (a structural connection type is also a directiveless object, and both rows are true); one-reason-per-coordinate is the resolved view''s job, per the same masked-reading argument the column-match classifier records. The interface arm is the census''s largest population (no interface''s fields ever classify); the input arm makes the trace-only input coordinates explicit rows; the underscore arm transcribes the walk''s name short-circuit at the field-bearing object kind (interfaces and inputs are already covered by their kind arms); the machinery arm is the structural connection recognition (an object with an edges field whose object element has a node field, reached by some carrier field, plus that shape''s edge type, plus the SDL-declared PageInfo when any promotion would fire), whose fields the connection emitter owns; the nesting-target arm is the walk''s own absence-shaped rule (a plain object with no classifying directive, no root binding and no store-visible producer resolves through its embedding edge, or is an orphan whose rejection surfaces at the referencing field), stated by its own predicate rather than as an anti-join of the demand view, so the two relations state their rules independently and the resolved view owns their meet. Types bound only through the reflection fixed point (accessor chains, record-composite carriers) are deliberately in neither this view nor the demand view; that population is the shadow residue whose store-side closure lands with the binding-walk classifier migration.';
@@ -6769,27 +6729,27 @@ COMMENT ON COLUMN intent_field_exemption_rule.reason IS 'why the fields are exem
 CREATE VIEW intent_type_demand (graph_name, type_name, rule) AS
 SELECT r.graph_name, r.type_name, 'ROOT_OPERATION'
   FROM graphql_root_operation r
-  JOIN intent_expanded_type t ON t.graph_name = r.graph_name AND t.type_name = r.type_name
+  JOIN graphitron_type t ON t.graph_name = r.graph_name AND t.type_name = r.type_name
    AND t.kind = 'OBJECT'
 UNION
 SELECT gt.graph_name, gt.type_name, 'TABLE_TYPE'
   FROM graphitron_table gt
-  JOIN intent_expanded_type t ON t.graph_name = gt.graph_name AND t.type_name = gt.type_name
+  JOIN graphitron_type t ON t.graph_name = gt.graph_name AND t.type_name = gt.type_name
    AND t.kind = 'OBJECT'
  WHERE gt.type_name NOT LIKE '\_%' ESCAPE '\'
 UNION
 SELECT ge.graph_name, ge.type_name, 'ERROR_TYPE'
   FROM graphitron_error ge
-  JOIN intent_expanded_type t ON t.graph_name = ge.graph_name AND t.type_name = ge.type_name
+  JOIN graphitron_type t ON t.graph_name = ge.graph_name AND t.type_name = ge.type_name
    AND t.kind = 'OBJECT'
  WHERE ge.type_name NOT LIKE '\_%' ESCAPE '\'
 UNION
 SELECT t.graph_name, t.type_name, 'INTERFACE_TYPE'
-  FROM intent_expanded_type t
+  FROM graphitron_type t
  WHERE t.kind = 'INTERFACE' AND t.type_name NOT LIKE '\_%' ESCAPE '\'
 UNION
 SELECT t.graph_name, t.type_name, 'UNION_TYPE'
-  FROM intent_expanded_type t
+  FROM graphitron_type t
  WHERE t.kind = 'UNION' AND t.type_name NOT LIKE '\_%' ESCAPE '\'
 UNION
 SELECT m.graph_name, m.type_name, 'CONNECTION_MACHINERY'
@@ -6828,10 +6788,10 @@ SELECT f.graph_name, f.type_name, f.field_name,
                          WHEN 3 THEN 'UNDERSCORE_TYPE' WHEN 4 THEN 'CONNECTION_MACHINERY'
                          ELSE 'NESTING_TARGET' END
        END
-  FROM intent_expanded_field f
+  FROM graphitron_field f
   JOIN intent_type_domain dom
     ON dom.graph_name = f.graph_name AND dom.type_name = f.type_name
-  JOIN intent_expanded_type t
+  JOIN graphitron_type t
     ON t.graph_name = f.graph_name AND t.type_name = f.type_name
    AND t.kind IN ('OBJECT', 'INTERFACE', 'INPUT_OBJECT')
   LEFT JOIN (SELECT graph_name, type_name,
@@ -10461,7 +10421,7 @@ INSERT INTO meta_relation VALUES
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
   ('graphitron_minted_type', 'expanded-type', 'graphitron',
    'A type macro expansion added to the schema that the author did not declare: one row per minted type name in the graph.',
-   'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads intent_expanded_type.',
+   'For example @asConnection on Query.films mints QueryFilmsConnection here, where graphql_type holds only what the document declares and therefore holds no row for it; a reader wanting both populations reads graphitron_type.',
    'The transcription is what the author declared and only that, so a type this expansion minted cannot live in it. Keeping it here rather than there is what makes the rewrite recoverable in both directions and what lets the SDL crawler stay a crawler: the expansion is a stage of the graphitron gatherer, reading the decode''s own connection rows, and it writes nothing another gatherer owns. One row per name however many carriers caused it, which is how the shared PageInfo is one type with a site apiece.'),
   ('graphitron_minted_type_site', 'minted-type-site', 'graphitron',
    'One declaration site a macro contributed for a minted type: the position an author can edit to make the type go away, and which carrier put it there.',
@@ -10469,16 +10429,8 @@ INSERT INTO meta_relation VALUES
    'Separate from the minted type because the multiplicity is the point: a type minted once per carrier would be indistinguishable from shared machinery if the sites were folded into it, and refcounting is what tells an incremental refresh when the last carrier naming PageInfo went away. The site carries a position rather than inventing one, so a diagnostic about a minted shape points at the application that caused it.'),
   ('graphitron_minted_field', 'expanded-field', 'graphitron',
    'One field of a minted type, carrying the same wrapping columns graphql_field carries for an authored one.',
-   'For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is intent_expanded_field.',
+   'For example a minted Connection''s edges field has a row here naming its Edge type, non-null and a list of non-null items; the union of these rows with graphql_field''s is graphitron_field.',
    'The field-grain half of graphitron_minted_type''s argument. The columns mirror graphql_field''s deliberately: the union that puts the two populations back together is a projection and not a translation, so a reader joining named_type joins one column whichever arm supplied its row.'),
-  ('intent_expanded_type', 'expanded-type', 'derivation',
-   'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
-   'For example a Connection type the CONNECTION macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',
-   'Two populations answer to one question and only one of them is a transcription. What an author declared is the document''s business and the SDL crawler''s; a type macro expansion minted is graphitron''s own contribution. A reader asking what the generator must emit wants both and should never have to know which arm supplied a row, and a reader asking what the author wrote reads graphql_type and gets exactly that. Naming the union is what lets the arms move without touching a reader: the measured population that needs it is eleven views, every one of them about the emitted surface rather than about the document.'),
-  ('intent_expanded_field', 'expanded-field', 'derivation',
-   'Every field the generator works with, at the type expression it works with: one row per field coordinate, carrying the wrapping columns graphql_field carries.',
-   'For example a field the CONNECTION macro rewrote reads here as the Connection it returns, where graphql_type''s own transcription is where a reader goes for what the author wrote instead.',
-   'The field-grain half of intent_expanded_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that union is disjoint; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate, and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
   ('graphitron_element', 'expanded-element', 'graphitron',
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the three element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',
