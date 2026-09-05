@@ -16,26 +16,30 @@ last-updated: 2026-09-05
 
 A `graphitron:dev` round starts from a record of what the developer changed, rather than working it
 out again by reading the workspace. The dev goal watches three populations of files and re-runs part
-of the generator when one moves; a *gatherer* is any of the stages that then reads those files and
+of the generator when one moves; a *gatherer* is one of the passes that then reads those files and
 writes facts into the store, the per-workspace cache of what a consumer's schema, database and
-classpath contain. Today every watcher knows exactly which file fired it and discards that before
-calling anything, so five separate stages downstream each rediscover the same answer by reading
-bytes: hashing, stat-walking or re-parsing whole populations to find the one file that moved. When
-this lands, the watchers write what they saw into a ledger, each gatherer reads the ledger at its own
-pace, and a gatherer that can prove its population did not move does no work at all. Two things
-change for a developer in a session. The console names the file that triggered each round instead of
-saying only that a round happened, and a round on one cadence stops stat-walking the population
-belonging to another: measured below at 7 ms of a quiet round on this repo's own example consumer,
-and proportional to the consumer's compiled output rather than to the edit, so it is tens of
-milliseconds on a large one.
+classpath contain, and the store already rosters the seven of them by name. Today every watcher knows
+exactly which file fired it and discards that before calling anything, so five separate stages
+downstream each rediscover the same answer by reading bytes: hashing, stat-walking or re-parsing
+whole populations to find the one file that moved. When this lands, an observation marks what moved,
+each gatherer records in the store which of its inputs it has caught up with, and an input nothing
+marked is not read again. Two things change for a developer in a session. A `.java` save stops
+content-hashing every source file under the module's compile roots to find the one that was saved,
+measured below at 30 to 46 ms of every debounced save on this repo's own example consumer and
+proportional to the consumer's sources rather than to the edit; and the console names the file that
+triggered each round instead of saying only that a round happened.
 
-The larger change is what the ledger lets the *next* items do. Three filed items each propose their
-own private cache to remove their own stage's rediscovery, and each has to argue a fresh
-invalidation heuristic to do it. Those three arguments collapse into one mechanism here, argued once.
+The mechanism is a dirty flag, and saying so is not a deflation. Everything below follows from taking
+it literally: marks are idempotent so a burst of twenty thousand events is one mark, absence of a
+claim is the stale state so a cold start needs no initialisation, and "I cannot say what moved" is not
+a third state but every claim deleted at once. What the flag buys beyond the three items it retires is
+that a gatherer can only ever be told to do *less* than it does today, never something different, so
+it can be adopted one gatherer at a time and a wrong mark costs a re-read rather than a wrong answer.
 
-The ledger must be able to say "I do not know", and that arm is the design rather than a caveat: it
-is what lets every gatherer keep today's rediscovery as its fallback, so the mechanism can only ever
-narrow work and never widen the risk of being wrong, and can be adopted one gatherer at a time.
+The larger change is what it lets the *next* item do. Three filed items each propose their own private
+cache to remove their own stage's rediscovery, and each has to argue a fresh invalidation heuristic to
+do it. Those three arguments collapse into one mechanism here, argued once, against a soundness
+condition the store already states and gates.
 
 ## The information exists and is thrown away
 
@@ -74,325 +78,433 @@ Five stages, each correct in isolation, each paying to learn something a watcher
 3. **`SchemaLoader.parsePerSource`** re-parses every schema document every round. There is no cache
    at all here, though the populations either side of it have one.
 4. **`JavaSourceFacts.refresh`** content-hashes every `.java` file under the compile source roots on
-   every source-watcher fire, to find the one that moved.
+   every source-watcher fire, to find the one that moved. Measured over the same example consumer's
+   source roots, generated sources included: 1,316 files, 6.0 MiB, 151 ms on the first pass and 30 to
+   46 ms warm over twenty-five consecutive passes. `SourceWalker`, one call frame away, already
+   re-parses only the files whose modification time moved, so on a warm save the hash is not cheap
+   beside the parse it protects; it is the entire cost of the refresh. This is the stage this item
+   adopts.
 5. **`StoreRefresh`**'s graph-scoped clear deletes and rewrites the whole of the round's graph
    partition regardless of what changed, which then forces a full re-derivation of the
    materialization register downstream of it.
 
-Items 2, 3 and 5 are the passes R857 enumerates; item 4 is R921; item 1's jar half is R620. Each of
-those is the same defect seen from one stage. This item is the shared cause, and it takes item 1's
-directory half itself, for the reasons under "What this item adopts" below.
+Items 2, 3 and 5 are the passes R857 enumerates and item 1's jar half is R620. Each of those is the
+same defect seen from one stage, and this item is the shared cause: it builds the mechanism and takes
+item 4, which R921 filed, as its first client. Why that one rather than the cheaper-looking item 1 is
+under "What this item adopts" below.
 
-## The API
+## The mechanism, and where its rows live
 
-Two types in `graphitron-model`, under `no.sikt.graphitron.model.sources` beside `ClasspathSources`
-and `SourceWalker`, which are the two gatherers that already live there. Neither type knows what a
-`WatchService` is; the plugin owns the instances and the watchers that fill them, and a gatherer that
-holds a subscription can be unit-tested without the plugin.
+A *currency claim*: one row saying that one gatherer has read one instance of one corpus and that
+nothing has moved it since. Presence means current, absence means stale. The rows are store rows,
+in a new `gatherer_` family, because they are written in the gatherer roster's vocabulary and a
+family is named for whose vocabulary its rows are written in. They are not `meta_`, whose charter is
+rows that are "a statement of what this file declares, never a record of what a run read", and they
+are not `store_`, whose relations key on the graph and the source rather than on the gatherer.
 
-```java
-/** What changed in one watched population since a reader last looked. */
-public sealed interface SourceDelta {
-
-    /**
-     * Exactly these moved under these roots, and nothing else under them did.
-     *
-     * @param scope   the roots this delta speaks for; a path outside them is not described here
-     * @param changed files created or modified since the reader's last commit
-     * @param removed files deleted since it
-     */
-    record Known(Set<Path> scope, Set<Path> changed, Set<Path> removed) implements SourceDelta {
-
-        /** Whether this delta describes {@code root} at all. */
-        public boolean covers(Path root) { ... }
-
-        /** Whether anything it names lies at or under {@code root}. */
-        public boolean touched(Path root) { ... }
-    }
-
-    /** We cannot say. Whoever reads this rediscovers, exactly as a cold process does. */
-    record Unknown(String reason) implements SourceDelta {}
-}
+```sql
+CREATE TABLE gatherer_current (
+  gatherer_name VARCHAR   NOT NULL,
+  corpus_name   VARCHAR   NOT NULL,
+  instance_key  VARCHAR   NOT NULL,
+  claimed_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (gatherer_name, corpus_name, instance_key),
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
+  FOREIGN KEY (corpus_name)   REFERENCES meta_corpus (corpus_name)
+);
 ```
 
-```java
-/** One watched population's append-only record, and the cursors that read it. */
-public final class SourceLedger {
+Every property the design needs falls out of the polarity rather than being added to it:
 
-    public SourceLedger(Set<Path> scope) { ... }
+* **Stale is the initial state**, so a cold session, a store written by another process, and an
+  instance nobody has ever read all behave identically and need no initialisation.
+* **Marking is a delete and is idempotent**, so twenty thousand `.class` events under one root are
+  one delete of one row, and a watcher can mark without reading anything.
+* **"I cannot say" is not a state.** An overflow, a subtree registered mid-session and an unreadable
+  observation all delete every claim in scope, which is the same as being cold. The *reason* survives
+  as a diagnostic string for the console line, because a reader who cannot tell an overflow from a
+  first round cannot report usefully on either, but it is not a case any consumer switches on.
+* **An unobserved instance is permanently stale**, because nothing ever claims it. A jar in the local
+  Maven repository is not watched, so it never carries a claim and is always hashed. That is the
+  right behaviour and it arrives without an exception being written for it.
+* **Claiming is refused for what is not observed.** A gatherer may only claim an instance the
+  observation actually covers; otherwise it would mint a claim nothing can ever invalidate, which is
+  the one way this mechanism could manufacture a false current. The refusal lives in the mechanism,
+  not in each caller.
 
-    public void changed(Path file);
-    public void removed(Path file);
+**The relation is emptied when a process opens the store.** A claim rests on continuous observation
+and nothing observes between processes, so an inherited claim is exactly the false-current case. This
+is what makes the rows durable in mechanism and session-scoped in meaning, and it is why the relation
+needs no observer column: a second session opening over the same workspace store clears the first
+one's claims, which costs that session a round of rediscovery and never a wrong answer.
 
-    /** Records that this population moved in a way the ledger cannot describe. */
-    public void unknown(String reason);
+**A claim is taken in the transaction that writes the rows it vouches for.** A gatherer that throws
+has claimed nothing and is simply stale next round; there is no restore-on-failure for anyone to
+forget, and no ordering for anyone to get wrong. That is `ClasspathSources.commitStamps`'s existing
+argument, that a stamp written after the flush means "these rows are all here" rather than "these rows
+were started", made structural by the transaction rather than by call order.
 
-    /** A reader's own cursor, minted once per consumer at session start. */
-    public Subscription subscribe(String consumer);
+**Marking is immediate and undebounced**, and that ordering is the single most important statement
+here. Today's debounce sits between the observation and the action and is precisely what destroys the
+information: a burst is coalesced into one bare `Runnable` before anything can record what was in it.
+Marks accumulate across the debounce window; only the acting stays debounced, and it stays with
+`DebounceExecutor` where it is, since a gatherer has no cadence of its own to debounce (it is called
+by a round, it does not decide when to run) and moving scheduling policy into `graphitron-model` would
+dissolve the no-overlap guarantee that executor's single thread provides. Marking writes through an
+in-memory outbox that the round flushes in its own transaction before it reads, so the watch thread
+never waits on the database and nothing is ever read before it is durable.
 
-    public final class Subscription {
+## Why the gatherer roster is what makes this sound
 
-        /** What has been recorded since this cursor's last commit. */
-        public SourceDelta look();
+Using the store's declared vocabulary rather than a parallel one is what turns the mechanism's
+soundness from an argument into a theorem.
 
-        /** Consumes exactly what the most recent {@link #look} reported, and no more. */
-        public void commit();
-    }
-}
-```
+`meta_corpus` rosters the outside inputs; the three this item touches are `classpath`, `sdl` and
+`java-source`. `meta_gatherer` rosters the seven gatherers against the class that is each one's entry
+point, and `meta_gatherer_corpus` binds gatherer to corpus. That junction's own comment defines the
+word the whole design turns on:
 
-Every path is stored absolute and normalised, on record and in the scope, so "is this path under that
-root" is a string test rather than a filesystem call on a hot path.
+> A gatherer with at least one row here is a crawler, and this junction is the store's definition of
+> that word: a transcription pass whose rows about its own corpus may not vary with any other
+> corpus's contents.
 
-The load-bearing choice is the **cursor**, not the record. A destructive drain, which is the obvious
-shape and the one this item was filed with, breaks on the two cases that actually occur:
+That is exactly the condition under which a currency claim is sound. For a crawler, "this instance of
+my corpus has not moved, therefore my rows about it are still current" holds because its rows about
+that instance are a function of that instance alone. For a gatherer with no corpus row it fails: the
+`graphitron` gatherer's rows vary with what the `sdl` and `catalog` gatherers produced, so a
+per-instance claim would read current while its inputs moved underneath it. The store has already
+sorted every gatherer into the two classes and gates the sorting, so the mechanism reads the roster
+and refuses the rest rather than deciding for itself.
 
-* **Two consumers, one population.** The class census reads the classpath population from *both*
-  cadences, because a `.graphqls` round builds a catalog too. A drain by whichever round arrives
-  first leaves the other round told that nothing moved while a class file it has not read sits on
-  disk. Per-consumer cursors make each reader's question independent of which cadence woke it, which
-  is the property the census needs and cannot get any other way.
-* **A round that fails.** A drain has to be undone by hand when the consumer throws, and every
-  consumer has to remember to. A cursor advances only on `commit()`, so a gatherer that throws simply
-  has not committed, and the next round sees the same delta plus whatever arrived since. Nothing
-  needs to record `Unknown` on failure, and no gatherer can forget to.
+An *instance* is one member of a corpus: one jar or one `target/classes` root for `classpath`, one
+document for `sdl`, one file for `java-source`. Instances are already named in the store, as
+`store_source.source_name` and `java_file.file`, so `instance_key` carries a name the store already
+uses rather than minting an identifier of its own.
 
-`look()` returns `Unknown` in four cases, each with its reason carried so a report can name it: the
-cursor has never committed (the first round of a session, which is the round that reconciles against
-a store some other process may have written), an `unknown(...)` marker sits in the unconsumed range,
-the log was trimmed past this cursor, or the ledger is disabled. Otherwise it returns `Known` with
-this ledger's scope.
+The relation's own owner is the one place this item extends the declared model rather than fitting
+into it, and the extension is small and motivated. `gatherer_current` gets a new `meta_gatherer` row,
+`observation`, with no `meta_gatherer_corpus` rows: it transcribes no corpus, its rows span every
+corpus, and crossing corpora is exactly what a gatherer with no corpus row is for.
+`MetaDeclarationGateTest.ownerAndGrainAgreeAboutTheCorpus` exempts such an owner in those words,
+"an owner with no corpus rows is exempt, crossing being its job", so the declaration lands inside the
+gate rather than beside it. The one genuine gap is `meta_grain.corpus_name`, which is NOT NULL and has
+no honest value for a grain that spans corpora; this item makes it nullable and has the corpus check
+skip a null, which is the same exemption the owner side already carries, stated once more on the grain
+side where the roster had not yet needed it.
 
-The ledger trims events below the minimum committed cursor across its subscriptions, and collapses
-its whole log into a single `unknown("event log full")` marker once the unconsumed span passes a cap.
-The cap is what keeps a session that watches a `mvn clean install` in another terminal from
-accumulating one entry per class file written; degrading to `Unknown` there costs a full walk, which
-is exactly what that round would have paid anyway.
+## Grain, and the one law that is easy to lose
 
-## What the mechanism guarantees
+An instance's grain is the grain of the fact it invalidates, and it is not the same for every corpus.
+For `classpath` the instance is the root, so twenty thousand file events fold to one. For `sdl` and
+`java-source` the instance is the file, because that is what `store_source` and `java_file` are keyed
+on.
 
-A delta can be read two ways, and they are not equally safe. The distinction is the heart of this
-item, and every adopter has to say which one it is using.
+**The fold belongs to the gatherer, not to the watcher.** The gatherer owns the key, because the key
+is the key of the fact it writes, and one corpus can feed readers that want different grains: the
+`classpath` corpus feeds the class census at root grain and, eventually, the consumer-class recompile
+invalidation that `rebuildCatalog` today does conservatively at file grain. A single fold on the
+watcher cannot serve both. So a gatherer registers its fold up front and the observation applies every
+registered fold as events arrive, which keeps raw paths transient and needs no cap on anything.
 
-**The negative reading: "nothing under this root moved."** A consumer that skips a root the delta
-proves untouched keeps every property it has today for the rounds where the root *did* move, because
-on those rounds it does exactly what it does now. In particular it keeps *self-healing*: today, if
-the OS watcher silently drops the event for class `C` but delivers the one for class `D`, the round
-that `D` triggers walks the whole root and picks up `C` as well. Under the negative reading that is
-still true, because a delta that names `D` sends the consumer down the walking path.
+And the law, which has to be written where the mechanism is defined rather than only here, because a
+mechanism this small invites a later "simplification" that does not know the precondition is
+load-bearing:
 
-**The positive reading: "exactly these moved, so read only these."** This is strictly stronger and
-strictly more useful, and it forfeits the self-healing above: a dropped event for `C` is never
-noticed, and the session serves stale facts about `C` until it restarts. Adopting it is a decision
-each gatherer makes for itself, with its own argument, and this item deliberately does not make that
-decision on any gatherer's behalf.
+> A mark at grain G is safe exactly when the consumer's unit of work is at grain G or coarser.
 
-Three ways a watcher can be wrong, and where each is answered. A design that does not answer all
-three trades a correct dev loop for a fast one, which is not a trade this item is willing to make.
+The reason is dropped events. If the OS watcher silently loses the event for file `C` but delivers the
+one for `D`, a consumer whose unit is the whole containing root re-reads that root and picks `C` up;
+the loss heals. A consumer whose unit is one file re-reads `D` alone and `C` stays stale until the
+session restarts; the loss is permanent. Self-healing is a property of grain, not of good intentions.
 
-**Watch overflow.** `WatchService` drops events under burst. `SchemaWatcher.dispatch` already handles
-`OVERFLOW` by rescheduling rather than ignoring it, so the honest translation exists: it records
-`unknown("watch overflow")`.
+The adoption below is at file grain, so it is on the losing side of that law and needs its own
+argument rather than the law's protection. It has one, and it is the same one `SourceWalker` already
+relies on a call frame away: within a single process, an editor writing a file moves it through the
+watcher, and the operations that replace a whole source tree underneath a session, a branch switch or
+a `git checkout`, move every file they touch. The events this loses are the ones the OS drops, and the
+recovery for those is the escape hatch below rather than a coarser grain, because at this grain a
+coarser fold would re-read the whole population and buy nothing.
+
+Three ways an observation can be wrong, and where each is answered, because a design that does not
+answer all three trades a correct dev loop for a fast one.
+
+**Watch overflow.** `SchemaWatcher.dispatch` already handles `OVERFLOW` by rescheduling rather than
+ignoring it, so the honest translation exists: delete every claim in scope.
 
 **A subtree registered mid-session.** `dispatch` registers newly created directories on the fly, and
 files created between the directory appearing and the registration completing are never seen.
 `SchemaWatcher.addRoot`, which `regeneratePass` calls when a re-expansion of `<schemaInputs>` finds a
-new root, has the same hole. That is harmless today because everything is rediscovered anyway; under
-a delta it is a silent miss, so both sites record `unknown(...)`.
+new root, has the same hole. Harmless today because everything is rediscovered anyway; under a claim
+it is a silent miss, so both sites delete every claim in scope.
 
-**A root the ledger does not speak for.** The watchers resolve their roots once at session start
-(`DevMojo.resolveClasspathRoots`, `resolveSchemaRoots`, `resolveSourceRoots`); a round later in the
-session rebuilds its `RunContext` and can name a directory none of them watch, a reactor module built
-for the first time being the ordinary way. `Known.covers` is what a consumer asks before trusting a
-delta about a root, and a root outside the scope is rediscovered.
+**A root nothing watches.** The watchers resolve their roots once at session start
+(`DevMojo.resolveClasspathRoots`, `resolveSchemaRoots`, `resolveSourceRoots`); a later round rebuilds
+its `RunContext` and can name a directory none of them cover, a reactor module built for the first
+time being the ordinary way. Nothing claims it, so it is permanently stale and permanently
+rediscovered. This is the "claiming is refused for what is not observed" rule doing its work, and it
+needs no separate check at any read site.
 
 **And an escape hatch, because filesystem watchers do lie.** `-Dgraphitron.dev.rediscover=always`
-makes every `look()` return `Unknown("rediscovery forced")`, which is today's behaviour exactly. A
-developer on a filesystem where the watcher under-reports, a container bind mount and a network share
-being the usual suspects, gets a working session back with one flag, and a bug report against this
-mechanism has a one-line bisect. The round's own report says which path it took, so a stale session
-is diagnosable rather than silent; that is the same argument `ClasspathCensus.Round` already makes
-for reporting what a round re-read.
+deletes every claim on every round, which is today's behaviour exactly. A developer on a filesystem
+where the watcher under-reports, a container bind mount and a network share being the usual suspects,
+gets a working session back with one flag, and a bug report has a one-line bisect. The round's report
+says which path it took, so a stale session is diagnosable rather than silent, which is the argument
+`ClasspathCensus.Round` already makes for reporting what a round re-read.
 
 ## What this item adopts
 
-Two clients, chosen because between them they exercise both readings of the API and neither can
-produce a wrong generated file.
+One gatherer and one console line, chosen so the item delivers the mechanism against a real crawler
+and neither client can produce a wrong generated file.
 
-**The round says what changed** (positive reading). `regeneratePass`, `rebuildCatalog` and
-`refreshSourceFacts` each hold a subscription, look at the top of the round, and name what they found
-on the console beside the banner they already print: the changed files where the delta is `Known`
-(the first few, then a count), or the reason where it is `Unknown`. Today a developer watching the
-log sees that a round happened and has to guess why, which matters most in the case where the guess
-is wrong: an editor writing a stray file, or another terminal's build, triggers a round that looks
-like it came from the save just made. The positive reading is safe here because the worst a dropped
-event can do is leave a file out of a log line.
+**The `java-source` gatherer stops hashing every source file.** `JavaSourceFacts.refresh` today
+computes `ClasspathSources.hash(file)` for every file the walk returned, compares it against the
+`java_file.stamp` the store recorded, and rewrites the ones that differ. Measured on this workstation
+over `graphitron-sakila-example`'s reactor source roots, generated sources included, 1,316 `.java`
+files and 6.0 MiB: 151 ms on the first pass and 30 to 46 ms warm over twenty-five consecutive passes,
+paid on every debounced `.java` save. Under a claim the refresh hashes the files with no current claim
+and skips the rest, and the claim is taken inside the transaction `rewrite` already opens, so a file
+whose write the store refused holds no claim and is re-read next save rather than silently skipped for
+the rest of the session.
 
-**The class census stops walking a population that did not move** (negative reading).
-`ClasspathCensus` takes a subscription over the classpath population and, for a directory root it
-holds a cached reading of, skips the walk entirely when the delta is `Known`, `covers` that root and
-`touched` nothing under it. It returns the references it already composed, in the order it composed
-them. Any other case walks, including a `Known` delta that names one file under the root: the census
-pays exactly what it pays today on the rounds where that population moved, and pays nothing on the
-rounds where it did not.
+This is the right first client for three reasons. It is a declared crawler, so the soundness condition
+applies to it by roster rather than by argument. It reads one corpus at file grain with no graph
+dimension, so its claim is the simplest possible instance of the shape. And it already owns both
+halves of its own lifecycle on its own cadence, so nothing else has to change for it to work.
 
-That is the whole rule, and it is worth saying why it is not the more obvious one. Applying a delta's
-named files to the cached directory map, rather than using it only as a proof of stillness, would let
-the census re-read one file instead of walking. It would also put a newly created file at the end of
-a map whose order is the walk's, and that order decides which of two classes declaring the same
-fully-qualified name the census keeps. The negative reading has no such hazard, needs no argument
-about walk order, and saves the cost on the cadence that matters: a `.graphqls` save cannot change a
-class file, and that is the round a developer waits on.
+**The round says what changed.** `regeneratePass`, `rebuildCatalog` and `refreshSourceFacts` each name
+what they were told at the top of the round, beside the banner they already print: the changed files
+where the observation can say, the reason where it cannot. Today a developer watching the log sees
+that a round happened and has to guess why, which matters most when the guess is wrong, an editor
+writing a stray file or another terminal's build producing a round that looks like it came from the
+save just made. This reads a bounded ring of recent raw paths rather than the claims, because it wants
+the file and the claims are folded to grain; the ring is diagnostic and never authoritative, so the
+worst a dropped event costs here is a name missing from a log line.
 
-`ClasspathCensus.Round` gains a `rootsProvenUnchanged` count and a clause in `report()`, so the
-saving is visible on the console and a regression that starts walking again is visible too. A census
-with no subscription behaves exactly as it does today, which is what the one-shot goals get.
+`JavaSourceFacts` gains a count of the files it hashed and the files it skipped, reported the way
+`ClasspathCensus.Round` reports, so the saving is visible on the console and a regression that starts
+hashing everything again is visible too. A `JavaSourceFacts` constructed without an observation
+behaves exactly as it does today, which is what the one-shot goals get.
 
 ## What this item does not do
 
-It does not remove the jar hash, and that limit is structural rather than an omission.
-`resolveClasspathRoots` watches each reactor project's `target/classes` and nothing else; no watcher
-covers the local Maven repository, so for jars the content hash is the only detector that exists. A
-later adopter can decide *whether* to hash from a delta, but the cold round still pays, and making
-the cold round cheaper is R620's, through classpath entries that carry an identity their builder
-already knows. The two compose: R620 takes a quiet round's jar cost from two hash passes down to one
-pass over the reactor's own snapshots, and this item takes the directory walk beside it to nothing.
+**It does not adopt the class census**, although the census's directory walk is the sibling defect and
+is measured under "What rediscovers it" above at 7 ms per round. The census is an in-process cache
+rather than a store writer, so a claim about it is a claim about JVM-local state, and it feeds the
+`catalog` gatherer without being it: a claim filed under `catalog`/`classpath` by the census would
+assert something about rows `CatalogFactCapture` may not have written. Untangling that deserves its own
+argument, and R620 is already working in that neighbourhood.
 
-It does not adopt the delta in `SchemaLoader.parsePerSource`, `JavaSourceFacts.refresh` or
-`StoreRefresh`. Each of those is the positive reading, each is owned by an item that is already
-specifying the surrounding change, and each needs an argument this item cannot make for it. What they
-get from here is the mechanism and the vocabulary: R857's per-document schema parse becomes "look,
-re-parse what the delta names, commit", with the store's own per-document stamp still the ground
-truth on the first round of a session; R921's source hash becomes the same shape one cadence over,
-and its "the session record belongs to the writer, not to the walker" finding is answered by the
-cursor, since a file whose store write failed is a file whose consumer did not commit.
+**It does not remove the jar hash**, and the limit is structural. `resolveClasspathRoots` watches each
+reactor project's `target/classes` and nothing else; no watcher covers the local Maven repository, so a
+jar is never observed, never claimed, and therefore always stale. The content hash stays its only
+detector. Making that cheaper is R620's, through classpath entries that carry an identity their builder
+already recorded beside them.
 
-Widening the watch into the local Maven repository was considered and is under "Other solutions"
-below.
+**It does not adopt `SchemaLoader.parsePerSource` or `StoreRefresh`.** Both are R857's, which is
+specifying the surrounding change; a schema document is a `store_source` instance of the `sdl` corpus,
+so R857's per-document parse is this same shape one corpus over, and its argument for reading a
+recorded stamp for a population it was not written for is replaced by a claim it takes itself.
+
+**It absorbs R921.** That item is this adoption stated as a private cache: the same cadence, the same
+files, the same skip, reached by a per-writer record of "files committed at a given size and mtime"
+rather than by a claim. Its central finding survives and is answered structurally here, that the record
+belongs to the writer rather than to the walker, because a file whose store write failed is a file that
+holds no claim. R921 becomes a Backlog tombstone naming this item, and its file deletes when this one
+reaches Done.
+
+**It does not do propagation.** Marking an instance says its crawler is behind; it does not say which
+registrations, partitions or generated units must re-run because of it. That is the next item, and the
+edges it needs are already in the store: `store_graph_source` records which sources each graph read,
+`meta_gatherer_dependency` declares which gatherers may read which others' rows, and
+`meta_materialize_dependency` carries transitive reach through the registered views. With
+`gatherer_current` beside them, "what must run" is a join. Putting the claims anywhere but the store
+would have made that join hand-written Java over data that is already relational, which is the whole
+reason this item pays the schema cost rather than deferring it.
 
 ## Implementation
 
+`graphitron-model`, the DDL (`graphitron-model.sql`):
+
+* `gatherer_current` as above, with the table and column comments the schema's own conventions require
+  and the grain sentence its `meta_relation` row must echo verbatim.
+* A `gatherer_` row in `meta_family` with its introduction and charter, plus a `meta_family_headline`
+  entry. The prefix collides with nothing: `meta_gatherer` stays in `meta_`, being a declaration
+  rather than a record of what a run read.
+* A `meta_gatherer` row, `('observation', '<the observation class>')`, and no `meta_gatherer_corpus`
+  row for it. `meta_gatherer_dependency`'s comment says "there are two of those" about corpus-less
+  gatherers and becomes wrong with a third; it is rewritten in the same commit.
+* A `meta_grain` row for the claim's grain and a `meta_relation` row owning the relation to
+  `observation`. `meta_grain.corpus_name` becomes nullable, and
+  `MetaDeclarationGateTest.ownerAndGrainAgreeAboutTheCorpus` skips a null grain corpus, matching the
+  exemption its owner side already carries.
+
+The relation rosters a new base table has to join, each of which fails the build if missed:
+`StoreRefresh.wholesale()`'s exemption list (it is written in exemption polarity, so a relation nobody
+thought about is emptied every round, which here would delete every claim), the roster in
+`FactCaptureAgreementTest`, `ThreadConfinedStore`'s non-empty-relation predicate, and
+`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`, which needs a `gatherer_` arm naming
+`gatherer_name` as the leading key column.
+
 `graphitron-model`, `no.sikt.graphitron.model.sources`:
 
-* `SourceDelta`, new. Sealed on `Known` and `Unknown` as sketched above, with `covers` and `touched`
-  on `Known` doing the normalised-prefix test.
-* `SourceLedger`, new. An append-only list of events under a monotonic sequence, a map of named
-  cursors, all state guarded by the ledger's monitor because the three watch threads and the debounce
-  threads are distinct. `Subscription.look` folds the events after its cursor and remembers the
-  position it folded to; `commit` applies that position and trims.
+* The observation, new. Holds the registered folds, the observed scope and the outbox, and owns the
+  claim relation: `register(gatherer, corpus, scope, fold)` validates the pair against
+  `meta_gatherer_corpus` and rejects one the roster does not carry, which is the crawler condition
+  enforced rather than assumed; `mark(Path)` applies every registered fold into the outbox;
+  `markAll(reason)` records a scope-wide deletion and its reason; `flush(dsl)` applies the outbox in
+  one transaction; `isCurrent(dsl, gatherer, corpus, key)` answers the read; `claim(dsl, gatherer,
+  corpus, key)` inserts inside the caller's transaction and refuses a key outside the observed scope.
+  `clearAll(dsl)` empties the relation and is called where the store opens. The grain law goes in this
+  class's javadoc on `register`, where a later reader meets it before choosing a fold.
 
-`graphitron-model`, `no.sikt.graphitron.model.classpath`:
+`graphitron-model`, `no.sikt.graphitron.model.capture.java`:
 
-* `ClasspathCensus` gains `observing(SourceLedger.Subscription)`, registered rather than passed to
-  `read` for the same reason `reportTo` is: every read must see it, including the reads inside a
-  cadence the owner does not otherwise think about. `read` looks once at the top, before the
-  `jooqPackage` comparison that clears the cache (a cleared cache walks regardless, and the round
-  still commits, so the delta is not replayed), passes the delta to `readDirectory`, and commits after
-  the reading is composed. `readDirectory` gains the skip arm. `Round` and `report()` gain
-  `rootsProvenUnchanged`.
+* `JavaSourceFacts` takes an optional observation, registers `java-source` at file grain, hashes only
+  the walked files with no current claim, and calls `claim` inside the `dsl.transaction` that `rewrite`
+  already opens. `prune` keeps taking the whole walked set, which the walk supplies regardless of what
+  was hashed. The class javadoc's sentence about recomputing the hash for every walked file
+  deliberately is rewritten rather than deleted: it is the right argument about the persisted stamp and
+  the wrong one about this cadence, and the next reader needs both halves stated.
 
 `graphitron-maven-plugin`:
 
-* `SchemaWatcher` takes a `SourceLedger` beside its `DebounceExecutor`. `dispatch` records before it
-  schedules: the resolved path on a suffix match, as `removed` for `ENTRY_DELETE` and `changed`
-  otherwise; `unknown("watch overflow")` on `OVERFLOW`; `unknown(...)` where it registers a new
-  subdirectory. `addRoot` records `unknown(...)` too. The four existing constructors keep their shapes
-  with the ledger added; `SchemaWatcherTest` and `CatalogRefreshTest` are the two other construction
+* `SchemaWatcher` takes the observation beside its `DebounceExecutor` and marks before it schedules:
+  the resolved path on a suffix match or a delete, `markAll` on `OVERFLOW` and where it registers a new
+  subdirectory. `addRoot` calls `markAll` too. The four existing constructors keep their shapes with
+  the parameter added; `SchemaWatcherTest` and `CatalogRefreshTest` are the two other construction
   sites.
-* `DevMojo.buildSaveListener` takes the ledger and records the saved document before scheduling,
-  resolving the LSP's URI with `Path.of(URI.create(uri))` and recording `unknown(...)` for a URI that
-  is not a resolvable `file:` path, which is what an unsaved editor buffer produces.
-* `DevMojo` holds three ledgers beside the three debounce executors it already holds, scoped to the
-  roots each watcher resolved, and mints the subscriptions: one per cadence for the announcement, one
-  for `sessionCensus` over the classpath ledger. The ledgers are created before `bindServer`, since
-  the save listener is built there. `graphitron.dev.rediscover` is a `@Parameter` that disables them.
+* `DevMojo.buildSaveListener` takes it and marks the saved document before scheduling, resolving the
+  LSP's URI with `Path.of(URI.create(uri))` and calling `markAll` for a URI that is not a resolvable
+  `file:` path, which is what an unsaved editor buffer produces.
+* `DevMojo` constructs the observation once the store is open, since registration reads the roster, and
+  before `bindServer`, since the save listener is built there. It also holds the bounded ring of recent
+  paths the announcement reads, one per cadence. `graphitron.dev.rediscover` is a `@Parameter`; set to
+  `always` it makes every read stale.
 * The three round entry points announce, as described above.
 
-`docs/architecture/how-to/dev-loop-internals.adoc`, "Dev loop: how the goal is wired internally",
-gains the ledger as a component, since that list is where a contributor learns what the dev JVM is
-made of and it currently describes the watchers as signalling the dispatch and nothing more.
+`docs/architecture/how-to/dev-loop-internals.adoc`, "Dev loop: how the goal is wired internally", gains
+the observation as a component, since that list is where a contributor learns what the dev JVM is made
+of and it currently describes the watchers as signalling the dispatch and nothing more. The fact-model
+page gains the `gatherer_` family, which the generated schema reference renders from the `meta_family`
+row.
+
+The DDL change bumps `store_stamp.ddl_hash`, so every persisted store is rebuilt once on first use
+after this lands. That is the designed behaviour of that column ("any schema edit at all invalidates a
+persisted file") and needs no migration.
 
 ## Tests
 
-`SourceLedgerTest`, `graphitron-model` unit tier. The mechanism's own contract, and every arm of it: a
-first `look` is `Unknown` and says why; after a commit a `look` names exactly what was recorded since;
-an uncommitted `look` is not consumed, so a consumer that throws sees the same delta again; an event
-recorded between a `look` and its `commit` survives the commit and arrives at the next one; an
-`unknown` marker anywhere in the unconsumed range makes the `look` `Unknown` and carries the reason;
-two subscriptions advance independently; a delete arrives in `removed` and not in `changed`; the log
-collapses to `Unknown` rather than growing once the cap is passed; `covers` and `touched` answer for
-nested roots and for a path outside the scope.
+`GathererCurrentTest`, `graphitron-model` unit tier. The mechanism's contract: an unclaimed instance
+reads stale, so a fresh store answers stale for everything without initialisation; a claim makes it
+current and a mark makes it stale again; marking is idempotent, so a thousand marks under one root
+leave one instance stale; `markAll` deletes every claim in scope and carries its reason; a claim for a
+key outside the observed scope is refused and cannot be read back as current; `register` rejects a
+gatherer-and-corpus pair `meta_gatherer_corpus` does not carry and accepts one it does, which is the
+crawler condition; opening the store empties the relation, so no claim is inherited across processes; a
+claim taken in a transaction that then rolls back leaves the instance stale.
 
-`ClasspathCensusTest`, `graphitron` unit tier, four cases beside the eight it already has. A delta
-that names nothing under a root leaves the root unwalked (`rootsProvenUnchanged` is 1, `filesReused`
-is 0) and answers a census equal to the walking round's, entry for entry and in the same order. **A
-delta that names one file under a root walks it and picks up a sibling the delta never named**; this
-is the self-healing property stated above, and it is the test that fails if someone later "optimises"
-the skip into a per-file apply. An `Unknown` delta walks every root. A root outside the delta's scope
-is walked although the delta is `Known` and names nothing. A census with no subscription is unchanged,
-which the existing eight already assert and which must keep passing untouched.
+`JavaSourceFactsTest`, `graphitron-model` unit tier, beside its existing lifecycle anchors. A second
+refresh over an unchanged walk hashes nothing and writes nothing, where today it hashes everything. An
+edited file is hashed and rewritten while its neighbours are not. **A file whose rewrite the store
+refused is hashed again on the next refresh**, which is the finding this absorbs from R921 and the case
+a walker-side cache gets wrong. A refresh with no observation hashes everything, which is the existing
+behaviour and the one-shot path.
 
-`SchemaWatcherTest`, plugin unit tier: a suffix-matching modify records the resolved absolute path and
-then schedules; a delete records it as removed; `OVERFLOW` records `Unknown` and still schedules;
-registering a new subdirectory records `Unknown`. `DevMojoTest`: `buildSaveListener` records the saved
-document's path before scheduling, and a non-`file:` URI records `Unknown`.
+`ClasspathCensusTest` and the census are untouched, and that is deliberate: the eight existing cases
+must keep passing unchanged, which is the evidence that the mechanism is additive.
+
+`SchemaWatcherTest`, plugin unit tier: a suffix-matching modify marks the resolved absolute path before
+scheduling; a delete marks it; `OVERFLOW` marks everything and still schedules; registering a new
+subdirectory marks everything. `DevMojoTest`: `buildSaveListener` marks the saved document before
+scheduling, and a non-`file:` URI marks everything.
 
 `DevMojoTest`, driving a round through `regeneratePass` as it already does, asserts the console names
 the file the round was told about. That is the completeness evidence for the visible half of the goal;
-the census assertions above are the evidence for the other half. No timing assertion appears anywhere
-in this item: a timing assertion passes on hardware fast enough to hide the regression, and
-`rootsProvenUnchanged` is the same fact stated as a count.
+the `JavaSourceFacts` counts are the evidence for the other half. No timing assertion appears anywhere
+in this item: a timing assertion passes on hardware fast enough to hide the regression, and the
+hashed-versus-skipped counts are the same fact stated as counts.
+
+The schema gates carry the rest without new tests being written for them, which is the point of
+declaring the relation rather than exempting it: `MetaDeclarationGateTest` fails if `gatherer_current`
+arrives undeclared, if its comment and its declaration drift, or if its primary key disagrees with its
+grain's key shape.
 
 ## Why this is worth building rather than fixing five times
 
-Each of the five stages can be fixed alone, and three items already propose to. The reason to build
-the shared mechanism is that each local fix buys a cache whose invalidation is a second heuristic, and
-the heuristics do not compose: R921 has to argue modification times are safe, R857 has to argue a
-recorded stamp can be read for a population it was not written for, and R620 has to thread one round's
-hashes from one consumer to another. Told what changed, none of those arguments is needed, and the two
-that remain, the overflow and the cold start, are answered once in one place.
+Each of the five stages can be fixed alone, and three items already propose to. The reason to build the
+shared mechanism is that each local fix buys a cache whose invalidation is a second heuristic, and the
+heuristics do not compose: R921 has to argue modification times are safe, R857 has to argue a recorded
+stamp can be read for a population it was not written for, and R620 has to thread one round's hashes
+from one consumer to another. Against a claim none of those arguments is needed, and the condition that
+replaces them is not a fourth heuristic but the crawler property the store already declares and gates.
 
 There is also a pattern here worth naming, because it predicts where the next instance appears. Every
 incremental cache in this tree justified its detector against the cost of the work it protects.
 `ClasspathCensus` argues hashing a jar set "costs roughly an eighth of parsing it". `JavaSourceFacts`
-argues that "hashing source files is cheap beside the parse it is protecting". Both were true against
-a cold parse, and both stopped being true the moment a later item cached the parse: the verification
+argues that "hashing source files is cheap beside the parse it is protecting". Both were true against a
+cold parse, and both stopped being true the moment a later item cached the parse: the verification
 became the entire cost of the round. Any detector argued as cheap relative to work that later gets
 cached is the next one of these.
 
 ## Other solutions we've considered
 
-**A destructive drain rather than per-consumer cursors.** The shape this item was filed with: a round
-takes the accumulated delta and resets the ledger to empty. Rejected on the two cases under "The API"
-above, either of which is a wrong answer rather than a slow one.
+**Hold the claims in memory rather than in the store.** No DDL, no family, no roster work, and the
+mechanism is otherwise identical. Rejected on the next item rather than on this one: propagation turns
+"this instance moved" into "therefore these registrations, partitions and generated units must re-run",
+and the edges that answer it are relations. Marks in a field on a Mojo make that join hand-written Java
+over data that is already relational, and the schema work this defers has to be done then anyway, with
+a mechanism already shipped in the wrong place. Two things the store does *not* buy are worth stating
+so nobody later assumes it does: it does not fix the cold start, because a claim rests on continuous
+observation and observation ends with the process, which is why the relation is emptied at open; and it
+is not what makes a claim crash-safe, since clearing only after the write commits gets that too, the
+shared transaction making it impossible to get wrong rather than merely possible to get right.
 
-**The watchers push into the gatherers.** A watcher that calls `census.invalidate(path)` needs no
-ledger at all. Rejected because it inverts the dependency, putting knowledge of every gatherer into
-the plugin's watch wiring, and because it has no answer for a consumer that fails: the notice is
-delivered once and gone, where a cursor keeps it until the consumer says it read it.
+**An event log with a per-consumer cursor.** Record every path a watcher sees, let each reader fold the
+events after its own position, and advance the position on success. Strictly more informative than a
+claim, and strictly more machinery for information no planned consumer reads: sequence numbers, a trim
+below the minimum committed position, and a cap that collapses the log when a burst outruns it. All
+three exist to bound a per-event record, and a claim is idempotent. The cursor's two real properties,
+that two readers over one population stay independent and that a failed reader loses nothing, are
+properties of a per-gatherer claim too.
 
-**Carry the delta on `RunContext`.** It is the value a round already threads everywhere. Rejected
-because the lifetimes do not match: `RunContext` is rebuilt per round from configuration, while the
-consumers are session-lived objects (the census, the facts writer) whose cursors have to outlive any
-one round to mean anything.
+**A destructive drain.** A round takes the accumulated changes and resets. Rejected because the class
+census reads the `classpath` corpus from both cadences, so a drain by whichever round arrives first
+leaves the other told that nothing moved while an unread class file sits on disk, and because a
+consumer that throws has to undo the drain by hand.
+
+**The watchers fold, and hand gatherers a key.** Simpler wiring, and wrong on ownership: the key is the
+key of the fact the gatherer writes, so the gatherer knows it and the watcher does not, and one corpus
+can feed readers at different grains. The `classpath` corpus feeding the census at root grain and the
+consumer-class recompile invalidation at file grain is the case that decides it.
+
+**The gatherers own the debounce as well as the fold.** They have the knowledge for the fold and not
+for the debounce: a gatherer is called by a round rather than deciding when to run, so it has no
+cadence of its own, and giving each an executor would put scheduling policy into `graphitron-model` and
+dissolve the no-overlap guarantee `DebounceExecutor`'s single thread provides. What the question did
+surface is that the debounce sits in the wrong place relative to the marking, which is fixed here
+whoever owns it.
+
+**Carry the marks on `RunContext`.** It is the value a round already threads everywhere. Rejected on
+lifetimes: `RunContext` is rebuilt per round from configuration, while a claim has to outlive any one
+round to mean anything.
 
 **Watch the local Maven repository too.** Registering the classpath jars' parent directories would let
-the delta cover jars as well, and a steady round would hash nothing at all. Rejected for now on two
-grounds: it makes the census's cache validity depend on watch soundness where today the census is
-self-validating by construction, and it extends the watch surface outside the project tree to a
-directory shared with every other build on the machine. The cheaper route to the same steady state is
-R620's, which establishes a jar's identity from what the resolver already recorded beside it.
+jars be observed, and a steady round would hash nothing. Rejected for now on two grounds: it makes the
+census's cache validity depend on watch soundness where today the census is self-validating by
+construction, and it extends the watch surface outside the project tree into a directory shared with
+every other build on the machine. The cheaper route to the same steady state is R620's.
 
-**A per-source content-hash cache in each gatherer, and no shared mechanism.** This is what R857 and
-R921 propose in their own scopes, and it works: it is strictly more trustworthy than a watcher,
-because it reads the bytes. It is also strictly more expensive, because it reads the bytes, and on the
-cadences those items are about the read is the whole cost. The two approaches are complementary rather
-than exclusive, which is why the fallback here *is* the per-source check.
+**A per-source content-hash cache in each gatherer, and no shared mechanism.** What R857 and R921
+propose in their own scopes, and it works: it is strictly more trustworthy than an observation, because
+it reads the bytes. It is also strictly more expensive, because it reads the bytes, and on the cadences
+those items are about the read is the whole cost. The two are complementary rather than exclusive,
+which is why the fallback here *is* the per-source check: an instance with no claim is read exactly as
+it is read today.
 
 ## Provenance
 
 Found while specifying R620, whose narrow question is why one round hashes the same jar set twice.
 Asked why the round has to hash at all, given that a watcher fired it and knew which file moved, the
 answer was that nothing carries the answer from one to the other. The dev session's own architecture
-discards it three times over. R857 and R921 are the same finding reached from two other stages, and
-both shrink substantially if this lands first.
+discards it three times over. R857 and R921 are the same finding reached from two other stages; R921's
+scope is taken over here, and R857 shrinks substantially if this lands first.

@@ -23,6 +23,18 @@ everything, because that is the walk that reconciles a store written by some oth
 every walk after it hashes only the files whose modification time moved, the way the classpath
 census already treats `target/classes`.
 
+> **Absorbed by R922, 2026-09-05.** This item's execution has moved into R922, which builds the
+> currency-claim mechanism and takes this refresh as its first client, so this file is a Backlog
+> tombstone: it stays as a redirect while R922 is in flight and deletes when R922 reaches Done. The
+> goal above is what R922 delivers for this cadence. Two things changed on the way. The cost this item
+> said Spec owed is now measured: 1,316 `.java` files and 6.0 MiB over `graphitron-sakila-example`'s
+> source roots, 151 ms cold and 30 to 46 ms warm per debounced save, so the item was worth keeping
+> rather than discarding. And the detector is a store-held claim rather than a modification time, which
+> retires the "why mtime is enough here" argument below: the claim is deleted by the watcher that saw
+> the file move, so nothing has to reason about timestamps. The finding under "Implementation sketch"
+> that the session record belongs to the writer rather than to the walker survives, and is answered
+> structurally there, a file whose store write failed being a file that holds no claim.
+
 ## What a save costs today
 
 `DevMojo.refreshSourceFacts` runs `SourceWalker.walkFiles` over `ctx.compileSourceRoots()` and hands
