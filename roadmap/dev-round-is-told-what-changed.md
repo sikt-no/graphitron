@@ -70,11 +70,16 @@ Five stages, each correct in isolation, each paying to learn something a watcher
    files, 6.3 MB, one `Files.walk` plus a size and a modification-time stat per file costs 24 ms on
    the first pass and 7 ms steady over thirty consecutive passes. That is 5.1 µs per class file, so
    the figure is a property of the consumer's compiled output rather than of this example. The jar
-   half of the same read costs 33 to 34 ms warm over fifteen jars, measured while specifying R620.
-2. **`StoreRefresh.freshSources`** hashes the same jars again, to decide which of the store's
-   classpath partitions it can keep. A *partition* is the rows one source owns in a relation shared
-   with other sources. So a warm round pays that 33 ms twice, which with the walk above is most of a
-   quiet round.
+   half of the same read cost 33 to 34 ms warm over fifteen jars when it was measured for R620, whose
+   implementation has since landed: an entry now carries a `ClasspathEntry.suppliedStamp` the plugin
+   fills from the resolver's own record, so most of that population is verified without being opened.
+   The directory walk beside it is untouched by that change and is the figure above.
+2. **`StoreRefresh.freshSources`** asks the same question of the same jars a second time, to decide
+   which of the store's classpath partitions it can keep. A *partition* is the rows one source owns
+   in a relation shared with other sources. R620 closed the duplicate hash by seeding
+   `ClasspathSources` with the stamps the census established for the round, so the second pass now
+   reads a memo rather than the bytes; what remains unconditional here is the question itself, asked
+   of every entry on every round.
 3. **`SchemaLoader.parsePerSource`** re-parses every schema document every round. There is no cache
    at all here, though the populations either side of it have one.
 4. **`JavaSourceFacts.refresh`** content-hashes every `.java` file under the compile source roots on
@@ -88,9 +93,9 @@ Five stages, each correct in isolation, each paying to learn something a watcher
    partition regardless of what changed, which then forces a full re-derivation of the
    materialization register downstream of it.
 
-Items 2, 3 and 5 are the passes R857 enumerates and item 1's jar half is R620. Each of those is the
-same defect seen from one stage, and this item is the shared cause: it builds the mechanism and takes
-item 4, which R921 filed, as its first client. Why that one rather than the cheaper-looking item 1 is
+Items 2, 3 and 5 are the passes R857 enumerates; item 1's jar half was R620's and has landed. Each of
+those is the same defect seen from one stage, and this item is the shared cause: it builds the
+mechanism and takes item 4, which R921 filed, as its first client. Why that one rather than item 1 is
 under "What this item adopts" below.
 
 ## The mechanism, and where its rows live
@@ -308,9 +313,11 @@ argument, and R620 is already working in that neighbourhood.
 
 **It does not remove the jar hash**, and the limit is structural. `resolveClasspathRoots` watches each
 reactor project's `target/classes` and nothing else; no watcher covers the local Maven repository, so a
-jar is never observed, never claimed, and therefore always stale. The content hash stays its only
-detector. Making that cheaper is R620's, through classpath entries that carry an identity their builder
-already recorded beside them.
+jar is never observed, never claimed, and therefore always stale. Establishing a jar's identity stays
+the classpath's own business, and R620 has landed the cheap way to do it: a classpath entry carries a
+stamp its builder already recorded beside the artifact, so the identity is read rather than computed.
+The two are complementary by construction, one supplying identity where nothing observes and the other
+supplying observation where identity is expensive.
 
 **It does not adopt `SchemaLoader.parsePerSource` or `StoreRefresh`.** Both are R857's, which is
 specifying the surrounding change; a schema document is a `store_source` instance of the `sdl` corpus,
@@ -444,9 +451,10 @@ grain's key shape.
 Each of the five stages can be fixed alone, and three items already propose to. The reason to build the
 shared mechanism is that each local fix buys a cache whose invalidation is a second heuristic, and the
 heuristics do not compose: R921 has to argue modification times are safe, R857 has to argue a recorded
-stamp can be read for a population it was not written for, and R620 has to thread one round's hashes
-from one consumer to another. Against a claim none of those arguments is needed, and the condition that
-replaces them is not a fourth heuristic but the crawler property the store already declares and gates.
+stamp can be read for a population it was not written for, and R620 had to thread one round's hashes
+from one consumer to another and to argue that a resolver's record may stand in for the bytes. Against
+a claim none of those arguments is needed, and the condition that replaces them is not a fourth
+heuristic but the crawler property the store already declares and gates.
 
 There is also a pattern here worth naming, because it predicts where the next instance appears. Every
 incremental cache in this tree justified its detector against the cost of the work it protects.
@@ -502,7 +510,8 @@ round to mean anything.
 jars be observed, and a steady round would hash nothing. Rejected for now on two grounds: it makes the
 census's cache validity depend on watch soundness where today the census is self-validating by
 construction, and it extends the watch surface outside the project tree into a directory shared with
-every other build on the machine. The cheaper route to the same steady state is R620's.
+every other build on the machine. R620 has already reached the same steady state more cheaply, by
+reading the identity the resolver recorded beside the artifact instead of watching for it to change.
 
 **A per-source content-hash cache in each gatherer, and no shared mechanism.** What R857 and R921
 propose in their own scopes, and it works: it is strictly more trustworthy than an observation, because
