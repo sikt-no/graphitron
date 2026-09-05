@@ -1556,7 +1556,7 @@ CREATE TABLE graphitron_connection (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_connection IS '@asConnection on a field: the macro''s spec, as authored. The expansion''s output is provenance-marked rows in the graphql_ tables, below.';
+COMMENT ON TABLE graphitron_connection IS '@asConnection on a field: the macro''s spec, as authored, and the whole of what the expansion reads. Its output is rows in the minted relations, keyed by this field''s own coordinate, and nothing it produces lands in the transcription.';
 COMMENT ON COLUMN graphitron_connection.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_connection.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_connection.field_name IS 'the field name within the owning type';
