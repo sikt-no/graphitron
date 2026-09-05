@@ -1,7 +1,7 @@
 ---
 id: R620
 title: "A round hashes a jar only when it must, and never twice"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 2
 theme: dev-loop
