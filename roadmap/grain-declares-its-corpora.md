@@ -78,9 +78,7 @@ is every corpus. For a crawler it is its own corpora, which is today's rule unch
 The gate becomes: **every corpus a grain declares must be within its relation's owner's reach**, with
 no exemption for anyone. It is identical to today's test for the 28 crawler-owned relations, and it is
 the first check the other 12 have ever had: a `graphitron`-owned grain may declare `sdl`, `catalog`, or
-both, and nothing else. It is also what makes R922's claim relation correct by gate rather than by
-exemption, since its `observation` owner reads no corpus and depends on none, so its reach is empty and
-its grain must declare no corpus, which is exactly the intent.
+both, and nothing else.
 
 ## The migration, and the rule that decides it
 
@@ -115,7 +113,7 @@ The remaining grains under corpus-less owners follow the same rule and the same 
 rewritten against reach and loses its exemption arm, so it now binds all 40 declared relations; a new
 case asserts the reach computation itself over the declared edges, including that a crawler's reach is
 its own corpora and that `derivation` reaches every corpus. A case asserts that a grain whose owner
-reaches no corpus declares none, which is the arm R922 depends on.
+reaches no corpus declares none, which is the empty arm the junction exists to admit.
 
 `MetaGrainCorpusTest` or an added case beside the roster gates: every grain row is reachable from at
 least one declared relation, so a grain declaring corpora nothing owns cannot accumulate; and the
@@ -130,11 +128,14 @@ gate's assertion description, which describes an exemption this item removes.
 
 ## Provenance
 
-Found while specifying R922, which needs a claim relation whose grain is one gatherer's currency on one
-instance of one corpus. That grain names its corpus per row and so has no single corpus of its own, and
-the first draft proposed making `meta_grain.corpus_name` nullable to admit it. A nullable column is the
-model saying the column does not belong on the relation, and the audit above says the same thing from
-the other direction: the column is already unchecked for 12 of 40 declared relations and already carries
-at least two values that are not true. R922 depends on this item rather than working around it, and the
-two are kept separate because this one changes a gated `meta_` relation every other item reads and is
-worth reviewing on those terms rather than inside a dev-loop item.
+Found while specifying R922, which at the time proposed a relation whose grain was one gatherer's
+currency on one instance of one corpus. That grain names its corpus per row and so has no single corpus
+of its own, and the first draft proposed making `meta_grain.corpus_name` nullable to admit it. A
+nullable column is the model saying the column does not belong on the relation, which is what prompted
+the audit above.
+
+R922 has since shed that relation entirely, so this item has no dependent and rests wholly on its own
+evidence, which is where its case always was: the column is already unchecked for 12 of 40 declared
+relations, and at least two of the values it carries are not true. Losing the dependent removes the
+schedule pressure and nothing else. The exemption that lets a third of the roster go unchecked is worth
+closing whether or not anything is waiting on it.
