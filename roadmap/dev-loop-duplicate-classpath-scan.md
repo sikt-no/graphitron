@@ -1,7 +1,7 @@
 ---
 id: R620
 title: "A round hashes a jar only when it must, and never twice"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 2
 theme: dev-loop
@@ -195,6 +195,12 @@ the Java-source population and on the `.java` cadence rather than the round's.
 Nothing in the tree reads it back today, so nothing changes; it is named because R643 is specified
 against that column, and a reader arriving from there should not have to rediscover which spelling
 it holds.
+
+Each of the three columns says which spelling it holds in its own DDL comment, which is where the
+store describes a column and where a reader looks before comparing one. That edits the DDL
+resource, so `store_stamp.ddl_hash` moves and an existing persisted store is discarded rather than
+migrated: the first round after this lands is a full one either way, and a discard is a superset of
+the re-walk declared above rather than a second cost.
 
 **`ClasspathSources`.** A constructor taking seed stamps, pre-populating the memo that `stamp`
 already reads. `StoreRefresh.freshSources` and `commitStamps` are then untouched: both call
