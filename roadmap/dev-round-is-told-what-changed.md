@@ -518,3 +518,104 @@ Asked why the round has to hash at all, given that a watcher fired it and knew w
 answer was that nothing carries the answer from one to the other. The dev session's own architecture
 discards it three times over. R857 and R921 are the same finding reached from two other stages; R921's
 scope is taken over here, and R857 shrinks substantially if this lands first.
+
+## Reviewer findings
+
+### Round 1 (2026-09-05, Spec -> Ready, reviewer session 01EBHF6eU9hfN88dLezaQ64k)
+
+Verdict: withhold. Two blocking findings, one on each gate question, and they are one seam seen from
+two sides: the mechanism is coherent, and the wiring the item specifies for its one adopting client
+does not yet realise it. Every symbol, method, relation, column and test class the spec names exists
+as named, bar the four small slips in the non-blocking list; the verification narrative is in this
+commit's message.
+
+The goal communicates. Stated without the plan sections: a developer running `graphitron:dev` will see
+each round's console line name the file that caused it rather than only announcing that a round
+happened, and the `.java` save cadence will stop content-hashing the whole source tree to find the one
+file the watcher already identified. The item is also honest about which half a developer feels, which
+is the console line and not the milliseconds, and that honesty is what makes the second half's real
+case (the mechanism, proved against a declared crawler) legible rather than oversold.
+
+**Blocking, question 1: `read_at` is written only where `rewrite` runs, so a file that is verified and
+found unchanged never becomes trusted, and over a warm store the adoption saves nothing.**
+`JavaSourceFacts.refresh` hashes each walked file, `continue`s past it when the hash equals the stamp
+the store recorded, and opens `dsl.transaction(tx -> rewrite(tx.dsl(), file, stamp))` only on a
+mismatch. "Implementation" has `JavaSourceFacts` write "the new `read_at` through the transaction
+`rewrite` already opens", and "Tests" confirms the marked-but-unchanged file is "not rewritten". So the
+only files that ever carry a `read_at` above this session's floor are the ones whose content differed
+from what the store held.
+
+Three things follow, in increasing order of severity. First, the mechanism's own claim that "trust then
+rebuilds instance by instance as the next verifying pass writes fresh `read_at` values, so an overflow
+costs one pass rather than the rest of the session" requires a verifying pass to write `read_at` for
+files it verified without rewriting. It does not, so an overflow in a workspace nobody is editing costs
+exactly what that bullet says it does not, the rest of the session. "A false mark is cheap" is cheap
+once and permanent thereafter: the file marked by a save that changed nothing is re-hashed on every
+later refresh for the life of the session, never regaining trust.
+
+Second, and this is the one that decides the finding, the item saves nothing at all in the session shape
+it is written for. A dev session over a warm store is the case `JavaSourceFacts`' class javadoc calls out
+by name, "what makes a cold dev session over a warm store cheap ... the store already agrees and nothing
+is written". The startup seed (`refreshSourceFacts(initialCtx, false)`) hashes all 1,316 files, rewrites
+none, and writes no `read_at`. Every save after it therefore finds every file's `read_at` below the boot
+floor, distrusts the whole corpus, and hashes the whole tree exactly as today. The 30 to 46 ms the item
+is measured against survives untouched wherever the store was already warm, which is every dev session
+after the first on a workspace. R620's changelog entry states the outcome this item was expected to
+reach, "a steady-state round hashes nothing"; as specified it reaches that only in a session whose store
+started cold, and there only for the files that first pass happened to rewrite.
+
+Third, the specified test cannot see any of it. "A second refresh over an unchanged walk under
+observation hashes nothing and writes nothing" passes when the first refresh ran against a cold store,
+because then every file was rewritten and every `read_at` written. It is green on the arm that works and
+silent on the arm that does not, which is worse than no coverage.
+
+What would satisfy the finding is stating where `read_at` moves for a file that was hashed and found
+equal to its stamp. That file's content *was* read, and the stamp it still carries is vouched for by that
+read, so the currency the column records is genuinely established; what is missing is a write, on a path
+that today writes nothing on its common arm. The shape is a design call and the author's: a transaction
+per verified file, a single batched update at the end of the walk against instants taken before each hash,
+or something else. Whichever it is has to preserve what the current sentence buys, that a file whose
+rewrite the store refused keeps the `read_at` it had, because the verified-unchanged file and the
+refused-rewrite file now sit on the same path and need opposite outcomes. The test that separates the two
+is a refresh over a *warm* store, where nothing is rewritten, followed by one save: the neighbours must
+not be hashed.
+
+**Blocking, question 2: the floor is established where the item wires registration, which is not where
+watching begins, so the startup seed writes trusted `read_at` for a corpus nothing is watching yet.** The
+mechanism defines a floor as "the instant this process began watching" a corpus, and `register` both
+validates the corpus and establishes its floor. The implementation then places registration somewhere
+else: `JavaSourceFacts` "registers the `java-source` corpus at file grain", and `DevMojo` constructs
+`JavaSourceFacts` off `sessionStore.dsl()` early, before `bindServer`, while the source watcher is
+constructed much later in the watcher-start block. The seed `refreshSourceFacts(initialCtx, false)` runs
+between the two.
+
+Over a cold store that seed writes a fresh `read_at` for every source file, above a floor established for
+a corpus with no watcher behind it. A `.java` file saved in that window is unobserved, and the LSP is
+already bound by then so an editor is already attached. That file reads as trusted for the rest of the
+session while the store holds declarations from before the edit, and since this family feeds
+goto-definition and hover, the symptom is positions that silently disagree with the file, healed only by
+restarting the session. This is precisely the hole the floor rule closes correctly one paragraph earlier
+for the between-sessions case, reappearing inside a session because two events the mechanism treats as
+one are wired apart.
+
+What would satisfy it is making the floor and the start of watching the same event, so that no `read_at`
+written while a corpus's watcher is not yet running can ever sit above that corpus's floor. Registering a
+corpus when its watcher starts, holding the seed until after the watchers are up, or having watcher start
+raise the floor are all available; choosing among them is the author's, and the choice interacts with the
+first finding, since the seed is also where the warm-store case would otherwise establish trust.
+
+**Non-blocking.** Four slips in the implementation instructions, left for the author rather than
+corrected here only because they sit in the same sections being revised. `JavaSourceFactsTest` is in the
+`graphitron` module, not `graphitron-model`
+(`graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/JavaSourceFactsTest.java`, carrying
+`@UnitTier`); `graphitron-model`'s own tests carry no tier annotation at all, so `ObservationTest` there
+is that module's plain unit tests. `ClasspathSources` lives in `no.sikt.graphitron.model.sources`, not
+the `no.sikt.graphitron.model.capture` heading it is filed under. `SchemaWatcher` has three public
+constructors, not four. The DDL declares 209 foreign keys, not 205.
+
+Two smaller things, neither of which changes what gets built. `dev-loop-internals.adoc` opens "The dev
+goal runs five cooperating components", a count in prose beside the list the item plans to extend. And
+`ClasspathSources` "writes `store_source.read_at` where it writes the stamp", which is commit time,
+while the item's own rule takes the instant before the read; nothing reads that column until R857 adopts
+it, so it is inert here, but the column would be born holding the value `ObservationTest`'s read-window
+case exists to forbid.
