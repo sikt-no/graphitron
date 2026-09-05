@@ -7,7 +7,7 @@ priority: 3
 theme: classification-model
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-02
+last-updated: 2026-09-05
 ---
 
 # Planners read facts, emitters read commands: dissolve the walk and the leaf zoo
@@ -3707,6 +3707,51 @@ each fails exactly the cases that name it.
 
 **Next** is the argument arm as the increment above states it, now that the slots it pairs against
 are a relation.
+
+### Conditions, twenty-seventh increment: the Java type a scalar's value arrives as
+
+**Shipped.** `intent_scalar_java_type`, keyed on the graph and the scalar: which Java type
+graphql-java's coercion hands a resolver for a value of that scalar. It comes before the argument
+arm because three of that arm's four branches compare a Java type against a slot's, and the store
+could not name a slot's. Two populations answer and the relation is one, a reader asking what type
+rather than which rule found it: the engine's scalars are a closed list, the five the specification
+defines and the seven the federation link renames, and a consumer's scalar names a constant.
+
+**The reading the census could not do.** A scalar constant's declared type is `GraphQLScalarType`
+whatever it coerces to, so the classfile scan sees one descriptor for all of them, and which
+`Coercing` a constant holds is decided by its class initialiser. So `jvm_scalar_type_field` gains
+`input_type`, read by loading the class through the same codegen classpath the catalog came from.
+The scanner stays parse-only and `ScalarConstantInput` holds the load, which keeps the corpus
+reading in the gatherer that declares the classpath as its corpus. Every way the read comes up
+empty is one answer, null, and the resolver that tells them apart is the build's.
+
+**A closed vocabulary spelled twice, and held.** The engine's twelve names live in the view body
+and in `ScalarTypeResolver`'s tables, and they have to: the relation is evaluated inside the store
+where the resolver is not reachable. A gate reads the list back out of the live view definition and
+holds it against the resolver's own, name for name and type for type.
+
+**Read cost, and a shape the doctrine already names.** Reading the relation whole costs 0.3, 0.5
+and 1.5 milliseconds against graphs of 25, 100 and 400 declared scalars. That is the second
+measurement: matching the census on a concatenation of its two key columns cost 1.1, 4.8 and 48
+over the same three, the quadratic a derived relation joined on an expression pays. So
+`graphitron_scalar_type` now stores the two halves of its reference, split by the grammar that
+already owns that split, and the join is an equi-join on the census's own key. No registration.
+
+**Coverage: nine seeded cases, three over a real capture, five mutations.** The seeded tier carries
+both arms, the kind guard, the three silences a consumer scalar can fall into and the partition.
+The capture cases exist because the two readings have to meet: the census records a constant by
+parsing a classfile and the type comes off a loaded one, and a disagreement about the constant's
+identity answers silence, which reads exactly like a scalar that honestly resolves to nothing. One
+of them holds the store's answer against the resolver's for the same constant. The mutations are an
+engine arm ignoring the kind, an admitted null type, a census unscoped to the graph's sources, a
+name in the view the resolver does not know, and a read that reports the declared type instead of
+the coercing's; each fails exactly the cases that name it.
+
+**Next** is the argument arm itself, now that both halves of the comparison are relations: the slot
+and its type from the previous increment, the parameter and its type from
+`intent_condition_param_extraction`, and the scalar mapping between them from this one. Four
+branches, and the reachability search behind two of them reads input-object structure, which
+`intent_input_occurrence_path` already carries.
 
 ### Emitter half: family by family
 
