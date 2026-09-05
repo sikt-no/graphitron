@@ -1,7 +1,7 @@
 ---
 id: R905
 title: "A polymorphic-connection execution test asserts over an unfiltered root field and races sibling film inserts"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: testing
@@ -126,12 +126,29 @@ not a table count; `TenantDivinedRoutingExecutionTest` and `RootLauncherSqlBasel
 vehicle and assert on connection pinning and rejection messages rather than on rows; the SQL
 baseline classes assert emitted SQL.
 
-One candidate was tested and refuted rather than assumed.
+One candidate reads like the same defect and is not, for a reason worth recording precisely,
+because the reason is a standing constraint rather than a property of the query.
 `filmsFaceted_selectionGate_unselectedFacetContributesNoArm` asserts exactly three rating groups
-over an unbounded `filmsFaceted`, which reads like the same defect. It is not: the non-null-element
-facet appends `AND col IS NOT NULL` to its arm, so a stray film's NULL rating cannot open a fourth
-group, and no write path in the module sets `rating` at all. Verified by inserting a
-null-`release_year`, null-`rating` film and watching the case pass.
+over an unbounded `filmsFaceted`. The governing fact is the column default: `init.sql` declares
+`rating mpaa_rating DEFAULT 'G'`, and `createFilm_omittedFieldUsesColumnDefault` pins that an
+omitted input field binds `DSL.defaultValue()` rather than a typed null, so a film another class
+inserts without naming a rating is G-rated. `G` is already one of the seed's three groups, so a
+stray row joins a group instead of opening one and the group count stays at three.
+
+What that leaves is a constraint, not immunity: no fixture in the module names a rating, and the
+day one names `R` or `PG-13` a fourth group opens and the case goes red. Both halves were run
+rather than argued. A film inserted the way the module's writers insert them, with `rating`
+omitted, lands as `G` and the case passes; the same film inserted with `rating = 'R'` fails it at
+`Expected size: 3 but was: 4`. A writer that starts naming ratings has to revisit this case, which
+is the same form `filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate` and its two
+siblings already use for the same column.
+
+The `IS NOT NULL` scrub on the non-null-element facet is real, and `FilmFacetFilter.rating`'s SDL
+comment says so, but it is not what protects this case: it never fires on a row this module
+writes, because the default means no such row carries a NULL rating. Bounding the query instead of
+documenting the constraint is not available here the way it is for the facet cases above: this
+case asserts its single aggregate has no `length` grouping, and an `extra: {lengthIs: [...]}` bound
+would put that column into the SQL it inspects.
 
 ## Tests (delivered)
 
@@ -224,6 +241,28 @@ fixture names a rating; then either re-run the probe with a default-rating film,
 shape a writer actually produces, or drop the probe claim rather than let it stand as evidence for
 something it did not test. Enforcing that constraint mechanically rather than documenting it would
 be a fresh Backlog item, not this one.
+
+**Response.** Fixed as asked; the finding is right, and it also caught a second error in the same
+entry. The audit entry now states the governing fact (the `DEFAULT 'G'` column default, with
+`createFilm_omittedFieldUsesColumnDefault` as the pin that an omitted field binds it) and the
+standing constraint that leaves (no fixture names a rating; one that names `R` or `PG-13` turns
+the case red), in the form the three `filmsOrderedConnection` / `filmsFaceted` siblings already
+use for this column. The `IS NOT NULL` claim is demoted to what it is: real, but never firing on a
+row this module writes.
+
+The second error was in the probe's description rather than only its reasoning. The original probe
+inserted `(title, language_id)` and omitted `rating`, so the column default applied and the row was
+G-rated. It did test the shape a writer produces, and the entry then reported it as a
+null-`rating` row, so the recorded evidence misdescribed a probe that was itself sound. Both
+shapes have now been run and are recorded as run: `rating` omitted lands as `G` and the case
+passes, `rating = 'R'` fails it at `Expected size: 3 but was: 4`. That puts the standing
+constraint on measurement rather than on prediction.
+
+No code changed, so the delivered tree is unchanged from the round under review. Not done here,
+per the finding's own scoping: bounding this case's query is unavailable, because an
+`extra: {lengthIs: [...]}` base would put `length` into the SQL the case inspects and that is the
+thing it asserts about; and enforcing the constraint mechanically is left unfiled rather than
+smuggled into this item.
 
 Verified along the way and not in question: the primary case keys both paths to the five seed
 titles through `seedFilmSummaryLeaf` and keeps nulls, so a missing diverging leaf fails an
