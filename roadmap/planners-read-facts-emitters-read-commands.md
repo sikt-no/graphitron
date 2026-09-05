@@ -3735,7 +3735,16 @@ and 1.5 milliseconds against graphs of 25, 100 and 400 declared scalars. That is
 measurement: matching the census on a concatenation of its two key columns cost 1.1, 4.8 and 48
 over the same three, the quadratic a derived relation joined on an expression pays. So
 `graphitron_scalar_type` now stores the two halves of its reference, split by the grammar that
-already owns that split, and the join is an equi-join on the census's own key. No registration.
+already owns that split, and the join is an equi-join on the census's own key. R876 names that
+shape as one of the two defects behind the fact model's expensive reads, and the fix here is the
+one it prescribes: correct the model at the source rather than store the result.
+
+**Where the relation lives, asked rather than defaulted.** It bottoms out in `graphql_`,
+`graphitron_` and `jvm_`, so it crosses three families and its owner is the gatherer that runs
+last, which is what `intent_` and the derivation gatherer are. R876 is collapsing that gatherer
+into `graphitron` on the ground that landing in `intent_` had become a default rather than a
+choice; a crossing rule moves with the rest when that lands, so this one sits where the tree puts
+crossing rules today.
 
 **Coverage: nine seeded cases, three over a real capture, five mutations.** The seeded tier carries
 both arms, the kind guard, the three silences a consumer scalar can fall into and the partition.
