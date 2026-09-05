@@ -7,7 +7,7 @@ priority: 3
 theme: testing
 depends-on: []
 created: 2026-08-22
-last-updated: 2026-08-22
+last-updated: 2026-09-05
 ---
 
 # A bridging-condition split-table execution case returns a second actor only in a full-module run
@@ -36,6 +36,15 @@ A second order-dependent failure surfaced in the same session, in `graphitron-ls
 in common with this one beyond being order-dependent; it is filed as
 `roadmap/trace-static-state-leaks-between-cases.md`. Two in three full builds is what says the suite
 has such cases rather than one unlucky test, which is the reason both are items instead of re-runs.
+
+A second case in the same class showed the same shape on 2026-09-05:
+`GraphQLQueryTest.referenceFilter_reverseDirectionFkHop_matchesEachParentOnce` expected `[1, 2, 3]`
+and got `[1, 2, 3, 4]` in a full `mvnd install -Plocal-db`, then passed the whole class, 409 tests,
+on the same commit. That is one row too many again, in a different shape: a reference filter over a
+reverse-direction foreign-key hop rather than a bridged split-table join. The two cases share the
+suite and the module and not the feature, which points the search at residual rows over any one
+rule's predicate, and says the exact-list assertions in this class are reading a table other cases
+write.
 
 Found while holding the In Review gate on the inlay enforcer item, which is unrelated to this
 module; filed rather than folded into that verdict.
