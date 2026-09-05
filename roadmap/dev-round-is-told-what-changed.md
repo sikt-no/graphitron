@@ -1,7 +1,7 @@
 ---
 id: R922
 title: "A dev round is told what changed instead of rediscovering it"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: dev-loop
@@ -700,3 +700,43 @@ bare number here; R924 carries the count and is repointed at `meta_relation_refe
 and the review's figure disagree by one and the view is that item's own source of truth either way.
 
 The warm-store arm the finding named is now the case the adoption is judged on.
+
+### Round 2 (2026-09-05, Spec -> Ready, reviewer session 01EBHF6eU9hfN88dLezaQ64k)
+
+Verdict: sign off. Both round-1 findings are answered at the level they were raised, and each answer is
+stated where the next reader will need it rather than only where the finding landed.
+
+Finding 1 is resolved by making verification the write, not the rewrite. "The mechanism" now carries the
+general form, which is the right home for it: the same slip is available to every later adopter, and the
+paragraph names the arm that made it invisible, a store that already agrees. The adoption has two write
+arms, `rewrite`'s own transaction where the content differed and one batched update where it matched, and
+they are disjoint in exactly the way the refused-write property needs, so a file whose rewrite the store
+rejected is on neither and keeps the `read_at` it had. Traced against the tree: the pass instant taken in
+`refreshSourceFacts` before `SourceWalker.walkFiles` and passed into `refresh` precedes every read the
+pass makes, including the hash, since `ClasspathSources.hash` reads bytes whether or not the walker's
+mtime cache re-parsed the file. The warm-store sequence now closes: watcher up, floor raised, seed hashes
+all 1,316 files, matches every stamp, and writes the pass instant above the floor, so the next save hashes
+the saved file alone. Making the seeded warm store the case the adoption is judged on, with the seeding
+named as the test rather than as fixture detail, is what stops the earlier green-for-the-wrong-reason
+assertion from coming back.
+
+Finding 2 is resolved by splitting declaration from observation, and the split is better than the fix the
+finding asked for. `register` records scope and fold; `observing(corpus)` raises the floor once a
+watcher's `WatchService` registrations are in place; until then `trusts` answers false for the whole
+corpus. Soundness now holds under any startup order, and the new claim bullet says so as a consequence of
+the comparison rather than as a rule to remember, which is the same move the rest of that section makes.
+The seed's move is then a scheduling choice and is argued as one. Checked against `DevMojo`: the seed sits
+at `refreshSourceFacts(initialCtx, false)` before `maybeStartIncrementalCompiler`, the three watcher
+starts follow, and the "LSP listening" line follows those, so the move keeps the seed inside startup and
+ahead of the line a developer waits for, as the item claims.
+
+Every corrected slip checks out: `JavaSourceFactsTest` at the path and annotation given,
+`ClasspathSources` in `no.sikt.graphitron.model.sources`, three public `SchemaWatcher` constructors, and
+the foreign-key count deferred to `meta_relation_reference`, which is the right answer to a number two
+counts disagreed on. `refresh`'s new instant parameter has one main-source caller and one test-support
+caller, so the parameter is cheap.
+
+Two things left to the implementer, neither a fork: how a `SchemaWatcher` names the corpus it calls
+`observing` and `lose` for, since one class serves three corpora and the registered scope already maps
+roots to corpora; and what instant the no-observation path passes, that path hashing everything by
+definition.
