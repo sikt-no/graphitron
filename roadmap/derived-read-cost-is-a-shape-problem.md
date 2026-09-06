@@ -626,6 +626,68 @@ which an illegal state can be refused, and
 `roadmap/audits/2026-09-06-graphitron-family-grain-inventory.md` places every relation of both
 families against them and measures the dependency graph.
 
+### Note from another session, 2026-09-06: which gatherer writes an entry
+
+> Offered to whoever holds this item rather than adopted into its plan. Raised by session
+> `01QDMJx75yxRTJACZ9fW2D5S` while mapping the incremental-refresh arc; adopt it, refuse it or defer
+> it as the arc's own sequencing decides.
+
+The pattern above settles what an entry is and what an anchor is. It does not settle which gatherer
+writes each half, and the answer may not be the same for both.
+
+An entry asks nothing of the directive: it joins nothing, resolves nothing, defaults nothing, and
+reads no corpus but the document the directive sits in. So an entry needs only what `SdlFactCapture`
+is already holding while it walks. An anchor is the opposite shape: `Nodes.derive` joins
+`graphitron_node_entry` against `sql_node_metadata`, a different corpus, and could not run inside a
+walk at all.
+
+Both halves sit on the store side of that line today, and the entry half pays for it. Follow
+`@node(typeId:)` through the tree:
+
+1. `SdlFactCapture` holds the parsed `Value` and prints it, `AstPrinter.printAstCompact`, into
+   `graphql_type_directive_arg.value_sdl`.
+2. `GraphitronFactCapture` reads the string back, rebuilds a synthetic `graphql.language.Directive`
+   by calling `Parser.parseValue` per argument in its own `directive(name, location, stored)` helper,
+   and writes `graphitron_node_entry` from it.
+3. `Nodes.derive` joins that entry against the catalog to produce the `graphitron_node` anchor.
+
+Step 3 needs the store. Step 2 is a print-then-reparse whose only output is a column step 1 already
+had in a local variable.
+
+Three things follow if the entry half is written by the walk instead.
+
+**R713's two remaining alternatives stop being needed.** Both of them, structuring the value at
+capture as a tree of value-node rows and leaving it as text to be parsed inside an H2 function, exist
+to serve a decode that reads printed literals back out of the store. Entry relations already are the
+structured form, one per directive with meaningful column names, and an anchor reads entry columns
+rather than `value_sdl`, which `Nodes.derive` demonstrates. If every graphitron directive gets an
+entry the walk writes, `Parser.parseValue` and the decoder's twelve `graphql.language` and two
+`graphql.parser` imports go with it, and the value-literal parser R713 costs out never has to be
+written.
+
+**A gate this item narrowed could be widened again.** `b5c9ff262` cut
+`CaptureCorpusIsolationTest.SDL_FAMILIES` to `graphql_` alone, which was right: a gatherer that reads
+the store may legitimately read the catalog, so the family as a whole stopped being holdable to
+catalog-independence. An entry written by the walk is holdable to it and could rejoin the gate's
+scope, which is a check recovered rather than a tidiness gain.
+
+**The standing counter-argument does not reach entries.** `GraphitronFactCapture`'s own javadoc
+argues against callback-driven decoding, that such a decode "can only ever see what the walk holds at
+that instant" and "cannot join the coordinate it is decoding against anything". That is exactly right
+about anchors and says nothing about entries, which join nothing by construction. The javadoc predates
+the entry and anchor names and speaks about the family as one undivided thing.
+
+One consequence for the arc's own sequencing, offered as the reason this is worth reading before the
+next relation rather than after the last one: the note argues the entry half is cheaper to write in
+the walk than in the gatherer, so a relation landed as a gatherer-written entry now is a relation that
+moves later.
+
+Two claims in `docs/architecture/explanation/fact-model.adoc` went stale when this item split the
+gatherers, and would mislead the next reader of that page. Its ownership section still says
+`GraphitronFactCapture` is a field of `SdlFactCapture`, constructed by it and writing through the same
+sink; its corpus-isolation section still says the gate holds every `graphitron_` relation to identical
+rows with and without a catalog. Neither has been true since 2026-08-31.
+
 ### The element family, and what minting writes into it
 
 **The anchor is the element family mirrored, one relation per element kind.** `graphitron_element`
