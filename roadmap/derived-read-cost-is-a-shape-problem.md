@@ -407,11 +407,11 @@ declared now is the one that will still be right.
 
 **What the arc still owes**, in the order the dependencies force:
 
-1. The element family, described below: the anchors `graphitron_type`, `graphitron_field` and
-   `graphitron_argument` under the supertype `graphitron_element`, fed by three minted relations that
-   carry the coining coordinate in their key. The relation that shipped as `graphitron_field` is
-   renamed `graphitron_field_table` to free the name, and repoints onto the field anchor along with
-   `graphitron_field_navigation`.
+1. The type hierarchy, described below. A type is bound or it is not, it is a node or it is not, it
+   has participants or it does not, and those are subtypes of `graphitron_type` rather than columns
+   or conventions. One rung is built already and undeclared; two more are foreign keys the store can
+   take for free; and `intent_resolved_type_binding` dissolves, being a union that lets a routine's
+   result pass for a type binding.
 2. The route family, described below, which now carries three things that were separate: the target
    fact onto the field anchor, Route and Step as grains of their own with `graphitron_field_table`
    dissolving into them, and the entry-and-match pairing named, which is where
@@ -460,10 +460,13 @@ lets a rule about the well-formed schema join matches and never filter, makes th
 anti-join at the application grain, and leaves a schema with one unresolvable application still
 capturing everything else.
 
-One thing does not wait for any of that, because it is not a modelling preference: fifteen of the
-twenty-five `intent_` tables carry no primary key at all and are exactly the materialization targets,
-so nothing refuses a duplicate row in them and the gate that checks a key against its grain is
-vacuous on every one.
+7. Whatever of the materialization targets is still standing. Fifteen of the twenty-five `intent_`
+   tables carry no primary key at all and are exactly those targets, so nothing refuses a duplicate
+   row in them and the gate that checks a key against its grain is vacuous on every one. That is a
+   real hole and it is deliberately last: the register is item 6's subject and most of these
+   dissolve with it, so keying them now would be hardening relations on their way out. The existing
+   tests carry their correctness until then, and what has not dissolved when the arc reaches this
+   point gets a key and a grain.
 
 **There is no capture gap in this arc, and the one candidate turned out not to be one.** An earlier
 draft of this list named the written order of directive applications as the single fact a gatherer
@@ -670,6 +673,53 @@ section had open rather than opening one: union members and interface implementa
 coordinate at all by the specification's own note, so a macro that adds one could never be modelled
 at this grain, and `graphql_poly_member` sitting outside the family is conformance rather than a
 gap.
+
+### The type hierarchy
+
+A field has one type, possibly wrapped, and that type is a scalar, an object, an interface, a union
+or an enum. Objects and interfaces can be bound to a table. Interfaces and unions have participants,
+which can themselves be bound. So the type is a supertype with subtypes, and `INTERFACE` sits in two
+of them at once, which is why no partition of type kinds has ever held and why `tablefield` and
+`nestingfield` would not sit still as kinds of field.
+
+**Boundness is one fact and only `@table` states it.** A routine is an operation, not a binding: it
+produces rows, and the shape of those rows is not a property of the type the field returns. The store
+currently says otherwise. `intent_resolved_type_binding` is `intent_bound_table UNION
+intent_routine_return_binding`, which exists so that a routine's result can be read wherever a type
+binding is read, and it is a category error rather than a convenience. It dissolves. What replaces it
+is not another binding but the field-level fact it was standing in for: where a field's rows come
+from, which is the enclosing type's binding when there is one and the enclosing field's operation
+when there is not.
+
+That also settles the target vocabulary, which has been three-and-a-half things for several rounds. A
+field's target type is bound, or it is an unbound object, or it is a leaf. `resultfield` is not a
+fourth: it names a field whose operation set includes a routine, so it belongs on the operation axis
+and not on the target axis at all.
+
+**One rung of the hierarchy is already enforced and nowhere stated.** `graphitron_node` keys into
+`graphitron_tabletype` rather than into the type element, so nodehood presupposes boundness
+structurally and an unbound node is already unwritable. That is the shape the other rungs want, and
+it is worth naming because it was arrived at once and not generalised.
+
+**Two refusals the store can take for free.** `graphitron_tabletype` keys into
+`graphql_type_element` with no kind constraint at all, so a union, a scalar or an enum can be
+table-bound and nothing refuses it. And `graphql_poly_member` carries `CHECK (container_kind IN
+('UNION', 'INTERFACE'))`, but the kind rides the member row with nothing tying it to the container's
+real kind, so a member may claim `UNION` for a type the anchor calls an object. Both are the same
+fix: a unique on `(graph_name, type_name, kind)` at the anchor, and a composite reference to that
+pair from each subtype with its own kind check. No new relation, one unique and a few foreign keys,
+and four illegal states stop being writable.
+
+**The hierarchy spans two families, and that is the naming rule working rather than an exception.**
+Participants are `graphql_poly_member` because `union X = A | B` is a fact in GraphQL's vocabulary;
+boundness and nodehood are graphitron's because `@table` and `@node` are. A family states whose
+semantics its rows are written in, which the architecture docs already say under stratum three, and
+the hierarchy crossing a family boundary is that rule holding rather than bending.
+
+**What gets renamed.** Grain first: `graphitron_type_table` and `graphitron_type_node` for the
+anchors, `graphitron_type_table_entry` and `graphitron_type_node_entry` for the decodes, retiring
+`graphitron_tabletype`, `graphitron_node` and `graphitron_table`. Declared together with their
+grains, so the pass that follows has a worked example of the rule rather than a rule and no example.
 
 ### The route family, and the grains it hangs off
 
