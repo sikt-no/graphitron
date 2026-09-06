@@ -1215,6 +1215,29 @@ COMMENT ON COLUMN graphitron_argument_condition_context_arg.argument_name IS 'th
 COMMENT ON COLUMN graphitron_argument_condition_context_arg.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_argument_condition_context_arg.name IS 'the context argument name as written';
 
+CREATE TABLE graphitron_field_chain_application (
+  graph_name     VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  field_name     VARCHAR NOT NULL,
+  chain_position INT     NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, chain_position),
+  UNIQUE (graph_name, type_name, field_name, directive_name, ordinal),
+  FOREIGN KEY (graph_name, type_name, field_name, directive_name, ordinal)
+    REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal)
+    ON DELETE CASCADE,
+  CHECK (chain_position >= 0),
+  CHECK (directive_name IN ('reference', 'routine'))
+);
+COMMENT ON TABLE graphitron_field_chain_application IS 'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0. For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.';
+COMMENT ON COLUMN graphitron_field_chain_application.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_chain_application.type_name IS 'the type owning the field the application sits on';
+COMMENT ON COLUMN graphitron_field_chain_application.field_name IS 'the field the application sits on; with the two columns above, the coordinate whose chain this row is a step of';
+COMMENT ON COLUMN graphitron_field_chain_application.chain_position IS 'the application''s place in the written order, dense from 0 across every directive that contributes to the chain. The manual states the order is load-bearing and the decode relations cannot carry it: each numbers its own applications, so @reference#0, @routine#0 and @reference#1 are three ordinals in two relations with no relation between them. In the key, so two applications at one position are unwritable rather than merely unexpected';
+COMMENT ON COLUMN graphitron_field_chain_application.directive_name IS 'which directive this application is of, in graphql_directive''s spelling. Two contribute: @reference adds hops and @routine adds its result table as a node. @referenceFor does not, being one participant''s own path rather than the field''s chain, which is why it is a route of its own and not a step of this one';
+COMMENT ON COLUMN graphitron_field_chain_application.ordinal IS 'that directive''s own ordinal at this coordinate, which is the join down to the decode relation carrying what the application says. Unique with the coordinate and the directive name, so one application cannot occupy two positions, and a foreign key into graphql_field_directive, so a position cannot be minted for an application nobody wrote';
+
 CREATE TABLE graphitron_field_reference (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -10396,6 +10419,9 @@ INSERT INTO meta_grain VALUES
   ('minted-conflict',
    'one coordinate several macro applications would mint and disagree about, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('field-chain-application',
+   'one directive application composing one field''s table chain, at its place in the written order',
+   'graph_name, type_name, field_name, chain_position', 'sdl'),
   ('minted-type', 'one type one macro application would add to one graph',
    'graph_name, source_coordinate, type_name', 'sdl'),
   ('minted-field',
@@ -10485,6 +10511,10 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
+  ('graphitron_field_chain_application', 'field-chain-application', 'graphitron',
+   'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0.',
+   'For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.',
+   'The written order across directive names, which the manual states is load-bearing and which no relation carried. The decode relations each number their own applications, so the order between them was recoverable only by comparing source positions, and the one reader that recovers it gets it wrong: intent_field_chain_node anchors on the routine and admits only applications following it, so on the manual''s own sandwich example it reports two nodes where the manual describes four, the hop written before the routine being excluded by the predicate. The order was captured all along, in graphql_field_directive, which holds every application with its position; what was missing is a relation that states it, so a reader joins the answer instead of re-ranking by position, on the terms graphitron_field_navigation''s comment sets out. The population is the two directives that contribute a node, and @referenceFor is deliberately not among them: it is one participant''s own path rather than the field''s chain, so it is a route of its own.'),
   ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',

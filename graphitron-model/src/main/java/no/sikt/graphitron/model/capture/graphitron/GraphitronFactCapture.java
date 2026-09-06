@@ -16,6 +16,7 @@ import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.ElementAnchors;
+import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -187,6 +188,9 @@ public final class GraphitronFactCapture {
         // driven by the graphitron_connection rows the decode above just produced, and the
         // navigation rule is stated over the population expansion completes.
         sink.flush();
+        // First of the gatherer's own stages: it reads the transcription alone, and the written
+        // order of a field's applications is what everything below that walks a chain wants.
+        FieldChainApplications.derive(dsl, graphName);
         TableTypes.derive(dsl, graphName);
         Nodes.derive(dsl, graphName);
         NodeKeyColumns.derive(dsl, graphName);

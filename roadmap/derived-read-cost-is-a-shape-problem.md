@@ -601,12 +601,24 @@ declared now is the one that will still be right.
 6. The register, which is downstream of all of it and is where this item's own thesis is settled: a
    registration either has no rule left to buy or it is re-argued on its own evidence.
 
-Two things do not wait for that order, because neither is a modelling preference. Fifteen of the
+One thing does not wait for that order, because it is not a modelling preference: fifteen of the
 twenty-five `intent_` tables carry no primary key at all and are exactly the materialization targets,
 so nothing refuses a duplicate row in them and the gate that checks a key against its grain is
-vacuous on every one. And the written order of directive applications across directive names is the
-one fact in this whole arc that a gatherer stage cannot read out of what is already captured; it has
-a measured symptom in the chain walk and item 2 is blocked behind it.
+vacuous on every one.
+
+**There is no capture gap in this arc, and the one candidate turned out not to be one.** An earlier
+draft of this list named the written order of directive applications as the single fact a gatherer
+stage could not read out of what is already captured. It can. `graphql_field_directive` holds every
+application with its source position, so the order is a rank over those positions; measured on the
+manual's own sandwich, ranking them yields `@reference#0`, `@routine#0`, `@reference#1` in exactly
+the written order. The chain walk reports two nodes where the manual describes four not because the
+fact is absent but because it reads the per-directive decodes and anchors on the routine, admitting
+only applications that follow it.
+
+`graphitron_field_chain_application` states the order as rows, which is worth doing on
+`graphitron_field_navigation`'s terms, a reader joining the answer rather than re-ranking by
+position. But it is placement, not capture, and with it the claim holds without exception: every
+relation this arc owes is a fact the gatherer already has in hand, written down at a named grain.
 
 The evidence for the ordering is in two audits:
 `roadmap/audits/2026-09-05-coordinate-facts-as-relations.md` names the grains and the four tiers at

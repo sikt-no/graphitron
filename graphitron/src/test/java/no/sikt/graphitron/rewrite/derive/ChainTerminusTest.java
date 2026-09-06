@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_APPLICATION;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_TERMINUS;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -198,6 +199,57 @@ class ChainTerminusTest {
             assertThat(rows.getFirst().get(INTENT_FIELD_CHAIN_TERMINUS.VIA)).isEqualTo("ROUTINE");
             assertThat(table(rows.getFirst())).isEqualTo("films_for_actor");
         });
+    }
+
+    /**
+     * The written order across directive names, which the decode relations cannot carry: each
+     * numbers its own applications, so this field's three are ordinals 0, 0 and 1 in two relations
+     * with nothing relating them. The manual's own sandwich example, and the case the chain walk
+     * reports two nodes for where the manual describes four.
+     *
+     * <p>The order was captured all along, in {@code graphql_field_directive}, which holds every
+     * application with its position; what this relation adds is that a reader joins the answer
+     * rather than re-ranking by position, and that the ranking happens once where it is known.
+     */
+    @Test
+    void theChainApplicationsAreOrderedAsWritten() {
+        withCaptured("""
+            type Actor @table(name: "actor") {
+              castRecentFilms: [Film!]!
+                @reference(path: [{table: "film_actor"}])
+                @routine(name: "films_for_actor", argMapping: "pMinLength: len",
+                         columnMapping: "pActorId: actor_id")
+                @reference(path: [{table: "film"}])
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { actors: [Actor] }
+            """, dsl -> assertThat(dsl
+                .select(GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION,
+                    GRAPHITRON_FIELD_CHAIN_APPLICATION.DIRECTIVE_NAME,
+                    GRAPHITRON_FIELD_CHAIN_APPLICATION.ORDINAL)
+                .from(GRAPHITRON_FIELD_CHAIN_APPLICATION)
+                .where(GRAPHITRON_FIELD_CHAIN_APPLICATION.FIELD_NAME.eq("castRecentFilms"))
+                .orderBy(GRAPHITRON_FIELD_CHAIN_APPLICATION.CHAIN_POSITION)
+                .fetch(r -> r.value1() + ":@" + r.value2() + "#" + r.value3()))
+                .as("dense from zero in the order the author wrote them, across both directives")
+                .containsExactly("0:@reference#0", "1:@routine#0", "2:@reference#1"));
+    }
+
+    /**
+     * {@code @referenceFor} is not a step of the field's chain. It states one participant's own path
+     * through a multi-table container, which is a route of its own, so a field carrying it and
+     * nothing else composes no chain at all.
+     */
+    @Test
+    void aReferenceForIsNotAChainApplication() {
+        withCaptured("""
+            type Query { media: [Media!]! }
+            interface Media @table(name: "film") { id: ID }
+            type Film implements Media @table(name: "film") { id: ID }
+            type Actor implements Media @table(name: "actor") { id: ID }
+            """, dsl -> assertThat(dsl.fetchCount(GRAPHITRON_FIELD_CHAIN_APPLICATION))
+                .as("no @reference and no @routine, so no chain")
+                .isZero());
     }
 
     // ===== The name-matched hop's own columns =====
