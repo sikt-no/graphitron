@@ -22,8 +22,11 @@ that already holds a previous run's rows, empties `sql_node_metadata`, `sql_node
 `sql_routine` and `sql_routine_parameter` for every source in the store and refills them only for the
 sources its own census names. So in the ordinary workspace of two modules on two jOOQ packages, which
 `GraphitronModelStore` describes the file-backed store as being shared by, building module A blanks
-module B's node-identity and routine facts. B's language server then answers "no node metadata" for a
-table that publishes it, and answers nothing for a routine that exists, until B is captured again.
+module B's node-identity and routine facts. Every reader of B's partition then sees them missing
+until B is next captured, and the reach is wider than the rows: `Nodes.derive` resolves a node from a
+declared arm or a published one, the published arm being a join against `sql_node_metadata`, so an
+emptied partition can change which of B's types are nodes at all rather than only what an editor
+reports.
 
 When this lands, the relations the catalog walk deletes per source are exactly the relations the warm
 refresh retains per source, and a build-time gate makes the two sets unable to disagree again.
@@ -46,15 +49,22 @@ capture of any graph. `CatalogFactCapture` then re-inserts rows for the sources 
 names and for no others.
 
 The omission is visible from three directions, which is what makes it an oversight rather than a
-decision. `CatalogFactCapture.clearSchemaSources` already deletes all four per source, in the same
-loop body as the ten listed relations and immediately before the `ClasspathSources.upsert` that takes
-the source over, which is exactly the per-source delete `PARTITIONED`'s own javadoc says a member must
-have. `sql_node_metadata`'s table comment states the intent outright, placing the relation under the
-`sql_` family because the constants "ride on the same generated package `sql_table` partitions on,
-refreshed in the same clearing round by the same walk", and adding that "a family boundary here would
-cut one refresh unit in half", which is what the omission does. And all four lead their primary key
-with `source_name`, so `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` already
-classifies them as source-partitioned.
+decision. `CatalogFactCapture.clearSchemaSources` already deletes all four per source, in its second
+loop, beside seven of the ten listed relations and immediately before the `ClasspathSources.upsert`
+that takes the source over; the other three listed relations are deleted in the first loop, which
+claims each source before peeling off the constraint leaves. Either way that is exactly the
+per-source delete `PARTITIONED`'s own javadoc says a member must
+have. And all four lead their primary key with `source_name`, which
+`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` requires of exactly the relations
+whose partition dimension is the source, so the schema's own gate already reads them as
+source-partitioned while the retention set does not.
+
+A third direction was cited when this was filed and no longer holds up, recorded here so a reviewer
+does not go looking for it. `sql_node_metadata`'s table comment used to argue its own placement, that
+the constants ride on the same generated package `sql_table` partitions on and that a family boundary
+would cut one refresh unit in half. `0eeb2f1f5` rewrote the `sql_` rationales to say why a relation
+exists and stop there, so the sentence is gone. The placement it described is still the placement the
+relation has; what is lost is the comment as evidence, not the fact.
 
 ### The wholesale arm has no other members
 
@@ -79,11 +89,18 @@ before `sql_node_metadata`), so nothing else in the write path moves.
 ## The gate: an unclassified relation stops the build
 
 The Backlog filing asked a spec to settle the gate that keeps the set honest in the reverse
-direction, because today's anchor only holds one way. A relation added to `PARTITIONED` with no
-matching per-source delete keeps rows whose partition went away, and
-`WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` catches that as a warm-versus-cold row-count
-difference. Nothing catches the reverse, a relation whose walk deletes it per source while the
-wholesale clear empties it anyway, which is this defect.
+direction. Checking what holds today turned up less than the filing assumed, and the difference
+matters, so it is stated before the plan rather than discovered during it.
+
+`PARTITIONED`'s javadoc names "an empty refresh empties every relation" as the anchor catching a
+member with no matching per-source delete, which would keep rows whose partition went away. That
+phrase occurs nowhere in the tree except in the javadoc that names it, and no test implements it.
+`WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` is the nearest live gate and is not a
+substitute: both of its arms read the same input set, so no partition goes away in either, and a
+member with no delete agrees with itself. So neither direction is gated today. This item closes the
+direction that is a live data-loss bug and leaves the other named rather than silently claimed; the
+missing anchor is worth its own Backlog item and is not folded in here, a bug fix being the wrong
+place to grow a second gate.
 
 The plan is to flip the wholesale arm's polarity and gate the residue.
 
@@ -107,6 +124,15 @@ The empty `clear` loop stays rather than being deleted with its set. It is the s
 run-owned relation would use, and its FK-safe `childrenFirst` ordering is the part that is easy to get
 wrong; deleting it means whoever first answers the gate with `RUN_OWNED` writes that ordering from
 scratch.
+
+## What an existing store does at the upgrade
+
+Nothing, deliberately, and it is worth saying because the reader's next question is whether a store
+already missing rows repairs itself. The change adds constants to a `Set` and moves no DDL, so
+`store_stamp.ddl_hash` is unchanged and no existing store is discarded on the version that carries
+the fix. A partition emptied before the upgrade stays empty until its own graph captures again, which
+it will, the catalog walk rewriting an owned package unconditionally. So the fix stops the loss rather
+than repairing it, and no migration is owed.
 
 ## Implementation
 
@@ -144,8 +170,9 @@ scratch.
   change that empties its input fails rather than passing vacuously; that failure mode was recorded
   against `FactSchemaGateTest.currencyAccompaniesEveryStamp` at R922's Done gate and is cheap to avoid
   here.
-- Both directions of the loop are then held: this gate for a per-source relation left out of the set,
-  and the existing warm-versus-cold anchor for a set member whose per-source delete nobody wrote.
+- What this does not add, stated so the delivery is not read as more than it is: nothing here gates a
+  `PARTITIONED` member whose per-source delete nobody wrote. That direction is unenforced today and
+  stays unenforced after this item; see the gate section above.
 
 ## Other solutions we've considered
 
@@ -156,7 +183,10 @@ structurally impossible rather than gated. Rejected because it trades one silent
 other one. Membership in `PARTITIONED` asserts that a per-source delete exists somewhere, in `clear`
 for `jvm_`, in the catalog walk for `sql_`, in `JavaSourceFacts` for `java_`, and a key column is no
 evidence of that. A derived set would silently enrol a relation whose delete nobody wrote, which keeps
-rows whose partition went away. The list stays a list, checked from both sides.
+rows whose partition went away. That is the failure nothing in the tree currently catches, so
+deriving would move the risk from the direction this item gates to the direction it leaves open. The
+list stays a list, and stays the place a member's delete is asserted by someone having written it
+down.
 
 **Adding the four and leaving the polarity alone.** The narrower fix, with a gate asserting only that
 no relation in the wholesale set leads its key with `source_name`. It closes this defect and nothing
