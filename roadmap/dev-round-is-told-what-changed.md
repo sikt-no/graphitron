@@ -384,6 +384,41 @@ diffing:
   cases that pin the comparison's strictness, which need an instant equal to one the observation
   holds and cannot construct one from outside.
 
+An adversarial review after the first green build changed seven more things, all of them small and
+two of them soundness:
+
+* **A watch loop that terminates abnormally now gives up its corpus.** `SchemaWatcher.run` logs and
+  rethrows on an unexpected exception, which kills the thread; without a loss on that path the
+  corpus's floor stayed where it was and every row read before the crash stayed trusted for the rest
+  of a session nothing was watching. This is the one loss that never recovers, and that is correct:
+  the corpus is cold from there on.
+* **A fold that throws costs its corpus rather than the watch thread.** A fold is a gatherer's own
+  code running on the watch thread, and a thread that dies stops delivering events for every corpus,
+  not just the one whose fold failed. `Observation.mark` now catches per corpus and calls `lose`.
+* **A schema root added mid-session enters the registered scope.** `regeneratePass` already told the
+  watcher about new roots; the corpus's scope still named the old set, so marks for files under a new
+  root were silently dropped while the watcher faithfully reported them. Nothing reads `sdl` currency
+  yet, so this was a hole waiting for the next adopter rather than a live defect.
+* **The loss reason lives in one place.** `Observation` kept a reason map that only tests read, beside
+  the ring that actually renders it. The observation now logs the reason and keeps no copy, so the two
+  records cannot disagree; `observesAnything`, also test-only, is gone.
+* **An unrecognised `graphitron.dev.rediscover` value warns** instead of silently meaning `observed`,
+  which is the arm a developer reaching for that flag is trying to leave.
+* **`register` moved inside `refresh`'s store-trouble guard**, since its first call reads the roster
+  and this class owes its callers that store trouble costs warmth and never the dev loop.
+* **`trusts` no longer throws on an instance key the filesystem will not parse.** Not every key is a
+  path: a jOOQ schema source is a package name. Such a key is outside every scope, which is the answer
+  that costs a read.
+
+The review also added the coverage it found missing: nothing asserted that `store_source.read_at` is
+written at all, so a case now pins it to the census's own instant rather than to non-nullness, which
+is the assertion that fails if a later refactor dates the row where it writes it. One defect the
+review found is not this item's and is filed as its own Backlog item: a `java_file` row's stamp and
+its declarations come from two reads of the file, so a save landing between the walk's parse and the
+hash leaves declarations one version behind permanently. That behaves identically with and without
+the observation, hashing every file never having caught it, which is why it is filed rather than
+fixed here.
+
 One test-side note, because it is the kind of thing that goes quietly wrong. Every case about a
 mark or a loss asserts that an instant is trusted *before* the event and distrusted after it, and
 takes that instant from a clock reading inside a deliberate gap. A case that reached for an instant

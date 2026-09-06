@@ -47,6 +47,10 @@ class SchemaWatcherTest {
     // Watching nothing, for the cases whose subject is the trigger rather than what the watcher
     // was told. The observation cases below build one of their own over a store.
     private WatchedCorpus watched = WatchedCorpus.unobserved(SDL);
+    // The ring the observation cases drain to read back the reason a corpus was given up. It is
+    // where a reason lives: the observation raises its floor and logs, and what a developer reads
+    // is the line the round prints off this.
+    private RecentChanges recent = RecentChanges.none();
 
     @AfterEach
     void tearDown() throws Exception {
@@ -322,7 +326,9 @@ class SchemaWatcherTest {
                 .as("the events nobody received are the ones nothing can name, so the corpus goes"
                     + " cold rather than reading as unchanged")
                 .isFalse();
-            assertThat(observation.lossReason(SDL)).isEqualTo("OVERFLOW");
+            assertThat(recent.drain(SDL))
+                .as("and the round is told it cannot be given files, with the reason")
+                .hasValue("a change it cannot name (OVERFLOW)");
             assertThat(latch.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
         }
     }
@@ -342,7 +348,7 @@ class SchemaWatcherTest {
             assertThat(observation.trusts(SDL, schema.toString(), readBefore))
                 .as("whatever the subtree already held arrived unwatched")
                 .isFalse();
-            assertThat(observation.lossReason(SDL)).contains("new directory");
+            assertThat(recent.drain(SDL)).get().asString().contains("new directory");
         }
     }
 
@@ -361,7 +367,7 @@ class SchemaWatcherTest {
             assertThat(observation.trusts(SDL, schema.toString(), readBefore))
                 .as("a root that was not being watched until now covers files read blind")
                 .isFalse();
-            assertThat(observation.lossReason(SDL)).contains("watch root added");
+            assertThat(recent.drain(SDL)).get().asString().contains("watch root added");
         }
     }
 
@@ -416,7 +422,8 @@ class SchemaWatcherTest {
     private Observation watcherOver(Path dir, Runnable onTrigger) throws java.io.IOException {
         var observation = new Observation(STORE.handle().dsl());
         observation.register(SDL, List.of(dir), Path::toString);
-        watched = new WatchedCorpus(observation, SDL, new RecentChanges(dir));
+        recent = new RecentChanges(dir);
+        watched = new WatchedCorpus(observation, SDL, recent);
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(Set.of(dir), debounce, onTrigger, watched);
         return observation;

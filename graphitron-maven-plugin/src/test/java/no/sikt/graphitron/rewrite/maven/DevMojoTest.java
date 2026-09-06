@@ -210,14 +210,28 @@ class DevMojoTest {
             var observation = new no.sikt.graphitron.model.sources.Observation(store.dsl());
             observation.register("sdl", List.of(dir), java.nio.file.Path::toString);
             observation.observing("sdl");
+            var recent = new RecentChanges(dir);
             var listener = DevMojo.buildSaveListener(Set.of(".graphqls"), debounce, () -> { },
-                new WatchedCorpus(observation, "sdl", RecentChanges.none()));
+                new WatchedCorpus(observation, "sdl", recent));
+            // Between watching and the save, because an instant a minute away sits above the floor
+            // the loss raises and the case would pass without the loss having happened.
+            Thread.sleep(5);
+            var readBeforeTheSave = java.time.LocalDateTime.now();
+            Thread.sleep(5);
+            assertThat(observation.trusts("sdl", dir.resolve("schema.graphqls").toString(),
+                readBeforeTheSave)).isTrue();
 
             // A document the editor names by something other than a file: there is no instance to
             // mark, so the corpus stops being observed rather than the save being forgotten.
             listener.accept("untitled:Untitled-1.graphqls");
 
-            assertThat(observation.lossReason("sdl")).contains("unresolvable document URI");
+            assertThat(observation.trusts("sdl", dir.resolve("schema.graphqls").toString(),
+                readBeforeTheSave))
+                .as("a save nothing can attribute is a save nothing can rule out, so the corpus"
+                    + " goes cold rather than reading as unchanged")
+                .isFalse();
+            assertThat(recent.drain("sdl")).get().asString()
+                .contains("unresolvable document URI");
         }
     }
 

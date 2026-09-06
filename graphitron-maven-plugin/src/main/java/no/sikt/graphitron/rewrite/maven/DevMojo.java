@@ -121,7 +121,8 @@ public class DevMojo extends AbstractRewriteMojo {
     static final String CLASSPATH_CORPUS = "classpath";
     static final String JAVA_SOURCE_CORPUS = "java-source";
 
-    /** The {@code rediscover} arm that trusts nothing; anything else is the observed default. */
+    /** The two {@code rediscover} arms: observe what the watchers cover, or trust nothing at all. */
+    static final String REDISCOVER_OBSERVED = "observed";
     static final String REDISCOVER_ALWAYS = "always";
 
     /**
@@ -408,6 +409,15 @@ public class DevMojo extends AbstractRewriteMojo {
         // corpus reads the roster to refuse one no crawler declares, and before the save listener
         // is built below, which marks through it. Registering this early is harmless: registration
         // establishes no floor, so nothing is trusted until a watcher says it is up.
+        // A misspelling would otherwise read as the default, which is the arm the developer
+        // reaching for this flag is trying to leave. Said once, and the session continues on the
+        // default rather than failing: the flag is a diagnostic aid, not a correctness setting.
+        if (!REDISCOVER_ALWAYS.equalsIgnoreCase(rediscover)
+            && !REDISCOVER_OBSERVED.equalsIgnoreCase(rediscover)) {
+            getLog().warn("graphitron:dev: unrecognised graphitron.dev.rediscover value '"
+                + rediscover + "'; expected " + REDISCOVER_OBSERVED + " or " + REDISCOVER_ALWAYS
+                + ". Continuing on " + REDISCOVER_OBSERVED + ".");
+        }
         this.observation = rediscoverAlways()
             ? Observation.rediscovering()
             : new Observation(sessionStore.dsl());
@@ -936,7 +946,8 @@ public class DevMojo extends AbstractRewriteMojo {
         // beat: the save listener is wired at bindServer, a few lines earlier. Nothing to register
         // a new root with yet, and the watcher resolves its own roots when it starts.
         if (schemaWatcher != null) {
-            for (Path root : resolveSchemaRoots(ctx)) {
+            Set<Path> schemaRoots = resolveSchemaRoots(ctx);
+            for (Path root : schemaRoots) {
                 try {
                     schemaWatcher.addRoot(root);
                 } catch (IOException e) {
@@ -944,6 +955,11 @@ public class DevMojo extends AbstractRewriteMojo {
                         + root + ": " + e.getMessage());
                 }
             }
+            // The scope follows the roots. A root this round added is watched from here on, and a
+            // corpus whose registered scope still named the old set would drop every mark under it:
+            // the watcher would report the change and the comparison would refuse to hear it,
+            // leaving files under a new root trusted while they moved.
+            registerCorpus(SDL_CORPUS, schemaRoots);
         }
         // The round's own diagnostics, from the pass that produced them, whether or not it emitted:
         // a validation-rejected round has a report and publishes it. A read that refused has none,

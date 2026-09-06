@@ -179,9 +179,6 @@ class ObservationTest {
                 .as("and trust rebuilds instance by instance as passes verify them again,"
                     + " so a loss costs one pass rather than the session")
                 .isTrue();
-            assertThat(observation.lossReason(CORPUS))
-                .as("the reason is carried for a console line, never switched on")
-                .isEqualTo("OVERFLOW");
         }
     }
 
@@ -269,6 +266,31 @@ class ObservationTest {
         assertThat(observation.trusts(CORPUS, file(root, "Widgets.java"), longAfter()))
             .as("every answer becomes read it, which is what the loop did before the mechanism")
             .isFalse();
-        assertThat(observation.observesAnything()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a fold that throws costs its corpus, not the thread that was marking")
+    void aFailingFoldLosesItsCorpusRatherThanEscaping(@TempDir Path root)
+        throws InterruptedException {
+        var observation = new Observation(STORE.handle().dsl());
+        observation.register(CORPUS, List.of(root), path -> {
+            throw new IllegalStateException("this fold cannot name an instance");
+        });
+        observation.observing(CORPUS);
+        String widgets = file(root, "Widgets.java");
+        var readBeforeTheMark = between();
+        assertThat(observation.trusts(CORPUS, widgets, readBeforeTheMark)).isTrue();
+
+        // A fold is a gatherer's own code on a watch thread, and a watch thread that dies stops
+        // delivering every later event for every corpus. Losing one corpus is the survivable
+        // outcome; propagating is not.
+        observation.mark(root.resolve("Widgets.java"));
+
+        assertThat(observation.trusts(CORPUS, widgets, readBeforeTheMark))
+            .as("the corpus goes cold, which is the same recovery an overflow gets")
+            .isFalse();
+        assertThat(observation.trusts(CORPUS, widgets, between()))
+            .as("and a pass that verifies it afterwards gets it back")
+            .isTrue();
     }
 }

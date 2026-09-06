@@ -1,7 +1,10 @@
 package no.sikt.graphitron.model.sources;
 
 import org.jooq.DSLContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -52,6 +55,8 @@ import static no.sikt.graphitron.model.Tables.META_GATHERER_CORPUS;
  */
 public final class Observation {
 
+    private static final Logger LOG = LoggerFactory.getLogger(Observation.class);
+
     /**
      * A path folded to the key of the row a gatherer stamps.
      *
@@ -71,7 +76,6 @@ public final class Observation {
     private final Map<String, Registration> registered = new ConcurrentHashMap<>();
     private final Map<String, LocalDateTime> floors = new ConcurrentHashMap<>();
     private final Map<String, LocalDateTime> marks = new ConcurrentHashMap<>();
-    private final Map<String, String> losses = new ConcurrentHashMap<>();
 
     /**
      * An observation over {@code dsl}'s roster. The handle is read by {@link #register} alone, and
@@ -176,8 +180,19 @@ public final class Observation {
         Path resolved = absolute(path);
         var at = now();
         registered.forEach((corpus, registration) -> {
-            if (covers(registration, resolved)) {
+            if (!covers(registration, resolved)) {
+                return;
+            }
+            // A fold is a gatherer's own code running on a watch thread, and a watch thread that
+            // dies stops delivering every later event for every corpus. So a fold that throws
+            // costs its corpus's observation rather than the loop: the floor goes up, which is the
+            // same recovery an overflow gets, and the next pass verifies its way back.
+            try {
                 marks.put(key(corpus, registration.fold().apply(resolved)), at);
+            } catch (RuntimeException e) {
+                LOG.warn("the {} fold could not name an instance for {}; giving up observation"
+                    + " of that corpus until a pass verifies it again", corpus, resolved, e);
+                lose(corpus, "fold failed on " + resolved);
             }
         });
     }
@@ -197,17 +212,10 @@ public final class Observation {
             return;
         }
         floors.put(corpus, now());
-        if (reason != null) {
-            losses.put(corpus, reason);
-        }
-    }
-
-    /**
-     * Why {@code corpus} last dropped out of observation, or null if it never has. Diagnostic: it
-     * is what a console line says instead of naming files when the session cannot name them.
-     */
-    public String lossReason(String corpus) {
-        return losses.get(corpus);
+        // Logged rather than kept. Whoever renders a console line owns the reason, because it has
+        // to be said once and then forgotten, and a copy here that nothing drains would be a second
+        // record of the same event for the two to disagree about.
+        LOG.debug("no longer observing {}: {}", corpus, reason);
     }
 
     /**
@@ -227,7 +235,7 @@ public final class Observation {
             return false;
         }
         var registration = registered.get(corpus);
-        if (registration == null || !covers(registration, absolute(Path.of(instanceKey)))) {
+        if (registration == null || !covers(registration, instance(instanceKey))) {
             return false;
         }
         var mark = marks.get(key(corpus, instanceKey));
@@ -245,11 +253,6 @@ public final class Observation {
     public LocalDateTime pass(String corpus) {
         Objects.requireNonNull(corpus, "corpus");
         return now();
-    }
-
-    /** Whether any corpus is being watched at all; a session watching none trusts nothing. */
-    public boolean observesAnything() {
-        return !disabled && !floors.isEmpty();
     }
 
     /**
@@ -276,7 +279,24 @@ public final class Observation {
             .where(META_GATHERER_CORPUS.CORPUS_NAME.eq(corpus)));
     }
 
+    /**
+     * An instance key as a path, or null where it is not one. Not every key is: a jOOQ schema
+     * source is a package name, and a hand-built stand-in is the empty string. Those are outside
+     * every registered scope, which is the answer that costs a read, so a key the filesystem
+     * refuses to parse takes the same arm rather than throwing out of the comparison.
+     */
+    private static Path instance(String instanceKey) {
+        try {
+            return absolute(Path.of(instanceKey));
+        } catch (InvalidPathException e) {
+            return null;
+        }
+    }
+
     private static boolean covers(Registration registration, Path path) {
+        if (path == null) {
+            return false;
+        }
         for (Path root : registration.scope()) {
             if (path.startsWith(root)) {
                 return true;

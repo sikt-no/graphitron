@@ -162,11 +162,14 @@ public final class JavaSourceFacts {
                          LocalDateTime readAt) {
         Objects.requireNonNull(readAt, "readAt");
         long startedAt = System.nanoTime();
-        register(sourceRoots);
         int hashed = 0;
         int skipped = 0;
         int rewritten = 0;
         try {
+            // Inside the guard, because the first registration reads the roster: this class owes
+            // its callers that store trouble costs warmth and never the dev loop, and a refresh
+            // that threw out of its first statement would break that for the session's first pass.
+            register(sourceRoots);
             Map<String, Recorded> recorded = new HashMap<>();
             dsl.select(JAVA_FILE.FILE, JAVA_FILE.STAMP, JAVA_FILE.READ_AT).from(JAVA_FILE)
                 .forEach(row -> recorded.put(row.value1(), new Recorded(row.value2(), row.value3())));

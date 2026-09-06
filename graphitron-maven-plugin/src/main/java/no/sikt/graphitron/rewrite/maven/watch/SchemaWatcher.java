@@ -165,6 +165,11 @@ public final class SchemaWatcher implements AutoCloseable {
             }
         } catch (RuntimeException e) {
             LOGGER.error("graphitron:dev: event loop terminated abnormally", e);
+            // Nothing will deliver another event for this corpus, so leaving its floor where it is
+            // would let every row read before now stay trusted for the rest of the session. This is
+            // the one loss that never recovers: the corpus goes cold and stays cold, which is
+            // exactly the session behaving as it did before it was observed.
+            watched.lost("watch loop terminated: " + e);
             throw e;
         }
     }

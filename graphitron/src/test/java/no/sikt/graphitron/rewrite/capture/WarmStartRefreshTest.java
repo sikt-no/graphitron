@@ -214,6 +214,49 @@ class WarmStartRefreshTest {
     }
 
     /**
+     * The stamp says what the bytes were; this says when reading them began. Both come from the
+     * round, and the second is the half a later reader compares against its own watch coverage to
+     * decide whether it may skip re-reading at all.
+     *
+     * <p>Asserted as an equality against the census's own instant rather than as "not null",
+     * because the failure this guards is a value that is present and late. A {@code read_at} taken
+     * where the row is written would date the source after the load that read it, swallowing every
+     * change that landed in between and reading as current for a partition that is not.
+     */
+    @Test
+    @DisplayName("a source is dated with the instant its reading began, not the one it was written")
+    void theRecordedCurrencyIsWhenTheRoundBeganReading(@TempDir Path tmp) throws IOException {
+        Path jar = jarWith(tmp, "com.example.lib.LibraryClass");
+        Path directory = tmp.resolve("graphitron-model");
+        var reading = new ClasspathCensus().read(
+            List.of(new ClasspathEntry(jar, ClasspathEntry.Origin.DECLARED, "com.example:library")),
+            DEFAULT_JOOQ_PACKAGE);
+
+        var registry = CapturedStore.registryOf(tmp, SDL);
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            FactCapture.capture(store.dsl(), false, graph(tmp), SubjectConfig.none(), registry,
+                SchemaAssembly.of(registry), SdlVerdicts.none(),
+                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps(),
+                reading.readAt());
+        }
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            var dated = store.dsl()
+                .select(STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.STAMP, STORE_SOURCE.READ_AT)
+                .from(STORE_SOURCE)
+                .where(STORE_SOURCE.SOURCE_NAME.eq(jar.toString()))
+                .fetchOne();
+            assertThat(dated).as("the jar the census read has a source row").isNotNull();
+            assertThat(dated.value2())
+                .as("stamped, which is the half that says what the bytes were")
+                .isEqualTo(reading.stamps().get(jar.toString()));
+            assertThat(dated.value3())
+                .as("and dated with the census's own instant, taken before it opened the entry")
+                .isEqualTo(reading.readAt());
+        }
+    }
+
+    /**
      * The retention decision reads what the round established, and does not go back to the jar.
      *
      * <p>The two consumers of a jar's identity used to ask independently: the census hashed it to
