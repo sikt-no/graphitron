@@ -4490,7 +4490,7 @@ SELECT r.graph_name, r.type_name, r.field_name, r.ordinal,
                      WHERE r2.graph_name = r.graph_name
                        AND r2.type_name = r.type_name
                        AND r2.field_name = r.field_name);
-COMMENT ON VIEW intent_field_chain_start IS 'Where a field''s @routine chain begins: the last @routine application written on the field, resolved to the table-valued function result it names. The last and not the first, because a second @routine application restarts the chain rather than extending it, so the chain a reader cares about departs from the last one; applications before it move where the chain starts and never where it ends. Two conditions, and both are the resolution rather than the rule: the spelling resolves through intent_spelled_table as any written table name does, and the result is then required to be FUNCTION-typed, which is the only kind @routine accepts. A routine name resolving to no FUNCTION-typed table yields no row, and the chain over it therefore has no start, no nodes and no terminus, which is the silence intent_field_chain_node states the general form of. Its own relation because three things need it and each needs a different part: intent_field_chain_node seeds its walk from the landing, that view''s tail is the elements written after this application''s source position, and a rejection about an unresolvable @routine names this coordinate. The source position travels with the row for the second of those. It is a position in a document and not an ordinal comparison, because @routine and @reference number their ordinals separately, the rule graphitron_field_reference''s own comment states. No arity column: two schemas declaring the routine''s name is genuinely two rows here, and the count a reader wants is over the chain''s landings rather than its departures, which is intent_field_chain_terminus.candidates. Adding one would put a second window function under a relation the node walk inlines, and buy a number nothing asks this relation for.';
+COMMENT ON VIEW intent_field_chain_start IS 'Where a field''s @routine chain begins: the last @routine application written on the field, resolved to the table-valued function result it names. The last and not the first, because a second @routine application restarts the chain rather than extending it, so the chain a reader cares about departs from the last one; applications before it move where the chain starts and never where it ends. Two conditions, and both are the resolution rather than the rule: the spelling resolves through intent_spelled_table as any written table name does, and the result is then required to be FUNCTION-typed, which is the only kind @routine accepts. A routine name resolving to no FUNCTION-typed table yields no row, and the chain over it therefore has no start, no nodes and no terminus, which is the silence intent_field_chain_node states the general form of. Its own relation because two things need it and each needs a different part: intent_field_chain_node seeds its walk from the landing, and a rejection about an unresolvable @routine names this coordinate, which is what the source position on the row is for. That view''s tail used to need the position too, to find the elements written after this application, because @routine and @reference number their ordinals separately and no relation related them; it reads graphitron_field_chain_application now, which states the written order across directive names as rows. No arity column: two schemas declaring the routine''s name is genuinely two rows here, and the count a reader wants is over the chain''s landings rather than its departures, which is intent_field_chain_terminus.candidates. Adding one would put a second window function under a relation the node walk inlines, and buy a number nothing asks this relation for.';
 COMMENT ON COLUMN intent_field_chain_start.graph_name IS 'the owning graph''s partition, carried from graphitron_routine';
 COMMENT ON COLUMN intent_field_chain_start.type_name IS 'the type owning the field the chain is written on';
 COMMENT ON COLUMN intent_field_chain_start.field_name IS 'the field the chain is written on';
@@ -4511,20 +4511,23 @@ WITH RECURSIVE
 tail (graph_name, type_name, field_name, ordinal, position, seq, last_seq) AS (
   SELECT st.graph_name, st.type_name, st.field_name, st.ordinal, st.position,
          CAST(ROW_NUMBER() OVER (PARTITION BY st.graph_name, st.type_name, st.field_name
-                                 ORDER BY st.ordinal, st.position) AS INT),
+                                 ORDER BY ca.chain_position, st.position) AS INT),
          CAST(COUNT(*) OVER (PARTITION BY st.graph_name, st.type_name, st.field_name) AS INT)
     FROM graphitron_field_reference_step st
-    JOIN graphitron_field_reference fr
-      ON fr.graph_name = st.graph_name AND fr.type_name = st.type_name
-     AND fr.field_name = st.field_name AND fr.ordinal = st.ordinal
-    JOIN (SELECT DISTINCT graph_name, type_name, field_name,
-                 source_name, source_line, source_column
-            FROM intent_field_chain_start) s
-      ON s.graph_name = fr.graph_name AND s.type_name = fr.type_name
-     AND s.field_name = fr.field_name
-   WHERE fr.source_name = s.source_name
-     AND (fr.source_line > s.source_line
-          OR (fr.source_line = s.source_line AND fr.source_column > s.source_column))
+    -- The application this step belongs to, at its place in the field's written order.
+    JOIN graphitron_field_chain_application ca
+      ON ca.graph_name = st.graph_name AND ca.type_name = st.type_name
+     AND ca.field_name = st.field_name AND ca.directive_name = 'reference'
+     AND ca.ordinal = st.ordinal
+    -- The routine the chain starts at, which is the last one written, on
+    -- intent_field_chain_start's terms and now by the same measure it uses to say "last".
+    JOIN (SELECT graph_name, type_name, field_name, MAX(chain_position) AS routine_at
+            FROM graphitron_field_chain_application
+           WHERE directive_name = 'routine'
+           GROUP BY graph_name, type_name, field_name) rt
+      ON rt.graph_name = st.graph_name AND rt.type_name = st.type_name
+     AND rt.field_name = st.field_name
+   WHERE ca.chain_position > rt.routine_at
 ),
 node (graph_name, type_name, field_name, seq, last_seq, ordinal, position, via, step_via,
       key_matched_by, from_source_name, from_schema, from_table,
