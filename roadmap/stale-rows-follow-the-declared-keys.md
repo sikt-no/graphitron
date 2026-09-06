@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 2
 theme: dev-loop
-depends-on: [dev-round-is-told-what-changed]
+depends-on: []
 created: 2026-09-05
 last-updated: 2026-09-05
 ---
