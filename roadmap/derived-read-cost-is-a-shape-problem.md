@@ -25,6 +25,22 @@ has nothing left to buy. That last claim is established at one relation by a con
 and is what the rest of this item has to establish at the others; the honest status against it is in
 "What changes when this lands" rather than here.
 
+**One sharpening from running the arc, and it makes the remaining work cheaper than the paragraph
+above implies.** "A relation the capture family never wrote" turned out to overstate the problem.
+Capture read the facts; what nobody wrote was a relation stating them at a grain. Every relation this
+arc has landed was filled by a select over populations already in the store, and the one candidate
+for a genuine capture gap, the written order of a field's directive applications, was already in
+`graphql_field_directive` with every position. So the work is placement, not capture, and the
+architecture is why: the graphitron gatherer runs last, after both crawlers have flushed, as a
+sequence of stages in an order it chooses, with the whole transcription and the whole catalog in
+hand. A rule it can compute in a stage needs to be neither a view, nor a registration, nor a reader's
+join.
+
+That also says what the `intent_` family is. Not a layer with 132 relations to tidy, but the shape a
+pipeline takes when the facts are not written down: 107 of them are views, and the ones this arc has
+reached have been deleted rather than improved. The remaining sequencing follows from that reading
+rather than from their names.
+
 This item takes over the performance narrative from nine dissolved items and states the lever
 ordering the fact model should have been using. The evidence is in
 `roadmap/audits/2026-08-28-derived-read-cost-premise.md`, which is filed as an audit precisely so it
@@ -215,271 +231,83 @@ them.
 
 ## What landed
 
-Thirty-one slices, grouped by what they changed. The per-slice reasoning, the arms that were tried
-and withdrawn, and the figures that were later voided are in the git history; what follows is the
-delivered state.
+Sixteen slices, summarised by what each established rather than by what it changed; the diffs are in
+the git history and the design arguments that still bind are in the sections below.
 
-**Supertypes captured.** Eight per-site argMapping tables, three classpath type-reference tables and
-two polymorphic membership tables became one relation each: `graphitron_arg_mapping_pair`,
-`jvm_declared_type_ref`, `graphql_poly_member`. Every view that reconstructed one by union reads the
-table. Isolated on the kept store, the two argMapping supertypes take `intent_carrier_routine_hop`
-from 77.90 s to 0.07 s with nothing materialized in either arm.
+[cols="3,5"]
+|===
+| slice | what it established
 
-**Join keys stored.** Two keys that existed only as expressions became columns an index can serve.
-The measured case: `intent_field_accessor_hop` refuses a 120-second budget with all registrations in
-place and returns its 21287 rows in 1.90 s with none of them, on a generated bean-property column
-with one index.
+| supertypes captured
+| eight per-site argMapping tables and three classpath type-reference tables became one relation
+  each, written by capture rather than reconstructed by every reader
 
-**Grains given.** Five of the twenty registered targets carry a primary key, against none at the
-start. `SupertypeSignatureGateTest` holds the signature, and `MetaDeclarationGateTest`'s frozen
-roster is what keeps a new relation from arriving undeclared.
+| join keys stored
+| two keys that existed only as expressions became columns an index can serve
 
-**The argMapping right-hand side modelled.** A written path used to be resolved by walking a
-positional segment list, a hundred-odd probes per statement. `graphitron_argmapping_candidate` keys
-the candidate tree by the path it resolves, and the resolution is a prefix match ranked by depth.
+| grains given
+| five of the twenty registered targets gained a primary key, against none at the start
 
-**The argMapping family put on schema coordinates.** The candidate tree is keyed by the coordinate
-the directive carrying the argMapping sits on, spelled as the GraphQL specification spells one and
-anchored by `graphql_element`: `Type.field`, `Type.field(argument:)`, `InputType.field`. It holds
-every spelling an author may legally write at that coordinate, including the one that repeats the
-coordinate's own name, marked `deprecated`. `graphitron_argmapping_entry` carries `written_path` and
-three generated readings of it, and `graphitron_argument_path_segment` is deleted: the stored
-decomposition existed so a reader could probe every prefix, and with every legal spelling a
-candidate there are only two prefixes worth asking about. `graphitron_argmapping_match` lost its two
-window functions, its subquery wrapper, its ranking, and the nine-way `CASE` that enforced the
-repeating spelling; what survives is two left joins and a five-site list, those four of the nine
-sites that bind nothing whatever they spell.
+| the argMapping right-hand side modelled
+| a written path resolves by equality against a candidate tree instead of by a walk each reader
+  spelled itself; the family moved onto schema coordinates
 
-Two relations then shed what they were keeping twice. `graphitron_argmapping_entry` had `type_name`,
-`field_name` and `argument_name` beside the coordinate that spells them, and they are gone; a reader
-wanting the parts joins `graphql_element_field`, the decomposition stated once instead of a
-two-arm COALESCE per reader. And `graphitron_argmapping_match` was carrying `written_path` and
-`trailing_name`, neither of which the resolution decided: a match says which candidate bound, the
-author's spelling is the entry's, and every consumer of a match already holds the entry's key.
-Removing that pass-through is what let the case fold return to a stored column, because a value
-travelling through a view has nowhere to keep one; `graphitron_argmapping_entry.tail_name_upper`
-sits beside the name it folds and the schema's per-row `UPPER` count in views is back to eleven.
+| the gathering architecture
+| one flush at the end became a flush per gatherer, which is what lets a stage read what the stage
+  before it wrote
 
-The plan-size figure moved the wrong way throughout and is reported rather than explained away: the
-shipping arm goes 2774 to 2842 instantiations across the three commits and the heaviest read 349 to
-372. The match view goes 6 to 9, having traded one segment join for a second candidate join and a
-decomposition it no longer keeps beside itself. What the measure does not count is what left the
-same view, two window partitions over the entry grain, or that
-`intent_argmapping_projection_defect` lost a third of its text and one of its six verdicts, or that
-one per-row fold became a stored one. That is worth stating as a limit of the measure rather than as
-a defence: relation instantiations count namings, so a rewrite that replaces a ranked probe with two
-equalities, and a decomposition kept in four places with one relation, both read as worse.
+| the macro expansion left the transcription
+| `graphql_type` and its siblings hold what the author declared and only that, with the expansion's
+  output beside it
 
-**The gathering architecture.** `FactSink` buffered every gatherer's rows until one flush at the end,
-so no gatherer could read another's facts and everything crossed as hand-threaded Java parameters.
-Each gatherer now flushes inside the same transaction in declared order, `meta_gatherer_dependency`
-states that order as data, and the catalog leads. `GraphitronFactCapture` stopped being a visitor the
-SDL walk called and became a gatherer with three stages that read each other through the store.
+| two registrations retired
+| one on a structural argument, one on the blindfold argument, which is the first evidence for this
+  item's own thesis
 
-**The macro expansion left the transcription.** `graphql_type`, `graphql_type_declaration` and
-`graphql_field` hold what the author declared and nothing else. What `@asConnection` mints is
-`graphitron_minted_type`, `graphitron_minted_type_site` and `graphitron_minted_field`;
-`graphitron_field_synthesis` holds the macro's replacement expression; `graphitron_type` and
-`graphitron_field` carry the two together. Both readings of a rewritten field are now rows at one
-coordinate, where before the authored expression survived only in a text column no anti-join could
-recover.
+| the node family became entry and anchor pairs
+| with the type binding, and it is where the pattern this arc runs on was named
 
-**Two registrations retired**, one on a structural argument and one on the blindfold argument: a
-registration standing over a rule hides what the rule costs.
+| the coordinate family took the specification's vocabulary
+| `graphql_element` over four anchors, `element_kind` in the specification's own words, the field and
+  input-field split settled at the write
 
-**The argMapping alias dissolved.** `intent_argmapping_pair` selected all eighteen columns of
-`graphitron_arg_mapping_pair` and did nothing else: no filter, no join, no union. It existed to widen
-eight per-site relations, those eight are gone, and its own comment says so. Its five reader views,
-`ArgmappingProjectionDefects` and its test now name the table. It was hiding a drift worth recording,
-because the drift is what an alias buys: six downstream comments described the site vocabulary as
-that relation's "closed vocabulary of eight" where the relation underneath states nine and
-enumerates nine. A count restated in six comments about a relation that restates another relation is
-the failure mode, not an accident. 287 relations to 286, with the frozen undeclared roster and the
-stated view count following.
+| the element family the generator emits
+| `graphitron_element` over type, field and argument as tables, and `intent_expanded_type` and
+  `intent_expanded_field` deleted with their forty read sites repointed
 
-**The candidate relation is keyed by coordinate and path, and holds only writable things.** It was
-keyed by an origin, which was a serialized position with the path's head folded into it, and a root
-was a row whose path was the empty string. Neither survives. A coordinate is the container whose
-members a head may name, the field where a head names an argument and the input type where it names
-one of that type's fields; the path is the whole right-hand side, head included; and a root is a row
-with no parent. Nothing stores `''`, because `''` is not something an author can write.
+| the minting family
+| three relations keyed by the coordinate that coined each row, replacing four; precedence as a
+  column, the machinery-shares-its-type's-fate anti-join, and the pagination arguments recorded for
+  the first time
 
-Three columns went with the change. `origin_kind` described the rooting and was constant down a
-subtree; `element_kind` replaces it and describes the row, which removed every `depth = 0` test in
-the reader, `bound_kind` collapsing from a two-arm CASE to a column. `argument_name` was origin-level
-data repeated on every descendant and equal to `element_name` at the one row that used it. And the
-serialized origin existed only because a nullable `argument_name` could not sit in the key; with the
-argument now the head of a path, the key needs neither.
+| contested mints refused
+| two applications minting one coordinate with different payload get neither, and
+  `graphitron_minted_conflict` says which coordinate and how many readings
 
-The sigil follows from the same rule rather than from a special case: a sigil is a path written at a
-coordinate, not a coordinate of its own, so it is a root like an argument is, and the only thing that
-distinguishes it is that it names no GraphQL type. What had looked like a subtype needing nullable
-columns was a path modelled as a place.
+| the chain applications ordered
+| the written order across directive names stated as rows, and the chain walk reads it instead of
+  comparing source positions
+|===
 
-**The node family became entry and anchor pairs, and the type binding with it.**
-`graphitron_tabletype` holds the settled type-to-table bindings, so eleven readers stop spelling a
-candidate count and four stop forgetting it. `graphitron_node_entry` and `graphitron_node` split what
-an author wrote from what took effect, `graphitron_node_keycolumn_entry` and
-`graphitron_node_keycolumn` do the same for the key tuple, and the key columns resolve against the
-bound table instead of forwarding a spelling, which retired four per-row folds and absorbed R731.
-`graphitron_field_table` states where a field's rows come from and where the field departs from to reach
-them, which no relation said before: the departure lived in one derivation keyed on the parent type
-and the arrival in another keyed on the field.
+Three findings from those slices outlived the slices themselves.
 
-**The coordinate family took the specification's vocabulary.** The specification defines a schema
-element and a schema coordinate as two different things: an element is a named type, a field, an
-input field, an enum value, a field argument, a directive or a directive argument, and a coordinate
-is the string that identifies one. The store had named the relations after the string. So
-`graphql_coordinate` is `graphql_element` over `graphql_type_element`, `graphql_field_element`,
-`graphql_argument_element` and `graphql_enum_value_element`, with `graphql_coordinate_field`
-following as `graphql_element_field`. The `coordinate` columns are untouched, being the one thing
-that genuinely is a coordinate. The supertype's discriminator is `element_kind` and takes five of the
-specification's seven values, `TYPE` widening to `NAMED_TYPE`, `ARGUMENT` narrowing to
-`FIELD_ARGUMENT` so the directive argument has a name to take later, and `FIELD` splitting from
-`INPUT_FIELD`, which the walk settles at the write because it already knows which body it is in.
-Nothing read the column, so the widening cost nothing; what it bought is that the agreement test's
-field arm now joins the declaring type's kind instead of asserting a literal, which is a rule that
-can fail where the literal agreed with whatever capture wrote.
+**A relation the store could not key at.** A graphitron relation naming a coordinate had nowhere to
+point, because `graphql_*_element` holds what the document declares and a macro mints coordinates it
+does not. `graphitron_field_table` was written with that key and the build failed on
+`QueryFilmsConnection.nodes`. Three relations have since taken back a coordinate key their own
+comments said they gave up only because the population was a view.
 
-Two findings came out of reading the specification against the family rather than out of the rename.
-Directives and directive arguments are schema elements with coordinate forms of their own and the
-store holds no anchor for either, which is the same shape of gap the minted types had and is left
-for the pass that needs it. And union members and interface implementations have no coordinate at
-all, which the specification states directly and gives a reason for, so `graphql_poly_member` sitting
-outside the family is conformance rather than an omission.
+**H2 refuses a duplicate source key in a `MERGE`, and that is not always what you want.** The upsert
+filling an anchor raises rather than picking a winner, so a schema an author can write turned into a
+capture that produced nothing. `WHEN MATCHED THEN DELETE` fails identically, H2 matching against the
+pre-statement target. The resolution is to withhold the contested coordinate and record it.
 
-**The element family the generator emits is written, and the two union views are gone.**
-`graphitron_element` over `graphitron_type`, `graphitron_field` and `graphitron_argument` is the
-transcription's element family widened by what macro expansion minted, as tables where
-`intent_expanded_type` and `intent_expanded_field` were views. Three things follow that a view could
-not give. Four relations key into the anchors now: `graphitron_field_navigation` and
-`graphitron_field_table`, which both carried a foreign key on the graph alone and said in their own
-comments that they would rather have keyed at a coordinate; and `intent_type_domain`, whose comment
-said the same and which is exact again. The relation that shipped as `graphitron_field` is renamed
-`graphitron_field_table` to free the name, since the anchor is what a field is.
+**Capture must not throw on author input, and the boundary is sharper than it looks.** Two carriers
+naming one connection over different element types disagree about that connection's own fields.
+Assembly rejects that schema with a diagnostic; capture runs before assembly and for readers that
+never run it, so refusing there leaves an author mid-edit with no store rather than with a store and
+a diagnostic.
 
-Three subtypes and not four. Enum values are minted by nothing and read by nobody at this grain, so
-an anchor over them would be a copy of `graphql_enum_value` with no question to answer; the CHECK on
-`element_kind` states that boundary in four values rather than five, and an emitter reading this
-family for a whole schema is what would move it. `graphitron_argument` has one arm today for the
-reason the section below gives: the two pagination arguments the expansion mints are not in the store
-at all yet, and the anchor's own agreement assertion is what will fail on the day they are.
-
-The fill is an insert-select with `ON CONFLICT`, which is what the anchors were designed around, and
-the reason is not speed. Relations key into them with `ON DELETE CASCADE`, so a re-derive that
-cleared first would take a classification domain along with it and refill neither; clearing a graph
-whole is the refresh's business and it already knows the order. That was found by a fixture, not by
-reading: the clear-then-fill version passed the model's own suite until `intent_type_domain` gained
-its key back.
-
-What the anchors cost is that a fixture seeding rows and reading a derived relation now has a
-derivation between the two where a view needed none. Two test classes read the emitted population
-without deriving and were silently reading a view before; both now derive, which is what every other
-reading helper in that fixture already did.
-
-**The minting family is three relations keyed by what coined them, and it landed whole.**
-`graphitron_minted_type`, `graphitron_minted_field` and `graphitron_minted_argument` each lead their
-key with the source coordinate and carry one foreign key, into `graphql_element` with
-`ON DELETE CASCADE`. `graphitron_minted_type_site` and `graphitron_field_synthesis` are gone: the
-site is the source coordinate in the key, and a rewrite is a minted field whose coining coordinate
-is its own, which is a difference a reader spells as an equality rather than by joining a second
-table. `intent_connection_facet` is the one view that read the synthesis and it reads that equality
-now.
-
-What went with those two tables is machinery rather than only rows. `PageInfo` was defined by the
-first carrier and extended by the rest, which needed `merge_ordinal`, `is_extension`, a site counter
-and a minted-name set inside `MacroCapture`; under a key that already carries the source, every
-carrier states the whole of `PageInfo` and the primary key is the only dedupe. The whole-schema set
-of declared type names went too, and that is the one worth naming: the expansion returned early
-against it, so it was never the function of one carrier's own declaration that this family's comment
-gives as the reason a macro may run inside capture at all. Writing the row unconditionally with a
-precedence column makes the stated rule true for the first time, and it gains the row a suppressed
-mint used to leave as silence, saying which application would have minted what and stood down.
-
-**The argument mint closed the gap it was found in.** The connection expansion mints `first` and
-`after` on a carrier whose author wrote no pagination argument, and until now the store recorded
-nothing about them, the expansion having two halves in two modules and only the schema-building half
-knowing they existed. They are rows now. The condition on them is the one thing that could not become
-a precedence column, and the reason is worth keeping: it is not a per-name collision. An author who
-writes any pagination argument keeps their pagination whole, so a carrier carrying only `last` gets
-neither `first` nor `after` though neither name is taken. That is a property of the carrier and not
-of the row, so it stays in capture, where it reads the carrier's own argument list and nothing wider
-and therefore leaves the qualification rule intact.
-
-**The anti-join a precedence column cannot carry has a test of its own.** An author who declares
-`type QueryFilmsConnection { mine: String }` collides with the minted type, and the four machinery
-fields collide with nothing, so the field-grain rule alone would land `edges` and `pageInfo` on the
-author's type and fuse two types nobody asked to merge. Machinery is told from a rewritten carrier by
-its source: it shares a source coordinate with a minted type row for its own owning type, where a
-rewritten `Query.films` coined no minted `Query`. The case asserts all three halves, that the
-author's type is whole, that the mint is recorded standing down, and that its fields are recorded and
-reach no anchor.
-
-**The key leads with the source, so each relation carries an index on its own coordinate.** The
-family is read both ways: the key answers what one application minted, and the transcription's arm
-of every precedence resolution asks the opposite question once per authored element, which the key
-cannot serve. `intent_connection_facet` asks it too. Three indexes, argued where they sit. The
-expansion also stopped asking the store one question per carrier about that carrier's own arguments
-and asks it once for the graph, which is the shape this item is about and would have been worse for
-sitting inside capture rather than in a view.
-
-**Two carriers minting one coordinate with disagreeing payload get neither, and the coordinate is
-marked.** The design asked for a primary key violation here, on the reasoning that a disagreement is
-a capture bug. It is not. `@asConnection(connectionName: ...)` names a shared connection, and two
-carriers naming one over different element types disagree about that connection's own `nodes` and
-its edge's `node`. Assembly already rejects that schema with a diagnostic naming both carriers, and
-capture runs before assembly and for readers that never run it at all, so refusing leaves an author
-mid-edit with no store rather than with a store and a diagnostic.
-
-The refusal was not hypothetical, which is how this was found. This item recorded that the upsert
-took an arbitrary winner; the probe written to confirm that produced a constraint violation instead,
-because H2 matches a MERGE's source against the pre-statement target and therefore never sees the
-row it just inserted. `WHEN MATCHED THEN DELETE` was measured for the same reason and fails
-identically: both source rows are unmatched, both insert, and the second violates the key.
-
-So `graphitron_minted_conflict` holds one row per contested coordinate, every arm withholds what it
-finds, and neither reading lands. Two things follow that are worth stating. Absence could not have
-carried this on its own: a machinery field whose owning type lost is also minted and also missing
-from the anchor, and its owning type is present, so it is indistinguishable by anti-join from a
-contested coordinate; the only fact that separates them is whether the mints agree, which is a
-grouping and not a join. And withholding is per coordinate, not per type, so a contested connection
-lands as a type with a hole where the carriers disagreed rather than not at all, which is the honest
-reading of a schema that disagrees with itself at exactly those fields.
-
-What each application would have written is not copied into the conflict row. The minted relations
-keep it, keyed by the coordinate that coined each, so a rejection derived from the store is a later
-item's to write and this resolution destroys nothing it would need.
-
-**The key leads with the source, so each relation carries an index on its own coordinate.** The
-family is read both ways: the key answers what one application minted, and the transcription's arm
-of every precedence resolution asks the opposite question once per authored element, which the key
-cannot serve. `intent_connection_facet` asks it too. Three indexes, argued where they sit. The
-expansion also stopped asking the store one question per carrier about that carrier's own arguments
-and asks it once for the graph, which is the shape this item is about and would have been worse for
-sitting inside capture rather than in a view.
-
-**Two carriers minting one coordinate with disagreeing payload is the author's to write, so the
-anchor chooses rather than refuses.** The design asked for a primary key violation here, on the
-reasoning that a disagreement is a capture bug. It is not. `@asConnection(connectionName: ...)` names
-a shared connection, and two carriers naming one over different element types disagree about that
-connection's own `nodes` and its edge's `node`. Assembly already rejects that schema with a
-diagnostic naming both carriers, and capture runs before assembly and for readers that never run it
-at all, so refusing leaves an author mid-edit with no store rather than with a store and a
-diagnostic.
-
-The refusal was not hypothetical, which is how this was found: H2's `MERGE` raises on a source that
-yields two rows for one target key, so the upsert already refused, and a schema the generator has a
-diagnostic for became a capture that produced nothing. This item recorded the opposite in an earlier
-draft, that the upsert took an arbitrary winner, and the probe that was meant to confirm it produced
-the constraint violation instead.
-
-So the minted arms rank rather than deduplicate: a replacing row first, then the lowest coining
-coordinate, which is a total order over a set that is never empty. Nothing is lost by choosing.
-Both contributions stay in the minted relation, which is keyed by the coordinate that coined each,
-so the disagreement is a group-by away and a rejection derived from the store is a later item's to
-write rather than something this resolution destroys. The window costs nothing that this item worries
-about: it runs once per graph inside an insert, not per driving row inside a relation somebody
-reads.
 
 ## The entry and anchor pattern, and the scope it makes visible
 
@@ -584,8 +412,13 @@ declared now is the one that will still be right.
    carry the coining coordinate in their key. The relation that shipped as `graphitron_field` is
    renamed `graphitron_field_table` to free the name, and repoints onto the field anchor along with
    `graphitron_field_navigation`.
-2. The route family, described below. The target fact goes on the field anchor, Route and Step become
-   grains of their own, and `graphitron_field_table` dissolves into them.
+2. The route family, described below, which now carries three things that were separate: the target
+   fact onto the field anchor, Route and Step as grains of their own with `graphitron_field_table`
+   dissolving into them, and the entry-and-match pairing named, which is where
+   `graphitron_field_chain_application` gains its `_entry` name and moves to whichever gatherer the
+   decision above settles on. It also carries the emitter migration, because
+   `intent_field_chain_node.seq` names generated SQL aliases through `ReservedAliases.chainHop`, so
+   the complete chain arrives with its consumers rather than as a change underneath them.
 3. The reference decode on the field sites: `graphitron_field_reference_step` and
    `graphitron_reference_for_step`, which differ only in the key saying which directive owns the row.
    The two argument-site relations beside them are item 4's, not this one's.
@@ -601,7 +434,33 @@ declared now is the one that will still be right.
 6. The register, which is downstream of all of it and is where this item's own thesis is settled: a
    registration either has no rule left to buy or it is re-argued on its own evidence.
 
-One thing does not wait for that order, because it is not a modelling preference: fifteen of the
+Two decisions sit ahead of item 2 and are cheap to take now, expensive to discover later.
+
+**Which gatherer writes an entry.** The note below argues the entry half of every pair belongs in the
+SDL walk rather than in the graphitron gatherer, because an entry joins nothing and the gatherer
+currently prints a parsed value and reparses it to get back what the walk had in a local variable.
+The argument holds with more force for the relation this arc landed last:
+`graphitron_field_chain_application` is an entry, and the walk sees a field's directives in written
+order natively where the gatherer reconstructs that order by ranking source positions and needs an
+invented tie-break to make the rank total. One constraint the note does not address has to be settled
+with it: across all 45 declared relations the prefix determines the owner without exception, and
+`meta_relation.owner_name` is documented as the gatherer that owns the relation, so a `graphitron_`
+entry written by the SDL walk is the first break in that correlation. Either the correlation is
+prefix-to-family rather than prefix-to-writer and should be restated, or entries need their own
+answer. Taking the decision belongs with item 2, where the entry and its match land named together.
+
+**Entry, match, and the anti-join between them.** The pattern the arc runs on has a third member the
+sections below name only for the argMapping family, where `graphitron_argmapping_entry` is what was
+written, `graphitron_argmapping_candidate` is what may be written and `graphitron_argmapping_match`
+is where a written one landed, with the match's own comment stating the rule: a resolution and not a
+rejection, and an entry naming nothing has no row. The route family is the same triple at two grains
+rather than one, an application resolving to one node or to several steps, so the match carries the
+chain position back to the entry. That is what gives provenance a join instead of a reconstruction,
+lets a rule about the well-formed schema join matches and never filter, makes the diagnostic an
+anti-join at the application grain, and leaves a schema with one unresolvable application still
+capturing everything else.
+
+One thing does not wait for any of that, because it is not a modelling preference: fifteen of the
 twenty-five `intent_` tables carry no primary key at all and are exactly the materialization targets,
 so nothing refuses a duplicate row in them and the gate that checks a key against its grain is
 vacuous on every one.
@@ -1541,258 +1400,15 @@ evidence.
 
 ## Reviewer findings
 
-### Round 1 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
+### Rounds 1 to 3 (2026-08-28, Spec to Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
 
-Verdict: withhold. Two blocking findings on question one, one on question two, one traceability
-finding, one figure to reconcile.
+Three rounds, all findings addressed before the item moved to Ready, and the item has been In
+Progress since. The full exchange is in the git history of this file; what survived it and still
+governs is in the sections above rather than in the rounds.
 
-*What was checked and holds.* Every test symbol the item names exists under the name it gives:
-`DerivedReadCostTest` and its `KNOWN_NON_MONOTONIC` set, `MaterializeRegistryGateTest` and
-`everyTargetIsIndexedOrStatesWhyNot`, `FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`.
-So do the DDL objects the two key slices land on: `jvm_method`, `graphql_field.named_type`,
-`graphitron_field_synthesis`, and the schema's thirty-five existing `GENERATED ALWAYS AS` columns, the
-count the audit cites. Section 1's table sums to 15477.19 against its stated 15477.1, the ten
-unreachable positions to 14759.5 as stated, and positions 14 to 18 to 15382.5 as stated, so the pass
-arithmetic is internally sound. Each surviving item the supersession section says is untouched exists and is untouched; the four
-citation redirects landed and read correctly. The dissolution itself is well argued and the decision to
-file the evidence as a dated audit rather than in a file that dies at Done is right, and worth keeping
-whatever happens to the findings below. The diagnosis, that a comparison between "evaluate" and "store"
-cannot report that a third option was better, is the strongest thing in the item and I am not disputing
-any of it.
-
-**Finding 1 (question one: is the stated outcome reachable). "What changes when this lands" promises a
-capture in the tens of seconds, and no slice in this item is measured against the positions that carry
-99.4% of the pass.** Section 1 puts 15382.5 s in positions 14 to 18. Four of those five are in the
-unreachable subgraph, so the only lever the item names over them is the registration precondition, which
-this file explicitly defers. The reachable ten carry 717.6 s, so perfect success on every non-deferred
-slice leaves over four hours on the audit's own store, and on the shipped DDL leaves the predicted 7126 s
-of which the item's own section 4 citation says over 98.7% is positions 17 and 18. Slices 1 to 5 name
-`intent_spelled_table`, `intent_argmapping_pair`, `intent_carrier_data_field`, the accessor hop and the
-named-type sites; none of them is a payload or filter-role position, and nothing in the audit measures a
-grain fix against one. There may well be a real claim here, that cutting expansion at the two grains cuts
-the refresh of the unreachable views too, since section 3 shows five timed-out relations completing with
-nothing materialized. But the item does not make that claim, and it is the whole distance between the
-promised outcome and the slices. Resolve it one of three ways: state and evidence the claim that the
-grain and key fixes reach positions 14 to 18; or restate what changes when this lands as what the slices
-actually deliver, with the hours left to the deferred question; or pull the deferred slice into the item.
-The third is now open in a way it was not when the item was drafted: the stated blocker, that R848 should
-not be adjudicated while in review, cleared when R848 reached Done on 2026-08-28.
-
-*Author's response.* Resolved, by none of the three routes offered, because the finding was right
-about a bigger thing than it claimed. The promised outcome was not merely unreached by the slices; it
-was on the wrong axis. The kept store re-priced on the shipping DDL refreshes in 43.0 seconds, so
-positions 14 to 18 are not a gap this item has to close and the deferred slice is not the way to
-close it: the tree closed it, with the cold-refresh split and the two payload registrations, and the
-audit's new section 10 measures each contribution separately. "What changes when this lands" is
-restated on the read side, which is the axis every slice was always measured on, and the target is now
-a store that materializes nothing rather than one that refreshes faster. The finding's underlying
-complaint, that the outcome and the slices were measured against different things, is what the rewrite
-fixes, and it is now fixed with an arm rather than an argument: the outcome is measured by emptying the
-register, applying the slices this item knows about, and timing the consumer read set. That arm comes
-out worse than the register today, which is stated in the item rather than smoothed over, and the
-residual it leaves is what slice 3 is scoped by.
-
-**Finding 2 (question one: viability). Slice 0 gates the design of everything below it and runs against an
-artifact this repository does not contain, with no stated way for an implementer session to obtain it.**
-"Nothing below is designed until they are answered", and both determinations are reads "against the kept
-2026-08-27 store". The audit says only that the store file is kept, 99 MB, with a SHA-256 recorded
-alongside it; where it is kept, and by whom, is nowhere in either document. Meanwhile the item's own
-"Not in this item" section establishes that no session working from this repository can take a fresh
-consumer capture. Taken together, an implementer picking this up may be unable to start, which is a
-viability question rather than a detail. Say where the store lives and how a session gets at it; or state
-that slice 0 belongs to the session that holds it and cannot be handed off, and what the item does if that
-session is not available. A reproduction recipe good enough to re-take the capture elsewhere would settle
-it, but the item argues that is out of reach, so the location is the answer that is left.
-
-*Author's response.* Resolved by taking slice 0 rather than by documenting a hand-off, so there is no
-determination left for an implementer to be blocked on. The finding's premise turned out to be wrong
-in the useful direction: the item claimed a capture on the shipping DDL was out of reach, and the
-distinction it had missed is that refreshing an already-captured schema needs the kept store and a DDL
-file, not the consumer's machine. The whole pass is therefore reproducible by anyone holding the
-store, which is what the audit's section 10 does and documents. The store's location, its provenance
-file and its recorded SHA-256 are stated at the end of that section anyway, and "Not in this item" is
-rewritten to draw the line where it actually falls, between refreshing a captured schema and
-capturing one.
-
-**Finding 3 (question two: architecture fit). The lever order contradicts the one in
-`docs/architecture/explanation/fact-model.adoc`, and no slice amends that page.** The page orders three
-rungs: a captured fact top, a registration middle, and "a rewrite is the last rung, because it usually
-changes nothing the planner cares about". This item orders five, with rewrite fourth and registration last
-behind a new reader precondition. That is a doctrine change, not the gloss the item gives it ("the top rung
-was never actually tried, so the ordering was doctrine rather than practice"): it demotes the middle rung
-below the one the page calls last, and it adds two rungs the page does not have. The item is right on the
-merits as far as the evidence goes, but if it lands as written the tree carries two orderings and the one a
-contributor finds first is the page. Name the page edit as a slice and say whether the precondition sentence
-goes in with it or waits for the deferred policy question, or say why the page stands as written. Related:
-the item's own claim that the page "already states a hierarchy" should be narrowed to which part of it
-survives.
-
-*Author's response.* Accepted in full. The page edit is now slice 5, scoped to three edits and with
-the two things it must not touch named. "The lever order" is rewritten to say which part of the page
-survives (its top rung, and its reasoning about rewrites, which the audit's two refuted rewrites
-confirm) and which part this item changes (where a registration sits, plus a rung the page does not
-carry at all). The gloss the finding objected to is gone, and the change is labelled a doctrine
-change. The finding's sub-question, whether the precondition sentence ships with the page edit or
-waits for the policy question, is named in the slice as its one open question with a recommendation
-rather than left implicit.
-**Finding 4 (traceability). "The audit predicts four named regressions in `KNOWN_NON_MONOTONIC` become
-removable" is a prediction the audit does not contain.** Neither the audit nor this file mentions
-monotonicity or that set anywhere else, and the four pairs are not named. A reader can guess at them from
-the two grains, the set's rows on `intent_argmapping_pair` and the two on `intent_spelled_table`, but a
-guess is not what the Tests section should hand an implementer, and the count is a figure the Done gate
-would be checked against. Name the four pairs in the item, or drop the count and keep the direction.
-
-*Author's response.* Accepted, taking the second option and then the first as well. The count is
-dropped because the audit does not contain it, and three pairs are named instead: the ones sitting on
-relations the slices rebuild, with the set's own comments quoted for why each is there. The Tests
-section now also says explicitly that whether any of the three becomes removable is for the Done gate
-to measure rather than a prediction inherited from the audit, since the audit measures plan sizes and
-wall clock and says nothing about scan-count monotonicity.
-**Finding 5 (figure to reconcile, minor). The audit's two readings of positions 1 to 16 disagree by about
-30 seconds.** Section 4 states 6293 s cold against 90.8 s analysed, from which the 69-fold ratio comes.
-Section 1's table sums to 6262.6 s over the same sixteen positions, which is where this item's "removes
-about 6172 seconds" comes from (6262.6 minus 90.8), so the item is consistent with the table and the audit
-is not consistent with itself. Half a percent changes no conclusion, but the audit is the artifact that
-outlives every file citing it, and a figure a later reader cannot reconcile is exactly what an audit is for
-avoiding. Say which reading is the pass and where the other came from.
-
-*Author's response.* Accepted, and settled from the capture's own log rather than by choosing between
-the two readings. The per-registration lines were re-summed: positions 1 to 16 are 6262.6 s, all
-twenty are 15477.2 s, and positions 14 to 18 are 15382.5 s, so section 1's table is the pass and is
-internally consistent. The 6293 exceeds the pass by 30.4 seconds, which is exactly position 8 counted
-twice, so it is arithmetic and not a second measurement. The audit now states this where the 6293
-stood, and the 69-fold ratio is unchanged.
-*Fixed in passing, per the reviewer-fix rule.* "The two per-refused-row reader items" was a stale count:
-there is one such item, R812, which names both call sites in its own body. Corrected in the supersession
-section; nothing else in that paragraph changed.
-
-### Round 2 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
-
-Verdict: withhold. One blocking finding on question two, one small correction beside it. Every round 1
-finding is addressed, and two of them were addressed by taking the measurement rather than by editing
-the prose, which is the better answer in both cases.
-
-*What was checked this round.* The reframing from cost to modelling is the right move and the detector
-is the reason: a defect you can state off the DDL is enumerable where a wall-clock hunt is not, and the
-item is honest about what that reframing found that the cost pass missed. The subtype-set inventory
-checks out against `graphitron-model.sql` exactly as stated: ten capture tables carry `class_name` and
-`method`, eight are `*_arg_mapping_pair`, six carry `table_ref` with `graphitron_routine` spelling the
-seventh `routine_ref`, three are `jvm_*_type_ref`, and `graphql_field`, `graphql_argument` and
-`graphql_directive_argument` share all eight of the named columns. `meta_materialize` seeds twenty-two
-registrations. `intent_argmapping_bound_parameter_type`'s `hosted` CTE is six arms differing only in the
-directive table joined and the `site` literal filtered, as described; its seventh `UNION ALL` is in the
-separate `resolved` CTE and is not one of the six. `intent_declared_type_ref` carries the comments quoted
-from it, and reads as the worked confession the item says it is. The 43.0-second re-pricing, the
-attribution arms and the store's location are in the audit's section 10, and the 6293 correction landed
-where it stood. The read-side honesty in "What changes when this lands", stating an arm that comes out
-worse than the register today, is what makes this item trustworthy on the rest.
-
-**Finding 1 (question two: what the implementer builds). The detector's union-site column is inflated
-at two of its four rows, and slice 1 is scoped by one of the inflated numbers.** The detector confirms
-an omission when a view `UNION`s three or more members of a subtype set, with no check that the set's
-shared attributes are what those arms project or join on. Membership overlaps between sets, so a view
-that unions six directive tables to reconstruct one fact is counted as a reconstruction of every set
-those tables belong to.
-
-That is not hypothetical. Slice 1 says the table-or-routine reference is reconstructed at four sites and
-makes "repointing only the first leaves three reconstructions standing" its main correction over the
-audit's class A. Grepping the three: `intent_condition_param_extraction`, `intent_condition_table_parameter`
-and `intent_argmapping_bound_parameter_type` contain no occurrence of `table_ref` or `routine_ref` at all.
-All three union those tables for `class_name` and `method`, which is row 1 of the table and slice 3's
-work. A table-or-routine-reference supertype cannot repoint any of them, so the count is one site and the
-slice's central correction dissolves. The same rule inflates row 1 the other way round: of its six union
-sites, only those same three mention `class_name` or `method`; `intent_spelled_table_live`,
-`intent_argmapping_pair_live` and `intent_condition_membership` union member tables for other facts
-entirely. Rows 3 and 4 survive the tightened rule at one and two sites.
-
-Three consequences, and the reason this blocks rather than being a note. The count that scopes slice 1 is
-wrong, and slice 1 is the slice with the strongest isolation behind it, so the item should not ship
-telling an implementer to repoint three views that cannot be repointed. Slice 3's prediction inherits the
-same arithmetic: "repoint the six sites and those three residual relations should move" is a prediction
-over three sites, which changes what a failed prediction would mean. And the gate this item says it most
-owes is specified as this detector, so it would ship the same false positives into the build, which is
-the one place they would be expensive: a gate that confirms an omission from set membership alone will
-fire on a supertype the view does not reconstruct, and attribute a real reconstruction to the wrong set.
-The fix looks small and is the author's to take: require the union's arms to project or join the set's
-shared attribute group, re-derive the union-site column under that rule, and re-scope slices 1 and 3 to
-what it gives. The audit's section 11 owes the same correction in its own table and in its "there are
-four" sentence, since the audit outlives this file and the detector script is cited from it.
-
-Nothing about the defect thesis moves. Four subtype sets with no supertype still exist off the DDL, the
-genuine reconstructions are still there, and the modelling argument does not depend on how many readers
-happen to be paying today, which is the item's own point.
-
-*Author's response.* Accepted in full; the finding is right and the defect was mine. Verified before
-fixing: `intent_condition_param_extraction`, `intent_condition_table_parameter` and
-`intent_argmapping_bound_parameter_type` contain no occurrence of `table_ref` or `routine_ref`, and of
-the method-bearing set's six reported sites only those same three name `class_name` or `method`. The
-scan now requires the view to name the set's own attributes as well as to union three or more of its
-members, which puts row 1 at three sites and row 2 at one and leaves rows 3 and 4 untouched.
-
-Everything the inflated numbers scoped is re-scoped. Slice 1's "main correction" is deleted rather than
-adjusted, because there was nothing to correct: the audit's class A named the one reconstruction that
-exists and was right, and the slice now says so and says the claim against it was this scan's defect.
-Slice 3's prediction is over the three sites it can actually be run against. The gate specification
-carries the attribute check as one of three parts, with the measured consequence of omitting it stated
-where an implementer will read it, and with the further limit that even the tightened check is name
-matching over a view body rather than proof that the attribute is projected from the unioned arms.
-
-The audit takes the same corrections in its section 11 table and prose, and it now records both
-calibration errors together, since they pull in opposite directions and the pair is more instructive
-than either: the first hid a real set, the second invented reconstructions for sets that had none, and
-both were caught only by checking output against the DDL by hand.
-
-**Finding 2 (small, question one). The access-form claim is off by one class and understates the case for
-the gate it argues for.** Round 1's finding on this was answered well, and the corrected claim is nearly
-right: `table(name(...))` appears in five main-source classes, not four (`StoreProse`, `StoreCatalog`,
-`Materializations`, `MaterializeDependencies`, `ViewReferences`). The conclusion holds, every site names a
-`meta_*` relation, `store_graph` or `INFORMATION_SCHEMA`. But one site does not name anything literally:
-`StoreProse` builds the name from a variable, `table(name(relation.toUpperCase(Locale.ROOT)))`, bounded to
-`metaRelations(dsl)` at the call site. That is the form a grep-shaped gate cannot see, and it is worth a
-sentence where the gate is proposed, because a gate that only refuses a literal `intent_` name would pass a
-computed one.
-
-*Author's response.* Accepted, both halves verified. Five classes carry the form, the fifth being
-`ViewReferences`, and `StoreProse` line 61 builds the name from a variable. Corrected in the item and in
-the audit's section 2, with the resolved-to set widened to include `INFORMATION_SCHEMA`, which the
-four-class version had not accounted for either. The computed site is now a sentence on the access-form
-gate bullet rather than only a correction: the check belongs on what the argument can resolve to and not
-on how it is spelled, which is a real constraint on how that gate gets written.
-
-*Fixed in passing, per the reviewer-fix rule.* The Tests section's account of `KNOWN_NON_MONOTONIC`'s
-remaining rows was a miscount: the set holds thirteen, of which the three named leave ten, and those are
-eight on `intent_field_reference_step_hop` plus the node-id instruction's plus the `intent_errors_field`
-pair, which shares its comment with the argmapping row. Corrected in place.
-
-### Round 3 (2026-08-28, Spec -> Ready, reviewer session 01P2HFCFzA3YiKbaLjgXzet7)
-
-Verdict: sign off. Both round 2 findings are resolved at the source rather than papered over, and the
-resolution of the first is better than the finding asked for: the detector grew a third part, the two
-inflated rows are re-derived under it, everything they scoped is re-scoped, and the two calibration
-errors are recorded together in the audit because they fail in opposite directions. Deleting slice 1's
-"main correction" rather than adjusting it is the right call, since there was nothing to correct.
-
-*Re-verified against `graphitron-model.sql` this round.* Of the method-bearing set's six previously
-reported sites exactly three name `class_name` or `method`: `intent_argmapping_bound_parameter_type`
-at six arms and `intent_condition_param_extraction` and `intent_condition_table_parameter` at five
-each, which is the table's new row 1 and slice 3's new prediction. `intent_spelled_table_live` is the
-only view naming `table_ref` or `routine_ref`, so row 2 is one site. Rows 3 and 4 are unchanged at one
-and two, `intent_jvm_ancestor` and `intent_declared_type_ref` being the two. Five main-source classes
-carry `table(name(...))` and `StoreProse:61` is the computed one, as the item and the audit now say.
-
-**One thing for the implementer to carry into slice 1, not a finding against the plan.** The one
-argMapping reconstruction covers seven of the set's eight members: eight arms, with
-`graphitron_field_condition_arg_mapping_pair` appearing twice for `FIELD_CONDITION` and
-`INPUT_FIELD_CONDITION`, and `graphitron_argument_reference_for_step_arg_mapping_pair` absent. That
-table's own comment says capture is total across every SDL-legal location even though today's validator
-rejects the coordinate, so the eighth member can hold rows the current view does not return. The
-supertype is over the closed set of eight; the repointed view has to keep returning 108. Those two are
-consistent only if the view keeps the eighth arm out, so the discriminator has to let a reader exclude
-it, and a supertype that silently folded it in would break the row-identity anchor in the one direction
-the anchor exists to catch. The plan already forces this through its anchor rather than leaving it open,
-which is why it is a note and not a finding. The arm count is corrected in the slice and in the audit's
-section 3 table.
-
-*Fixed in passing, per the reviewer-fix rule.* Two stale arm counts for that view: "seven arms" in
-slice 1 and "7-arm `UNION ALL`" in the audit's class A table, both now eight arms over seven of eight
-members.
+Two findings are worth keeping here because they shaped the item rather than a paragraph of it. The
+first was that the central claim, that a registration has nothing left to buy once the model is
+fixed, was established at one relation and asserted at the others; the item now says so in its own
+opening and carries the honest status in "What changes when this lands". The second was that the
+lever order was stated as a principle before it had been run, which is why "Four attempts, and what
+each of them found missing" exists: each attempt is the order being tested rather than illustrated.
