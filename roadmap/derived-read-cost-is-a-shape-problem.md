@@ -593,6 +593,26 @@ declared now is the one that will still be right.
    output-field side, a routine segment has no meaning there, and the multi-table polymorphic root
    fans the departure out per branch, so folding them in before the field side is settled would model
    three unlike things as one.
+5. The declaration pass, which is the documentation and the audit in one. 249 relations carry no
+   `meta_relation` row, and writing one forces a grain to be named, after which the existing gate
+   checks the primary key against it. Ordered after the dissolutions above and not before them:
+   `intent_` alone is 129 of the 249, and most of those are views the slices above delete, so
+   declaring them first would be writing rationales for relations about to go.
+6. The register, which is downstream of all of it and is where this item's own thesis is settled: a
+   registration either has no rule left to buy or it is re-argued on its own evidence.
+
+Two things do not wait for that order, because neither is a modelling preference. Fifteen of the
+twenty-five `intent_` tables carry no primary key at all and are exactly the materialization targets,
+so nothing refuses a duplicate row in them and the gate that checks a key against its grain is
+vacuous on every one. And the written order of directive applications across directive names is the
+one fact in this whole arc that a gatherer stage cannot read out of what is already captured; it has
+a measured symptom in the chain walk and item 2 is blocked behind it.
+
+The evidence for the ordering is in two audits:
+`roadmap/audits/2026-09-05-coordinate-facts-as-relations.md` names the grains and the four tiers at
+which an illegal state can be refused, and
+`roadmap/audits/2026-09-06-graphitron-family-grain-inventory.md` places every relation of both
+families against them and measures the dependency graph.
 
 ### The element family, and what minting writes into it
 

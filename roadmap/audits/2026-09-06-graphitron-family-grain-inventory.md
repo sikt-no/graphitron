@@ -180,3 +180,38 @@ repository is another worktree's, and this tree's `graphitron` test sources do n
 it. The buckets above are therefore parse-derived and honest about being an upper bound. Rerunning
 the probe after the repository holds this tree's model would turn findings about the Field and Graph
 buckets from inference into measurement, and is worth doing before any rename touches a view.
+
+## The shape of the debt, measured
+
+Two more measurements, taken after the naming analysis and pointing somewhere different.
+
+**The dependency graph is shallow.** 117 views, of which 107 are `intent_`. No view is read by more
+than five others; 53 are read by no view at all, 29 by one, 19 by two, 12 by three. So the family is
+wide and flat rather than deep, and untangling it is not a big-bang: most of it is one repointing
+deep.
+
+**Of the 53 leaf views, 20 have a production reader and 33 do not.** Twenty of that 33 are the
+`_live` materialization sources, which the register reads dynamically through `meta_materialize`
+rather than by name, so they are read after all. That leaves **13 views whose only consumer is their
+own tests**: `graphql_directive_site`, `intent_condition_context_parameter`,
+`intent_condition_membership`, `intent_condition_method_route_defect`,
+`intent_condition_param_decode`, `intent_connection_facet`, `intent_errors_field_member`,
+`intent_federation_key`, `intent_field_error_channel`, `intent_mutation_write_agreement`,
+`intent_node_id_encode`, `intent_producer_cardinality_conflict`, `intent_scalar_java_type`.
+
+Those 13 are not all debt, and the difference matters. Under a strangler migration a relation lands
+before the consumer that will read it, so a view with no production reader is either ahead of its
+consumer or stranded behind one that never arrived. A grep cannot tell those apart; the item history
+can. Sorting the 13 is a cheap first pass with a real answer at the end of it.
+
+## Where the plan lives
+
+Not here. R876's owed list is the plan, and this file is the evidence under it. What the measurements
+above change about that list is recorded there: the declaration pass is ordered after the
+dissolutions rather than before, because `intent_` is 129 of the 249 undeclared relations and most of
+those are views the dissolutions delete.
+
+Two measurements bear on the size of that pass. All 249 undeclared relations already carry a table
+comment, so no relation is undocumented; but only 6 of them carry the example sentence the gate
+requires, so 243 need one written. And the undeclared tables show 60 distinct primary key shapes
+against 41 grains declared today, so the pass mints grains as well as rows.
