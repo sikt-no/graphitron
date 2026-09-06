@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-05
+last-updated: 2026-09-06
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -584,7 +584,8 @@ declared now is the one that will still be right.
    carry the coining coordinate in their key. The relation that shipped as `graphitron_field` is
    renamed `graphitron_field_table` to free the name, and repoints onto the field anchor along with
    `graphitron_field_navigation`.
-2. The join path family, described below. `graphitron_field_joinpath` is its head.
+2. The route family, described below. The target fact goes on the field anchor, Route and Step become
+   grains of their own, and `graphitron_field_table` dissolves into them.
 3. The reference decode on the field sites: `graphitron_field_reference_step` and
    `graphitron_reference_for_step`, which differ only in the key saying which directive owns the row.
    The two argument-site relations beside them are item 4's, not this one's.
@@ -717,35 +718,62 @@ coordinate at all by the specification's own note, so a macro that adds one coul
 at this grain, and `graphql_poly_member` sitting outside the family is conformance rather than a
 gap.
 
-### The join path family
+### The route family, and the grains it hangs off
 
-`graphitron_field_table` says where a field's rows come from and where it departs from. The route
-between those two endpoints is a family of its own, and it is the largest thing this arc has left.
+`graphitron_field_table` says where a field's rows come from, where it departs from, and which of
+three rules named the target, all in one key. It dissolves. It is the only relation in the store with
+its key shape, it has no reader outside its own writer and tests, and the three grains it runs
+together are the reason the naming would not settle: four rounds of argument over `field_table`
+against `tablefield` were an argument about which grain the name should mean.
 
-**A path runs from one source table to one target table.** One source can have many targets: a field
-whose navigated type is a multi-table interface or a union departs once and arrives once per
-participant, and the paths to those participants need not agree, since each is a different join. So
-`graphitron_field_joinpath` is keyed by the whole of `graphitron_field_table`'s key rather than by
-the coordinate, and the two cannot disagree about which target a path leads to.
+The grain analysis that settles it is in two audits rather than here, because it is about the whole
+family and not this item:
+`roadmap/audits/2026-09-05-coordinate-facts-as-relations.md` names the grains and the four tiers at
+which an illegal state can be refused, and
+`roadmap/audits/2026-09-06-graphitron-family-grain-inventory.md` places every graphitron_ and intent_
+relation against them. What this item owes is the part that is in its own path.
 
-**A path's nodes are of two kinds, and that is the manual's own definition rather than a
-convenience.** A field's table chain is the concatenation, in written order, of the enclosing type's
-table and each directive application's contribution: `@reference` contributes hops, and `@routine`
-contributes its result table as a node. A relation holding only the hops would hold half a chain,
-which is what the present walk does. The order across applications is load-bearing and is not
-captured: ordinals are per directive name, so `@reference#0`, `@routine#0` and `@reference#1` carry
-no relative order and the walk recovers it by comparing source line and column. Measured on the
-manual's own sandwich example, that recovery reports two nodes where the manual describes four, the
-hop written before the routine being absent. The chain position therefore has to be minted at
-capture, where the order is known, rather than reconstructed by a reader.
+**The target is a Field-grain fact, and it needs no new capture.** Which type a field navigates to,
+and whether that type is bound to a table, to a routine's result, or to nothing, is determined by the
+field alone. Three relations already carry the inputs at a compatible key:
+`graphitron_field_navigation`, which is total over `graphitron_field`; `graphitron_tabletype`; and
+`intent_field_chain_terminus.via`. Measured on a capture, the classification is total and it is
+independent of the producer axis: a `@service` field over a table-bound return classifies as a table
+target, and the rule that says so reads none of the service relations.
 
-**More relations sit under it.** The reference decode it resolves, the routine decode it interleaves,
-and whatever the resolution of a hop turns out to need, since the hop relation today is a candidate
-enumeration rather than a resolution: it emits both directions and every matching constraint, and two
-separate recursive walks pick between them. How many relations that is, is not yet known, and the
-arc's own history says the number will be discovered by something refusing rather than by planning.
+**The participants are a Type-grain fact, so there is no per-field target fan-out.** A field has one
+navigated type. That a union or interface has several members is a fact of the container, and
+`graphql_poly_member` already keys it at `(graph, container, member)`. Today's relation materializes
+that fan-out once per field, which is a duplicate of a type fact rather than a field fact.
 
-What this reorders in the item as a whole: the register is downstream of all of it. Each of the four
+**What genuinely varies per field and participant is the route.** Two participants of one container
+need not be reached by the same join, which is why Route is a grain of its own at
+`(graph, coordinate, target)` and Step sits under it at `(graph, coordinate, target, position)`.
+
+**`target_basis` is a discriminator standing in for a relation that was never written.** Its three
+values are not a property of one thing: `NAMED_TYPE_TABLE` and `PARTICIPANT_TABLE` differ only in how
+many participants the navigated type has, which is the Type fact above, and `ROUTINE_RESULT` is a
+different target kind entirely, arriving through `FieldEndpoints.routineResult`, which demands
+`candidates = 1` and so is one-to-one where the other two fan out. One relation was holding a
+one-to-one population and a one-to-many population under one key.
+
+**The chain position is an Application-grain fact, and its absence is the sandwich defect.**
+`graphitron_field_reference`, `graphitron_reference_for` and `graphitron_routine` each key
+`(coordinate, ordinal)` with the ordinal counting applications of that one directive, where
+`graphql_field_directive` keys the real application grain at
+`(coordinate, directive_name, ordinal)`. So no relation orders the three against each other,
+`intent_field_chain_node` recovers the order by comparing source line and column, and on the manual's
+own sandwich it reports two nodes where the manual describes four: the hop written before the routine
+is excluded by the predicate that admits only applications following the routine's position. The
+order has to be minted where it is known, which is capture.
+
+**More relations sit under the route.** The reference decode it resolves and the routine decode it
+interleaves, and the hop relation today is a candidate enumeration rather than a resolution: it emits
+both directions and every matching constraint, and two separate recursive walks pick between them.
+How many relations that is, is not yet known, and the arc's own history says the number will be
+discovered by something refusing rather than by planning.
+
+What this reorders in the item as a whole: the register is downstream of all of it. Each slice
 removes the reason a registration existed rather than arguing the registration down, which is the
 lever order's first rung applied to relations rather than to columns.
 
