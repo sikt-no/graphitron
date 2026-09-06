@@ -410,6 +410,16 @@ two of them soundness:
   path: a jOOQ schema source is a package name. Such a key is outside every scope, which is the answer
   that costs a read.
 
+One footgun the review named and a second pass removed rather than documented. `CaptureRequest` and
+`FactCapture.capture` each had an arity taking the round's classpath stamps while filling the instant
+in for itself, which is exactly the pairing this item exists to forbid: the stamps describe bytes read
+earlier, so an instant taken at that point is later than the read it claims to date and every change
+in between records as though it had not happened. Both are gone. What replaces them is
+`CaptureRequest.unseeded`, which takes neither the stamps nor the instant, so the only shapes the API
+offers are "I have a census, here are both halves of what it established" and "I have no census,
+nothing has been read yet". Supplying one half and letting the other be filled in is no longer
+something a caller can spell.
+
 The review also added the coverage it found missing: nothing asserted that `store_source.read_at` is
 written at all, so a case now pins it to the census's own instant rather than to non-nullness, which
 is the assertion that fails if a later refactor dates the row where it writes it. One defect the

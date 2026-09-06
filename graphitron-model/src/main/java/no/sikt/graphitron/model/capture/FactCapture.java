@@ -147,8 +147,8 @@ public final class FactCapture {
                            TypeDefinitionRegistry registry, SchemaAssembly assembly,
                            SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
                            JooqCatalog jooq, List<CompletionData.ExternalReference> extensions) {
-        CapturePort.perRun(storeDirectory).capture(new CaptureRequest(graph, config, registry,
-            assembly, verdicts, attribution, jooq, extensions, Map.of(), ClassifiedRun.absent()));
+        CapturePort.perRun(storeDirectory).capture(CaptureRequest.unseeded(graph, config, registry,
+            assembly, verdicts, attribution, jooq, extensions, ClassifiedRun.absent()));
     }
 
     /**
@@ -180,8 +180,8 @@ public final class FactCapture {
                                    List<CompletionData.ExternalReference> extensions,
                                    ClassifiedRun classified,
                                    CapturePort.AfterCapture<T> after) {
-        return CapturePort.perRun(storeDirectory).captureAndRead(new CaptureRequest(graph, config,
-            registry, assembly, verdicts, attribution, jooq, extensions, Map.of(), classified),
+        return CapturePort.perRun(storeDirectory).captureAndRead(CaptureRequest.unseeded(graph,
+            config, registry, assembly, verdicts, attribution, jooq, extensions, classified),
             after);
     }
 
@@ -305,8 +305,11 @@ public final class FactCapture {
                                SchemaAssembly assembly, SdlVerdicts verdicts,
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions) {
+        // Nothing seeded, so nothing has been read: every source this capture records is hashed
+        // inside it, and entry is therefore before the read the instant dates. This is the one
+        // shape in which an instant may be taken here rather than carried in.
         capture(dsl, warm, graph, config, registry, assembly, verdicts, attribution, jooq,
-            extensions, Map.of());
+            extensions, Map.of(), LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
     }
 
     /**
@@ -319,33 +322,13 @@ public final class FactCapture {
      *
      * <p>The values have to be <em>this</em> round's. What the seeded memo asserts is that the
      * bytes the census parsed are the bytes the partition describes; a value from any other moment
-     * would record a stamp for bytes nobody read.
+     * would record a stamp for bytes nobody read. {@code readAt} is the same assertion about the
+     * same moment, which is why there is no arity taking the stamps without it: an instant this
+     * method took for itself would be later than the reads the stamps describe, and every change
+     * that landed in between would be recorded as though it had not happened.
      *
-     * @param classpathStamps the round's per-jar identities keyed by path, empty where a caller
-     *                        has none and every source is hashed here exactly as before
-     */
-    public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
-                               SubjectConfig config, TypeDefinitionRegistry registry,
-                               SchemaAssembly assembly, SdlVerdicts verdicts,
-                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
-                               List<CompletionData.ExternalReference> extensions,
-                               Map<String, String> classpathStamps) {
-        capture(dsl, warm, graph, config, registry, assembly, verdicts, attribution, jooq,
-            extensions, classpathStamps, LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
-    }
-
-    /**
-     * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
-     * SchemaAssembly, SdlVerdicts, Map, JooqCatalog, List, Map)} for a caller that also took the
-     * instant its {@code classpathStamps} describe, before it read the bytes they identify.
-     *
-     * <p>The pair travels together everywhere, and this is why: the stamp says what the bytes were
-     * and {@code readAt} says when reading them began, so {@code store_source.read_at} dates the
-     * read rather than the write. The overload above takes the instant here instead, which is
-     * correct for a caller handing over no stamps: with nothing seeded every source is hashed
-     * inside this capture, so entry is before the read it dates.
-     *
-     * @param readAt when the round began reading the sources it hands over
+     * @param classpathStamps the round's per-jar identities keyed by path
+     * @param readAt          when the round began reading them, taken before it opened the first
      */
     public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
                                SubjectConfig config, TypeDefinitionRegistry registry,

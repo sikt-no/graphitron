@@ -45,7 +45,8 @@ import java.util.Objects;
  *                    beside each stamp as the currency of the rows that read produced. It rides
  *                    with the stamps because it dates them: taken before the read, so a source
  *                    that moves while the pass is running is later than the value its row carries
- *                    and reads as moved
+ *                    and reads as moved. A caller with no census has neither and takes
+ *                    {@link #unseeded}
  * @param classified  whether the pass has a classified model for the detections to run against;
  *                    {@link ClassifiedRun.Absent} is the failure arm's, where a stage refused the
  *                    document and there is no walk to gate a detection on
@@ -70,17 +71,24 @@ public record CaptureRequest(GraphIdentity graph, SubjectConfig config,
     }
 
     /**
-     * A request whose sources are read inside the capture rather than before it: the arms that
-     * hand over no census stamps, where nothing has been read yet when the request is built, so
-     * now is genuinely before the read.
+     * A request whose sources are read inside the capture rather than before it: the arms holding
+     * no census, where nothing has been read when the request is built, so now is genuinely before
+     * every read the capture makes.
+     *
+     * <p>It takes no stamps <em>and</em> no instant, which is the whole point of it being a factory
+     * rather than a shorter constructor. The two are one fact seen twice, so a shape that let a
+     * caller supply the stamps and leave the instant to be filled in would be a shape in which the
+     * recorded currency is later than the read it claims to date, silently, at exactly the call
+     * sites that have a real census to hand. Having no such shape is what stops that.
      */
-    public CaptureRequest(GraphIdentity graph, SubjectConfig config,
-                          TypeDefinitionRegistry registry, SchemaAssembly assembly,
-                          SdlVerdicts verdicts, Map<String, SchemaInput> attribution,
-                          JooqCatalog jooq, List<CompletionData.ExternalReference> extensions,
-                          Map<String, String> classpathStamps, ClassifiedRun classified) {
-        this(graph, config, registry, assembly, verdicts, attribution, jooq, extensions,
-            classpathStamps, LocalDateTime.now().truncatedTo(ChronoUnit.MICROS), classified);
+    public static CaptureRequest unseeded(GraphIdentity graph, SubjectConfig config,
+                                          TypeDefinitionRegistry registry, SchemaAssembly assembly,
+                                          SdlVerdicts verdicts,
+                                          Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                                          List<CompletionData.ExternalReference> extensions,
+                                          ClassifiedRun classified) {
+        return new CaptureRequest(graph, config, registry, assembly, verdicts, attribution, jooq,
+            extensions, Map.of(), LocalDateTime.now().truncatedTo(ChronoUnit.MICROS), classified);
     }
 
     /** What this request writes, against whichever store a port hands it. */

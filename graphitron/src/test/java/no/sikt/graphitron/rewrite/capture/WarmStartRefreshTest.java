@@ -300,7 +300,8 @@ class WarmStartRefreshTest {
         try (var store = GraphitronModelStore.openAt(directory)) {
             FactCapture.capture(store.dsl(), true, graph(tmp), SubjectConfig.none(), registry,
                 SchemaAssembly.of(registry), SdlVerdicts.none(),
-                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps());
+                CapturedStore.attributionOf(tmp), null, reading.references(), reading.stamps(),
+                reading.readAt());
         }
 
         try (var store = GraphitronModelStore.openAt(directory)) {

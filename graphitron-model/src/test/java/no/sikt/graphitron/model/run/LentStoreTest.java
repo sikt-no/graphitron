@@ -127,9 +127,9 @@ class LentStoreTest {
      */
     private static CaptureRequest request(Path baseDir, String sdl) {
         var registry = CapturedStore.registryOf(baseDir, sdl);
-        return new CaptureRequest(CapturedStore.graph(baseDir), SubjectConfig.none(), registry,
+        return CaptureRequest.unseeded(CapturedStore.graph(baseDir), SubjectConfig.none(), registry,
             SchemaAssembly.of(registry), SdlVerdicts.none(), CapturedStore.attributionOf(baseDir),
-            null, List.of(), Map.of(), ClassifiedRun.absent());
+            null, List.of(), ClassifiedRun.absent());
     }
 
     /** The captured type census, which is the cheapest fact that says which document landed. */
