@@ -23,6 +23,13 @@ import java.util.List;
  * keys its rows on the coordinate its own remedy names. One family spanning both would have had to
  * pick one keying and restate the other's rows under it.
  *
+ * <p>{@link #nodeIdLandings} is the third {@code @nodeId} family and the one whose question is
+ * about a predicate rather than about a signature: whether the key a decode yields lands on the
+ * columns the author's path says it does. It is separate from {@link #nodeIdDecodes} because the
+ * two judge different operands at different grains, a producer parameter against a key's shape and
+ * a per-position landing against a catalog column, and a coordinate can fail either without the
+ * other having anything to say.
+ *
  * <p>{@link #referenceForParticipants} is the family whose question no single coordinate can ask:
  * a {@code @referenceFor} on a {@code @nodeId} filter input field names a participant of the
  * <em>consuming</em> query's return type, and one input type may be consumed by several queries with
@@ -39,6 +46,7 @@ import java.util.List;
 public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
+                              NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               ResolvedKeyProjections.Projections keyProjections) {
 
@@ -47,6 +55,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
             NodeIdDecodeDefects.Detection.empty(),
+            NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty());
     }
@@ -56,6 +65,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         var out = new ArrayList<>(claims.violations());
         out.addAll(argmappingProjections.violations());
         out.addAll(nodeIdDecodes.violations());
+        out.addAll(nodeIdLandings.violations());
         out.addAll(referenceForParticipants.violations());
         return List.copyOf(out);
     }

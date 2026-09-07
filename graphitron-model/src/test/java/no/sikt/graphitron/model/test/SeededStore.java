@@ -46,6 +46,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
@@ -1621,6 +1622,43 @@ public final class SeededStore {
         }
         pair(dsl, graphName, "ARGUMENT_REFERENCE_STEP", typeName, fieldName, argumentName,
             ordinal, stepPosition, position, paramName, argumentPath);
+    }
+
+    /**
+     * A {@code @referenceFor} application at a field coordinate, naming the participant it is for.
+     * The application alone, with no step under it: a case whose subject is which route applies
+     * where states the participant and nothing about the path, that being the half no view reads.
+     */
+    public static void seedReferenceFor(DSLContext dsl, String graphName, String typeName,
+                                        String fieldName, int ordinal,
+                                        String participantTypeRef) {
+        dsl.insertInto(GRAPHITRON_REFERENCE_FOR)
+            .set(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_REFERENCE_FOR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_REFERENCE_FOR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_REFERENCE_FOR.ORDINAL, ordinal)
+            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE, 2)
+            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_REFERENCE_FOR.PARTICIPANT_TYPE_REF, participantTypeRef)
+            .execute();
+    }
+
+    /** The argument-site twin of {@link #seedReferenceFor}, over the four-part coordinate. */
+    public static void seedArgumentReferenceFor(DSLContext dsl, String graphName, String typeName,
+                                                String fieldName, String argumentName, int ordinal,
+                                                String participantTypeRef) {
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_FOR)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.PARTICIPANT_TYPE_REF, participantTypeRef)
+            .execute();
     }
 
     /**

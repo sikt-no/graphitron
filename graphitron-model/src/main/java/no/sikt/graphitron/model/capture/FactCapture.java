@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
+import no.sikt.graphitron.model.derive.NodeIdLandingDefects;
 import no.sikt.graphitron.model.derive.ReferenceForParticipantDefects;
 import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
@@ -211,8 +212,8 @@ public final class FactCapture {
      * producer that wants the fact can ask for it directly, and this read is a value the plan is
      * handed rather than a question it puts.
      *
-     * <p>The two {@code @nodeId} families read only SDL facts and the classpath census, and share the
-     * classified-run arm anyway: a run with no classified model is a run whose verdict has already
+     * <p>The {@code @nodeId} families read only SDL facts, the catalog and the classpath census, and
+     * share the classified-run arm anyway: a run with no classified model is a run whose verdict has already
      * been pronounced elsewhere, and there is no build for these rejections to fail.
      */
     private static StoreDetections detect(DSLContext dsl, String graphName,
@@ -223,6 +224,7 @@ public final class FactCapture {
                 yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graphName),
                     ArgmappingProjectionDefects.detect(dsl, graphName),
                     NodeIdDecodeDefects.detect(dsl, graphName),
+                    NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName));
             }

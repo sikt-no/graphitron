@@ -12,6 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
+import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.notExists;
@@ -54,6 +55,15 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>Output-field applications are excluded structurally rather than by a kind test: an occurrence
  * path's leaf is always an input object type, so an application on an object or interface field
  * matches no occurrence and never enters the population.
+ *
+ * <p>Both arms are anti-joins against {@code intent_reference_for_application}, which is the
+ * resolution "does this application apply at this consumer, and to which participant" as a relation
+ * rather than as a join this reader spells twice. The predicate is the same one it always was: an
+ * application has a row there for each consumer offering the participant it names, so no row
+ * anywhere is exactly the name that matched nothing anywhere. What changed is that a second reader
+ * asks the same question, the {@code @nodeId} landing verdicts needing to know which branches a
+ * per-participant route reaches, and a derivation two readers ask for is a relation. The two
+ * population gates below stay here, being this reader's own question rather than that relation's.
  */
 public final class ReferenceForParticipantDefects {
 
@@ -109,19 +119,17 @@ public final class ReferenceForParticipantDefects {
     private static List<Defect> inputFieldDefects(DSLContext dsl, String graphName) {
         var r = GRAPHITRON_REFERENCE_FOR;
         var o = INTENT_INPUT_OCCURRENCE_PATH;
-        var ps = INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
+        var a = INTENT_REFERENCE_FOR_APPLICATION;
         return dsl.selectFrom(r)
             .where(r.GRAPH_NAME.eq(graphName),
                 // Consumed somewhere: an input type nothing reads is outside what the build classifies.
                 exists(selectOne().from(o)
                     .where(o.GRAPH_NAME.eq(graphName), o.LEAF_NAMED_TYPE.eq(r.TYPE_NAME))),
-                // And no consumer of it holds a participant by this name.
-                notExists(selectOne().from(o)
-                    .join(ps).on(ps.GRAPH_NAME.eq(o.GRAPH_NAME),
-                                 ps.TYPE_NAME.eq(o.ROOT_TYPE_NAME),
-                                 ps.FIELD_NAME.eq(o.ROOT_FIELD_NAME),
-                                 ps.MEMBER_TYPE_NAME.eq(r.PARTICIPANT_TYPE_REF))
-                    .where(o.GRAPH_NAME.eq(graphName), o.LEAF_NAMED_TYPE.eq(r.TYPE_NAME))))
+                // And the application applies at no consumer of it.
+                notExists(selectOne().from(a)
+                    .where(a.GRAPH_NAME.eq(graphName), a.SITE.eq("INPUT_FIELD"),
+                        a.TYPE_NAME.eq(r.TYPE_NAME), a.FIELD_NAME.eq(r.FIELD_NAME),
+                        a.ORDINAL.eq(r.ORDINAL))))
             .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.ORDINAL)
             .fetch(row -> {
                 String coordinate = row.getTypeName() + "." + row.getFieldName();
@@ -139,17 +147,16 @@ public final class ReferenceForParticipantDefects {
      */
     private static List<Defect> argumentDefects(DSLContext dsl, String graphName) {
         var a = GRAPHITRON_ARGUMENT_REFERENCE_FOR;
-        var ps = INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
+        var ra = INTENT_REFERENCE_FOR_APPLICATION;
         var d = INTENT_TYPE_DOMAIN;
         return dsl.selectFrom(a)
             .where(a.GRAPH_NAME.eq(graphName),
                 exists(selectOne().from(d)
                     .where(d.GRAPH_NAME.eq(graphName), d.TYPE_NAME.eq(a.TYPE_NAME))),
-                notExists(selectOne().from(ps)
-                    .where(ps.GRAPH_NAME.eq(graphName),
-                           ps.TYPE_NAME.eq(a.TYPE_NAME),
-                           ps.FIELD_NAME.eq(a.FIELD_NAME),
-                           ps.MEMBER_TYPE_NAME.eq(a.PARTICIPANT_TYPE_REF))))
+                notExists(selectOne().from(ra)
+                    .where(ra.GRAPH_NAME.eq(graphName), ra.SITE.eq("ARGUMENT"),
+                        ra.TYPE_NAME.eq(a.TYPE_NAME), ra.FIELD_NAME.eq(a.FIELD_NAME),
+                        ra.ARGUMENT_NAME.eq(a.ARGUMENT_NAME), ra.ORDINAL.eq(a.ORDINAL))))
             .orderBy(a.TYPE_NAME, a.FIELD_NAME, a.ARGUMENT_NAME, a.ORDINAL)
             .fetch(row -> {
                 String coordinate = row.getTypeName() + "." + row.getFieldName();

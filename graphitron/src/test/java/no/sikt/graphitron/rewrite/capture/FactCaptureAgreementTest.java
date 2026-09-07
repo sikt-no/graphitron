@@ -535,6 +535,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_decode_slot", Arm.DERIVED);
         registrations.put("intent_node_id_decode", Arm.DERIVED);
         registrations.put("intent_node_id_decode_defect", Arm.DERIVED);
+        registrations.put("intent_node_id_decode_landing_defect", Arm.DERIVED);
+        registrations.put("intent_reference_for_application", Arm.DERIVED);
         registrations.put("intent_foreign_key_column_pair", Arm.DERIVED);
         registrations.put("intent_node_id_encode", Arm.DERIVED);
         registrations.put("intent_spelled_table_live", Arm.DERIVED);

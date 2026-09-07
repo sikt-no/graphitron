@@ -123,6 +123,14 @@ class SupertypeSignatureGateTest {
      * union, {@code graphitron_service_context_arg}: a condition parameter's roles are a different
      * rule from a service parameter's. Its supertype therefore belongs at capture, keyed on the site
      * a reader filters by, rather than as a union in a derived view.
+     *
+     * <p>{@code intent_reference_for_application} is the newest row and the one worth reading as an
+     * improvement rather than as a regression. Its two arms were previously spelled inside one
+     * reader's {@code WHERE} clause, twice, so the reconstruction existed and this gate could not
+     * see it; naming the resolution as a relation is what made it visible here, and what a second
+     * reader now joins instead of respelling. The supertype it owes is the same one every other row
+     * owes: {@code @referenceFor} written at an argument and at a field is one fact at two
+     * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
         "intent_argument_filter_role|graphitron_argument_condition,graphitron_field_condition",
@@ -135,6 +143,7 @@ class SupertypeSignatureGateTest {
         "intent_field_producer_reference|graphitron_external_field,graphitron_service",
         "intent_input_occurrence_override|graphitron_argument_condition,graphitron_field_condition",
         "intent_node_id_instruction_live|graphitron_argument_node_id,graphitron_field_node_id",
+        "intent_reference_for_application|graphitron_argument_reference_for,graphitron_reference_for",
         "intent_resolved_node_key_column|sql_constraint_column,sql_node_key_column");
 
     @Test

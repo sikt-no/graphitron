@@ -355,6 +355,44 @@ module consumes `intent_node_id_decode_defect` today either. The new view is sha
 (ungated rows, source location on the row) so an editor diagnostic is a query away when a consumer
 asks for it; that is a separate item.
 
+### Three notes from the implementation
+
+Recorded here rather than left for a reviewer to reconstruct from the diff. None of them changes what
+the item delivers; each is a place where following the plan's letter would have contradicted
+something already in the tree.
+
+**Which coordinate the error attaches to, and why the input-field lead is not a duplicate.**
+`ValidationError.forField` unconditionally prefixes `Field '<coordinate>': `, so a message body that
+opened `input field 'FilmFilter.categoryRef': ` while the coordinate was the input field itself would
+render that coordinate twice. Both sites therefore attach to the *consuming* coordinate and name the
+slot in the lead: `Field 'Query.films': input field 'FilmFilter.categoryRef': ...` at an input field
+and `Field 'Query.stock': argument 'orgRef': ...` at an argument. That is the drafted wording
+unchanged, and it is also the right coordinate on this family's own terms, the landing being a fact of
+the use site: one input field reached from two queries whose scope tables differ can land right at one
+and wrong at the other, so attaching both rows to the input field would put two contradictory-looking
+errors on one coordinate. Where the coordinate holds several branches the lead names the departing
+table, which the plan asked for; that reads
+`input field 'OrgHolderFilter.orgRef' on the 'diverged_ref_child' branch: `.
+
+**The view carries `root_type_name`, `root_field_name` and `branches`.** The plan had the reader reach
+the consuming coordinate through `intent_input_occurrence_path` for its domain gate. It carries them on
+the view instead, which is `intent_node_id_decode_defect`'s own shape (that view carries
+`root_type_name`, `root_field_name` and `root_argument_name` for exactly this reason) and which the
+coordinate lead above needs anyway, so the alternative was one join spelled twice in one reader.
+`branches` is the endpoint count for the coordinate and node type, counted over the endpoint population
+rather than over the judged one: it is what tells the consumer whether naming a branch says anything,
+and a count over the judged rows would fall to one on the coordinate where a sibling branch was
+excluded, which is precisely where an author most needs the branch named.
+
+**Two roster rows the plan did not name, both demanded by gates that fired.**
+`MetaDeclarationGateTest`'s undeclared roster only shrinks, so both new relations owe a `meta_relation`
+row *and* a `meta_grain` row, and a declared relation's whole comment must be its grain sentence plus
+its example, both length-checked; the essays the undeclared siblings carry go in `rationale` instead.
+And `SupertypeSignatureGateTest` counts `intent_reference_for_application` as a new reconstruction of
+the `@referenceFor` subtype set, which it is: the union was previously spelled inside
+`ReferenceForParticipantDefects`'s `WHERE` clause twice, where that gate could not see it, so naming
+the resolution as a relation is what made the reconstruction visible. Its roster row says so.
+
 ## Tests
 
 Both faults are accepted today, so the first commit of the implementation may pin today's outcome
