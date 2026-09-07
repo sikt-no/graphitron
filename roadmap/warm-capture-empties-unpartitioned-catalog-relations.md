@@ -1168,3 +1168,24 @@ until something asks for a per-source SDL refresh.
 A per-source delete can only be observed on a relation holding rows from two sources, so that overlap
 is the shape this item's own regression test needs, and the Tests section may be able to lean on it
 rather than build its own.
+
+### Round 5 addendum (2026-09-07, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Appended rather than folded into round 5 above, which stands as written. R876's note said the
+`store_source` row had been checked but that nothing had checked the per-graph membership. That gap
+is now closed, and by an existing test rather than by reasoning from `GraphSourceMembership.note`.
+
+`FactCaptureAgreementTest.graphSourceMembershipEqualsTheRunsReadSet` captures two graphs into one
+store and asserts each graph's `store_graph_source` set equals its own read-set, then re-asserts the
+first graph's set after the second is captured. Its oracle, `sdlSourceNames`, mirrors
+`captureSources` and walks `registry.getDirectiveDefinitions()`, which is where the bundled
+definitions live, so `directives.graphqls` is in *both* graphs' expected sets and the test pins that
+it is in both actual ones. With `TaggedCaptureStampTest` pinning the single `SCHEMA_FILE` row for that
+same file, finding 5 is pinned from both ends: one registry row, two memberships, both asserted today.
+
+Which resolves phase four's own pre-flight step against it. That phase opens by saying
+"Implementation confirms first that no fixture captures two graphs over one schema file, the new rule
+being a refusal an existing test could trip". This is that test, it does trip, and the reason is not a
+fixture that happens to share a file: both graphs read the bundled file by construction, so no fixture
+edit can make the check pass. The step is worth keeping in the revised phase, but its answer is
+already known and it is the finding rather than a way around it.
