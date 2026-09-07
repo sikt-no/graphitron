@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+
 import java.nio.file.Path;
 import java.util.List;
 
@@ -212,7 +214,17 @@ public final class EntryFamilyFixture {
 
     /** Captures both documents into one graph, which is the shape every case here wants. */
     public static CapturedStore capture(Path directory) {
-        return CapturedStore.ofFiles(directory, FIRST, CORE, SECOND, EXTENSION);
+        return capture(directory, null);
+    }
+
+    /**
+     * The same capture with a jOOQ catalog beside it, or without one when {@code jooq} is null. The
+     * two arms of a catalog differential are one call each, and the fixture is what makes that
+     * differential worth running: the schema names tables the catalog need not hold, so what the
+     * arms are compared on is the decode's own output rather than a resolution.
+     */
+    public static CapturedStore capture(Path directory, JooqCatalog jooq) {
+        return CapturedStore.ofFiles(directory, FIRST, CORE, SECOND, EXTENSION, jooq);
     }
 
     /**

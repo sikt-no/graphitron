@@ -353,9 +353,10 @@ is that the split is exactly entry against anchor, which is the split between ne
 document and needing the store. Two pages state the old correlation as though it were the rule and
 both need restating with slice one. The fact model's ownership section says the two families have "a
 gatherer each" and that the decode "runs after the transcription has flushed rather than inside its
-walk"; its corpus-isolation section says the decode is outside that gate's scope because its gatherer
-may reach the catalog legitimately. The first becomes false here. The second stays true of the 15 and
-becomes false of the 56.
+walk"; its corpus-isolation section said the decode is outside that gate's scope because its gatherer
+may reach the catalog legitimately. The first becomes false when the writer moves and still says the
+old thing. The second stayed true of the 15 and became false of the 56, and was restated with the
+widening rather than with the move, because the widening is what made it false.
 
 **The name says which half.** Every as-written relation carries the `_entry` suffix; three of the 56
 do today. The pattern's central operation is the anti-join between the two halves, and a reader who
@@ -485,10 +486,10 @@ attempt owes before it can claim to be done.
 
 1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode writes today, from
    the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages write.
-   The `_entry` suffix lands on each relation as it goes, and the corpus-isolation gate widens
-   behind a fixture that can fail. That fixture landed ahead of the slice on 2026-09-07 and the
-   widening is the only part of it still owed. Specified in full below, because it is the next slice
-   and because what it moves was measured before the decision was taken.
+   The `_entry` suffix lands on each relation as it goes. The corpus-isolation gate widened behind
+   a fixture that can fail, both landed 2026-09-07 ahead of the move, so what is left of the slice
+   is the move itself. Specified in full below, because it is the next slice and because what it
+   moves was measured before the decision was taken.
 2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
    type is one of the specification's six kinds, and boundness, participants and fields are facts
    each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
@@ -614,11 +615,16 @@ parsed `Value` and prints it with `AstPrinter.printAstCompact` into `graphql_typ
 locations, and the `inputTypes` query, which asks the transcription for something the walk knows by
 standing inside an `InputObjectTypeDefinition`.
 
-**One gate widens now and a second becomes reachable.** `CaptureCorpusIsolationTest` holds a
+**One gate has widened and a second becomes reachable.** `CaptureCorpusIsolationTest` holds a
 crawler's rows about its corpus to being identical with and without a catalog, and `b5c9ff262` cut
 its scope to `graphql_` alone, correctly, because a gatherer that may read the catalog cannot be held
-to catalog-independence. An entry can be, so the entry half rejoins that scope, and the widening is a
-check recovered rather than a tidiness gain. The second is `MetaDeclarationGateTest`'s corpus check,
+to catalog-independence. An entry can be, so the entry half rejoined that scope on 2026-09-07, and
+the widening is a check recovered rather than a tidiness gain. It landed ahead of the move rather
+than with it, which is the point: the scope is a property of the rows and not of their writer, so
+the check that says the entry half reads no catalog is running against the arm the move is about to
+retire, and it is the same check the new arm will have to pass. Verified by making one decode
+catalog-dependent and watching the gate go red naming `graphitron_pivot`, on the entry corpus alone
+and not on the transcription's own fixture, which is the widening being what caught it. The second is `MetaDeclarationGateTest`'s corpus check,
 which exempts every graphitron-owned relation today because the graphitron gatherer has no
 `meta_gatherer_corpus` row and crossing is its job. An sdl-owned entry is not exempt: its grain has to
 live in the sdl corpus, which is a check the entry half has always been able to pass and has never
@@ -637,13 +643,14 @@ entry half passed before any code moved, measured 2026-09-07 over the 57 relatio
 selects, and it passed for the wrong reason: eight of the 57 held a row under that gate's fixture,
 so 49 of them agreed by being empty twice, and a gate that cannot fail is what this arc has twice
 mistaken for evidence. `EntryFamilyFixture` is the answer to that, landed 2026-09-07 ahead of the
-move. It applies every graphitron directive the decode writes a relation for, across two documents,
+move, and the widened gate runs against it rather than against the transcription's own fixture. It applies every graphitron directive the decode writes a relation for, across two documents,
 and `EntryFamilyCoverageTest` holds it to writing a row into all 56 entry relations, to nine of them
 holding rows from both documents, and to its own two lists partitioning the family, so a 73rd
 relation has to be classified as an entry or an anchor rather than slipping into the uncovered set.
-Re-measured behind it, the differential runs over 86 relations of which 83 are populated and none
-differs between the arms. The claim that the entry half reads no catalog now has a check that could
-have said otherwise.
+The differential runs over 86 relations of which 83 are populated and none differs between the
+arms, and the shipped gate asserts that all 56 of the entry half are among the populated, so a
+fixture that stopped applying a directive fails on the relation rather than going quietly empty. The
+claim that the entry half reads no catalog now has a check that could have said otherwise.
 
 **Two things the fixture settles beyond the widening.** The classification this slice rests on is a
 stated artifact rather than a grep: 56 entries against 16 anchors, the sixteenth being the match

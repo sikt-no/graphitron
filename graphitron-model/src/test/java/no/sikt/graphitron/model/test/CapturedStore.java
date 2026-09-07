@@ -135,11 +135,20 @@ public final class CapturedStore implements AutoCloseable {
      */
     public static CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
                                         String secondName, String secondSdl) {
+        return ofFiles(directory, firstName, firstSdl, secondName, secondSdl, null);
+    }
+
+    /**
+     * {@link #ofFiles(Path, String, String, String, String)} against a generated jOOQ catalog, for a
+     * case whose two arms are the same two documents with and without one.
+     */
+    public static CapturedStore ofFiles(Path directory, String firstName, String firstSdl,
+                                        String secondName, String secondSdl, JooqCatalog jooq) {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
-        captureFiles(store, files, directory, GRAPH, registry, null, List.of(), false);
+        captureFiles(store, files, directory, GRAPH, registry, jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
     }
 
