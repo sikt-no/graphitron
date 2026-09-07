@@ -403,3 +403,65 @@ in the same schema land a wrong terminal table whose columns agree with the node
 type, because they are the child columns of that table's own foreign key to the node: those compile and
 produce correct SQL, and they are why this item is about verification rather than about a codegen
 crash.
+
+## Reviewer findings
+
+### Round 1 (2026-09-07, Spec -> Ready, reviewer session 01Cq156uGUZ1uZy5zaknuRo8)
+
+Verdict: withhold. One finding, on question one with a question-two consequence. The goal reads
+without reconstruction: after this lands, a `@nodeId(typeName:)` filter whose path stops one table
+short of the node type's table, or whose decoded key lands on a same-named column of a different
+Java type, is a `graphitron:generate` refusal naming both tables or both columns and types, where
+today it is uncompilable generated Java or SQL that is right by accident. The store placement is the
+right shape under the strangler rule, and every symbol, relation and fixture the spec names exists
+as named, with one exception below. The exception is a claim about facts the store holds that the
+plan's participant-route coverage stands on, and the tree does not hold them.
+
+**Finding 1 (question one: the `@referenceFor` route does not reach the hop relation; question
+two: the implementer would have to design the derivation that does).**
+
+"The facts are already there" and "a participant route reaches the hop relation through the same
+reference-target views" are both false for the `@referenceFor` route today. `@referenceFor` steps
+are captured, by `GraphitronFactCapture` through `FactWrites`, into `graphitron_reference_for_step`
+at the field coordinate and `graphitron_argument_reference_for_step` at the argument coordinate.
+No view in `graphitron-model.sql` reads either table. `intent_node_id_instruction_live` computes
+`carries_reference_path` from `graphitron_field_reference_step` and
+`graphitron_argument_reference_step` alone, and `intent_node_id_decode_hop` joins
+`intent_argument_reference_step_target` and `intent_input_field_reference_step_target`, both built
+over those same `@reference` step tables. A `@nodeId` slot whose stated route is a `@referenceFor`
+is therefore `SAME_TABLE` or `DISCOVERED_KEY` in the store, and its hops, where it has any, are the
+one foreign key auto-discovery would find, not the path the author wrote and the walk's
+`Route.ParticipantRoute` arm follows. `FactCaptureAgreementTest` pins no `@referenceFor` `@nodeId`
+case, so the store and the walk disagree on this route today with nothing failing.
+
+Three parts of the plan inherit that:
+
+- `PATH_STOPS_SHORT` is gated on `navigation = 'AUTHORED_PATH'`, so it cannot fire for a
+  `@referenceFor` path. The pipeline-tier bullet "The same refusal on the `@referenceFor` route, at
+  both the input-field and the argument coordinate" cannot pass as specified.
+- `LANDING_TYPE_DISAGREEMENT` over a participant route judges whatever landing `DISCOVERED_KEY`
+  computes for that branch, which is not the landing the generator emits for it. It can miss the
+  fault (authored path diverges, discovered key does not) and it can refuse a sound schema
+  (discovered key diverges, authored path does not).
+- The case for the store over the walk includes "a store predicate over the hop relation covers
+  every navigation at once". Today it covers two of the walk's three routes, and the walk-side
+  alternative's cost "a check written into two of the three `Route` arms" is a cost the store
+  route shares until the decode family models the third arm.
+
+What satisfies it is the author's fork, and the spec has to say which arm it takes:
+
+- Extend the decode family so a participant route is an `AUTHORED_PATH` whose hops come from the
+  `@referenceFor` step tables, selected per branch by `participant_type_ref` against the branch's
+  type, with `FactCaptureAgreementTest` pinning the walk against the extended landing relation.
+  The plan's claims then hold as written, and "The facts are already there" becomes a section
+  that says which fact is new (a derived one; the captured steps do exist).
+- Or narrow this item to the `@reference` and discovered-key navigations: drop the `@referenceFor`
+  test bullet, state that a participant route is not judged until the store models it, and file
+  the store's missing `@referenceFor` navigation as its own Backlog item, since the walk-store
+  disagreement exists whether or not this item lands.
+
+Non-blocking. The spec says the coordinate spelling is the sibling's, with `input field
+'Type.field'` at an input field. `NodeIdDecodeDefects` reads an `ARGUMENT`-only view and spells
+`argument 'x'` only, and `ReferenceForParticipantDefects` spells an input-field coordinate as bare
+`Type.field`. The input-field lead the messages open with is minted by this item, not copied; noted
+because the spec states both messages in full for review.
