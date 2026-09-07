@@ -76,36 +76,56 @@ The file still exists and its registry row still identifies it, so nothing delet
 content change invalidates is the facts read out of the file, and each family already has a single
 relation those facts hang from:
 
-[cols="2,2,4"]
+A *root* here is precise: a relation whose rows hang directly off the registry row, so that deleting
+them reaches the family's whole subtree. Enumerated from the keys rather than assumed, because the
+obvious answer is wrong in one place.
+
+[cols="2,3,4"]
 |===
-| Family | Its root row | One delete replaces
+| Family | Its root rows | One delete each replaces
 
 | `sql_`
-| `sql_schema` for the source
-| the eleven per-source statements in `CatalogFactCapture.clearSchemaSources`, tables, columns,
-  constraints, indexes, node metadata and routines all cascading from it
+| `sql_schema` **and** `sql_enum_binding`
+| the eleven per-source statements in `CatalogFactCapture.clearSchemaSources`. Two roots, not one:
+  `sql_enum_binding` keys `(source_name, class_fqn)` and its `table_schema` is nullable, so it hangs
+  off the registry rather than off a schema and no edge can be added to fold it in
 
 | `jvm_`
-| `jvm_class` for the source
+| `jvm_class`
 | the seven hand-unrolled deletes in `StoreRefresh.clear`, hand-ordered children before parents
 
 | `java_`
-| `java_file` for the file
+| `java_file`
 | the family's own declaration sweep
 
 | `graphql_`, `graphitron_`
 | `store_graph_source`, the `(graph, source)` row
-| a scoped delete per relation across 56 relations, which is why this family needs its root named
-  rather than assumed
+| a scoped delete across 54 relations, which is why this family needs its root named rather than
+  assumed
 |===
 
-So a refresh deletes one row per family per changed source, the cascade clears everything beneath it,
-and the walk rewrites. The registry row persists throughout and its `stamp` and `read_at` update in
-place, which is also what R922's currency comparison expects to find there.
+So a refresh deletes one row per root per changed source, the cascade clears everything beneath, and
+the walk rewrites. The registry row persists throughout and its `stamp` and `read_at` update in place,
+which is where R922's currency comparison expects to find them.
+
+**Deleting the `(graph, source)` row is not the mechanic this plan rejects, and the difference is worth
+being explicit about since the two look alike.** `store_source` holds the file's identity, which a
+refresh does not change and must not churn. `store_graph_source` holds *this graph's reading of that
+file*, and a re-read genuinely replaces the reading, so the row going and coming back is the fact
+being restated rather than an identity being churned to trigger a side effect. A reviewer should test
+that claim rather than take it: if the reading row ever acquires state worth preserving across a
+re-read, this stops being true and the family needs a root of its own.
+
+**A refresh in one corpus can validly delete rows in another family**, and the family-by-family table
+hides it. `graphitron_tabletype` and `graphitron_field_table` hang off `sql_table`, and
+`graphitron_node_keycolumn` off `sql_column`, so refreshing a jOOQ package deletes those decode rows.
+That is correct, since a decode resolved against the catalog cannot outlive the catalog row it
+resolved against, and it is exactly the kind of edge a hand-written per-family delete has no way to
+find.
 
 `store_graph_source` earns its place here without being a second registry. It already exists, already
 keys `(graph_name, source_name)`, already carries foreign keys to both sides, and is already
-maintained by `GraphSourceMembership`. Making the 56 source-attributed SDL relations hang off it
+maintained by `GraphSourceMembership`. Making the 54 source-owned SDL relations hang off it
 gives that family the same shape `sql_schema` and `jvm_class` give theirs: one row to delete, one
 cascade, no roster.
 
@@ -113,8 +133,19 @@ cascade, no roster.
 
 A schema file deleted, a jar dropped from the classpath, a `.java` file removed. Here the registry
 row is exactly what should go, and deleting it takes the family roots, their subtrees and the
-membership rows with it in one statement. This is the operation the cascade to `store_source` is for,
-and it is the one the current code has no clean expression of at all.
+membership rows with it in one statement. This is the operation the cascade to `store_source` is for.
+
+It is also an operation the store does not currently have at all, which is worth stating as a gain
+rather than leaving implied. Nothing in the tree deletes a `store_source` row: there is no
+`deleteFrom(STORE_SOURCE)` anywhere, and `StoreReaper` reaps whole store *files* from disk rather than
+partitions inside one. `StoreRefresh` says so from the other side, retaining a source absent from this
+run's input set on the correct ground that another graph may still need it, and nothing ever asks
+whether any graph still does. So a jar that leaves a consumer's classpath keeps its classes for the
+life of the workspace cache, and the store grows monotonically across a project's dependency churn.
+This item does not add the reaping policy, which is a question about when a source is known to be
+unwanted rather than about how to remove it, but it is what makes the removal expressible in one
+statement instead of eighteen. That bears on R917 and on the cache byte-budget item, and both should
+be told the mechanism exists rather than each inventing one.
 
 ### A schema file belongs to exactly one graph
 
@@ -134,29 +165,46 @@ it as policy.
 
 ### What cascades, and what has to be re-aggregated
 
-Every relation of these five families is one of three things. The counts are derived from the DDL
-rather than estimated.
+Every relation of these five families is one of three things, and the test is *whether the row's
+existence is a function of one source or of several*, not whether it happens to carry a source
+column. Getting that test wrong is what put two cross-file relations in the cascading set in an
+earlier draft. The counts are computed from the DDL over all 124 relations of the five families and
+they sum, which the previous version's did not.
 
 [cols="3,1,5"]
 |===
 | Kind | Count | Treatment
 
-| Source-attributed: carries `source_name` or `file`
-| 81
-| A cascading foreign key into its family root, or into `store_source` where it is the root itself.
-  14 `sql_`, 7 `jvm_`, 4 `java_`, 16 `graphql_`, 40 `graphitron_`.
+| Owned by one source
+| 79
+| A cascading foreign key into its family root, or into the registry where it is a root itself.
+  14 `sql_`, 7 `jvm_`, 4 `java_`, 14 `graphql_`, 40 `graphitron_`.
 
-| Descendant of a source-attributed row
-| 6
-| Nothing to do. It already cascades transitively through the parent carrying the attribution:
-  `graphql_directive_location` under `graphql_directive`, and the five `*_directive_arg` relations
-  under their directive-application parents.
+| Descendant of an owned row
+| 30
+| Nothing to do; it already cascades transitively. `graphql_directive_location` under
+  `graphql_directive`, the five `*_directive_arg` relations under their applications, and the 24
+  `graphitron_` decodes hanging off owned rows or off catalog rows.
 
-| Aggregate over declaration sites
-| 6
-| Re-aggregate and delete what no longer matches. `graphql_element`, the four `*_element` coordinate
-  anchors, and `graphql_type`.
+| A function of more than one source
+| 15
+| Re-aggregate after the walk and delete what no longer matches.
 |===
+
+The last row is the case that cannot cascade, and it has three kinds in it. Six are the SDL coordinate
+anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists if
+*any* declaration site names it, and a type declared in one file may be extended in three others, so
+deleting one file's rows must not remove a coordinate another file still declares. Seven are the
+`graphitron_` anchors that key at `store_graph` rather than at a source, `graphitron_element` and its
+type, field and argument relations among them, which no source refresh reaches at all and which would
+otherwise keep coordinates whose declarations are gone.
+
+Two are verdicts, and they are the ones an earlier draft had cascading. `graphql_schema_error` records
+what the registry and assembly stages refuse, judged over the document set as a whole rather than one
+file at a time, and `graphql_duplicate_declaration` records a losing occurrence whose existence
+depends on the winner's file as much as its own: refreshing the winner can make the duplicate go away,
+and a row hanging off the loser's file would survive that. `graphql_syntax_error` is the counter-case
+and stays in the cascading set, its own comment saying it is judged one file at a time.
 
 The aggregate row is the case that cannot cascade, and the reason is worth stating plainly because it
 is what makes this design more than a schema edit. A coordinate exists if *any* declaration site names
@@ -193,6 +241,16 @@ doing it rather than for patching the list.
   `CatalogFactCapture.clearSchemaSources` runs two separate loops to handle. Two cascading edges do it
   with no loop at all.
 
+**The new SDL edges need indexes, and this is the item's main cost.** `source_name` sits outside the
+primary key of 53 of the 54 source-owned `graphql_` and `graphitron_` relations, only
+`graphql_type_declaration` carrying it in its key. So a
+`(graph_name, source_name)` foreign key has no supporting index on the child side, and without one
+H2 scans the child for every parent row deleted and on every referential check. Each of those
+relations therefore needs an index on `(graph_name, source_name)`, which is storage and per-insert
+maintenance on the families capture writes most heavily. That cost is real, it is the price of the
+mechanism rather than an oversight, and Implementation measures it rather than assuming it: capture
+wall-clock and store size on the sakila example, before and after, reported in the item.
+
 Three sets of edges are missing and are this item's schema work. `jvm_declared_type_ref` carries no
 foreign key at all: it is a defect rather than an exemption, its key leading `(source_name,
 class_name)` which is exactly `jvm_class`'s whole primary key and exactly the edge its four siblings
@@ -202,8 +260,8 @@ CASCADE`. Its `referenced_class` column deliberately gets none: that names a cla
 another source or in no captured source at all, and the schema already refuses to model cross-source
 resolution as a reference. The owner-precise edge is not expressible either, the owner being a
 method, a record component or a method parameter by `owner_kind`, so the common ancestor is the right
-parent. The 16 source-attributed `graphql_` relations carry `source_name` and reference no source
-registry at all, and the 40 source-attributed `graphitron_` relations are in the same position; all 56
+parent. The 14 source-owned `graphql_` relations carry `source_name` and reference no source
+registry at all, and the 40 source-owned `graphitron_` relations are in the same position; all 54
 gain a cascading `(graph_name, source_name)` foreign key into `store_graph_source`, which is what
 gives that family the single root row the other three already have.
 
@@ -241,8 +299,9 @@ phase pays the `ddl_hash` store discard, so the later two are free.
 
 **Phase one, the source-keyed families.** Add `jvm_declared_type_ref`'s missing edge; add
 `ON DELETE CASCADE` throughout the `sql_`, `jvm_` and `java_` webs so each family cascades from its
-root; replace `clear`'s `jvm_` block and `clearSchemaSources`'s eighteen statements with one delete
-per family per changed source; remove `PARTITIONED` and `wholesale()`. The four relations this item
+roots; replace `clear`'s `jvm_` block and `clearSchemaSources`'s eighteen statements with one delete
+per root per changed source, which is two for `sql_` and one each for the other two; remove
+`PARTITIONED` and `wholesale()`. The four relations this item
 was filed for are carried by the cascade with nothing naming them.
 
 **Phase two, `java_` joins the registry.** Add the `JAVA_SOURCE` kind, give `java_file` a cascading
@@ -253,9 +312,10 @@ relation it came from.
 
 **Phase three, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
 the refusal a second graph meets; add the cascading `(graph_name, source_name)` foreign keys from the
-16 `graphql_` and 40 `graphitron_` source-attributed relations into `store_graph_source`; write the
-coordinate re-aggregation over the surviving declaration sites; reduce the graph-scoped clear to what
-does not now cascade. Implementation confirms first that no fixture captures two graphs over one schema
+14 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
+each needs; write the re-aggregation over all fifteen relations that are a function of more than one
+source, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
+graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture captures two graphs over one schema
 file, the new rule being a refusal that an existing test could trip.
 
 ## Tests
@@ -285,9 +345,16 @@ file, the new rule being a refusal that an existing test could trip.
   `read_at` and the same identity, while removing the source deletes the registry row and everything
   under it. A test asserting the first would fail against any implementation that cleared facts by
   churning the registry row.
+- **A cross-file verdict is not deleted by refreshing one of its files**, which is the case the
+  corrected taxonomy exists for: two files declaring the same type, the duplicate recorded, then the
+  *winner's* file re-read, asserting the duplicate row is reconciled rather than left hanging off the
+  loser's file. The same shape for `graphql_schema_error`, whose stages judge the document set whole.
 - **Cascade cost is measured, not assumed**: one delete of a jar's source row against the sakila
   fixture, reported as a row count and a duration beside the hand-written path it replaces, so a
-  regression in refresh cost is visible here rather than discovered in a dev loop.
+  regression in refresh cost is visible here rather than discovered in a dev loop. Insert cost is
+  measured too and is the one more likely to regress: 54 new foreign keys and 54 new indexes sit on
+  the families capture writes most heavily, so capture wall-clock and store size on the sakila example
+  are reported before and after.
 
 ## Other solutions we've considered
 
