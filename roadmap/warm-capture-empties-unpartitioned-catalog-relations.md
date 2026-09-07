@@ -1,7 +1,7 @@
 ---
 id: R872
 title: "The keys say what a source owns, and the gatherer decides how to refresh it"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 2
 theme: tooling
@@ -1083,3 +1083,88 @@ rows from two sources at once, and to its two lists partitioning the family so a
 be classified. The two-source overlap is there for this item rather than incidental to it: a
 per-source delete can only be observed on a relation holding rows from two sources, so the gate
 holds the overlap and the next edit to the SDL cannot quietly remove it.
+
+### Round 5 (2026-09-07, Ready -> Spec, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: reopen. R876's session is right that its second note is blocking, and it defeats my round-4
+sign-off rather than qualifying it. I verified it against the tree instead of taking it, and it holds.
+Phase four's shared-file rule is not severable policy that an implementer could ship and revisit; it
+is unsatisfiable as written, and the refusal fires on the second graph of every store. Status goes
+back to `Spec`, which re-engages the guard, so a fresh independent sign-off is owed after the
+revision. Phases one, two and three are unaffected and still read as implementable.
+
+Of R876's eight notes, two are gate-blocking and are restated as findings below so the author knows
+what must be answered. The rest are advisory, and I checked the two that make claims about the tree:
+exactly 40 `graphitron_` relations carry a `source_name` column, which is the same 40 this item calls
+owned, so the two decompositions do coincide; and `graphitron_spelled_reference` does key
+`(graph_name, spelling)` with no `source_name` and a foreign key only to `store_graph`, so it does
+belong in the re-aggregated set and "graph-keyed" is a better name for that set than "anchors". Both
+are fair and neither is a gate question.
+
+**Finding 5 (question two: the rule cannot hold). `directives.graphqls` is a `SCHEMA_FILE` source that
+every graph reads, so "a schema file belongs to exactly one graph" has no satisfying assignment and
+the refusal fires on the second graph in any store.**
+
+The mechanism is three steps and all three are in the tree today. `SdlFactCapture.captureSources`
+collects a name from every definition the registry holds, and `addSource` admits any non-null source
+name, so `SchemaLoader.DIRECTIVES_SOURCE_NAME` is in the set for every graph, the bundled definitions
+being registry rows by design (the directive-definition walk's own javadoc: "Graphitron's own bundled
+definitions are rows too"). For each name it calls `GraphSourceMembership.note`, before and
+independent of the `sink.claim(STORE_SOURCE, name)` guard, so membership is recorded per graph
+whether or not this run claimed the source row. Then `ClasspathSources.upsert(dsl, name, SCHEMA_FILE)`
+inserts-or-updates on `source_name` alone, so the bundled file is one `store_source` row of kind
+`SCHEMA_FILE` shared by every graph, carrying one `store_graph_source` row per graph.
+
+This is already pinned by a shipped test rather than only inferable.
+`TaggedCaptureStampTest` fetches the `SCHEMA_FILE` rows and asserts that every one that is not the
+fixture file is either `TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME` or
+`SchemaLoader.DIRECTIVES_SOURCE_NAME`, both unstamped. So the row exists, its kind is `SCHEMA_FILE`,
+and the test would have to change for it not to.
+
+Phase four then adds `CHECK ((graph_name IS NOT NULL) = (source_kind = 'SCHEMA_FILE'))` and a typed
+rejection when a second graph claims a schema file another graph owns. The bundled file must
+therefore name exactly one graph while every graph reads it, and the second module captured into a
+shared store is refused. That is the ordinary two-module workspace this item was filed to fix, so the
+rule as written breaks the item's own goal case.
+
+Two things make this worse than a fixture problem. Phase three deliberately *keeps* the bundled file
+as a source, giving it the stamp it lacks tied to the generator version, so the counterexample
+survives phase three by design rather than being cleared by it. And it is not one file:
+`SYNTHESISED_SOURCE_NAME` is a second `SCHEMA_FILE` row shared across every graph with a tagged
+input, which the same test pins. Phase three retires that one, but its existence shows the rule's
+premise is false for generator-injected source names as a class rather than for one path.
+
+R876's note offers three ways out and I am not choosing between them; that is the author's fork. I
+will say the diagnosis underneath it looks right to me, and it is the one round 1 raised and I let
+stand: whether a graph read a file is a fact about the membership, `store_graph_source` already holds
+it and deliberately puts no uniqueness on `source_name`, and `store_source.graph_name` is a second
+kind-filtered answer to the same question. Round 1 recorded that as the strongest argument against the
+rule and accepted the author's framing of it as severable policy. It was not severable, and I should
+have tested whether the rule was satisfiable before signing off rather than judging only whether it
+was desirable. That is my miss, not a moved goalpost.
+
+**Finding 6 (question one: a claim about code). Phase four's "the cascade clears everything beneath,
+and the walk rewrites" is false for 40 of the 52 relations it roots.**
+
+`GraphitronFactCapture.capture(sink, dsl, graphName)` takes a graph name and nothing else, and
+`SOURCE_NAME` appears once in the whole class, so the decode runs over the graph's entire
+transcription rather than over one source. A per-source delete of the `store_graph_source` root
+therefore cascades the 40 owned `graphitron_` relations away, and no per-source walk rewrites them:
+refreshing one schema file either re-runs the whole graph's decode or leaves those 40 empty. Today's
+wholesale clear hides this, which is why the roots table can name a joint root for both families
+without the question surfacing.
+
+Nothing ships broken from this, because the item changes no gatherer's route and the SDL families are
+still re-walked per graph. What is wrong is the sentence, which states a property of the mechanism
+that does not hold for the larger half of the family it is about. Whether the answer is to qualify it,
+to say the joint root buys per-source precision only for the `graphql_` half until one gatherer writes
+both, or to take a sequencing dependency on R876's first slice, is the author's call. R876 argues the
+last and calls it correctness rather than convenience; on the evidence above that reading is
+defensible, but the item can also ship honest prose and no dependency, since the imprecision is latent
+until something asks for a per-source SDL refresh.
+
+**A fixture worth knowing about.** `EntryFamilyFixture` and `EntryFamilyCoverageTest` in
+`graphitron-model`'s test sources now hold nine relations to carrying rows from two sources at once.
+A per-source delete can only be observed on a relation holding rows from two sources, so that overlap
+is the shape this item's own regression test needs, and the Tests section may be able to lean on it
+rather than build its own.
