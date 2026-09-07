@@ -744,6 +744,13 @@ insert, update, delete and upsert. Each carries payload no sibling can hold, whi
 test for a subtype keeping a relation, and the disjointness makes this a correctness improvement
 rather than a tidying.
 
+**Flat, and eight rather than four with modifiers.** `@routine` and `@mutation` are mutually
+exclusive: a field on the Mutation type carrying `@routine` calls the routine and the routine handles
+the write, and `@service` is the same. So a write is not a producer with a delegate attached, and the
+producer axis needs no second level. What decides whether a field writes is not its producer but the
+root slot it hangs under, which is the position axis: one producer, `ROUTINE`, reads under `Query`
+and writes under `Mutation`. Two axes crossing, which is the whole reason this model has axes.
+
 **Today the exclusion is real in the generator and unrepresentable in the store.**
 `graphitron_service`, `graphitron_mutation` and `graphitron_field_lookup_key` all key at
 `(graph_name, type_name, field_name)` and nothing stops one coordinate carrying all three. The
