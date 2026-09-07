@@ -16,9 +16,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-07 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R872` | A capture of one graph deletes another graph's node-identity and routine facts | Spec | 2026-09-06 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
+| `R872` | A refresh deletes the sources it re-read, and the database deletes the rest | Spec | 2026-09-06 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -683,8 +683,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R616` [**Landed-note SHA citations die when a branch is rebased before its gate**](collapsed-plan-sha-citations.md) — Backlog, process
 - `R768` [**The build boots the fact schema 1051 times, and a reset costs a fraction of a boot**](store-boots-once-per-test-not-once-per-build.md) — Backlog, dx
-- `R872` [**A capture of one graph deletes another graph's node-identity and routine facts**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, bug
 - `R857` [**A dev round refreshes what the edit touched**](refresh-what-the-edit-touched.md) — Spec, dx, blocked by [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
+- `R872` [**A refresh deletes the sources it re-read, and the database deletes the rest**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, bug
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R913` [**An agent re-reads every diagnostic to learn what one edit changed**](mcp-diagnostics-delta-and-capture-notification.md) — Backlog, mcp
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx

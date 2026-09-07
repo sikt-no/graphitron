@@ -1,6 +1,6 @@
 ---
 id: R872
-title: "A capture of one graph deletes another graph's node-identity and routine facts"
+title: "A refresh deletes the sources it re-read, and the database deletes the rest"
 status: Spec
 bucket: bug
 priority: 2
@@ -10,199 +10,233 @@ created: 2026-08-28
 last-updated: 2026-09-06
 ---
 
-# A capture of one graph deletes another graph's node-identity and routine facts
+# A refresh deletes the sources it re-read, and the database deletes the rest
 
 ## Goal
 
-Capturing one graph stops deleting another graph's catalog facts. A *graph* is one consumer schema
-and the configuration it is generated under, the unit a capture runs for; a *source* is one thing a
-run crawled, which for the catalog families is one generated jOOQ package; a *partition* is the rows
-one source owns in a relation that several sources share. Today a *warm* capture, one into a store
-that already holds a previous run's rows, empties `sql_node_metadata`, `sql_node_key_column`,
-`sql_routine` and `sql_routine_parameter` for every source in the store and refills them only for the
-sources its own census names. So in the ordinary workspace of two modules on two jOOQ packages, which
-`GraphitronModelStore` describes the file-backed store as being shared by, building module A blanks
-module B's node-identity and routine facts. Every reader of B's partition then sees them missing
-until B is next captured, and the reach is wider than the rows: `Nodes.derive` resolves a node from a
-declared arm or a published one, the published arm being a join against `sql_node_metadata`, so an
-emptied partition can change which of B's types are nodes at all rather than only what an editor
-reports.
+Refreshing the fact store becomes one statement: delete the rows of the source registry naming the
+inputs this round re-read. Everything those inputs produced goes with them, because the foreign keys
+that already model the ownership say `ON DELETE CASCADE`. A *source* is one input the store read, a
+`.graphqls` file, a jar, a generated jOOQ package or a `.java` file, each carrying a row in
+`store_source`; a *partition* is the rows one source owns in a relation that several sources share.
 
-When this lands, the relations the catalog walk deletes per source are exactly the relations the warm
-refresh retains per source, and a build-time gate makes the two sets unable to disagree again.
+What this removes is a mechanism, not a bug. Today a refresh empties every relation outright unless
+that relation appears in `StoreRefresh.PARTITIONED`, a hand-maintained list of 21 exemptions; the
+relations on the list are then deleted per source by eighteen hand-written statements spread across
+three files, hand-ordered children before parents. Membership on the list is an unverified promise
+that one of those statements exists somewhere else. When this lands there is no list, no exemption
+polarity, no wholesale arm and no hand-ordered delete. Retention becomes the decision not to delete a
+source row, and deleting everything downstream becomes the database's job.
 
-The urgency is that the self-repair is about to be withdrawn. A jOOQ package partition carries no
-content stamp, so today's catalog walk rewrites it unconditionally and B recovers on its next
-capture: the damage is a window, not a permanent loss. R857 is the item that stops a round rewriting
-what did not change, and on the day it lands the window becomes forever, because B's capture will
-correctly decide it has nothing to rewrite while the rows are gone. That is why R857 names this item
-as its only remaining dependency, and why this is worth fixing ahead of it rather than inside it.
+For a consumer the immediate effect is that building one module stops destroying another module's
+facts. Four relations are missing from the list today, so a warm capture of graph A empties
+`sql_node_metadata`, `sql_node_key_column`, `sql_routine` and `sql_routine_parameter` for every source
+in the store and refills them only for the sources A's own census names. In the ordinary workspace of
+two modules on two jOOQ packages sharing one store, A's build blanks B's node-identity and routine
+facts until B is captured again, and the reach is wider than the rows: `Nodes.derive` resolves a node
+from a declared arm or a published arm joining `sql_node_metadata`, so an emptied partition can change
+which of B's types are nodes at all. Under this design that defect is not fixed, it is
+unrepresentable. There is no list to be left out of.
 
-## The defect, in the order it happens
+The reason to do this now rather than patch the list is R857, which stops a round rewriting what did
+not change. Today the loss self-repairs, a jOOQ package carrying no stamp so the catalog walk rewrites
+it unconditionally, and R857 withdraws exactly that: on the day it lands, B's capture will correctly
+decide it has nothing to rewrite while the rows are gone. R857 also needs what this item builds. A
+refresh that can delete one source's facts precisely is the prerequisite for a refresh that re-reads
+only one source.
 
-`StoreRefresh.PARTITIONED` names the relations whose rows survive a warm capture by source rather
-than being emptied. It lists ten `sql_` relations, seven `jvm_` ones and four `java_` ones. Four
-source-keyed `sql_` relations are missing from it. A relation absent from that set and carrying no
-`graph_name` column falls through every exclusion in `StoreRefresh.wholesale()` and is emptied by
-`clear`'s wholesale arm, which is a predicate-free `deleteFrom(table).execute()`, on every warm
-capture of any graph. `CatalogFactCapture` then re-inserts rows for the sources this run's census
-names and for no others.
+## The design
 
-The omission is visible from three directions, which is what makes it an oversight rather than a
-decision. `CatalogFactCapture.clearSchemaSources` already deletes all four per source, in its second
-loop, beside seven of the ten listed relations and immediately before the `ClasspathSources.upsert`
-that takes the source over; the other three listed relations are deleted in the first loop, which
-claims each source before peeling off the constraint leaves. Either way that is exactly the
-per-source delete `PARTITIONED`'s own javadoc says a member must
-have. And all four lead their primary key with `source_name`, which
-`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` requires of exactly the relations
-whose partition dimension is the source, so the schema's own gate already reads them as
-source-partitioned while the retention set does not.
+Three roots, because there are three ways a fact can be owned, and the difference between them is
+load-bearing rather than cosmetic.
 
-A third direction was cited when this was filed and no longer holds up, recorded here so a reviewer
-does not go looking for it. `sql_node_metadata`'s table comment used to argue its own placement, that
-the constants ride on the same generated package `sql_table` partitions on and that a family boundary
-would cut one refresh unit in half. `0eeb2f1f5` rewrote the `sql_` rationales to say why a relation
-exists and stop there, so the sentence is gone. The placement it described is still the placement the
-relation has; what is lost is the comment as evidence, not the fact.
+[cols="2,2,4"]
+|===
+| Root | Families | Why this root
 
-### The wholesale arm has no other members
+| `store_source`
+| `sql_`, `jvm_`
+| The rows are shared by every graph naming the source. One jar's classes are the same classes
+  whoever reads them, so the facts are stored once and the source owns them outright.
 
-Re-derived from the DDL against `wholesale()`'s own predicate, the reactor's 176 base relations
-divide as 140 graph-scoped by their `graph_name` column, 21 in `PARTITIONED`, 8 in the `meta_` family,
-3 `store_` relations `wholesale()` names by hand, and 4 left over. The 4 left over are exactly the
-four this item is about. The arithmetic closes with nothing unaccounted for, so the wholesale arm's
-entire population today *is* the bug: there is no relation in the store that is legitimately emptied
-outright by a run.
+| `store_graph_source`
+| `graphql_`, `graphitron_`
+| The rows are per graph. Two graphs may read one `.graphqls` file and each holds its own
+  transcription of it, so the owner is the `(graph, source)` pair rather than the file.
 
-That reframes what the fix has to be. Adding the four constants is not a patch that leaves a working
-mechanism slightly larger; it empties a code path that has never had a correct member, and it leaves
-behind a default that silently selects that path for anything nobody classified.
+| `java_file`
+| `java_`
+| The family carries its own registry keyed on the file, refreshed on the source-save cadence, and
+  capture never writes it at all.
+|===
 
-## Adding the four constants
+**The middle row is the correctness point, and getting it wrong reproduces the defect this item
+retires.** Cascading the SDL families from `store_source` would delete both graphs' rows whenever
+either graph re-read a shared schema file, which is today's bug wearing a new costume. The junction
+`store_graph_source` already exists, keyed `(graph_name, source_name)` with foreign keys to both
+sides, and `GraphSourceMembership` already maintains it.
 
-`SQL_NODE_METADATA`, `SQL_NODE_KEY_COLUMN`, `SQL_ROUTINE` and `SQL_ROUTINE_PARAMETER` join
-`StoreRefresh.PARTITIONED`. Their per-source delete already exists in `clearSchemaSources`, in the
-FK-safe order the family needs (`sql_routine_parameter` before `sql_routine`, `sql_node_key_column`
-before `sql_node_metadata`), so nothing else in the write path moves.
+### What cascades, and what has to be re-aggregated
 
-## The gate: an unclassified relation stops the build
+Every relation of these five families is one of three things. The counts are derived from the DDL
+rather than estimated.
 
-The Backlog filing asked a spec to settle the gate that keeps the set honest in the reverse
-direction. Checking what holds today turned up less than the filing assumed, and the difference
-matters, so it is stated before the plan rather than discovered during it.
+[cols="3,1,5"]
+|===
+| Kind | Count | Treatment
 
-`PARTITIONED`'s javadoc names "an empty refresh empties every relation" as the anchor catching a
-member with no matching per-source delete, which would keep rows whose partition went away. That
-phrase occurs nowhere in the tree except in the javadoc that names it, and no test implements it.
-`WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` is the nearest live gate and is not a
-substitute: both of its arms read the same input set, so no partition goes away in either, and a
-member with no delete agrees with itself. So neither direction is gated today. This item closes the
-direction that is a live data-loss bug and leaves the other named rather than silently claimed; the
-missing anchor is worth its own Backlog item and is not folded in here, a bug fix being the wrong
-place to grow a second gate.
+| Source-attributed: carries `source_name` or `file`
+| 81
+| A foreign key into its root, `ON DELETE CASCADE`. 14 `sql_`, 7 `jvm_`, 4 `java_`, 16 `graphql_`,
+  40 `graphitron_`.
 
-The plan is to flip the wholesale arm's polarity and gate the residue.
+| Descendant of a source-attributed row
+| 6
+| Nothing to do. It already cascades transitively through the parent carrying the attribution:
+  `graphql_directive_location` under `graphql_directive`, and the five `*_directive_arg` relations
+  under their directive-application parents.
 
-`wholesale()`'s derivation by subtraction is replaced by an explicitly declared `RUN_OWNED` set,
-initially empty, and `clear`'s third loop iterates that. The subtraction moves into a build-time gate
-stated as a completeness claim: every base relation is accounted for by exactly one lifetime rule,
-being graph-scoped by its `graph_name` column, source- or file-partitioned by `PARTITIONED`,
-schema-authored under `meta_`, lifetime-managed as one of the three named `store_` relations, or
-run-owned by `RUN_OWNED`. A relation matching none of them fails the build, naming itself and asking
-for the decision.
+| Aggregate over declaration sites
+| 6
+| Re-aggregate and delete what no longer matches. `graphql_element`, the four `*_element` coordinate
+  anchors, and `graphql_type`.
+|===
 
-This is a deliberate reversal of the polarity `wholesale()`'s javadoc currently defends, that "a
-relation nobody thought about is emptied and rebuilt, never silently retained". The reversal is
-warranted because that reasoning holds only for a relation the run owns entirely, and "nobody listed
-it" is not evidence of that. In a store shared by a workspace's modules, emptying a relation nobody
-thought about is not the safe default; it is this bug. The gate keeps what the old polarity was
-protecting, since a relation nobody classified is still not silently retained, and stops the build
-instead of silently destroying rows.
+The aggregate row is the case that cannot cascade, and the reason is worth stating plainly because it
+is what makes this design more than a schema edit. A coordinate exists if *any* declaration site names
+it, and a type may be declared in one file and extended in three others. So no single source owns
+`graphql_element`, and deleting one file's rows must not remove a coordinate another file still
+declares. After the moved sources are deleted and re-walked, the coordinate set is recomputed from the
+surviving `graphql_type_declaration` and its kin, and coordinates with no remaining declaration are
+deleted.
 
-The empty `clear` loop stays rather than being deleted with its set. It is the shape a genuinely
-run-owned relation would use, and its FK-safe `childrenFirst` ordering is the part that is easy to get
-wrong; deleting it means whoever first answers the gate with `RUN_OWNED` writes that ordering from
-scratch.
+Those deletions cascade in turn, which is what closes the chain rather than needing a fourth
+mechanism: the `graphitron_` decodes hang off the coordinate anchors by foreign keys the DDL already
+declares `ON DELETE CASCADE`, its own comment naming that as the family's pattern, and `graphql_type`
+hangs off `graphql_type_element`. A coordinate that stops being declared takes its decode with it
+without anything being told to do so.
+
+## What the schema already has
+
+This is largely a design the store already models and does not yet use, which is the argument for
+doing it rather than for patching the list.
+
+- **21 of 22 source-keyed relations already reach `store_source` by declared foreign keys**, most of
+  them transitively: `sql_node_metadata` through `sql_table`, `sql_routine_parameter` through
+  `sql_routine`, `jvm_method_parameter` through `jvm_method` through `jvm_class`. The `java_` family
+  is already a tree rooted at `java_file`.
+- **The foreign-key graph is acyclic**, checked over all 176 base relations, so a cascade terminates
+  and needs no ordering decision from any caller.
+- **The idiom is already project doctrine.** The DDL carries 16 `ON DELETE CASCADE` clauses, and the
+  element family's own comment declares it the pattern every relation there follows. The source-keyed
+  families are the ones hand-rolling it instead.
+- **The cross-source case is already modelled.** `sql_referential_constraint` carries two foreign keys
+  into `sql_constraint`, its own and the referenced one, which is the schema-crossing key that
+  `CatalogFactCapture.clearSchemaSources` runs two separate loops to handle. Two cascading edges do it
+  with no loop at all.
+
+Three sets of edges are missing and are this item's schema work. `jvm_declared_type_ref` carries no
+foreign key although its key leads `(source_name, class_name)` exactly as its siblings do, and
+Implementation has to establish that this is an omission rather than a deliberate exemption before
+adding the edge. The 16 source-attributed `graphql_` relations carry `source_name` and reference no
+source registry at all. The 40 source-attributed `graphitron_` relations are in the same position.
+
+## What the code loses
+
+- `StoreRefresh.PARTITIONED`, `StoreRefresh.wholesale()`, and `clear`'s wholesale loop.
+- `clear`'s seven hand-unrolled `jvm_` deletes, and the children-before-parents order they are
+  hand-written in.
+- The eleven per-source deletes and the two-loop structure in
+  `CatalogFactCapture.clearSchemaSources`.
+- `StoreRefresh.childrenFirst` for these families, the database owning the order instead.
+
+Two things stay, named so they are not read as collateral. `freshSources` still decides which sources
+this round re-read; that set becomes the argument to one delete rather than the scope of eighteen. And
+the claim seeding in `prepare` is untouched, being an insert-side optimisation that stops a walk
+rewriting a partition it is retaining, which is orthogonal to how deletion happens.
 
 ## What an existing store does at the upgrade
 
-Nothing, deliberately, and it is worth saying because the reader's next question is whether a store
-already missing rows repairs itself. The change adds constants to a `Set` and moves no DDL, so
-`store_stamp.ddl_hash` is unchanged and no existing store is discarded on the version that carries
-the fix. A partition emptied before the upgrade stays empty until its own graph captures again, which
-it will, the catalog walk rewriting an owned package unconditionally. So the fix stops the loss rather
-than repairing it, and no migration is owed.
+It is discarded once, deliberately. Adding foreign keys and cascade clauses changes the DDL, so
+`store_stamp.ddl_hash` moves and every persisted store is rebuilt cold on first open under the new
+version. That is the existing mechanism for a schema change working as intended rather than a
+migration this item skips, and it is worth paying once here rather than twice if the schema work
+were split across two items.
 
 ## Implementation
 
-- `StoreRefresh.PARTITIONED` gains the four constants, with the javadoc's family sentence updated to
-  the new count and the `sql_` clause naming the catalog walk as their delete site, which it already
-  does for the ten.
-- `StoreRefresh.wholesale()` becomes `RUN_OWNED`, a declared and initially empty `Set<Table<?>>`,
-  carrying the javadoc for what membership asserts: that no partition of this relation belongs to any
-  run but the current one. `clear` iterates it unchanged.
-- `StoreRefresh` gains a package-private `unclassified()` returning the base relations no lifetime
-  rule claims, which is the old subtraction with `RUN_OWNED` in `PARTITIONED`'s place. Production code
-  does not call it; the gate does, and having it beside the rules is what keeps it from re-deriving
-  them differently.
-- No change to `CatalogFactCapture`, to the DDL, or to what any walk writes. This item moves a
-  retention decision only.
+Two phases, and the seam is real rather than bookkeeping: the source-keyed families land and can be
+observed working with the SDL families untouched, and only the second phase needs the re-aggregation.
+The first phase pays the store discard, so the second is free.
+
+**Phase one, the source-keyed families.** Establish whether `jvm_declared_type_ref`'s missing edge is
+an omission and add it; add `ON DELETE CASCADE` to the existing roots, being `sql_schema`, `sql_table`,
+`sql_enum_binding`, `sql_routine` and `jvm_class` into `store_source`, and the `java_` tree into
+`java_file`; replace `clear`'s `jvm_` block and `clearSchemaSources`'s deletes with a delete of the
+source rows the round re-read; remove `PARTITIONED` and `wholesale()`. The four relations this item was
+filed for are carried by the cascade with nothing naming them.
+
+**Phase two, the SDL families.** Add the `(graph_name, source_name)` cascading foreign keys from the 16
+`graphql_` and 40 `graphitron_` source-attributed relations into `store_graph_source`; write the
+coordinate re-aggregation over the surviving declaration sites; reduce the graph-scoped clear to what
+does not now cascade.
 
 ## Tests
 
-- **The regression, in `WarmStartRefreshTest`.** Capture graph B over one jOOQ package fixture and
-  graph A over a different one, so the two share no source at all, then capture A warm and assert B's
-  rows are unchanged. Asserted as a sweep rather than over four hand-named relations: the test derives
-  the source-partitioned relations from the schema metadata (base relations whose primary key leads
-  with `source_name`, less `store_source`) and compares B's rendered row sets before and after, so a
-  relation added to the family later is covered without the test being edited. `CaptureCorpusIsolationTest.contentsOf`
-  is the rendering shape to copy.
-- **The control that keeps it honest.** The sweep passes vacuously for any relation the fixtures leave
-  empty, so the same case asserts separately that B holds rows in each of the four relations this item
-  adds, before A's capture runs. The default fixture catalog publishes node metadata, which
-  `CaptureCorpusIsolationTest.theCatalogArmIsNotVacuous` already relies on, and declares the
-  `films_for_actor` table-valued function that fills the two routine relations; the fixture pairing has
-  to put that catalog under B.
-- **The gate, in `graphitron-model`'s unit tier.** A new test in `no.sikt.graphitron.model.capture`,
-  where `StoreRefresh` is reachable, asserting `unclassified()` is empty and naming what to do when it
-  is not. It carries a floor on the number of relations it classified, so a rename or a metadata
-  change that empties its input fails rather than passing vacuously; that failure mode was recorded
-  against `FactSchemaGateTest.currencyAccompaniesEveryStamp` at R922's Done gate and is cheap to avoid
-  here.
-- What this does not add, stated so the delivery is not read as more than it is: nothing here gates a
-  `PARTITIONED` member whose per-source delete nobody wrote. That direction is unenforced today and
-  stays unenforced after this item; see the gate section above.
+- **The regression this item was filed for**, in `WarmStartRefreshTest`: capture graph B over one jOOQ
+  package fixture and graph A over a different one so the two share no source, capture A warm, and
+  assert B's rows are unchanged. Written as a sweep over the source-partitioned relations derived from
+  schema metadata rather than over named relations, so a relation added later is covered unedited, with
+  a control asserting B holds rows in the four before A's capture runs. The default fixture catalog
+  publishes node metadata and declares `films_for_actor` with reflected parameters, both already
+  asserted non-empty by `FactCaptureAgreementTest`, so the control is real rather than nominal.
+- **The shared-file case that separates the first two roots**, which is the test that fails under the
+  wrong design rather than under a typo: two graphs reading one `.graphqls` file, one graph re-read,
+  the other graph's `graphql_` and `graphitron_` rows still standing.
+- **The aggregate case**: a type declared in one file and extended in another, the extending file
+  re-read and then removed, asserting the coordinate survives the first and goes on the second, and
+  that the `graphitron_` decode hanging off it goes with it.
+- **A structural gate over the reference web**, which is what replaces the list with something
+  checkable: every base relation of the five families either reaches its root by declared foreign keys
+  whose every edge cascades, or is named in a small declared aggregate set. A relation added with no
+  such path fails the build. It carries a floor on how many relations it classified, so a metadata
+  change cannot let it pass vacuously, that failure mode having been recorded against
+  `FactSchemaGateTest.currencyAccompaniesEveryStamp` at R922's Done gate.
+- **Cascade cost is measured, not assumed**: one delete of a jar's source row against the sakila
+  fixture, reported as a row count and a duration beside the hand-written path it replaces, so a
+  regression in refresh cost is visible here rather than discovered in a dev loop.
 
 ## Other solutions we've considered
 
-**Deriving `PARTITIONED` from the key instead of listing it.** Every member leads its primary key with
-its partition dimension, and the partition-dimension gate already enforces that, so membership could
-be computed as "leads with `source_name` or `file`, less `store_source`" and this bug would be
-structurally impossible rather than gated. Rejected because it trades one silent failure for the
-other one. Membership in `PARTITIONED` asserts that a per-source delete exists somewhere, in `clear`
-for `jvm_`, in the catalog walk for `sql_`, in `JavaSourceFacts` for `java_`, and a key column is no
-evidence of that. A derived set would silently enrol a relation whose delete nobody wrote, which keeps
-rows whose partition went away. That is the failure nothing in the tree currently catches, so
-deriving would move the risk from the direction this item gates to the direction it leaves open. The
-list stays a list, and stays the place a member's delete is asserted by someone having written it
-down.
+**Adding the four missing relations to `PARTITIONED`.** The one-line fix, and what this item was
+specified as until the mechanism was examined. Rejected because the list is the defect: nothing derives
+it, nothing checks it, and its 21 members are three different situations under one name, being deleted
+here, deleted elsewhere, and not capture's business at all. The four went missing because a
+hand-maintained exemption list has no way to notice an omission, and patching it leaves the next
+omission free to happen.
 
-**Adding the four and leaving the polarity alone.** The narrower fix, with a gate asserting only that
-no relation in the wholesale set leads its key with `source_name`. It closes this defect and nothing
-else: a future relation at a new grain, or at the `file` grain the `java_` family already uses, walks
-into the same hole with the gate silent. Given that the residue is empty either way, the broader gate
-costs one extra clause and covers grains nobody has invented yet.
+**Deriving `PARTITIONED` from the key instead of listing it.** Makes the omission impossible without
+removing the mechanism, membership being computable as leading the key with `source_name` or `file`.
+Rejected because membership asserts that a per-source delete exists somewhere and a key column is no
+evidence of that, so a derived set would silently enrol a relation whose delete nobody wrote and keep
+rows whose partition went away. Cascade answers both halves at once: the edge granting membership is
+the edge performing the delete, so the two cannot disagree.
 
-**Accepting the loss and repairing it on read.** Not viable past R857, which is the item this blocks:
-today's unconditional reader-side refresh recomputes the affected targets from the emptied relations
-rather than repairing them, and R857 exists to stop that pass running unconditionally.
+**Keeping the wholesale arm behind an explicitly empty roster and a completeness gate.** The previous
+version of this plan. Rejected as careful work on a mechanism this design deletes, a gate whose only
+purpose is catching omissions from a list that would no longer exist.
+
+**Extending the same treatment to the graph dimension.** Out of scope rather than rejected.
+`graphql_element` already keys into `store_graph`, so cascading from the graph row would retire
+`clear`'s graph-scoped loop too. That loop is derived from the schema and is not broken, so it is not
+this item's to fix, and folding it in would put a working mechanism inside the blast radius of a
+data-loss fix.
 
 ## Provenance
 
-Found while reviewing R857, whose currency rule needs these relations rewritten only inside a
-transaction that upserts the owning source's `store_source` row. Registrations in the node-id family
-read `sql_node_metadata` and `sql_node_key_column` through `intent_node_metadata_defect` and
-`intent_inferred_node_type`, so that item depends on this one. `sql_routine` and
-`sql_routine_parameter` have no registered materialization reader yet, so the next registration naming
-a routine would have walked into the same hole silently.
+Filed on 2026-08-28 out of a review of R857, as four relations missing from a list. Respecified on
+2026-09-06 after a self-review traced the mechanism rather than the omission and found two things: the
+wholesale arm's entire population is those four relations, so the arm has never had a correct member,
+and the machinery that makes the list unnecessary already exists in the same method, used for the
+graph dimension and not for the source one. The cascade design, and the split between what cascades
+and what is re-aggregated, are the user's.
