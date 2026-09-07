@@ -10,8 +10,9 @@ import java.util.List;
  * The projection command relation: one row per projection unit, keyed by the unit's address
  * (type name for anchor units, {@code (anchor, typeName)} for nested units, coordinate for
  * pivot units — the key is structural in the minted {@link UnitRef}). The producer registers
- * rows through a case-folded address census, so a duplicate address never reaches this
- * constructor with two distinct rows; the check here is the relation's own integrity backstop.
+ * rows through an address census keyed on {@link UnitRef#foldedAddress()}, so a duplicate address
+ * never reaches this constructor with two distinct rows; the check here is the relation's own
+ * integrity backstop, keyed at the same grain.
  */
 public record ProjectionRelation(List<ProjectionCommand> rows) {
 
@@ -19,7 +20,7 @@ public record ProjectionRelation(List<ProjectionCommand> rows) {
         rows = List.copyOf(rows);
         var seen = new LinkedHashSet<String>();
         for (var row : rows) {
-            if (!seen.add(row.unit().fqcn().toLowerCase(java.util.Locale.ROOT))) {
+            if (!seen.add(row.unit().foldedAddress())) {
                 throw new IllegalArgumentException(
                     "duplicate projection unit address '" + row.unit().fqcn() + "' (case-folded); "
                     + "the producer's address census must reject this before relation construction");

@@ -33,7 +33,6 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -483,7 +482,7 @@ public final class ProjectionCommands {
     // ------------------------------------------------------------------------------------------
 
     /**
-     * Registers rows under their case-folded unit address. A key hit with an identical row is
+     * Registers rows under {@link UnitRef#foldedAddress()}. A key hit with an identical row is
      * legitimate reuse (the same {@code (anchor, nesting type)} reached through two fields);
      * a key hit with a diverging row is an address collision, which the validator mirror
      * ({@link #addressCollisions}) rejects with a located error before production normally runs,
@@ -494,7 +493,7 @@ public final class ProjectionCommands {
         private final LinkedHashMap<String, String> originByFoldedAddress = new LinkedHashMap<>();
 
         void add(ProjectionCommand row, String origin) {
-            var key = row.unit().fqcn().toLowerCase(Locale.ROOT);
+            var key = row.unit().foldedAddress();
             var existing = byFoldedAddress.putIfAbsent(key, row);
             if (existing == null) {
                 originByFoldedAddress.put(key, origin);
@@ -517,9 +516,13 @@ public final class ProjectionCommands {
     /**
      * The validator's mirror of the producer's address census: every projection-unit simple
      * name the schema mints (anchor type names, {@code <Anchor><Nested>} pairs,
-     * {@code <Parent><Field>} pivot coordinates), grouped case-folded, with the groups that
-     * collide across <em>distinct origins</em> returned for rejection. Reuse of one origin
-     * (the same pair reached through two fields) is not a collision.
+     * {@code <Parent><Field>} pivot coordinates), grouped by {@link UnitRef#foldedStem()}, with the
+     * groups that collide across <em>distinct origins</em> returned for rejection. Reuse of one
+     * origin (the same pair reached through two fields) is not a collision.
+     *
+     * <p>The stem grain rather than {@link UnitRef#foldedAddress()} because this mirror runs over a
+     * schema alone and has no output package to key an address on: it mints against a placeholder
+     * package, so a folded address here would carry that placeholder into the key an author reads.
      */
     public static List<AddressCollision> addressCollisions(GraphitronSchema schema) {
         var units = new GeneratedUnits("");
@@ -529,7 +532,7 @@ public final class ProjectionCommands {
             if (!(type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType)) {
                 continue;
             }
-            record(origins, units.typeClass(typeName).simpleName(),
+            record(origins, units.typeClass(typeName),
                 "type '" + typeName + "'", type.location());
             walkAddresses(schema.fieldsOf(typeName), typeName, units, origins);
         }
@@ -556,13 +559,13 @@ public final class ProjectionCommands {
         for (var f : fields) {
             switch (f) {
                 case ChildField.NestingField nf -> {
-                    record(origins, units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName()).simpleName(),
+                    record(origins, units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName()),
                         "nesting type '" + nf.returnType().returnTypeName() + "' under anchor '"
                             + anchorTypeName + "'", nf.location());
                     walkAddresses(nf.nestedFields(), anchorTypeName, units, origins);
                 }
                 case ChildField.PivotSpecField pf ->
-                    record(origins, units.pivotUnit(pf.parentTypeName(), pf.name()).simpleName(),
+                    record(origins, units.pivotUnit(pf.parentTypeName(), pf.name()),
                         "@pivot coordinate '" + pf.parentTypeName() + "." + pf.name() + "'", pf.location());
                 default -> { }
             }
@@ -570,8 +573,8 @@ public final class ProjectionCommands {
     }
 
     private static void record(LinkedHashMap<String, LinkedHashMap<String, SourceLocation>> origins,
-            String simpleName, String origin, SourceLocation location) {
-        origins.computeIfAbsent(simpleName.toLowerCase(Locale.ROOT), k -> new LinkedHashMap<>())
+            UnitRef unit, String origin, SourceLocation location) {
+        origins.computeIfAbsent(unit.foldedStem(), k -> new LinkedHashMap<>())
             .putIfAbsent(origin, location);
     }
 

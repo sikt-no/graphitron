@@ -26,8 +26,10 @@ import java.util.Optional;
  * would be provably vacuous. A <em>case-folded</em> one would be worse than vacuous, here and on
  * the launcher side alike: it would reject {@code rentFilm} beside {@code rentfilm}, which emit two
  * perfectly legal Java methods. A fold belongs only where a minted name crosses into a second
- * namespace, which a method name never does. Do not add either by analogy; the coordinate key is
- * the whole invariant.
+ * namespace, which a method name never does. Neither is held off by this paragraph any more:
+ * {@code MintedNameCaseFoldGuardTest} fails the build on a minted-name fold spelled outside the one
+ * home the rule licenses, so the prohibition is enforced rather than merely written down. The
+ * coordinate key is the whole invariant.
  *
  * <p>{@link #tenancy} is the run's acquisition axis (see {@link TenantRouting}), carried here
  * rather than on every row because whether a build routes per tenant at all is a run-grain fact.
