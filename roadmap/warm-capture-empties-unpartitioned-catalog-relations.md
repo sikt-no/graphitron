@@ -202,9 +202,9 @@ they sum, which the previous version's did not.
 | Kind | Count | Treatment
 
 | Owned by one source
-| 79
+| 78
 | A cascading foreign key into its family root, or into the registry where it is a root itself.
-  14 `sql_`, 7 `jvm_`, 4 `java_`, 14 `graphql_`, 40 `graphitron_`.
+  14 `sql_`, 7 `jvm_`, 4 `java_`, 13 `graphql_`, 40 `graphitron_`.
 
 | Descendant of an owned row
 | 30
@@ -212,12 +212,14 @@ they sum, which the previous version's did not.
   `graphql_directive`, the five `*_directive_arg` relations under their applications, and the 24
   `graphitron_` decodes hanging off owned rows or off catalog rows.
 
-| A function of more than one source
-| 15
+| A function of more than one source, or of none
+| 16
 | Re-aggregate after the walk and delete what no longer matches.
 |===
 
-The last row is the case that cannot cascade, and it has three kinds in it. Six are the SDL coordinate
+The last row is the case that cannot cascade, and it has four kinds in it. One is
+`graphql_root_operation`, whose convention arm exists because a `schema` block is *absent*, so the row
+is a function of no document at all; phase three puts it here and the count above moves with it. Six are the SDL coordinate
 anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists if
 *any* declaration site names it, and a type declared in one file may be extended in three others, so
 deleting one file's rows must not remove a coordinate another file still declares. Seven are the
@@ -398,40 +400,59 @@ is stated once. `JavaSourceFacts` is the only reader or writer of either column,
 contained to one class; R922's comparison takes the instant as an argument and does not care which
 relation it came from.
 
-**Phase three, every SDL fact names its document.** The prerequisite for phase four, and the reason
-this item has four phases rather than three. `source_name` is nullable in 37 of the 54 source-owned
-SDL relations and rows really do carry NULL there, so an edge declared over them would reach nothing
-and the gate in phase four would certify them as covered, which is this item's own failure mode in
-the one form its replacement for the list cannot see.
+**Phase three, the four populations no document produced.** The prerequisite for phase four. Every
+definition the parser reads is already attributed: `SchemaLoader.parseSource` builds a
+`MultiSourceReader` with `.reader(reader, sourceName)`, so a `SourceLocation` carries a source name
+for every document including the bundled directives, which parse under
+`SchemaLoader.DIRECTIVES_SOURCE_NAME`. So the work is not to recover a document. It is to decide what
+four populations are, none of which came from one, and which between them are why `source_name` is
+nullable in 37 of the 54 relations.
 
-The premise is that there is no legitimate NULL: everything in the merged registry came from a
-document, so everything in it can name one. `SdlFactCapture.capture` walks a merged
-`TypeDefinitionRegistry` and recovers the document afterwards from graphql-java's `SourceLocation`,
-which `setPosition` leaves unset wherever that location is absent, while `SchemaLoader.parsePerSource`
-already reads the documents one at a time. So capture is driven from the per-source parse and writes
-the document it is standing on, `SourceLocation` keeping line and column, which it answers well. The
-two populations producing a NULL today are removed rather than modelled: a programmatically built
-registry is a shape we no longer support and is retired here, and the bundled `directives.graphqls` is
-an input the store read, so it gets a `store_source` row and its definitions are attributed to it. The
-37 columns then become `NOT NULL`.
+They divide into two shapes, and both shapes already exist in the plan.
 
-Two questions this phase settles rather than inherits. Which document owns a schema-level row, given
-that `graphql_schema_directive` and `graphql_root_operation` are keyed at schema level and a `schema`
-block may be extended from several files: attribution from the walk's position gives the file that
-wrote the row, and if that is wrong those two relations are functions of more than one document and
-move into the re-aggregated set, which changes the 79 / 30 / 15 counts. And which spelling of absence
-survives, `GraphSourceMembership.note` normalising a null source to the empty string while these
-columns use NULL.
+*Injected by an artifact, so attributed to that artifact.* The federation definitions
+`FederationLinkApplier.apply` injects before capture sees the registry come from
+`federation-graphql-java-support`, a jar on the compile classpath that already carries a
+`store_source` row of kind `JAR` with a real stamp. They are attributed there, which makes them
+`NOT NULL`, reachable by phase four's edge, and genuinely refreshed when the library version moves.
+The bundled `directives.graphqls` is the same shape one step in: it ships inside graphitron's own
+artifact, it already has a `store_source` row from `captureSources`, and what it lacks is a stamp, so
+it gains one tied to the generator version that `store_stamp` already records. Neither is a sentinel,
+because both name a thing that changes and that something re-reads when it does.
 
-The phase stands on its own. Every fact naming its document is what lets anything refresh, invalidate
-or attribute per document rather than per graph, which is what R857 and R924 both need, whether or not
-the cascade follows it.
+*Derived from the document set, so re-aggregated.* `SdlFactCapture.captureConventionRoots` writes a
+`graphql_root_operation` row when a schema declares a `Query`, `Mutation` or `Subscription` type and
+no `schema` block, and its own javadoc says why the row has no position: "no SDL line spells the
+binding". A row that exists because a declaration is *absent* is a function of the document set rather
+than of any document, which is the re-aggregated set's own definition. `graphql_root_operation` moves
+there whole rather than being split by arm, because the relation also holds explicit bindings and a
+taxonomy that classifies half a relation is not one; recomputing it after the walk covers both arms
+from the surviving declarations plus the convention rule. **This moves the counts to 78 / 30 / 16.**
+
+`TagLinkSynthesiser` is the fourth and it is the one the plan cannot leave alone, because it is the
+disposition the alternatives section refuses, already shipped: it stamps what it injects with
+`SourceLocation(1, 1, "<graphitron-synthesised:tag-link>")`, so those rows are `NOT NULL`, would
+satisfy phase four's edge and the strengthened gate, and belong to a source no refresh ever names.
+The synthesis is triggered by a specific `@link` tag in a specific document, so the row is attributed
+to that document and the synthetic name is retired. That keeps it in the owned set and gives it a real
+refresh: edit the file carrying the tag and the synthesised rows go with it.
+
+`SdlFactCapture.stampTarget`'s javadoc names the bundled directives and the synthesised name as "the
+whole miss set", which is true of sources with no file and is why those two are the ones with rows and
+no stamps. This phase's population list is wider because it asks a different question, which rows have
+no document rather than which sources have no file.
+
+What Implementation still owes, rather than the plan: whether the `SchemaSource.Named` label arm
+belongs in the same account. It carries its label as `source_name` so it produces no NULL and is not
+part of this defect, but it is a source with no file and no stamp, which is the property that makes
+the bundled directives need one. It is a live sealed arm at nine main-source sites and persisted as
+`KIND_NAMED`, so retiring it is a scope statement this item does not make.
 
 **Phase four, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
 the refusal a second graph meets; add the cascading `(graph_name, source_name)` foreign keys from the
 14 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
-each needs; write the re-aggregation over all fifteen relations that are a function of more than one
-source, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
+each needs; write the re-aggregation over all sixteen relations that are a function of more than one
+source or of none, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
 graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture
 captures two graphs over one schema file, the new rule being a refusal an existing test could trip.
 
@@ -781,3 +802,30 @@ a `store_source` row of its own kind, or whether the relations carrying it move 
 set, and where the counts land. The two questions the phase already settles are the right shape for
 this; there are four populations rather than two, and the schema-level ownership question is the least
 of them.
+
+> **Author, 2026-09-07.** Accepted in full; every claim reproduced before rewriting. The parser does
+> attribute everything, `parseSource` building a `MultiSourceReader` with `.reader(reader, sourceName)`
+> and the bundled directives parsing under `DIRECTIVES_SOURCE_NAME`, so the premise was wrong and the
+> phase was aimed at code that is not the problem. `captureConventionRoots`'s own javadoc says the
+> positions are null "because no SDL line spells the binding", `FederationLinkApplier` states the
+> source-name-less case in its own comment, and `TagLinkSynthesiser` does stamp
+> `<graphitron-synthesised:tag-link>`, which `stampTarget` names alongside the bundled directives as
+> the whole miss set.
+>
+> Phase three is rewritten from the four populations, and each gets a disposition carrying a refresh
+> path, because a disposition without one is the sentinel this plan already refuses. Two are injected
+> by an artifact and are attributed to it: the federation definitions to the
+> `federation-graphql-java-support` jar, which is already a `store_source` row of kind `JAR` with a
+> real stamp, and the bundled directives to graphitron's own artifact, which already has a row from
+> `captureSources` and gains the stamp it lacks, tied to the generator version `store_stamp` records.
+> Two are derivations: `graphql_root_operation` moves to the re-aggregated set whole rather than being
+> split by arm, since a row existing because a `schema` block is absent is a function of no document,
+> which takes the counts to **78 / 30 / 16**; and the tag-link synthesis is attributed to the document
+> carrying the `@link` that triggered it, which retires the synthetic name rather than letting phase
+> four ship the failure mode the alternatives section refuses.
+>
+> One thing is left to Implementation rather than settled, and named as such: whether the
+> `SchemaSource.Named` label arm belongs in the same account. It produces no NULL so it is not this
+> defect, but it is a source with no file and no stamp, which is the property that made the bundled
+> directives need one. Retiring a live sealed arm at nine main-source sites, persisted as
+> `KIND_NAMED`, is a scope statement this item does not make.
