@@ -829,3 +829,60 @@ of them.
 > defect, but it is a source with no file and no stamp, which is the property that made the bundled
 > directives need one. Retiring a live sealed arm at nine main-source sites, persisted as
 > `KIND_NAMED`, is a scope statement this item does not make.
+
+### Round 3 (2026-09-07, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold, on one of phase three's four dispositions. The other three are right and I checked
+each against the tree: `captureConventionRoots`'s javadoc says verbatim that "the row's positions are
+null because no SDL line spells the binding", and moving `graphql_root_operation` whole rather than by
+arm is correct because `captureSchema` writes the explicit bindings and the convention arm into the
+same relation. The federation disposition is sound and better than it needs to be:
+`graphitron-sakila-example` declares `federation-graphql-java-support` at compile scope with the
+comment "the federation-enabled generated `GraphitronSchema.build()` references `Federation` and
+`SchemaTransformer` at compile time", so a consumer whose registry `FederationLinkApplier` injects into
+necessarily has that jar on the compile classpath the census scans, where it gets a `JAR` row with a
+real stamp and a `store_graph_source` membership row, so phase four's edge resolves. The bundled
+directives already get a row from `captureSources` and `store_stamp` already records
+`generator_version`. The new counts are arithmetically sound: 78 / 30 / 16 sums to 124 and the
+`graphql_` family still tallies to 28 with `graphql_root_operation` moved. `SchemaSource.Named` is
+correctly parked, and correctly described.
+
+**Finding 4 (question two: architecture fit). The tag-link disposition attributes the synthesised row
+to "the document carrying the `@link` that triggered it", and no such document exists: the trigger is
+a configured field on any schema input, and one row is synthesised for the whole input set.**
+
+`TagLinkSynthesiser.apply` opens with
+`boolean anyTagged = bySource.values().stream().anyMatch(i -> i.tag().isPresent())` and returns early
+when that is false. `SchemaInput.tag` is a configuration field on the record, populated from
+`SchemaRecipe.Binding.tag()` and persisted by `StoredRecipe` as a `tag` column, not an `@link` tag in
+a document. Nothing in a document triggers the synthesis; the `@link` is what the synthesiser *writes*.
+What it reads from the registry is an already-present federation `@link`, and finding one that imports
+`@tag` makes it do nothing at all.
+
+So the trigger is a predicate over the input set, and `synthesise(registry)` adds exactly one
+`SchemaExtensionDefinition` for the registry however many inputs are tagged. `captureSchema` walks
+`registry.getSchemaExtensionDefinitions()`, so that one extension's `@link` becomes one
+`graphql_schema_directive` row stamped `<graphitron-synthesised:tag-link>`.
+
+Attributing that row to a document is therefore not available, and picking one of the tagged inputs is
+unsound in the item's own terms: with two tagged inputs, refreshing the chosen one would delete a row
+that must survive, because the other input still makes the predicate true. That is a partition losing
+rows it still owns, which is the failure this item exists to remove, arriving through the disposition
+meant to prevent it.
+
+By the plan's own taxonomy the row is a function of the input set, so it takes the same disposition
+`graphql_root_operation` just took: `graphql_schema_directive` re-aggregates, recomputed after the walk
+from the surviving inputs and the same predicate. That moves it out of the 54 owned relations and the
+counts again, to 77 / 30 / 17. It also settles the schema-level ownership question the phase's earlier
+version raised and the rewrite dropped, since `graphql_schema_directive` was the other relation named
+there.
+
+One thing worth saying because it bears on how the disposition is written rather than on which one is
+chosen: this row's existence is a function of the *recipe*, not of the document set, which is a shape
+neither the owned set nor the re-aggregated set is defined for. Re-aggregation reaches the right answer
+because it recomputes rather than deletes, so the plan does not need a fifth taxonomy row; the
+treatment column for that relation should say the predicate it recomputes from, so an implementer does
+not go looking for a declaration to survive.
+
+Nothing else in the round is outstanding. If the disposition lands as re-aggregation with the counts
+moved, phases one through four read as implementable to me and I would sign off on the next pass.
