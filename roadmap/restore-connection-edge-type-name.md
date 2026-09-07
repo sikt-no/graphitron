@@ -1,7 +1,7 @@
 ---
 id: R928
 title: "Restore the v9 *ConnectionEdge name for synthesised edge types"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: legacy-migration
