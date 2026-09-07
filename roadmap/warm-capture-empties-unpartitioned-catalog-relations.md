@@ -29,19 +29,15 @@ the effort can delete its root row and walk fresh, and gets a correct result in 
 are legitimate, the choice belongs to the gatherer that knows its corpus, and the keys hold either
 way.
 
-Today no gatherer has that choice. `StoreRefresh` empties every relation outright unless it appears in
-a hand-maintained list of exemptions, and the exempted ones are deleted per source by eighteen
-hand-written statements across three files. That is the store dictating one refresh strategy, the
-crudest one, to every corpus at once, and getting it wrong for four relations that were left off the
-list.
-
-What this removes is a mechanism, not a bug. Today a refresh empties every relation outright unless
-that relation appears in `StoreRefresh.PARTITIONED`, a hand-maintained list of 21 exemptions; the
-relations on the list are then deleted per source by eighteen hand-written statements spread across
-three files, hand-ordered children before parents. Membership on the list is an unverified promise
-that one of those statements exists somewhere else. When this lands there is no list, no exemption
-polarity, no wholesale arm and no hand-ordered delete. Retention becomes the decision not to issue a
-delete, and completing a delete becomes the database's job.
+Today no gatherer has that choice, and what this removes is a mechanism rather than a bug.
+`StoreRefresh` empties every relation outright unless it appears in `PARTITIONED`, a hand-maintained
+list of 21 exemptions, and the exempted ones are deleted per source by eighteen hand-written
+statements across three files, hand-ordered children before parents. Membership on the list is an
+unverified promise that one of those statements exists somewhere else. That is the store dictating one
+refresh strategy, the crudest one, to every corpus at once, and getting it wrong for four relations
+left off the list. When this lands there is no list, no exemption polarity, no wholesale arm and no
+hand-ordered delete: retention becomes the decision not to issue a delete, and completing a delete
+becomes the database's job.
 
 For a consumer the immediate effect is that building one module stops destroying another module's
 facts. Four relations are missing from the list today, so a warm capture of graph A empties
@@ -81,8 +77,8 @@ Two different operations then use it, and they are not the same operation.
 ### Refreshing a source that changed
 
 The file still exists and its registry row still identifies it, so nothing deletes that row. What a
-content change invalidates is the facts read out of the file, and each family already has a single
-relation those facts hang from:
+content change invalidates is the facts read out of the file, and a gatherer has two honest strategies
+for reaching them.
 
 A gatherer with a changed source has two honest strategies, and the item's job is to make both
 available rather than to pick one.
@@ -234,13 +230,9 @@ depends on the winner's file as much as its own: refreshing the winner can make 
 and a row hanging off the loser's file would survive that. `graphql_syntax_error` is the counter-case
 and stays in the cascading set, its own comment saying it is judged one file at a time.
 
-The aggregate row is the case that cannot cascade, and the reason is worth stating plainly because it
-is what makes this design more than a schema edit. A coordinate exists if *any* declaration site names
-it, and a type may be declared in one file and extended in three others. So no single source owns
-`graphql_element`, and deleting one file's rows must not remove a coordinate another file still
-declares. After the changed sources' roots are deleted and re-walked, the coordinate set is recomputed
-from the surviving `graphql_type_declaration` and its kin, and coordinates with no remaining
-declaration are deleted.
+Reconciling them is one step wherever a gatherer puts it: after the changed sources have been
+re-read, whichever strategy read them, the coordinate set is recomputed from the surviving
+`graphql_type_declaration` and its kin, and coordinates with no remaining declaration are deleted.
 
 Those deletions cascade in turn, which is what closes the chain rather than needing a fourth
 mechanism: the `graphitron_` decodes hang off the coordinate anchors by foreign keys the DDL already
@@ -304,8 +296,9 @@ gives that family the single root row the other three already have.
 
 Two things stay, named so they are not read as collateral. `freshSources` still decides which sources
 this round re-read; that set becomes the argument a gatherer refreshes against, rather than the scope
-of eighteen statements the store issues on its behalf. And the claim seeding in `prepare` is untouched, being an insert-side optimisation that
-stops a walk rewriting a partition it is retaining, which is orthogonal to how deletion happens.
+of eighteen statements the store issues on its behalf. And the claim seeding in `prepare` is
+untouched, being an insert-side optimisation that stops a walk rewriting a partition it is retaining,
+which is orthogonal to how deletion happens.
 
 What does not appear anywhere is a delete of a registry row followed by an insert of the same registry
 row. A refresh never churns a source's identity to clear its facts; the row stays, and its `stamp` and
@@ -382,11 +375,10 @@ phase pays the `ddl_hash` store discard, so the later two are free.
 
 **Phase one, the source-keyed families.** Add `jvm_declared_type_ref`'s missing edge; add
 `ON DELETE CASCADE` throughout the `sql_`, `jvm_` and `java_` webs so each family cascades from its
-roots; replace `clear`'s `jvm_` block and `clearSchemaSources`'s eighteen statements with one delete
-per root per changed source, which is two for `sql_` and one each for the other two and is the
-strategy those three gatherers take today; remove
-`PARTITIONED` and `wholesale()`. The four relations this item
-was filed for are carried by the cascade with nothing naming them.
+roots; replace the eighteen statements between `clear`'s `jvm_` block and `clearSchemaSources` with
+one delete per root per changed source, which is two for `sql_` and one each for the other two and is
+the strategy those three gatherers take today; remove `PARTITIONED` and `wholesale()`. The four
+relations this item was filed for are carried by the cascade with nothing naming them.
 
 **Phase two, `java_` joins the registry.** Add the `JAVA_SOURCE` kind, give `java_file` a cascading
 foreign key into `store_source`, and move its `stamp` and `read_at` up to the registry row so currency
@@ -399,8 +391,8 @@ the refusal a second graph meets; add the cascading `(graph_name, source_name)` 
 14 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
 each needs; write the re-aggregation over all fifteen relations that are a function of more than one
 source, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
-graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture captures two graphs over one schema
-file, the new rule being a refusal that an existing test could trip.
+graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture
+captures two graphs over one schema file, the new rule being a refusal an existing test could trip.
 
 ## Tests
 
@@ -433,10 +425,11 @@ file, the new rule being a refusal that an existing test could trip.
   corrected taxonomy exists for: two files declaring the same type, the duplicate recorded, then the
   *winner's* file re-read, asserting the duplicate row is reconciled rather than left hanging off the
   loser's file. The same shape for `graphql_schema_error`, whose stages judge the document set whole.
-- **Cascade cost is measured, not assumed**: one delete of a jar's source row against the sakila
-  fixture, reported as a row count and a duration beside the hand-written path it replaces, so a
-  regression in refresh cost is visible here rather than discovered in a dev loop. Insert cost is
-  measured too and is the one more likely to regress: 54 new foreign keys and 54 new indexes sit on
+- **Cascade cost is measured, not assumed**, and for both operations, since the plan now distinguishes
+  them: refreshing a changed jar, which deletes its `jvm_class` root, and removing a jar outright,
+  which deletes its registry row. Each reported as a row count and a duration beside the hand-written
+  path it replaces, so a regression in refresh cost is visible here rather than in a dev loop. Insert
+  cost is measured too and is the one more likely to regress: 54 new foreign keys and 54 new indexes sit on
   the families capture writes most heavily, so capture wall-clock and store size on the sakila example
   are reported before and after.
 
