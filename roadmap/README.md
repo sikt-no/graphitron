@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-06 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R928` | Restore the v9 *ConnectionEdge name for synthesised edge types | In Review | 2026-09-07 | [plan](restore-connection-edge-type-name.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
@@ -659,7 +658,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### legacy-migration
 
-- `R928` [**Restore the v9 *ConnectionEdge name for synthesised edge types**](restore-connection-edge-type-name.md) — In Review, bug
 - `R360` [**Retire the @enum directive; infer enum Java backing from producers**](retire-enum-directive.md) — Backlog, cleanup
 - `R540` [**mutation.adoc documents UPSERT the generator refuses at dispatch**](upsert-docs-match-dispatch-refusal.md) — Backlog, docs
 
