@@ -212,3 +212,112 @@ sites than the report listed (`emitAgreementDecodeLocal` and the two `==` guards
 argument for the producer-level fix stated as evidence rather than as principle.
 
 ## Reviewer findings
+
+### Round 1 (2026-09-07, Spec -> Ready, reviewer session 01DvSBrMskSSE6GFhvW1cDR4)
+
+Verdict: withhold. Two findings, one on each gate question. The goal reads cleanly without
+reconstruction from the plan: a consumer whose published schema nests an input object with a
+`@nodeId` field inside another input object can generate and compile code today only by flattening
+that schema, and after this lands they do not have to. The defect analysis is the strongest part of
+the item and it checks out line by line: `WireMapChain.of` does return an unparenthesised
+conditional expression, `ArgCallEmitter.nestedMapValueExpr` does short-circuit only the
+single-segment case, and every hazardous splice site the spec names exists with the format string
+it quotes, including the two `==` guards the original report missed. The chosen fix, wrapping at
+the `of` boundary rather than inside `at`, is the right shape and the rejected alternatives are
+argued honestly. Both findings below are factual rather than design: the plan is built on two
+counts of the tree that are wrong, and each wrong count changes what the implementer builds.
+
+**Finding 1 (question one: is the outcome reachable as planned). The corpus-coverage claim is
+false, and the fixture recipe as written describes something that already exists and compiles.**
+
+The Tests section states that "nothing in the fixture corpus reaches nested path x
+`@nodeId`-decoded leaf, so the whole family of descent-splice faults is currently uncovered", and
+prescribes "a fixture mutation whose input is a nested object carrying a `@nodeId` field".
+
+`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` already carries exactly that
+shape:
+
+```graphql
+input CustomerUpsertInput {
+    identity: CustomerIdentityGroup
+    details: CustomerDetailsGroup
+}
+
+input CustomerIdentityGroup {
+    customerId: ID! @nodeId(typeName: "Customer")
+}
+```
+
+reached by the `customerUpsert(in: CustomerUpsertInput!)` mutation, which compiles today and has
+three passing execution tests in `GraphQLQueryTest`
+(`customerUpsert_nestedLeafSet_landsOnColumn_omittedSiblingUntouched` and its two
+explicit-null counterparts). It is the only nested-input-with-`@nodeId` mutation in either the
+sakila schemas or `graphitron/src/test/resources/corpus/`.
+
+The reason it does not fire the defect is the property the spec never states: `customerUpsert` is a
+`@service` mutation, so its descent goes through `ArgCallEmitter.buildNestedInputFieldExtraction`
+into a service-call argument list, which is argument position and therefore one of the safe sites
+the spec's own defect section identifies. What is uncovered is nested path x `@nodeId` leaf
+*reaching the generated DML decode-locals walks* in `TypeFetcherGenerator`. An implementer who
+builds the fixture the spec describes gets a green compile and no regression test.
+
+What would satisfy this: state the mutation kind the fixture needs (a generated insert/update, not
+a `@service` one) as the load-bearing property of the fixture, and correct the coverage claim to
+say what is actually absent. The follow-on sentence about covering both the `instanceof` operand
+and the `==` operand already points at the decode locals and the refused-clear guard, so the
+guidance is half there; it is the headline claim and the one-line recipe that mislead. Naming
+`customerUpsert` as the near-miss is worth a sentence too, since the next reader will find it and
+wonder whether the gap is real.
+
+**Finding 2 (question two: architecture fit). `ConditionGlueRenderer` has three hand-wrap sites,
+not two, and the one the Implementation section omits is the one carrying the comment that states
+the caller obligation this fix retires.**
+
+The defect section says `ConditionGlueRenderer` "already hand-wraps two of its own splices as
+`($L) instanceof ...` with a comment naming both operators", and the Implementation section says to
+"delete the now-redundant hand-wraps in `ConditionGlueRenderer`'s enum and `JooqConvert` arms, so
+the tree carries one answer rather than three".
+
+There are three `($L) instanceof` wraps, in three methods:
+
+* `nestedArgExtraction`'s `EnumValueOf` arm (`ConditionGlueRenderer.java:628`), named.
+* `nestedArgExtraction`'s `JooqConvert` list arm (`ConditionGlueRenderer.java:635`), named.
+* `appendAuthoredAnd`'s `FieldPresent` guard (`ConditionGlueRenderer.java:408`), not named. Its
+  sibling non-list branch wraps the same read as `(($L) != null)` at line 411, which is the `==`
+  operand hazard in its second habitat.
+
+The comment naming both operators sits at lines 402 to 404, on `appendAuthoredAnd`, not on either
+arm the deletion bullet lists. So following the Implementation section as written deletes two of
+three wraps and leaves the third, plus a comment that after the fix asserts a caller obligation the
+producer now discharges. The tree would still carry two answers, and the surviving comment is
+precisely the artefact that teaches the next author to hand-wrap.
+
+What would satisfy this: fold `appendAuthoredAnd` into the deletion bullet (both branches, and the
+comment), and correct the "two splices" count in the defect section. This is a scope addition to a
+cleanup bullet rather than a design change, but it is the author's because it changes the site list
+the implementer works from.
+
+**Non-blocking corrections, for the same revision.** Two counts in the body are off by one against
+the tree, neither load-bearing:
+
+* The Documentation section says the NodeId-decode ternary is "live at four sites in
+  `TypeFetcherGenerator`". It is five: lines 2608, 3164, 3410, 3704 and 4452 all emit
+  `($L instanceof $T _s$L) ? ...`.
+* The `ArgPathHelperRegistry` alternative says "`buildInsertDecodeLocals` alone has nine call
+  sites". It has eight (lines 2333, 2347, 4175, 4192, 5471, 5485, 5516, 5814); the other four
+  occurrences of the name are javadoc `{@link}`s.
+
+**Checked and clean, so the next pass need not redo it.** Every other symbol the spec names exists
+as named: `WireMapChain.of`, `ArgCallEmitter.nestedMapValueExpr`, `nestedContainsKeyExpr`,
+`buildInsertDecodeLocals`, `emitAgreementDecodeLocal`, `emitBulkSetDecodeLocals`, the
+`appendDecodeLocal(..., CodeBlock wireValueExpr, ...)` overload, `appendSetDecodeLocal`,
+`OnExplicitNull.CannotArrive`, `ArgPathHelperRegistry`, `ServiceMethodCallEmitter` and
+`ServiceMethodCallEmitterTest`. The six call sites feeding a descent into the `appendDecodeLocal`
+overload are exactly six. `appendSetDecodeLocal` does bind the descent to a named `Object` local
+and does read it twice, so leaving it alone is right. `nestedContainsKeyExpr` is safe at all of its
+current call sites for the precedence reason given. `ServiceMethodCallEmitterTest`'s
+`instanceof Map<?, ?> map1` assertions exercise `ServiceMethodCallEmitter.walkSegments` and no test
+anywhere references `WireMapChain` or `nestedMapValueExpr`, so the no-golden-file-sweep claim
+holds. Both documentation statements are where the spec says they are and both say what it says
+they say. `R334`'s 2026-07-24 expanded scope does name the deep-input-path chains and the
+insert-value ternaries with the fix shape the spec attributes to it.
