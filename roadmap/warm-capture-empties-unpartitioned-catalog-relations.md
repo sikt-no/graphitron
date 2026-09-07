@@ -506,3 +506,109 @@ wholesale arm's entire population is those four relations, so the arm has never 
 and the machinery that makes the list unnecessary already exists in the same method, used for the
 graph dimension and not for the source one. The cascade design, and the split between what cascades
 and what is re-aggregated, are the user's.
+
+## Reviewer findings
+
+### Round 1 (2026-09-07, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold. One blocking finding on question two, scoped to phase three; question one passes,
+and passes well. Phases one and two extend a shape the tree already carries and I would hand them to
+an implementer as written. Phase three roots 54 SDL relations at `store_graph_source` by a foreign
+key whose child column is nullable in 37 of them, which the plan does not mention and the tree
+argues against in two places, and the structural gate the plan offers as the list's replacement
+cannot see the gap.
+
+The goal reads on its own. Building module A blanks module B's node-identity and routine facts in a
+shared store because four relations sit outside `PARTITIONED`, and afterwards the omission is
+unrepresentable because there is no list. Nearly every claim the plan makes about the tree checks
+out, and two of the sharper ones check out exactly: `StoreRefresh.wholesale()`'s population computes
+to precisely `sql_node_metadata`, `sql_node_key_column`, `sql_routine` and `sql_routine_parameter`
+and nothing else, so the arm has indeed never had a correct member; and the 79 / 30 / 15 taxonomy
+over 124 relations reproduces from the DDL down to each per-family figure, the seven `graphitron_`
+anchors keyed at `store_graph` and the five `*_directive_arg` descendants included. `sql_`'s second
+root is real (`sql_enum_binding` hangs off the registry with a nullable `table_schema`, no edge can
+fold it into a schema), `jvm_declared_type_ref` is the one relation of its family with no foreign key
+at all, and `meta_relation`'s `java_file` row and `store_source`'s table comment are quoted verbatim.
+
+**Finding 1 (question two: architecture fit). The `(graph_name, source_name)` edge into
+`store_graph_source` does not reach the rows it has to reach: `source_name` is nullable in 37 of the
+54 relations, a NULL matches no foreign key, and the structural gate would certify those relations
+as covered.**
+
+Of the 54 source-owned SDL relations, 17 declare `source_name NOT NULL` and 37 declare it nullable
+(8 of the 14 `graphql_`, 29 of the 40 `graphitron_`). A row whose `source_name` is NULL has no parent
+in `store_graph_source` and is not deleted when the root row goes, so for those relations "any delete
+anybody does issue is complete without being told what else to remove", which is the whole
+correctness argument of the design, does not hold. The rows survive every refresh of the file that
+produced them.
+
+The nullability is deliberate and the tree states it twice, in both cases as an argument against
+exactly this edge. `store_graph`'s table comment: "why the SDL roots carry an FK here while the
+SDL-to-`store_source` FK was declined: the graph is ambient before the walk begins and NOT NULL on
+every row, while the source rows are a summary collected last and nullable at schema-level sites, so
+the FK doctrine admits one and not the other." And
+`FactCaptureAgreementTest.schemaFilesAreRecordedAsSources`'s javadoc: "It declares no foreign key
+into `store_source`: a schema-level row can carry a null source name, and the FK doctrine puts one
+only where the walk writes the child while standing on the parent." The plan engages with neither.
+
+The population is concrete, not hypothetical. `graphql_schema_directive` and `graphql_root_operation`
+are the schema-level relations those two statements are about, both are in the plan's 54, and
+`SdlFactCapture.setPosition` returns without setting `source_name` whenever the graphql-java
+`SourceLocation` is absent or carries no source name, which is the programmatic-caller and bundled-
+resource case `store_source.stamp`'s own comment already records ("the bundled `directives.graphqls`
+is a resource name, a programmatic caller may hand a bare name"). The two ends of the proposed edge
+also disagree on how "no source" is spelled: `GraphSourceMembership.note` normalises a null source to
+the *empty string*, so even a `''` parent row would not match a NULL child.
+
+What makes this blocking rather than an implementation detail is the interaction with the plan's own
+replacement for the list. The gate under `## Tests` passes a relation that "reaches its root by
+declared foreign keys whose every edge cascades". All 54 would declare such an edge, so all 54 pass,
+while 37 of them retain rows the cascade never reaches. That is the exemption-list failure mode
+returning in a form the new gate is structurally unable to catch, which is the one outcome this item
+exists to make impossible. It also makes the taxonomy's first row wrong for those relations: the
+plan's own test is "whether the row's existence is a function of one source", and a row with no
+source recorded is not.
+
+Three dispositions are open and they are not variations on each other. Making the 37 columns NOT NULL
+against `''`, matching `store_graph_source`'s existing stand-in convention, touches every writer that
+leaves them unset and yields a synthetic source no refresh ever names, so those rows then never get
+deleted at all. Moving the schema-level relations into the re-aggregated set changes the 79 / 30 / 15
+counts and the gate's declared aggregate set, and makes the re-aggregation pass wider than fifteen
+relations. Attributing a source at capture time from the enclosing document rather than from the
+`SourceLocation` is a capture change carrying its own question about which file owns a schema
+extension's directive. Which one is chosen decides whether the gate is sound, so it belongs in the
+plan rather than in the implementer's hands mid-phase.
+
+**Finding 2 (question one: claims about code). Two structural figures in "What the schema already
+has" are wrong as stated, and three statement counts undercount.**
+
+The conclusions survive in every case, which is why this is one finding rather than four, but a
+reviewer checking them finds them false:
+
+- "The foreign-key graph is acyclic, checked over all 176 base relations." The DDL declares 177 base
+  relations, and the graph carries one cycle: `graphitron_argmapping_candidate` has a self-
+  referencing `(graph_name, coordinate, parent_path)` foreign key, already `ON DELETE CASCADE`. The
+  conclusion holds anyway (a self-loop terminates on rows, and the relation carries no `source_name`
+  so it is outside the cascading set), but the claim as written does not, and the sentence is
+  load-bearing for "a cascade terminates and needs no ordering decision from any caller".
+- "the eleven per-source statements in `CatalogFactCapture.clearSchemaSources`", repeated as "The
+  eleven per-source deletes and the two-loop structure" under "What the code loses".
+  `clearSchemaSources` issues 14 deletes, 3 in the first round and 11 in the second. Eleven is the
+  second round alone, which is odd beside the same sentence naming the two-loop structure as the
+  thing being replaced.
+- "eighteen hand-written statements across three files", repeated in phase one as "the eighteen
+  statements between `clear`'s `jvm_` block and `clearSchemaSources`". Those two sites hold 7 + 14 =
+  21. Counting `JavaSourceFacts.clear`'s three declaration deletes as the third file gives 24. Either
+  figure is defensible; eighteen is neither.
+
+### Non-blocking note
+
+`store_source.graph_name` falsifies the first clause of `store_source`'s own table comment, "store-
+global rather than graph-keyed: it can say what a file hashed to, never which graph read it". The
+description sweep is otherwise thorough and rewrites the comment's second sentence, so the omission
+reads as an oversight rather than a decision. Relatedly, the column makes `store_source` a second and
+kind-filtered place that answers which graph read a source, which is the shape
+`store_graph_source`'s comment argues against ("a kind-filtered membership would make completeness a
+function of which consumers had shipped"). The plan says the rule is severable policy and invites the
+reviewer to judge it as such, so this is a note and not a finding; if the rule stays, the falsified
+clause belongs in the sweep.
