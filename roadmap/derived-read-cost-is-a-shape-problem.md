@@ -309,12 +309,99 @@ never run it, so refusing there leaves an author mid-edit with no store rather t
 a diagnostic.
 
 
-## The entry and anchor pattern, and the scope it makes visible
+## The entry and anchor pattern, and the plan it makes possible
 
 The slices above each fixed a rule. What the node and field arcs added is the shape the fixes have in
-common, and stating it is what turns a sequence of repairs into a scope.
+common, and stating it is what turns a sequence of repairs into a plan. What follows is the rule,
+then how it was found, then the plan it makes possible, then the slice that comes next.
 
-### Four attempts, and what each of them found missing
+### The rule
+
+**An entry holds what the author wrote; an anchor holds what resolved.** The entry is keyed to the
+coordinate the directive sits on, carries unconstrained nullable columns, and holds rows the
+directive did nothing for, which is exactly why it can be keyed there. The anchor carries a primary
+key and foreign keys into what the resolution reached. What an author got wrong is the anti-join
+between the two, and it is the only place a diagnostic can find it.
+
+**An anchor's population is not its entry's.** `graphitron_node` unions a declared arm and a
+published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field_table` has three disjoint
+target rules and only one of them reads a directive. A pair is not a decode with its resolution
+bolted on; it is two relations answering different questions that happen to meet at an anti-join.
+
+**The SDL walk writes every entry; the graphitron gatherer writes every anchor.** Settled 2026-09-07,
+and it is the ownership rule applied to base relations rather than an exception to it. The fact model
+already decides an owner by asking what a row is a function of, and it has only ever run that
+question over views. An entry is a function of one document and nothing else: it joins nothing,
+resolves nothing, defaults nothing, and reads no corpus but the document the directive sits in. So
+its owner is that document's crawler. An anchor is the opposite shape by construction, `Nodes.derive`
+joining an entry against `sql_node_metadata`, and could not run inside a walk at all. The two halves
+are the two answers to the ownership question, and the family they share was never what the question
+asked.
+
+What this asks of the SDL gatherer is not a new capability. It is already a graphitron gatherer in
+the sense that matters: it holds the parse, it sees a field's applications in written order, and it
+is expected to understand what a graphitron directive means well enough to unpack it into the entry
+relation that directive belongs to. Most of what it writes is in the document's own vocabulary and
+the rest is in graphitron's, and that is two vocabularies over one document rather than two passes
+over one corpus.
+
+**A family names a vocabulary; an owner names a writer.** These have been separate columns in
+`meta_relation` from the start, each with its own foreign key, and the correlation between them is a
+property of the current population rather than a rule: the catalog gatherer already owns two
+prefixes, `sql_` and `jvm_`. What is new is one prefix with two owners, and what makes it legitimate
+is that the split is exactly entry against anchor, which is the split between needing only the
+document and needing the store. Two pages state the old correlation as though it were the rule and
+both need restating with slice one. The fact model's ownership section says the two families have "a
+gatherer each" and that the decode "runs after the transcription has flushed rather than inside its
+walk"; its corpus-isolation section says the decode is outside that gate's scope because its gatherer
+may reach the catalog legitimately. The first becomes false here. The second stays true of the 15 and
+becomes false of the 56.
+
+**The name says which half.** Every as-written relation carries the `_entry` suffix; three of the 56
+do today. The pattern's central operation is the anti-join between the two halves, and a reader who
+cannot tell from a relation's name which half it is cannot find that join, which is the whole
+justification and it does not depend on any gate. What the suffix buys on top of that is a scope a
+test can state: the two gates slice one touches have to name the entry half, and enumerating 56
+relations inside a test is the list that goes stale the first time somebody writes the 58th. The
+cost is 53 renames, taken one relation at a time as it moves rather than as a rename commit of its
+own. Once the declaration pass reaches the family, the declared owner says the same thing in a
+second place, and the two disagreeing is a check neither could be alone.
+
+**Entry, match, and the anti-join between them.** The pattern has a third member the sections below
+name only for the argMapping family, where `graphitron_argmapping_entry` is what was written,
+`graphitron_argmapping_candidate` is what may be written and `graphitron_argmapping_match` is where a
+written one landed, with the match's own comment stating the rule: a resolution and not a rejection,
+and an entry naming nothing has no row. The route family is the same triple at two grains rather than
+one, an application resolving to one node or to several steps, so the match carries the chain
+position back to the entry. That is what gives provenance a join instead of a reconstruction, lets a
+rule about the well-formed schema join matches and never filter, makes the diagnostic an anti-join at
+the application grain, and leaves a schema with one unresolvable application still capturing
+everything else.
+
+**A graphitron relation cannot key at `graphql_*_coordinate`.** Macro expansion mints coordinates the
+transcription does not hold, so a foreign key there excludes exactly the fields a connection is made
+of. `graphitron_field_table` was written with one and the build failed on `QueryFilmsConnection.nodes`.
+Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
+and for a while no such anchor existed: `intent_expanded_type` and `intent_expanded_field` were
+views, so nothing could point at them. The element family below is what the rest of this arc keys
+through, and it is where those two went.
+
+**Lifecycle is a cascade at the minted grain and a refcount at the anchor grain.** A minted row can
+be coined by several sources: `PageInfo` is one type in the schema however many `@asConnection`
+applications called for it, two in a two-connection schema. This arc first read that as proof the
+coining direction could carry no `ON DELETE CASCADE` at all. It is not, and the whole of the
+difference is where the provenance sits. Held in a relation beside the minted row, the coining is a
+set with no single parent and nothing to cascade from. Held in the minted row's own key, every minted
+row has exactly one parent, the coordinate whose directive coined it, and cascades from it cleanly.
+What still cannot cascade is the anchor, whose row must survive while any source still coins it, so
+that grain is refcounted and swept. The two mechanisms answer different questions rather than
+competing, which is only visible once the key carries the source. Neither is exercised today:
+`StoreRefresh.clear` deletes every graph-keyed relation on every capture and derives that set from
+the presence of a `GRAPH_NAME` column, so a new graphitron relation is rebuilt wholesale by default.
+The sweep is owed the day an incremental path exists, and what matters until then is that the cascade
+declared now is the one that will still be right.
+
+### How the rule was found
 
 Not one of the four landed the relation it set out to land without first landing something
 underneath it. The pivots are worth recording because they are not accidents of sequencing: each was
@@ -371,146 +458,111 @@ fail and did not notice the two-grain fusion described in the diagnosis. The rul
 under is to build the fixture that can falsify the claim before believing the claim, and to verify it
 by removing the thing under test and watching the test go red.
 
-**An entry holds what the author wrote; an anchor holds what resolved.** The entry is keyed to the
-coordinate the directive sits on, carries unconstrained nullable columns, and holds rows the
-directive did nothing for, which is exactly why it can be keyed there. The anchor carries a primary
-key and foreign keys into what the resolution reached. What an author got wrong is the anti-join
-between the two, and it is the only place a diagnostic can find it.
+### The plan
 
-**An anchor's population is not its entry's.** `graphitron_node` unions a declared arm and a
-published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field_table` has three disjoint
-target rules and only one of them reads a directive. A pair is not a decode with its resolution
-bolted on; it is two relations answering different questions that happen to meet at an anti-join.
+Nine slices, in the order they will be taken. Two things about that order changed on 2026-09-07, when
+the writer decision landed. The entry migration is now first, because every slice after it either
+adds an entry, renames one or reads one, and a relation landed in the gatherer today is a relation
+that moves later. And the macro consumer moved from last to third on its own argument, which is that
+it is the first consumer this arc retires and the size of what a retired consumer turns out to know
+is worth learning early rather than at the end. Everything else keeps its relative order.
 
-**A graphitron relation cannot key at `graphql_*_coordinate`.** Macro expansion mints coordinates the
-transcription does not hold, so a foreign key there excludes exactly the fields a connection is made
-of. `graphitron_field_table` was written with one and the build failed on `QueryFilmsConnection.nodes`.
-Every graphitron relation has to key through a macro-aware anchor over the expanded coordinate set,
-and for a while no such anchor existed: `intent_expanded_type` and `intent_expanded_field` were
-views, so nothing could point at them. The element family below is what the rest of this arc keys
-through, and it is where those two went.
+This is the order and the scope, and it is not an estimate. The finding above stands: a prerequisite
+is discovered by something refusing, so what a slice costs is known once its first relation refuses
+to be written and not before. What the list settles is what gets attempted next, and what each
+attempt owes before it can claim to be done.
 
-**Lifecycle is a cascade at the minted grain and a refcount at the anchor grain.** A minted row can
-be coined by several sources: `PageInfo` is one type in the schema however many `@asConnection`
-applications called for it, two in a two-connection schema. This arc first read that as proof the
-coining direction could carry no `ON DELETE CASCADE` at all. It is not, and the whole of the
-difference is where the provenance sits. Held in a relation beside the minted row, the coining is a
-set with no single parent and nothing to cascade from. Held in the minted row's own key, every minted
-row has exactly one parent, the coordinate whose directive coined it, and cascades from it cleanly.
-What still cannot cascade is the anchor, whose row must survive while any source still coins it, so
-that grain is refcounted and swept. The two mechanisms answer different questions rather than
-competing, which is only visible once the key carries the source. Neither is exercised today:
-`StoreRefresh.clear` deletes every graph-keyed relation on every capture and derives that set from
-the presence of a `GRAPH_NAME` column, so a new graphitron relation is rebuilt wholesale by default.
-The sweep is owed the day an incremental path exists, and what matters until then is that the cascade
-declared now is the one that will still be right.
-
-**What the arc still owes**, in the order the dependencies force:
-
-1. The two hierarchies, described below, which are one mechanism applied at two grains. A named type
-   is one of the specification's six kinds, and boundness, participants and fields are facts each
-   legal for some of them. A producer is what runs to fetch a field's rows, which most fields do not
-   have: a table-bound child is absorbed into its parent's query, and only a root slot, `@service` or
-   `@splitQuery` makes a field a fetch origin. Four values survive, three of them carrying a subtype
-   relation, and they are exclusive at a coordinate, so a coordinate carrying two should be
-   unwritable rather than rejected downstream. Both hierarchies are a unique on the anchor's key plus
-   its discriminator, and a composite reference from each dependent.
+1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode writes today, from
+   the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages write.
+   The `_entry` suffix lands on each relation as it goes, and the corpus-isolation gate widens
+   behind a fixture that can fail. Specified in full below, because it is the next slice and because
+   what it moves was measured before the decision was taken.
+2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
+   type is one of the specification's six kinds, and boundness, participants and fields are facts
+   each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
+   do not have: a table-bound child is absorbed into its parent's query, and only a root slot,
+   `@service` or `@splitQuery` makes a field a fetch origin. Four values survive, three of them
+   carrying a subtype relation, and they are exclusive at a coordinate, so a coordinate carrying two
+   should be unwritable rather than rejected downstream. Both hierarchies are a unique on the
+   anchor's key plus its discriminator, and a composite reference from each dependent.
    `intent_resolved_type_binding` dissolves with them, being a union that lets a routine's result
    pass for a type binding.
-2. The route family, described below, which now carries three things that were separate: the target
-   fact onto the field anchor, Route and Step as grains of their own with `graphitron_field_table`
-   dissolving into them, and the entry-and-match pairing named, which is where
-   `graphitron_field_chain_application` gains its `_entry` name and moves to whichever gatherer the
-   decision above settles on. It also carries the emitter migration, because
-   `intent_field_chain_node.seq` names generated SQL aliases through `ReservedAliases.chainHop`, so
-   the complete chain arrives with its consumers rather than as a change underneath them.
-3. The reference decode on the field sites: `graphitron_field_reference_step` and
-   `graphitron_reference_for_step`, which differ only in the key saying which directive owns the row.
-   The two argument-site relations beside them are item 4's, not this one's.
-4. The argument and input-field sides, deliberately last. Their `@reference` support differs from the
-   output-field side, a routine segment has no meaning there, and the multi-table polymorphic root
-   fans the departure out per branch, so folding them in before the field side is settled would model
-   three unlike things as one.
-5. The declaration pass, which is the documentation and the audit in one. 249 relations carry no
+3. **The macro arc's consumer**, which is the first one this arc retires. `MacroCapture` states the
+   `@asConnection` expansion as rows and `ConnectionPromoter` derives the same expansion again in
+   the generator, 732 lines against 403, so the naming, the field shapes, the nullability mirroring
+   and the precedence against an authored name are each decided twice. One value is pinned across
+   the boundary, the default page size, and the thirteen Relay description strings exist verbatim in
+   both modules with nothing holding them equal. Three capture gaps stand in the way, and each is a
+   fact the store should hold anyway. A structural connection carrier, a field whose return type is
+   already Connection-shaped with no directive on it, is promoted by the generator and has no row
+   here, `graphitron_connection` being the directive decode alone. `@asFacet` is a second macro,
+   minting a facets type and a facet-value type per carrier, and `graphitron_facet` is likewise only
+   its decode. And the descriptions belong on the minted row, which already carries the column. The
+   slice closes those, then cuts `ConnectionPromoter` along the seam it already has: deciding what
+   to mint becomes a read, and `rebuildAssembledForConnections` stays, building graphql-java objects
+   out of rows rather than out of a second derivation. How those 732 lines divide between deciding
+   and constructing is unmeasured, and measuring it is the first thing the slice does, because it is
+   what says whether this is one slice or two. The falsifier comes first, an agreement gate over a
+   corpus that fails if the two populations differ today, because claiming agreement without one is
+   how the page size came to be the only pinned value.
+4. **The route family**, described below, which now carries three things that were separate: the
+   target fact onto the field anchor, Route and Step as grains of their own with
+   `graphitron_field_table` dissolving into them, and the entry-and-match pairing named.
+   `graphitron_field_chain_application` becomes `graphitron_field_chain_application_entry` and is
+   the 57th entry, written by the walk with the rest: it is derived today by ranking source
+   positions and needs an invented tie-break to make the rank total, where the walk sees a field's
+   applications in written order natively and needs no rank at all. This slice also carries the
+   emitter migration, because `intent_field_chain_node.seq` names generated SQL aliases through
+   `ReservedAliases.chainHop`, so the complete chain arrives with its consumers rather than as a
+   change underneath them.
+5. **The reference decode on the field sites**: `graphitron_field_reference_step` and
+   `graphitron_reference_for_step`, which differ only in the key saying which directive owns the
+   row. The two argument-site relations beside them are item 6's, not this one's.
+6. **The argument and input-field sides**, deliberately last of the decodes. Their `@reference`
+   support differs from the output-field side, a routine segment has no meaning there, and the
+   multi-table polymorphic root fans the departure out per branch, so folding them in before the
+   field side is settled would model three unlike things as one.
+7. **The declaration pass**, which is the documentation and the audit in one. 249 relations carry no
    `meta_relation` row, and writing one forces a grain to be named, after which the existing gate
    checks the primary key against it. Ordered after the dissolutions above and not before them:
    `intent_` alone is 129 of the 249, and most of those are views the slices above delete, so
-   declaring them first would be writing rationales for relations about to go.
-6. The register, which is downstream of all of it and is where this item's own thesis is settled: a
-   registration either has no rule left to buy or it is re-argued on its own evidence.
+   declaring them first would be writing rationales for relations about to go. The entry half is
+   where the pass starts when it arrives: 56 relations whose owner and grain slice 1 has already
+   settled, so the only thing left to write is the prose, and the declared owner becomes the second
+   statement of what the suffix says.
+8. **The register**, which is downstream of all of it and is where this item's own thesis is
+   settled: a registration either has no rule left to buy or it is re-argued on its own evidence.
+9. **The materialization targets**, whatever of them is still standing. Fifteen of the twenty-five
+   `intent_` tables carry no primary key at all and are exactly those targets, so nothing refuses a
+   duplicate row in them and the gate that checks a key against its grain is vacuous on every one.
+   That is a real hole and it is deliberately last: the register is item 8's subject and most of
+   these dissolve with it, so keying them now would be hardening relations on their way out. The
+   existing tests carry their correctness until then, and what has not dissolved when the arc
+   reaches this point gets a key and a grain.
 
-Two decisions sit ahead of item 2 and are cheap to take now, expensive to discover later.
-
-**Which gatherer writes an entry.** The note below argues the entry half of every pair belongs in the
-SDL walk rather than in the graphitron gatherer, because an entry joins nothing and the gatherer
-currently prints a parsed value and reparses it to get back what the walk had in a local variable.
-The argument holds with more force for the relation this arc landed last:
-`graphitron_field_chain_application` is an entry, and the walk sees a field's directives in written
-order natively where the gatherer reconstructs that order by ranking source positions and needs an
-invented tie-break to make the rank total. One constraint the note does not address has to be settled
-with it: across all 45 declared relations the prefix determines the owner without exception, and
-`meta_relation.owner_name` is documented as the gatherer that owns the relation, so a `graphitron_`
-entry written by the SDL walk is the first break in that correlation. Either the correlation is
-prefix-to-family rather than prefix-to-writer and should be restated, or entries need their own
-answer. Taking the decision belongs with item 2, where the entry and its match land named together.
-
-**Entry, match, and the anti-join between them.** The pattern the arc runs on has a third member the
-sections below name only for the argMapping family, where `graphitron_argmapping_entry` is what was
-written, `graphitron_argmapping_candidate` is what may be written and `graphitron_argmapping_match`
-is where a written one landed, with the match's own comment stating the rule: a resolution and not a
-rejection, and an entry naming nothing has no row. The route family is the same triple at two grains
-rather than one, an application resolving to one node or to several steps, so the match carries the
-chain position back to the entry. That is what gives provenance a join instead of a reconstruction,
-lets a rule about the well-formed schema join matches and never filter, makes the diagnostic an
-anti-join at the application grain, and leaves a schema with one unresolvable application still
-capturing everything else.
-
-7. The macro arc's consumer, which is the first one this arc retires and the reason to reach for it
-   early rather than in list order. `MacroCapture` states the `@asConnection` expansion as rows and
-   `ConnectionPromoter` derives the same expansion again in the generator, 732 lines against 403, so
-   the naming, the field shapes, the nullability mirroring and the precedence against an authored
-   name are each decided twice. One value is pinned across the boundary, the default page size, and
-   the thirteen Relay description strings exist verbatim in both modules with nothing holding them
-   equal. Three capture gaps stand in the way, and each is a fact the store should hold anyway. A
-   structural connection carrier, a field whose return type is already Connection-shaped with no
-   directive on it, is promoted by the generator and has no row here, `graphitron_connection` being
-   the directive decode alone. `@asFacet` is a second macro, minting a facets type and a facet-value
-   type per carrier, and `graphitron_facet` is likewise only its decode. And the descriptions belong
-   on the minted row, which already carries the column. The slice closes those, then cuts
-   `ConnectionPromoter` along the seam it already has: deciding what to mint becomes a read, and
-   `rebuildAssembledForConnections` stays, building graphql-java objects out of rows rather than out
-   of a second derivation. The falsifier comes first, an agreement gate over a corpus that fails if
-   the two populations differ today, because claiming agreement without one is how the page size
-   came to be the only pinned value.
-8. Whatever of the materialization targets is still standing. Fifteen of the twenty-five `intent_`
-   tables carry no primary key at all and are exactly those targets, so nothing refuses a duplicate
-   row in them and the gate that checks a key against its grain is vacuous on every one. That is a
-   real hole and it is deliberately last: the register is item 6's subject and most of these
-   dissolve with it, so keying them now would be hardening relations on their way out. The existing
-   tests carry their correctness until then, and what has not dissolved when the arc reaches this
-   point gets a key and a grain.
-
-**There is no capture gap in this arc, and the one candidate turned out not to be one.** An earlier
-draft of this list named the written order of directive applications as the single fact a gatherer
-stage could not read out of what is already captured. It can. `graphql_field_directive` holds every
-application with its source position, so the order is a rank over those positions; measured on the
-manual's own sandwich, ranking them yields `@reference#0`, `@routine#0`, `@reference#1` in exactly
-the written order. The chain walk reports two nodes where the manual describes four not because the
-fact is absent but because it reads the per-directive decodes and anchors on the routine, admitting
-only applications that follow it.
+**There is no capture gap in the slices that only move facts, and the one candidate turned out not to
+be one.** An earlier draft named the written order of directive applications as the single fact a
+gatherer stage could not read out of what is already captured. It can. `graphql_field_directive`
+holds every application with its source position, so the order is a rank over those positions;
+measured on the manual's own sandwich, ranking them yields `@reference#0`, `@routine#0`,
+`@reference#1` in exactly the written order. The chain walk reports two nodes where the manual
+describes four not because the fact is absent but because it reads the per-directive decodes and
+anchors on the routine, admitting only applications that follow it.
 
 `graphitron_field_chain_application` states the order as rows, which is worth doing on
 `graphitron_field_navigation`'s terms, a reader joining the answer rather than re-ranking by
 position. But it is placement, not capture.
 
-The claim holds for items 1 through 6 and stops at item 7, and the exception is the interesting
-part. Placement is all the arc owes for as long as it only moves facts between relations; the moment
-it retires a consumer, that consumer turns out to know things the store never wrote down. A
-structural connection carrier and the `@asFacet` mint are both facts the generator has been deciding
-for itself, invisible from inside the store because nothing here ever needed them. That is the
-general shape rather than two oversights, and it is the argument for reaching item 7 early: every
-consumer this arc eventually retires will surface its own set, and the sooner one of them does the
-sooner the size of that class is known rather than assumed.
+The claim holds for every slice that only moves facts between relations and stops at slice 3, and the
+exception is the interesting part. Placement is all the arc owes for as long as it moves facts
+between relations; the moment it retires a consumer, that consumer turns out to know things the store
+never wrote down. A structural connection carrier and the `@asFacet` mint are both facts the
+generator has been deciding for itself, invisible from inside the store because nothing here ever
+needed them. That is the general shape rather than two oversights, and it is why the macro consumer
+moved up the list: every consumer this arc eventually retires will surface its own set, and the
+sooner one of them does the sooner the size of that class is known rather than assumed. Slice one is
+a writer move rather than a consumer retirement, so it is not expected to surface one, and the
+shadow-sink diff specified below is what would say otherwise.
 
 The evidence for the ordering is in two audits:
 `roadmap/audits/2026-09-05-coordinate-facts-as-relations.md` names the grains and the four tiers at
@@ -518,67 +570,95 @@ which an illegal state can be refused, and
 `roadmap/audits/2026-09-06-graphitron-family-grain-inventory.md` places every relation of both
 families against them and measures the dependency graph.
 
-### Note from another session, 2026-09-06: which gatherer writes an entry
+### Slice one: the entry migration
 
-> Offered to whoever holds this item rather than adopted into its plan. Raised by session
-> `01QDMJx75yxRTJACZ9fW2D5S` while mapping the incremental-refresh arc; adopt it, refuse it or defer
-> it as the arc's own sequencing decides.
+**Where the decision came from.** The argument was raised by session `01QDMJx75yxRTJACZ9fW2D5S` on
+2026-09-06 while mapping the incremental-refresh arc, offered to this item rather than adopted into
+it, and it is adopted here. What it argued is in the rule above. What it did not have, and what was
+measured before the decision was taken, is the population the rule cuts.
 
-The pattern above settles what an entry is and what an anchor is. It does not settle which gatherer
-writes each half, and the answer may not be the same for both.
+**The population it cuts.** 71 `graphitron_` tables ship today and one view. 56 of the tables are
+written by the decode arm and are the entry half; 15 are written by a deriver or by macro expansion
+and are the anchor half. Three of the 56 carry the `_entry` name. The decode arm reads the five
+directive transcription relations, their argument siblings, and `graphql_type` for the set of input
+object types, and it reads no catalog at all, which is what makes the whole of it entry-shaped
+rather than most of it. The widened corpus-isolation run below is the check on that claim, and its
+49 empty relations are the reason this slice starts with a fixture rather than with the move.
 
-An entry asks nothing of the directive: it joins nothing, resolves nothing, defaults nothing, and
-reads no corpus but the document the directive sits in. So an entry needs only what `SdlFactCapture`
-is already holding while it walks. An anchor is the opposite shape: `Nodes.derive` joins
-`graphitron_node_entry` against `sql_node_metadata`, a different corpus, and could not run inside a
-walk at all.
+**The seam is already cut.** `GraphitronFactCapture.capture` is two halves either side of its own
+first `sink.flush()`. Above the line are five methods, one per directive location, which fetch the
+transcription back and write 56 relations. Below it are eight stages that join, resolve, read the
+catalog and read each other, and write 15. The 56 above the line are the entries and they move. The
+15 below it are the anchors and they stay, with the gatherer, its two declared dependencies, and its
+javadoc's argument for existing, which is an argument about anchors and always was: a decode driven
+by callbacks "cannot join the coordinate it is decoding against anything" is exactly right about a
+resolution and says nothing about a relation that joins nothing.
 
-Both halves sit on the store side of that line today, and the entry half pays for it. Follow
-`@node(typeId:)` through the tree:
+**What moving them deletes.** The decode's input today is a printed literal. `SdlFactCapture` holds a
+parsed `Value` and prints it with `AstPrinter.printAstCompact` into `graphql_type_directive_arg.value_sdl`;
+`GraphitronFactCapture` calls `Parser.parseValue` per argument to rebuild a synthetic
+`graphql.language.Directive` it can read. That round trip is the second pass, and with it go twelve
+`graphql.language` imports, two `graphql.parser` imports, the grouped argument fetch at five
+locations, and the `inputTypes` query, which asks the transcription for something the walk knows by
+standing inside an `InputObjectTypeDefinition`.
 
-1. `SdlFactCapture` holds the parsed `Value` and prints it, `AstPrinter.printAstCompact`, into
-   `graphql_type_directive_arg.value_sdl`.
-2. `GraphitronFactCapture` reads the string back, rebuilds a synthetic `graphql.language.Directive`
-   by calling `Parser.parseValue` per argument in its own `directive(name, location, stored)` helper,
-   and writes `graphitron_node_entry` from it.
-3. `Nodes.derive` joins that entry against the catalog to produce the `graphitron_node` anchor.
+**One gate widens now and a second becomes reachable.** `CaptureCorpusIsolationTest` holds a
+crawler's rows about its corpus to being identical with and without a catalog, and `b5c9ff262` cut
+its scope to `graphql_` alone, correctly, because a gatherer that may read the catalog cannot be held
+to catalog-independence. An entry can be, so the entry half rejoins that scope, and the widening is a
+check recovered rather than a tidiness gain. The second is `MetaDeclarationGateTest`'s corpus check,
+which exempts every graphitron-owned relation today because the graphitron gatherer has no
+`meta_gatherer_corpus` row and crossing is its job. An sdl-owned entry is not exempt: its grain has to
+live in the sdl corpus, which is a check the entry half has always been able to pass and has never
+been asked to. That one does not fire on the move, because the gate binds per declared row and none
+of the 56 is declared. The move makes them declarable and the declaration pass collects it.
 
-Step 3 needs the store. Step 2 is a print-then-reparse whose only output is a column step 1 already
-had in a local variable.
+**One entry is keyed by its value rather than by a site, and the rule survives it.**
+`graphitron_spelled_reference` holds each distinct table or routine spelling once across the seven
+sites that can write one, deduplicated at capture, because a spelling's resolution does not vary by
+site. It is as-written in every other respect and asks nothing of the catalog, so it moves with the
+rest. What it shows is that "keyed to the coordinate" is a property of most entries rather than the
+definition of one; the definition is what the rows are a function of.
 
-Three things follow if the entry half is written by the walk instead.
+**The falsifier comes first, and the one available today fails in the informative way.** Widening
+`CaptureCorpusIsolationTest` to the entry half passes before any code moves: measured 2026-09-07 over
+the 57 relations that scope selects, the 56 tables and the match view, both arms hold identical rows
+and nothing differs. It passes for the wrong reason. Eight of the 57 hold a single row under that
+gate's fixture, so 49 of them agree by being empty twice, and a gate that cannot fail is what this
+arc has twice mistaken for evidence. The first work is therefore a fixture that populates the entry
+family, and the widening is worth having only behind it.
 
-**R713's two remaining alternatives stop being needed.** Both of them, structuring the value at
-capture as a tree of value-node rows and leaving it as text to be parsed inside an H2 function, exist
-to serve a decode that reads printed literals back out of the store. Entry relations already are the
-structured form, one per directive with meaningful column names, and an anchor reads entry columns
-rather than `value_sdl`, which `Nodes.derive` demonstrates. If every graphitron directive gets an
-entry the walk writes, `Parser.parseValue` and the decoder's twelve `graphql.language` and two
-`graphql.parser` imports go with it, and the value-literal parser R713 costs out never has to be
-written.
+**The second falsifier is the agreement between the two writers, and it takes the additive shape.**
+The walk writes to a shadow sink beside the gatherer's arm, the two populations are diffed over the
+corpus schemas, and the gatherer's arm is deleted when they agree rather than before. That diff is
+also what will say whether the round trip through `value_sdl` was as lossless as its javadoc claims,
+which is the one thing about this move nobody has checked.
 
-**A gate this item narrowed could be widened again.** `b5c9ff262` cut
-`CaptureCorpusIsolationTest.SDL_FAMILIES` to `graphql_` alone, which was right: a gatherer that reads
-the store may legitimately read the catalog, so the family as a whole stopped being holdable to
-catalog-independence. An entry written by the walk is holdable to it and could rejoin the gate's
-scope, which is a check recovered rather than a tidiness gain.
+**This restores a mechanism the arc itself retired, and the difference the second time is the whole
+of why it is right.** The five `captureXDirective` callbacks the walk drove the decode through went
+when the decode stopped being a visitor, recorded under "Retired vocabulary" below. What was missing
+then was the split: the family moved as one undivided thing, so the anchors' need for the store
+decided the entries' home with it. The callbacks come back for the entry half alone, and the anchor
+half stays exactly where that move put it.
 
-**The standing counter-argument does not reach entries.** `GraphitronFactCapture`'s own javadoc
-argues against callback-driven decoding, that such a decode "can only ever see what the walk holds at
-that instant" and "cannot join the coordinate it is decoding against anything". That is exactly right
-about anchors and says nothing about entries, which join nothing by construction. The javadoc predates
-the entry and anchor names and speaks about the family as one undivided thing.
+**R713 is refused by this slice and its thesis is honoured by it.** That item's complaint is that one
+corpus is transcribed twice and the second pass's rows are a function of the first pass's. Its move
+one landed and bought the wrong half, removing the AST dependency while keeping the pass. This
+removes the pass and restores the AST dependency, and its two remaining alternatives, both of which
+exist to serve a decode that reads printed literals back out of the store, go with it. Its status
+change is taken with this slice rather than ahead of it.
 
-One consequence for the arc's own sequencing, offered as the reason this is worth reading before the
-next relation rather than after the last one: the note argues the entry half is cheaper to write in
-the walk than in the gatherer, so a relation landed as a gatherer-written entry now is a relation that
-moves later.
+**What does not land with it is the declaration.** Writing a `meta_relation` row means naming a grain
+and arguing a rationale per relation, which is item 7's work and its cost. Until it happens the
+ownership move is real in the code and unstated in the store, and the two documentation pages
+restated with this slice are the only place the store's readers are told.
 
-Two claims in `docs/architecture/explanation/fact-model.adoc` went stale when this item split the
-gatherers, and would mislead the next reader of that page. Its ownership section still says
-`GraphitronFactCapture` is a field of `SdlFactCapture`, constructed by it and writing through the same
-sink; its corpus-isolation section still says the gate holds every `graphitron_` relation to identical
-rows with and without a catalog. Neither has been true since 2026-08-31.
+**One consequence for the target architecture stated below.** It assigns 186 relations to
+`graphitron` and 31 to `sdl`, computed by asking which gatherer writes each base relation rather than
+which corpus it transcribes, which are the same question everywhere except here. 56 base relations
+move from the first column to the second. What that does to the view counts is not recomputed, a
+view's owner being the latest of the owners of what it reads, and a view reading only entries moves
+with them.
 
 ### The element family, and what minting writes into it
 
@@ -1070,6 +1150,13 @@ all 287 relations the schema ships today, 170 tables and 117 views.
 **Nothing computes to `derivation`.** Not one relation of 287. The gatherer is empty, which is the
 collapse as a result rather than as an argument.
 
+**The `graphitron` and `sdl` rows below are stale as of 2026-09-07 and the direction is known.** The
+walk that produced them assigned each base relation to the gatherer that writes it, which is the same
+answer as the corpus it transcribes everywhere except in this family. Under the writer decision,
+56 base relations move from `graphitron` to `sdl`, leaving 130 and 87. The view counts are not
+recomputed: a view's owner is the latest of the owners of what it reads, so a view reading only
+entries moves with them and one reading an anchor does not.
+
 [cols="3,2,5"]
 |===
 | owner | relations | what it holds
@@ -1425,7 +1512,10 @@ where a reader now decomposes a coordinate.
 **Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
 than by the walk. The `Expansions` record and the five `captureXDirective` callbacks `SdlFactCapture`
 drove the decode through, along with `captureNavigation` and `connectionElementByType`, all of which
-went when the decode stopped being a visitor of the SDL walk.
+went when the decode stopped being a visitor of the SDL walk. The five callbacks return in slice 1, for
+the entry half only: what that move got wrong was moving the family as one thing, so the anchors'
+need for the store decided the entries' home with it, and the entry and anchor split is what
+separates them.
 
 **Swept, with seven survivors found and fixed.** One in main sources: the comment on
 `intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
@@ -1552,7 +1642,19 @@ guardrail is independent.
 
 ## What a reviewer should press on
 
-Five places where this plan is weakest, named so the gate does not have to find them.
+Six places where this plan is weakest, named so the gate does not have to find them.
+
+**The writer decision rests on a classification whose evidence is mostly vacuous, and it picks a
+mechanism for a sequencing reason.** Slice 1 moves 56 relations on the claim that each is a function
+of one document alone. The check available today, the widened corpus-isolation run, agrees for all 56
+and is empty for 49 of them, so the claim is measured at eight relations and asserted at the rest.
+The press is on what happens to a relation the classification gets wrong: it lands in a gatherer with
+no store to fall back on, and the failure is a missing row rather than an error. Second, the slice
+moves ownership in the code and declares it nowhere, because a `meta_relation` row costs a grain and
+a rationale per relation and that is item 7's budget. So between slice 1 and item 7 the store's own
+account of who writes the entry half is wrong, and the gate that would catch it is the one that binds
+per declared row. A reviewer should press on whether that window is acceptable or whether the 56
+declarations belong in slice 1 after all.
 
 **This item's thesis has been measured against, and it is confirmed in shape while refuted in
 scope.** Emptying the register does not work; the arms are tabled above. What survives is the claim
