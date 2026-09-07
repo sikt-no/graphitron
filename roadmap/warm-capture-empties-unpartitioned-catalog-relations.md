@@ -202,9 +202,9 @@ they sum, which the previous version's did not.
 | Kind | Count | Treatment
 
 | Owned by one source
-| 78
+| 77
 | A cascading foreign key into its family root, or into the registry where it is a root itself.
-  14 `sql_`, 7 `jvm_`, 4 `java_`, 13 `graphql_`, 40 `graphitron_`.
+  14 `sql_`, 7 `jvm_`, 4 `java_`, 12 `graphql_`, 40 `graphitron_`.
 
 | Descendant of an owned row
 | 30
@@ -212,14 +212,20 @@ they sum, which the previous version's did not.
   `graphql_directive`, the five `*_directive_arg` relations under their applications, and the 24
   `graphitron_` decodes hanging off owned rows or off catalog rows.
 
-| A function of more than one source, or of none
-| 16
+| A function of more than one source, of none, or of the recipe
+| 17
 | Re-aggregate after the walk and delete what no longer matches.
 |===
 
-The last row is the case that cannot cascade, and it has four kinds in it. One is
-`graphql_root_operation`, whose convention arm exists because a `schema` block is *absent*, so the row
-is a function of no document at all; phase three puts it here and the count above moves with it. Six are the SDL coordinate
+The last row is the case that cannot cascade, and it has five kinds in it. Two arrive from phase
+three and neither is a function of several documents, which is why the row's heading is wider than it
+was. `graphql_root_operation`'s convention arm exists because a `schema` block is *absent*, so the row
+is a function of no document at all. `graphql_schema_directive` holds the tag-link `@link`, whose
+existence is a function of the *recipe*: `TagLinkSynthesiser.apply` fires when any `SchemaInput` in
+the set carries a configured `tag`, and adds one extension for the registry however many do. Both are
+recomputed rather than deleted, which is what makes re-aggregation the right treatment for a shape
+neither the owned set nor a several-documents reading covers; the predicate each recomputes from is
+named in phase three so an implementer does not go looking for a declaration to survive. Six are the SDL coordinate
 anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists if
 *any* declaration site names it, and a type declared in one file may be extended in three others, so
 deleting one file's rows must not remove a coordinate another file still declares. Seven are the
@@ -427,15 +433,26 @@ binding". A row that exists because a declaration is *absent* is a function of t
 than of any document, which is the re-aggregated set's own definition. `graphql_root_operation` moves
 there whole rather than being split by arm, because the relation also holds explicit bindings and a
 taxonomy that classifies half a relation is not one; recomputing it after the walk covers both arms
-from the surviving declarations plus the convention rule. **This moves the counts to 78 / 30 / 16.**
+from the surviving declarations plus the convention rule.
 
 `TagLinkSynthesiser` is the fourth and it is the one the plan cannot leave alone, because it is the
 disposition the alternatives section refuses, already shipped: it stamps what it injects with
 `SourceLocation(1, 1, "<graphitron-synthesised:tag-link>")`, so those rows are `NOT NULL`, would
 satisfy phase four's edge and the strengthened gate, and belong to a source no refresh ever names.
-The synthesis is triggered by a specific `@link` tag in a specific document, so the row is attributed
-to that document and the synthetic name is retired. That keeps it in the owned set and gives it a real
-refresh: edit the file carrying the tag and the synthesised rows go with it.
+
+It cannot be attributed to a document, because no document triggers it. `TagLinkSynthesiser.apply`
+fires on `bySource.values().stream().anyMatch(i -> i.tag().isPresent())`, and `SchemaInput.tag` is a
+configuration field carried from `SchemaRecipe.Binding.tag()` and persisted by `StoredRecipe` as a
+`tag` column; the `@link` is what the synthesiser writes, not what it reads. `synthesise(registry)`
+then adds one `SchemaExtensionDefinition` for the whole registry however many inputs are tagged, and
+`captureSchema` turns that into one `graphql_schema_directive` row. Picking one tagged input to own it
+would be unsound in this item's own terms: with two tagged inputs, refreshing the chosen one deletes a
+row the other still requires, which is a partition losing rows it still owns.
+
+So `graphql_schema_directive` re-aggregates, recomputed after the walk from the surviving inputs and
+the same predicate, and the synthetic source name is retired. **This and the convention roots together
+move the counts to 77 / 30 / 17.** It also settles the schema-level ownership question an earlier
+version of this phase raised, `graphql_schema_directive` having been the other relation named there.
 
 `SdlFactCapture.stampTarget`'s javadoc names the bundled directives and the synthesised name as "the
 whole miss set", which is true of sources with no file and is why those two are the ones with rows and
@@ -451,8 +468,8 @@ the bundled directives need one. It is a live sealed arm at nine main-source sit
 **Phase four, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
 the refusal a second graph meets; add the cascading `(graph_name, source_name)` foreign keys from the
 14 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
-each needs; write the re-aggregation over all sixteen relations that are a function of more than one
-source or of none, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
+each needs; write the re-aggregation over all seventeen relations that are a function of more than one
+source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
 graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture
 captures two graphs over one schema file, the new rule being a refusal an existing test could trip.
 
@@ -886,3 +903,25 @@ not go looking for a declaration to survive.
 
 Nothing else in the round is outstanding. If the disposition lands as re-aggregation with the counts
 moved, phases one through four read as implementable to me and I would sign off on the next pass.
+
+> **Author, 2026-09-07.** Accepted, and verified before changing anything:
+> `TagLinkSynthesiser.apply` opens on `anyMatch(i -> i.tag().isPresent())` over the input map and
+> `SchemaInput.tag` is a record component fed from the recipe, so the trigger is configuration and
+> `synthesise(registry)` writes one extension for the whole registry. The disposition was unsound in
+> this item's own terms, and the way you put it is the part worth keeping: with two tagged inputs,
+> refreshing the chosen one deletes a row the other still requires, which is a partition losing rows
+> it still owns, arriving through the disposition meant to prevent exactly that.
+>
+> `graphql_schema_directive` re-aggregates, recomputed after the walk from the surviving inputs and
+> the same predicate, and the synthetic source name is retired. Counts move to **77 / 30 / 17**, which
+> sums to 124, with the `graphql_` owned figure at 12 and the family still tallying to 28. Phase four's
+> re-aggregation now covers seventeen relations.
+>
+> Your note on how to write it rather than which to pick is taken. The re-aggregated row's heading is
+> now "a function of more than one source, of none, or of the recipe", and the taxonomy section names
+> the predicate each of the two new members recomputes from, so an implementer is not sent looking for
+> a declaration to survive. That row now holds five kinds rather than three, and the widening is the
+> honest consequence of two populations that are functions of neither one document nor several.
+>
+> The schema-level ownership question is settled by this rather than parked: `graphql_root_operation`
+> and `graphql_schema_directive` were the two relations it was about, and both are now re-aggregated.
