@@ -283,6 +283,49 @@ What does not appear anywhere is a delete of a registry row followed by an inser
 row. A refresh never churns a source's identity to clear its facts; the row stays, and its `stamp` and
 `read_at` update in place, which is where R922's currency comparison reads them.
 
+## The descriptions this settles, retires and falsifies
+
+A mechanism's prose goes stale the moment the mechanism does, and this item deletes enough of one to
+leave a trail. The sweep is scoped here rather than left to the Done gate to discover, and it divides
+into three kinds.
+
+**One description stops being aspirational and becomes enforced**, and it is the best argument the
+item has. `store_source`'s own table comment already states this design:
+
+> Every base relation is partitionable by the source that produced it: a refresh deletes exactly the
+> rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store
+> can only ever discard wholesale.
+
+That is the invariant, written down, describing a property nothing checks. The four relations this
+item was filed for are exactly the ones unreachable from a source row, and the wholesale discard is
+exactly what happened to them. So the comment is not wrong; it is a specification with no enforcer,
+and the structural gate this item adds is that enforcer. The comment is revised to say which gate
+holds it rather than to change what it claims.
+
+**One description becomes false and has to be rewritten rather than trimmed.** `meta_relation`'s
+`java_file` row argues its own placement: "Its own relation rather than a `store_source` row because
+`store_source` is a capture round's read set and a `.java` file is read by neither the SDL walk nor
+the classpath scan, so this family carries its own freshness bookkeeping and leaves that taxonomy
+closed." Every clause of that is reversed here. The registry becomes every input the store read
+whoever read it, the `.java` file joins the taxonomy rather than being kept out of it, and the
+family's separate freshness bookkeeping moves up to the registry row. `store_source.source_kind`'s
+comment names the closed taxonomy member by member and gains `JAVA_SOURCE` with it.
+
+**The rest describe a mechanism that is being deleted, so their homes go with them.**
+`StoreRefresh`'s class javadoc is an account of retention by exemption, `PARTITIONED`'s javadoc
+explains why the set is listed rather than derived and cites an anchor that does not exist,
+`wholesale()`'s explains the exemption polarity, and `clear`'s explains hand-ordering children before
+parents. `CatalogFactCapture.clearSchemaSources` carries the two-loop argument for the
+schema-crossing foreign key that two cascading edges now handle, and the class's remaining
+partition-and-retain sentences describe a decision the walk no longer makes. None of these is edited
+in place: they document code this item removes, and what replaces them is the shorter description of
+a delete whose completeness the keys guarantee.
+
+R877 is rewriting relation descriptions concurrently and is not a dependency, its subject being
+descriptions written as argument transcripts rather than descriptions falsified by a mechanism
+change. The two touch the same file and should be sequenced by whoever picks this up second, which is
+a merge concern and not a design one.
+
 ## What an existing store does at the upgrade
 
 It is discarded once, deliberately. Adding foreign keys and cascade clauses changes the DDL, so
@@ -292,6 +335,11 @@ migration this item skips, and it is worth paying once here rather than twice if
 were split across two items.
 
 ## Implementation
+
+Descriptions travel with the code that carries them rather than being swept at the end: the javadoc
+on a deleted method goes in the commit that deletes it, `meta_relation`'s `java_file` row is rewritten
+in the phase that moves the family into the registry, and `store_source`'s table comment gains its
+enforcer's name in the phase that adds the gate.
 
 Three phases, and the seams are real rather than bookkeeping: each lands a family group that can be
 observed working while the others are untouched, and only the last needs the re-aggregation. The first
@@ -355,6 +403,24 @@ file, the new rule being a refusal that an existing test could trip.
   measured too and is the one more likely to regress: 54 new foreign keys and 54 new indexes sit on
   the families capture writes most heavily, so capture wall-clock and store size on the sakila example
   are reported before and after.
+
+## Retired vocabulary
+
+Declared for the retirement sweep at the Done gate. Each term names something this item removes
+rather than renames, so a surviving use is a description of a mechanism that is gone.
+
+- `PARTITIONED`, and the phrase *source-partitioned families* where it names membership of that set
+  rather than the property of being partitioned by source, which survives and is the whole point.
+- `wholesale()`, the *wholesale arm*, the *wholesale clear*, and *discard wholesale* as a description
+  of what happens to an unlisted relation.
+- *Exemption polarity*, and the argument that a relation nobody thought about is emptied rather than
+  silently retained.
+- *An empty refresh empties every relation*, the anchor `PARTITIONED`'s javadoc cites, which no test
+  ever implemented and which the structural gate replaces.
+- `childrenFirst` and the children-before-parents ordering as a caller's obligation, the ordering
+  becoming the database's.
+- *A capture round's read set* as the definition of `store_source`, which becomes every input the
+  store read whoever read it.
 
 ## Other solutions we've considered
 
