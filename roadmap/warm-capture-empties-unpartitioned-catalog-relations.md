@@ -1,13 +1,13 @@
 ---
 id: R872
 title: "The keys say what a source owns, and the gatherer decides how to refresh it"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-06
+last-updated: 2026-09-07
 ---
 
 # The keys say what a source owns, and the gatherer decides how to refresh it
@@ -124,7 +124,7 @@ because the obvious answer is wrong in one place.
 
 | `graphql_`, `graphitron_`
 | `store_graph_source`, the `(graph, source)` row
-| a scoped delete across 54 relations, which is why this family needs its root named rather than
+| a scoped delete across 52 relations, which is why this family needs its root named rather than
   assumed
 |===
 
@@ -151,7 +151,7 @@ find.
 
 `store_graph_source` earns its place here without being a second registry. It already exists, already
 keys `(graph_name, source_name)`, already carries foreign keys to both sides, and is already
-maintained by `GraphSourceMembership`. Making the 54 source-owned SDL relations hang off it
+maintained by `GraphSourceMembership`. Making the 52 source-owned SDL relations hang off it
 gives that family the same shape `sql_schema` and `jvm_class` give theirs: one row to delete, one
 cascade, no roster.
 
@@ -277,7 +277,7 @@ doing it rather than for patching the list.
   with no loop at all.
 
 **The new SDL edges need indexes, and this is the item's main cost.** `source_name` sits outside the
-primary key of 53 of the 54 source-owned `graphql_` and `graphitron_` relations, only
+primary key of 51 of the 52 source-owned `graphql_` and `graphitron_` relations, only
 `graphql_type_declaration` carrying it in its key. So a
 `(graph_name, source_name)` foreign key has no supporting index on the child side, and without one
 H2 scans the child for every parent row deleted and on every referential check. Each of those
@@ -295,8 +295,8 @@ CASCADE`. Its `referenced_class` column deliberately gets none: that names a cla
 another source or in no captured source at all, and the schema already refuses to model cross-source
 resolution as a reference. The owner-precise edge is not expressible either, the owner being a
 method, a record component or a method parameter by `owner_kind`, so the common ancestor is the right
-parent. The 14 source-owned `graphql_` relations carry `source_name` and reference no source
-registry at all, and the 40 source-owned `graphitron_` relations are in the same position; all 54
+parent. The 12 source-owned `graphql_` relations carry `source_name` and reference no source
+registry at all, and the 40 source-owned `graphitron_` relations are in the same position; all 52
 gain a cascading `(graph_name, source_name)` foreign key into `store_graph_source`, which is what
 gives that family the single root row the other three already have.
 
@@ -467,7 +467,7 @@ the bundled directives need one. It is a live sealed arm at nine main-source sit
 
 **Phase four, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
 the refusal a second graph meets; add the cascading `(graph_name, source_name)` foreign keys from the
-14 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
+12 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
 each needs; write the re-aggregation over all seventeen relations that are a function of more than one
 source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
 graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture
@@ -511,7 +511,7 @@ captures two graphs over one schema file, the new rule being a refusal an existi
   them: refreshing a changed jar, which deletes its `jvm_class` root, and removing a jar outright,
   which deletes its registry row. Each reported as a row count and a duration beside the hand-written
   path it replaces, so a regression in refresh cost is visible here rather than in a dev loop. Insert
-  cost is measured too and is the one more likely to regress: 54 new foreign keys and 54 new indexes sit on
+  cost is measured too and is the one more likely to regress: 52 new foreign keys and 52 new indexes sit on
   the families capture writes most heavily, so capture wall-clock and store size on the sakila example
   are reported before and after.
 
@@ -532,6 +532,8 @@ rather than renames, so a surviving use is a description of a mechanism that is 
   becoming the database's.
 - *A capture round's read set* as the definition of `store_source`, which becomes every input the
   store read whoever read it.
+- `TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME` and its value `<graphitron-synthesised:tag-link>`,
+  which phase three retires along with the stamp-lookup branch that tolerates it.
 
 ## Other solutions we've considered
 
@@ -925,3 +927,53 @@ moved, phases one through four read as implementable to me and I would sign off 
 >
 > The schema-level ownership question is settled by this rather than parked: `graphql_root_operation`
 > and `graphql_schema_directive` were the two relations it was about, and both are now re-aggregated.
+
+### Round 4 (2026-09-07, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: sign off. Finding 4 is answered as asked. `graphql_schema_directive` re-aggregates from the
+surviving inputs and the same predicate, the synthetic source name is retired, and the re-aggregated
+row's heading now carries the recipe case with the predicate named beside it, so the taxonomy states a
+shape rather than stretching an existing one to cover it. The counts are right: 77 + 30 + 17 sums to
+124, the `graphql_` family still tallies to 28 with both relations moved, and phase four's
+re-aggregation covers seventeen.
+
+Both gate questions are answered. A reader learns from the Goal that building one module stops
+destroying another module's facts in a shared store, and that the omission becomes unrepresentable
+rather than fixed, which is a stronger claim and the one the item delivers. The outcome is reachable:
+across four passes every structural claim this plan makes about the tree has been checked against the
+DDL and the capture code, and the ones that were wrong are now right. The solution extends shapes
+already in the tree rather than standing a new one beside them: the `jvm_` family's sibling edges into
+`jvm_class`, the sixteen `ON DELETE CASCADE` clauses the element family already calls its pattern, and
+`store_graph_source` as a root it already has the key for. I would hand this to an implementer.
+
+Two corrections landed in this commit rather than as findings, both determinate and neither changing
+what gets built, which is the test the workflow sets for what a reviewer may fix in passing.
+
+The counts moved twice across rounds 2 and 3 and seven sites kept the pre-move figure: the SDL root's
+"scoped delete across 54 relations", "making the 54 source-owned SDL relations hang off it", "53 of
+the 54" for the index argument, "the 14 source-owned `graphql_` relations" and "all 54" in the missing-
+edges paragraph, phase four's "14 `graphql_` and 40 `graphitron_`", and the Tests section's "54 new
+foreign keys and 54 new indexes". All now read 52, with 51 of 52 for the index figure and 12 for the
+`graphql_` half, which is what the taxonomy table's 12 plus 40 already fixed them at. Phase three's
+"nullable in 37 of the 54 relations" is left alone deliberately: it diagnoses the tree as it stands
+before the phase acts, where both figures are correct. It is the one place "54" now means the pre-move
+set, and a disambiguating clause there would not hurt.
+
+`## Retired vocabulary` gained the entry phase three's own text requires, `SYNTHESISED_SOURCE_NAME`
+and its value, since that section is the Done gate's only grep query for the sweep and a retirement
+stated in the plan body but missing from the index is a hole in a later gate rather than a wording
+choice.
+
+### Non-blocking note (round 4)
+
+`SdlFactCapture.stampTarget`'s javadoc is the one description phase three falsifies that the
+descriptions sweep does not name. It calls the bundled directives and the synthesised name "the whole
+miss set" and explains that "capture's stamp lookup has to name it to tolerate the miss instead of
+absorbing it in a filesystem probe". Phase three retires one member and gives the other a stamp, so
+the pair is no longer a miss set and the branch the javadoc explains is deleted;
+`SYNTHESISED_SOURCE_NAME`'s own javadoc, which argues why the constant is public, goes with the
+constant. Phase three mentions the javadoc but frames it as still true of sources with no file, which
+is why the sweep did not pick it up. Left to the author rather than corrected here, because what
+replaces a description is authoring rather than arithmetic. It is not a gate question: the item's
+description discipline is already strong enough that this reads as one propagation miss from the
+round-3 change, and the retirement sweep at Done will reach the constant either way.
