@@ -1,6 +1,6 @@
 ---
 id: R872
-title: "The keys say what a source owns, so refreshing one is a single delete"
+title: "The keys say what a source owns, and the gatherer decides how to refresh it"
 status: Spec
 bucket: bug
 priority: 2
@@ -10,22 +10,30 @@ created: 2026-08-28
 last-updated: 2026-09-06
 ---
 
-# The keys say what a source owns, so refreshing one is a single delete
+# The keys say what a source owns, and the gatherer decides how to refresh it
 
 ## Goal
 
 The store says what a source owns in the only place that cannot go stale, its own foreign keys, and
-refreshing one source becomes a single delete per family instead of eighteen hand-written statements
-and a list of exemptions. A *source* is one input the store has read, a `.graphqls` file, a jar, a
-generated jOOQ package or a `.java` file, each carrying a row in `store_source`; a *partition* is the
-rows one source owns in a relation that several sources share.
+then stops deciding for each gatherer how that source gets refreshed. A *source* is one input the
+store has read, a `.graphqls` file, a jar, a generated jOOQ package or a `.java` file, each carrying a
+row in `store_source`; a *partition* is the rows one source owns in a relation that several sources
+share; a *gatherer* is one of the passes that fill the store, each answering for one corpus.
 
-The foreign keys carry `ON DELETE CASCADE`, which is a statement about ownership rather than a
-schedule for deleting anything. It says a column's row cannot outlive the table row it describes, so
-whatever delete anybody does issue is complete without being told what else to remove. A refresh then
-deletes the one row each family hangs its facts from, and the source's own registry row is left alone,
-because the file still exists and its identity has not changed. Deleting the registry row is the other
-operation, the one for a source that has genuinely gone away.
+The foreign keys carry `ON DELETE CASCADE`, and that is a statement about ownership rather than a
+schedule for deleting anything. It says a fact cannot outlive the source that produced it, so any
+delete anybody does issue is complete without being told what else to remove. What it does not say is
+when a delete happens or whether one happens at all. A gatherer that can work out what actually
+changed should reconcile against the store and touch only that; a gatherer for which that is not worth
+the effort can delete its root row and walk fresh, and gets a correct result in one statement. Both
+are legitimate, the choice belongs to the gatherer that knows its corpus, and the keys hold either
+way.
+
+Today no gatherer has that choice. `StoreRefresh` empties every relation outright unless it appears in
+a hand-maintained list of exemptions, and the exempted ones are deleted per source by eighteen
+hand-written statements across three files. That is the store dictating one refresh strategy, the
+crudest one, to every corpus at once, and getting it wrong for four relations that were left off the
+list.
 
 What this removes is a mechanism, not a bug. Today a refresh empties every relation outright unless
 that relation appears in `StoreRefresh.PARTITIONED`, a hand-maintained list of 21 exemptions; the
@@ -76,9 +84,27 @@ The file still exists and its registry row still identifies it, so nothing delet
 content change invalidates is the facts read out of the file, and each family already has a single
 relation those facts hang from:
 
-A *root* here is precise: a relation whose rows hang directly off the registry row, so that deleting
-them reaches the family's whole subtree. Enumerated from the keys rather than assumed, because the
-obvious answer is wrong in one place.
+A gatherer with a changed source has two honest strategies, and the item's job is to make both
+available rather than to pick one.
+
+**Reconcile.** Walk the source, compare against what the store holds, write what differs, delete what
+is gone, and leave what matches alone. This is the better answer wherever a gatherer can afford it,
+and not only because it writes less. A reconciling gatherer *knows what changed*, and that knowledge
+is exactly what the rest of the refresh work needs: R857 wants to re-derive only what an edit reached,
+and R924 wants to propagate staleness along the declared keys. Delete-and-rewalk destroys that
+information by construction, since afterwards nothing can tell a row that never changed from one
+deleted and rewritten identically. So the crude strategy is not merely cruder, it discards the input
+the next item wants.
+
+**Delete the root and walk fresh.** One statement, no comparison, and correct because the cascade is
+complete. The right trade where the walk is cheap and the corpus small, which is a real case: a jOOQ
+package carries no stamp and its walk costs milliseconds, so the catalog gatherer has little to gain
+from comparing.
+
+The rest of this section serves the second strategy, because it is the one that needs the schema to
+name a root. A *root* is precise: a relation whose rows hang directly off the registry row, so that
+deleting them reaches the family's whole subtree. Enumerated from the keys rather than assumed,
+because the obvious answer is wrong in one place.
 
 [cols="2,3,4"]
 |===
@@ -104,9 +130,11 @@ obvious answer is wrong in one place.
   assumed
 |===
 
-So a refresh deletes one row per root per changed source, the cascade clears everything beneath, and
-the walk rewrites. The registry row persists throughout and its `stamp` and `read_at` update in place,
-which is where R922's currency comparison expects to find them.
+So a gatherer taking that route deletes one row per root per changed source, the cascade clears
+everything beneath, and the walk rewrites. The registry row persists either way and its `stamp` and
+`read_at` update in place, which is where R922's currency comparison expects to find them. Nothing
+here obliges a gatherer to take that route, and the item ships no change to which route any existing
+gatherer takes; what changes is that the choice becomes theirs to make.
 
 **Deleting the `(graph, source)` row is not the mechanic this plan rejects, and the difference is worth
 being explicit about since the two look alike.** `store_source` holds the file's identity, which a
@@ -275,8 +303,8 @@ gives that family the single root row the other three already have.
 - `StoreRefresh.childrenFirst` for these families, the database owning the order instead.
 
 Two things stay, named so they are not read as collateral. `freshSources` still decides which sources
-this round re-read; that set becomes the argument to one delete per family rather than the scope of
-eighteen. And the claim seeding in `prepare` is untouched, being an insert-side optimisation that
+this round re-read; that set becomes the argument a gatherer refreshes against, rather than the scope
+of eighteen statements the store issues on its behalf. And the claim seeding in `prepare` is untouched, being an insert-side optimisation that
 stops a walk rewriting a partition it is retaining, which is orthogonal to how deletion happens.
 
 What does not appear anywhere is a delete of a registry row followed by an insert of the same registry
@@ -296,11 +324,18 @@ item has. `store_source`'s own table comment already states this design:
 > rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store
 > can only ever discard wholesale.
 
-That is the invariant, written down, describing a property nothing checks. The four relations this
-item was filed for are exactly the ones unreachable from a source row, and the wholesale discard is
-exactly what happened to them. So the comment is not wrong; it is a specification with no enforcer,
-and the structural gate this item adds is that enforcer. The comment is revised to say which gate
-holds it rather than to change what it claims.
+The four relations this item was filed for are exactly the ones unreachable from a source row, and
+the wholesale discard is exactly what happened to them. So the sentence describes a property nothing
+checks, and the structural gate this item adds is its enforcer.
+
+It is also **too wide**, and the revision narrows it rather than only citing the gate. "A refresh
+deletes exactly the rows one source wrote and re-walks it" states a refresh strategy as though the
+schema mandated it, and the schema mandates no such thing: delete-and-rewalk is one option, it is the
+cheap one, and a gatherer that reconciles instead is not violating the store's design. A description
+on `store_source` should say what the keys guarantee and stop. The replacement says that ownership is
+declared by the keys into this row, that no fact can outlive its source, that any delete a gatherer
+issues is therefore complete without naming what else to remove, and that how a gatherer refreshes its
+corpus is its own decision.
 
 **One description becomes false and has to be rewritten rather than trimmed.** `meta_relation`'s
 `java_file` row argues its own placement: "Its own relation rather than a `store_source` row because
@@ -348,7 +383,8 @@ phase pays the `ddl_hash` store discard, so the later two are free.
 **Phase one, the source-keyed families.** Add `jvm_declared_type_ref`'s missing edge; add
 `ON DELETE CASCADE` throughout the `sql_`, `jvm_` and `java_` webs so each family cascades from its
 roots; replace `clear`'s `jvm_` block and `clearSchemaSources`'s eighteen statements with one delete
-per root per changed source, which is two for `sql_` and one each for the other two; remove
+per root per changed source, which is two for `sql_` and one each for the other two and is the
+strategy those three gatherers take today; remove
 `PARTITIONED` and `wholesale()`. The four relations this item
 was filed for are carried by the cascade with nothing naming them.
 
@@ -454,6 +490,14 @@ grounds that its cadence differs. Rejected: cadence is what `meta_gatherer` and 
 the SDL and classpath gatherers already share `store_source` while running on cadences of their own,
 and a second registry duplicates the freshness model that R922 had just finished stating once. A
 `.java` file is an input the store read, which is what the registry is for.
+
+**Making any gatherer reconcile instead of delete-and-rewalk.** Out of scope, deliberately, and worth
+stating because the plan argues reconciliation is the better strategy. This item makes the choice
+available and changes nobody's answer: each of the three source-keyed gatherers keeps the
+delete-and-rewalk it performs today, expressed as one delete rather than eighteen. Moving a gatherer
+to reconciliation is a decision about that corpus, wants the measurement of its own walk beside it,
+and belongs with R857, which is the item that needs the knowledge reconciliation produces. Folding it
+in here would mix a data-loss fix with a per-corpus performance judgment.
 
 **Extending the same treatment to the graph dimension.** Out of scope rather than rejected.
 `graphql_element` already keys into `store_graph`, so cascading from the graph row would retire
