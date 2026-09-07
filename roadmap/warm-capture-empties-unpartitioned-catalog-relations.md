@@ -47,22 +47,17 @@ only one source.
 
 ## The design
 
-Three roots, because there are three ways a fact can be owned, and the difference between them is
-load-bearing rather than cosmetic.
+Two roots, one for the sources a run reads and one for the family that keeps its own registry.
 
 [cols="2,2,4"]
 |===
 | Root | Families | Why this root
 
 | `store_source`
-| `sql_`, `jvm_`
-| The rows are shared by every graph naming the source. One jar's classes are the same classes
-  whoever reads them, so the facts are stored once and the source owns them outright.
-
-| `store_graph_source`
-| `graphql_`, `graphitron_`
-| The rows are per graph. Two graphs may read one `.graphqls` file and each holds its own
-  transcription of it, so the owner is the `(graph, source)` pair rather than the file.
+| `sql_`, `jvm_`, `graphql_`, `graphitron_`
+| Every row is owned outright by the source it was read from. A jar's classes are the same classes
+  whoever reads them, and a schema file belongs to one graph by the rule below, so in both cases
+  deleting the source row can only remove facts that source produced.
 
 | `java_file`
 | `java_`
@@ -70,11 +65,41 @@ load-bearing rather than cosmetic.
   capture never writes it at all.
 |===
 
-**The middle row is the correctness point, and getting it wrong reproduces the defect this item
-retires.** Cascading the SDL families from `store_source` would delete both graphs' rows whenever
-either graph re-read a shared schema file, which is today's bug wearing a new costume. The junction
-`store_graph_source` already exists, keyed `(graph_name, source_name)` with foreign keys to both
-sides, and `GraphSourceMembership` already maintains it.
+### A schema file belongs to exactly one graph
+
+This is a new rule, and it is what lets one root serve both the shared and the per-graph families.
+Two graphs reading one `.graphqls` file would each hold their own transcription of it, so deleting
+the file's source row would take both graphs' rows and reproduce this item's own bug in a new
+costume. Rather than model the ownership as a `(graph, source)` pair to survive that case, the case
+is refused: a schema file read by a second graph in one store is rejected, so the pair cannot arise.
+
+The distinction is by source kind and not by policy, which is what makes it hold rather than merely
+hold today. `store_source.source_kind` already separates `SCHEMA_FILE` from `JAR`, `DIRECTORY` and
+`JOOQ_SCHEMA`. The latter three are dependencies, genuinely shared between the modules of a
+workspace and stored once. A schema file is a project's own input, and two graphs sharing one is
+unusual enough that forbidding it costs less than carrying a second ownership shape through every
+relation of two families.
+
+The rule wants to be visible in the schema rather than kept as a convention, so `store_source` gains
+a nullable `graph_name` with a foreign key into `store_graph` and a
+`CHECK ((graph_name IS NOT NULL) = (source_kind = 'SCHEMA_FILE'))`. What the column buys is precise
+and worth stating without inflating it. `store_source` is keyed on `source_name` alone, so there was
+never a second row for a second graph to create; sharing was implicit in a junction that admitted
+both pairs, and nothing anywhere said which graph a schema file belonged to. With the column the
+answer is single-valued and stated on the row, so a second graph claiming the file is a conflict
+between a value and a value rather than a fact nobody recorded.
+
+The refusal itself stays in capture, because a cross-row rule of this shape is not expressible as a
+`CHECK` and H2 carries no filtered unique index to express it either. So the column does not make
+the state unrepresentable, and the plan should not claim it does; it makes the state legible enough
+that the refusal has something to compare against, and it puts the cascade's correctness on a column
+a reader can see rather than on an invariant held elsewhere. The refusal names both graphs and the
+file, and is a typed rejection like every other author-facing refusal.
+
+`store_graph_source` stays as it is. It is the read spine every graph-partitioned relation joins,
+used by `SourceGraph`, `StoreHandle`, `TableTypes` and `FieldEndpoints`, and it keeps covering the
+kinds that really are shared. What changes is that it stops being asked to carry an ownership claim
+it was never the right shape for.
 
 ### What cascades, and what has to be re-aggregated
 
@@ -87,8 +112,8 @@ rather than estimated.
 
 | Source-attributed: carries `source_name` or `file`
 | 81
-| A foreign key into its root, `ON DELETE CASCADE`. 14 `sql_`, 7 `jvm_`, 4 `java_`, 16 `graphql_`,
-  40 `graphitron_`.
+| A foreign key into its root on `source_name`, or on `file` for the `java_` family, each
+  `ON DELETE CASCADE`. 14 `sql_`, 7 `jvm_`, 4 `java_`, 16 `graphql_`, 40 `graphitron_`.
 
 | Descendant of a source-attributed row
 | 6
@@ -136,10 +161,17 @@ doing it rather than for patching the list.
   with no loop at all.
 
 Three sets of edges are missing and are this item's schema work. `jvm_declared_type_ref` carries no
-foreign key although its key leads `(source_name, class_name)` exactly as its siblings do, and
-Implementation has to establish that this is an omission rather than a deliberate exemption before
-adding the edge. The 16 source-attributed `graphql_` relations carry `source_name` and reference no
-source registry at all. The 40 source-attributed `graphitron_` relations are in the same position.
+foreign key at all: it is a defect rather than an exemption, its key leading `(source_name,
+class_name)` which is exactly `jvm_class`'s whole primary key and exactly the edge its four siblings
+already carry, so it gains
+`FOREIGN KEY (source_name, class_name) REFERENCES jvm_class (source_name, class_name) ON DELETE
+CASCADE`. Its `referenced_class` column deliberately gets none: that names a class which may sit in
+another source or in no captured source at all, and the schema already refuses to model cross-source
+resolution as a reference. The owner-precise edge is not expressible either, the owner being a
+method, a record component or a method parameter by `owner_kind`, so the common ancestor is the right
+parent. The 16 source-attributed `graphql_` relations carry `source_name` and reference no source
+registry at all, and the 40 source-attributed `graphitron_` relations are in the same position; all
+56 gain a cascading foreign key on `source_name` into `store_source`.
 
 ## What the code loses
 
@@ -169,17 +201,19 @@ Two phases, and the seam is real rather than bookkeeping: the source-keyed famil
 observed working with the SDL families untouched, and only the second phase needs the re-aggregation.
 The first phase pays the store discard, so the second is free.
 
-**Phase one, the source-keyed families.** Establish whether `jvm_declared_type_ref`'s missing edge is
-an omission and add it; add `ON DELETE CASCADE` to the existing roots, being `sql_schema`, `sql_table`,
-`sql_enum_binding`, `sql_routine` and `jvm_class` into `store_source`, and the `java_` tree into
-`java_file`; replace `clear`'s `jvm_` block and `clearSchemaSources`'s deletes with a delete of the
-source rows the round re-read; remove `PARTITIONED` and `wholesale()`. The four relations this item was
-filed for are carried by the cascade with nothing naming them.
+**Phase one, the source-keyed families.** Add `jvm_declared_type_ref`'s missing edge; add
+`ON DELETE CASCADE` to the existing roots, being `sql_schema`, `sql_table`, `sql_enum_binding`,
+`sql_routine` and `jvm_class` into `store_source`, and the `java_` tree into `java_file`; replace
+`clear`'s `jvm_` block and `clearSchemaSources`'s deletes with a delete of the source rows the round
+re-read; remove `PARTITIONED` and `wholesale()`. The four relations this item was filed for are carried
+by the cascade with nothing naming them.
 
-**Phase two, the SDL families.** Add the `(graph_name, source_name)` cascading foreign keys from the 16
-`graphql_` and 40 `graphitron_` source-attributed relations into `store_graph_source`; write the
-coordinate re-aggregation over the surviving declaration sites; reduce the graph-scoped clear to what
-does not now cascade.
+**Phase two, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
+the refusal a second graph meets; add the cascading `source_name` foreign keys from the 16 `graphql_`
+and 40 `graphitron_` source-attributed relations into `store_source`; write the coordinate
+re-aggregation over the surviving declaration sites; reduce the graph-scoped clear to what does not now
+cascade. Implementation confirms first that no fixture captures two graphs over one schema file, the
+new rule being a refusal that an existing test could trip.
 
 ## Tests
 
@@ -190,9 +224,10 @@ does not now cascade.
   a control asserting B holds rows in the four before A's capture runs. The default fixture catalog
   publishes node metadata and declares `films_for_actor` with reflected parameters, both already
   asserted non-empty by `FactCaptureAgreementTest`, so the control is real rather than nominal.
-- **The shared-file case that separates the first two roots**, which is the test that fails under the
-  wrong design rather than under a typo: two graphs reading one `.graphqls` file, one graph re-read,
-  the other graph's `graphql_` and `graphitron_` rows still standing.
+- **The refusal that makes one root sound**, which is the test that fails under the wrong design
+  rather than under a typo: a second graph claiming a schema file another graph already owns is
+  rejected, with the message naming both graphs and the file. Its companion asserts the case the rule
+  permits, two graphs over two schema files in one store, each refreshed without touching the other.
 - **The aggregate case**: a type declared in one file and extended in another, the extending file
   re-read and then removed, asserting the coordinate survives the first and goes on the second, and
   that the `graphitron_` decode hanging off it goes with it.
@@ -225,6 +260,12 @@ the edge performing the delete, so the two cannot disagree.
 **Keeping the wholesale arm behind an explicitly empty roster and a completeness gate.** The previous
 version of this plan. Rejected as careful work on a mechanism this design deletes, a gate whose only
 purpose is catching omissions from a list that would no longer exist.
+
+**Rooting the SDL families at `store_graph_source` instead.** The previous revision's design, which
+carried the `(graph, source)` pair as the owner so that two graphs could share a schema file safely.
+Rejected because it pays for a case we do not want: every relation of two families would carry a
+composite ownership key to model sharing that is unusual in practice and that nothing needs. Refusing
+the case costs one column and one `CHECK`, and leaves one root serving five families.
 
 **Extending the same treatment to the graph dimension.** Out of scope rather than rejected.
 `graphql_element` already keys into `store_graph`, so cascading from the graph row would retire
