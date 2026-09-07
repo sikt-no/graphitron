@@ -1,7 +1,7 @@
 ---
 id: R926
 title: "The @nodeId key landing is asserted, never verified"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
@@ -745,3 +745,85 @@ because the spec states both messages in full for review.
 > `Long` rather than the qualified pair; the trade `simpleName` takes (two types differing only in
 > package read as one name) is stated where the message is drafted rather than discovered by whoever
 > implements it.
+
+### Round 1 (2026-09-07, In Review -> Done, reviewer session 015YX8okwkXtDevhTzDuRMz6)
+
+Verdict: rework, on question one. One finding, and it is narrow: the delivery is faithful to the
+plan almost everywhere, and where it departs it departs deliberately and says so. `mvn install
+-Plocal-db` passes on the delivered tree (`EXIT=0`, no failures). Both relations, the reader, the
+retired spelling, the roster and gate rows, the user-manual paragraphs and every test bullet the
+plan's Tests section names are present and read as specified; the two messages are asserted in full
+over real sakila captures with the `Field '<coordinate>': ` prefix the implementation note explains,
+the three notes recorded in the body are each a real collision with the tree rather than a
+convenience, and no test asserts on a generated method body. Question two is answered for the goal
+as the plan scoped it: the truncated-`Category` pair and the converter-diverged discovered key are
+the two faults from Provenance, each refusing where it was silent, each with its control beside it.
+
+The finding is against the plan's own predicate rather than against the implementer's reading of it,
+which is why it lands here and not as a note: the plan authored a population that refuses a schema
+the generator handles correctly, and the delivery implemented that population exactly.
+
+**Finding 1 (question one: `LANDING_TYPE_DISAGREEMENT` refuses a partially-landed key, where the
+generator emits no comparison for the position it names).**
+
+The type verdict's population is per-position, `local_column_name IS NOT NULL` on a judged endpoint,
+with nothing requiring that *every* position of the node type's key landed. But the arm choice is
+per-endpoint and total, as the Goal itself states: `NodeIdLeafResolver` takes
+`walked.landings().stream().allMatch(l -> l.localColumn().isPresent())` to `DirectFk` and everything
+else to `TranslatedFk`, and `TranslatedFk` is constructed from the key columns and the path alone,
+carrying no local columns. So on a composite key where one position lands and another does not, the
+generated predicate is a correlated `EXISTS` on the node type's own table, the landed position's
+local column appears in no comparison, and a type divergence there costs nothing: the Java compiles
+and the SQL is right. The view refuses it anyway, and `NodeIdLandingDefects` turns that row into a
+build error whose text reads "the reference path lands it on column 'a' of table 'pair_owner' ...
+so no predicate can bind one against the other" about a predicate the generator never emits.
+
+Reproduced on a seeded store rather than reasoned from the SQL. A node type over a two-column
+primary key, reached from a table by one authored hop over a foreign key that references only the
+first of the two:
+
+    endpoint:  Query.owners(pairRef)  AUTHORED_PATH  pair_owner -> pair_key
+    columns:   position 0  a -> a        position 1  b -> NULL
+    verdict:   LANDING_TYPE_DISAGREEMENT  position 0  a String vs a Long
+
+The terminal hop arrives on the node type's own table, so `PATH_STOPS_SHORT` does not fire and the
+exclusion below it does not apply; position 1 lands nowhere, so the walk classifies `TranslatedFk`.
+The shape is not exotic. It needs a composite key and a hop that lifts a proper subset of it, which
+is any `@node(keyColumns:)` naming more columns than the traversed foreign key references, and any
+multi-hop chain whose intermediate hop drops a carried column. It is the Provenance schema's own
+shape one column short: nine positions landed there, and had eight landed this check would have
+refused a filter that worked.
+
+Two things in the item already hold the principle this misses. Revision 1 added the participant
+exclusion because "no landing computed under [a resolution the schema contradicts] is one anything
+should judge", which is the route axis of exactly this argument; the arm axis wants the same
+treatment. And the delivered test `aPositionLandingNowhereDrawsNoTypeVerdict` justifies its own
+absence as "a correlated `EXISTS` on the node type's own table, which is a shape and not a fault",
+a reason that is true of every position of that endpoint and is applied only to the null one. The
+plan's own invariant is the third: "the schemas they remove are the ones that do not compile or are
+right by accident", and this schema is neither.
+
+What satisfies it: gate the type arm on the endpoint's landing being total, which is one `NOT
+EXISTS` over `intent_node_id_decode_column` at the same endpoint with `local_column_name IS NULL`,
+the same shape as the `stopped` exclusion the arm already carries. `intent_node_id_decode_column` is
+a total function over key positions, so the predicate is expressible with no new fact. Then say so
+in the body, in the verdict's population and in the view's `verdict` column comment, on the terms
+the arm choice states: the type verdict is about the local tuple comparison, and an endpoint that
+binds remotely has no local operand to disagree. And pin it in both directions at the model tier, a
+partial landing with a diverging landed position drawing nothing beside the existing total landing
+that still draws its row, because a single-column key makes the two predicates indistinguishable
+and every type-verdict fixture in the delivered test uses one.
+
+Non-blocking, neither bearing on either question.
+
+The type verdict's prose opens "reaches its target through an `@reference` path" in the path verdict
+and says "the reference path lands it" in the type verdict, and the type verdict fires on
+`DISCOVERED_KEY`, where no path was written; the delivered pipeline fixture that asserts that message
+in full is a discovered key. This is the drafted wording verbatim, so it is approved text and not a
+deviation, and it is worth a sentence only because the message is the item's author-facing surface.
+
+`NodeIdLandingDefects.slot`'s `ARGUMENT` arm, the `argument 'x'` lead the implementation note drafts
+as `Field 'Query.stock': argument 'orgRef': ...`, is asserted nowhere: the model tier reads view rows
+rather than messages, and the pipeline tier's two argument-site fixtures both assert an empty report.
+The plan's Tests section does not ask for it, so this is not a shortfall against the contract, and
+the lead is three lines with no branch in it. Worth one assertion whenever this file is next opened.
