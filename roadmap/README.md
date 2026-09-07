@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
-| `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-06 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-07 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R872` | A capture of one graph deletes another graph's node-identity and routine facts | Spec | 2026-09-06 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |

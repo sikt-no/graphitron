@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-06
+last-updated: 2026-09-07
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -407,11 +407,13 @@ declared now is the one that will still be right.
 
 **What the arc still owes**, in the order the dependencies force:
 
-1. The type hierarchy, described below. A type is bound or it is not, it is a node or it is not, it
-   has participants or it does not, and those are subtypes of `graphitron_type` rather than columns
-   or conventions. One rung is built already and undeclared; two more are foreign keys the store can
-   take for free; and `intent_resolved_type_binding` dissolves, being a union that lets a routine's
-   result pass for a type binding.
+1. The two hierarchies, described below, which are one mechanism applied at two grains. A named type
+   is one of the specification's six kinds, and boundness, participants and fields are facts each
+   legal for some of them. A field has at most one producer, and the eight are disjoint, so a
+   coordinate carrying two of them should be unwritable rather than rejected downstream. Both are a
+   unique on the anchor's key plus its discriminator, and a composite reference from each dependent.
+   `intent_resolved_type_binding` dissolves with them, being a union that lets a routine's result
+   pass for a type binding.
 2. The route family, described below, which now carries three things that were separate: the target
    fact onto the field anchor, Route and Step as grains of their own with `graphitron_field_table`
    dissolving into them, and the entry-and-match pairing named, which is where
@@ -674,13 +676,23 @@ coordinate at all by the specification's own note, so a macro that adds one coul
 at this grain, and `graphql_poly_member` sitting outside the family is conformance rather than a
 gap.
 
-### The type hierarchy
+### The two hierarchies, and the one mechanism under them
 
 A field has one type, possibly wrapped, and that type is a scalar, an object, an interface, a union
 or an enum. Objects and interfaces can be bound to a table. Interfaces and unions have participants,
 which can themselves be bound. So the type is a supertype with subtypes, and `INTERFACE` sits in two
 of them at once, which is why no partition of type kinds has ever held and why `tablefield` and
 `nestingfield` would not sit still as kinds of field.
+
+**The type hierarchy is discriminated by kind, and boundness is not a subtype of it.** Bound,
+participant-bearing and field-bearing are neither disjoint nor exhaustive: an interface is all three
+at once and a scalar is none, so they are optional facts rather than subtypes. The subtype axis is
+the specification's own, which Section 3 states as "there are six kinds of named type definitions in
+GraphQL, and two wrapping types", and the store already carries it as `graphitron_type.kind` with the
+six-value check. Two genuine subtype relations exist where a kind carries payload no other kind can:
+`graphitron_scalar_type` holds a `@scalar` reference to a Java field and `graphitron_enum` holds a
+class and method, and neither can describe anything but its own kind. The facts hang off kinds; the
+subtypes are the kinds.
 
 **Boundness is one fact and only `@table` states it.** A routine is an operation, not a binding: it
 produces rows, and the shape of those rows is not a property of the type the field returns. The store
@@ -716,10 +728,56 @@ boundness and nodehood are graphitron's because `@table` and `@node` are. A fami
 semantics its rows are written in, which the architecture docs already say under stratum three, and
 the hierarchy crossing a family boundary is that rule holding rather than bending.
 
+**Two discriminators, two words, and the specification separates them.** Its Schema Coordinates
+section carries a table headed "Element Kind" over named type, field, input field, enum value, field
+argument, directive and directive argument, which is exactly what `graphql_element.element_kind`
+holds. Section 3's six-way split is a different axis and the specification does not call it that; on
+its own phrasing it is the named type kind. Every named type has one element kind, `NAMED_TYPE`, and
+its six-way kind one level down, so the two must not share a column name. The store spells the
+second three ways today, bare `kind` on `graphql_type` and `graphitron_type` and `container_kind` on
+`graphql_poly_member`, and `named_type_kind` is the specification's word for all three.
+
+### The producer hierarchy
+
+A field has at most one producer, and the eight are disjoint: query, lookup, service, routine,
+insert, update, delete and upsert. Each carries payload no sibling can hold, which is the store's own
+test for a subtype keeping a relation, and the disjointness makes this a correctness improvement
+rather than a tidying.
+
+**Today the exclusion is real in the generator and unrepresentable in the store.**
+`graphitron_service`, `graphitron_mutation` and `graphitron_field_lookup_key` all key at
+`(graph_name, type_name, field_name)` and nothing stops one coordinate carrying all three. The
+exclusions live in the classifier as directive conflicts, the `@routine` with `@splitQuery` pair
+being the named precedent, which is a rejection a reader of the store cannot see and a constraint the
+store cannot state. A producer supertype keyed at the coordinate, with each subtype referencing
+`(coordinate, producer_kind)` and checking its own value, makes a second producer unwritable.
+
+**The word is `producer` and not `operation`, and the store chose it already.** `operation` is taken
+twice: `graphql_root_operation.operation` is the specification's, "which root slot", and
+`graphitron_mutation.operation` already holds four of the eight values below. This item's own model
+uses it for a third thing, the multi-valued set where one field selects and joins and paginates at
+once, and that axis has to survive alongside this one: a field with `producer = QUERY` and
+`operations = {select, join, paginate}` is a sentence two axes called operation could not carry. The
+store meanwhile runs four relations on the right word already, `intent_field_producer_method`,
+`intent_field_producer_reference`, `intent_field_payload_producer` and
+`intent_producer_cardinality_conflict`.
+
+**One grain wrinkle, stated rather than smoothed.** Most subtypes are field grain, but
+`graphitron_routine` keys at `(coordinate, ordinal)` because the directive is repeatable, so its
+reference to the producer is many-to-one. That still enforces what matters, that a coordinate holding
+a routine application has `ROUTINE` as its producer, and it is why the relationship is a reference to
+the pair rather than a shared primary key.
+
+**And one column becomes load-bearing that is unguarded today.**
+`graphitron_mutation.operation` carries the DML verb with no CHECK at all. As the discriminator
+component of the subtype's reference it gains the four-value vocabulary it should always have had.
+
 **What gets renamed.** Grain first: `graphitron_type_table` and `graphitron_type_node` for the
 anchors, `graphitron_type_table_entry` and `graphitron_type_node_entry` for the decodes, retiring
-`graphitron_tabletype`, `graphitron_node` and `graphitron_table`. Declared together with their
-grains, so the pass that follows has a worked example of the rule rather than a rule and no example.
+`graphitron_tabletype`, `graphitron_node` and `graphitron_table`, with `graphitron_scalar_type` and
+`graphitron_enum` becoming `graphitron_type_scalar` and `graphitron_type_enum` on the same rule.
+Declared together with their grains, so the pass that follows has a worked example of the rule rather
+than a rule and no example.
 
 ### The route family, and the grains it hangs off
 
