@@ -24,9 +24,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
-| `R926` | The @nodeId key landing is asserted, never verified | Spec | 2026-09-07 | [plan](nodeid-key-landing-is-never-verified.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R926` | The @nodeId key landing is asserted, never verified | Ready | 2026-09-07 | [plan](nodeid-key-landing-is-never-verified.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -476,7 +476,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
-- `R926` [**The @nodeId key landing is asserted, never verified**](nodeid-key-landing-is-never-verified.md) — Spec, bug
+- `R926` [**The @nodeId key landing is asserted, never verified**](nodeid-key-landing-is-never-verified.md) — Ready, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
