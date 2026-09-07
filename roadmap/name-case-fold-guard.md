@@ -1,7 +1,7 @@
 ---
 id: R890
 title: "A structural guard gives case-folded name comparison one legitimate home"
-status: In Progress
+status: In Review
 bucket: testing
 priority: 3
 theme: diagnostics
