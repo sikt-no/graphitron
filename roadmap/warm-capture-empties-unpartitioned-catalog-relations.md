@@ -2,7 +2,7 @@
 id: R872
 title: "The keys say what a source owns, and the gatherer decides how to refresh it"
 status: Spec
-bucket: bug
+bucket: architecture
 priority: 2
 theme: tooling
 depends-on: []

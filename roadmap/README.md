@@ -690,7 +690,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R857` [**A dev round refreshes what the edit touched**](refresh-what-the-edit-touched.md) — Spec, dx, blocked by [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R913` [**An agent re-reads every diagnostic to learn what one edit changed**](mcp-diagnostics-delta-and-capture-notification.md) — Backlog, mcp
-- `R872` [**The keys say what a source owns, and the gatherer decides how to refresh it**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, bug
+- `R872` [**The keys say what a source owns, and the gatherer decides how to refresh it**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, architecture
 - `R764` [**graphitron-model ships its junit-platform.properties to four consumers that never asked for it**](model-test-jar-leaks-parallelism-config.md) — Backlog, dx
 - `R780` [**srp names the reviewer as the disqualified party: the session grep takes the first ID in the body, not the trailer**](srp-disqualified-session-read-from-trailer.md) — Backlog, dx
 - `R917` [**A store too large to service is discarded rather than cleared**](store-too-large-to-service.md) — Backlog, dx
