@@ -5,6 +5,9 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sources.ClasspathSources;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.classpath.CompletionData;
@@ -22,6 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
@@ -72,15 +76,15 @@ public final class CapturedStore implements AutoCloseable {
     private final GraphitronModelStore store;
     private final String graphName;
     private final Path directory;
-    private final Path file;
+    private final List<Path> files;
     private final TypeDefinitionRegistry registry;
 
-    private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
-                          TypeDefinitionRegistry registry) {
+    private CapturedStore(GraphitronModelStore store, String graphName, Path directory,
+                          List<Path> files, TypeDefinitionRegistry registry) {
         this.store = store;
         this.graphName = graphName;
         this.directory = directory;
-        this.file = file;
+        this.files = files;
         this.registry = registry;
     }
 
@@ -149,7 +153,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
         captureFiles(store, files, directory, GRAPH, registry, jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
+        return new CapturedStore(store, GRAPH, directory, files, registry);
     }
 
     /**
@@ -222,7 +226,7 @@ public final class CapturedStore implements AutoCloseable {
         FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
+        return new CapturedStore(store, GRAPH, directory, files, parse.registry());
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
@@ -232,7 +236,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = FactStores.inMemory();
         captureFile(store, file, directory, graphName, registry, jooq, census, false);
-        return new CapturedStore(store, graphName, directory, file, registry);
+        return new CapturedStore(store, graphName, directory, List.of(file), registry);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -273,8 +277,8 @@ public final class CapturedStore implements AutoCloseable {
      * location a function of the graph and could not state it at all.
      */
     public CapturedStore andGraphSharingTheFile(String otherGraph) {
-        captureFile(store, file, directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(file))), null, List.of(), false);
+        captureFile(store, file(), directory, otherGraph,
+            SchemaLoader.load(List.of(SchemaSource.file(file()))), null, List.of(), false);
         return this;
     }
 
@@ -413,7 +417,36 @@ public final class CapturedStore implements AutoCloseable {
 
     /** The schema file this fixture captured, for a reader that needs the name the store spells. */
     public Path file() {
-        return file;
+        return files.getFirst();
+    }
+
+    /**
+     * Re-walks this fixture's own parse and returns the sink the walk's entry decode wrote into,
+     * which nothing flushed. The shape for a case comparing what the walk decodes from the
+     * applications it is holding against what the gatherer decoded from the same applications
+     * fetched back out of this store.
+     *
+     * <p>A second walk rather than a hook into the first, because the first ran inside capture's
+     * transaction and its shadow went nowhere. It reads the same registry and hands over the same
+     * inputs, so the two walks differ in nothing the decode can see; the transcription it writes on
+     * the way is buffered into a sink nobody flushes either, so this leaves the store as it found
+     * it.
+     */
+    public FactSink entriesDecodedByTheWalk() {
+        return entriesDecodedByTheWalk(dsl(), graphName, registry, files);
+    }
+
+    /**
+     * {@link #entriesDecodedByTheWalk()} for a graph this fixture captured beside its own, whose
+     * parse the caller holds: {@link #registryOf(Path, String, String)} rebuilds it from the same
+     * SDL and {@link #fixtureFile(Path, String)} names the file it was written to, so a case can
+     * diff a second corpus without a second store.
+     */
+    public static FactSink entriesDecodedByTheWalk(DSLContext dsl, String graphName,
+                                                   TypeDefinitionRegistry registry,
+                                                   List<Path> files) {
+        return SdlFactCapture.capture(new FactSink(dsl, graphName), registry,
+            new ClasspathSources(), attributionOfFiles(files), Set.of());
     }
 
     /**

@@ -7,6 +7,7 @@ import org.jooq.TableRecord;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -51,6 +52,25 @@ public final class FactSink {
     /** The store this sink writes to; capture reads nothing back, but tests do. */
     public DSLContext dsl() {
         return dsl;
+    }
+
+    /**
+     * An empty sink over this one's store and graph, for a writer being built up beside the arm
+     * that currently owns its relations rather than in place of it. Buckets and claims are its own,
+     * so neither arm can see the other's first-wins decisions, and nothing flushes it: what a
+     * shadow produces is read out of {@link #buffered()} and compared.
+     */
+    public FactSink shadow() {
+        return new FactSink(dsl, graphName);
+    }
+
+    /**
+     * The rows buffered so far, by relation. Capture never reads its own buffer back, so this is
+     * for the comparison a second writer is proved by; on a sink nothing flushes, the buffer is the
+     * whole of what that writer produced.
+     */
+    public Map<Table<?>, List<TableRecord<?>>> buffered() {
+        return Collections.unmodifiableMap(buckets);
     }
 
     /**

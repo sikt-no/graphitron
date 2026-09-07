@@ -78,10 +78,12 @@ final class ThreadConfinedStore {
      * integrity off, check constraints dropped) and so cannot share a store with anything, and
      * {@code LentStoreTest}'s three, whose subject is a store one caller opens and another
      * captures into: two of them are one home opened twice, the second open being warm, which is
-     * the only state the ownership check reads, and {@code EntryFamilyCoverageTest}'s one, which is
-     * that same shape: a store {@code CapturedStore} captures two documents into, booted once for
-     * the class rather than once per case. Orders of magnitude under the case count, which is the
-     * number this exists to keep the module away from.
+     * the only state the ownership check reads, and the two the entry-family pair boots, one each
+     * for {@code EntryFamilyCoverageTest} and {@code EntryWriterAgreementTest}, which are that same
+     * shape: a store {@code CapturedStore} captures into, booted once for the class rather than
+     * once per case, and in the second case captured into twice so one boot carries two corpora.
+     * Orders of magnitude under the case count, which is the number this exists to keep the module
+     * away from.
      *
      * <p>It bounds {@link FactStores#boots()} rather than {@link #boots()}, which is the whole
      * point of having two counters: the funnel's own count cannot see a boot that does not go
@@ -97,10 +99,10 @@ final class ThreadConfinedStore {
      * The funnel is not always the answer: it hands a body a {@link org.jooq.DSLContext}, so a case
      * whose subject is a store <em>handle</em> (one lent to something that captures into it, or one
      * home reopened to meet its own previous rows) cannot ask it for what it needs, which is the
-     * reason {@code LentStoreTest}'s three and {@code EntryFamilyCoverageTest}'s one are counted
-     * here rather than routed away.
+     * reason {@code LentStoreTest}'s three and the entry-family pair's two are counted here rather
+     * than routed away.
      */
-    private static final int BOOT_BUDGET = 76;
+    private static final int BOOT_BUDGET = 77;
 
     private final GraphitronModelStore store;
 

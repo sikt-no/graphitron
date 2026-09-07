@@ -143,6 +143,17 @@ public final class SdlFactCapture {
      */
     private final Set<String> refusedSources;
 
+    /**
+     * The as-written half of {@code graphitron_}, decoded from the applications this walk is
+     * holding rather than fetched back out of the store. It writes to a sink of its own, which
+     * nothing flushes: the relations still belong to the gatherer that runs after this walk, and
+     * the two arms are being compared before either is retired.
+     */
+    private final FactSink entries;
+
+    /** The decode {@link #entries} collects, driven one application at a time. */
+    private final GraphitronFactCapture decode;
+
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry,
                            ClasspathSources sources, Map<String, SchemaInput> attribution,
                            Set<String> refusedSources) {
@@ -152,23 +163,32 @@ public final class SdlFactCapture {
         this.sources = sources;
         this.attribution = attribution;
         this.refusedSources = refusedSources;
+        this.entries = sink.shadow();
+        this.decode = GraphitronFactCapture.decodingInto(entries);
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
+    public static FactSink capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        capture(sink, registry, sources, attribution, Set.of());
+        return capture(sink, registry, sources, attribution, Set.of());
     }
 
     /**
      * {@link #capture(FactSink, TypeDefinitionRegistry, ClasspathSources, Map)}
      * plus the sources the parser refused, which the walk has no other way to learn about: a
      * refused source contributes no declaration, so nothing in the registry points back at it.
+     *
+     * @return the unflushed sink the entry decode wrote into, for a caller comparing it against the
+     *     arm that still owns those relations. Production discards it, which is what makes this
+     *     writer additive: it runs over every capture, so it cannot rot while it is being proved,
+     *     and it lands nothing until the comparison says it may.
      */
-    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
+    public static FactSink capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution,
                         Set<String> refusedSources) {
-        new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
+        var walk = new SdlFactCapture(sink, registry, sources, attribution, refusedSources);
+        walk.run();
+        return walk.entries;
     }
 
     private void run() {
@@ -391,6 +411,7 @@ public final class SdlFactCapture {
                     row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
                     sink.add(row);
                 }
+                decode.captureSchemaDirective(directive, ordinal);
             }
         }
         if (registry.schemaDefinition().isEmpty()) {
@@ -773,6 +794,7 @@ public final class SdlFactCapture {
             row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
             sink.add(row);
         }
+        decode.captureTypeDirective(site, directive, ordinal);
     }
 
     private void captureFieldDirectives(String typeName, String fieldName,
@@ -807,6 +829,7 @@ public final class SdlFactCapture {
                 row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
                 sink.add(row);
             }
+            decode.captureFieldDirective(typeName, fieldName, directive, ordinal, inputField);
         }
     }
 
@@ -845,6 +868,7 @@ public final class SdlFactCapture {
                 row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
                 sink.add(row);
             }
+            decode.captureArgumentDirective(typeName, fieldName, argumentName, directive, ordinal);
         }
     }
 
@@ -879,6 +903,7 @@ public final class SdlFactCapture {
                 row.setValueSdl(AstPrinter.printAstCompact(argument.getValue()));
                 sink.add(row);
             }
+            decode.captureEnumValueDirective(typeName, valueName, directive, ordinal);
         }
     }
 

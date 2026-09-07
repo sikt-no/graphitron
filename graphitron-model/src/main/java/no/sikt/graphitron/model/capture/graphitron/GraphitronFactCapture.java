@@ -153,6 +153,20 @@ public final class GraphitronFactCapture {
         this.sink = sink;
     }
 
+    /**
+     * A decode with no gatherer around it, for a caller that holds the parse and drives it one
+     * application at a time rather than fetching the applications back out of the store.
+     *
+     * <p>What makes that possible is a property of the five methods below rather than a concession
+     * to the caller: each reads the directive it is handed, buffers rows and queries nothing at
+     * all. That is what "the rows are a function of one document" amounts to in code, and it is
+     * why the relations they write can be held to catalog-independence while the stages after the
+     * flush cannot.
+     */
+    public static GraphitronFactCapture decodingInto(FactSink sink) {
+        return new GraphitronFactCapture(sink);
+    }
+
 
     // ---------------------------------------------------------------- the gatherer's own entry
 
@@ -392,7 +406,7 @@ public final class GraphitronFactCapture {
 
     // ---------------------------------------------------------------- schema-level
 
-    void captureSchemaDirective(Directive directive, int ordinal) {
+    public void captureSchemaDirective(Directive directive, int ordinal) {
         if (!FEDERATION_LINK.equals(directive.getName())) {
             return;
         }
@@ -436,7 +450,7 @@ public final class GraphitronFactCapture {
      * of a single-application directive keeps the first row; the repeat is a detection over the
      * ordinal, never a collision.
      */
-    void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
+    public void captureTypeDirective(SiteRef site, Directive directive, int ordinal) {
         String type = site.typeName();
         switch (directive.getName()) {
             case "table" -> {
@@ -611,7 +625,7 @@ public final class GraphitronFactCapture {
      *     argMapping site from one on an object field, and the type's kind is what separates them;
      *     the walk knows which of the two it is descending and nothing at this depth does
      */
-    void captureFieldDirective(String type, String field, Directive directive, int ordinal,
+    public void captureFieldDirective(String type, String field, Directive directive, int ordinal,
                                boolean inputField) {
         switch (directive.getName()) {
             case "field" -> {
@@ -940,7 +954,7 @@ public final class GraphitronFactCapture {
 
     // ---------------------------------------------------------------- argument-level
 
-    void captureArgumentDirective(String type, String field, String argument,
+    public void captureArgumentDirective(String type, String field, String argument,
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
@@ -1110,7 +1124,7 @@ public final class GraphitronFactCapture {
 
     // ---------------------------------------------------------------- enum-value-level
 
-    void captureEnumValueDirective(String type, String value, Directive directive, int ordinal) {
+    public void captureEnumValueDirective(String type, String value, Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
                 if (!sink.claim(GRAPHITRON_ENUM_VALUE_BINDING, type, value)) return;
