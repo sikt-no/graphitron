@@ -29,7 +29,7 @@ directive @asConnection(
 
 == Canonical examples
 
-A bare list on a `@table` parent (`Query.stores`): `@asConnection` rewrites the return type to `StoreConnection`, adds `first:`/`after:` arguments, and emits keyset pagination using xref:defaultOrder.adoc[`@defaultOrder`] for the cursor:
+A bare list on a `@table` parent (`Query.stores`): `@asConnection` rewrites the return type to `QueryStoresConnection`, adds `first:`/`after:` arguments, and emits keyset pagination using xref:defaultOrder.adoc[`@defaultOrder`] for the cursor:
 
 [source,graphql]
 ----
@@ -64,7 +64,7 @@ type Film @table(name: "film") {
 }
 ----
 
-When the schema declares the connection type explicitly (the `ActorsConnection!` shape above), the rewrite reuses it instead of synthesising a fresh one. Otherwise, a `*Connection`, `*Edge`, and `PageInfo` are generated alongside the field.
+When the schema declares the connection type explicitly (the `ActorsConnection!` shape above), the rewrite reuses it instead of synthesising a fresh one. Otherwise a Connection type, an Edge type, and `PageInfo` are generated alongside the field, and their names are derived from the field's coordinate: `Query.stores` above gets `QueryStoresConnection` and `QueryStoresConnectionEdge`. The deprecated `connectionName:` argument replaces the Connection name, and the Edge name follows it, so an override of `SharedMoviesConnection` mints `SharedMoviesConnectionEdge`. Both are the names the legacy generator emitted, so an upgraded schema publishes the connection types its clients already hold fragments against.
 
 Federation directives on the field (`@shareable`, `@tag`) propagate onto the synthesised Connection, Edge, and PageInfo types, so federation contracts that include the field's tags also include its pagination types. An author-declared `PageInfo` is left untouched; a synthesised one carries the union of the tags from every connection-promoted field.
 

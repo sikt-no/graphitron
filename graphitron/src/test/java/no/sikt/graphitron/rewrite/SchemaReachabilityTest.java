@@ -86,7 +86,7 @@ class SchemaReachabilityTest {
                 "FilmMedia",             // interface → implementor fan-out only
                 "City",                  // @node directive-scan seed only
                 "QueryFilmsConnection",  // synthesised @asConnection carrier
-                "QueryFilmsEdge",
+                "QueryFilmsConnectionEdge",
                 "PageInfo");
     }
 

@@ -199,7 +199,7 @@ class ClassificationDomainTest {
         withCapturedStore(tmp, sdl, dsl ->
             assertThat(domain(dsl, CapturedStore.GRAPH))
                 .as("the schema the store describes carries the expansion, so the traversal does too")
-                .contains("QueryFilmsConnection", "QueryFilmsEdge", "PageInfo", "Film"));
+                .contains("QueryFilmsConnection", "QueryFilmsConnectionEdge", "PageInfo", "Film"));
     }
 
     // ===== The partition and the cliff =====

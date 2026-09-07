@@ -35,7 +35,7 @@ extend schema @assertContains(relation: "graphitron_field_navigation", rows: """
 # other. Stated because a relation total over the graph's fields includes the generator's own, and a
 # reader meeting an unfamiliar type name here should find it accounted for rather than wonder.
 extend schema @assertContains(relation: "graphitron_field_navigation", rows: """
-  type_name,             field_name, basis,      navigated_type_name
-  QueryFilmsConnection,  nodes,      NAMED_TYPE, Film
-  QueryFilmsEdge,        node,       NAMED_TYPE, Film
+  type_name,                 field_name, basis,      navigated_type_name
+  QueryFilmsConnection,      nodes,      NAMED_TYPE, Film
+  QueryFilmsConnectionEdge,  node,       NAMED_TYPE, Film
   """)

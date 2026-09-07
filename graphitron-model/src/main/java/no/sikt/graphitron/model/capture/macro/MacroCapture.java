@@ -59,8 +59,6 @@ public final class MacroCapture {
     /** The directive whose applications this expansion answers to, as {@code graphql_directive} keys it. */
     private static final String DIRECTIVE = "asConnection";
 
-    private static final String CONNECTION_SUFFIX = "Connection";
-    private static final String EDGE_SUFFIX = "Edge";
     private static final String PAGE_INFO = "PageInfo";
     private static final String OBJECT = "OBJECT";
 
@@ -170,7 +168,7 @@ public final class MacroCapture {
             var arguments = argumentsByField.getOrDefault(
                 List.of(row.value1(), row.value2()), List.of());
             carriers.add(new Carrier(row.value1(), row.value2(), connectionName,
-                connectionName.replace(CONNECTION_SUFFIX, EDGE_SUFFIX),
+                ConnectionNaming.defaultEdgeName(connectionName),
                 element.name(), element.nullable(), row.value6(), row.value7(),
                 arguments.size(),
                 arguments.stream().anyMatch(PAGINATION_ARGUMENTS::contains),

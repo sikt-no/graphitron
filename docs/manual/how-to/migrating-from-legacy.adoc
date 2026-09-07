@@ -194,6 +194,8 @@ otherMovies: [Movie!]! @asConnection(connectionName: "SharedMoviesConnection")
 
 The override coalesces multiple connection-bearing fields onto one synthesised type. The rewrite default produces one Connection type per field (`<ParentType><FieldName>Connection`); sharing a name across fields conflates distinct semantic contexts (different parents, filters, orders, cursor formats) at the type level.
 
+The Edge type is named after the connection type, whether or not you override it: the override above mints `SharedMoviesConnectionEdge`, exactly as legacy did. So a client holding a fragment on the edge type keeps compiling across the upgrade even while the override is still in place.
+
 Migration: drop the argument and let each field own its synthesised connection type. The four reasons for the per-field default and the migration considerations live in xref:connections.adoc[How-to: Cursor-paginated connections] under "One field, one connection type".
 
 === `@index` on enum values

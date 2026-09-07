@@ -10,7 +10,7 @@ For the cursor-stability and tie-breaker side of pagination, see xref:sort-resul
 
 Two paths produce a connection type, and the rewrite recognises both:
 
-* *Directive-driven (synthesised).* `myField: [T!]! @asConnection` on a bare list. The generator manufactures `<ParentType><FieldName>Connection` and a matching `Edge` type, registers them on the schema, and rewrites the field's return type to point at the synthesised name. `Query.stores: [Store!]! @asConnection` becomes `Query.stores: QueryStoresConnection!`.
+* *Directive-driven (synthesised).* `myField: [T!]! @asConnection` on a bare list. The generator manufactures `<ParentType><FieldName>Connection` and a matching Edge type named `<ParentType><FieldName>ConnectionEdge`, registers them on the schema, and rewrites the field's return type to point at the synthesised name. `Query.stores: [Store!]! @asConnection` becomes `Query.stores: QueryStoresConnection!`, alongside a `QueryStoresConnectionEdge`.
 * *Structural (declared).* `myField: FilmsConnection!` where the SDL already declares `FilmsConnection { edges: [FilmsEdge!]!, nodes: [Film!]!, pageInfo: PageInfo!, totalCount: Int }`. The rewrite recognises the `edges.node` shape and reuses the SDL type as-is. `@asConnection` may also be present on the carrier, but the directive's job is just to opt the field into the connection emitter; no rewrite of the return type happens.
 
 The Sakila example schema uses both shapes intentionally: `Query.stores` exercises the synthesised path (`QueryStoresConnection`), and `Query.filmsConnection: FilmsConnection!` exercises the declared path. Both compile to the same kind of fetcher; the difference is purely which side owns the type's name.

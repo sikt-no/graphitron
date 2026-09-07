@@ -4296,7 +4296,7 @@ class GraphQLQueryTest {
 
     @Test
     void stores_synthesisedConnection_returnsEdgesAndPageInfo() {
-        // The QueryStoresConnection / QueryStoresEdge types are synthesised at emit time
+        // The QueryStoresConnection / QueryStoresConnectionEdge types are synthesised at emit time
         // (not hand-written). This test proves SDL → classifier → synthesis → programmatic
         // schema → fetcher runtime compose end-to-end.
         // The test DB has 2 stores; request first:1 so hasNextPage is true.

@@ -9,7 +9,7 @@ extend type Query {
 
         @synthesises(mints: [
             {name: "QueryFilmsConnection", as: ConnectionType},
-            {name: "QueryFilmsEdge", as: EdgeType},
+            {name: "QueryFilmsConnectionEdge", as: EdgeType},
             {name: "QueryFilmsConnectionFacets", as: FacetsType},
             {name: "StringFacetValue", as: FacetValueType},
             {name: "PageInfo", as: PageInfoType}])

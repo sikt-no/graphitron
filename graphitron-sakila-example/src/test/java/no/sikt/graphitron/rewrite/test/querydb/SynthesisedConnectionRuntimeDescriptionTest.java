@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link GraphQLObjectType} closes that gap.
  *
  * <p>Scope mirrors the file-seam test: only the genuinely-synthesised {@code QueryStoresConnection}
- * / {@code QueryStoresEdge} (driven by {@code stores: [Store!]! @asConnection} on the shared
+ * / {@code QueryStoresConnectionEdge} (driven by {@code stores: [Store!]! @asConnection} on the shared
  * fixture). {@code PageInfo} is declared structurally in that fixture, so the synthesis path reuses
  * the consumer object and stamps no description; synthesised-{@code PageInfo} descriptions are
  * pinned at the unit tier by
@@ -48,7 +48,7 @@ class SynthesisedConnectionRuntimeDescriptionTest {
         assertThat(connection.getFieldDefinition("totalCount").getDescription())
             .isEqualTo("Identifies the total count of items in the connection.");
 
-        GraphQLObjectType edge = schema.getObjectType("QueryStoresEdge");
+        GraphQLObjectType edge = schema.getObjectType("QueryStoresConnectionEdge");
         assertThat(edge.getDescription()).isEqualTo("An edge in a connection.");
         assertThat(edge.getFieldDefinition("cursor").getDescription()).isEqualTo("A cursor for use in pagination.");
         assertThat(edge.getFieldDefinition("node").getDescription()).isEqualTo("The item at the end of the edge.");

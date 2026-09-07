@@ -10770,7 +10770,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var conn = (ConnectionType) schema.type("QueryFilmsConnection");
                 assertThat(conn.elementTypeName()).isEqualTo("Film");
-                assertThat(conn.edgeTypeName()).isEqualTo("QueryFilmsEdge");
+                assertThat(conn.edgeTypeName()).isEqualTo("QueryFilmsConnectionEdge");
                 assertThat(conn.itemNullable()).isFalse();
                 assertThat(conn.shareable()).isFalse();
                 assertThat(conn.schemaType()).isNotNull();
@@ -10782,7 +10782,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(totalCount).isNotNull();
                 assertThat(totalCount.getType()).isEqualTo(graphql.Scalars.GraphQLInt);
 
-                var edge = (EdgeType) schema.type("QueryFilmsEdge");
+                var edge = (EdgeType) schema.type("QueryFilmsConnectionEdge");
                 assertThat(edge.elementTypeName()).isEqualTo("Film");
                 assertThat(edge.itemNullable()).isFalse();
                 assertThat(edge.schemaType().getFieldDefinition("cursor")).isNotNull();
@@ -10803,7 +10803,34 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 assertThat(schema.type("MyFilmsConnection")).isInstanceOf(ConnectionType.class);
                 assertThat(schema.type("QueryFilmsConnection")).isNull();
-                assertThat(schema.type("MyFilmsEdge")).isInstanceOf(EdgeType.class);
+                assertThat(schema.type("MyFilmsConnectionEdge")).isInstanceOf(EdgeType.class);
+            }),
+
+        EXPLICIT_CONNECTION_NAME_REPEATING_CONNECTION(
+            "an override whose name repeats Connection mints the Edge by appending, not by substituting",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection(connectionName: "ConnectionsConnection") }
+            """,
+            schema -> {
+                assertThat(schema.type("ConnectionsConnection")).isInstanceOf(ConnectionType.class);
+                assertThat(schema.type("ConnectionsConnectionEdge")).isInstanceOf(EdgeType.class);
+                // A substring substitution of Connection for Edge would have minted EdgesEdge.
+                assertThat(schema.type("EdgesEdge")).isNull();
+            }),
+
+        EXPLICIT_CONNECTION_NAME_NOT_ENDING_IN_CONNECTION(
+            "an override carrying no Connection substring still mints a distinct Edge name",
+            """
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection(connectionName: "MovieFeed") }
+            """,
+            schema -> {
+                // Substituting would have left the Edge name equal to the Connection name, so both
+                // classifications landed on the one coordinate and the registry demoted it to
+                // UnclassifiedType — which is what the ConnectionType assertion here rules out.
+                assertThat(schema.type("MovieFeed")).isInstanceOf(ConnectionType.class);
+                assertThat(schema.type("MovieFeedEdge")).isInstanceOf(EdgeType.class);
             }),
 
         NULLABLE_ITEM(
@@ -10815,7 +10842,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var conn = (ConnectionType) schema.type("QueryFilmsConnection");
                 assertThat(conn.itemNullable()).isTrue();
-                var edge = (EdgeType) schema.type("QueryFilmsEdge");
+                var edge = (EdgeType) schema.type("QueryFilmsConnectionEdge");
                 assertThat(edge.itemNullable()).isTrue();
             }),
 
@@ -10867,7 +10894,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 assertThat(schema.type("SharedConnection")).isInstanceOf(ConnectionType.class);
-                assertThat(schema.type("SharedEdge")).isInstanceOf(EdgeType.class);
+                assertThat(schema.type("SharedConnectionEdge")).isInstanceOf(EdgeType.class);
             }),
 
         NO_PAGE_INFO_SYNTHESIS_WHEN_DECLARED(
@@ -11132,36 +11159,36 @@ class GraphitronSchemaBuilderTest {
             "an SDL type case-equal to a synthesised Edge name demotes both via the SYNTH_EDGE origin arm",
             """
             type Item @table(name: "film") { v: String }
-            type fooEdge @table(name: "film") { v: String }
+            type fooConnectionEdge @table(name: "film") { v: String }
             type Query {
                 foo: [Item!]! @asConnection(connectionName: "FooConnection")
-                stash: fooEdge
+                stash: fooConnectionEdge
             }
             """,
             (schema, sdl) -> {
-                assertThat(schema.type("FooEdge")).isNotInstanceOf(UnclassifiedType.class);
-                assertThat(schema.type("fooEdge")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FooConnectionEdge")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooConnectionEdge")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
                 var clashMessages = errors.stream()
                     .filter(e -> e.message().contains("case-insensitively"))
                     .map(ValidationError::message)
                     .toList();
                 assertThat(clashMessages)
-                    .anyMatch(m -> m.startsWith("Type 'FooEdge':")
+                    .anyMatch(m -> m.startsWith("Type 'FooConnectionEdge':")
                         && m.contains("synthesised edge type")
-                        && m.contains("'FooEdge'") && m.contains("'fooEdge'"))
-                    .anyMatch(m -> m.startsWith("Type 'fooEdge':")
+                        && m.contains("'FooConnectionEdge'") && m.contains("'fooConnectionEdge'"))
+                    .anyMatch(m -> m.startsWith("Type 'fooConnectionEdge':")
                         && m.contains("collides case-insensitively")
-                        && m.contains("'FooEdge'") && m.contains("'fooEdge'"));
+                        && m.contains("'FooConnectionEdge'") && m.contains("'fooConnectionEdge'"));
                 // Synth-Edge side carries the @asConnection carrier-field location;
                 // SDL side carries its own parse location.
                 var synthErr = errors.stream()
-                    .filter(e -> e.coordinate().equals("FooEdge") && e.message().contains("case-insensitively"))
+                    .filter(e -> e.coordinate().equals("FooConnectionEdge") && e.message().contains("case-insensitively"))
                     .findFirst().orElseThrow();
                 assertThat(synthErr.location()).isNotNull();
                 assertThat(synthErr.location().getColumn()).isEqualTo(5);
                 var sdlErr = errors.stream()
-                    .filter(e -> e.coordinate().equals("fooEdge") && e.message().contains("case-insensitively"))
+                    .filter(e -> e.coordinate().equals("fooConnectionEdge") && e.message().contains("case-insensitively"))
                     .findFirst().orElseThrow();
                 assertThat(sdlErr.location()).isNotNull();
             }),

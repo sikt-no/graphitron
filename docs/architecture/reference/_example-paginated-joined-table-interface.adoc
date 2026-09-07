@@ -36,8 +36,8 @@ type Individual implements Party @table(name: "party_individual") @discriminator
 | no claiming directive
 | `fetchers.QueryPartiesConnectionFetchers#edges(DataFetchingEnvironment)`
 
-| `QueryPartiesEdge.node`
+| `QueryPartiesConnectionEdge.node`
 | no claiming directive
-| `fetchers.QueryPartiesEdgeFetchers#node(DataFetchingEnvironment)`
+| `fetchers.QueryPartiesConnectionEdgeFetchers#node(DataFetchingEnvironment)`
 
 |===

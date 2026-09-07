@@ -53,7 +53,7 @@ class ConnectionFederationTagPipelineTest {
         GraphQLSchema assembled = TestSchemaHelper.buildBundle(sdl).assembled();
 
         assertThat(tagNames(obj(assembled, "QueryFilmsConnection"))).containsExactly("x");
-        assertThat(tagNames(obj(assembled, "QueryFilmsEdge"))).containsExactly("x");
+        assertThat(tagNames(obj(assembled, "QueryFilmsConnectionEdge"))).containsExactly("x");
         assertThat(tagNames(obj(assembled, "PageInfo"))).containsExactly("x");
         // The carrier field still carries its own @tag (promotion does not strip it).
         var carrier = ((GraphQLObjectType) assembled.getType("Query")).getFieldDefinition("films");
@@ -66,7 +66,7 @@ class ConnectionFederationTagPipelineTest {
 
         // TagApplier stamps @tag(name: "catalog") on the carrier field; promotion inherits it.
         assertThat(tagNames(obj(assembled, "QueryFilmsConnection"))).containsExactly("catalog");
-        assertThat(tagNames(obj(assembled, "QueryFilmsEdge"))).containsExactly("catalog");
+        assertThat(tagNames(obj(assembled, "QueryFilmsConnectionEdge"))).containsExactly("catalog");
         assertThat(tagNames(obj(assembled, "PageInfo"))).containsExactly("catalog");
     }
 
@@ -83,7 +83,7 @@ class ConnectionFederationTagPipelineTest {
             new SchemaParser().parse(Files.readString(target, StandardCharsets.UTF_8));
 
         assertThat(reparsedTagNames(reparsed, "QueryFilmsConnection")).containsExactly("catalog");
-        assertThat(reparsedTagNames(reparsed, "QueryFilmsEdge")).containsExactly("catalog");
+        assertThat(reparsedTagNames(reparsed, "QueryFilmsConnectionEdge")).containsExactly("catalog");
         assertThat(reparsedTagNames(reparsed, "PageInfo")).containsExactly("catalog");
     }
 

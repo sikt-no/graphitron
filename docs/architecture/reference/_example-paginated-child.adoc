@@ -32,9 +32,9 @@ type City @table(name: "city") {
 | no claiming directive
 | `fetchers.CountryCitiesConnectionFetchers#edges(DataFetchingEnvironment)`
 
-| `CountryCitiesEdge.node`
+| `CountryCitiesConnectionEdge.node`
 | no claiming directive
-| `fetchers.CountryCitiesEdgeFetchers#node(DataFetchingEnvironment)`
+| `fetchers.CountryCitiesConnectionEdgeFetchers#node(DataFetchingEnvironment)`
 
 | `Query.country`
 | no claiming directive

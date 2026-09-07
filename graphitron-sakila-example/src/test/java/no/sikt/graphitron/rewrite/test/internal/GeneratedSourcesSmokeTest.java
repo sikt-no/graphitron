@@ -39,7 +39,7 @@ class GeneratedSourcesSmokeTest {
         // Category 6: synthesised connection type (directive-driven @asConnection)
         PKG + ".schema.QueryStoresConnectionType",
         // Category 7: synthesised edge type
-        PKG + ".schema.QueryStoresEdgeType",
+        PKG + ".schema.QueryStoresConnectionEdgeType",
         // Fetcher classes — one per GraphQL object type
         PKG + ".fetchers.QueryFetchers",
         PKG + ".fetchers.FilmFetchers",

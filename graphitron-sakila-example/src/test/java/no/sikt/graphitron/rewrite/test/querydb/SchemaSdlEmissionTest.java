@@ -142,7 +142,7 @@ class SchemaSdlEmissionTest {
      * match, so a printer that dropped descriptions would fail here.
      *
      * <p>Asserts only the genuinely-synthesised types ({@code QueryStoresConnection} /
-     * {@code QueryStoresEdge}). This fixture declares {@code PageInfo} structurally in SDL (shared
+     * {@code QueryStoresConnectionEdge}). This fixture declares {@code PageInfo} structurally in SDL (shared
      * by the hand-written {@code FilmsConnection} / {@code ActorsConnection}), so the synthesis
      * path reuses the consumer-owned object and does not stamp a description on it; that is the
      * scope boundary. Synthesised-{@code PageInfo} descriptions are covered at the unit tier
@@ -162,10 +162,16 @@ class SchemaSdlEmissionTest {
         assertThat(fieldDescription(connection, "totalCount"))
             .isEqualTo("Identifies the total count of items in the connection.");
 
-        var edge = requireNonNull(registry.getTypeOrNull("QueryStoresEdge", ObjectTypeDefinition.class));
+        var edge = requireNonNull(registry.getTypeOrNull("QueryStoresConnectionEdge", ObjectTypeDefinition.class));
         assertThat(descriptionOf(edge)).isEqualTo("An edge in a connection.");
         assertThat(fieldDescription(edge, "cursor")).isEqualTo("A cursor for use in pagination.");
         assertThat(fieldDescription(edge, "node")).isEqualTo("The item at the end of the edge.");
+
+        // The edge name is the Connection name plus Edge, which is the Graphitron 9 contract a
+        // consumer's clients hold fragments against. Substituting Connection for Edge instead would
+        // publish QueryStoresEdge and break them, so its absence is asserted here, on the emitted
+        // schema, and not only where the formula is evaluated.
+        assertThat(registry.getTypeOrNull("QueryStoresEdge", ObjectTypeDefinition.class)).isNull();
     }
 
     private static String descriptionOf(ObjectTypeDefinition type) {

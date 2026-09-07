@@ -72,7 +72,7 @@ class ConnectionPromoterTest {
                 assertThat(dd.rewritesCarrierReturnType()).isTrue();
             }));
         assertThat(bctx.types.get("QueryCustomersConnection")).isInstanceOf(ConnectionType.class);
-        assertThat(bctx.types.get("QueryCustomersEdge")).isInstanceOf(EdgeType.class);
+        assertThat(bctx.types.get("QueryCustomersConnectionEdge")).isInstanceOf(EdgeType.class);
         assertThat(bctx.types.get("PageInfo")).isInstanceOf(PageInfoType.class);
         // The row carries the absent-from-assembled discriminator per minted name; the shared
         // PageInfo is a schema-grain slot on the relation, not a row entry.
@@ -80,7 +80,7 @@ class ConnectionPromoterTest {
             .extracting(ConnectionSynthesis.MintedName::name, ConnectionSynthesis.MintedName::absentFromAssembled)
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple("QueryCustomersConnection", true),
-                org.assertj.core.groups.Tuple.tuple("QueryCustomersEdge", true));
+                org.assertj.core.groups.Tuple.tuple("QueryCustomersConnectionEdge", true));
         assertThat(relation.sharedMinted())
             .extracting(ConnectionSynthesis.MintedName::name, ConnectionSynthesis.MintedName::absentFromAssembled)
             .containsExactly(org.assertj.core.groups.Tuple.tuple("PageInfo", true));
@@ -106,7 +106,7 @@ class ConnectionPromoterTest {
         assertThat(connection.getFieldDefinition("totalCount").getDescription())
             .isEqualTo("Identifies the total count of items in the connection.");
 
-        var edge = ((EdgeType) bctx.types.get("QueryCustomersEdge")).schemaType();
+        var edge = ((EdgeType) bctx.types.get("QueryCustomersConnectionEdge")).schemaType();
         assertThat(edge.getDescription()).isEqualTo("An edge in a connection.");
         assertThat(edge.getFieldDefinition("cursor").getDescription()).isEqualTo("A cursor for use in pagination.");
         assertThat(edge.getFieldDefinition("node").getDescription()).isEqualTo("The item at the end of the edge.");
@@ -138,7 +138,7 @@ class ConnectionPromoterTest {
         assertThat(relation.rows().values()).singleElement().satisfies(row ->
             assertThat(row.connectionName()).isEqualTo("MyCustomerConnection"));
         assertThat(bctx.types.get("MyCustomerConnection")).isInstanceOf(ConnectionType.class);
-        assertThat(bctx.types.get("MyCustomerEdge")).isInstanceOf(EdgeType.class);
+        assertThat(bctx.types.get("MyCustomerConnectionEdge")).isInstanceOf(EdgeType.class);
     }
 
     @Test
@@ -246,13 +246,13 @@ class ConnectionPromoterTest {
         assertThat(relation.rows().values())
             .allSatisfy(row -> assertThat(row.connectionName()).isEqualTo("CustomerConnection"));
         assertThat(bctx.types.get("CustomerConnection")).isInstanceOf(ConnectionType.class);
-        assertThat(bctx.types.get("CustomerEdge")).isInstanceOf(EdgeType.class);
+        assertThat(bctx.types.get("CustomerConnectionEdge")).isInstanceOf(EdgeType.class);
         // Two rows agreeing on the minted shape pass the name-axis check: no diagnostic.
         assertThat(bctx.diagnostics()).isEmpty();
         // The rebuild set dedups by name: one Connection, one Edge (plus the shared PageInfo).
         assertThat(relation.absentMinted())
             .extracting(ConnectionSynthesis.MintedName::name)
-            .containsExactly("CustomerConnection", "CustomerEdge", "PageInfo");
+            .containsExactly("CustomerConnection", "CustomerConnectionEdge", "PageInfo");
     }
 
     @Test
@@ -399,7 +399,7 @@ class ConnectionPromoterTest {
         promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactly("x");
-        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactly("x");
+        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersConnectionEdge"))).containsExactly("x");
         assertThat(tagNames(pageInfoSchema(bctx))).containsExactly("x");
         // The carrier field on the original schema keeps its own @tag (promotion does not strip it).
         var carrier = ((GraphQLObjectType) bctx.schema.getType("Query")).getFieldDefinition("customers");
@@ -419,7 +419,7 @@ class ConnectionPromoterTest {
         promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "QueryCustomersConnection"))).containsExactlyInAnyOrder("a", "b");
-        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersEdge"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(edgeSchema(bctx, "QueryCustomersConnectionEdge"))).containsExactlyInAnyOrder("a", "b");
         assertThat(tagNames(pageInfoSchema(bctx))).containsExactlyInAnyOrder("a", "b");
     }
 
@@ -437,7 +437,7 @@ class ConnectionPromoterTest {
         promoteAll(bctx);
 
         assertThat(tagNames(connSchema(bctx, "CustomerConnection"))).containsExactlyInAnyOrder("a", "b");
-        assertThat(tagNames(edgeSchema(bctx, "CustomerEdge"))).containsExactlyInAnyOrder("a", "b");
+        assertThat(tagNames(edgeSchema(bctx, "CustomerConnectionEdge"))).containsExactlyInAnyOrder("a", "b");
         assertThat(tagNames(pageInfoSchema(bctx))).containsExactlyInAnyOrder("a", "b");
     }
 

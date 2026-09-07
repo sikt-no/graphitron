@@ -332,7 +332,7 @@ type Query {
     # SDL → emitted-source loop for R131's same-table half.
     filmActorBySingularCompositeNodeId(filter: FilmActorSingularNodeIdFilter): [FilmActor!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
-    # synthesises QueryStoresConnectionType, QueryStoresEdgeType and wires them into
+    # synthesises QueryStoresConnectionType, QueryStoresConnectionEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
     # (FilmsConnection, ActorsConnection) are unaffected — both paths coexist.
     stores: [Store!]! @asConnection @defaultOrder(primaryKey: true)

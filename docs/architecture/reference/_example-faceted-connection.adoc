@@ -33,8 +33,8 @@ input FilmFilter {
 | no claiming directive
 | `fetchers.QueryFilmsConnectionFetchers#edges(DataFetchingEnvironment)`
 
-| `QueryFilmsEdge.node`
+| `QueryFilmsConnectionEdge.node`
 | no claiming directive
-| `fetchers.QueryFilmsEdgeFetchers#node(DataFetchingEnvironment)`
+| `fetchers.QueryFilmsConnectionEdgeFetchers#node(DataFetchingEnvironment)`
 
 |===

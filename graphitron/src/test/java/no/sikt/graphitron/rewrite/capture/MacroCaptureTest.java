@@ -126,15 +126,31 @@ class MacroCaptureTest {
     void theMintedShapesMatchTheAssembledOnes(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, CONNECTIONS)) {
             assertThat(fieldsOf(store, "QueryFilmsConnection")).containsExactly(
-                "edges=[QueryFilmsEdge!]!", "nodes=[Film!]!", "pageInfo=PageInfo!", "totalCount=Int");
-            assertThat(fieldsOf(store, "QueryFilmsEdge")).containsExactly(
+                "edges=[QueryFilmsConnectionEdge!]!", "nodes=[Film!]!", "pageInfo=PageInfo!", "totalCount=Int");
+            assertThat(fieldsOf(store, "QueryFilmsConnectionEdge")).containsExactly(
                 "cursor=String!", "node=Film!");
             // The nullable-item carrier mirrors its element's nullability into both node slots.
             assertThat(fieldsOf(store, "ActorConnection")).contains("nodes=[Actor]!");
-            assertThat(fieldsOf(store, "ActorEdge")).containsExactly("cursor=String!", "node=Actor");
+            assertThat(fieldsOf(store, "ActorConnectionEdge")).containsExactly("cursor=String!", "node=Actor");
             assertThat(fieldsOf(store, "PageInfo")).containsExactly(
                 "hasNextPage=Boolean!", "hasPreviousPage=Boolean!",
                 "startCursor=String", "endCursor=String");
+        }
+    }
+
+    @Test
+    @DisplayName("an override carrying no Connection substring still mints a distinct Edge type")
+    void anOverrideWithoutTheConnectionSubstringMintsADistinctEdge(@TempDir Path tmp) {
+        // The capture-side twin of the classification tier's MovieFeed case: appending Edge to the
+        // resolved Connection name keeps the two sides of the fact-store boundary in agreement on
+        // the one override shape where substituting left the Edge name equal to the Connection's.
+        String sdl = """
+            type Query { films: [Film!]! @asConnection(connectionName: "MovieFeed") }
+            type Film { title: String }
+            """;
+        try (var store = CapturedStore.of(tmp, sdl)) {
+            assertThat(fieldsOf(store, "MovieFeed")).contains("edges=[MovieFeedEdge!]!");
+            assertThat(fieldsOf(store, "MovieFeedEdge")).containsExactly("cursor=String!", "node=Film!");
         }
     }
 
@@ -149,9 +165,9 @@ class MacroCaptureTest {
                 .fetch();
             assertThat(marked.map(r -> r.value1() + "<-" + r.value2()))
                 .containsExactlyInAnyOrder(
-                    "QueryFilmsConnection<-Query.films", "QueryFilmsEdge<-Query.films",
+                    "QueryFilmsConnection<-Query.films", "QueryFilmsConnectionEdge<-Query.films",
                     "PageInfo<-Query.films",
-                    "ActorConnection<-Query.actors", "ActorEdge<-Query.actors",
+                    "ActorConnection<-Query.actors", "ActorConnectionEdge<-Query.actors",
                     "PageInfo<-Query.actors");
         }
     }
@@ -330,12 +346,12 @@ class MacroCaptureTest {
                 .as("the contested coordinates are exactly the two the element types reach:"
                     + " the connection's own nodes and its edge's node")
                 .containsExactlyInAnyOrder(
-                    "SharedConnection.nodes:FIELDx2", "SharedEdge.node:FIELDx2");
+                    "SharedConnection.nodes:FIELDx2", "SharedConnectionEdge.node:FIELDx2");
 
             assertThat(fieldsOf(store, "SharedConnection"))
                 .as("neither reading lands, and the fields both carriers agree on still do")
-                .containsExactly("edges=[SharedEdge!]!", "pageInfo=PageInfo!", "totalCount=Int");
-            assertThat(fieldsOf(store, "SharedEdge")).containsExactly("cursor=String!");
+                .containsExactly("edges=[SharedConnectionEdge!]!", "pageInfo=PageInfo!", "totalCount=Int");
+            assertThat(fieldsOf(store, "SharedConnectionEdge")).containsExactly("cursor=String!");
         }
     }
 

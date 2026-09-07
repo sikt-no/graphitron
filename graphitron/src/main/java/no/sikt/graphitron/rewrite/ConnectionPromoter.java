@@ -463,7 +463,7 @@ final class ConnectionPromoter {
             String elementTypeName = elementLayer instanceof GraphQLNamedType named
                 ? named.getName() : elementLayer.toString();
             String connName = resolveConnectionName(parent.getName(), fieldDef);
-            String edgeName = connName.replace("Connection", "Edge");
+            String edgeName = ConnectionNaming.defaultEdgeName(connName);
             boolean shareable = fieldDef.hasAppliedDirective("shareable");
             // Directive arm: the carrier field is the tag source. TagApplier tags fields
             // (never type declarations), so a <schemaInput tag> source surfaces here too.

@@ -218,7 +218,7 @@ class GraphitronSchemaClassGeneratorTest {
     @Test
     void build_emitsAdditionalType_forSynthesisedEdge() {
         var body = buildBody("type Query { films: [Film!]! @asConnection }\ntype Film { id: ID! }");
-        assertThat(body).contains(".additionalType(com.example.schema.QueryFilmsEdgeType.type())");
+        assertThat(body).contains(".additionalType(com.example.schema.QueryFilmsConnectionEdgeType.type())");
     }
 
     @Test

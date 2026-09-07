@@ -758,7 +758,7 @@ parent's SELECT and there is nothing to window: `@asConnection` without `@splitQ
 outright. Either lookup-keyed spelling is refused because a page would break the positional
 correspondence `@lookupKey` establishes, and that holds whether or not `@splitQuery` is also present.
 
-`CountryCitiesConnection` and `CountryCitiesEdge` are synthesised for the coordinate and named after it,
+`CountryCitiesConnection` and `CountryCitiesConnectionEdge` are synthesised for the coordinate and named after it,
 exactly as on <<pagination-and-facets,a paginated root>>; being batched changes where the rows come
 from, not how the wrapper types are made.
 
@@ -991,7 +991,7 @@ after it. `@asFacet` on an input field adds facet counts computed over the same 
 
 include::_example-faceted-connection.adoc[]
 
-The coordinates named `QueryFilmsConnection` and `QueryFilmsEdge` are the synthesised types, and they
+The coordinates named `QueryFilmsConnection` and `QueryFilmsConnectionEdge` are the synthesised types, and they
 emit fetchers of their own: that is what makes them visible here at all, since nothing in the authored
 SDL mentions them. Neither carries a claim, because `@asConnection` shapes the read rather than
 claiming the coordinate. Asserted by the `faceted-connection` corpus example, whose `@synthesises`
