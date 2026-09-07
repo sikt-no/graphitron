@@ -409,9 +409,12 @@ declared now is the one that will still be right.
 
 1. The two hierarchies, described below, which are one mechanism applied at two grains. A named type
    is one of the specification's six kinds, and boundness, participants and fields are facts each
-   legal for some of them. A field has at most one producer, and the eight are disjoint, so a
-   coordinate carrying two of them should be unwritable rather than rejected downstream. Both are a
-   unique on the anchor's key plus its discriminator, and a composite reference from each dependent.
+   legal for some of them. A producer is what runs to fetch a field's rows, which most fields do not
+   have: a table-bound child is absorbed into its parent's query, and only a root slot, `@service` or
+   `@splitQuery` makes a field a fetch origin. Four values survive, three of them carrying a subtype
+   relation, and they are exclusive at a coordinate, so a coordinate carrying two should be
+   unwritable rather than rejected downstream. Both hierarchies are a unique on the anchor's key plus
+   its discriminator, and a composite reference from each dependent.
    `intent_resolved_type_binding` dissolves with them, being a union that lets a routine's result
    pass for a type binding.
 2. The route family, described below, which now carries three things that were separate: the target
@@ -739,45 +742,89 @@ second three ways today, bare `kind` on `graphql_type` and `graphitron_type` and
 
 ### The producer hierarchy
 
-A field has at most one producer, and the eight are disjoint: query, lookup, service, routine,
-insert, update, delete and upsert. Each carries payload no sibling can hold, which is the store's own
-test for a subtype keeping a relation, and the disjointness makes this a correctness improvement
-rather than a tidying.
+A producer is what runs to fetch a field's rows. The first thing to say about it is that most fields
+do not have one, and the design has to make that the default rather than the exception.
 
-**Flat, and eight rather than four with modifiers.** `@routine` and `@mutation` are mutually
-exclusive: a field on the Mutation type carrying `@routine` calls the routine and the routine handles
-the write, and `@service` is the same. So a write is not a producer with a delegate attached, and the
-producer axis needs no second level. What decides whether a field writes is not its producer but the
-root slot it hangs under, which is the position axis: one producer, `ROUTINE`, reads under `Query`
-and writes under `Mutation`. Two axes crossing, which is the whole reason this model has axes.
+**A table-bound field is not a producer.** A child field navigating to another table is absorbed
+into its parent's query as a join or a correlated projection: nothing runs for it, and there is
+nothing for a producer row to describe. It becomes a producer only when something forces it to be
+fetched separately, and three things do. The root slot, because a field in a `Query` or `Mutation`
+slot has no parent query to be absorbed into. `@service`, because a Java call is not something SQL
+can absorb. And `@splitQuery`, which is the author saying so.
+
+The three causes sit on two axes and they overlap: a root `@service` field is caused twice. So the
+cause is not a function of the coordinate and must not be a column on the producer row; what the row
+states is that the field is a fetch origin, and the derivation states why. Its population is a strict
+subset of `graphitron_field`, and a reader wanting the absorbed fields anti-joins.
+
+**`@routine` is two things and only one of them is a producer.** A `@routine` application in the
+middle or at the end of a chain is a step: it contributes its result table as a node in the join
+path, interleaved with `@reference` hops in written order, which is what
+`graphitron_field_chain_application` was built to state and what the manual's sandwich example
+describes. On a sandwich the field's rows come from the parent's table by a join and the routine is a
+hop; the field's producer, if it has one at all, is not the routine.
+
+The way not to model this is as two roles for one directive. `@routine` has one role, a step in the
+route, and the step at position 0 is where the field's rows originate. Producer-hood is a separate
+question asked of the field and not of the application. So `graphitron_routine` belongs to the route
+family in full and is not a producer subtype: a subtype reference from it would assert that every
+coordinate holding a routine application has `ROUTINE` as its producer, which the sandwich falsifies.
+Where a producer does need to name the originating application it references
+`(coordinate, ordinal)` with a field-grain unique above it, so at most one application can be the
+origin and the rest are steps by construction.
+
+**Which leaves four values rather than eight, and the store's own test is what cuts them.** A
+subtype keeps a relation when it carries payload no sibling can hold.
+
+`insert`, `update`, `delete` and `upsert` share `graphitron_mutation`'s exact column set, so they are
+one subtype with a verb column and not four subtypes. The relation already is that; splitting it
+would put a discriminator to work twice.
+
+`lookup` is not a producer at all. `LookupFacts` fires a coordinate's lookup trigger when
+`@lookupKey` appears anywhere on its argument surface, directly or through a reachable input object
+field, so lookup-ness is a derived predicate over the argument grain rather than a marker at the
+field grain. It is legal at root and child sites both and composes with `@splitQuery` at the child
+one, which is exactly what a modifier does and what a sibling of `service` could not. It keys a table
+read; it does not replace one.
+
+`query` carries no payload and no relation, which is the same observation from the other side: it is
+the default when no directive names something else, so it is the anchor's value with no subtype under
+it.
+
+What survives is `QUERY`, `SERVICE`, `ROUTINE` and `MUTATION`, with three subtype relations under
+four values. These four are genuinely exclusive at a coordinate, which the eight were not, so the
+disjointness the mechanism enforces is now a true claim rather than a hopeful one.
 
 **Today the exclusion is real in the generator and unrepresentable in the store.**
-`graphitron_service`, `graphitron_mutation` and `graphitron_field_lookup_key` all key at
-`(graph_name, type_name, field_name)` and nothing stops one coordinate carrying all three. The
-exclusions live in the classifier as directive conflicts, the `@routine` with `@splitQuery` pair
-being the named precedent, which is a rejection a reader of the store cannot see and a constraint the
-store cannot state. A producer supertype keyed at the coordinate, with each subtype referencing
-`(coordinate, producer_kind)` and checking its own value, makes a second producer unwritable.
+`graphitron_service` and `graphitron_mutation` both key at `(graph_name, type_name, field_name)` and
+nothing stops one coordinate carrying both. The exclusions live in the classifier as directive
+conflicts, the `@routine` with `@splitQuery` pair being the named precedent, which is a rejection a
+reader of the store cannot see and a constraint the store cannot state. A producer anchor keyed at
+the coordinate, with each subtype referencing `(coordinate, producer_kind)` and checking its own
+value, makes a second producer unwritable.
 
 **The word is `producer` and not `operation`, and the store chose it already.** `operation` is taken
 twice: `graphql_root_operation.operation` is the specification's, "which root slot", and
-`graphitron_mutation.operation` already holds four of the eight values below. This item's own model
-uses it for a third thing, the multi-valued set where one field selects and joins and paginates at
-once, and that axis has to survive alongside this one: a field with `producer = QUERY` and
-`operations = {select, join, paginate}` is a sentence two axes called operation could not carry. The
-store meanwhile runs four relations on the right word already, `intent_field_producer_method`,
+`graphitron_mutation.operation` holds the DML verb. This item's own model uses it for a third thing,
+the multi-valued set where one field selects and joins and paginates at once, and that axis has to
+survive alongside this one: a field with `producer = QUERY` and `operations = {select, join,
+paginate}` is a sentence two axes called operation could not carry. The store meanwhile runs four
+relations on the right word already, `intent_field_producer_method`,
 `intent_field_producer_reference`, `intent_field_payload_producer` and
 `intent_producer_cardinality_conflict`.
 
-**One grain wrinkle, stated rather than smoothed.** Most subtypes are field grain, but
-`graphitron_routine` keys at `(coordinate, ordinal)` because the directive is repeatable, so its
-reference to the producer is many-to-one. That still enforces what matters, that a coordinate holding
-a routine application has `ROUTINE` as its producer, and it is why the relationship is a reference to
-the pair rather than a shared primary key.
+**Flat, and one level.** `@routine` and `@mutation` are mutually exclusive: a field on the Mutation
+type carrying `@routine` calls the routine and the routine handles the write, and `@service` is the
+same. So a write is not a producer with a delegate attached. What decides whether a field writes is
+not its producer but the root slot it hangs under, which is the position axis: one producer,
+`ROUTINE`, reads under `Query` and writes under `Mutation`. Two axes crossing, which is the whole
+reason this model has axes, and the cut from eight to four is what makes the crossing carry the
+weight instead of the value list.
 
 **And one column becomes load-bearing that is unguarded today.**
-`graphitron_mutation.operation` carries the DML verb with no CHECK at all. As the discriminator
-component of the subtype's reference it gains the four-value vocabulary it should always have had.
+`graphitron_mutation.operation` carries the DML verb with no CHECK at all. It is not the producer
+discriminator, that being `MUTATION` for all four verbs, but it is the vocabulary the write half of
+the model reads, and it gains the four-value check it should always have had.
 
 **What gets renamed.** Grain first: `graphitron_type_table` and `graphitron_type_node` for the
 anchors, `graphitron_type_table_entry` and `graphitron_type_node_entry` for the decodes, retiring
