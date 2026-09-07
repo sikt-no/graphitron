@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-07
+last-updated: 2026-09-08
 ---
 
 # The keys say what a source owns, and the gatherer decides how to refresh it
@@ -53,7 +53,11 @@ unrepresentable. There is no list to be left out of.
 The reason to do this now rather than patch the list is R857, which stops a round rewriting what did
 not change. Today the loss self-repairs, a jOOQ package carrying no stamp so the catalog walk rewrites
 it unconditionally, and R857 withdraws exactly that: on the day it lands, B's capture will correctly
-decide it has nothing to rewrite while the rows are gone. R857 also needs what this item builds. A
+decide it has nothing to rewrite while the rows are gone. R857 exposes a second loss the same way,
+on the files two graphs share: the record of reading is store-global while an SDL row is the graph's
+own reading, so a graph can skip a re-walk on a stamp its sibling moved. Both are one shortfall, a
+store that partitions its facts more finely than it partitions its record of having read them.
+R857 also needs what this item builds. A
 refresh that can delete one source's facts precisely is the prerequisite for a refresh that re-reads
 only one source.
 
@@ -129,7 +133,22 @@ because the obvious answer is wrong in one place.
 |===
 
 So a gatherer taking that route deletes one row per root per changed source, the cascade clears
-everything beneath, and the walk rewrites. The registry row persists either way and its `stamp` and
+everything beneath, and the walk rewrites.
+
+That last clause is precise for three of the four family groups and not yet for the fourth, which the
+roots table above cannot show because it names a joint root for two families one gatherer does not
+write. `GraphitronFactCapture.capture` takes a graph name and nothing else, and `SOURCE_NAME` appears
+once in the class, so the decode runs over the graph's whole transcription rather than over one source:
+a per-source delete of the `(graph, source)` root cascades the 40 owned `graphitron_` relations away
+and no per-source walk rewrites them. So the joint root buys per-source precision for the 12
+`graphql_` relations, and the `graphitron_` half is either re-decoded whole or left empty until one
+gatherer writes both halves; R876's first slice moves those 40 writes into the walk and closes it.
+Nothing ships broken from this, the item changing no gatherer's route and the SDL families still being
+re-walked per graph, and this item takes no dependency on that slice. What it does take is the
+project's family ordering, the transcription families first and the decode family after, which is the
+same ordering the gap already has.
+
+The registry row persists either way and its `stamp` and
 `read_at` update in place, which is where R922's currency comparison expects to find them. Nothing
 here obliges a gatherer to take that route, and the item ships no change to which route any existing
 gatherer takes; what changes is that the choice becomes theirs to make.
@@ -140,7 +159,10 @@ refresh does not change and must not churn. `store_graph_source` holds *this gra
 file*, and a re-read genuinely replaces the reading, so the row going and coming back is the fact
 being restated rather than an identity being churned to trigger a side effect. A reviewer should test
 that claim rather than take it: if the reading row ever acquires state worth preserving across a
-re-read, this stops being true and the family needs a root of its own.
+re-read, this stops being true and the family needs a root of its own. Phase four gives the row a
+`stamp`, which is the state that clause anticipates and does not trip it: the value is what the
+graph's last read established, so a re-read replaces it with the read just performed. What would trip
+it is state a re-read cannot restore, and the row carries none.
 
 **A refresh in one corpus can validly delete rows in another family**, and the family-by-family table
 hides it. `graphitron_tabletype` and `graphitron_field_table` hang off `sql_table`, and
@@ -173,21 +195,70 @@ unwanted rather than about how to remove it, but it is what makes the removal ex
 statement instead of twenty-one. That bears on R917 and on the cache byte-budget item, and both should
 be told the mechanism exists rather than each inventing one.
 
-### A schema file belongs to exactly one graph
+### A source file can belong to several graphs
 
-`store_source` gains a nullable `graph_name` with a foreign key into `store_graph` and a
-`CHECK ((graph_name IS NOT NULL) = (source_kind = 'SCHEMA_FILE'))`, and a second graph claiming a
-schema file another graph owns is refused with a typed rejection naming both graphs and the file.
+An earlier version of this section gave `store_source` a `graph_name` column and refused a second
+graph claiming a schema file another owns. The rule is dropped. It is unsatisfiable, on the file it
+was least likely to be tested against: `SdlFactCapture.captureSources` walks every source name the
+registry hands back and `ClasspathSources.upsert` writes the bundled `directives.graphqls` as one
+`SCHEMA_FILE` row, with a `store_graph_source` membership per graph, so the rule demands a single
+owner for a file every graph reads by construction and the refusal fires on the second module of every
+workspace. Two shipped tests pin it from both ends, `TaggedCaptureStampTest` on the single registry row
+and `FactCaptureAgreementTest.graphSourceMembershipEqualsTheRunsReadSet` on the two memberships. We
+also have consumer files shared between graphs, so the rule was not merely unsatisfiable in the
+generator's own corner.
 
-Two honest notes on it. The refusal itself stays in capture, because a cross-row rule of this shape
-is no `CHECK` and H2 carries no filtered unique index to express it; the column makes the owner
-single-valued and stated on the row, which is what gives the refusal something to compare against.
-And under the mechanics above the rule is a simplification rather than a correctness requirement: the
-SDL family roots at the `(graph, source)` row, so two graphs sharing a file would get a root each and
-each graph's refresh would already delete only its own. The rule is kept because a shared schema file
-is not a thing we want to support, and because every relation of two families is cheaper to reason
-about when a file has one owner. It is not load-bearing for the cascade, and a reviewer should judge
-it as policy.
+Of the three ways out, this takes the third: drop the column and hold the rule where the fact lives, or
+do not hold it at all. Sharing is supported, and the design already carries it because the two kinds of
+fact key differently. `jvm_class` keys `(source_name, class_name)` with no graph dimension, a class
+declaration being a function of the bytes, so two graphs reading one jar want the same rows.
+`graphql_type_declaration` keys `(graph_name, type_name, source_name, source_line, source_column)` and
+carries `merge_ordinal`, "capture-assigned position in merge order", which is a property of the graph's
+document set rather than of the file: two graphs listing one file beside different siblings assign it
+different values. A row of that family is the graph's *reading* of the file. So the source-keyed
+families root at `store_source`, the graph-keyed ones root at the `(graph, source)` row, each graph
+holds a root of its own over a shared file, and a refresh reaches exactly its own rows. That is the
+shape the roots table above already has, and sharing needs no structure the store does not have.
+
+What is missing is one column. `store_source.stamp` says what the bytes are; nothing says what content
+a given graph's rows were built from, and with the reading per graph that is the fact a graph needs.
+`store_graph_source` gains `stamp`, the content identity this graph last read the source under, and the
+currency test becomes an equality between the two columns: a database comparison with no file I/O, so a
+shared file is hashed once a round and each graph decides for itself from its own record. Without it
+the hazard arrives with R857 rather than being live today, and it is silent: A edits a shared file and
+re-walks, the registry stamp becomes the new hash, and B's next round finds that stamp matching the
+bytes on disk, concludes it has nothing to re-read, and keeps SDL rows built from content that is gone.
+
+The membership row also stops being cleared and rewritten wholesale per graph, which is a change this
+item makes anyway rather than one the column adds: the row is the SDL family's root, so a refresh
+deletes it per changed source and retains the rest. Its table comment records the wholesale clear as
+today's behaviour and is rewritten with the rest of the mechanism's prose. Retention keeping the stamp
+is what makes the column worth having.
+
+Nothing else moves onto the row. Per-graph *age*, when a graph last named a source in its inputs, is
+the eviction question `last_seen` answers store-global, and the reaping policy is another item's; a
+second timestamp here would be built for a reader that does not exist.
+
+**One thing goes rather than moving: the null-stamp protocol.** `ClasspathSources.upsert` blanks an
+existing row's `stamp` and `read_at`, on the ground that "this run is about to (re)write the source's
+partition, and the null is what keeps a killed run re-walked", and `store_source.stamp`'s own
+description states the same rule. Both are hand-rolled crash consistency standing in for a transaction
+the capture already has. `FactCapture.capture` is one transaction end to end with `commitStamps` inside
+it, and the blanking branch fires only against a row that already exists, which means a warm store,
+which means the store holds a graph row written in that same transaction, which is the path where the
+stamps commit with the rows. A run that dies rolls back the stamp and the rows together. So the branch
+protects nothing the rollback does not, and under sharing it is actively wrong: one graph's capture
+blanking a currency record another graph reads. What survives is a write-ordering rule and not a null,
+write the stamp after the rows it vouches for, which the first-graph path needs because its
+materialization refresh runs outside the transaction and its stamps commit in a second one, and which
+needs no existing row to blank.
+
+**What the dropped rule was protecting is left unprotected, deliberately.** Nothing now stops two
+consumer graphs binding one schema file, and `SourceGraph.Shared` stays a general arm rather than
+narrowing to the bundled file. If that turns out to want a rule, it belongs on
+`store_graph_source.source_name` where the fact lives, as a restriction over consumer sources, and it
+is a policy question about what we support rather than anything the cascade needs. This item does not
+ask it.
 
 ### What cascades, and what has to be re-aggregated
 
@@ -308,6 +379,8 @@ gives that family the single root row the other three already have.
 - The fourteen per-source deletes and the two-loop structure in
   `CatalogFactCapture.clearSchemaSources`, three in its first round and eleven in its second.
 - `StoreRefresh.childrenFirst` for these families, the database owning the order instead.
+- The blanking branch in `ClasspathSources.upsert`, which resets `stamp` and `read_at` on a row
+  another graph may have established, for a crash the enclosing transaction already covers.
 
 Two things stay, named so they are not read as collateral. `freshSources` still decides which sources
 this round re-read; that set becomes the argument a gatherer refreshes against, rather than the scope
@@ -345,10 +418,21 @@ declared by the keys into this row, that no fact can outlive its source, that an
 issues is therefore complete without naming what else to remove, and that how a gatherer refreshes its
 corpus is its own decision.
 
-**Two descriptions become false and have to be rewritten rather than trimmed.** `store_source`'s
-table comment opens "store-global rather than graph-keyed: it can say what a file hashed to, never
-which graph read it", which phase four's `graph_name` column falsifies directly. The clause is
-rewritten with the rest of that comment rather than left standing beside a column that contradicts it.
+The same comment's opening clause, "store-global rather than graph-keyed: it can say what a file
+hashed to, never which graph read it", is kept exactly as it stands and becomes load-bearing. An
+earlier version of this plan would have falsified it with a `graph_name` column on the row; the
+sharing case is what showed that column to be the wrong answer, and the clause it would have
+contradicted turns out to state the design.
+
+**Two claims become false and have to be rewritten rather than trimmed.** The first has two homes.
+`store_source.stamp` says it is "Also NULL while the source's rows are being written, and set only
+once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one
+that claims to be complete", and `ClasspathSources.upsert`'s javadoc states the same rule from the
+code side. The capture is one transaction and its rollback gives that guarantee already, so both
+describe a protocol this item deletes; what replaces them is the ordering rule, write the stamp after
+the rows it vouches for, stated on the one path that needs it. `store_graph_source`'s comment carries
+the second, that a warm capture "clears and rewrites exactly its own graph's rows", which stops being
+true when the row becomes a root deleted per changed source and carries a stamp worth retaining.
 And `meta_relation`'s
 `java_file` row argues its own placement: "Its own relation rather than a `store_source` row because
 `store_source` is a capture round's read set and a `.java` file is read by neither the SDL walk nor
@@ -465,13 +549,17 @@ part of this defect, but it is a source with no file and no stamp, which is the 
 the bundled directives need one. It is a live sealed arm at nine main-source sites and persisted as
 `KIND_NAMED`, so retiring it is a scope statement this item does not make.
 
-**Phase four, the SDL families.** Add `store_source.graph_name` with its foreign key and `CHECK`, and
-the refusal a second graph meets; add the cascading `(graph_name, source_name)` foreign keys from the
+**Phase four, the SDL families.** Add `store_graph_source.stamp` and delete the blanking branch in
+`ClasspathSources.upsert`; give `store_graph_source`'s existing foreign key into `store_source` its
+`ON DELETE CASCADE`, which is the edge that makes removing a source reach the graph-keyed families at
+all; add the cascading `(graph_name, source_name)` foreign keys from the
 12 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
 each needs; write the re-aggregation over all seventeen relations that are a function of more than one
-source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file verdicts among them; reduce the
-graph-scoped clear to what does not now cascade. Implementation confirms first that no fixture
-captures two graphs over one schema file, the new rule being a refusal an existing test could trip.
+source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file
+verdicts among them; reduce the graph-scoped clear to what does not now cascade, the membership row
+being a root this phase deletes per changed source rather than empties per graph. No ownership column
+and no refusal: the phase's own pre-flight step asked whether a fixture captures two graphs over one
+schema file, and the answer, established by two shipped tests, is that every store does.
 
 ## Tests
 
@@ -482,10 +570,14 @@ captures two graphs over one schema file, the new rule being a refusal an existi
   a control asserting B holds rows in the four before A's capture runs. The default fixture catalog
   publishes node metadata and declares `films_for_actor` with reflected parameters, both already
   asserted non-empty by `FactCaptureAgreementTest`, so the control is real rather than nominal.
-- **The refusal that makes one root sound**, which is the test that fails under the wrong design
-  rather than under a typo: a second graph claiming a schema file another graph already owns is
-  rejected, with the message naming both graphs and the file. Its companion asserts the case the rule
-  permits, two graphs over two schema files in one store, each refreshed without touching the other.
+- **A shared source file keeps two graphs apart**, which is the test that fails under the wrong
+  design rather than under a typo: two graphs over one schema file in one store, the file edited and
+  graph A re-read, asserting A's rows follow the edit, B's rows are untouched, and B's
+  `store_graph_source` stamp still names the content B read, so B's next round re-walks instead of
+  trusting the registry stamp A moved. `FactCaptureAgreementTest.graphSourceMembershipEqualsTheRunsReadSet`
+  already captures two graphs into one store and is the shape to extend; `EntryFamilyFixture` holds
+  nine relations to carrying rows from two sources at once, which is the overlap a per-source delete
+  can be observed on at all.
 - **The aggregate case**: a type declared in one file and extended in another, the extending file
   re-read and then removed, asserting the coordinate survives the first and goes on the second, and
   that the `graphitron_` decode hanging off it goes with it.
@@ -532,6 +624,8 @@ rather than renames, so a surviving use is a description of a mechanism that is 
   becoming the database's.
 - *A capture round's read set* as the definition of `store_source`, which becomes every input the
   store read whoever read it.
+- *The null stamp as a crash marker*, and the claim that blanking a `store_source` row's `stamp` is
+  what keeps a killed run re-walked, the enclosing transaction's rollback being what does that.
 - `TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME` and its value `<graphitron-synthesised:tag-link>`,
   which phase three retires along with the stamp-lookup branch that tolerates it.
 
@@ -543,6 +637,20 @@ it, nothing checks it, and its 21 members are three different situations under o
 here, deleted elsewhere, and not capture's business at all. The four went missing because a
 hand-maintained exemption list has no way to notice an omission, and patching it leaves the next
 omission free to happen.
+
+**One graph per schema file.** Carried by this plan for four rounds: a `graph_name` column on
+`store_source` with a `CHECK` tying it to the `SCHEMA_FILE` kind, and a typed rejection when a second
+graph claimed a file another owned, on the grounds that a shared schema file was not a thing we wanted
+to support and that two families are cheaper to reason about when a file has one owner. Rejected as
+unsatisfiable rather than as undesirable: the bundled `directives.graphqls` is one `SCHEMA_FILE` row
+with a membership per graph, so no assignment of the column satisfies the `CHECK` and the refusal fires
+on the second module of every workspace, which is the case the item was filed to fix. Two other ways
+out were available, a `source_kind` of its own for the bundled file or a NULL `graph_name` for it, and
+both keep a column that answers "which graph read this source" a second time and kind-filtered, which
+is the shape `store_graph_source`'s own comment argues against and which round 1 flagged before the
+counterexample existed. Dropping it costs nothing the cascade needed: the SDL family roots at the
+`(graph, source)` row either way, and the column would have falsified the clause of `store_source`'s
+own comment that turns out to state the design.
 
 **Deriving `PARTITIONED` from the key instead of listing it.** Makes the omission impossible without
 removing the mechanism, membership being computable as leading the key with `source_name` or `file`.
@@ -1189,3 +1297,57 @@ being a refusal an existing test could trip". This is that test, it does trip, a
 fixture that happens to share a file: both graphs read the bundled file by construction, so no fixture
 edit can make the check pass. The step is worth keeping in the revised phase, but its answer is
 already known and it is the finding rather than a way around it.
+
+> **Author, 2026-09-08.** Both findings accepted, and one note covers both since the revision is one
+> change. Findings 5 and 6 are left exactly as written above; the round-1 non-blocking note is where
+> this should have been settled and I am not going back to amend it.
+>
+> **Finding 5.** The rule is dropped rather than repaired, which is the third of the three ways out.
+> The user reported independently that we have consumer schema files shared between graphs, so the
+> bundled file is the sharpest counterexample rather than the only one, and a rule that has to be
+> narrowed to "consumer files, but not that one" is answering a question the keys already answer. The
+> section is rewritten as "A source file can belong to several graphs" and states why sharing is safe
+> from the keys rather than from a rule: `jvm_class` carries no graph dimension because a class
+> declaration is a function of the bytes, `graphql_type_declaration` is graph-keyed and carries
+> `merge_ordinal`, a property of the graph's document set, so the two kinds of fact root in different
+> places and each graph holds a root of its own over a shared file. Round 1 had the diagnosis and I
+> accepted my own framing of it as severable policy; it was not severable, and the column was the
+> wrong relation for the fact from the start.
+>
+> One column is genuinely missing and phase four now adds it. `store_source.stamp` says what the bytes
+> are and nothing says what content a given graph's rows were built from, which under sharing is a
+> silent stale read the day R857 lands: A re-walks an edited shared file, the registry stamp becomes
+> the new hash, and B finds that stamp matching the bytes and keeps rows built from content that is
+> gone. `store_graph_source` gains `stamp` and the currency test becomes an equality between the two
+> columns. `read_at` is deliberately not added beside it: the graph's question is which content its
+> rows came from, and the time questions are already answered store-global.
+>
+> A first draft of this revision kept `ClasspathSources.upsert`'s null-stamp protocol and relocated it
+> to the membership row. That was wrong and the user caught it: `FactCapture.capture` is one
+> transaction with `commitStamps` inside it, and the blanking branch fires only against an existing
+> row, which means a warm store, which is the path where the stamps commit with the rows. It is
+> hand-rolled crash consistency standing in for a transaction we already have, so it goes rather than
+> moves, and the surviving rule has no null in it. Two descriptions go with it and the descriptions
+> sweep names them. The one description phase four was going to falsify, `store_source`'s "store-global
+> rather than graph-keyed", is kept exactly as it stands and is now load-bearing.
+>
+> **Finding 6.** The sentence is qualified rather than defended, in the design section where it
+> appears. `GraphitronFactCapture.capture` takes a graph name and nothing else, so the joint root buys
+> per-source precision for the 12 `graphql_` relations and the 40 owned `graphitron_` ones are
+> re-decoded whole or left empty until one gatherer writes both halves. No dependency on R876's slice
+> is declared, per your framing that the item can ship honest prose instead; what the plan does record
+> is that the ordering is the project's own, the transcription families first and the decode family
+> after, which is where that gap already sits.
+>
+> R876's advisory notes are taken where they bear on this text. The 40/24/7 split and the decode-side
+> coincidence are recorded as confirmation rather than restated, and I have not renamed the
+> re-aggregated set from "anchors" to "graph-keyed" in this pass: the set now holds five kinds and two
+> of them are neither, so a rename would trade one imprecision for another, and the row's heading
+> already says what the members have in common. That is a wording call and I would not defend it hard
+> if you disagree.
+>
+> Verified on the tree before writing: `captureSources` and `ClasspathSources.upsert` for the bundled
+> file's single row, `FactCapture.capture` for the transaction boundary and `commitStamps` inside it,
+> `GraphitronFactCapture.capture`'s signature for finding 6, and `graphql_type_declaration`'s key and
+> `merge_ordinal` comment against `jvm_class`'s key for the sharing argument.
+
