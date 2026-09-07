@@ -401,6 +401,17 @@ the presence of a `GRAPH_NAME` column, so a new graphitron relation is rebuilt w
 The sweep is owed the day an incremental path exists, and what matters until then is that the cascade
 declared now is the one that will still be right.
 
+That day has a number. R872 deletes the wholesale arm outright, so "not exercised today" is true now
+and false on its first phase, and the refcounted grain becomes live rather than declared. The two
+items reach the same line from opposite sides and agree on it: R872 sorts the family by whether a
+row's existence is a function of one source, which is the entry test under another name, and the two
+decompositions coincide exactly. Every one of its 40 source-owned `graphitron_` relations is an
+entry, no anchor is source-owned, and 40 owned plus 24 descendants plus 7 graph-keyed is 56 entries
+plus 15 anchors read a second way. What that session found while measuring is filed in that item's
+own findings rather than argued here, including one blocking finding: its phase four would refuse
+the second graph of any store, the bundled `directives.graphqls` being a schema-file source that
+carries a membership per graph.
+
 ### How the rule was found
 
 Not one of the four landed the relation it set out to land without first landing something
@@ -475,8 +486,9 @@ attempt owes before it can claim to be done.
 1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode writes today, from
    the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages write.
    The `_entry` suffix lands on each relation as it goes, and the corpus-isolation gate widens
-   behind a fixture that can fail. Specified in full below, because it is the next slice and because
-   what it moves was measured before the decision was taken.
+   behind a fixture that can fail. That fixture landed ahead of the slice on 2026-09-07 and the
+   widening is the only part of it still owed. Specified in full below, because it is the next slice
+   and because what it moves was measured before the decision was taken.
 2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
    type is one of the specification's six kinds, and boundness, participants and fields are facts
    each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
@@ -620,13 +632,24 @@ site. It is as-written in every other respect and asks nothing of the catalog, s
 rest. What it shows is that "keyed to the coordinate" is a property of most entries rather than the
 definition of one; the definition is what the rows are a function of.
 
-**The falsifier comes first, and the one available today fails in the informative way.** Widening
-`CaptureCorpusIsolationTest` to the entry half passes before any code moves: measured 2026-09-07 over
-the 57 relations that scope selects, the 56 tables and the match view, both arms hold identical rows
-and nothing differs. It passes for the wrong reason. Eight of the 57 hold a single row under that
-gate's fixture, so 49 of them agree by being empty twice, and a gate that cannot fail is what this
-arc has twice mistaken for evidence. The first work is therefore a fixture that populates the entry
-family, and the widening is worth having only behind it.
+**The falsifier came first and it has been built.** Widening `CaptureCorpusIsolationTest` to the
+entry half passed before any code moved, measured 2026-09-07 over the 57 relations that scope
+selects, and it passed for the wrong reason: eight of the 57 held a row under that gate's fixture,
+so 49 of them agreed by being empty twice, and a gate that cannot fail is what this arc has twice
+mistaken for evidence. `EntryFamilyFixture` is the answer to that, landed 2026-09-07 ahead of the
+move. It applies every graphitron directive the decode writes a relation for, across two documents,
+and `EntryFamilyCoverageTest` holds it to writing a row into all 56 entry relations, to nine of them
+holding rows from both documents, and to its own two lists partitioning the family, so a 73rd
+relation has to be classified as an entry or an anchor rather than slipping into the uncovered set.
+Re-measured behind it, the differential runs over 86 relations of which 83 are populated and none
+differs between the arms. The claim that the entry half reads no catalog now has a check that could
+have said otherwise.
+
+**Two things the fixture settles beyond the widening.** The classification this slice rests on is a
+stated artifact rather than a grep: 56 entries against 16 anchors, the sixteenth being the match
+view, enumerated in the fixture and gated against the generated model. And the entry half's source
+attribution is measured rather than assumed: 40 of the 56 carry a `source_name` and 16 are
+descendants that carry none, which is exactly the split the refresh work reads the family through.
 
 **The second falsifier is the agreement between the two writers, and it takes the additive shape.**
 The walk writes to a shadow sink beside the gatherer's arm, the two populations are diffed over the

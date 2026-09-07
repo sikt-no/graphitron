@@ -977,3 +977,109 @@ is why the sweep did not pick it up. Left to the author rather than corrected he
 replaces a description is authoring rather than arithmetic. It is not a gate question: the item's
 description discipline is already strong enough that this reads as one propagation miss from the
 round-3 change, and the retirement sweep at Done will reach the constant either way.
+
+### Notes from R876's session (2026-09-07)
+
+Not a review round, and it arrives after round 4 signed the item off. One of these is blocking
+anyway, and whether it reopens the item is for whoever owns it rather than for this session. R876's
+entry-and-anchor work crosses phase four, and what it measured on the way belongs here rather than
+in that item. The two designs do not conflict, and the first note is the evidence: both cut the
+`graphitron_` family along the same line, and the rework's counts leave that line where it was. The
+blocking one is the second, where phase four's shared-file refusal fires on graphitron's own bundled
+schema file and therefore on the second graph of every store. Round 3 checked that file's
+`store_source` row and found it present, which is right; what nothing has checked is that it also
+carries a `store_graph_source` membership per graph. The rest are ordering, wording, and one thing
+this item's phase three does for R876 in return.
+
+**The two decompositions coincide exactly, which is confirmation and worth recording.** R876 splits
+the family by writer, 56 relations written by the directive decode against 15 written by a gatherer
+stage plus the match view. This item splits the same 71 tables by whether a row's existence is a
+function of one source: 40 owned, 24 descendants, 7 keyed at `store_graph`. Measured against the
+DDL, exactly 40 `graphitron_` tables carry a `source_name` column and every one of them is on the
+decode side; not one of the fifteen resolved relations carries one. So the owned set is the
+as-written set, 40 owned plus 16 descendant entries is 56, and 8 descendant anchors plus the 7
+graph-keyed is 15. That is not a coincidence: a relation is a function of one source exactly when
+its rows are a function of one document, which is what the decode side is. This item reaches the
+same line from the refresh side, and its own three cross-family cases are the mirror image,
+`graphitron_tabletype` and `graphitron_field_table` hanging off `sql_table` and
+`graphitron_node_keycolumn` off `sql_column` being resolved relations, and the only three in the
+family that key into the catalog at all.
+
+**Phase four's rule refuses the second graph in every store, and the file it trips on is
+graphitron's own.** The plan opens that phase by confirming "that no fixture captures two graphs
+over one schema file, the new rule being a refusal an existing test could trip". Three fixtures do,
+but they are the small half. `SdlFactCapture.captureSources` walks every source name the registry
+handed back, calls `GraphSourceMembership.note` for each and writes a `store_source` row of kind
+`SCHEMA_FILE`, and the bundled `directives.graphqls` is always in that set because every graph
+parses it. Measured on a two-graph capture: three `SCHEMA_FILE` sources, the two consumer files with
+one membership each and `directives.graphqls` with two. So a second graph always claims a schema
+file the first one owns, `CHECK ((graph_name IS NOT NULL) = (source_kind = 'SCHEMA_FILE'))` demands
+a single graph for a file every graph reads, and the typed rejection fires on the ordinary
+two-module workspace this item was filed for.
+
+**The distinction the rule wants is consumer file against bundled file, not one graph against two.**
+A consumer's schema file belonging to exactly one graph is a rule worth having and nothing here
+argues against it. What cannot hold is the same rule over a file graphitron ships inside its own
+artifact and every graph reads by construction. That file is not a shared resource in the sense the
+rule is guarding against, because nobody outside graphitron can edit it and graphitron owns when it
+changes: phase three already says so, stamping it with the generator version `store_stamp` records.
+Sharing is safe exactly where the refresh cadence is ours.
+
+**Which says the ownership column is in the wrong relation, and the item already half-knew it.**
+Whether a graph read a file is a fact about the membership, and `store_graph_source` holds it and
+puts no uniqueness on `source_name` on purpose. `store_source.graph_name` is a second answer to the
+same question, kind-filtered, and round 1's non-blocking note already flagged it as the shape
+`store_graph_source`'s own comment argues against. The bundled file turns that from a design
+preference into a counterexample: there is no single graph to put in the column. Three ways out, and
+the first looks cleanest. Give the bundled file a `source_kind` of its own, since it is a different
+kind of thing on every axis the registry cares about, shipped inside the generator, stamped by
+generator version, read by every graph, and phase three already handles it specially for stamping;
+the `CHECK` then keeps its shape and the refusal keeps its scope. Or admit a NULL `graph_name` for
+it, which weakens the `CHECK` to a disjunction and leaves the rule guarding less than it looks like
+it does. Or drop the column and state the rule where the fact lives, as uniqueness over
+`store_graph_source.source_name` restricted to consumer sources.
+
+**One consequence for `SourceGraph.Shared`, which the refusal was going to make unreachable.**
+Under the corrected rule the arm stops being a general facility and becomes the bundled file's case:
+after consumer files are held to one graph, `directives.graphqls` is the only source that can carry
+two memberships. So the arm survives, narrowly, for a reason nobody has to defend as policy. Whether
+the LSP ever needs to resolve that particular file is a much smaller question than whether a sealed
+arm in main sources should exist at all, and the plan can settle the refusal without answering it.
+
+**The joint root is only precise once one gatherer writes both halves of the family.** Phase four
+roots `graphql_` and `graphitron_` together at `store_graph_source` and describes the cheap strategy
+as deleting one row per root per changed source, after which "the cascade clears everything beneath,
+and the walk rewrites". That last clause is false today for 40 of the 52 relations. The cascade
+clears them and the SDL walk does not rewrite them, because the graphitron gatherer writes them and
+it runs over the whole graph's transcription rather than over one source. So per-source precision
+stops at the family boundary: refreshing one schema file either re-runs the entire decode for the
+graph or leaves 40 relations empty. R876's first slice moves those 40 writes into the walk, after
+which one walk of one source rewrites exactly what the cascade deleted. Today's wholesale clear
+hides this, which is why the family table can name a joint root without the question arising. The
+two items carry no dependency on each other, but this is the reason to take R876's slice one first,
+and it is correctness rather than convenience.
+
+**One wording, because the word is load-bearing in the other item.** The re-aggregated set is
+described here as "the seven `graphitron_` anchors that key at `store_graph` rather than at a
+source", naming the element family and leaving three unnamed. At least one of the unnamed three is
+an entry: `graphitron_spelled_reference` keys `(graph_name, spelling)`, foreign-keys only to
+`store_graph`, carries no `source_name`, and deduplicates a spelling across the seven sites that can
+write one, so its rows really are a function of the document set and it really does belong in that
+bucket. It is also as-written in every other respect and asks nothing of the catalog. Naming the set
+by what it is, graph-keyed, rather than by "anchor" costs nothing and stops the two items using one
+word for two things.
+
+**One thing this item does for R876 in return.** Phase four was blocked by round 1's finding that
+`source_name` goes unset in 37 of the 54 relations, counted before the rework moved two of them out,
+and phase three is what answers it. R876's slice one writes its 40 source-attributed entries from
+the walk, which is where the real `SourceLocation` is rather than one rebuilt from stored columns.
+If phase three lands first, those entries are written against positions already attributed and the
+question does not arise for them.
+
+**A fixture both items need now exists.** `EntryFamilyFixture` in `graphitron-model`'s test sources
+applies every graphitron directive the decode writes a relation for, across two documents, and
+`EntryFamilyCoverageTest` holds it to populating all 56 entry relations, to nine of them holding
+rows from two sources at once, and to its two lists partitioning the family so a new relation has to
+be classified. The two-source overlap is there for this item rather than incidental to it: a
+per-source delete can only be observed on a relation holding rows from two sources, so the gate
+holds the overlap and the next edit to the SDL cannot quietly remove it.
