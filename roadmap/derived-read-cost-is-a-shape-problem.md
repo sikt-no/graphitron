@@ -752,6 +752,26 @@ fetched separately, and three things do. The root slot, because a field in a `Qu
 slot has no parent query to be absorbed into. `@service`, because a Java call is not something SQL
 can absorb. And `@splitQuery`, which is the author saying so.
 
+Two of those are structural and one is authored, and that exhausts the list, because a fact about a
+field cannot be created by the emitter's reach. Today a list-cardinality child over a table-bound
+polymorphic target is delivered batched, and it is tempting to read that as a fourth cause. It is
+not. `ChildField.InterfaceField` is the inline per-parent delivery of exactly that target type at
+single cardinality, so the polymorphic branching itself inlines; what is missing at list cardinality
+is a shape for projecting many correlated branch rows, not a difference in where the rows come from.
+The classifier picks the batched leaf because it has nowhere else to put the field, and the day
+someone writes the inline list shape the field's facts do not change, only the delivery does. A
+producer row minted for it would have to be un-minted then, which is the test: **anything that would
+change when a missing shape lands is a status and not a fact, and the fact base does not record it.**
+The rule generalises past this case, and it is worth stating once here because the store has no other
+guard against an emitter limitation entering it as vocabulary.
+
+So inline against batched is a delivery, and delivery is the classifier's and the emitter's. Producer
+constrains it, a fetch origin having to be its own fetch, but does not determine it: the emitter may
+also split what the model calls absorbable, and that is a decision downstream of these relations
+rather than a fact inside them. The same cut disposes of the `@asConnection` rejection on an inline
+table field, which reads as though a connection needed the split. It is a rejection, and its own
+message says "is not supported".
+
 The three causes sit on two axes and they overlap: a root `@service` field is caused twice. So the
 cause is not a function of the coordinate and must not be a column on the producer row; what the row
 states is that the field is a fetch origin, and the derivation states why. Its population is a strict
