@@ -465,7 +465,24 @@ lets a rule about the well-formed schema join matches and never filter, makes th
 anti-join at the application grain, and leaves a schema with one unresolvable application still
 capturing everything else.
 
-7. Whatever of the materialization targets is still standing. Fifteen of the twenty-five `intent_`
+7. The macro arc's consumer, which is the first one this arc retires and the reason to reach for it
+   early rather than in list order. `MacroCapture` states the `@asConnection` expansion as rows and
+   `ConnectionPromoter` derives the same expansion again in the generator, 732 lines against 403, so
+   the naming, the field shapes, the nullability mirroring and the precedence against an authored
+   name are each decided twice. One value is pinned across the boundary, the default page size, and
+   the thirteen Relay description strings exist verbatim in both modules with nothing holding them
+   equal. Three capture gaps stand in the way, and each is a fact the store should hold anyway. A
+   structural connection carrier, a field whose return type is already Connection-shaped with no
+   directive on it, is promoted by the generator and has no row here, `graphitron_connection` being
+   the directive decode alone. `@asFacet` is a second macro, minting a facets type and a facet-value
+   type per carrier, and `graphitron_facet` is likewise only its decode. And the descriptions belong
+   on the minted row, which already carries the column. The slice closes those, then cuts
+   `ConnectionPromoter` along the seam it already has: deciding what to mint becomes a read, and
+   `rebuildAssembledForConnections` stays, building graphql-java objects out of rows rather than out
+   of a second derivation. The falsifier comes first, an agreement gate over a corpus that fails if
+   the two populations differ today, because claiming agreement without one is how the page size
+   came to be the only pinned value.
+8. Whatever of the materialization targets is still standing. Fifteen of the twenty-five `intent_`
    tables carry no primary key at all and are exactly those targets, so nothing refuses a duplicate
    row in them and the gate that checks a key against its grain is vacuous on every one. That is a
    real hole and it is deliberately last: the register is item 6's subject and most of these
@@ -484,8 +501,16 @@ only applications that follow it.
 
 `graphitron_field_chain_application` states the order as rows, which is worth doing on
 `graphitron_field_navigation`'s terms, a reader joining the answer rather than re-ranking by
-position. But it is placement, not capture, and with it the claim holds without exception: every
-relation this arc owes is a fact the gatherer already has in hand, written down at a named grain.
+position. But it is placement, not capture.
+
+The claim holds for items 1 through 6 and stops at item 7, and the exception is the interesting
+part. Placement is all the arc owes for as long as it only moves facts between relations; the moment
+it retires a consumer, that consumer turns out to know things the store never wrote down. A
+structural connection carrier and the `@asFacet` mint are both facts the generator has been deciding
+for itself, invisible from inside the store because nothing here ever needed them. That is the
+general shape rather than two oversights, and it is the argument for reaching item 7 early: every
+consumer this arc eventually retires will surface its own set, and the sooner one of them does the
+sooner the size of that class is known rather than assumed.
 
 The evidence for the ordering is in two audits:
 `roadmap/audits/2026-09-05-coordinate-facts-as-relations.md` names the grains and the four tiers at
