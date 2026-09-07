@@ -125,6 +125,12 @@ class DerivedReadCostTest {
      * classpath census, none of which is a registration's target, so the two figures below held
      * again.
      *
+     * <p>Raised to 119 by {@code intent_node_id_decode_landing_defect} and
+     * {@code intent_reference_for_application}, and this is the first arrival here that moved both
+     * figures below with it. Every previous one read outside the register: these two do not, the
+     * landing verdicts reading the whole decode family and the application resolution reading the
+     * type binding, so each enters the domain rather than merely the schema.
+     *
      * <p>Lowered to 117 by {@code intent_expanded_type} and {@code intent_expanded_field} becoming
      * the tables {@code graphitron_type} and {@code graphitron_field}. This is the first move in
      * this history that takes a view out of the domain by writing its rows down rather than by
@@ -133,7 +139,7 @@ class DerivedReadCostTest {
      * one. What their readers gained is not in this count at all, a table being seekable where a
      * union is re-evaluated per reader.
      */
-    private static final int READERS_IN_SCHEMA = 117;
+    private static final int READERS_IN_SCHEMA = 119;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -148,8 +154,13 @@ class DerivedReadCostTest {
      * view left, on the same terms as the seven: its only path to a registration ran through the
      * reduction the key columns used to be derived by, so reading them off a table takes it out of
      * the domain rather than making it cheaper inside one.
+     *
+     * <p>Fifty-seven to fifty-nine when the {@code @nodeId} landing verdicts and the
+     * {@code @referenceFor} application resolution arrived. Two views in and two cells' worth of
+     * reach each, which is the ordinary arrival rather than any of the three shapes above: nothing
+     * was registered, captured or retired, so this figure moves by exactly the views.
      */
-    private static final int READERS_WITH_CELLS = 57;
+    private static final int READERS_WITH_CELLS = 59;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -216,8 +227,16 @@ class DerivedReadCostTest {
      * measured, only that the readers of that reduction now read a table. The size difference from
      * the twenty eight above is the point worth keeping: what a capture is worth to this measure is
      * how widely the relation it replaces was read, and this one was read by six.
+     *
+     * <p>128 to 137 when the {@code @nodeId} landing verdicts and the {@code @referenceFor}
+     * application resolution arrived: the plain case, nine cells added and none displaced. Seven
+     * are the landing verdicts', which sit over the whole decode family and so reach every
+     * registration under it, and two are the application resolution's, the type binding and the
+     * table spelling. The split is the useful half: a verdict relation costs this domain roughly
+     * what the family it judges already costs it, where a resolution over two captured tables costs
+     * it almost nothing, and neither figure is a function of how much the relation itself does.
      */
-    private static final int CELLS = 128;
+    private static final int CELLS = 137;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -560,6 +579,15 @@ class DerivedReadCostTest {
         // child took up when the input-field path stopped being unwalkable.
         "intent_field_reference_step_hop|intent_node_id_decode_hop",
         "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
+        // The same floor a third time, reached because the @nodeId landing verdicts read the hop
+        // relation above. Six scans dearer registered, 4472 against 4466, and three times faster,
+        // 224 milliseconds against 709. What this row records is a reader inheriting its parent's
+        // charge rather than a new mechanism: the verdicts name intent_node_id_decode_hop once, to
+        // find the terminal hop, and that relation's own cell is pinned here for this same
+        // registration. Six scans against a saving of nearly half a second is also the clearest
+        // reading in the set of why the counter is not the clock, the two figures pointing opposite
+        // ways with nothing ambiguous about which one a consumer feels.
+        "intent_field_reference_step_hop|intent_node_id_decode_landing_defect",
         // The same floor again, reached because the write-payload family reads the input-field
         // one: twelve scans out of fifty-nine thousand on the refusal, thirty-six out of two
         // hundred thousand on the two above it; measured above. The refusal stood beside the
