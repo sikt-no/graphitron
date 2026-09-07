@@ -531,7 +531,7 @@ and a second registry duplicates the freshness model that R922 had just finished
 **Making any gatherer reconcile instead of delete-and-rewalk.** Out of scope, deliberately, and worth
 stating because the plan argues reconciliation is the better strategy. This item makes the choice
 available and changes nobody's answer: each of the three source-keyed gatherers keeps the
-delete-and-rewalk it performs today, expressed as one delete rather than eighteen. Moving a gatherer
+delete-and-rewalk it performs today, expressed as one delete rather than twenty-one. Moving a gatherer
 to reconciliation is a decision about that corpus, wants the measurement of its own walk beside it,
 and belongs with R857, which is the item that needs the knowledge reconciliation produces. Folding it
 in here would mix a data-loss fix with a per-corpus performance judgment.
@@ -704,3 +704,80 @@ clause belongs in the sweep.
 > against exactly that, is not resolved by a sweep and is recorded here as the strongest argument
 > against the rule. The plan still offers the rule as severable policy, and this note is the reason a
 > reviewer might sever it.
+
+### Round 2 (2026-09-07, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold. One blocking finding on question two, on the new phase three alone. Everything
+round 1 asked for is done and done well: finding 2's four figures are all corrected and each
+correction checks out (177 relations, the `graphitron_argmapping_candidate` self-cycle described
+accurately as harmless and outside the cascading set, fourteen deletes as three plus eleven, and
+twenty-one spelled as seven plus fourteen. One "eighteen" survived the sweep, in the
+alternatives section's reconciliation entry, and is corrected in this commit as a stale count). The non-blocking note is absorbed in both halves. The disposition chosen for finding 1 is the
+right one of the three, the refusals of the other two are correct on their merits, and making the
+structural gate check that a child column is `NOT NULL` as well as declared is the strongest thing to
+come out of round 1. Phases one, two and four are implementable as written.
+
+What is not established is phase three's premise. It reads "there is no legitimate NULL: everything
+in the merged registry came from a document, so everything in it can name one", and names two
+NULL-producing populations to remove. Neither is a NULL producer, and the two production populations
+that are do not come from a document at all, so the phase as written would send an implementer at
+code that is not the problem and leave the problem standing under phase four's new gate.
+
+**Finding 3 (question two: architecture fit). Phase three's account of what produces a NULL is wrong
+in both directions, and two of the real populations are unreachable by the mechanism it proposes.**
+
+*The parser path produces no NULL, so neither named population is one.* `SchemaLoader.parseSource`
+hands every document to a `MultiSourceReader` built with `.reader(reader, sourceName)`, so every
+definition parsed through `parsePerSource` carries a `SourceLocation` with a source name, the bundled
+directives included: `parseDirectives` parses under `SchemaLoader.DIRECTIVES_SOURCE_NAME`. The
+bundled file therefore needs a `store_source` row and a stamp decision, which the phase is right
+about, but it produces no NULL and removing it removes none. And no capture path in the tree builds a
+registry programmatically. `SdlFactCapture.capture` is reached only from `FactCapture.capture`, whose
+registry comes from `parsePerSource` in production (`GraphQLRewriteGenerator.loadAttributedRegistry`)
+and from `CapturedStore.registryOf` in tests, which writes the SDL to a real file and goes through
+`SchemaLoader.load`. The nameless `new SchemaParser().parse(sdl)` registries in the tree feed
+`LintEngine` and `DeclaredDirectives`, never capture. If the intended target is the `SchemaSource.Named`
+label arm, that is a different claim and a much larger one: `Named` is a live sealed arm handled at
+nine main-source sites across the plugin, `SchemaRecipe`, `StoredRecipe` (persisted as `KIND_NAMED`)
+and the generator, and it carries its label as `source_name`, so it too produces no NULL. Retiring it
+is a scope statement the phase does not make.
+
+*Two production populations do produce a NULL, and neither came from a document.* First,
+`SdlFactCapture.captureConventionRoots` writes `graphql_root_operation` rows with no `setPosition`
+call at all, for any schema that declares a `Query`, `Mutation` or `Subscription` type and no `schema`
+block, which is the ordinary shape. Such a row exists because of the *absence* of a declaration, so
+there is no document to attribute it to and the premise is false for it. The plan does name
+`graphql_root_operation`, but its primary disposition is "attribution from the walk's position", and
+here there is no position; its fallback, the re-aggregated set, is defined as "a function of more than
+one source", and a convention root is a function of none, so the taxonomy has no row for it as
+written.
+
+Second, and this one the phase cannot reach at all: `FederationLinkApplier.apply` runs on the registry
+before capture sees it, deliberately, and injects definitions from
+`federation-graphql-java-support`. That code's own comment states the consequence, "No source file
+means the existing entry was not parsed from any `.graphqls`; it was added by
+federation-graphql-java-support itself", and distinguishes a hand-written declaration that "carries a
+`SourceLocation` with a file path" from a "source-name-less existing definition". Those definitions
+are transcribed into `graphql_directive`, `graphql_directive_argument` and the directive-application
+relations, all of which carry a nullable `source_name`. Driving capture from the per-source parse
+does not help, because the injection happens after the parse inside a library graphitron does not
+control, and federation is a shipped feature rather than a shape that can be retired.
+
+*A synthetic source that no refresh names already exists.* `TagLinkSynthesiser` stamps what it injects
+with `SourceLocation(1, 1, SYNTHESISED_SOURCE_NAME)`, where that constant is
+`"<graphitron-synthesised:tag-link>"`. `SdlFactCapture.stampTarget`'s javadoc names it and the bundled
+directives as "the whole miss set" for sources with no file. Rows attributed to it are `NOT NULL` and
+would satisfy phase four's edge and the strengthened gate, while belonging to a source no refresh ever
+names, so they would never be deleted. That is exactly the property the plan rejects the sentinel
+disposition for, already in the tree at production, and the plan does not mention it. Whatever answer
+phase three reaches for the sentinel has to cover this name too, or phase four ships the failure mode
+the alternatives section just refused.
+
+What would satisfy the finding is a phase three written from the real population list rather than the
+inferred one: the parser path attributes everything already, so the work is not "recover the document"
+but "decide what these four non-document populations are". For each of convention roots, federation
+library injections, `<graphitron-synthesised:tag-link>` and the bundled directives, say whether it gets
+a `store_source` row of its own kind, or whether the relations carrying it move to the re-aggregated
+set, and where the counts land. The two questions the phase already settles are the right shape for
+this; there are four populations rather than two, and the schema-level ownership question is the least
+of them.
