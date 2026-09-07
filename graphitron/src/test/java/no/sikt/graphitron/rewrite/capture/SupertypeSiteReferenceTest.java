@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two relations in the {@code graphitron_} family hold a fact several kinds of site spell, and
  * both reached that shape by absorbing relations that carried nothing of their own.
- * {@code graphitron_argmapping_entry} absorbed eight, {@code graphitron_method_reference} one. Each
+ * {@code graphitron_argmapping_entry} absorbed eight, {@code graphitron_method_reference_entry} one. Each
  * absorbed relation had a foreign key into the directive that owned its rows, and no foreign key
  * can span the nine or eleven parents a discriminator column chooses between, so those edges are
  * not enforced by the schema any more. They are still true, because capture writes the shared row
@@ -111,73 +111,73 @@ class SupertypeSiteReferenceTest {
      */
     private static final Map<String, String> PAIR_OWNERS = new LinkedHashMap<>(Map.of(
         "ROUTINE",
-        "graphitron_routine d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_routine_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal",
         "SERVICE",
-        "graphitron_service d, graphql_element_field c WHERE " + AT_COORDINATE,
+        "graphitron_service_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
         "FIELD_CONDITION",
-        "graphitron_field_condition d, graphql_element_field c WHERE " + AT_COORDINATE,
+        "graphitron_field_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
         "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition d, graphql_element_field c WHERE " + AT_COORDINATE,
+        "graphitron_field_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE,
         "ARGUMENT_CONDITION",
-        "graphitron_argument_condition d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_condition_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name",
         "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_field_reference_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_reference_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position",
         "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_reference_for_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step d, graphql_element_field c WHERE " + AT_COORDINATE
+        "graphitron_argument_reference_for_step_entry d, graphql_element_field c WHERE " + AT_COORDINATE
             + " AND d.argument_name = c.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position"));
 
 
     /**
-     * The same, for {@code graphitron_method_reference}. {@code SOURCE_ROW} is absent by design and
+     * The same, for {@code graphitron_method_reference_entry}. {@code SOURCE_ROW} is absent by design and
      * not by oversight: its subtype is the one that collapsed, so there is no owning relation left
      * to point at and nothing for an orphan scan to check. That site's correctness is the
      * population assertion's alone.
      */
     private static final Map<String, String> METHOD_OWNERS = new LinkedHashMap<>(Map.of(
         "ENUM",
-        "graphitron_enum d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name",
+        "graphitron_enum_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name",
         "SERVICE",
-        "graphitron_service d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
+        "graphitron_service_entry d WHERE d.graph_name = s.graph_name AND d.type_name = s.type_name"
             + " AND d.field_name = s.field_name",
         "EXTERNAL_FIELD",
-        "graphitron_external_field d WHERE d.graph_name = s.graph_name"
+        "graphitron_external_field_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
         "FIELD_CONDITION",
-        "graphitron_field_condition d WHERE d.graph_name = s.graph_name"
+        "graphitron_field_condition_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
         "INPUT_FIELD_CONDITION",
-        "graphitron_field_condition d WHERE d.graph_name = s.graph_name"
+        "graphitron_field_condition_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name",
         "ARGUMENT_CONDITION",
-        "graphitron_argument_condition d WHERE d.graph_name = s.graph_name"
+        "graphitron_argument_condition_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
             + " AND d.argument_name = s.argument_name",
         "FIELD_REFERENCE_STEP",
-        "graphitron_field_reference_step d WHERE d.graph_name = s.graph_name"
+        "graphitron_field_reference_step_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_STEP",
-        "graphitron_argument_reference_step d WHERE d.graph_name = s.graph_name"
+        "graphitron_argument_reference_step_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
             + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position",
         "REFERENCE_FOR_STEP",
-        "graphitron_reference_for_step d WHERE d.graph_name = s.graph_name"
+        "graphitron_reference_for_step_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
             + " AND d.ordinal = s.ordinal AND d.position = s.step_position",
         "ARGUMENT_REFERENCE_FOR_STEP",
-        "graphitron_argument_reference_for_step d WHERE d.graph_name = s.graph_name"
+        "graphitron_argument_reference_for_step_entry d WHERE d.graph_name = s.graph_name"
             + " AND d.type_name = s.type_name AND d.field_name = s.field_name"
             + " AND d.argument_name = s.argument_name AND d.ordinal = s.ordinal"
             + " AND d.position = s.step_position"));
@@ -194,7 +194,7 @@ class SupertypeSiteReferenceTest {
     @DisplayName("every named method resolves to the directive application that named it")
     void everyMethodReferenceReachesItsSite(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertNoOrphans(store.dsl(), "graphitron_method_reference", METHOD_OWNERS);
+            assertNoOrphans(store.dsl(), "graphitron_method_reference_entry", METHOD_OWNERS);
         }
     }
 
@@ -211,7 +211,7 @@ class SupertypeSiteReferenceTest {
                 .as("argMapping pair sites this fixture reaches")
                 .contains("SERVICE", "FIELD_CONDITION", "INPUT_FIELD_CONDITION",
                     "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
-            assertThat(sites(store.dsl(), "graphitron_method_reference"))
+            assertThat(sites(store.dsl(), "graphitron_method_reference_entry"))
                 .as("method reference sites this fixture reaches")
                 .contains("ENUM", "SERVICE", "EXTERNAL_FIELD", "SOURCE_ROW", "FIELD_CONDITION",
                     "INPUT_FIELD_CONDITION", "ARGUMENT_CONDITION", "FIELD_REFERENCE_STEP");
@@ -235,7 +235,7 @@ class SupertypeSiteReferenceTest {
     void theUseSiteAgreesWithItsColumns(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             for (String relation : java.util.List.of(
-                    "graphitron_argmapping_entry", "graphitron_method_reference")) {
+                    "graphitron_argmapping_entry", "graphitron_method_reference_entry")) {
                 // The entry keeps only the coordinate, so its use-site key is checked against
                 // that spelling instead of against three columns it no longer repeats. The two
                 // grammars differ by one character, the specification writing an argument with a

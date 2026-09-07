@@ -29,8 +29,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_GATHERER;
@@ -553,9 +553,9 @@ class FactSchemaGateTest {
     void theDecodeDoesNotReplaceTheTranscription(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             var decoded = store.dsl()
-                .select(GRAPHITRON_TABLE.TYPE_NAME)
-                .from(GRAPHITRON_TABLE)
-                .fetch(GRAPHITRON_TABLE.TYPE_NAME);
+                .select(GRAPHITRON_TABLE_ENTRY.TYPE_NAME)
+                .from(GRAPHITRON_TABLE_ENTRY)
+                .fetch(GRAPHITRON_TABLE_ENTRY.TYPE_NAME);
             assertThat(decoded).as("the fixture applies @table, so the gate has something to pin")
                 .isNotEmpty();
             var verbatim = store.dsl()
@@ -572,8 +572,8 @@ class FactSchemaGateTest {
     void federationKeyProjectionsAgree(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             var decoded = store.dsl()
-                .select(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY.ORDINAL)
-                .from(GRAPHITRON_FEDERATION_KEY)
+                .select(GRAPHITRON_FEDERATION_KEY_ENTRY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY_ENTRY.ORDINAL)
+                .from(GRAPHITRON_FEDERATION_KEY_ENTRY)
                 .fetch();
             assertThat(decoded).as("the fixture applies @key twice, so the gate has something to pin")
                 .hasSize(2);

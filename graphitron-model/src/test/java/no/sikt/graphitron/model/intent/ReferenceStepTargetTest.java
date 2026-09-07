@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
@@ -160,8 +160,8 @@ class ReferenceStepTargetTest {
             seedTableBinding(dsl, GRAPH, "Film", "film");
             seedKeyPath(dsl, "Film", "actors", "no_such_fkey", "film_actor_actor_id_fkey");
 
-            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP,
-                GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(GRAPH)))
+            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,
+                GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(GRAPH)))
                 .as("both elements were authored; only their resolution declines")
                 .isEqualTo(2);
             assertThat(chain(dsl, GRAPH)).isEmpty();
@@ -339,8 +339,8 @@ class ReferenceStepTargetTest {
                 .fetch(0, String.class);
             assertThat(resolved).hasSize(1);
             assertThat(resolved.getFirst()).isEqualToIgnoringCase("film_translation");
-            assertThat(dsl.fetchCount(GRAPHITRON_TABLE, GRAPHITRON_TABLE.GRAPH_NAME.eq(GRAPH)
-                .and(GRAPHITRON_TABLE.TABLE_REF.eq("film_translation"))))
+            assertThat(dsl.fetchCount(GRAPHITRON_TABLE_ENTRY, GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(GRAPH)
+                .and(GRAPHITRON_TABLE_ENTRY.TABLE_REF.eq("film_translation"))))
                 .as("no @table wrote this spelling; only the path element did")
                 .isZero();
         });

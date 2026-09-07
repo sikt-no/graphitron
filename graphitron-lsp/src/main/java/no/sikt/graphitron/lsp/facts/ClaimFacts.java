@@ -11,12 +11,12 @@ import org.jooq.TableField;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
@@ -165,38 +165,38 @@ public final class ClaimFacts {
                     INTENT_COLUMN_MATCH_CLAIM.FIELD_NAME.eq(fieldName))))
                 .convertFrom(rows -> rows.map(Records.mapping(ColumnMatch::new)))
                 .as("claim_column_match");
-            service = memberArm(GRAPHITRON_SERVICE.CLASS_NAME, GRAPHITRON_SERVICE.METHOD,
-                coordinate(GRAPHITRON_SERVICE.GRAPH_NAME.eq(graph),
-                    GRAPHITRON_SERVICE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName))).as("claim_service");
-            externalField = memberArm(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME,
-                GRAPHITRON_EXTERNAL_FIELD.METHOD,
-                coordinate(GRAPHITRON_EXTERNAL_FIELD.GRAPH_NAME.eq(graph),
-                    GRAPHITRON_EXTERNAL_FIELD.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_EXTERNAL_FIELD.FIELD_NAME.eq(fieldName))).as("claim_external_field");
-            nodeTypes = multiset(select(GRAPHITRON_FIELD_NODE_ID.NODE_TYPE_REF)
-                .from(GRAPHITRON_FIELD_NODE_ID)
-                .where(coordinate(GRAPHITRON_FIELD_NODE_ID.GRAPH_NAME.eq(graph),
-                    GRAPHITRON_FIELD_NODE_ID.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_FIELD_NODE_ID.FIELD_NAME.eq(fieldName))))
+            service = memberArm(GRAPHITRON_SERVICE_ENTRY.CLASS_NAME, GRAPHITRON_SERVICE_ENTRY.METHOD,
+                coordinate(GRAPHITRON_SERVICE_ENTRY.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_SERVICE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_SERVICE_ENTRY.FIELD_NAME.eq(fieldName))).as("claim_service");
+            externalField = memberArm(GRAPHITRON_EXTERNAL_FIELD_ENTRY.CLASS_NAME,
+                GRAPHITRON_EXTERNAL_FIELD_ENTRY.METHOD,
+                coordinate(GRAPHITRON_EXTERNAL_FIELD_ENTRY.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_EXTERNAL_FIELD_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_EXTERNAL_FIELD_ENTRY.FIELD_NAME.eq(fieldName))).as("claim_external_field");
+            nodeTypes = multiset(select(GRAPHITRON_FIELD_NODE_ID_ENTRY.NODE_TYPE_REF)
+                .from(GRAPHITRON_FIELD_NODE_ID_ENTRY)
+                .where(coordinate(GRAPHITRON_FIELD_NODE_ID_ENTRY.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_FIELD_NODE_ID_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_NODE_ID_ENTRY.FIELD_NAME.eq(fieldName))))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("claim_node_types");
             // One row per application, in application order: the directive is repeatable and each
             // row is a routine of its own, so a chained field reads as the chain it is.
-            routines = multiset(select(GRAPHITRON_ROUTINE.ROUTINE_REF)
-                .from(GRAPHITRON_ROUTINE)
-                .where(coordinate(GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graph),
-                    GRAPHITRON_ROUTINE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_ROUTINE.FIELD_NAME.eq(fieldName)))
-                .orderBy(GRAPHITRON_ROUTINE.ORDINAL))
+            routines = multiset(select(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF)
+                .from(GRAPHITRON_ROUTINE_ENTRY)
+                .where(coordinate(GRAPHITRON_ROUTINE_ENTRY.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_ROUTINE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ROUTINE_ENTRY.FIELD_NAME.eq(fieldName)))
+                .orderBy(GRAPHITRON_ROUTINE_ENTRY.ORDINAL))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("claim_routines");
-            mutation = multiset(select(GRAPHITRON_MUTATION.OPERATION, GRAPHITRON_MUTATION.TABLE_REF,
-                GRAPHITRON_MUTATION.MULTI_ROW)
-                .from(GRAPHITRON_MUTATION)
-                .where(coordinate(GRAPHITRON_MUTATION.GRAPH_NAME.eq(graph),
-                    GRAPHITRON_MUTATION.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_MUTATION.FIELD_NAME.eq(fieldName))))
+            mutation = multiset(select(GRAPHITRON_MUTATION_ENTRY.OPERATION, GRAPHITRON_MUTATION_ENTRY.TABLE_REF,
+                GRAPHITRON_MUTATION_ENTRY.MULTI_ROW)
+                .from(GRAPHITRON_MUTATION_ENTRY)
+                .where(coordinate(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_MUTATION_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_MUTATION_ENTRY.FIELD_NAME.eq(fieldName))))
                 .convertFrom(rows -> rows.map(Records.mapping(Mutation::new)))
                 .as("claim_mutation");
             // Only elements whose destination is certain: a path the chain could not walk
@@ -297,12 +297,12 @@ public final class ClaimFacts {
                 .orderBy(INTENT_BOUND_TABLE.TABLE_SCHEMA, INTENT_BOUND_TABLE.TABLE_NAME))
                 .convertFrom(rows -> rows.map(Record1::value1))
                 .as("type_claim_tables");
-            handlers = multiset(select(GRAPHITRON_ERROR_HANDLER.HANDLER,
-                GRAPHITRON_ERROR_HANDLER.CLASS_NAME)
-                .from(GRAPHITRON_ERROR_HANDLER)
-                .where(GRAPHITRON_ERROR_HANDLER.GRAPH_NAME.eq(graph))
-                .and(GRAPHITRON_ERROR_HANDLER.TYPE_NAME.eq(typeName))
-                .orderBy(GRAPHITRON_ERROR_HANDLER.POSITION))
+            handlers = multiset(select(GRAPHITRON_ERROR_HANDLER_ENTRY.HANDLER,
+                GRAPHITRON_ERROR_HANDLER_ENTRY.CLASS_NAME)
+                .from(GRAPHITRON_ERROR_HANDLER_ENTRY)
+                .where(GRAPHITRON_ERROR_HANDLER_ENTRY.GRAPH_NAME.eq(graph))
+                .and(GRAPHITRON_ERROR_HANDLER_ENTRY.TYPE_NAME.eq(typeName))
+                .orderBy(GRAPHITRON_ERROR_HANDLER_ENTRY.POSITION))
                 .convertFrom(rows -> rows.map(Records.mapping(Handler::new)))
                 .as("type_claim_handlers");
             grounded = multiset(selectDistinct(INTENT_TYPE_BACKING_SEED.CLASS_NAME)

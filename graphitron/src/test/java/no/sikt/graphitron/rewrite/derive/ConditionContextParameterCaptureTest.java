@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_CONTEXT_PARAMETER;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -60,8 +60,8 @@ class ConditionContextParameterCaptureTest {
     @DisplayName("the context key reaches the one parameter neither the table nor a slot claims")
     void theContextKeyReachesItsParameterOverARealCapture(@TempDir Path tmp) {
         withCatalogStore(tmp, dsl -> {
-            assertThat(dsl.fetchExists(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG,
-                    GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.NAME.eq("title")))
+            assertThat(dsl.fetchExists(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
+                    GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.NAME.eq("title")))
                 .as("capture writes the directive's context key, which is the reading the relation"
                     + " starts from")
                 .isTrue();

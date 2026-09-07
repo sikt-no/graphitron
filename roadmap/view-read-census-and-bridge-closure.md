@@ -70,7 +70,7 @@ in any join or filter predicate) and found eleven further views, none of them a 
 `LIKE`s are population filters, `intent_authored_field_claim` builds and tests a path string for
 cycle detection inside one vocabulary, and the `COALESCE`s choose which authored value to look
 up. One of the eleven already meets this item's remit as worded above: `intent_bound_table`
-applies `COALESCE` to a `graphitron_table` column and compares it against an
+applies `COALESCE` to a `graphitron_table_entry` column and compares it against an
 `intent_spelled_table` column, a function over columns tracing to two families' relations,
 outside a bridge-registered view. Its disposition is easy, since it reads the flagship's rule
 rather than owning one, but it is the shape that says the predicate boundary needs deciding

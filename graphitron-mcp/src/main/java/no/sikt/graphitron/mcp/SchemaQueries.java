@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import static java.util.Comparator.comparing;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -915,12 +915,12 @@ final class SchemaQueries {
                 arity(JVM_METHOD.SOURCE_NAME, JVM_METHOD.CLASS_NAME, JVM_METHOD.METHOD_NAME,
                     JVM_METHOD.DESCRIPTOR),
                 inline(CONDITION), conditionCandidates(store))
-                .from(GRAPHITRON_FIELD_CONDITION)
+                .from(GRAPHITRON_FIELD_CONDITION_ENTRY)
                 .join(JVM_METHOD)
-                .on(JVM_METHOD.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION.CLASS_NAME)
-                    .and(JVM_METHOD.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION.METHOD)))
-                .where(ofField(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME,
-                    GRAPHITRON_FIELD_CONDITION.TYPE_NAME, GRAPHITRON_FIELD_CONDITION.FIELD_NAME)
+                .on(JVM_METHOD.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
+                    .and(JVM_METHOD.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD)))
+                .where(ofField(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME,
+                    GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME)
                     .and(store.reads(JVM_METHOD.SOURCE_NAME))))
             .convertFrom(r -> r.map(Records.mapping(MethodBinding::new)));
     }
@@ -937,8 +937,8 @@ final class SchemaQueries {
         var match = JVM_METHOD.as("condition_match");
         return field(selectCount()
             .from(match)
-            .where(match.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION.CLASS_NAME)
-                .and(match.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION.METHOD))
+            .where(match.CLASS_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME)
+                .and(match.METHOD_NAME.eq(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD))
                 .and(store.reads(match.SOURCE_NAME))));
     }
 

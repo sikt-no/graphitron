@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -40,7 +40,7 @@ public final class TableTypes {
 
     /** Clears and re-derives the graph's settled bindings; see the class javadoc. */
     public static void derive(DSLContext dsl, String graphName) {
-        var t = GRAPHITRON_TABLE;
+        var t = GRAPHITRON_TABLE_ENTRY;
         var m = STORE_GRAPH_SOURCE;
         var st = SQL_TABLE;
         // Cleared first so the call is idempotent: capture makes it once per graph, and a caller

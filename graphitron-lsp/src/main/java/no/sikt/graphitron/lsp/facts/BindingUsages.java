@@ -11,14 +11,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 
@@ -57,10 +57,10 @@ public final class BindingUsages {
      * position: the five field- and type-level directives that name one directly, the two condition
      * families, and the three reference-step families through their parent reference row.
      *
-     * <p>Two carriers are deliberately absent. {@code graphitron_record}'s class name is the
+     * <p>Two carriers are deliberately absent. {@code graphitron_record_entry}'s class name is the
      * deprecated {@code @record(className:)}, which binds no live class, so listing it as a use
      * would show an author a site the generator ignores; the definition surface carves the same
-     * directive out for the same reason. {@code graphitron_error_handler} names a class and records
+     * directive out for the same reason. {@code graphitron_error_handler_entry} names a class and records
      * no position for it, so there is nowhere to send an editor.
      */
     public static List<Location> ofClass(StoreHandle store, String fqn) {
@@ -157,7 +157,7 @@ public final class BindingUsages {
      * Every site that names a class, as one scan. It used to be the nine class-naming relations
      * unioned by hand, three of the arms joining back to the owning application only to reach its
      * source position; the store now writes that fact once, positioned, so this is a scan of
-     * {@code graphitron_method_reference} with the class predicate on it.
+     * {@code graphitron_method_reference_entry} with the class predicate on it.
      *
      * <p>The population widened slightly in the move and in the direction of correctness. The
      * hand-written union had nine arms against eleven sites, and the two it omitted were the
@@ -170,7 +170,7 @@ public final class BindingUsages {
     private static Result<Record3<String, Integer, Integer>> classSites(
         StoreHandle store, String fqn, String method
     ) {
-        var m = GRAPHITRON_METHOD_REFERENCE;
+        var m = GRAPHITRON_METHOD_REFERENCE_ENTRY;
         return store.dsl()
             .select(m.SOURCE_NAME, m.SOURCE_LINE, m.SOURCE_COLUMN)
             .from(m)
@@ -193,12 +193,12 @@ public final class BindingUsages {
         StoreHandle store, CatalogTable table
     ) {
         return store.dsl()
-            .select(GRAPHITRON_TABLE.SOURCE_NAME, GRAPHITRON_TABLE.SOURCE_LINE,
-                GRAPHITRON_TABLE.SOURCE_COLUMN)
+            .select(GRAPHITRON_TABLE_ENTRY.SOURCE_NAME, GRAPHITRON_TABLE_ENTRY.SOURCE_LINE,
+                GRAPHITRON_TABLE_ENTRY.SOURCE_COLUMN)
             .from(INTENT_BOUND_TABLE)
-            .join(GRAPHITRON_TABLE)
-            .on(GRAPHITRON_TABLE.GRAPH_NAME.eq(INTENT_BOUND_TABLE.GRAPH_NAME))
-            .and(GRAPHITRON_TABLE.TYPE_NAME.eq(INTENT_BOUND_TABLE.TYPE_NAME))
+            .join(GRAPHITRON_TABLE_ENTRY)
+            .on(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(INTENT_BOUND_TABLE.GRAPH_NAME))
+            .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(INTENT_BOUND_TABLE.TYPE_NAME))
             .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
             .and(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME.eq(table.sourceName()))
             .and(INTENT_BOUND_TABLE.TABLE_SCHEMA.eq(table.schema()))
@@ -216,57 +216,57 @@ public final class BindingUsages {
     ) {
         String graph = store.graphName();
         return store.dsl()
-            .select(GRAPHITRON_FIELD_REFERENCE.SOURCE_NAME, GRAPHITRON_FIELD_REFERENCE.SOURCE_LINE,
-                GRAPHITRON_FIELD_REFERENCE.SOURCE_COLUMN)
-            .from(GRAPHITRON_FIELD_REFERENCE_STEP)
-            .join(GRAPHITRON_FIELD_REFERENCE)
-            .on(GRAPHITRON_FIELD_REFERENCE.GRAPH_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE.TYPE_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE.FIELD_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME))
-            .and(GRAPHITRON_FIELD_REFERENCE.ORDINAL.eq(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL))
-            .where(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(graph))
+            .select(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_NAME, GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE,
+                GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_COLUMN)
+            .from(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY)
+            .join(GRAPHITRON_FIELD_REFERENCE_ENTRY)
+            .on(GRAPHITRON_FIELD_REFERENCE_ENTRY.GRAPH_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME))
+            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.TYPE_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TYPE_NAME))
+            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.FIELD_NAME.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.FIELD_NAME))
+            .and(GRAPHITRON_FIELD_REFERENCE_ENTRY.ORDINAL.eq(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.ORDINAL))
+            .where(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graph))
             .and(spelled.isKey()
-                ? hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART_UPPER,
-                    GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART_UPPER)
-                : hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART_UPPER,
-                    GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART_UPPER))
+                ? hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
+                : hopNames(spelled, GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER))
             .unionAll(store.dsl()
-                .select(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME,
-                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
-                .join(GRAPHITRON_ARGUMENT_REFERENCE)
-                .on(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME))
-                .and(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL
-                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL))
-                .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME.eq(graph))
+                .select(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_NAME,
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY)
+                .join(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY)
+                .on(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.GRAPH_NAME
+                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME))
+                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.TYPE_NAME
+                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME))
+                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.FIELD_NAME
+                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME))
+                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ARGUMENT_NAME
+                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME))
+                .and(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ORDINAL
+                    .eq(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL))
+                .where(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graph))
                 .and(spelled.isKey()
-                    ? hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAME_PART_UPPER,
-                        GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAMESPACE_PART_UPPER)
-                    : hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAME_PART_UPPER,
-                        GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART_UPPER)))
+                    ? hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
+                        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
+                    : hopNames(spelled, GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
+                        GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER)))
             .unionAll(store.dsl()
-                .select(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, GRAPHITRON_REFERENCE_FOR.SOURCE_LINE,
-                    GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN)
-                .from(GRAPHITRON_REFERENCE_FOR_STEP)
-                .join(GRAPHITRON_REFERENCE_FOR)
-                .on(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.TYPE_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.FIELD_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME))
-                .and(GRAPHITRON_REFERENCE_FOR.ORDINAL.eq(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL))
-                .where(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME.eq(graph))
+                .select(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_NAME, GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY)
+                .join(GRAPHITRON_REFERENCE_FOR_ENTRY)
+                .on(GRAPHITRON_REFERENCE_FOR_ENTRY.GRAPH_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME))
+                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.TYPE_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TYPE_NAME))
+                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.FIELD_NAME.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.FIELD_NAME))
+                .and(GRAPHITRON_REFERENCE_FOR_ENTRY.ORDINAL.eq(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.ORDINAL))
+                .where(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME.eq(graph))
                 .and(spelled.isKey()
-                    ? hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP.KEY_REF_NAME_PART_UPPER,
-                        GRAPHITRON_REFERENCE_FOR_STEP.KEY_REF_NAMESPACE_PART_UPPER)
-                    : hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP.TABLE_REF_NAME_PART_UPPER,
-                        GRAPHITRON_REFERENCE_FOR_STEP.TABLE_REF_NAMESPACE_PART_UPPER)))
+                    ? hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.KEY_REF_NAME_PART_UPPER,
+                        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.KEY_REF_NAMESPACE_PART_UPPER)
+                    : hopNames(spelled, GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TABLE_REF_NAME_PART_UPPER,
+                        GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TABLE_REF_NAMESPACE_PART_UPPER)))
             .fetch();
     }
 

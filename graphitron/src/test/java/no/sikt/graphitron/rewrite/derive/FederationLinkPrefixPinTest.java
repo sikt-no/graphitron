@@ -31,7 +31,7 @@ class FederationLinkPrefixPinTest {
                     """)
                 .fetchSingle(0, String.class);
             assertThat(definition)
-                .as("the view decides the federation opt-in by a prefix over graphitron_link.url")
+                .as("the view decides the federation opt-in by a prefix over graphitron_link_entry.url")
                 .contains(FederationSpec.SPEC_PREFIX);
         }
     }

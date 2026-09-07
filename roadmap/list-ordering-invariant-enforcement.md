@@ -190,13 +190,13 @@ closed it.
 
 At the fact grain there is no carve-out to be outside of, because there is no capability interface.
 Every ingredient is already captured: `graphql_field.is_list` for list-shapedness,
-`graphitron_default_order` and `graphitron_default_order_field` and `graphitron_order_by` for the
-authored ordering, `intent_bound_table` joined to `sql_primary_key` for the fallback,
-`intent_field_chain_terminus` for the routine terminus that has no primary key to fall back on, and
-`intent_mutation_routine_seat` for the write shapes, whose population is every mutation-root field
-carrying `@routine` and whose `verdict` column already sorts its values into the ones an author fixes
-and the ones the generator owes an emitter. The polymorphic root is an ordinary row of every one of
-those relations.
+`graphitron_default_order_entry` and `graphitron_default_order_field_entry` and
+`graphitron_order_by_entry` for the authored ordering, `intent_bound_table` joined to
+`sql_primary_key` for the fallback, `intent_field_chain_terminus` for the routine terminus that has
+no primary key to fall back on, and `intent_mutation_routine_seat` for the write shapes, whose
+population is every mutation-root field carrying `@routine` and whose `verdict` column already sorts
+its values into the ones an author fixes and the ones the generator owes an emitter. The polymorphic
+root is an ordinary row of every one of those relations.
 
 ## Absence is not the complement's claim
 
@@ -308,9 +308,9 @@ write is admitted today and is one of the two things this arm catches.
 
 The availability side is three relations, all captured or one join away:
 
-* `graphitron_default_order` at the coordinate, with `graphitron_default_order_field` for the entries
+* `graphitron_default_order_entry` at the coordinate, with `graphitron_default_order_field_entry` for the entries
   and the directive's own `source_name` / `source_line` / `source_column` for the location.
-* `graphitron_order_by` on any argument of the coordinate, with the argument's own position.
+* `graphitron_order_by_entry` on any argument of the coordinate, with the argument's own position.
 * `intent_bound_table` joined to `sql_primary_key` for the fallback
   `OrderByResolver.resolveDefaultOrderSpec` supplies where nothing is declared. This arm is what
   makes the rule availability-keyed rather than declaration-keyed, and it is inert on the multitable
@@ -518,8 +518,8 @@ membership; whether an available ordering is then honoured is phase 1's question
 absence is not the complement's claim (see the section of that name above):
 
 * `intent_field_ordering_rule (graph_name, type_name, field_name, rule)`, one literal per arm, arms
-  unmasked against each other: `DEFAULT_ORDER` where the coordinate carries `graphitron_default_order`,
-  `ORDER_BY_ARGUMENT` where an argument carries `graphitron_order_by`, `PRIMARY_KEY_FALLBACK` where the
+  unmasked against each other: `DEFAULT_ORDER` where the coordinate carries `graphitron_default_order_entry`,
+  `ORDER_BY_ARGUMENT` where an argument carries `graphitron_order_by_entry`, `PRIMARY_KEY_FALLBACK` where the
   read's target table has a `sql_primary_key`, `PARTICIPANT_KEY` where the read fans out per
   participant and the synthetic key orders it, `INPUT_SCATTER` where the visible order is the input
   order (the keyed shapes phase 2 exempts, stated here as a positive rule rather than an absence).

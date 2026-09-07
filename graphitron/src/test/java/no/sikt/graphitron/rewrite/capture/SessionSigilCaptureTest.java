@@ -8,10 +8,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_CANDIDATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * sigil relation as a decoded fact, the residual keeps its full pair set, and nothing
  * quarantines. The complement pins the boundary: columnMapping admits no sigil, so a
  * {@code $}-prefixed value there keeps its ordinary parse quarantine
- * ({@code graphitron_undecoded_argument}) rather than being quietly lifted.
+ * ({@code graphitron_undecoded_argument_entry}) rather than being quietly lifted.
  */
 @UnitTier
 class SessionSigilCaptureTest {
@@ -79,7 +79,7 @@ class SessionSigilCaptureTest {
                 .isNull();
             assertThat(candidates.get(0).getDepth()).isZero();
 
-            assertThat(store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT).fetch())
+            assertThat(store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY).fetch())
                 .as("a recognized sigil is a decoded fact, never malformed overflow")
                 .isEmpty();
         }
@@ -89,10 +89,10 @@ class SessionSigilCaptureTest {
     @DisplayName("a $ in columnMapping keeps its parse quarantine; no sigil is admitted there")
     void dollarInColumnMapping_quarantinesAsUndecoded(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, ROUTINE_WITH_DOLLAR_COLUMN)) {
-            assertThat(store.dsl().selectFrom(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR).fetch())
+            assertThat(store.dsl().selectFrom(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY).fetch())
                 .as("the malformed mapping contributes no pair rows")
                 .isEmpty();
-            var undecoded = store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT).fetch();
+            var undecoded = store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY).fetch();
             assertThat(undecoded)
                 .as("the raw value quarantines with its argument name")
                 .anySatisfy(row -> {

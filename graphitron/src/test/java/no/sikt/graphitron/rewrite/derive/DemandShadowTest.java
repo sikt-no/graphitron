@@ -18,7 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -303,12 +303,12 @@ class DemandShadowTest {
      */
     private static Set<String> pinnedExcessParents(DSLContext dsl, String graphName) {
         var parents = new LinkedHashSet<String>(dsl.select(GRAPHQL_FIELD.NAMED_TYPE)
-            .from(GRAPHITRON_MUTATION)
+            .from(GRAPHITRON_MUTATION_ENTRY)
             .join(GRAPHQL_FIELD)
-            .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_MUTATION.GRAPH_NAME)
-                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_MUTATION.TYPE_NAME))
-                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_MUTATION.FIELD_NAME)))
-            .where(GRAPHITRON_MUTATION.GRAPH_NAME.eq(graphName))
+            .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME)
+                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_MUTATION_ENTRY.TYPE_NAME))
+                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME)))
+            .where(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME.eq(graphName))
             .fetch(org.jooq.Record1::value1));
         parents.addAll(dsl.select(GRAPHQL_ROOT_OPERATION.TYPE_NAME)
             .from(GRAPHQL_ROOT_OPERATION)

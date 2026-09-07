@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_DESTINATION;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -464,10 +464,10 @@ class MutationWriteDestinationTest {
         withCatalog(dsl -> {
             deleteSurface(dsl, "FilmDeleteInput");
             payloadField(dsl, "deleteFilm", "FilmDeleteInput", "title", "String", 0);
-            dsl.update(GRAPHITRON_MUTATION)
-                .set(GRAPHITRON_MUTATION.MULTI_ROW, true)
-                .where(GRAPHITRON_MUTATION.GRAPH_NAME.eq(GRAPH))
-                .and(GRAPHITRON_MUTATION.FIELD_NAME.eq("deleteFilm"))
+            dsl.update(GRAPHITRON_MUTATION_ENTRY)
+                .set(GRAPHITRON_MUTATION_ENTRY.MULTI_ROW, true)
+                .where(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME.eq("deleteFilm"))
                 .execute();
 
             assertThat(destinations(dsl)).containsExactly(

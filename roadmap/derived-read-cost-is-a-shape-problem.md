@@ -358,15 +358,25 @@ may reach the catalog legitimately. The first becomes false when the writer move
 old thing. The second stayed true of the 15 and became false of the 56, and was restated with the
 widening rather than with the move, because the widening is what made it false.
 
-**The name says which half.** Every as-written relation carries the `_entry` suffix; three of the 56
-do today. The pattern's central operation is the anti-join between the two halves, and a reader who
-cannot tell from a relation's name which half it is cannot find that join, which is the whole
-justification and it does not depend on any gate. What the suffix buys on top of that is a scope a
-test can state: the two gates slice one touches have to name the entry half, and enumerating 56
-relations inside a test is the list that goes stale the first time somebody writes the 58th. The
-cost is 53 renames, taken one relation at a time as it moves rather than as a rename commit of its
-own. Once the declaration pass reaches the family, the declared owner says the same thing in a
-second place, and the two disagreeing is a check neither could be alone.
+**The name says which half, and it does now.** Every as-written relation carries the `_entry`
+suffix. Three of the 56 did; the other 53 were renamed on 2026-09-07, as one transform over exact
+identifiers rather than one relation at a time, the writer having moved as one thing rather than
+relation by relation as the plan first expected. The pattern's central operation is the anti-join
+between the two halves, and a reader who cannot tell from a relation's name which half it is cannot
+find that join, which is the whole justification and it does not depend on any gate.
+
+**What the suffix bought on top of that is that two gates stopped carrying a list.** Enumerating 56
+relations inside a test is the list that goes stale the first time somebody writes the 58th, and it
+did not survive first contact: the fixture's two lists were written on 2026-09-07 and were edited
+again the same day. Both halves are read off the generated model by name now. That retires the case
+holding the lists to partitioning the family, which is true by construction once the name decides
+it, and it moves what that case was really protecting to `EntryNamingGuardTest`: a scan of the
+decode's own source holding it to naming only suffixed relations, since a relation the decode writes
+is a relation whose rows are a function of one document and the name has to say so. Verified failing
+by naming an anchor inside the decode. What no source scan can say is the other direction, a
+suffixed relation some stage writes, that being a read and a write it cannot tell apart; the
+declaration pass says it properly by giving every relation a declared owner, and the two disagreeing
+is a check neither could be alone.
 
 **Entry, match, and the anti-join between them.** The pattern has a third member the sections below
 name only for the argMapping family, where `graphitron_argmapping_entry` is what was written,
@@ -486,9 +496,9 @@ attempt owes before it can claim to be done.
 
 1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode used to write,
    from the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages
-   write. The writer move landed 2026-09-07 behind the fixture and the widened gate; the `_entry`
-   suffix is what is left of the slice, 53 renames taken one relation at a time. Specified in full
-   below, because what it moved was measured before the decision was taken.
+   write. The writer move and the `_entry` suffix both landed 2026-09-07, behind the fixture and the
+   widened gate, which closes the slice. Specified in full below, because what it moved was measured
+   before the decision was taken.
 2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
    type is one of the specification's six kinds, and boundness, participants and fields are facts
    each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
@@ -507,8 +517,8 @@ attempt owes before it can claim to be done.
    both modules with nothing holding them equal. Three capture gaps stand in the way, and each is a
    fact the store should hold anyway. A structural connection carrier, a field whose return type is
    already Connection-shaped with no directive on it, is promoted by the generator and has no row
-   here, `graphitron_connection` being the directive decode alone. `@asFacet` is a second macro,
-   minting a facets type and a facet-value type per carrier, and `graphitron_facet` is likewise only
+   here, `graphitron_connection_entry` being the directive decode alone. `@asFacet` is a second macro,
+   minting a facets type and a facet-value type per carrier, and `graphitron_facet_entry` is likewise only
    its decode. And the descriptions belong on the minted row, which already carries the column. The
    slice closes those, then cuts `ConnectionPromoter` along the seam it already has: deciding what
    to mint becomes a read, and `rebuildAssembledForConnections` stays, building graphql-java objects
@@ -527,8 +537,8 @@ attempt owes before it can claim to be done.
    emitter migration, because `intent_field_chain_node.seq` names generated SQL aliases through
    `ReservedAliases.chainHop`, so the complete chain arrives with its consumers rather than as a
    change underneath them.
-5. **The reference decode on the field sites**: `graphitron_field_reference_step` and
-   `graphitron_reference_for_step`, which differ only in the key saying which directive owns the
+5. **The reference decode on the field sites**: `graphitron_field_reference_step_entry` and
+   `graphitron_reference_for_step_entry`, which differ only in the key saying which directive owns the
    row. The two argument-site relations beside them are item 6's, not this one's.
 6. **The argument and input-field sides**, deliberately last of the decodes. Their `@reference`
    support differs from the output-field side, a routine segment has no meaning there, and the
@@ -628,7 +638,7 @@ the widening is a check recovered rather than a tidiness gain. It landed ahead o
 than with it, which is the point: the scope is a property of the rows and not of their writer, so
 the check ran first against the arm the move was about to retire and then, unchanged, against the
 one that replaced it. Verified by making one decode catalog-dependent and watching the gate go red
-naming `graphitron_pivot`, on the entry corpus alone and not on the transcription's own fixture,
+naming `graphitron_pivot_entry`, on the entry corpus alone and not on the transcription's own fixture,
 which is the widening being what caught it. The second is `MetaDeclarationGateTest`'s corpus check,
 which exempts every graphitron-owned relation today because the graphitron gatherer has no
 `meta_gatherer_corpus` row and crossing is its job. An sdl-owned entry is not exempt: its grain has to
@@ -637,7 +647,7 @@ been asked to. That one does not fire on the move, because the gate binds per de
 of the 56 is declared. The move makes them declarable and the declaration pass collects it.
 
 **One entry is keyed by its value rather than by a site, and the rule survives it.**
-`graphitron_spelled_reference` holds each distinct table or routine spelling once across the seven
+`graphitron_spelled_reference_entry` holds each distinct table or routine spelling once across the seven
 sites that can write one, deduplicated at capture, because a spelling's resolution does not vary by
 site. It is as-written in every other respect and asks nothing of the catalog, so it moves with the
 rest. What it shows is that "keyed to the coordinate" is a property of most entries rather than the
@@ -852,7 +862,7 @@ at once and a scalar is none, so they are optional facts rather than subtypes. T
 the specification's own, which Section 3 states as "there are six kinds of named type definitions in
 GraphQL, and two wrapping types", and the store already carries it as `graphitron_type.kind` with the
 six-value check. Two genuine subtype relations exist where a kind carries payload no other kind can:
-`graphitron_scalar_type` holds a `@scalar` reference to a Java field and `graphitron_enum` holds a
+`graphitron_scalar_type_entry` holds a `@scalar` reference to a Java field and `graphitron_enum_entry` holds a
 class and method, and neither can describe anything but its own kind. The facts hang off kinds; the
 subtypes are the kinds.
 
@@ -945,7 +955,7 @@ hop; the field's producer, if it has one at all, is not the routine.
 
 The way not to model this is as two roles for one directive. `@routine` has one role, a step in the
 route, and the step at position 0 is where the field's rows originate. Producer-hood is a separate
-question asked of the field and not of the application. So `graphitron_routine` belongs to the route
+question asked of the field and not of the application. So `graphitron_routine_entry` belongs to the route
 family in full and is not a producer subtype: a subtype reference from it would assert that every
 coordinate holding a routine application has `ROUTINE` as its producer, which the sandwich falsifies.
 Where a producer does need to name the originating application it references
@@ -955,7 +965,7 @@ origin and the rest are steps by construction.
 **Which leaves four values rather than eight, and the store's own test is what cuts them.** A
 subtype keeps a relation when it carries payload no sibling can hold.
 
-`insert`, `update`, `delete` and `upsert` share `graphitron_mutation`'s exact column set, so they are
+`insert`, `update`, `delete` and `upsert` share `graphitron_mutation_entry`'s exact column set, so they are
 one subtype with a verb column and not four subtypes. The relation already is that; splitting it
 would put a discriminator to work twice.
 
@@ -975,7 +985,7 @@ four values. These four are genuinely exclusive at a coordinate, which the eight
 disjointness the mechanism enforces is now a true claim rather than a hopeful one.
 
 **Today the exclusion is real in the generator and unrepresentable in the store.**
-`graphitron_service` and `graphitron_mutation` both key at `(graph_name, type_name, field_name)` and
+`graphitron_service_entry` and `graphitron_mutation_entry` both key at `(graph_name, type_name, field_name)` and
 nothing stops one coordinate carrying both. The exclusions live in the classifier as directive
 conflicts, the `@routine` with `@splitQuery` pair being the named precedent, which is a rejection a
 reader of the store cannot see and a constraint the store cannot state. A producer anchor keyed at
@@ -984,7 +994,7 @@ value, makes a second producer unwritable.
 
 **The word is `producer` and not `operation`, and the store chose it already.** `operation` is taken
 twice: `graphql_root_operation.operation` is the specification's, "which root slot", and
-`graphitron_mutation.operation` holds the DML verb. This item's own model uses it for a third thing,
+`graphitron_mutation_entry.operation` holds the DML verb. This item's own model uses it for a third thing,
 the multi-valued set where one field selects and joins and paginates at once, and that axis has to
 survive alongside this one: a field with `producer = QUERY` and `operations = {select, join,
 paginate}` is a sentence two axes called operation could not carry. The store meanwhile runs four
@@ -1001,14 +1011,15 @@ reason this model has axes, and the cut from eight to four is what makes the cro
 weight instead of the value list.
 
 **And one column becomes load-bearing that is unguarded today.**
-`graphitron_mutation.operation` carries the DML verb with no CHECK at all. It is not the producer
+`graphitron_mutation_entry.operation` carries the DML verb with no CHECK at all. It is not the producer
 discriminator, that being `MUTATION` for all four verbs, but it is the vocabulary the write half of
 the model reads, and it gains the four-value check it should always have had.
 
 **What gets renamed.** Grain first: `graphitron_type_table` and `graphitron_type_node` for the
 anchors, `graphitron_type_table_entry` and `graphitron_type_node_entry` for the decodes, retiring
-`graphitron_tabletype`, `graphitron_node` and `graphitron_table`, with `graphitron_scalar_type` and
-`graphitron_enum` becoming `graphitron_type_scalar` and `graphitron_type_enum` on the same rule.
+`graphitron_tabletype`, `graphitron_node` and `graphitron_table_entry`, with `graphitron_scalar_type_entry` and
+`graphitron_enum_entry` becoming `graphitron_type_scalar_entry` and `graphitron_type_enum_entry` on
+the same rule, both being decodes and so keeping the suffix.
 Declared together with their grains, so the pass that follows has a worked example of the rule rather
 than a rule and no example.
 
@@ -1052,7 +1063,7 @@ different target kind entirely, arriving through `FieldEndpoints.routineResult`,
 one-to-one population and a one-to-many population under one key.
 
 **The chain position is an Application-grain fact, and its absence is the sandwich defect.**
-`graphitron_field_reference`, `graphitron_reference_for` and `graphitron_routine` each key
+`graphitron_field_reference_entry`, `graphitron_reference_for_entry` and `graphitron_routine_entry` each key
 `(coordinate, ordinal)` with the ordinal counting applications of that one directive, where
 `graphql_field_directive` keys the real application grain at
 `(coordinate, directive_name, ordinal)`. So no relation orders the three against each other,
@@ -1093,7 +1104,7 @@ references in that plan fall from 427 to 128 and the plan text from 525 497 char
 `intent_class_member_slot` 4198. All five as recorded before the work.
 
 **The expansion, on the same capture.** 218 `@asConnection` applications produce 218
-`graphitron_connection` rows and 218 field rewrites; 434 minted types across 436 sites carry 1302
+`graphitron_connection_entry` rows and 218 field rewrites; 434 minted types across 436 sites carry 1302
 minted fields. `intent_expanded_type` is 2345, which is 1911 plus 434. `intent_expanded_field` is
 8408, which is 7106 plus 1302. `graphitron_field_navigation` is 8408, one row per expanded field.
 
@@ -1420,8 +1431,8 @@ what that column was added to stop readers doing. Measured on the capture, the t
 
 **One relation moved into the family that computes its owner, and it is the first `graphitron_`
 view.** `intent_argmapping_binding_leaf` reads `graphitron_arg_mapping_pair`,
-`graphitron_argument_path_segment`, `graphitron_argmapping_candidate`, `graphitron_argument_node_id`
-and `graphitron_field_node_id`, and nothing else. Every input belongs to the graphitron gatherer, so
+`graphitron_argument_path_segment`, `graphitron_argmapping_candidate`, `graphitron_argument_node_id_entry`
+and `graphitron_field_node_id_entry`, and nothing else. Every input belongs to the graphitron gatherer, so
 the computed owner is graphitron and the `intent_` prefix on it recorded the default placement rather
 than a decision. It is now `graphitron_argmapping_match`, which corrects the noun at the same time:
 the schema already conceded that a leaf in the candidate tree is a candidate with no children while
@@ -1541,6 +1552,17 @@ hiding. `intent_declared_type_ref`. `graphitron_type_declaration_synthesis`, now
 `graphitron_minted_type` and `graphitron_minted_type_site`. And two retired registrations, which
 deletes a `_live` view and a table each: `intent_argmapping_pair_live` and `intent_errors_field_live`.
 
+**Fifty-three relations renamed, not retired, and they are listed by rule rather than one by one.**
+Every relation of the as-written half of `graphitron_` gained the `_entry` suffix, which is the
+whole of the change to each name: `graphitron_table` is `graphitron_table_entry`,
+`graphitron_field_reference_step` is `graphitron_field_reference_step_entry`, and so on for the 53
+that did not already carry it. The three that did are `graphitron_argmapping_entry`,
+`graphitron_node_entry` and `graphitron_node_keycolumn_entry`. Nothing in the resolved half moved.
+Two index names followed their relations, `graphitron_spelled_reference_name_ix` and
+`graphitron_method_reference_method_ix`. A sweep for a survivor is a search for a `graphitron_` name
+that is neither suffixed nor one of the sixteen in the resolved half, which is cheaper than a list
+and does not go stale.
+
 **Columns and values.** `graphitron_field_synthesis.authored_type_sdl`, the relation's payload having
 flipped to carry the macro's replacement rather than the expression it overwrote.
 `AUTHORED_EXPRESSION`, retired from the navigation basis vocabulary, which is two values now.
@@ -1570,6 +1592,11 @@ went when the decode stopped being a visitor of the SDL walk. The five callbacks
 for the entry half only: what that move got wrong was moving the family as one thing, so the anchors'
 need for the store decided the entries' home with it, and the entry and anchor split is what
 separates them.
+
+**Java, slice 1, the suffix.** `EntryFamilyFixture.ENTRY_RELATIONS` and `ANCHOR_RELATIONS`, the two
+enumerated lists, now `entryRelations()` and `anchorRelations()` read off the generated model by
+name; and `EntryFamilyCoverageTest`'s partition case, which held the two lists to covering the
+family and is true by construction once the name decides it.
 
 **Java, slice 1.** The store-driven half of `GraphitronFactCapture`: `schemaDirectives`,
 `typeDirectives`, `fieldDirectives`, `argumentDirectives` and `enumValueDirectives`, the five loops

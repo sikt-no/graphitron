@@ -50,16 +50,16 @@ already captured somewhere else. So they capture it again, under a slightly diff
 
 The store has worked examples of the result:
 
-- Six relations spell a reference to a table as `table_ref`. A seventh, `graphitron_routine`, spells
+- Six relations spell a reference to a table as `table_ref`. A seventh, `graphitron_routine_entry`, spells
   the identical fact `routine_ref`. The mechanical detector that hunts for this defect missed that
   seventh relation for that reason alone.
 - Ten views reconstruct a fact by unioning an argument-site relation with its field-site twin, for
-  example `graphitron_argument_condition` with `graphitron_field_condition`. Each pair is one fact
+  example `graphitron_argument_condition_entry` with `graphitron_field_condition_entry`. Each pair is one fact
   written at two coordinates with no relation naming it once. `SupertypeSignatureGateTest` counts
   them.
 - Names diverge inside a single set. The four reference-step relations are
-  `graphitron_field_reference_step`, `graphitron_argument_reference_step`,
-  `graphitron_reference_for_step` and `graphitron_argument_reference_for_step`. Two carry a site
+  `graphitron_field_reference_step_entry`, `graphitron_argument_reference_step_entry`,
+  `graphitron_reference_for_step_entry` and `graphitron_argument_reference_for_step_entry`. Two carry a site
   prefix and two do not, which hides the fact that they are four spellings of one thing.
 
 ## Why the transcripts ended up in the DDL
@@ -453,7 +453,7 @@ Verdict: withhold. Two findings, both on question one, both cheap to resolve. Ev
 checks out against the tree: the headline finding (the twenty unkeyed tables are exactly the twenty
 `meta_materialize` targets, both directions), the key-shape head, the family counts, every named
 class and gate method, the fact-model page's ownership rule and its "not mechanically enforced"
-line, the six `table_ref` relations plus `graphitron_routine`'s `routine_ref`, the ten union pairs,
+line, the six `table_ref` relations plus `graphitron_routine_entry`'s `routine_ref`, the ten union pairs,
 and the `owner_kind` precedent. The goal is well communicated, the plan is reachable, and the design
 extends the existing `meta_` pattern rather than standing a mechanism beside it. Stale counts in the
 measurement sections were corrected in this commit rather than raised as findings; the corrected

@@ -38,7 +38,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -238,11 +238,11 @@ public final class Hovers {
      */
     private static List<CatalogColumns.Column> nodeColumns(StoreHandle store, String typeName) {
         String tableRef = store.dsl()
-            .select(GRAPHITRON_TABLE.TABLE_REF)
-            .from(GRAPHITRON_TABLE)
-            .where(GRAPHITRON_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_TABLE.TYPE_NAME.eq(typeName))
-            .fetchOne(GRAPHITRON_TABLE.TABLE_REF);
+            .select(GRAPHITRON_TABLE_ENTRY.TABLE_REF)
+            .from(GRAPHITRON_TABLE_ENTRY)
+            .where(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(typeName))
+            .fetchOne(GRAPHITRON_TABLE_ENTRY.TABLE_REF);
         String tableName = tableRef == null || tableRef.isBlank() ? typeName : tableRef;
         int dot = tableName.lastIndexOf('.');
         return CatalogColumns.of(store, dot < 0 ? tableName : tableName.substring(dot + 1));

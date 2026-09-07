@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
@@ -48,7 +48,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
  * qualification rule above still holds.
  *
  * <p>It reads the store rather than the parse. Its input is the decode's own
- * {@code graphitron_connection} rows joined to the carrier's transcribed field, so it runs as a
+ * {@code graphitron_connection_entry} rows joined to the carrier's transcribed field, so it runs as a
  * stage of the graphitron gatherer after both crawlers and the directive decode have flushed.
  *
  * <p>Nothing here rejects. A macro whose precondition does not hold contributes no rows, exactly as
@@ -144,17 +144,17 @@ public final class MacroCapture {
         var carriers = new ArrayList<Carrier>();
         var argumentsByField = argumentsByField(dsl, graphName);
         for (var row : dsl
-                .select(GRAPHITRON_CONNECTION.TYPE_NAME, GRAPHITRON_CONNECTION.FIELD_NAME,
-                    GRAPHITRON_CONNECTION.CONNECTION_NAME,
-                    GRAPHITRON_CONNECTION.DEFAULT_FIRST_VALUE,
+                .select(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME,
+                    GRAPHITRON_CONNECTION_ENTRY.CONNECTION_NAME,
+                    GRAPHITRON_CONNECTION_ENTRY.DEFAULT_FIRST_VALUE,
                     GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.ORDINAL, GRAPHQL_FIELD.DESCRIPTION)
-                .from(GRAPHITRON_CONNECTION)
+                .from(GRAPHITRON_CONNECTION_ENTRY)
                 .join(GRAPHQL_FIELD)
-                .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_CONNECTION.GRAPH_NAME))
-                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_CONNECTION.TYPE_NAME))
-                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_CONNECTION.FIELD_NAME))
-                .where(GRAPHITRON_CONNECTION.GRAPH_NAME.eq(graphName))
-                .orderBy(GRAPHITRON_CONNECTION.TYPE_NAME, GRAPHITRON_CONNECTION.FIELD_NAME)
+                .on(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME))
+                .and(GRAPHQL_FIELD.TYPE_NAME.eq(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME))
+                .and(GRAPHQL_FIELD.FIELD_NAME.eq(GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME))
+                .where(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME.eq(graphName))
+                .orderBy(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME)
                 .fetch()) {
             Element element = element(row.value5());
             if (element == null) {

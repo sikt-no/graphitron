@@ -12,11 +12,11 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -136,7 +136,7 @@ class QualifiedReferenceDecodeTest {
     @DisplayName("a path element's key and table partition by the same rule")
     void aPathElementPartitionsByTheSameRule(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            var s = GRAPHITRON_FIELD_REFERENCE_STEP;
+            var s = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
             assertThat(halves(store.dsl()
                 .select(s.KEY_REF_NAMESPACE_PART, s.KEY_REF_NAME_PART)
                 .from(s).where(s.FIELD_NAME.eq("language")).fetchOne()))
@@ -153,14 +153,14 @@ class QualifiedReferenceDecodeTest {
     void aRoutineAndAMutationPartitionByTheSameRule(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             assertThat(halves(store.dsl()
-                .select(GRAPHITRON_ROUTINE.ROUTINE_REF_NAMESPACE_PART,
-                        GRAPHITRON_ROUTINE.ROUTINE_REF_NAME_PART)
-                .from(GRAPHITRON_ROUTINE).fetchOne()))
+                .select(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART,
+                        GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART)
+                .from(GRAPHITRON_ROUTINE_ENTRY).fetchOne()))
                 .containsExactly("public", "films_for_actor");
             assertThat(halves(store.dsl()
-                .select(GRAPHITRON_MUTATION.TABLE_REF_NAMESPACE_PART,
-                        GRAPHITRON_MUTATION.TABLE_REF_NAME_PART)
-                .from(GRAPHITRON_MUTATION).fetchOne()))
+                .select(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART,
+                        GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAME_PART)
+                .from(GRAPHITRON_MUTATION_ENTRY).fetchOne()))
                 .containsExactly("public", "film");
         }
     }
@@ -182,9 +182,9 @@ class QualifiedReferenceDecodeTest {
             """;
         try (var store = CapturedStore.of(tmp, dotted)) {
             assertThat(store.dsl()
-                .select(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR.COLUMN_REF)
-                .from(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR)
-                .fetch(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR.COLUMN_REF))
+                .select(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY.COLUMN_REF)
+                .from(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY)
+                .fetch(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY.COLUMN_REF))
                 .containsExactly("film.title");
         }
     }
@@ -193,10 +193,10 @@ class QualifiedReferenceDecodeTest {
 
     /** One type's {@code @table} reference as its two halves, either of which may be null. */
     private static List<String> tableRefParts(DSLContext dsl, String typeName) {
-        return halves(dsl.select(GRAPHITRON_TABLE.TABLE_REF_NAMESPACE_PART,
-                                 GRAPHITRON_TABLE.TABLE_REF_NAME_PART)
-            .from(GRAPHITRON_TABLE)
-            .where(GRAPHITRON_TABLE.TYPE_NAME.eq(typeName))
+        return halves(dsl.select(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAMESPACE_PART,
+                                 GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAME_PART)
+            .from(GRAPHITRON_TABLE_ENTRY)
+            .where(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(typeName))
             .fetchOne());
     }
 

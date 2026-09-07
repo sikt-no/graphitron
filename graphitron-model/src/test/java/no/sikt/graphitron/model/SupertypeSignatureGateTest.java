@@ -95,21 +95,21 @@ class SupertypeSignatureGateTest {
      * eight nullable columns on a supertype whose type rows can never fill them.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
-        Set.of("graphitron_undecoded_argument", "graphql_argument_directive_arg",
+        Set.of("graphitron_undecoded_argument_entry", "graphql_argument_directive_arg",
                "graphql_enum_value_directive_arg", "graphql_field_directive_arg",
                "graphql_schema_directive_arg", "graphql_type_directive_arg"),
-        Set.of("graphitron_argument_reference_for_step", "graphitron_argument_reference_step",
-               "graphitron_field_reference_step", "graphitron_reference_for_step"),
+        Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
+               "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
-        Set.of("graphitron_argument_condition_context_arg", "graphitron_field_condition_context_arg",
-               "graphitron_service_context_arg"),
-        Set.of("graphitron_argument_condition", "graphitron_field_condition"),
-        Set.of("graphitron_external_field", "graphitron_service"),
-        Set.of("graphitron_default_order_field", "graphitron_order_field"),
-        Set.of("graphitron_error", "graphql_type_directive"),
-        Set.of("graphitron_argument_binding", "graphitron_field_binding"),
-        Set.of("graphitron_argument_node_id", "graphitron_field_node_id"),
-        Set.of("graphitron_argument_reference_for", "graphitron_reference_for"),
+        Set.of("graphitron_argument_condition_context_arg_entry", "graphitron_field_condition_context_arg_entry",
+               "graphitron_service_context_arg_entry"),
+        Set.of("graphitron_argument_condition_entry", "graphitron_field_condition_entry"),
+        Set.of("graphitron_external_field_entry", "graphitron_service_entry"),
+        Set.of("graphitron_default_order_field_entry", "graphitron_order_field_entry"),
+        Set.of("graphitron_error_entry", "graphql_type_directive"),
+        Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
+        Set.of("graphitron_argument_node_id_entry", "graphitron_field_node_id_entry"),
+        Set.of("graphitron_argument_reference_for_entry", "graphitron_reference_for_entry"),
         Set.of("graphitron_element", "graphql_element"),
         Set.of("graphitron_argument", "graphitron_field"));
 
@@ -120,7 +120,7 @@ class SupertypeSignatureGateTest {
      * author may write the same directive at either coordinate and no relation says so once.
      *
      * <p>The context-argument row's set has a third member the reconstruction deliberately does not
-     * union, {@code graphitron_service_context_arg}: a condition parameter's roles are a different
+     * union, {@code graphitron_service_context_arg_entry}: a condition parameter's roles are a different
      * rule from a service parameter's. Its supertype therefore belongs at capture, keyed on the site
      * a reader filters by, rather than as a union in a derived view.
      *
@@ -133,17 +133,17 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
-        "intent_argument_filter_role|graphitron_argument_condition,graphitron_field_condition",
-        "intent_condition_context_parameter|graphitron_argument_condition_context_arg,graphitron_field_condition_context_arg",
-        "intent_condition_method_route|graphitron_argument_reference_step,graphitron_field_reference_step",
-        "intent_condition_method_route_defect|graphitron_argument_reference_step,graphitron_field_reference_step",
-        "intent_condition_param_decode|graphitron_argument_condition,graphitron_field_condition",
-        "intent_field_demand_rule|graphitron_external_field,graphitron_service",
-        "intent_field_exemption_rule|graphitron_external_field,graphitron_service",
-        "intent_field_producer_reference|graphitron_external_field,graphitron_service",
-        "intent_input_occurrence_override|graphitron_argument_condition,graphitron_field_condition",
-        "intent_node_id_instruction_live|graphitron_argument_node_id,graphitron_field_node_id",
-        "intent_reference_for_application|graphitron_argument_reference_for,graphitron_reference_for",
+        "intent_argument_filter_role|graphitron_argument_condition_entry,graphitron_field_condition_entry",
+        "intent_condition_context_parameter|graphitron_argument_condition_context_arg_entry,graphitron_field_condition_context_arg_entry",
+        "intent_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
+        "intent_condition_method_route_defect|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
+        "intent_condition_param_decode|graphitron_argument_condition_entry,graphitron_field_condition_entry",
+        "intent_field_demand_rule|graphitron_external_field_entry,graphitron_service_entry",
+        "intent_field_exemption_rule|graphitron_external_field_entry,graphitron_service_entry",
+        "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
+        "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
+        "intent_node_id_instruction_live|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
+        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
         "intent_resolved_node_key_column|sql_constraint_column,sql_node_key_column");
 
     @Test
@@ -189,7 +189,7 @@ class SupertypeSignatureGateTest {
      * members carry the same columns outside their own keys, so the converted shape is those very
      * columns, all of them, referencing one relation: the members agree on a spelling and the
      * database holds them to it. The whole payload and not merely some of it, because a reference
-     * carrying part of one is a different fact entirely. graphitron_error and
+     * carrying part of one is a different fact entirely. graphitron_error_entry and
      * graphql_type_directive share five columns and both point three of them at
      * graphql_type_declaration, which is where each was written and not what each is a kind of.
      */

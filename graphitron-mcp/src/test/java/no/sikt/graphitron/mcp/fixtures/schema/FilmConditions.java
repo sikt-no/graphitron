@@ -9,7 +9,7 @@ import org.jooq.impl.DSL;
  * <p>The fixture for the method population the store's producer view does not carry: that view is
  * scoped to {@code @service} and {@code @externalField}, so a coordinate whose method comes from a
  * {@code @condition} is reachable only through this module's own read of
- * {@code graphitron_field_condition}.
+ * {@code graphitron_field_condition_entry}.
  */
 public class FilmConditions {
 

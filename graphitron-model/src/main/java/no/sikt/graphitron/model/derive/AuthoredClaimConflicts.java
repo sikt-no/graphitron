@@ -13,11 +13,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_CLAIM_CONFLICT;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
@@ -226,7 +226,7 @@ public final class AuthoredClaimConflicts {
     private static FieldClaim enrich(DSLContext dsl, String graphName, FieldCoordinate c, ClaimRow row) {
         return switch (row.classifier()) {
             case SERVICE -> {
-                var s = GRAPHITRON_SERVICE;
+                var s = GRAPHITRON_SERVICE_ENTRY;
                 var r = row.decoded()
                     ? dsl.select(s.CLASS_NAME, s.METHOD).from(s)
                         .where(s.GRAPH_NAME.eq(graphName), s.TYPE_NAME.eq(c.typeName()), s.FIELD_NAME.eq(c.fieldName()))
@@ -237,7 +237,7 @@ public final class AuthoredClaimConflicts {
                     row.trigger(), row.decoded(), row.location());
             }
             case EXTERNAL_FIELD -> {
-                var e = GRAPHITRON_EXTERNAL_FIELD;
+                var e = GRAPHITRON_EXTERNAL_FIELD_ENTRY;
                 var r = row.decoded()
                     ? dsl.select(e.CLASS_NAME, e.METHOD).from(e)
                         .where(e.GRAPH_NAME.eq(graphName), e.TYPE_NAME.eq(c.typeName()), e.FIELD_NAME.eq(c.fieldName()))
@@ -248,7 +248,7 @@ public final class AuthoredClaimConflicts {
                     row.trigger(), row.decoded(), row.location());
             }
             case NODE_ID -> {
-                var n = GRAPHITRON_FIELD_NODE_ID;
+                var n = GRAPHITRON_FIELD_NODE_ID_ENTRY;
                 var r = row.decoded()
                     ? dsl.select(n.NODE_TYPE_REF).from(n)
                         .where(n.GRAPH_NAME.eq(graphName), n.TYPE_NAME.eq(c.typeName()), n.FIELD_NAME.eq(c.fieldName()))
@@ -260,7 +260,7 @@ public final class AuthoredClaimConflicts {
             case LOOKUP_KEY -> new FieldClaim.LookupKey(row.trigger(), row.decoded(), row.location());
             case ROUTINE -> {
                 // The whole chain is this one claim's slots, in application-ordinal order.
-                var rt = GRAPHITRON_ROUTINE;
+                var rt = GRAPHITRON_ROUTINE_ENTRY;
                 var refs = row.decoded()
                     ? dsl.select(rt.ROUTINE_REF).from(rt)
                         .where(rt.GRAPH_NAME.eq(graphName), rt.TYPE_NAME.eq(c.typeName()), rt.FIELD_NAME.eq(c.fieldName()))
@@ -270,7 +270,7 @@ public final class AuthoredClaimConflicts {
                 yield new FieldClaim.Routine(refs, row.trigger(), row.decoded(), row.location());
             }
             case MUTATION -> {
-                var m = GRAPHITRON_MUTATION;
+                var m = GRAPHITRON_MUTATION_ENTRY;
                 var r = row.decoded()
                     ? dsl.select(m.OPERATION, m.TABLE_REF).from(m)
                         .where(m.GRAPH_NAME.eq(graphName), m.TYPE_NAME.eq(c.typeName()), m.FIELD_NAME.eq(c.fieldName()))

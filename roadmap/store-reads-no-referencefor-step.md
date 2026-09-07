@@ -19,12 +19,12 @@ the path the author wrote, so the store's answer for that slot and the generator
 disagree with nothing failing, and every store consumer that asks how such a slot navigates gets the
 wrong answer.
 
-`@referenceFor` steps are captured: `graphitron_reference_for_step` holds them at a field coordinate and
-`graphitron_argument_reference_for_step` at an argument coordinate, both read as the same element
+`@referenceFor` steps are captured: `graphitron_reference_for_step_entry` holds them at a field coordinate and
+`graphitron_argument_reference_for_step_entry` at an argument coordinate, both read as the same element
 grammar as `@reference`. No view in
 `graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql` reads either table.
-`intent_node_id_instruction_live` derives `carries_reference_path` from `graphitron_field_reference_step`
-and `graphitron_argument_reference_step` alone, and `intent_node_id_decode_hop` resolves an
+`intent_node_id_instruction_live` derives `carries_reference_path` from `graphitron_field_reference_step_entry`
+and `graphitron_argument_reference_step_entry` alone, and `intent_node_id_decode_hop` resolves an
 `AUTHORED_PATH`'s hops through `intent_argument_reference_step_target` and
 `intent_input_field_reference_step_target`, both built over those same two `@reference` step tables.
 So `intent_node_id_decode_endpoint.navigation` reads `SAME_TABLE` or `DISCOVERED_KEY` for such a slot,

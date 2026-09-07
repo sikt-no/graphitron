@@ -11,9 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Locale;
 import java.util.Set;
-import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -22,18 +20,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * as-written half of the {@code graphitron_} family, from two sources, so that a gate over that half
  * cannot pass by agreeing about empty relations.
  *
- * <p>The generator module's corpus-isolation differential is the case that wants it. Its scope is
- * {@code graphql_} alone today, and widening it to the as-written {@code graphitron_} relations
- * passes over 57 relations of which only eight hold a row under that gate's own fixture: the other
- * 49 agree by being empty in both arms. A differential over relations nobody wrote to is not a
- * differential, and this fixture is what turns the widening into a check rather than a count.
+ * <p>The generator module's corpus-isolation differential is the case that wanted it. Its scope was
+ * {@code graphql_} alone, and widening it to the as-written {@code graphitron_} relations passed
+ * over 57 relations of which only eight held a row under that gate's own fixture: the other 49
+ * agreed by being empty in both arms. A differential over relations nobody wrote to is not a
+ * differential, and this fixture is what turned the widening into a check rather than a count.
  *
- * <p>Three cases, and the first is what keeps the other two from rotting. The family is read off the
- * generated model rather than counted here, and the fixture's two lists have to partition it, so a
- * relation added to the family and to neither list fails this rather than slipping quietly into the
- * uncovered set. The classification is the thing being stated: an entry's rows are a function of one
- * document and nothing else, an anchor's are a function of the store, and every relation of the
- * family is one or the other.
+ * <p>Two cases, and there used to be a third. It held the fixture's two enumerated lists to
+ * partitioning the family, so a relation added to neither had to be classified rather than slipping
+ * out of every gate that read them. The suffix retired it: the halves are read off the generated
+ * model by name now, so the partition is true by construction and asserting it says nothing. What
+ * the suffix cannot say by itself is that a new decode relation gets named right, and that is
+ * {@code EntryNamingGuardTest}'s, which holds the decode to naming only suffixed relations.
+ *
+ * <p>What is left here is the claim that could always only be measured: every relation named an
+ * entry holds a row under this fixture, and some of them hold rows from both of its documents.
  */
 class EntryFamilyCoverageTest {
 
@@ -65,32 +66,10 @@ class EntryFamilyCoverageTest {
     }
 
     @Test
-    @DisplayName("the two lists partition the graphitron family, so a new relation must be classified")
-    void everyRelationOfTheFamilyIsClassifiedAsOneHalfOrTheOther() {
-        var entries = Set.copyOf(EntryFamilyFixture.ENTRY_RELATIONS);
-        var anchors = Set.copyOf(EntryFamilyFixture.ANCHOR_RELATIONS);
-
-        assertThat(entries)
-            .as("a relation listed twice would be covered by accident rather than by classification")
-            .hasSize(EntryFamilyFixture.ENTRY_RELATIONS.size());
-        assertThat(anchors).hasSize(EntryFamilyFixture.ANCHOR_RELATIONS.size());
-        assertThat(entries)
-            .as("no relation is both a function of one document and a function of the store")
-            .doesNotContainAnyElementsOf(anchors);
-
-        var classified = new TreeSet<>(entries);
-        classified.addAll(anchors);
-        assertThat(classified)
-            .as("classify the new relation: an entry if its rows are a function of one document and "
-                + "nothing else, an anchor if a gatherer stage joins, ranks or resolves to write it")
-            .isEqualTo(family());
-    }
-
-    @Test
     @DisplayName("the fixture writes a row into every entry relation")
     void theFixturePopulatesTheWholeEntryHalf() {
         var empty = new ArrayList<String>();
-        for (String relation : EntryFamilyFixture.ENTRY_RELATIONS) {
+        for (String relation : EntryFamilyFixture.entryRelations()) {
             if (store().dsl().fetchCount(table(relation)) == 0) {
                 empty.add(relation);
             }
@@ -105,7 +84,7 @@ class EntryFamilyCoverageTest {
     @DisplayName("entry relations hold rows from both documents, so a per-source delete has a subject")
     void theOverlapBetweenTheTwoDocumentsIsReal() {
         var shared = new ArrayList<String>();
-        for (String relation : EntryFamilyFixture.ENTRY_RELATIONS) {
+        for (String relation : EntryFamilyFixture.entryRelations()) {
             if (sourcesOf(relation).size() > 1) {
                 shared.add(relation);
             }
@@ -114,18 +93,6 @@ class EntryFamilyCoverageTest {
             .as("deleting one source's rows can only be observed on a relation holding rows from "
                 + "two, so the fixture writes some of them from both documents on purpose")
             .isNotEmpty();
-    }
-
-    /** Every relation of the family, read off the generated model so the count cannot drift. */
-    private static Set<String> family() {
-        var names = new TreeSet<String>();
-        for (Table<?> table : Public.PUBLIC.getTables()) {
-            String name = table.getName().toLowerCase(Locale.ROOT);
-            if (name.startsWith("graphitron_")) {
-                names.add(name);
-            }
-        }
-        return names;
     }
 
     /** The distinct documents a relation's rows were written from, empty where it records none. */

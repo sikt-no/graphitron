@@ -8,7 +8,7 @@ import org.jooq.Select;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -133,8 +133,8 @@ public final class FieldEndpoints {
     private static Select<? extends Record10<
             String, String, String, String, String, String, String, String, String, String>>
             routineResult(DSLContext dsl, String graphName) {
-        var r = GRAPHITRON_ROUTINE;
-        var later = GRAPHITRON_ROUTINE.as("later");
+        var r = GRAPHITRON_ROUTINE_ENTRY;
+        var later = GRAPHITRON_ROUTINE_ENTRY.as("later");
         var gs = STORE_GRAPH_SOURCE;
         var st = SQL_TABLE;
         var nv = GRAPHITRON_FIELD_NAVIGATION;

@@ -4,7 +4,7 @@
 # one Java reader were each writing that union out by hand before it existed.
 
 # The two condition sites are told apart by the owning type's kind, not by the relation they live
-# in: both are rows of graphitron_field_condition, and site is what splits them.
+# in: both are rows of graphitron_field_condition_entry, and site is what splits them.
 type Film @table(name: "film") {
   title: String
 }
@@ -49,7 +49,7 @@ extend type Film {
     method: "sourceRow")
 }
 
-extend schema @assertContains(relation: "graphitron_method_reference", rows: """
+extend schema @assertContains(relation: "graphitron_method_reference_entry", rows: """
   site,                  use_site,          type_name, field_name, ordinal, step_position, class_name,                                              method
   SERVICE,               Query.languages,   Query,     languages,  ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   getFilms
   FIELD_CONDITION,       Language.films,    Language,  films,      ,        ,              no.sikt.graphitron.rewrite.generators.TestFilmService,   fieldCondition

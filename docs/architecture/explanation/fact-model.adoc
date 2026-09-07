@@ -82,7 +82,7 @@ A verdict is a conclusion, and the recompute test was stated over declarations, 
 
 Two of those results are inversions rather than descriptions, and naming them is not the same as acting on them: `lint_` derives what it stores today, and the macro case stores a derivation where the captured fact belongs. Saying which assignment is right is what this page owes; moving the rows is a schema change.
 
-That schema change has its first instance, so the sentence above is no longer only a promise. Federation's key synthesis used to run inside the capture walk and land a synthesized `@key` in `graphql_type_directive`, its decode in `graphitron_federation_key`, and a provenance row in a relation whose only purpose was to say which of those rows a macro put there. The rule is now `intent_synthesized_federation_key`, a derivation whose own presence is its provenance, the provenance relation is gone, and stratum one at that coordinate is pure transcription of the SDL. What the instance demonstrates is the cost profile rather than the difficulty: the readers moved, the anchors moved, and no consumer of generated code noticed, the emitted schema's synthesized `@key` having always come from the pipeline's registry rewrite rather than from the store.
+That schema change has its first instance, so the sentence above is no longer only a promise. Federation's key synthesis used to run inside the capture walk and land a synthesized `@key` in `graphql_type_directive`, its decode in `graphitron_federation_key_entry`, and a provenance row in a relation whose only purpose was to say which of those rows a macro put there. The rule is now `intent_synthesized_federation_key`, a derivation whose own presence is its provenance, the provenance relation is gone, and stratum one at that coordinate is pure transcription of the SDL. What the instance demonstrates is the cost profile rather than the difficulty: the readers moved, the anchors moved, and no consumer of generated code noticed, the emitted schema's synthesized `@key` having always come from the pipeline's registry rewrite rather than from the store.
 
 The corollary worth stating because it looks like a counter-argument: the foreign keys from `graphitron_` into `graphql_` are a derivation's edges to its inputs. They are correct and permanent, and they argue neither for nor against separating the two families. Stated without a count, since an unguarded census rots silently; `meta_relation_family` and the roster gates are where the enumerable answer lives.
 
@@ -265,7 +265,7 @@ The four anchors and what hangs off each:
 
 | enum value
 | `graphql_enum_value_element`
-| `graphql_enum_value`, `graphql_enum_value_directive`, `graphitron_enum_value_binding`, `graphitron_order`, `graphitron_index`
+| `graphql_enum_value`, `graphql_enum_value_directive`, `graphitron_enum_value_binding_entry`, `graphitron_order_entry`, `graphitron_index_entry`
 |===
 
 The directive-definition family has no anchor of its own and needs none: a directive is defined once, nothing merges into a definition, and only its own two children reference it.

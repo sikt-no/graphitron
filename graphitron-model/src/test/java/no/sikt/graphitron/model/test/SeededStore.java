@@ -17,44 +17,44 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
@@ -132,7 +132,7 @@ public final class SeededStore {
 
     /**
      * The declaration site every seeded type carries. One spelling, so the composite foreign keys
-     * from {@code graphql_field} and {@code graphitron_table} back to
+     * from {@code graphql_field} and {@code graphitron_table_entry} back to
      * {@code graphql_type_declaration} line up without a caller ever naming a line number.
      */
     private static final String SEED_SOURCE = "seed.graphqls";
@@ -234,7 +234,7 @@ public final class SeededStore {
      * <p>The method reference is the mixed case and shows both halves at once. Nine of its sites
      * keep relations of their own and are transcribed from them below; the tenth, the source row,
      * carried nothing beyond the shared fact, so it has no relation to transcribe from and a case
-     * meaning that site writes {@code graphitron_method_reference} itself.
+     * meaning that site writes {@code graphitron_method_reference_entry} itself.
      *
      * <p>Modelling capture rather than deriving anything, which is why it is named apart from the
      * refresh below it and why the refresh keeps the property of being an entry point production
@@ -247,32 +247,32 @@ public final class SeededStore {
      * otherwise leave the first graph's rows behind a stale copy of themselves.
      */
     public static void transcribeSupertypes(DSLContext dsl) {
-        dsl.execute("DELETE FROM graphitron_spelled_reference");
+        dsl.execute("DELETE FROM graphitron_spelled_reference_entry");
         dsl.execute("""
-            INSERT INTO graphitron_spelled_reference (graph_name, spelling, namespace_part, name_part)
+            INSERT INTO graphitron_spelled_reference_entry (graph_name, spelling, namespace_part, name_part)
             SELECT graph_name, spelling, namespace_part, name_part FROM (
               SELECT graph_name, COALESCE(table_ref, type_name) AS spelling,
                      table_ref_namespace_part AS namespace_part,
                      COALESCE(table_ref_name_part, type_name) AS name_part
-                FROM graphitron_table
+                FROM graphitron_table_entry
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_field_reference_step WHERE table_ref IS NOT NULL
+                FROM graphitron_field_reference_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_argument_reference_step WHERE table_ref IS NOT NULL
+                FROM graphitron_argument_reference_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_reference_for_step WHERE table_ref IS NOT NULL
+                FROM graphitron_reference_for_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_argument_reference_for_step WHERE table_ref IS NOT NULL
+                FROM graphitron_argument_reference_for_step_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, table_ref, table_ref_namespace_part, table_ref_name_part
-                FROM graphitron_mutation WHERE table_ref IS NOT NULL
+                FROM graphitron_mutation_entry WHERE table_ref IS NOT NULL
               UNION
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
-                FROM graphitron_routine) spellings
+                FROM graphitron_routine_entry) spellings
             """);
         dsl.execute("DELETE FROM graphitron_field_navigation");
         dsl.execute("""
@@ -285,26 +285,26 @@ public final class SeededStore {
               LEFT JOIN intent_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
             """);
-        dsl.execute("DELETE FROM graphitron_method_reference");
+        dsl.execute("DELETE FROM graphitron_method_reference_entry");
         dsl.execute("""
-            INSERT INTO graphitron_method_reference
+            INSERT INTO graphitron_method_reference_entry
               (graph_name, site, use_site, type_name, field_name, argument_name, ordinal,
                step_position, class_name, method, source_name, source_line, source_column)
             SELECT graph_name, 'ENUM', type_name, type_name, NULL, NULL, NULL, NULL,
                    class_name, method, source_name, source_line, source_column
-              FROM graphitron_enum
+              FROM graphitron_enum_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
             SELECT graph_name, 'SERVICE', type_name || '.' || field_name,
                    type_name, field_name, NULL, NULL, NULL,
                    class_name, method, source_name, source_line, source_column
-              FROM graphitron_service
+              FROM graphitron_service_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
             SELECT graph_name, 'EXTERNAL_FIELD', type_name || '.' || field_name,
                    type_name, field_name, NULL, NULL, NULL,
                    class_name, method, source_name, source_line, source_column
-              FROM graphitron_external_field
+              FROM graphitron_external_field_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
             SELECT c.graph_name,
@@ -313,7 +313,7 @@ public final class SeededStore {
                    c.type_name || '.' || c.field_name,
                    c.type_name, c.field_name, NULL, NULL, NULL,
                    c.class_name, c.method, c.source_name, c.source_line, c.source_column
-              FROM graphitron_field_condition c
+              FROM graphitron_field_condition_entry c
               JOIN graphql_type t ON t.graph_name = c.graph_name AND t.type_name = c.type_name
              WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
             UNION ALL
@@ -321,7 +321,7 @@ public final class SeededStore {
                    type_name || '.' || field_name || '(' || argument_name || ')',
                    type_name, field_name, argument_name, NULL, NULL,
                    class_name, method, source_name, source_line, source_column
-              FROM graphitron_argument_condition
+              FROM graphitron_argument_condition_entry
              WHERE class_name IS NOT NULL AND method IS NOT NULL
             UNION ALL
             SELECT s.graph_name, 'FIELD_REFERENCE_STEP',
@@ -329,8 +329,8 @@ public final class SeededStore {
                      || '[' || CAST(s.position AS VARCHAR) || ']',
                    s.type_name, s.field_name, NULL, s.ordinal, s.position,
                    s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_field_reference_step s
-              JOIN graphitron_field_reference d
+              FROM graphitron_field_reference_step_entry s
+              JOIN graphitron_field_reference_entry d
                 ON d.graph_name = s.graph_name AND d.type_name = s.type_name
                AND d.field_name = s.field_name AND d.ordinal = s.ordinal
              WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
@@ -340,8 +340,8 @@ public final class SeededStore {
                      || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
                    s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
                    s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_reference_step s
-              JOIN graphitron_argument_reference d
+              FROM graphitron_argument_reference_step_entry s
+              JOIN graphitron_argument_reference_entry d
                 ON d.graph_name = s.graph_name AND d.type_name = s.type_name
                AND d.field_name = s.field_name AND d.argument_name = s.argument_name
                AND d.ordinal = s.ordinal
@@ -352,8 +352,8 @@ public final class SeededStore {
                      || '[' || CAST(s.position AS VARCHAR) || ']',
                    s.type_name, s.field_name, NULL, s.ordinal, s.position,
                    s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_reference_for_step s
-              JOIN graphitron_reference_for d
+              FROM graphitron_reference_for_step_entry s
+              JOIN graphitron_reference_for_entry d
                 ON d.graph_name = s.graph_name AND d.type_name = s.type_name
                AND d.field_name = s.field_name AND d.ordinal = s.ordinal
              WHERE s.class_name IS NOT NULL AND s.method IS NOT NULL
@@ -363,8 +363,8 @@ public final class SeededStore {
                      || CAST(s.ordinal AS VARCHAR) || '[' || CAST(s.position AS VARCHAR) || ']',
                    s.type_name, s.field_name, s.argument_name, s.ordinal, s.position,
                    s.class_name, s.method, d.source_name, d.source_line, d.source_column
-              FROM graphitron_argument_reference_for_step s
-              JOIN graphitron_argument_reference_for d
+              FROM graphitron_argument_reference_for_step_entry s
+              JOIN graphitron_argument_reference_for_entry d
                 ON d.graph_name = s.graph_name AND d.type_name = s.type_name
                AND d.field_name = s.field_name AND d.argument_name = s.argument_name
                AND d.ordinal = s.ordinal
@@ -810,17 +810,17 @@ public final class SeededStore {
      */
     public static void seedTableBinding(DSLContext dsl, String graphName, String typeName, String tableRef) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHITRON_TABLE)
-            .set(GRAPHITRON_TABLE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_TABLE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_TABLE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_TABLE.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_TABLE.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_TABLE.SOURCE_LINE, 1)
-            .set(GRAPHITRON_TABLE.SOURCE_COLUMN, 20)
-            .set(GRAPHITRON_TABLE.TABLE_REF, tableRef)
-            .set(GRAPHITRON_TABLE.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_TABLE.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+        dsl.insertInto(GRAPHITRON_TABLE_ENTRY)
+            .set(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_TABLE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_TABLE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_TABLE_ENTRY.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_TABLE_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_TABLE_ENTRY.SOURCE_LINE, 1)
+            .set(GRAPHITRON_TABLE_ENTRY.SOURCE_COLUMN, 20)
+            .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
             .execute();
     }
 
@@ -832,19 +832,19 @@ public final class SeededStore {
     public static void seedScalarType(DSLContext dsl, String graphName, String typeName,
                                       String scalarRef) {
         seedDeclaredType(dsl, graphName, typeName, "SCALAR");
-        dsl.insertInto(GRAPHITRON_SCALAR_TYPE)
-            .set(GRAPHITRON_SCALAR_TYPE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_SCALAR_TYPE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_SCALAR_TYPE.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_SCALAR_TYPE.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_LINE, 1)
-            .set(GRAPHITRON_SCALAR_TYPE.SOURCE_COLUMN, 14)
-            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF, scalarRef)
-            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF_CLASS_PART,
+        dsl.insertInto(GRAPHITRON_SCALAR_TYPE_ENTRY)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SOURCE_LINE, 1)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SOURCE_COLUMN, 14)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SCALAR_REF, scalarRef)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SCALAR_REF_CLASS_PART,
                 ConstantReferenceGrammar.split(scalarRef)
                     instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.classFqn() : null)
-            .set(GRAPHITRON_SCALAR_TYPE.SCALAR_REF_FIELD_PART,
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SCALAR_REF_FIELD_PART,
                 ConstantReferenceGrammar.split(scalarRef)
                     instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.fieldName() : null)
             .execute();
@@ -873,14 +873,14 @@ public final class SeededStore {
      */
     public static void seedFieldBinding(DSLContext dsl, String graphName, String typeName,
                                         String fieldName, String nameRef) {
-        dsl.insertInto(GRAPHITRON_FIELD_BINDING)
-            .set(GRAPHITRON_FIELD_BINDING.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_BINDING.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_BINDING.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_BINDING.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_BINDING.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FIELD_BINDING.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FIELD_BINDING.NAME_REF, nameRef)
+        dsl.insertInto(GRAPHITRON_FIELD_BINDING_ENTRY)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_BINDING_ENTRY.NAME_REF, nameRef)
             .execute();
     }
 
@@ -892,29 +892,29 @@ public final class SeededStore {
      */
     public static void seedArgumentBinding(DSLContext dsl, String graphName, String typeName,
                                            String fieldName, String argumentName, String nameRef) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_BINDING)
-            .set(GRAPHITRON_ARGUMENT_BINDING.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_BINDING.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_BINDING.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_BINDING.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ARGUMENT_BINDING.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ARGUMENT_BINDING.NAME_REF, nameRef)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_BINDING_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_BINDING_ENTRY.NAME_REF, nameRef)
             .execute();
     }
 
     /** An {@code @error} application on a type: presence, which is the whole of what it states. */
     public static void seedError(DSLContext dsl, String graphName, String typeName) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHITRON_ERROR)
-            .set(GRAPHITRON_ERROR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ERROR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ERROR.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ERROR.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_ERROR.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_ERROR.SOURCE_LINE, 1)
-            .set(GRAPHITRON_ERROR.SOURCE_COLUMN, 20)
+        dsl.insertInto(GRAPHITRON_ERROR_ENTRY)
+            .set(GRAPHITRON_ERROR_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ERROR_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ERROR_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ERROR_ENTRY.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_ERROR_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_ERROR_ENTRY.SOURCE_LINE, 1)
+            .set(GRAPHITRON_ERROR_ENTRY.SOURCE_COLUMN, 20)
             .execute();
     }
 
@@ -924,13 +924,13 @@ public final class SeededStore {
      */
     public static void seedSplitQuery(DSLContext dsl, String graphName, String typeName,
                                       String fieldName) {
-        dsl.insertInto(GRAPHITRON_SPLIT_QUERY)
-            .set(GRAPHITRON_SPLIT_QUERY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_SPLIT_QUERY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_SPLIT_QUERY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_SPLIT_QUERY.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_SPLIT_QUERY_ENTRY)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_SPLIT_QUERY_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -941,13 +941,13 @@ public final class SeededStore {
      */
     public static void seedTenantFanOut(DSLContext dsl, String graphName, String typeName,
                                         String fieldName) {
-        dsl.insertInto(GRAPHITRON_TENANT_FAN_OUT)
-            .set(GRAPHITRON_TENANT_FAN_OUT.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_TENANT_FAN_OUT.TYPE_NAME, typeName)
-            .set(GRAPHITRON_TENANT_FAN_OUT.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_LINE, 2)
-            .set(GRAPHITRON_TENANT_FAN_OUT.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_TENANT_FAN_OUT_ENTRY)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_TENANT_FAN_OUT_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -957,15 +957,15 @@ public final class SeededStore {
      */
     public static void seedPivot(DSLContext dsl, String graphName, String typeName, String fieldName,
                                  String onColumn, String valueColumn) {
-        dsl.insertInto(GRAPHITRON_PIVOT)
-            .set(GRAPHITRON_PIVOT.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_PIVOT.TYPE_NAME, typeName)
-            .set(GRAPHITRON_PIVOT.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_PIVOT.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_PIVOT.SOURCE_LINE, 2)
-            .set(GRAPHITRON_PIVOT.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_PIVOT.ON_COLUMN, onColumn)
-            .set(GRAPHITRON_PIVOT.VALUE_COLUMN, valueColumn)
+        dsl.insertInto(GRAPHITRON_PIVOT_ENTRY)
+            .set(GRAPHITRON_PIVOT_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_PIVOT_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_PIVOT_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_PIVOT_ENTRY.ON_COLUMN, onColumn)
+            .set(GRAPHITRON_PIVOT_ENTRY.VALUE_COLUMN, valueColumn)
             .execute();
     }
 
@@ -975,14 +975,14 @@ public final class SeededStore {
      */
     public static void seedFieldReference(DSLContext dsl, String graphName, String typeName,
                                           String fieldName, int ordinal) {
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE)
-            .set(GRAPHITRON_FIELD_REFERENCE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_REFERENCE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_REFERENCE.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_REFERENCE.ORDINAL, ordinal)
-            .set(GRAPHITRON_FIELD_REFERENCE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_REFERENCE.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FIELD_REFERENCE.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_ENTRY)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -993,18 +993,18 @@ public final class SeededStore {
     public static void seedFieldReferenceStep(DSLContext dsl, String graphName, String typeName,
                                               String fieldName, int ordinal, int position,
                                               String tableRef, String keyRef) {
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL, ordinal)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION, position)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF, tableRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF, keyRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
+        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.POSITION, position)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF, keyRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .execute();
     }
 
@@ -1031,20 +1031,20 @@ public final class SeededStore {
                                                  String fieldName, int ordinal, int position,
                                                  String tableRef, String keyRef,
                                                  String className, String method) {
-        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL, ordinal)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION, position)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF, tableRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF, keyRef)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.CLASS_NAME, className)
-            .set(GRAPHITRON_FIELD_REFERENCE_STEP.METHOD, method)
+        dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.POSITION, position)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF, keyRef)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.METHOD, method)
             .execute();
     }
 
@@ -1055,15 +1055,15 @@ public final class SeededStore {
      */
     public static void seedArgumentReference(DSLContext dsl, String graphName, String typeName,
                                              String fieldName, String argumentName, int ordinal) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1077,19 +1077,19 @@ public final class SeededStore {
                                                  String fieldName, String argumentName,
                                                  int ordinal, int position,
                                                  String tableRef, String keyRef) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF, tableRef)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF, keyRef)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF, keyRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
             .execute();
     }
 
@@ -1115,21 +1115,21 @@ public final class SeededStore {
                                                     String argumentName, int ordinal, int position,
                                                     String tableRef, String keyRef,
                                                     String className, String method) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF, tableRef)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF, keyRef)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.CLASS_NAME, className)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.METHOD, method)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF, keyRef)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(keyRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.KEY_REF_NAME_PART, QualifiedNameGrammar.namePart(keyRef))
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.METHOD, method)
             .execute();
     }
 
@@ -1150,16 +1150,16 @@ public final class SeededStore {
     public static void seedFieldCondition(DSLContext dsl, String graphName, String typeName,
                                           String fieldName, String className, String method,
                                           Boolean override) {
-        dsl.insertInto(GRAPHITRON_FIELD_CONDITION)
-            .set(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_CONDITION.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_CONDITION.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FIELD_CONDITION.CLASS_NAME, className)
-            .set(GRAPHITRON_FIELD_CONDITION.METHOD, method)
-            .set(GRAPHITRON_FIELD_CONDITION.OVERRIDE, override)
+        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_ENTRY)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.METHOD, method)
+            .set(GRAPHITRON_FIELD_CONDITION_ENTRY.OVERRIDE, override)
             .execute();
     }
 
@@ -1177,17 +1177,17 @@ public final class SeededStore {
     public static void seedArgumentCondition(DSLContext dsl, String graphName, String typeName,
                                              String fieldName, String argumentName, String className,
                                              String method, Boolean override) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.CLASS_NAME, className)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.METHOD, method)
-            .set(GRAPHITRON_ARGUMENT_CONDITION.OVERRIDE, override)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.METHOD, method)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.OVERRIDE, override)
             .execute();
     }
 
@@ -1199,12 +1199,12 @@ public final class SeededStore {
      */
     public static void seedFieldConditionContextArg(DSLContext dsl, String graphName, String typeName,
                                                     String fieldName, int position, String name) {
-        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.POSITION, position)
-            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG.NAME, name)
+        dsl.insertInto(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.POSITION, position)
+            .set(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY.NAME, name)
             .execute();
     }
 
@@ -1212,13 +1212,13 @@ public final class SeededStore {
     public static void seedArgumentConditionContextArg(DSLContext dsl, String graphName, String typeName,
                                                       String fieldName, String argumentName,
                                                       int position, String name) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.POSITION, position)
-            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG.NAME, name)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.POSITION, position)
+            .set(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY.NAME, name)
             .execute();
     }
 
@@ -1229,15 +1229,15 @@ public final class SeededStore {
      */
     public static void seedService(DSLContext dsl, String graphName, String typeName, String fieldName,
                                    String className, String method) {
-        dsl.insertInto(GRAPHITRON_SERVICE)
-            .set(GRAPHITRON_SERVICE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_SERVICE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_SERVICE.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_SERVICE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_SERVICE.SOURCE_LINE, 2)
-            .set(GRAPHITRON_SERVICE.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_SERVICE.CLASS_NAME, className)
-            .set(GRAPHITRON_SERVICE.METHOD, method)
+        dsl.insertInto(GRAPHITRON_SERVICE_ENTRY)
+            .set(GRAPHITRON_SERVICE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_SERVICE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_SERVICE_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_SERVICE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_SERVICE_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_SERVICE_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_SERVICE_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_SERVICE_ENTRY.METHOD, method)
             .execute();
     }
 
@@ -1248,15 +1248,15 @@ public final class SeededStore {
      */
     public static void seedExternalField(DSLContext dsl, String graphName, String typeName,
                                          String fieldName, String className, String method) {
-        dsl.insertInto(GRAPHITRON_EXTERNAL_FIELD)
-            .set(GRAPHITRON_EXTERNAL_FIELD.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_EXTERNAL_FIELD.TYPE_NAME, typeName)
-            .set(GRAPHITRON_EXTERNAL_FIELD.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_LINE, 2)
-            .set(GRAPHITRON_EXTERNAL_FIELD.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_EXTERNAL_FIELD.CLASS_NAME, className)
-            .set(GRAPHITRON_EXTERNAL_FIELD.METHOD, method)
+        dsl.insertInto(GRAPHITRON_EXTERNAL_FIELD_ENTRY)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.CLASS_NAME, className)
+            .set(GRAPHITRON_EXTERNAL_FIELD_ENTRY.METHOD, method)
             .execute();
     }
 
@@ -1384,64 +1384,64 @@ public final class SeededStore {
             String argumentName, Integer ordinal) {
         var r = switch (site) {
             case "ROUTINE" -> dsl
-                .select(GRAPHITRON_ROUTINE.SOURCE_LINE, GRAPHITRON_ROUTINE.SOURCE_COLUMN)
-                .from(GRAPHITRON_ROUTINE)
-                .where(GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_ROUTINE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_ROUTINE.FIELD_NAME.eq(fieldName),
-                    GRAPHITRON_ROUTINE.ORDINAL.eq(ordinal))
+                .select(GRAPHITRON_ROUTINE_ENTRY.SOURCE_LINE, GRAPHITRON_ROUTINE_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_ROUTINE_ENTRY)
+                .where(GRAPHITRON_ROUTINE_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ROUTINE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ROUTINE_ENTRY.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ROUTINE_ENTRY.ORDINAL.eq(ordinal))
                 .fetchOne();
             case "SERVICE" -> dsl
-                .select(GRAPHITRON_SERVICE.SOURCE_LINE, GRAPHITRON_SERVICE.SOURCE_COLUMN)
-                .from(GRAPHITRON_SERVICE)
-                .where(GRAPHITRON_SERVICE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_SERVICE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName))
+                .select(GRAPHITRON_SERVICE_ENTRY.SOURCE_LINE, GRAPHITRON_SERVICE_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_SERVICE_ENTRY)
+                .where(GRAPHITRON_SERVICE_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_SERVICE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_SERVICE_ENTRY.FIELD_NAME.eq(fieldName))
                 .fetchOne();
             case "FIELD_CONDITION", "INPUT_FIELD_CONDITION" -> dsl
-                .select(GRAPHITRON_FIELD_CONDITION.SOURCE_LINE,
-                    GRAPHITRON_FIELD_CONDITION.SOURCE_COLUMN)
-                .from(GRAPHITRON_FIELD_CONDITION)
-                .where(GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_FIELD_CONDITION.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName))
+                .select(GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_FIELD_CONDITION_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_FIELD_CONDITION_ENTRY)
+                .where(GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME.eq(fieldName))
                 .fetchOne();
             case "ARGUMENT_CONDITION" -> dsl
-                .select(GRAPHITRON_ARGUMENT_CONDITION.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_CONDITION.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_CONDITION)
-                .where(GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME.eq(fieldName),
-                    GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME.eq(argumentName))
+                .select(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_ARGUMENT_CONDITION_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_ARGUMENT_CONDITION_ENTRY)
+                .where(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ARGUMENT_CONDITION_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ARGUMENT_CONDITION_ENTRY.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ARGUMENT_CONDITION_ENTRY.ARGUMENT_NAME.eq(argumentName))
                 .fetchOne();
             case "FIELD_REFERENCE_STEP" -> dsl
-                .select(GRAPHITRON_FIELD_REFERENCE.SOURCE_LINE,
-                    GRAPHITRON_FIELD_REFERENCE.SOURCE_COLUMN)
-                .from(GRAPHITRON_FIELD_REFERENCE)
-                .where(GRAPHITRON_FIELD_REFERENCE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_FIELD_REFERENCE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_FIELD_REFERENCE.FIELD_NAME.eq(fieldName),
-                    GRAPHITRON_FIELD_REFERENCE.ORDINAL.eq(ordinal))
+                .select(GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_FIELD_REFERENCE_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_FIELD_REFERENCE_ENTRY)
+                .where(GRAPHITRON_FIELD_REFERENCE_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_FIELD_REFERENCE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_REFERENCE_ENTRY.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_FIELD_REFERENCE_ENTRY.ORDINAL.eq(ordinal))
                 .fetchOne();
             case "ARGUMENT_REFERENCE_STEP" -> dsl
-                .select(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE,
-                    GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN)
-                .from(GRAPHITRON_ARGUMENT_REFERENCE)
-                .where(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME.eq(fieldName),
-                    GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME.eq(argumentName),
-                    GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL.eq(ordinal))
+                .select(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY)
+                .where(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ARGUMENT_NAME.eq(argumentName),
+                    GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ORDINAL.eq(ordinal))
                 .fetchOne();
             case "REFERENCE_FOR_STEP" -> dsl
-                .select(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE,
-                    GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN)
-                .from(GRAPHITRON_REFERENCE_FOR)
-                .where(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_REFERENCE_FOR.TYPE_NAME.eq(typeName),
-                    GRAPHITRON_REFERENCE_FOR.FIELD_NAME.eq(fieldName),
-                    GRAPHITRON_REFERENCE_FOR.ORDINAL.eq(ordinal))
+                .select(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_LINE,
+                    GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_COLUMN)
+                .from(GRAPHITRON_REFERENCE_FOR_ENTRY)
+                .where(GRAPHITRON_REFERENCE_FOR_ENTRY.GRAPH_NAME.eq(graphName),
+                    GRAPHITRON_REFERENCE_FOR_ENTRY.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_REFERENCE_FOR_ENTRY.FIELD_NAME.eq(fieldName),
+                    GRAPHITRON_REFERENCE_FOR_ENTRY.ORDINAL.eq(ordinal))
                 .fetchOne();
             default -> throw new IllegalArgumentException("no application relation for site " + site);
         };
@@ -1482,10 +1482,10 @@ public final class SeededStore {
     public static void seedRoutineArgmappingEntry(DSLContext dsl, String graphName, String typeName,
                                                  String fieldName, int ordinal, int position,
                                                  String paramName, String argumentPath) {
-        if (!dsl.fetchExists(GRAPHITRON_ROUTINE, GRAPHITRON_ROUTINE.GRAPH_NAME.eq(graphName)
-                .and(GRAPHITRON_ROUTINE.TYPE_NAME.eq(typeName))
-                .and(GRAPHITRON_ROUTINE.FIELD_NAME.eq(fieldName))
-                .and(GRAPHITRON_ROUTINE.ORDINAL.eq(ordinal)))) {
+        if (!dsl.fetchExists(GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_ROUTINE_ENTRY.GRAPH_NAME.eq(graphName)
+                .and(GRAPHITRON_ROUTINE_ENTRY.TYPE_NAME.eq(typeName))
+                .and(GRAPHITRON_ROUTINE_ENTRY.FIELD_NAME.eq(fieldName))
+                .and(GRAPHITRON_ROUTINE_ENTRY.ORDINAL.eq(ordinal)))) {
             seedRoutine(dsl, graphName, typeName, fieldName, ordinal, "Routines.someRoutine", 2);
         }
         pair(dsl, graphName, "ROUTINE", typeName, fieldName, null, ordinal, null,
@@ -1496,9 +1496,9 @@ public final class SeededStore {
     public static void seedServiceArgmappingEntry(DSLContext dsl, String graphName, String typeName,
                                                  String fieldName, int position, String paramName,
                                                  String argumentPath) {
-        if (!dsl.fetchExists(GRAPHITRON_SERVICE, GRAPHITRON_SERVICE.GRAPH_NAME.eq(graphName)
-                .and(GRAPHITRON_SERVICE.TYPE_NAME.eq(typeName))
-                .and(GRAPHITRON_SERVICE.FIELD_NAME.eq(fieldName)))) {
+        if (!dsl.fetchExists(GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_SERVICE_ENTRY.GRAPH_NAME.eq(graphName)
+                .and(GRAPHITRON_SERVICE_ENTRY.TYPE_NAME.eq(typeName))
+                .and(GRAPHITRON_SERVICE_ENTRY.FIELD_NAME.eq(fieldName)))) {
             seedService(dsl, graphName, typeName, fieldName, "no.example.Svc", "get");
         }
         pair(dsl, graphName, "SERVICE", typeName, fieldName, null, null, null,
@@ -1515,10 +1515,10 @@ public final class SeededStore {
                                                         String typeName, String fieldName,
                                                         int position, String paramName,
                                                         String argumentPath) {
-        if (!dsl.fetchExists(GRAPHITRON_FIELD_CONDITION,
-                GRAPHITRON_FIELD_CONDITION.GRAPH_NAME.eq(graphName)
-                    .and(GRAPHITRON_FIELD_CONDITION.TYPE_NAME.eq(typeName))
-                    .and(GRAPHITRON_FIELD_CONDITION.FIELD_NAME.eq(fieldName)))) {
+        if (!dsl.fetchExists(GRAPHITRON_FIELD_CONDITION_ENTRY,
+                GRAPHITRON_FIELD_CONDITION_ENTRY.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_FIELD_CONDITION_ENTRY.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_FIELD_CONDITION_ENTRY.FIELD_NAME.eq(fieldName)))) {
             seedFieldCondition(dsl, graphName, typeName, fieldName, "no.example.Cond", "apply", false);
         }
         boolean onInput = dsl.fetchExists(GRAPHQL_TYPE, GRAPHQL_TYPE.GRAPH_NAME.eq(graphName)
@@ -1542,11 +1542,11 @@ public final class SeededStore {
                 .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
             seedArgument(dsl, graphName, typeName, fieldName, argumentName, "String");
         }
-        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_CONDITION,
-                GRAPHITRON_ARGUMENT_CONDITION.GRAPH_NAME.eq(graphName)
-                    .and(GRAPHITRON_ARGUMENT_CONDITION.TYPE_NAME.eq(typeName))
-                    .and(GRAPHITRON_ARGUMENT_CONDITION.FIELD_NAME.eq(fieldName))
-                    .and(GRAPHITRON_ARGUMENT_CONDITION.ARGUMENT_NAME.eq(argumentName)))) {
+        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_CONDITION_ENTRY,
+                GRAPHITRON_ARGUMENT_CONDITION_ENTRY.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_ARGUMENT_CONDITION_ENTRY.ARGUMENT_NAME.eq(argumentName)))) {
             seedArgumentCondition(dsl, graphName, typeName, fieldName, argumentName,
                 "no.example.Cond", "apply", false);
         }
@@ -1563,12 +1563,12 @@ public final class SeededStore {
                                                             int ordinal, int stepPosition,
                                                             int position, String paramName,
                                                             String argumentPath) {
-        if (!dsl.fetchExists(GRAPHITRON_FIELD_REFERENCE_STEP,
-                GRAPHITRON_FIELD_REFERENCE_STEP.GRAPH_NAME.eq(graphName)
-                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.TYPE_NAME.eq(typeName))
-                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.FIELD_NAME.eq(fieldName))
-                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.ORDINAL.eq(ordinal))
-                    .and(GRAPHITRON_FIELD_REFERENCE_STEP.POSITION.eq(stepPosition)))) {
+        if (!dsl.fetchExists(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY,
+                GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY.POSITION.eq(stepPosition)))) {
             seedFieldReference(dsl, graphName, typeName, fieldName, ordinal);
             seedFieldReferenceStep(dsl, graphName, typeName, fieldName, ordinal, stepPosition,
                 null, null);
@@ -1593,31 +1593,31 @@ public final class SeededStore {
                 .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
             seedArgument(dsl, graphName, typeName, fieldName, argumentName, "String");
         }
-        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_REFERENCE_STEP,
-                GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME.eq(graphName)
-                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME.eq(typeName))
-                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME.eq(fieldName))
-                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME.eq(argumentName))
-                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL.eq(ordinal))
-                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION.eq(stepPosition)))) {
-            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.TYPE_NAME, typeName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.ARGUMENT_NAME, argumentName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.ORDINAL, ordinal)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_NAME, SEED_SOURCE)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_LINE, 2)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE.SOURCE_COLUMN, 3)
+        if (!dsl.fetchExists(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME.eq(argumentName))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.POSITION.eq(stepPosition)))) {
+            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ARGUMENT_NAME, argumentName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.ORDINAL, ordinal)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_LINE, 2)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY.SOURCE_COLUMN, 3)
                 .onDuplicateKeyIgnore()
                 .execute();
-            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.TYPE_NAME, typeName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ARGUMENT_NAME, argumentName)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.ORDINAL, ordinal)
-                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP.POSITION, stepPosition)
+            dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.TYPE_NAME, typeName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ARGUMENT_NAME, argumentName)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.ORDINAL, ordinal)
+                .set(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.POSITION, stepPosition)
                 .execute();
         }
         pair(dsl, graphName, "ARGUMENT_REFERENCE_STEP", typeName, fieldName, argumentName,
@@ -1632,15 +1632,15 @@ public final class SeededStore {
     public static void seedReferenceFor(DSLContext dsl, String graphName, String typeName,
                                         String fieldName, int ordinal,
                                         String participantTypeRef) {
-        dsl.insertInto(GRAPHITRON_REFERENCE_FOR)
-            .set(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_REFERENCE_FOR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_REFERENCE_FOR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_REFERENCE_FOR.ORDINAL, ordinal)
-            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE, 2)
-            .set(GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_REFERENCE_FOR.PARTICIPANT_TYPE_REF, participantTypeRef)
+        dsl.insertInto(GRAPHITRON_REFERENCE_FOR_ENTRY)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_REFERENCE_FOR_ENTRY.PARTICIPANT_TYPE_REF, participantTypeRef)
             .execute();
     }
 
@@ -1648,16 +1648,16 @@ public final class SeededStore {
     public static void seedArgumentReferenceFor(DSLContext dsl, String graphName, String typeName,
                                                 String fieldName, String argumentName, int ordinal,
                                                 String participantTypeRef) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_FOR)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.ORDINAL, ordinal)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR.PARTICIPANT_TYPE_REF, participantTypeRef)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY.PARTICIPANT_TYPE_REF, participantTypeRef)
             .execute();
     }
 
@@ -1670,29 +1670,29 @@ public final class SeededStore {
                                                           int ordinal, int stepPosition,
                                                           int position, String paramName,
                                                           String argumentPath) {
-        if (!dsl.fetchExists(GRAPHITRON_REFERENCE_FOR_STEP,
-                GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME.eq(graphName)
-                    .and(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME.eq(typeName))
-                    .and(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME.eq(fieldName))
-                    .and(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL.eq(ordinal))
-                    .and(GRAPHITRON_REFERENCE_FOR_STEP.POSITION.eq(stepPosition)))) {
-            dsl.insertInto(GRAPHITRON_REFERENCE_FOR)
-                .set(GRAPHITRON_REFERENCE_FOR.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_REFERENCE_FOR.TYPE_NAME, typeName)
-                .set(GRAPHITRON_REFERENCE_FOR.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_REFERENCE_FOR.ORDINAL, ordinal)
-                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_NAME, SEED_SOURCE)
-                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_LINE, 2)
-                .set(GRAPHITRON_REFERENCE_FOR.SOURCE_COLUMN, 3)
-                .set(GRAPHITRON_REFERENCE_FOR.PARTICIPANT_TYPE_REF, "Other")
+        if (!dsl.fetchExists(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY,
+                GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME.eq(graphName)
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TYPE_NAME.eq(typeName))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.FIELD_NAME.eq(fieldName))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.ORDINAL.eq(ordinal))
+                    .and(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.POSITION.eq(stepPosition)))) {
+            dsl.insertInto(GRAPHITRON_REFERENCE_FOR_ENTRY)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.TYPE_NAME, typeName)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.ORDINAL, ordinal)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_NAME, SEED_SOURCE)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_LINE, 2)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.SOURCE_COLUMN, 3)
+                .set(GRAPHITRON_REFERENCE_FOR_ENTRY.PARTICIPANT_TYPE_REF, "Other")
                 .onDuplicateKeyIgnore()
                 .execute();
-            dsl.insertInto(GRAPHITRON_REFERENCE_FOR_STEP)
-                .set(GRAPHITRON_REFERENCE_FOR_STEP.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_REFERENCE_FOR_STEP.TYPE_NAME, typeName)
-                .set(GRAPHITRON_REFERENCE_FOR_STEP.FIELD_NAME, fieldName)
-                .set(GRAPHITRON_REFERENCE_FOR_STEP.ORDINAL, ordinal)
-                .set(GRAPHITRON_REFERENCE_FOR_STEP.POSITION, stepPosition)
+            dsl.insertInto(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.TYPE_NAME, typeName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.FIELD_NAME, fieldName)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.ORDINAL, ordinal)
+                .set(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY.POSITION, stepPosition)
                 .execute();
         }
         pair(dsl, graphName, "REFERENCE_FOR_STEP", typeName, fieldName, null, ordinal,
@@ -1756,14 +1756,14 @@ public final class SeededStore {
      */
     public static void seedFieldNodeId(DSLContext dsl, String graphName, String typeName,
                                        String fieldName, String nodeTypeRef) {
-        dsl.insertInto(GRAPHITRON_FIELD_NODE_ID)
-            .set(GRAPHITRON_FIELD_NODE_ID.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_NODE_ID.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_NODE_ID.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FIELD_NODE_ID.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FIELD_NODE_ID.NODE_TYPE_REF, nodeTypeRef)
+        dsl.insertInto(GRAPHITRON_FIELD_NODE_ID_ENTRY)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FIELD_NODE_ID_ENTRY.NODE_TYPE_REF, nodeTypeRef)
             .execute();
     }
 
@@ -1781,15 +1781,15 @@ public final class SeededStore {
                 .and(GRAPHQL_ARGUMENT.ARGUMENT_NAME.eq(argumentName)))) {
             seedArgument(dsl, graphName, typeName, fieldName, argumentName, "ID");
         }
-        dsl.insertInto(GRAPHITRON_ARGUMENT_NODE_ID)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ARGUMENT_NODE_ID.NODE_TYPE_REF, nodeTypeRef)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY.NODE_TYPE_REF, nodeTypeRef)
             .execute();
     }
 
@@ -1800,14 +1800,14 @@ public final class SeededStore {
      */
     public static void seedMutation(DSLContext dsl, String graphName, String typeName,
                                     String fieldName, String operation) {
-        dsl.insertInto(GRAPHITRON_MUTATION)
-            .set(GRAPHITRON_MUTATION.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MUTATION.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MUTATION.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_MUTATION.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_MUTATION.SOURCE_LINE, 2)
-            .set(GRAPHITRON_MUTATION.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_MUTATION.OPERATION, operation)
+        dsl.insertInto(GRAPHITRON_MUTATION_ENTRY)
+            .set(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MUTATION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_MUTATION_ENTRY.OPERATION, operation)
             .execute();
     }
 
@@ -1817,17 +1817,17 @@ public final class SeededStore {
      */
     public static void seedMutation(DSLContext dsl, String graphName, String typeName,
                                     String fieldName, String operation, String tableRef) {
-        dsl.insertInto(GRAPHITRON_MUTATION)
-            .set(GRAPHITRON_MUTATION.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_MUTATION.TYPE_NAME, typeName)
-            .set(GRAPHITRON_MUTATION.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_MUTATION.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_MUTATION.SOURCE_LINE, 2)
-            .set(GRAPHITRON_MUTATION.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_MUTATION.OPERATION, operation)
-            .set(GRAPHITRON_MUTATION.TABLE_REF, tableRef)
-            .set(GRAPHITRON_MUTATION.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
-            .set(GRAPHITRON_MUTATION.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+        dsl.insertInto(GRAPHITRON_MUTATION_ENTRY)
+            .set(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_MUTATION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_MUTATION_ENTRY.OPERATION, operation)
+            .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF, tableRef)
+            .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
+            .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
             .execute();
     }
 
@@ -1847,17 +1847,17 @@ public final class SeededStore {
      */
     public static void seedRoutine(DSLContext dsl, String graphName, String typeName,
                                    String fieldName, int ordinal, String routineRef, int sourceLine) {
-        dsl.insertInto(GRAPHITRON_ROUTINE)
-            .set(GRAPHITRON_ROUTINE.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ROUTINE.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ROUTINE.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ROUTINE.ORDINAL, ordinal)
-            .set(GRAPHITRON_ROUTINE.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ROUTINE.SOURCE_LINE, sourceLine)
-            .set(GRAPHITRON_ROUTINE.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_ROUTINE.ROUTINE_REF, routineRef)
-            .set(GRAPHITRON_ROUTINE.ROUTINE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(routineRef))
-            .set(GRAPHITRON_ROUTINE.ROUTINE_REF_NAME_PART, QualifiedNameGrammar.namePart(routineRef))
+        dsl.insertInto(GRAPHITRON_ROUTINE_ENTRY)
+            .set(GRAPHITRON_ROUTINE_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ROUTINE_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ROUTINE_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ROUTINE_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_ROUTINE_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ROUTINE_ENTRY.SOURCE_LINE, sourceLine)
+            .set(GRAPHITRON_ROUTINE_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF, routineRef)
+            .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(routineRef))
+            .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART, QualifiedNameGrammar.namePart(routineRef))
             .execute();
     }
 
@@ -1877,14 +1877,14 @@ public final class SeededStore {
      */
     public static void seedArgumentLookupKey(DSLContext dsl, String graphName, String typeName,
                                              String fieldName, String argumentName, int sourceLine) {
-        dsl.insertInto(GRAPHITRON_ARGUMENT_LOOKUP_KEY)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_LINE, sourceLine)
-            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.SOURCE_LINE, sourceLine)
+            .set(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1895,13 +1895,13 @@ public final class SeededStore {
      */
     public static void seedInputFieldLookupKey(DSLContext dsl, String graphName, String typeName,
                                                String fieldName) {
-        dsl.insertInto(GRAPHITRON_FIELD_LOOKUP_KEY)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FIELD_LOOKUP_KEY.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1912,13 +1912,13 @@ public final class SeededStore {
      */
     public static void seedConnection(DSLContext dsl, String graphName, String typeName,
                                       String fieldName) {
-        dsl.insertInto(GRAPHITRON_CONNECTION)
-            .set(GRAPHITRON_CONNECTION.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_CONNECTION.TYPE_NAME, typeName)
-            .set(GRAPHITRON_CONNECTION.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_CONNECTION.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_CONNECTION.SOURCE_LINE, 2)
-            .set(GRAPHITRON_CONNECTION.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_CONNECTION_ENTRY)
+            .set(GRAPHITRON_CONNECTION_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1929,14 +1929,14 @@ public final class SeededStore {
      */
     public static void seedOrderBy(DSLContext dsl, String graphName, String typeName,
                                    String fieldName, String argumentName) {
-        dsl.insertInto(GRAPHITRON_ORDER_BY)
-            .set(GRAPHITRON_ORDER_BY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_ORDER_BY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_ORDER_BY.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_ORDER_BY.ARGUMENT_NAME, argumentName)
-            .set(GRAPHITRON_ORDER_BY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_ORDER_BY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_ORDER_BY.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_ORDER_BY_ENTRY)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.ARGUMENT_NAME, argumentName)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -1948,13 +1948,13 @@ public final class SeededStore {
      */
     public static void seedFacet(DSLContext dsl, String graphName, String typeName,
                                  String fieldName) {
-        dsl.insertInto(GRAPHITRON_FACET)
-            .set(GRAPHITRON_FACET.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FACET.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FACET.FIELD_NAME, fieldName)
-            .set(GRAPHITRON_FACET.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FACET.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FACET.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHITRON_FACET_ENTRY)
+            .set(GRAPHITRON_FACET_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FACET_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FACET_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_FACET_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FACET_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FACET_ENTRY.SOURCE_COLUMN, 3)
             .execute();
     }
 
@@ -2076,13 +2076,13 @@ public final class SeededStore {
      * (a {@code null} url, which matches no prefix).
      */
     public static void seedLink(DSLContext dsl, String graphName, int ordinal, String url) {
-        dsl.insertInto(GRAPHITRON_LINK)
-            .set(GRAPHITRON_LINK.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_LINK.ORDINAL, ordinal)
-            .set(GRAPHITRON_LINK.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_LINK.SOURCE_LINE, 1)
-            .set(GRAPHITRON_LINK.SOURCE_COLUMN, 15)
-            .set(GRAPHITRON_LINK.URL, url)
+        dsl.insertInto(GRAPHITRON_LINK_ENTRY)
+            .set(GRAPHITRON_LINK_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_LINK_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_LINK_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_LINK_ENTRY.SOURCE_LINE, 1)
+            .set(GRAPHITRON_LINK_ENTRY.SOURCE_COLUMN, 15)
+            .set(GRAPHITRON_LINK_ENTRY.URL, url)
             .execute();
     }
 
@@ -2102,34 +2102,34 @@ public final class SeededStore {
                                          int ordinal, String fieldsSdl, Boolean resolvable,
                                          String... paths) {
         seedDeclaredType(dsl, graphName, typeName, "OBJECT");
-        dsl.insertInto(GRAPHITRON_FEDERATION_KEY)
-            .set(GRAPHITRON_FEDERATION_KEY.GRAPH_NAME, graphName)
-            .set(GRAPHITRON_FEDERATION_KEY.TYPE_NAME, typeName)
-            .set(GRAPHITRON_FEDERATION_KEY.ORDINAL, ordinal)
-            .set(GRAPHITRON_FEDERATION_KEY.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHITRON_FEDERATION_KEY.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHITRON_FEDERATION_KEY.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHITRON_FEDERATION_KEY.SOURCE_LINE, 2)
-            .set(GRAPHITRON_FEDERATION_KEY.SOURCE_COLUMN, 3)
-            .set(GRAPHITRON_FEDERATION_KEY.FIELDS_SDL, fieldsSdl)
-            .set(GRAPHITRON_FEDERATION_KEY.RESOLVABLE, resolvable)
+        dsl.insertInto(GRAPHITRON_FEDERATION_KEY_ENTRY)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.ORDINAL, ordinal)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_LINE, 2)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.FIELDS_SDL, fieldsSdl)
+            .set(GRAPHITRON_FEDERATION_KEY_ENTRY.RESOLVABLE, resolvable)
             .execute();
         for (int position = 0; position < paths.length; position++) {
-            dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD.GRAPH_NAME, graphName)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD.TYPE_NAME, typeName)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD.ORDINAL, ordinal)
-                .set(GRAPHITRON_FEDERATION_KEY_FIELD.POSITION, position)
+            dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY)
+                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.GRAPH_NAME, graphName)
+                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.TYPE_NAME, typeName)
+                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.ORDINAL, ordinal)
+                .set(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY.POSITION, position)
                 .execute();
             String[] segments = paths[position].split("\\.");
             for (int segment = 0; segment < segments.length; segment++) {
-                dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.GRAPH_NAME, graphName)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.TYPE_NAME, typeName)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.ORDINAL, ordinal)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.POSITION, position)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.SEGMENT_POSITION, segment)
-                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT.SEGMENT_NAME, segments[segment])
+                dsl.insertInto(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.GRAPH_NAME, graphName)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.TYPE_NAME, typeName)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.ORDINAL, ordinal)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.POSITION, position)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.SEGMENT_POSITION, segment)
+                    .set(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY.SEGMENT_NAME, segments[segment])
                     .execute();
             }
         }

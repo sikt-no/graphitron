@@ -10,8 +10,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -107,12 +107,12 @@ class FieldSetDecodeTest {
 
     /** How many selections the field set decoded to. */
     private static int selections(DSLContext dsl) {
-        return dsl.fetchCount(GRAPHITRON_FEDERATION_KEY_FIELD);
+        return dsl.fetchCount(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY);
     }
 
     /** One selection's segments, outermost first, which is also the density check. */
     private static List<String> segments(DSLContext dsl, int position) {
-        var s = GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
+        var s = GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
         return dsl.select(s.SEGMENT_NAME)
             .from(s)
             .where(s.POSITION.eq(position))

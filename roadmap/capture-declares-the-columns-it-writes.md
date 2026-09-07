@@ -55,9 +55,9 @@ arrives.
 
 **Eleven of the 123 arrived ahead of this item.** That trigger is no longer hypothetical: the
 grammar-normalisation item shipped the generated columns (`28c4f64`, `71b7473`), and rather than wait
-on this one it converted the eleven relations it folds columns onto (`graphitron_table`,
-`graphitron_mutation`, `graphitron_routine`, the three reference-step relations,
-`graphitron_field_binding`, `graphql_field`, `sql_table`, `sql_constraint`, `sql_column`), thirteen
+on this one it converted the eleven relations it folds columns onto (`graphitron_table_entry`,
+`graphitron_mutation_entry`, `graphitron_routine_entry`, the three reference-step relations,
+`graphitron_field_binding_entry`, `graphql_field`, `sql_table`, `sql_constraint`, `sql_column`), thirteen
 `newRecord` sites in all. `sql_constraint_column` was the twelfth in an earlier draft of that item
 and is *not* converted: its only case-insensitive comparison is against `sql_column` inside the
 catalog family, so the narrowed fold rule mints it no folded column, it carries nothing the database

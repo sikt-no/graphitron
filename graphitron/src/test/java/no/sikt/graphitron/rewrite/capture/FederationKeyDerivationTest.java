@@ -12,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_INFERRED_NODE_TYPE;
@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * write the capture walk performed.
  *
  * <p>What each case reads is the point. Nothing lands in {@code graphql_type_directive} or
- * {@code graphitron_federation_key} for a synthesized key any more, so those two relations are
+ * {@code graphitron_federation_key_entry} for a synthesized key any more, so those two relations are
  * asserted <em>empty</em> at the synthesized coordinate and the membership is read from
  * {@code intent_synthesized_federation_key}. That is the whole of the move: at this coordinate
  * stratum one is now pure transcription of the SDL, and a reader wanting every key the emitted
@@ -93,7 +93,7 @@ class FederationKeyDerivationTest {
             assertThat(keyApplicationsOf(store.dsl(), "Film"))
                 .as("the SDL declares no @key, so the transcription holds none")
                 .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_FEDERATION_KEY))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_FEDERATION_KEY_ENTRY))
                 .as("the decode relation holds authored applications alone")
                 .isZero();
 

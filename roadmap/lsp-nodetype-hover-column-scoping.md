@@ -23,7 +23,7 @@ The LSP's move to the fact store delivered the behaviour and deleted the prescri
 vocabulary. `columnGraphqlType`, `CompletionData.NodeMetadata` in the LSP main sources, and
 `TypeContext.enclosingTypeDefinition` (the sibling shape the fix was to mirror) are all absent
 from the tree. The scoping now lives in `Hovers.nodeColumns`, which resolves the node type's own
-binding out of `graphitron_table` and returns that table's columns; its javadoc states the old
+binding out of `graphitron_table_entry` and returns that table's columns; its javadoc states the old
 defect in the past tense as its own reason for existing.
 
 ## What is left

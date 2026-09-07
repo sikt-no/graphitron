@@ -52,7 +52,7 @@ confirmed missing supertype nobody has captured. That relation has two arms toda
 `UNION ALL` resolves an authored `(class, method)` pair on one side and reaches
 `sql_routine_parameter` through `intent_field_routine_method` on the other, and the seven arms that
 used to differ only in which owner relation carried the class and the method collapsed into one join
-when `graphitron_method_reference` was captured as a table. The supertype the prediction was waiting
+when `graphitron_method_reference_entry` was captured as a table. The supertype the prediction was waiting
 for exists. What the three relations cost now is unmeasured, which is a different statement from the
 one the file makes.
 

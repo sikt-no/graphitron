@@ -1278,7 +1278,7 @@ and it is correctness rather than convenience.
 **One wording, because the word is load-bearing in the other item.** The re-aggregated set is
 described here as "the seven `graphitron_` anchors that key at `store_graph` rather than at a
 source", naming the element family and leaving three unnamed. At least one of the unnamed three is
-an entry: `graphitron_spelled_reference` keys `(graph_name, spelling)`, foreign-keys only to
+an entry: `graphitron_spelled_reference_entry` keys `(graph_name, spelling)`, foreign-keys only to
 `store_graph`, carries no `source_name`, and deduplicates a spelling across the seven sites that can
 write one, so its rows really are a function of the document set and it really does belong in that
 bucket. It is also as-written in every other respect and asks nothing of the catalog. Naming the set

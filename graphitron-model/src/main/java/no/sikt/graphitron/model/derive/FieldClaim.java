@@ -13,7 +13,7 @@ import java.util.List;
  *
  * <p>A claim's slots are the directive's <em>own</em> decoded columns, never a resolution the
  * classification walk would have to perform: {@link Mutation#tableRef()} is
- * {@code graphitron_mutation.table_ref} as written and absent when unwritten, deliberately not
+ * {@code graphitron_mutation_entry.table_ref} as written and absent when unwritten, deliberately not
  * the write-target precedence (whose single producer is
  * {@code MutationInputResolver#resolveDmlWriteTableRef}); a second
  * evaluation here could assert a table the classifier refuses.

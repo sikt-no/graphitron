@@ -39,8 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * transcription of the documents, enumerated off the generated model by prefix so the next
  * cross-corpus read fails this without being named here. Beside it is the as-written half of
  * {@code graphitron_}, the relations whose rows are a function of one document and nothing else,
- * which {@link EntryFamilyFixture#ENTRY_RELATIONS} names and a coverage gate in the model module
- * holds to being the whole of that half. Those rows restate a directive application in graphitron's
+ * which {@link EntryFamilyFixture#entryRelations()} reads off the generated model by name and a
+ * coverage gate in the model module holds to being populated. Those rows restate a directive application in graphitron's
  * vocabulary, so "does not vary with the catalog" is a property they have by construction and one
  * worth holding them to. The catalog's own families are deliberately out of scope, being exactly the
  * rows whose presence the two arms differ by.
@@ -116,7 +116,7 @@ class CaptureCorpusIsolationTest {
             () -> EntryFamilyFixture.capture(tmp, catalog()),
             () -> EntryFamilyFixture.capture(tmp));
 
-        var empty = EntryFamilyFixture.ENTRY_RELATIONS.stream()
+        var empty = EntryFamilyFixture.entryRelations().stream()
             .filter(relation -> bare.get(relation).isEmpty())
             .toList();
         assertThat(empty)
@@ -194,7 +194,7 @@ class CaptureCorpusIsolationTest {
             .filter(table -> {
                 String name = table.getName().toLowerCase(Locale.ROOT);
                 return SDL_FAMILIES.stream().anyMatch(name::startsWith)
-                    || EntryFamilyFixture.ENTRY_RELATIONS.contains(name);
+                    || EntryFamilyFixture.entryRelations().contains(name);
             })
             .toList();
     }

@@ -11,7 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -88,7 +88,7 @@ class WrittenPathSplitTest {
             type Film { title: String }
             """;
         try (var store = CapturedStore.of(tmp, malformed)) {
-            assertThat(store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT).fetch())
+            assertThat(store.dsl().selectFrom(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY).fetch())
                 .as("the fixture has to actually quarantine, or this asserts nothing")
                 .isNotEmpty();
             assertThat(store.dsl().selectFrom(GRAPHITRON_ARGMAPPING_ENTRY).fetch()).isEmpty();

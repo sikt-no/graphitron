@@ -23,7 +23,7 @@ import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_DATA_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
@@ -357,7 +357,7 @@ public final class RoutineWriteFacts {
         var ts = SQL_SCHEMA.as("hop_target_schema");
         var k = SQL_CONSTRAINT.as("hop_key");
         var ks = SQL_SCHEMA.as("hop_key_schema");
-        var st = GRAPHITRON_FIELD_REFERENCE_STEP;
+        var st = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
         return multiset(
             select(n.SEQ, n.STEP_VIA, t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, ts.TABLES_CLASS_FQN,
                 ks.KEYS_CLASS_FQN, k.JOOQ_NAME, st.CLASS_NAME, st.METHOD, n.FIELD_NAME)

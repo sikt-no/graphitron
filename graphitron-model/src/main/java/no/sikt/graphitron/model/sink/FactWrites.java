@@ -9,16 +9,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -80,22 +80,22 @@ final class FactWrites {
 
     private static Map<Table<?>, RelationWriter> registry() {
         Map<Table<?>, RelationWriter> writers = new HashMap<>();
-        writers.put(GRAPHITRON_TABLE, FactWrites::graphitronTable);
-        writers.put(GRAPHITRON_FIELD_BINDING, FactWrites::graphitronFieldBinding);
-        writers.put(GRAPHITRON_ARGUMENT_BINDING, FactWrites::graphitronArgumentBinding);
-        writers.put(GRAPHITRON_FIELD_REFERENCE_STEP, FactWrites::graphitronFieldReferenceStep);
-        writers.put(GRAPHITRON_ARGUMENT_REFERENCE_STEP, FactWrites::graphitronArgumentReferenceStep);
-        writers.put(GRAPHITRON_REFERENCE_FOR_STEP, FactWrites::graphitronReferenceForStep);
-        writers.put(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP, FactWrites::graphitronArgumentReferenceForStep);
-        writers.put(GRAPHITRON_MUTATION, FactWrites::graphitronMutation);
-        writers.put(GRAPHITRON_ROUTINE, FactWrites::graphitronRoutine);
+        writers.put(GRAPHITRON_TABLE_ENTRY, FactWrites::graphitronTable);
+        writers.put(GRAPHITRON_FIELD_BINDING_ENTRY, FactWrites::graphitronFieldBinding);
+        writers.put(GRAPHITRON_ARGUMENT_BINDING_ENTRY, FactWrites::graphitronArgumentBinding);
+        writers.put(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY, FactWrites::graphitronFieldReferenceStep);
+        writers.put(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY, FactWrites::graphitronArgumentReferenceStep);
+        writers.put(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronReferenceForStep);
+        writers.put(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronArgumentReferenceForStep);
+        writers.put(GRAPHITRON_MUTATION_ENTRY, FactWrites::graphitronMutation);
+        writers.put(GRAPHITRON_ROUTINE_ENTRY, FactWrites::graphitronRoutine);
         writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
         writers.put(GRAPHQL_ARGUMENT, FactWrites::graphqlArgument);
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
         writers.put(SQL_ENUM_BINDING, FactWrites::sqlEnumBinding);
-        writers.put(GRAPHITRON_SPELLED_REFERENCE, FactWrites::graphitronSpelledReference);
+        writers.put(GRAPHITRON_SPELLED_REFERENCE_ENTRY, FactWrites::graphitronSpelledReference);
         writers.put(JVM_METHOD, FactWrites::jvmMethod);
         return writers;
     }
@@ -131,7 +131,7 @@ final class FactWrites {
     }
 
     private static void graphitronSpelledReference(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_SPELLED_REFERENCE;
+        var t = GRAPHITRON_SPELLED_REFERENCE_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.SPELLING,
@@ -148,7 +148,7 @@ final class FactWrites {
     }
 
     private static void graphitronTable(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_TABLE;
+        var t = GRAPHITRON_TABLE_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -177,7 +177,7 @@ final class FactWrites {
     }
 
     private static void graphitronFieldBinding(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_FIELD_BINDING;
+        var t = GRAPHITRON_FIELD_BINDING_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -200,7 +200,7 @@ final class FactWrites {
     }
 
     private static void graphitronArgumentBinding(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_ARGUMENT_BINDING;
+        var t = GRAPHITRON_ARGUMENT_BINDING_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -225,7 +225,7 @@ final class FactWrites {
     }
 
     private static void graphitronFieldReferenceStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_FIELD_REFERENCE_STEP;
+        var t = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -262,7 +262,7 @@ final class FactWrites {
     }
 
     private static void graphitronArgumentReferenceForStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
+        var t = GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -301,7 +301,7 @@ final class FactWrites {
     }
 
     private static void graphitronArgumentReferenceStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_ARGUMENT_REFERENCE_STEP;
+        var t = GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -340,7 +340,7 @@ final class FactWrites {
     }
 
     private static void graphitronReferenceForStep(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_REFERENCE_FOR_STEP;
+        var t = GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -377,7 +377,7 @@ final class FactWrites {
     }
 
     private static void graphitronMutation(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_MUTATION;
+        var t = GRAPHITRON_MUTATION_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,
@@ -408,7 +408,7 @@ final class FactWrites {
     }
 
     private static void graphitronRoutine(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHITRON_ROUTINE;
+        var t = GRAPHITRON_ROUTINE_ENTRY;
         var batch = dsl.batch(dsl.insertInto(t)
                 .columns(t.GRAPH_NAME,
                          t.TYPE_NAME,

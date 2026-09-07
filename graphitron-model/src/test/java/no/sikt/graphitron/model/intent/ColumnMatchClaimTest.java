@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
@@ -81,9 +81,9 @@ class ColumnMatchClaimTest {
                 .where(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH))
                 .and(GRAPHQL_FIELD.TYPE_NAME.eq("Film"))
                 .and(GRAPHQL_FIELD.FIELD_NAME.eq("title")).fetchSingle();
-            var binding = dsl.selectFrom(GRAPHITRON_TABLE)
-                .where(GRAPHITRON_TABLE.GRAPH_NAME.eq(GRAPH))
-                .and(GRAPHITRON_TABLE.TYPE_NAME.eq("Film")).fetchSingle();
+            var binding = dsl.selectFrom(GRAPHITRON_TABLE_ENTRY)
+                .where(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq("Film")).fetchSingle();
             assertThat(row.getSourceName()).isEqualTo(field.getSourceName());
             assertThat(row.getSourceLine()).isEqualTo(field.getSourceLine());
             assertThat(row.getSourceColumn())
@@ -377,7 +377,7 @@ class ColumnMatchClaimTest {
         });
     }
 
-    /** The omitted argument's fallback, which {@code graphitron_table} defers: the type's own name. */
+    /** The omitted argument's fallback, which {@code graphitron_table_entry} defers: the type's own name. */
     @Test
     void anOmittedNameResolvesFromTheTypeName() {
         withCatalog(dsl -> {

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
@@ -164,8 +164,8 @@ class ArgumentReferenceStepTargetTest {
             seedKeyPath(dsl, "Query", "films", "inActor",
                 "no_such_fkey", "film_actor_actor_id_fkey");
 
-            assertThat(dsl.fetchCount(GRAPHITRON_ARGUMENT_REFERENCE_STEP,
-                GRAPHITRON_ARGUMENT_REFERENCE_STEP.GRAPH_NAME.eq(GRAPH)))
+            assertThat(dsl.fetchCount(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY,
+                GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY.GRAPH_NAME.eq(GRAPH)))
                 .as("both elements were authored; only their resolution declines")
                 .isEqualTo(2);
             assertThat(chain(dsl, GRAPH)).isEmpty();

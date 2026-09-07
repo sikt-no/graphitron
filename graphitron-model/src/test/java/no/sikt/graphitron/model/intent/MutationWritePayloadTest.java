@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_WRITE_PAYLOAD;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -291,10 +291,10 @@ class MutationWritePayloadTest {
 
     /** {@code @mutation(multiRow: true)}, which the seeding helper leaves unstated. */
     private static void seedMultiRow(DSLContext dsl, String fieldName) {
-        dsl.update(GRAPHITRON_MUTATION)
-            .set(GRAPHITRON_MUTATION.MULTI_ROW, true)
-            .where(GRAPHITRON_MUTATION.GRAPH_NAME.eq(GRAPH))
-            .and(GRAPHITRON_MUTATION.FIELD_NAME.eq(fieldName))
+        dsl.update(GRAPHITRON_MUTATION_ENTRY)
+            .set(GRAPHITRON_MUTATION_ENTRY.MULTI_ROW, true)
+            .where(GRAPHITRON_MUTATION_ENTRY.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME.eq(fieldName))
             .execute();
     }
 

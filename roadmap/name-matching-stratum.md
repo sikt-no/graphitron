@@ -79,7 +79,7 @@ primary one and the folded twin is visibly the SQL-matching column; the view com
 asymmetry.
 
 **`intent_type_table_spelling`** (authored side, tables): `(graph_name, type_name, spelling,
-spelling_folded, tier)` over `graphitron_table`, the `COALESCE(table_ref, type_name)` rule stated
+spelling_folded, tier)` over `graphitron_table_entry`, the `COALESCE(table_ref, type_name)` rule stated
 once. `intent_spelled_table`'s first union arm and `intent_bound_table`'s join both read it instead
 of each restating the rule.
 
@@ -94,8 +94,8 @@ matching surface and adds the tier, and `intent_column_spelling` is the relation
 
 **`intent_spelled_key`** (match view): the key-reference analogue of `intent_spelled_table`, keyed
 on the written spelling, population every `key_ref` the graph authors (union over
-`graphitron_field_reference_step`, `graphitron_argument_reference_step`,
-`graphitron_reference_for_step`, the same population honesty the table view states). Carries the
+`graphitron_field_reference_step_entry`, `graphitron_argument_reference_step_entry`,
+`graphitron_reference_for_step_entry`, the same population honesty the table view states). Carries the
 qualified-split rule (a spelling with a dot binds schema and name), the tier via
 `intent_key_spelling`, the SQL-name-shadows-jOOQ-name rule (a jOOQ-tier row survives only where no
 SQL-tier row matches the spelling in scope), `candidates`, and `matched_by`. Its comment states its

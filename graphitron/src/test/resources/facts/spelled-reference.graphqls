@@ -16,12 +16,12 @@ type Language @table(name: "language") {
 type Actor @table { firstName: String @field(name: "first_name") }
 
 # @mutation's delete target is a spelling of the same shape, and so is @routine(name:), which is why
-# graphitron_routine spelling its own column routine_ref changes nothing about the fact.
+# graphitron_routine_entry spelling its own column routine_ref changes nothing about the fact.
 extend type Mutation { dropFilm(id: ID!): Film @mutation(type: DELETE, table: "film") }
 
 extend type Query { films: [Film!]! }
 
-extend schema @assertContains(relation: "graphitron_spelled_reference", rows: """
+extend schema @assertContains(relation: "graphitron_spelled_reference_entry", rows: """
   spelling, namespace_part, name_part
   film,     ,               film
   language, ,               language

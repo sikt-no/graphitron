@@ -1527,11 +1527,11 @@ an arm plus a projection, not a relation.
 
 **Five captured populations have no derivation over them at all.** This is the cross-cutting result,
 and it is a better statement of the gap than "four relation-shaped folds have no home in the store
-yet", which is what this item has been saying. Ordering (`graphitron_order`, `graphitron_order_by`,
-`graphitron_order_field`, and the two default-order relations) is read by no view. So are the facets
-(`graphitron_facet`) and the tenant column (`store_graph_tenant_column`). The connection registry
-(`graphitron_connection`) is read by exactly one view, and only to exempt connection types from
-classification demand. `graphitron_pivot` is read by one view, and only as a column-scope input,
+yet", which is what this item has been saying. Ordering (`graphitron_order_entry`, `graphitron_order_by_entry`,
+`graphitron_order_field_entry`, and the two default-order relations) is read by no view. So are the facets
+(`graphitron_facet_entry`) and the tenant column (`store_graph_tenant_column`). The connection registry
+(`graphitron_connection_entry`) is read by exactly one view, and only to exempt connection types from
+classification demand. `graphitron_pivot_entry` is read by one view, and only as a column-scope input,
 never resolved as a pivot. Each of these is captured, complete, and inert, and each is needed by
 more than one of the five remaining producers. They are the shared cost, and they are what makes
 projections and launchers a pair rather than two increments.
@@ -1651,7 +1651,7 @@ An input-object argument expands into input fields that resolve at their own sit
 collides with a column often enough that a spurious row here would be one a consumer acted on.
 
 **The write path was the part that had to be found rather than designed.** The two-tier name match
-compares folded spellings, so `graphql_argument` and `graphitron_argument_binding` needed the
+compares folded spellings, so `graphql_argument` and `graphitron_argument_binding_entry` needed the
 `argument_name_upper` / `name_ref_upper` generated columns their field-site twins already carry. That
 is what a generated column costs in this store: `FactSink.flush` renders a relation's insert from
 `table.fields()`, which asserts every column writable, and H2 rejects an insert that so much as names
@@ -1729,7 +1729,7 @@ are what the section after that still lists.
 ### Conditions, second increment: the facets
 
 The second of the three relations the availability check named, and one of the five captured
-populations with no derivation over it at all. `graphitron_facet` held every `@asFacet` application
+populations with no derivation over it at all. `graphitron_facet_entry` held every `@asFacet` application
 and no view read one. Landed as store work again: two relations, no registration, no producer
 converted.
 
@@ -1743,7 +1743,7 @@ those against the carriers that consume them. That the classifier had already dr
 what makes it the store's line too, rather than a layering invented here and defended afterwards.
 
 **The carrier population is where this would have gone wrong.** The obvious gate is
-`graphitron_connection`, the `@asConnection` capture. It is the wrong population twice over. An
+`graphitron_connection_entry`, the `@asConnection` capture. It is the wrong population twice over. An
 `@asConnection` on something that is not a bare list expands nothing, and a structural Connection
 return type carries no directive at all and is deliberately never given a facets field, its shape
 being the author's. The store already holds the right population and holds it exactly:
@@ -3068,7 +3068,7 @@ actually yields for the sakila example schema, 91 of them. The first draft was 5
 5 too few. Four fold-side rules closed the 55, and all four are rules the classifier applies that
 reading the classifier had not made obvious: the mutation exclusion alone was 37 of them, because a
 mutation's write payload argument reads as an input-object filter argument until something says it
-is not. A fifth fix closed two of the five: reading `graphitron_field_condition` at the input
+is not. A fifth fix closed two of the five: reading `graphitron_field_condition_entry` at the input
 field's own coordinate rather than trusting `intent_input_field_filter_role.authored_condition`,
 which is false on a nesting field that carries a condition.
 
@@ -3252,7 +3252,7 @@ a condition row reads the return type, the parameter list, or the declared excep
 classification-time facts, read by the validator and the argument classifier, both of which sit
 upstream of the plan. So the narrowing is not merely the cheaper answer, it is a two-component
 answer, and the store already carries both components verbatim as the author wrote them
-(`graphitron_argument_condition.class_name` and `.method`).
+(`graphitron_argument_condition_entry.class_name` and `.method`).
 
 **The carrier is new rather than reused, because the two method references name different things.**
 `UnitMethodRef` addresses a method on a unit *we* emit: it splits the class into package and simple
@@ -3622,7 +3622,7 @@ needed so far and it should be scoped on its own terms rather than folded in for
 **Shipped.** `intent_condition_context_parameter`, keyed on the site (`graph_name, site, use_site,
 descriptor, position`): which of a condition method's parameters take a request-context value at one
 application of the directive. The site key the previous increment left open was already settled by
-the tree, so this increment spent nothing on it: `graphitron_method_reference` carries site plus its
+the tree, so this increment spent nothing on it: `graphitron_method_reference_entry` carries site plus its
 own `use_site`, and every relation in the argMapping family already joins on that pair, so the four
 site widths are one two-column key.
 
@@ -3734,7 +3734,7 @@ holds it against the resolver's own, name for name and type for type.
 and 1.5 milliseconds against graphs of 25, 100 and 400 declared scalars. That is the second
 measurement: matching the census on a concatenation of its two key columns cost 1.1, 4.8 and 48
 over the same three, the quadratic a derived relation joined on an expression pays. So
-`graphitron_scalar_type` now stores the two halves of its reference, split by the grammar that
+`graphitron_scalar_type_entry` now stores the two halves of its reference, split by the grammar that
 already owns that split, and the join is an equi-join on the census's own key. R876 names that
 shape as one of the two defects behind the fact model's expensive reads, and the fix here is the
 one it prescribes: correct the model at the source rather than store the result.

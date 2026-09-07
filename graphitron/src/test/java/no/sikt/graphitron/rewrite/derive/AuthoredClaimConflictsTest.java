@@ -351,7 +351,7 @@ class AuthoredClaimConflictsTest {
 
     @Test
     void mutationTableSlotIsTheDirectivesOwnArgumentOnly() {
-        // The table slot is graphitron_mutation.table_ref and nothing more: the write-target
+        // The table slot is graphitron_mutation_entry.table_ref and nothing more: the write-target
         // precedence keeps its single producer in the classification walk
         // (MutationInputResolver.resolveDmlWriteTableRef), so the claim never asserts a table
         // resolved through the input argument's @table binding or the return type.

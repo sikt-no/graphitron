@@ -25,7 +25,7 @@ loop's duplicate scan. The four below are unchanged and still consumer-gated.
 
 - **A declined decode leaves no semantic-stratum record.** A decode arm that hits a missing
   required argument returns without writing either its decoded row or a
-  `graphitron_undecoded_argument` row (`GraphitronFactCapture`'s `sourceRow`, `mutation` and
+  `graphitron_undecoded_argument_entry` row (`GraphitronFactCapture`'s `sourceRow`, `mutation` and
   `pivot` arms among others). The verbatim `graphql_` row survives, so a detection can still find
   the application, but nothing records that the decode declined. Either quarantine the
   application, or name the "verbatim graphitron application with no decoded row" detection as the

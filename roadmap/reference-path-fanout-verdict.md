@@ -115,7 +115,7 @@ Numbers from the example schema's main execution, captured 2026-08-19 on trunk.
 |---|---|
 | GraphQL fields in the graph | 850 |
 | `@reference` applications | 79 |
-| Path elements (`graphitron_field_reference_step`) | 94 |
+| Path elements (`graphitron_field_reference_step_entry`) | 94 |
 | Elements the walk resolves (`intent_field_reference_step_target`) | 62 |
 | Resolved elements arriving on the child side (`fk_on_from = FALSE`) | 35 |
 | Non-terminal child-side elements (the two rejected formulations' finding set) | 6 |
@@ -273,7 +273,7 @@ pattern as the suggested remedy without committing to a `distinct` flag. The edi
 empty, since there is no mechanical rewrite here.
 
 **Field-site paths only, in this item.** The capture family is symmetric
-(`graphitron_argument_reference_step`, `graphitron_reference_for_step`), but the derived hop and
+(`graphitron_argument_reference_step_entry`, `graphitron_reference_for_step_entry`), but the derived hop and
 target views are field-site only, so covering filter paths and `@referenceFor` means authoring
 their sibling views first. That is a bigger change than this rule and would be the tail wagging
 the dog. State the gap in the rule's documentation so an author is not misled into thinking a

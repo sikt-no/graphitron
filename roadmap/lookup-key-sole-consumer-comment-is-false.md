@@ -1,6 +1,6 @@
 ---
 id: R866
-title: "graphitron_field_lookup_key claims a sole consumer and three relations read it"
+title: "graphitron_field_lookup_key_entry claims a sole consumer and three relations read it"
 status: Backlog
 bucket: cleanup
 priority: 4
@@ -10,9 +10,9 @@ created: 2026-08-27
 last-updated: 2026-08-27
 ---
 
-# graphitron_field_lookup_key claims a sole consumer and three relations read it
+# graphitron_field_lookup_key_entry claims a sole consumer and three relations read it
 
-`graphitron_field_lookup_key` is the capture table for `@lookupKey` written on an input field,
+`graphitron_field_lookup_key_entry` is the capture table for `@lookupKey` written on an input field,
 which is the retired site for that directive. Its own relation comment says "the sole consumer is
 the located migration rejection". Three relations read it: the rejection the comment names, the
 `lookup_bearing` recursive term inside `intent_authored_field_claim`, and a third reader that takes

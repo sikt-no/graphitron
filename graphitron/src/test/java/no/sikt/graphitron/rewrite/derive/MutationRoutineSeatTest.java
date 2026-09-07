@@ -147,7 +147,7 @@ class MutationRoutineSeatTest {
     /**
      * The same refusal at the argument site. A {@code @condition} on an argument of the write field
      * is the same read surface as one on the field, and the verdict is asked of
-     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ARGUMENT_CONDITION} rather than of the
+     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ARGUMENT_CONDITION_ENTRY} rather than of the
      * directive application, so a reading pointed at the field-site relation would miss it.
      */
     @Test
@@ -171,7 +171,7 @@ class MutationRoutineSeatTest {
     /**
      * An ordering is a read surface on the same terms as a filter, and {@code @orderBy} has only
      * the argument site to sit on, so the verdict reads
-     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ORDER_BY}. This is the arm that used to
+     * {@link no.sikt.graphitron.model.Tables#GRAPHITRON_ORDER_BY_ENTRY}. This is the arm that used to
      * ride the same name list as the argument condition and now has a relation of its own.
      */
     @Test

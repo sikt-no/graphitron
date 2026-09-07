@@ -40,63 +40,63 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_INDEX;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NODE_ID_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INDEX_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.val;
@@ -122,7 +122,7 @@ import static org.jooq.impl.DSL.when;
  * and effective-value defaulting are not.
  *
  * <p>The decode never rejects. A literal that does not fit its declared shape leaves its typed
- * column NULL and quarantines raw in {@code graphitron_undecoded_argument} with its location, so the
+ * column NULL and quarantines raw in {@code graphitron_undecoded_argument_entry} with its location, so the
  * authored text survives and the malformed-literal detection has its row. Those paths stay
  * dormant while schema assembly still runs upstream and rejects such schemas first.
  *
@@ -170,7 +170,7 @@ public final class GraphitronFactCapture {
      * right about a resolution and says nothing about a relation that joins nothing.
      *
      * <p>A flush inside the load's transaction is what lets one stage read the last one's rows, and
-     * it publishes nothing: macro expansion is driven by the {@code graphitron_connection} rows the
+     * it publishes nothing: macro expansion is driven by the {@code graphitron_connection_entry} rows the
      * walk produced, and the navigation rule is stated over the population expansion completes.
      */
     public static Map<String, Set<String>> capture(FactSink sink, DSLContext dsl, String graphName) {
@@ -233,10 +233,10 @@ public final class GraphitronFactCapture {
         if (!FEDERATION_LINK.equals(directive.getName())) {
             return;
         }
-        if (!sink.claim(GRAPHITRON_LINK, ordinal)) {
+        if (!sink.claim(GRAPHITRON_LINK_ENTRY, ordinal)) {
             return;
         }
-        var record = sink.dsl().newRecord(GRAPHITRON_LINK);
+        var record = sink.dsl().newRecord(GRAPHITRON_LINK_ENTRY);
         record.setOrdinal(ordinal);
         SdlFactCapture.setPosition(directive.getSourceLocation(),
             record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -256,7 +256,7 @@ public final class GraphitronFactCapture {
             if (name == null) {
                 continue;
             }
-            var row = sink.dsl().newRecord(GRAPHITRON_LINK_IMPORT);
+            var row = sink.dsl().newRecord(GRAPHITRON_LINK_IMPORT_ENTRY);
             row.setLinkOrdinal(ordinal);
             row.setPosition(position++);
             row.setName(name);
@@ -277,8 +277,8 @@ public final class GraphitronFactCapture {
         String type = site.typeName();
         switch (directive.getName()) {
             case "table" -> {
-                if (!sink.claim(GRAPHITRON_TABLE, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_TABLE);
+                if (!sink.claim(GRAPHITRON_TABLE_ENTRY, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_TABLE_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -293,10 +293,10 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "scalarType" -> {
-                if (!sink.claim(GRAPHITRON_SCALAR_TYPE, type)) return;
+                if (!sink.claim(GRAPHITRON_SCALAR_TYPE_ENTRY, type)) return;
                 String scalar = string(directive, "scalar");
                 if (scalar == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_SCALAR_TYPE);
+                var record = sink.dsl().newRecord(GRAPHITRON_SCALAR_TYPE_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -309,8 +309,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "enum" -> {
-                if (!sink.claim(GRAPHITRON_ENUM, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ENUM);
+                if (!sink.claim(GRAPHITRON_ENUM_ENTRY, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ENUM_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -323,8 +323,8 @@ public final class GraphitronFactCapture {
                     reference.className(), reference.method(), directive);
             }
             case "record" -> {
-                if (!sink.claim(GRAPHITRON_RECORD, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_RECORD);
+                if (!sink.claim(GRAPHITRON_RECORD_ENTRY, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_RECORD_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -332,8 +332,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "error" -> {
-                if (!sink.claim(GRAPHITRON_ERROR, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ERROR);
+                if (!sink.claim(GRAPHITRON_ERROR_ENTRY, type)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ERROR_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -344,7 +344,7 @@ public final class GraphitronFactCapture {
                         undecoded(directive, "handlers", handler);
                         continue;
                     }
-                    var row = sink.dsl().newRecord(GRAPHITRON_ERROR_HANDLER);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ERROR_HANDLER_ENTRY);
                     row.setTypeName(type);
                     row.setPosition(position++);
                     row.setHandler(tokenOf(field(object, "handler")));
@@ -376,10 +376,10 @@ public final class GraphitronFactCapture {
                 }
             }
             case "discriminate" -> {
-                if (!sink.claim(GRAPHITRON_DISCRIMINATE, type)) return;
+                if (!sink.claim(GRAPHITRON_DISCRIMINATE_ENTRY, type)) return;
                 String on = string(directive, "on");
                 if (on == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATE);
+                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATE_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -387,10 +387,10 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "discriminator" -> {
-                if (!sink.claim(GRAPHITRON_DISCRIMINATOR, type)) return;
+                if (!sink.claim(GRAPHITRON_DISCRIMINATOR_ENTRY, type)) return;
                 String value = string(directive, "value");
                 if (value == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATOR);
+                var record = sink.dsl().newRecord(GRAPHITRON_DISCRIMINATOR_ENTRY);
                 record.setTypeName(type);
                 site(site, directive, record::setSourceName, record::setDeclarationLine,
                     record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
@@ -408,10 +408,10 @@ public final class GraphitronFactCapture {
      * gate query can pin the two projections in agreement.
      */
     private void captureFederationKey(SiteRef site, Directive directive, int ordinal) {
-        if (!sink.claim(GRAPHITRON_FEDERATION_KEY, site.typeName(), ordinal)) return;
+        if (!sink.claim(GRAPHITRON_FEDERATION_KEY_ENTRY, site.typeName(), ordinal)) return;
         String fields = string(directive, "fields");
         if (fields == null) return;
-        var record = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY);
+        var record = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_ENTRY);
         record.setTypeName(site.typeName());
         record.setOrdinal(ordinal);
         site(site, directive, record::setSourceName, record::setDeclarationLine,
@@ -422,13 +422,13 @@ public final class GraphitronFactCapture {
 
         int position = 0;
         for (List<String> path : FieldSetGrammar.paths(fields)) {
-            var row = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD);
+            var row = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_ENTRY);
             row.setTypeName(site.typeName());
             row.setOrdinal(ordinal);
             row.setPosition(position);
             sink.add(row);
             for (int segment = 0; segment < path.size(); segment++) {
-                var segmentRow = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT);
+                var segmentRow = sink.dsl().newRecord(GRAPHITRON_FEDERATION_KEY_FIELD_SEGMENT_ENTRY);
                 segmentRow.setTypeName(site.typeName());
                 segmentRow.setOrdinal(ordinal);
                 segmentRow.setPosition(position);
@@ -452,10 +452,10 @@ public final class GraphitronFactCapture {
                                boolean inputField) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_BINDING, type, field)) return;
+                if (!sink.claim(GRAPHITRON_FIELD_BINDING_ENTRY, type, field)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_BINDING_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -463,9 +463,9 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "condition" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_CONDITION, type, field)) return;
+                if (!sink.claim(GRAPHITRON_FIELD_CONDITION_ENTRY, type, field)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION);
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -481,7 +481,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_CONDITION_CONTEXT_ARG_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -498,8 +498,8 @@ public final class GraphitronFactCapture {
                 }
             }
             case "reference" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_REFERENCE, type, field, ordinal)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE);
+                if (!sink.claim(GRAPHITRON_FIELD_REFERENCE_ENTRY, type, field, ordinal)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -509,7 +509,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -537,10 +537,10 @@ public final class GraphitronFactCapture {
                 }
             }
             case "referenceFor" -> {
-                if (!sink.claim(GRAPHITRON_REFERENCE_FOR, type, field, ordinal)) return;
+                if (!sink.claim(GRAPHITRON_REFERENCE_FOR_ENTRY, type, field, ordinal)) return;
                 String participant = string(directive, "type");
                 if (participant == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR);
+                var record = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -551,7 +551,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -579,9 +579,9 @@ public final class GraphitronFactCapture {
                 }
             }
             case "service" -> {
-                if (!sink.claim(GRAPHITRON_SERVICE, type, field)) return;
+                if (!sink.claim(GRAPHITRON_SERVICE_ENTRY, type, field)) return;
                 var reference = codeReference(directive, "service");
-                var record = sink.dsl().newRecord(GRAPHITRON_SERVICE);
+                var record = sink.dsl().newRecord(GRAPHITRON_SERVICE_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -596,7 +596,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_SERVICE_CONTEXT_ARG_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -633,9 +633,9 @@ public final class GraphitronFactCapture {
                 }
             }
             case "externalField" -> {
-                if (!sink.claim(GRAPHITRON_EXTERNAL_FIELD, type, field)) return;
+                if (!sink.claim(GRAPHITRON_EXTERNAL_FIELD_ENTRY, type, field)) return;
                 var reference = codeReference(directive, "reference");
-                var record = sink.dsl().newRecord(GRAPHITRON_EXTERNAL_FIELD);
+                var record = sink.dsl().newRecord(GRAPHITRON_EXTERNAL_FIELD_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -650,15 +650,15 @@ public final class GraphitronFactCapture {
             case "sourceRow" -> {
                 // No relation of its own: this site carried the class and the method and nothing
                 // else, so it is rows of the shared relation rather than a table beside it.
-                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE, "SOURCE_ROW",
+                if (!sink.claim(GRAPHITRON_METHOD_REFERENCE_ENTRY, "SOURCE_ROW",
                         useSite(type, field, null, null, null))) return;
                 methodReference("SOURCE_ROW", useSite(type, field, null, null, null),
                     type, field, null, null, null,
                     string(directive, "className"), string(directive, "method"), directive);
             }
             case "asConnection" -> {
-                if (!sink.claim(GRAPHITRON_CONNECTION, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_CONNECTION);
+                if (!sink.claim(GRAPHITRON_CONNECTION_ENTRY, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_CONNECTION_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -666,14 +666,14 @@ public final class GraphitronFactCapture {
                 record.setConnectionName(string(directive, "connectionName"));
                 sink.add(record);
             }
-            case "asFacet" -> marker(GRAPHITRON_FACET, type, field, directive);
-            case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY, type, field, directive);
-            case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT, type, field, directive);
-            case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE, type, field, directive);
-            case "lookupKey" -> marker(GRAPHITRON_FIELD_LOOKUP_KEY, type, field, directive);
+            case "asFacet" -> marker(GRAPHITRON_FACET_ENTRY, type, field, directive);
+            case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
+            case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
+            case "multitableReference" -> marker(GRAPHITRON_MULTITABLE_REFERENCE_ENTRY, type, field, directive);
+            case "lookupKey" -> marker(GRAPHITRON_FIELD_LOOKUP_KEY_ENTRY, type, field, directive);
             case "nodeId" -> {
-                if (!sink.claim(GRAPHITRON_FIELD_NODE_ID, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID);
+                if (!sink.claim(GRAPHITRON_FIELD_NODE_ID_ENTRY, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_FIELD_NODE_ID_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -681,10 +681,10 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "mutation" -> {
-                if (!sink.claim(GRAPHITRON_MUTATION, type, field)) return;
+                if (!sink.claim(GRAPHITRON_MUTATION_ENTRY, type, field)) return;
                 String operation = tokenOf(argument(directive, "typeName"));
                 if (operation == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_MUTATION);
+                var record = sink.dsl().newRecord(GRAPHITRON_MUTATION_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -695,11 +695,11 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "pivot" -> {
-                if (!sink.claim(GRAPHITRON_PIVOT, type, field)) return;
+                if (!sink.claim(GRAPHITRON_PIVOT_ENTRY, type, field)) return;
                 String on = string(directive, "on");
                 String value = string(directive, "value");
                 if (on == null || value == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_PIVOT);
+                var record = sink.dsl().newRecord(GRAPHITRON_PIVOT_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -709,8 +709,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "defaultOrder" -> {
-                if (!sink.claim(GRAPHITRON_DEFAULT_ORDER, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER);
+                if (!sink.claim(GRAPHITRON_DEFAULT_ORDER_ENTRY, type, field)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -726,7 +726,7 @@ public final class GraphitronFactCapture {
                     }
                     String name = stringOf(field(object, "name"), directive, "fields");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_FIELD);
+                    var row = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setPosition(position++);
@@ -737,12 +737,12 @@ public final class GraphitronFactCapture {
                 }
             }
             case "routine" -> {
-                if (!sink.claim(GRAPHITRON_ROUTINE, type, field, ordinal)) return;
+                if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
                 String argMapping = string(directive, "argMapping");
                 String columnMapping = string(directive, "columnMapping");
-                var record = sink.dsl().newRecord(GRAPHITRON_ROUTINE);
+                var record = sink.dsl().newRecord(GRAPHITRON_ROUTINE_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setOrdinal(ordinal);
@@ -761,7 +761,7 @@ public final class GraphitronFactCapture {
                 }
                 int column = 0;
                 for (ParsedEntry entry : pairs(columnMapping, directive, "columnMapping")) {
-                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setOrdinal(ordinal);
@@ -781,10 +781,10 @@ public final class GraphitronFactCapture {
                                   Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_BINDING, type, field, argument)) return;
+                if (!sink.claim(GRAPHITRON_ARGUMENT_BINDING_ENTRY, type, field, argument)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_BINDING_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -793,9 +793,9 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "condition" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_CONDITION, type, field, argument)) return;
+                if (!sink.claim(GRAPHITRON_ARGUMENT_CONDITION_ENTRY, type, field, argument)) return;
                 var reference = codeReference(directive, "condition");
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION);
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -812,7 +812,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> context : list(directive, "contextArguments")) {
                     String name = stringOf(context, directive, "contextArguments");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_CONDITION_CONTEXT_ARG_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -829,8 +829,8 @@ public final class GraphitronFactCapture {
                 }
             }
             case "reference" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE, type, field, argument, ordinal)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY, type, field, argument, ordinal)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -841,7 +841,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -870,10 +870,10 @@ public final class GraphitronFactCapture {
                 }
             }
             case "referenceFor" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_FOR, type, field, argument, ordinal)) return;
+                if (!sink.claim(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, type, field, argument, ordinal)) return;
                 String participant = string(directive, "type");
                 if (participant == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR);
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -885,7 +885,7 @@ public final class GraphitronFactCapture {
                 for (Value<?> element : list(directive, "path")) {
                     var step = referenceElement(element, directive);
                     if (step == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY);
                     row.setTypeName(type);
                     row.setFieldName(field);
                     row.setArgumentName(argument);
@@ -914,8 +914,8 @@ public final class GraphitronFactCapture {
                 }
             }
             case "nodeId" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_NODE_ID, type, field, argument)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_NODE_ID);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_NODE_ID_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -924,8 +924,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "lookupKey" -> {
-                if (!sink.claim(GRAPHITRON_ARGUMENT_LOOKUP_KEY, type, field, argument)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_LOOKUP_KEY);
+                if (!sink.claim(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ARGUMENT_LOOKUP_KEY_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -933,8 +933,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "orderBy" -> {
-                if (!sink.claim(GRAPHITRON_ORDER_BY, type, field, argument)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ORDER_BY);
+                if (!sink.claim(GRAPHITRON_ORDER_BY_ENTRY, type, field, argument)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ORDER_BY_ENTRY);
                 record.setTypeName(type);
                 record.setFieldName(field);
                 record.setArgumentName(argument);
@@ -950,10 +950,10 @@ public final class GraphitronFactCapture {
     public void captureEnumValueDirective(String type, String value, Directive directive, int ordinal) {
         switch (directive.getName()) {
             case "field" -> {
-                if (!sink.claim(GRAPHITRON_ENUM_VALUE_BINDING, type, value)) return;
+                if (!sink.claim(GRAPHITRON_ENUM_VALUE_BINDING_ENTRY, type, value)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ENUM_VALUE_BINDING);
+                var record = sink.dsl().newRecord(GRAPHITRON_ENUM_VALUE_BINDING_ENTRY);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -961,8 +961,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "index" -> {
-                if (!sink.claim(GRAPHITRON_INDEX, type, value)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_INDEX);
+                if (!sink.claim(GRAPHITRON_INDEX_ENTRY, type, value)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_INDEX_ENTRY);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -970,8 +970,8 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "order" -> {
-                if (!sink.claim(GRAPHITRON_ORDER, type, value)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_ORDER);
+                if (!sink.claim(GRAPHITRON_ORDER_ENTRY, type, value)) return;
+                var record = sink.dsl().newRecord(GRAPHITRON_ORDER_ENTRY);
                 record.setTypeName(type);
                 record.setValueName(value);
                 position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
@@ -986,7 +986,7 @@ public final class GraphitronFactCapture {
                     }
                     String name = stringOf(field(object, "name"), directive, "fields");
                     if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_ORDER_FIELD);
+                    var row = sink.dsl().newRecord(GRAPHITRON_ORDER_FIELD_ENTRY);
                     row.setTypeName(type);
                     row.setValueName(value);
                     row.setPosition(position++);
@@ -1181,7 +1181,7 @@ public final class GraphitronFactCapture {
 
     /**
      * A qualifiable reference that names a table or a routine, written to its own site's relation
-     * and to {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE} beside it. The
+     * and to {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE_ENTRY} beside it. The
      * second write is what makes the spelling a fact rather than something a reader reconstructs by
      * unioning the seven relations that carry one; the first is unchanged, each site still recording
      * where its own spelling was written.
@@ -1202,7 +1202,7 @@ public final class GraphitronFactCapture {
     }
 
     /**
-     * One spelling into {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE},
+     * One spelling into {@link no.sikt.graphitron.model.Tables#GRAPHITRON_SPELLED_REFERENCE_ENTRY},
      * deduplicated through {@link FactSink#claim} because the same spelling authored at five
      * coordinates is one row: the relation is keyed by the spelling and the primary key is what says
      * a second write of it is the same fact and not a second one.
@@ -1213,10 +1213,10 @@ public final class GraphitronFactCapture {
      * against, so it belongs here even though no column holds it.
      */
     private void spelling(String written) {
-        if (written == null || !sink.claim(GRAPHITRON_SPELLED_REFERENCE, written)) {
+        if (written == null || !sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, written)) {
             return;
         }
-        var row = sink.dsl().newRecord(GRAPHITRON_SPELLED_REFERENCE);
+        var row = sink.dsl().newRecord(GRAPHITRON_SPELLED_REFERENCE_ENTRY);
         row.setSpelling(written);
         row.setNamespacePart(QualifiedNameGrammar.namespacePart(written));
         row.setNamePart(QualifiedNameGrammar.namePart(written));
@@ -1294,7 +1294,7 @@ public final class GraphitronFactCapture {
      * this replaces all filtered those out before doing anything else, so an absent row states what
      * their {@code IS NOT NULL} did.
      *
-     * @param site the discriminator, one of the eleven {@code GRAPHITRON_METHOD_REFERENCE} admits
+     * @param site the discriminator, one of the eleven {@code GRAPHITRON_METHOD_REFERENCE_ENTRY} admits
      */
     private void methodReference(String site, String useSite, String type, String field,
                                  String argument, Integer ordinal, Integer stepPosition,
@@ -1302,7 +1302,7 @@ public final class GraphitronFactCapture {
         if (className == null || method == null) {
             return;
         }
-        var row = sink.dsl().newRecord(GRAPHITRON_METHOD_REFERENCE);
+        var row = sink.dsl().newRecord(GRAPHITRON_METHOD_REFERENCE_ENTRY);
         row.setSite(site);
         row.setUseSite(useSite);
         row.setTypeName(type);
@@ -1345,11 +1345,11 @@ public final class GraphitronFactCapture {
         if (location == null || location.getSourceName() == null) {
             return;
         }
-        if (!sink.claim(GRAPHITRON_UNDECODED_ARGUMENT, location.getSourceName(), location.getLine(),
+        if (!sink.claim(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY, location.getSourceName(), location.getLine(),
                 location.getColumn(), directive.getName(), argumentName)) {
             return;
         }
-        var record = sink.dsl().newRecord(GRAPHITRON_UNDECODED_ARGUMENT);
+        var record = sink.dsl().newRecord(GRAPHITRON_UNDECODED_ARGUMENT_ENTRY);
         record.setSourceName(location.getSourceName());
         record.setSourceLine(location.getLine());
         record.setSourceColumn(location.getColumn());

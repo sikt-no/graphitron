@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -177,8 +177,8 @@ class FieldScopeTableTest {
     void thePayloadOutranksTheMutationTable() {
         withCatalog(dsl -> {
             seedPayloadReturningWrite(dsl, "updateFilmPayload", "UPDATE");
-            dsl.deleteFrom(GRAPHITRON_MUTATION)
-                .where(GRAPHITRON_MUTATION.FIELD_NAME.eq("updateFilmPayload")).execute();
+            dsl.deleteFrom(GRAPHITRON_MUTATION_ENTRY)
+                .where(GRAPHITRON_MUTATION_ENTRY.FIELD_NAME.eq("updateFilmPayload")).execute();
             seedMutation(dsl, GRAPH, "Mutation", "updateFilmPayload", "UPDATE", "actor");
 
             assertThat(writeRows(dsl))

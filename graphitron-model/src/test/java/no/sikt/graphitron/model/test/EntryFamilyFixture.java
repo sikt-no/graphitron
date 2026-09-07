@@ -1,9 +1,12 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
+import java.util.stream.Stream;
 
 /**
  * A schema that applies every graphitron directive the decode writes a relation for, spread over two
@@ -21,8 +24,8 @@ import java.util.List;
  * <p>Two documents rather than one, and the second is not a spillover. A refresh that deletes one
  * source's rows has to be shown deleting one source's rows, which needs a relation holding rows from
  * two sources at once so that what survives is visible. Several relations are therefore written from
- * both documents deliberately, {@code graphitron_table}, {@code graphitron_field_binding} and
- * {@code graphitron_field_reference} among them, and the coverage gate holds that overlap rather
+ * both documents deliberately, {@code graphitron_table_entry}, {@code graphitron_field_binding_entry} and
+ * {@code graphitron_field_reference_entry} among them, and the coverage gate holds that overlap rather
  * than leaving it to whoever edits the SDL next.
  *
  * <p>The schema is not meant to be a schema anybody would write. It names tables and columns that
@@ -33,7 +36,7 @@ import java.util.List;
  * <p>One application is deliberately malformed. {@code Mutation.brokenMapping} carries an
  * {@code argMapping} the grammar rejects, because quarantining a value it cannot decode is one of
  * the things the decode does: a fixture that only ever hands it decodable values leaves
- * {@code graphitron_undecoded_argument} empty and says nothing about the path that writes it.
+ * {@code graphitron_undecoded_argument_entry} empty and says nothing about the path that writes it.
  */
 public final class EntryFamilyFixture {
 
@@ -51,7 +54,7 @@ public final class EntryFamilyFixture {
      * <p>Federation's {@code @link} and {@code @key} are declared here rather than assumed, the way
      * a federated consumer's own schema declares them. {@code @link}'s import list carries both
      * spellings the grammar admits, a bare name and an aliased object, so that
-     * {@code graphitron_link_import.alias} holds a value somewhere rather than being NULL on every
+     * {@code graphitron_link_import_entry.alias} holds a value somewhere rather than being NULL on every
      * row. The coverage gate counts rows and would not notice, which is the point of saying it here.
      */
     public static final String CORE = """
@@ -231,93 +234,41 @@ public final class EntryFamilyFixture {
      * The as-written half of the {@code graphitron_} family: every relation the directive decode
      * writes, which is every relation whose rows are a function of one document and nothing else.
      *
-     * <p>Listed rather than derived, and the coverage gate is what keeps the list honest: it holds
-     * this list and {@link #ANCHOR_RELATIONS} to partitioning the family, so a relation added to
-     * neither fails rather than being quietly uncovered. The list dissolves into a suffix rule once
-     * the entry half carries {@code _entry}, at which point the gate reads the name instead.
+     * <p>Read off the generated model by suffix rather than listed. The list this replaced was a
+     * stand-in for a name: it had to be edited whenever the family grew, and a relation added to
+     * neither half slipped quietly out of every gate that read it. Now the name is the
+     * classification, which is the whole point of the suffix and is what a reader looking for the
+     * anti-join between the two halves needs anyway. What no longer has a mechanical statement here
+     * is that a new decode relation gets named right, and that is deliberately somewhere else:
+     * {@code EntryNamingGuardTest} holds the decode to naming only suffixed relations, and the
+     * declaration pass will say it a second time by giving each relation a declared owner.
      */
-    public static final List<String> ENTRY_RELATIONS = List.of(
-        "graphitron_argmapping_entry",
-        "graphitron_argument_binding",
-        "graphitron_argument_condition",
-        "graphitron_argument_condition_context_arg",
-        "graphitron_argument_lookup_key",
-        "graphitron_argument_node_id",
-        "graphitron_argument_reference",
-        "graphitron_argument_reference_for",
-        "graphitron_argument_reference_for_step",
-        "graphitron_argument_reference_step",
-        "graphitron_connection",
-        "graphitron_default_order",
-        "graphitron_default_order_field",
-        "graphitron_discriminate",
-        "graphitron_discriminator",
-        "graphitron_enum",
-        "graphitron_enum_value_binding",
-        "graphitron_error",
-        "graphitron_error_handler",
-        "graphitron_external_field",
-        "graphitron_facet",
-        "graphitron_federation_key",
-        "graphitron_federation_key_field",
-        "graphitron_federation_key_field_segment",
-        "graphitron_field_binding",
-        "graphitron_field_condition",
-        "graphitron_field_condition_context_arg",
-        "graphitron_field_lookup_key",
-        "graphitron_field_node_id",
-        "graphitron_field_reference",
-        "graphitron_field_reference_step",
-        "graphitron_index",
-        "graphitron_link",
-        "graphitron_link_import",
-        "graphitron_method_reference",
-        "graphitron_multitable_reference",
-        "graphitron_mutation",
-        "graphitron_node_entry",
-        "graphitron_node_keycolumn_entry",
-        "graphitron_order",
-        "graphitron_order_by",
-        "graphitron_order_field",
-        "graphitron_pivot",
-        "graphitron_record",
-        "graphitron_reference_for",
-        "graphitron_reference_for_step",
-        "graphitron_routine",
-        "graphitron_routine_column_mapping_pair",
-        "graphitron_scalar_type",
-        "graphitron_service",
-        "graphitron_service_context_arg",
-        "graphitron_spelled_reference",
-        "graphitron_split_query",
-        "graphitron_table",
-        "graphitron_tenant_fan_out",
-        "graphitron_undecoded_argument");
+    public static List<String> entryRelations() {
+        return family().filter(name -> name.endsWith(SUFFIX)).toList();
+    }
 
     /**
-     * The resolved half: the fifteen relations a gatherer stage writes by joining, ranking or
+     * The resolved half: every relation of the family a gatherer stage writes by joining, ranking or
      * reaching the catalog, plus {@code graphitron_argmapping_match}, which is a view joining an
      * entry to a candidate and so is written by nothing at all. None of them is this fixture's
      * subject, and none could be: a bare SDL capture has no catalog to resolve against, which is the
-     * same statement as their not being entries. The list is here to make the other one checkable
-     * rather than to say anything about these, which is why one non-entry shape it does not
-     * distinguish, a view, sits in it without a category of its own.
+     * same statement as their not being entries.
+     *
+     * <p>Stated as the complement, so the two halves cannot both claim a relation and cannot both
+     * miss one. That also means one non-entry shape it does not distinguish, a view, sits in it
+     * without a category of its own.
      */
-    public static final List<String> ANCHOR_RELATIONS = List.of(
-        "graphitron_argmapping_candidate",
-        "graphitron_argmapping_match",
-        "graphitron_argument",
-        "graphitron_element",
-        "graphitron_field",
-        "graphitron_field_chain_application",
-        "graphitron_field_navigation",
-        "graphitron_field_table",
-        "graphitron_minted_argument",
-        "graphitron_minted_conflict",
-        "graphitron_minted_field",
-        "graphitron_minted_type",
-        "graphitron_node",
-        "graphitron_node_keycolumn",
-        "graphitron_tabletype",
-        "graphitron_type");
+    public static List<String> anchorRelations() {
+        return family().filter(name -> !name.endsWith(SUFFIX)).toList();
+    }
+
+    /** The suffix every as-written relation carries, which is what tells the two halves apart. */
+    private static final String SUFFIX = "_entry";
+
+    private static Stream<String> family() {
+        return Public.PUBLIC.getTables().stream()
+            .map(table -> table.getName().toLowerCase(Locale.ROOT))
+            .filter(name -> name.startsWith("graphitron_"))
+            .sorted();
+    }
 }

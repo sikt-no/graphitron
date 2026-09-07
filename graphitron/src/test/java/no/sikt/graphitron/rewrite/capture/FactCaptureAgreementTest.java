@@ -43,12 +43,12 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -137,7 +137,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  * <ul>
  *   <li>{@link Arm#CONTAINMENT} for the SDL side. Capture is total and {@code GraphitronSchema} is
  *       reachability-pruned, so the honest relation is that the store contains the model. The claim
- *       is now about authored SDL throughout: {@code graphitron_federation_key} held
+ *       is now about authored SDL throughout: {@code graphitron_federation_key_entry} held
  *       macro-synthesized rows under it until federation's key rule became a derivation, so a
  *       containment arm here says the store transcribes what the document declares and nothing
  *       else.</li>
@@ -395,27 +395,27 @@ class FactCaptureAgreementTest {
             "graphql_field_directive", "graphql_field_directive_arg", "graphql_argument_directive",
             "graphql_argument_directive_arg", "graphql_enum_value_directive",
             "graphql_enum_value_directive_arg",
-            "graphitron_table", "graphitron_field_binding",
-            "graphitron_argument_binding", "graphitron_enum_value_binding", "graphitron_scalar_type",
-            "graphitron_enum", "graphitron_field_condition", "graphitron_field_condition_context_arg",
-            "graphitron_argument_condition", "graphitron_argument_condition_context_arg",
-            "graphitron_field_reference", "graphitron_field_reference_step",
-            "graphitron_argument_reference", "graphitron_argument_reference_step",
-            "graphitron_reference_for", "graphitron_reference_for_step",
-            "graphitron_argument_reference_for", "graphitron_argument_reference_for_step",
-            "graphitron_service", "graphitron_service_context_arg",
-            "graphitron_external_field", "graphitron_connection", "graphitron_facet",
-            "graphitron_order_by", "graphitron_order", "graphitron_order_field", "graphitron_index",
-            "graphitron_default_order", "graphitron_default_order_field", "graphitron_mutation",
-            "graphitron_error", "graphitron_error_handler", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
-            "graphitron_field_node_id", "graphitron_argument_node_id", "graphitron_argument_lookup_key",
-            "graphitron_field_lookup_key", "graphitron_split_query", "graphitron_tenant_fan_out",
-            "graphitron_pivot", "graphitron_routine", "graphitron_routine_column_mapping_pair",
-            "graphitron_discriminate", "graphitron_discriminator",
-            "graphitron_federation_key", "graphitron_federation_key_field",
-            "graphitron_federation_key_field_segment", "graphitron_link",
-            "graphitron_link_import", "graphitron_multitable_reference", "graphitron_record",
-            "graphitron_undecoded_argument", "graphitron_minted_type",
+            "graphitron_table_entry", "graphitron_field_binding_entry",
+            "graphitron_argument_binding_entry", "graphitron_enum_value_binding_entry", "graphitron_scalar_type_entry",
+            "graphitron_enum_entry", "graphitron_field_condition_entry", "graphitron_field_condition_context_arg_entry",
+            "graphitron_argument_condition_entry", "graphitron_argument_condition_context_arg_entry",
+            "graphitron_field_reference_entry", "graphitron_field_reference_step_entry",
+            "graphitron_argument_reference_entry", "graphitron_argument_reference_step_entry",
+            "graphitron_reference_for_entry", "graphitron_reference_for_step_entry",
+            "graphitron_argument_reference_for_entry", "graphitron_argument_reference_for_step_entry",
+            "graphitron_service_entry", "graphitron_service_context_arg_entry",
+            "graphitron_external_field_entry", "graphitron_connection_entry", "graphitron_facet_entry",
+            "graphitron_order_by_entry", "graphitron_order_entry", "graphitron_order_field_entry", "graphitron_index_entry",
+            "graphitron_default_order_entry", "graphitron_default_order_field_entry", "graphitron_mutation_entry",
+            "graphitron_error_entry", "graphitron_error_handler_entry", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
+            "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
+            "graphitron_field_lookup_key_entry", "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
+            "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_routine_column_mapping_pair_entry",
+            "graphitron_discriminate_entry", "graphitron_discriminator_entry",
+            "graphitron_federation_key_entry", "graphitron_federation_key_field_entry",
+            "graphitron_federation_key_field_segment_entry", "graphitron_link_entry",
+            "graphitron_link_import_entry", "graphitron_multitable_reference_entry", "graphitron_record_entry",
+            "graphitron_undecoded_argument_entry", "graphitron_minted_type",
             "graphitron_minted_field", "graphitron_minted_argument",
             // The three supertypes ride the arm of the sites that spell them. The spelled reference
             // and the method reference are written in the same walk as the per-site row they sit
@@ -423,8 +423,8 @@ class FactCaptureAgreementTest {
             // per-site row left to sit beside, having absorbed the eight, and the method reference
             // has none at the source-row site for the same reason, both being written in that same
             // walk regardless.
-            "graphitron_spelled_reference", "graphitron_argmapping_entry",
-            "graphitron_method_reference",
+            "graphitron_spelled_reference_entry", "graphitron_argmapping_entry",
+            "graphitron_method_reference_entry",
             // Written beside the field row in the same walk, so the field coordinate's claim
             // covers it exactly as it covers the field's own attributes.
             "graphitron_field_navigation")) {
@@ -986,7 +986,7 @@ class FactCaptureAgreementTest {
      * <p>The reading position is part of what this pins, and it matters more after the move than
      * before: a synthesized key transcribed as an authored one now lands wrong in stratum one
      * outright. What catches it is the derived membership. A capture that read the rewritten registry
-     * would land Film's and Language's {@code id} keys in {@code graphitron_federation_key} as
+     * would land Film's and Language's {@code id} keys in {@code graphitron_federation_key_entry} as
      * authored rows; the derivation's no-authored-id-key condition would then decline on both, so the
      * expected synthesized membership comes up empty while the first assertion still agrees. The
      * second assertion is therefore what keeps the agreement from being reached by capture reading
@@ -1149,8 +1149,8 @@ class FactCaptureAgreementTest {
             var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
 
             var tables = new LinkedHashMap<String, String>();
-            store.dsl().select(GRAPHITRON_TABLE.TYPE_NAME, GRAPHITRON_TABLE.TABLE_REF)
-                .from(GRAPHITRON_TABLE).where(GRAPHITRON_TABLE.TABLE_REF.isNotNull()).fetch()
+            store.dsl().select(GRAPHITRON_TABLE_ENTRY.TYPE_NAME, GRAPHITRON_TABLE_ENTRY.TABLE_REF)
+                .from(GRAPHITRON_TABLE_ENTRY).where(GRAPHITRON_TABLE_ENTRY.TABLE_REF.isNotNull()).fetch()
                 .forEach(row -> tables.put(row.value1(), row.value2()));
             assertThat(tables).as("the fixture writes @table(name:), so this pins something").isNotEmpty();
 
@@ -1236,9 +1236,9 @@ class FactCaptureAgreementTest {
             var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
 
             var rows = store.dsl()
-                .select(GRAPHITRON_SERVICE.TYPE_NAME, GRAPHITRON_SERVICE.FIELD_NAME,
-                    GRAPHITRON_SERVICE.CLASS_NAME, GRAPHITRON_SERVICE.METHOD)
-                .from(GRAPHITRON_SERVICE).fetch();
+                .select(GRAPHITRON_SERVICE_ENTRY.TYPE_NAME, GRAPHITRON_SERVICE_ENTRY.FIELD_NAME,
+                    GRAPHITRON_SERVICE_ENTRY.CLASS_NAME, GRAPHITRON_SERVICE_ENTRY.METHOD)
+                .from(GRAPHITRON_SERVICE_ENTRY).fetch();
             assertThat(rows).as("the fixture applies @service, so this pins something").isNotEmpty();
 
             int compared = 0;
@@ -1272,9 +1272,9 @@ class FactCaptureAgreementTest {
             var schema = GraphitronSchemaBuilder.build(store.registry(), testContext());
 
             var rows = store.dsl()
-                .select(GRAPHITRON_MUTATION.TYPE_NAME, GRAPHITRON_MUTATION.FIELD_NAME,
-                    GRAPHITRON_MUTATION.OPERATION)
-                .from(GRAPHITRON_MUTATION).fetch();
+                .select(GRAPHITRON_MUTATION_ENTRY.TYPE_NAME, GRAPHITRON_MUTATION_ENTRY.FIELD_NAME,
+                    GRAPHITRON_MUTATION_ENTRY.OPERATION)
+                .from(GRAPHITRON_MUTATION_ENTRY).fetch();
             assertThat(rows).as("the fixture applies @mutation, so this pins something").isNotEmpty();
 
             int compared = 0;

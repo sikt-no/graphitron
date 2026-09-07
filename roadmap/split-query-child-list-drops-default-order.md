@@ -194,7 +194,7 @@ code with a scheduled end. Three reasons that is the right thing to write anyway
 * Every neighbouring arm in the same method family reads the leaf today, the connection arm two
   lines up included. Writing this one arm against the store would leave the file speaking two
   vocabularies for one decision, which is harder to convert than four consistent arms.
-* The fact is already captured (`graphitron_default_order`), so the conversion is a change of
+* The fact is already captured (`graphitron_default_order_entry`), so the conversion is a change of
   source, not of shape. Post-pivot the same arm projects the same ordering from a fact instead of
   a getter, and the thing this item establishes, that the arm projects rather than passing `null`,
   is unchanged by the move.

@@ -8,8 +8,8 @@ import org.jooq.DSLContext;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PARTICIPANT_SCOPE_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_REFERENCE_FOR_APPLICATION;
@@ -117,7 +117,7 @@ public final class ReferenceForParticipantDefects {
      * has a participant by that name.
      */
     private static List<Defect> inputFieldDefects(DSLContext dsl, String graphName) {
-        var r = GRAPHITRON_REFERENCE_FOR;
+        var r = GRAPHITRON_REFERENCE_FOR_ENTRY;
         var o = INTENT_INPUT_OCCURRENCE_PATH;
         var a = INTENT_REFERENCE_FOR_APPLICATION;
         return dsl.selectFrom(r)
@@ -146,7 +146,7 @@ public final class ReferenceForParticipantDefects {
      * are, the refused coordinate's owning type carrying the field.
      */
     private static List<Defect> argumentDefects(DSLContext dsl, String graphName) {
-        var a = GRAPHITRON_ARGUMENT_REFERENCE_FOR;
+        var a = GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
         var ra = INTENT_REFERENCE_FOR_APPLICATION;
         var d = INTENT_TYPE_DOMAIN;
         return dsl.selectFrom(a)

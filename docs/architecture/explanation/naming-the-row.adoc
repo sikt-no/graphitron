@@ -41,7 +41,7 @@ stale the moment Sunday passes, and there is a quieter problem: you cannot check
 jar really contains raspberry jam is a fact you can verify by opening it; whether it is truly
 "for the scones" is knowable only by asking whoever wrote the label.
 
-Relations work the same way. `graphitron_table` says "the author put `@table` on this type,
+Relations work the same way. `graphitron_table_entry` says "the author put `@table` on this type,
 binding it to this database table name". That is a contents label: you can hold it up against the
 schema file and check it. A table named for its consumer, say `generator_backing_class`, would be
 a plans label: its meaning depends on what the generator happens to do this month.
@@ -62,6 +62,28 @@ question. And when a question turns out to be one that several readers keep aski
 pushed down into the database as a named *view*, so the rule is written once and everyone reads
 the same answer.
 
+== One suffix, because the sentence has two tenses
+
+The sentence a relation finishes comes in two tenses, and the difference is load-bearing enough to
+be visible in the name. "The author put `@table` on this type" is a fact about a document: it joins
+nothing, resolves nothing, and is true or false against one file you can open. "This type is bound
+to this catalog table" is a fact about a resolution: it is a function of the document *and* the
+catalog, and it can be true today and false tomorrow because somebody regenerated their jOOQ
+classes.
+
+Relations of the first kind carry the `_entry` suffix. `graphitron_table_entry` holds what was
+written; `graphitron_tabletype` holds what it resolved to. That is not decoration. The most useful
+question anybody asks of the pair is the anti-join between them, the applications that resolved to
+nothing, which is exactly where an author's mistake lives and is the only place a diagnostic can
+find it. A reader who cannot tell from a relation's name which tense it is in cannot find that
+join.
+
+The suffix also decides who writes the row, and it decides it the same way. A relation whose rows
+are a function of one document is written by the walk over that document, while it is standing on
+the coordinate; a relation whose rows are a function of the store is written by a gatherer that runs
+after every walk has finished, because that is the earliest moment its inputs all exist. So the name
+says the tense, the tense says the owner, and none of the three is a separate decision.
+
 == A worked example: which table backs a type?
 
 The generator needs to know which database table a GraphQL type is bound to. The tempting design
@@ -69,7 +91,7 @@ is one table holding the answer: type in, table out, done.
 
 The store instead holds the ingredients and derives the answer:
 
-* `graphitron_table` holds what the author wrote: `@table` on a type, with the name they spelled.
+* `graphitron_table_entry` holds what the author wrote: `@table` on a type, with the name they spelled.
 * `sql_table` holds what the catalog actually declares.
 * `intent_spelled_table` is a view that answers a small, general question: how does a written
   table name meet the catalog? The same rule whether the name was written in `@table`, in a

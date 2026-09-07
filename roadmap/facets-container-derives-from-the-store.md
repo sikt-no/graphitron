@@ -23,7 +23,7 @@ during the walk would leave it stale whenever a facet is added to a file the car
 never re-reads. It is an aggregate over the whole schema, not a local expansion.
 
 Every input the shape needs is already a captured column, which is what makes this a derivation
-rather than a gap in capture: `graphitron_facet` marks the input fields, `graphitron_field_binding`
+rather than a gap in capture: `graphitron_facet_entry` marks the input fields, `graphitron_field_binding_entry`
 gives each one's bound column, `graphql_argument` links a carrier to its filter type, and
 `graphql_field` carries the value's scalar and nullability. The container therefore computes as a
 query over captured columns, which is exactly the boundary the fact-base's decode rule draws when it

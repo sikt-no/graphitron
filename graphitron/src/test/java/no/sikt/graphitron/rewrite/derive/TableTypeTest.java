@@ -12,7 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -69,10 +69,10 @@ class TableTypeTest {
     @DisplayName("the decode records no fallback, only what the author wrote")
     void theDecodeRecordsOnlyWhatWasWritten() {
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq())) {
-            assertThat(store.dsl().select(GRAPHITRON_TABLE.TABLE_REF).from(GRAPHITRON_TABLE)
-                    .where(GRAPHITRON_TABLE.GRAPH_NAME.eq(GRAPH))
-                    .and(GRAPHITRON_TABLE.TYPE_NAME.eq("Actor"))
-                    .fetchOne(GRAPHITRON_TABLE.TABLE_REF))
+            assertThat(store.dsl().select(GRAPHITRON_TABLE_ENTRY.TABLE_REF).from(GRAPHITRON_TABLE_ENTRY)
+                    .where(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(GRAPH))
+                    .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq("Actor"))
+                    .fetchOne(GRAPHITRON_TABLE_ENTRY.TABLE_REF))
                 .as("the entry is the input; a bare @table wrote no name and the column says so")
                 .isNull();
         }
