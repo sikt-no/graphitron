@@ -364,7 +364,8 @@ public final class FactCapture {
             // transaction sees a partition mid-load. The two crawlers depend on nothing and on
             // each other least of all, so their order is free and the catalog takes the lead on
             // rate of change: a consumer's database moves on a release cadence where their schema
-            // documents move on a keystroke. The decode depends on both and therefore runs last.
+            // documents move on a keystroke. The resolution stages depend on both and therefore run
+            // last; the decode is not among them, the walk writing the as-written half as it goes.
             ConfigurationFactCapture.capture(sink, config);
             sink.flush();
             CatalogFactCapture.capture(sink, jooq, extensions, sources);

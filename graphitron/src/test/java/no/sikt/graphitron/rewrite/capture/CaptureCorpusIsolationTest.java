@@ -45,6 +45,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * worth holding them to. The catalog's own families are deliberately out of scope, being exactly the
  * rows whose presence the two arms differ by.
  *
+ * <p>The two arrive in the gate differently, and the difference is a claim rather than a
+ * convenience. A prefix is the whole of a family, so a relation added to {@code graphql_} is in
+ * scope without being named here. The as-written half is a partition of a family, so a relation
+ * added to {@code graphitron_} has to be classified as one half or the other, and the coverage gate
+ * beside the fixture is what refuses to let it go unclassified.
+ *
  * <p>The resolved half of {@code graphitron_} is out of scope, and that is what the family is rather
  * than a concession: a stage joining an entry against the catalog varies with the catalog by
  * construction, and that is the stage doing its job. What holds it in place is the ownership rule,
@@ -58,7 +64,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * synthesized {@code @key} into {@code graphql_type_directive} and its decode, and the bare arm did
  * not. The second is the entry fixture, which exists because most of the entry half holds no row
  * under the first: a differential over relations nobody wrote to agrees by being empty twice rather
- * than by agreeing, so that case asserts every entry relation is populated before it compares.
+ * than by agreeing, so that case holds every entry relation to being populated as well as to
+ * agreeing.
  */
 @PipelineTier
 class CaptureCorpusIsolationTest {
@@ -181,13 +188,7 @@ class CaptureCorpusIsolationTest {
         }
     }
 
-    /**
-     * Every declared relation the gate compares: the SDL families by prefix, and the entry half by
-     * the list that names it. The two arrive differently because they are different claims. A prefix
-     * is the whole of a family, so a relation added to it is in scope without being named; the entry
-     * half is a partition of a family, so a relation added to that one has to be classified, and the
-     * coverage gate beside the fixture is what refuses to let it go unclassified.
-     */
+    /** Every declared relation the gate compares: the SDL families by prefix, the entry half by name. */
     private static List<Table<?>> inScope() {
         return Public.PUBLIC.getTables().stream()
             .filter(table -> {

@@ -421,35 +421,6 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
-     * Re-walks this fixture's own parse and returns the sink the walk's entry decode wrote into,
-     * which nothing flushed. The shape for a case comparing what the walk decodes from the
-     * applications it is holding against what the gatherer decoded from the same applications
-     * fetched back out of this store.
-     *
-     * <p>A second walk rather than a hook into the first, because the first ran inside capture's
-     * transaction and its shadow went nowhere. It reads the same registry and hands over the same
-     * inputs, so the two walks differ in nothing the decode can see; the transcription it writes on
-     * the way is buffered into a sink nobody flushes either, so this leaves the store as it found
-     * it.
-     */
-    public FactSink entriesDecodedByTheWalk() {
-        return entriesDecodedByTheWalk(dsl(), graphName, registry, files);
-    }
-
-    /**
-     * {@link #entriesDecodedByTheWalk()} for a graph this fixture captured beside its own, whose
-     * parse the caller holds: {@link #registryOf(Path, String, String)} rebuilds it from the same
-     * SDL and {@link #fixtureFile(Path, String)} names the file it was written to, so a case can
-     * diff a second corpus without a second store.
-     */
-    public static FactSink entriesDecodedByTheWalk(DSLContext dsl, String graphName,
-                                                   TypeDefinitionRegistry registry,
-                                                   List<Path> files) {
-        return SdlFactCapture.capture(new FactSink(dsl, graphName), registry,
-            new ClasspathSources(), attributionOfFiles(files), Set.of());
-    }
-
-    /**
      * A reader of this store, for the cases whose subject is the read boundary rather than a query.
      *
      * <p>Unbounded, and every fixture reader in the reactor says the same thing for the same reason:

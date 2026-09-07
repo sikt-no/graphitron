@@ -68,11 +68,17 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
- * The SDL capture load: one walk over the {@link TypeDefinitionRegistry} filling the {@code graphql_}
- * family, and nothing else. What graphitron makes of the applications this walk transcribes is
- * {@link GraphitronFactCapture}'s, and it is a gatherer that runs after this one rather than a
- * visitor this walk calls: the decode reads the applications back out of the store, so it can join
- * them against everything else the store holds instead of seeing one directive at a time.
+ * The SDL capture load: one walk over the {@link TypeDefinitionRegistry}, filling the
+ * {@code graphql_} family and the as-written half of {@code graphitron_} beside it. Two
+ * vocabularies over one document rather than two passes over one corpus: most of what the walk
+ * writes is in the document's own words and the rest is in graphitron's, and a relation whose rows
+ * are a function of one document has this walk as its owner either way.
+ *
+ * <p>What it does not write is the resolved half, the relations {@link GraphitronFactCapture}'s
+ * stages produce by joining an entry against the catalog or against each other. Those could not run
+ * inside a walk at all: a callback sees one directive and no store, which is fatal to a resolution
+ * and irrelevant to a relation that joins nothing. The line between the two halves is where the
+ * rows come from, not which vocabulary names them.
  *
  * <p>The {@code graphql_} family is a total transcription of the document. Every declaration, every
  * directive definition, and every directive application is a row, graphitron's own namespace
@@ -87,8 +93,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * error. Capture is therefore <em>tolerant by construction</em> and never throws on author input;
  * a duplicate element quarantines in {@code graphql_duplicate_declaration}, rendered and located, so
  * a detection has its row and no authored text is lost. An argument's literal is transcribed exactly
- * as {@code AstPrinter} renders it, which is what lets the decode rebuild the application from these
- * rows; what it makes of a literal that does not fit its declared shape is its own quarantine.
+ * as {@code AstPrinter} renders it, for a reader that wants the authored text; the decode beside it
+ * reads the parsed value rather than that rendering, and what it makes of a literal that does not
+ * fit its declared shape is its own quarantine.
  *
  * <p>Capture is also <b>type-local</b>: every row's content is a function of its own type's
  * declaration sites and nothing else. Nothing here reads across types and no verdict is computed
@@ -145,13 +152,11 @@ public final class SdlFactCapture {
 
     /**
      * The as-written half of {@code graphitron_}, decoded from the applications this walk is
-     * holding rather than fetched back out of the store. It writes to a sink of its own, which
-     * nothing flushes: the relations still belong to the gatherer that runs after this walk, and
-     * the two arms are being compared before either is retired.
+     * holding. It is a second vocabulary over one document rather than a second pass over a corpus:
+     * the walk already understands what a graphitron directive means well enough to unpack it, and
+     * a relation whose rows are a function of one document has this walk as its owner by the same
+     * rule that gives it the transcription.
      */
-    private final FactSink entries;
-
-    /** The decode {@link #entries} collects, driven one application at a time. */
     private final GraphitronFactCapture decode;
 
     private SdlFactCapture(FactSink sink, TypeDefinitionRegistry registry,
@@ -163,32 +168,24 @@ public final class SdlFactCapture {
         this.sources = sources;
         this.attribution = attribution;
         this.refusedSources = refusedSources;
-        this.entries = sink.shadow();
-        this.decode = GraphitronFactCapture.decodingInto(entries);
+        this.decode = GraphitronFactCapture.decodingInto(sink);
     }
 
     /** Runs the walk, buffering into {@code sink}; the caller flushes. */
-    public static FactSink capture(FactSink sink, TypeDefinitionRegistry registry,
+    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution) {
-        return capture(sink, registry, sources, attribution, Set.of());
+        capture(sink, registry, sources, attribution, Set.of());
     }
 
     /**
      * {@link #capture(FactSink, TypeDefinitionRegistry, ClasspathSources, Map)}
      * plus the sources the parser refused, which the walk has no other way to learn about: a
      * refused source contributes no declaration, so nothing in the registry points back at it.
-     *
-     * @return the unflushed sink the entry decode wrote into, for a caller comparing it against the
-     *     arm that still owns those relations. Production discards it, which is what makes this
-     *     writer additive: it runs over every capture, so it cannot rot while it is being proved,
-     *     and it lands nothing until the comparison says it may.
      */
-    public static FactSink capture(FactSink sink, TypeDefinitionRegistry registry,
+    public static void capture(FactSink sink, TypeDefinitionRegistry registry,
                         ClasspathSources sources, Map<String, SchemaInput> attribution,
                         Set<String> refusedSources) {
-        var walk = new SdlFactCapture(sink, registry, sources, attribution, refusedSources);
-        walk.run();
-        return walk.entries;
+        new SdlFactCapture(sink, registry, sources, attribution, refusedSources).run();
     }
 
     private void run() {

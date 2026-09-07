@@ -484,12 +484,11 @@ is discovered by something refusing, so what a slice costs is known once its fir
 to be written and not before. What the list settles is what gets attempted next, and what each
 attempt owes before it can claim to be done.
 
-1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode writes today, from
-   the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages write.
-   The `_entry` suffix lands on each relation as it goes. The corpus-isolation gate widened behind
-   a fixture that can fail, both landed 2026-09-07 ahead of the move, so what is left of the slice
-   is the move itself. Specified in full below, because it is the next slice and because what it
-   moves was measured before the decision was taken.
+1. **The entry migration.** `SdlFactCapture` writes the 56 relations the decode used to write,
+   from the parse it is already holding, and `GraphitronFactCapture` keeps the 15 its own stages
+   write. The writer move landed 2026-09-07 behind the fixture and the widened gate; the `_entry`
+   suffix is what is left of the slice, 53 renames taken one relation at a time. Specified in full
+   below, because what it moved was measured before the decision was taken.
 2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
    type is one of the specification's six kinds, and boundness, participants and fields are facts
    each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
@@ -607,13 +606,19 @@ javadoc's argument for existing, which is an argument about anchors and always w
 by callbacks "cannot join the coordinate it is decoding against anything" is exactly right about a
 resolution and says nothing about a relation that joins nothing.
 
-**What moving them deletes.** The decode's input today is a printed literal. `SdlFactCapture` holds a
-parsed `Value` and prints it with `AstPrinter.printAstCompact` into `graphql_type_directive_arg.value_sdl`;
-`GraphitronFactCapture` calls `Parser.parseValue` per argument to rebuild a synthetic
-`graphql.language.Directive` it can read. That round trip is the second pass, and with it go twelve
-`graphql.language` imports, two `graphql.parser` imports, the grouped argument fetch at five
-locations, and the `inputTypes` query, which asks the transcription for something the walk knows by
-standing inside an `InputObjectTypeDefinition`.
+**What moving them deleted, and the prediction was wrong about which imports go.** The decode's input
+was a printed literal. `SdlFactCapture` holds a parsed `Value` and prints it with
+`AstPrinter.printAstCompact` into `graphql_type_directive_arg.value_sdl`; `GraphitronFactCapture`
+called `Parser.parseValue` per argument to rebuild a synthetic `graphql.language.Directive` it could
+read. That round trip was the second pass and it is gone, along with the five per-location fetch
+loops, the grouped argument fetch beside them, the two rebuilders, the `inputTypes` query, which
+asked the transcription for something the walk knows by standing inside an
+`InputObjectTypeDefinition`, and the quarantine arm for a stored literal that would not parse back,
+which was a failure mode of reading applications out of the store and had no other cause. 209 lines
+deleted against 17 added. What does not go is the twelve `graphql.language` imports an earlier draft
+predicted: the decode still reads an AST, which is the whole point, and it is `graphql.parser` that
+leaves, two imports of it, along with `org.jooq.Record` and eleven static references to the
+transcription relations the decode no longer queries.
 
 **One gate has widened and a second becomes reachable.** `CaptureCorpusIsolationTest` holds a
 crawler's rows about its corpus to being identical with and without a catalog, and `b5c9ff262` cut
@@ -621,10 +626,10 @@ its scope to `graphql_` alone, correctly, because a gatherer that may read the c
 to catalog-independence. An entry can be, so the entry half rejoined that scope on 2026-09-07, and
 the widening is a check recovered rather than a tidiness gain. It landed ahead of the move rather
 than with it, which is the point: the scope is a property of the rows and not of their writer, so
-the check that says the entry half reads no catalog is running against the arm the move is about to
-retire, and it is the same check the new arm will have to pass. Verified by making one decode
-catalog-dependent and watching the gate go red naming `graphitron_pivot`, on the entry corpus alone
-and not on the transcription's own fixture, which is the widening being what caught it. The second is `MetaDeclarationGateTest`'s corpus check,
+the check ran first against the arm the move was about to retire and then, unchanged, against the
+one that replaced it. Verified by making one decode catalog-dependent and watching the gate go red
+naming `graphitron_pivot`, on the entry corpus alone and not on the transcription's own fixture,
+which is the widening being what caught it. The second is `MetaDeclarationGateTest`'s corpus check,
 which exempts every graphitron-owned relation today because the graphitron gatherer has no
 `meta_gatherer_corpus` row and crossing is its job. An sdl-owned entry is not exempt: its grain has to
 live in the sdl corpus, which is a check the entry half has always been able to pass and has never
@@ -658,35 +663,54 @@ view, enumerated in the fixture and gated against the generated model. And the e
 attribution is measured rather than assumed: 40 of the 56 carry a `source_name` and 16 are
 descendants that carry none, which is exactly the split the refresh work reads the family through.
 
-**The second falsifier is the agreement between the two writers, and it takes the additive shape.**
-The walk writes to a shadow sink beside the gatherer's arm, the two populations are diffed over the
-corpus schemas, and the gatherer's arm is deleted when they agree rather than before. That diff is
-also what will say whether the round trip through `value_sdl` was as lossless as its javadoc claims,
-which is the one thing about this move nobody has checked.
+**The second falsifier was the agreement between the two writers, and it took the additive shape.**
+The walk wrote into a sink of its own beside the gatherer's arm, `EntryWriterAgreementTest` compared
+the two populations relation by relation and row by row, and the gatherer's arm went when they
+agreed rather than before. They agreed: over the entry fixture, which reaches every argument shape
+the decode reads, and over a second corpus whose applications sit on extension sites, where the walk
+stands on the site and the gatherer rebuilt it from three columns. So the round trip through
+`value_sdl` was as lossless as its javadoc claimed, which nobody had checked. Computed columns are
+excluded from the comparison and asked of the store rather than of the generated model, which models
+a generated column as an ordinary field; the gate was verified failing by dropping one directive
+from the walk's arm. It shipped in the additive commit and went with the flip, one writer leaving
+nothing to compare, which is what a falsifier for a move is supposed to do.
 
-**This restores a mechanism the arc itself retired, and the difference the second time is the whole
+**One way for the two to disagree was not covered and could not be.** First-wins is decided in the
+order each arm meets the applications, so two applications at one claim key could in principle be
+resolved differently. No corpus that reaches the fixture has such a pair: a second application of a
+single-application directive is what makes a schema fail assembly, and both arms number the ordinals
+from the same column anyway, the walk computing it and the gatherer reading back what the walk
+wrote.
+
+**This restored a mechanism the arc itself retired, and the difference the second time is the whole
 of why it is right.** The five `captureXDirective` callbacks the walk drove the decode through went
 when the decode stopped being a visitor, recorded under "Retired vocabulary" below. What was missing
 then was the split: the family moved as one undivided thing, so the anchors' need for the store
-decided the entries' home with it. The callbacks come back for the entry half alone, and the anchor
+decided the entries' home with it. The callbacks are back for the entry half alone, and the anchor
 half stays exactly where that move put it.
 
-**R713 is refused by this slice and its thesis is honoured by it.** That item's complaint is that one
+**R713 was refused by this slice and its thesis is honoured by it.** That item's complaint is that one
 corpus is transcribed twice and the second pass's rows are a function of the first pass's. Its move
 one landed and bought the wrong half, removing the AST dependency while keeping the pass. This
-removes the pass and restores the AST dependency, and its two remaining alternatives, both of which
-exist to serve a decode that reads printed literals back out of the store, go with it. Its status
-change is taken with this slice rather than ahead of it.
+removed the pass and restored the AST dependency, and its two remaining alternatives, both of which
+existed to serve a decode that reads printed literals back out of the store, went with it. Discarded
+with this slice, its measurements filed as
+`roadmap/audits/2026-09-07-directive-decode-census.md` rather than deleted with the plan: the
+63-relation decode census, the sub-grammar frequency over the corpus, and what driving an H2 function
+with a graphql-java parse costs.
 
-**What does not land with it is the declaration.** Writing a `meta_relation` row means naming a grain
+**What did not land with it is the declaration.** Writing a `meta_relation` row means naming a grain
 and arguing a rationale per relation, which is item 7's work and its cost. Until it happens the
 ownership move is real in the code and unstated in the store, and the two documentation pages
-restated with this slice are the only place the store's readers are told.
+restated with this slice are the only place the store's readers are told. Both are restated:
+the fact model's ownership section now says a family names a vocabulary and an owner names a writer,
+with one family split between two owners, and its corpus-isolation section names the half the gate
+holds.
 
 **One consequence for the target architecture stated below.** It assigns 186 relations to
 `graphitron` and 31 to `sdl`, computed by asking which gatherer writes each base relation rather than
 which corpus it transcribes, which are the same question everywhere except here. 56 base relations
-move from the first column to the second. What that does to the view counts is not recomputed, a
+have moved from the first column to the second, and the counts there are not recomputed. What that does to the view counts is not recomputed, a
 view's owner being the latest of the owners of what it reads, and a view reading only entries moves
 with them.
 
@@ -1542,10 +1566,20 @@ where a reader now decomposes a coordinate.
 **Java.** `MacroCapture.expandConnections`, now `MacroCapture.expand` and driven by store rows rather
 than by the walk. The `Expansions` record and the five `captureXDirective` callbacks `SdlFactCapture`
 drove the decode through, along with `captureNavigation` and `connectionElementByType`, all of which
-went when the decode stopped being a visitor of the SDL walk. The five callbacks return in slice 1, for
-the entry half only: what that move got wrong was moving the family as one thing, so the anchors'
+went when the decode stopped being a visitor of the SDL walk. The five callbacks returned in slice 1,
+for the entry half only: what that move got wrong was moving the family as one thing, so the anchors'
 need for the store decided the entries' home with it, and the entry and anchor split is what
 separates them.
+
+**Java, slice 1.** The store-driven half of `GraphitronFactCapture`: `schemaDirectives`,
+`typeDirectives`, `fieldDirectives`, `argumentDirectives` and `enumValueDirectives`, the five loops
+that fetched applications back out of the transcription; `argumentsBy`, which grouped their
+arguments; `directive` and `parsed`, which rebuilt a synthetic application from printed literals;
+`location`, which rebuilt a position from three columns; and the four-argument `undecoded`, which
+quarantined a stored literal that would not parse back and had no other caller. All private, so
+nothing outside the class spelled them. `SdlFactCapture.capture` returned the walk's shadow sink
+during the additive window and returns void again, and `EntryWriterAgreementTest` and
+`CapturedStore.entriesDecodedByTheWalk` went with the arm they compared against.
 
 **Swept, with seven survivors found and fixed.** One in main sources: the comment on
 `intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
