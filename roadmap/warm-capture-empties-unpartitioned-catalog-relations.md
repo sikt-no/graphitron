@@ -1965,3 +1965,63 @@ description the sweep does not name, still non-blocking, still carried from roun
 > On rounds 1 and 7: the anchor-side edges were R876's session's catch, not mine either. What the two
 > misses have in common is that both were claims about edges I read as declared because a neighbouring
 > edge was.
+
+### Round 8 (2026-09-08, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold, on a fifth population. Finding 8 is answered well and the propagation is complete:
+no site in the plan body still reads 52 or 35, the counts table reads 76 / 30 / 18 with the owned row
+at 14 `sql_`, 7 `jvm_`, 4 `java_`, 12 `graphql_`, 39 `graphitron_`, the index argument reads 50 of 51,
+the edge and index costs read 51, the `NOT NULL` population reads 34 as 6 plus 28, and the
+re-aggregated row now describes five kinds summing to 18. The rework also caught a propagation my
+finding did not name, the source-owned SDL figure moving from 52 to 51 across eight sites, and drew
+the right distinction in keeping phase three's diagnostic figures at 38 of 56, 9 of 16 and 29 of 40,
+since those count relations carrying the column and `graphitron_link_entry` still carries it.
+
+The decode-side bound holds, and I tested it rather than reading it. `FederationLinkApplier` injects
+`SDLDefinition`s, so nothing it adds reaches `captureSchemaDirective`; `captureConventionRoots` makes
+no `decode` call at all; and `GraphitronFactCapture` matches no directive named `tag`, so the tag
+applications discussed below are transcribed and never decoded. `graphitron_link_import_entry` does
+carry no `source_name` and hang off the entry, as stated.
+
+**Finding 9 (question two: `TagApplier` is a fifth population, on the transcription side, and it
+reaches three of the six relations phase four alters).** The bound the rework states is about the
+decode side and is correct there. Phase three's premise is wider than that, four populations that no
+document produced, and this is a fifth.
+
+`TagApplier.tagDirective` builds its directive with `Directive.newDirective().name(TAG_DIRECTIVE_NAME)
+.argument(...).build()` and **no `sourceLocation`**. `rewriteFields` appends that directive to a
+field's directive list, and `rewriteArguments` does the same for arguments, for every element whose
+`SchemaInput` carries a configured tag. `SdlFactCapture.captureFieldDirective` then writes
+`graphql_field_directive` taking `source_name` from `setPosition(directive.getSourceLocation(), ...)`,
+which returns without setting when the location is absent. So an applied tag leaves a
+`graphql_field_directive` row with a NULL `source_name`, and the same holds for
+`graphql_argument_directive` and, through the enum arms of the same switch,
+`graphql_enum_value_directive`. All three are among the six nullable owned `graphql_` relations phase
+four alters to `NOT NULL`, so the `ALTER` has no honest value for those rows and the new edge does not
+reach them.
+
+**The root cause is an asymmetry between two sibling relations, which is the more useful thing to fix
+than the injector.** `captureTypeDirective` sets `record.setSourceName(site.location().getSourceName())`
+from the declaring site and uses `setOwnPosition` for line and column only, whose javadoc gives the
+reason: "a position whose `source_name` column is already spoken for by the site key. The two always
+name the same file: an element sits lexically inside the site that declares it." `captureFieldDirective`
+takes the source from the directive instead. That is why `graphql_type_directive.source_name` is
+already `NOT NULL` while its three siblings are nullable, and why an injected application produces a
+NULL at the field, argument and enum-value sites but not at the type site. The same lexical argument
+that licenses the site key at the type level licenses it at the other three.
+
+So this population is attributable rather than derived, which makes it cheaper than the tag-link case:
+nothing has to move in the taxonomy and no count changes. Either the three site-level captures take
+`source_name` from the site as their type-level sibling already does, or `TagApplier` stamps what it
+appends with the element's own location. The first removes the asymmetry that produced the class; the
+second leaves it in place for the next injector. Which one, and whether `DescriptionNoteApplier` needs
+the same treatment (it appends descriptions rather than directives, so I expect not, but it is the
+same shape of injector and phase three should say so), is the author's.
+
+### Non-blocking note (round 8)
+
+The descendant row's clause, "the 24 `graphitron_` decodes hanging off owned rows or off catalog
+rows", does not cover a descendant whose parent re-aggregates. That is not new with finding 8:
+`graphitron_field_navigation` hangs off `graphitron_field`, one of the seven graph-keyed relations, and
+did so before. The treatment column is right either way, since such a row cascades from its parent
+whichever row the parent sits in, so this is wording rather than a gate question.
