@@ -851,3 +851,106 @@ arm reads nothing.
   which puts it between `=== A @nodeId argument on a field returning an interface or union` and
   `=== Multitable filter inputs`, splitting the two read-side siblings. Placing it after the filter
   subsection may read better. Author's call; it bears on neither gate question.
+
+### Round 2 (2026-09-08, Spec -> Ready, reviewer session 012LrTc9ZDzhB88ERqQAQTDw)
+
+Verdict: revisions requested; status stays `Spec`. Round 1's blocking finding is answered, and
+answered well: the grain is picked and argued rather than left to pickup, `candidates` keeps the one
+meaning its neighbours lean on, member multiplicity moves onto relations keyed where the fact lives,
+and the fifth destination lands as a `CASE` branch instead of a second naming of the deepest derived
+read in the schema. All four non-blocking notes are folded in. The first gate question passes again.
+One new blocking finding on the second gate question, in the same slice and of the same kind as round
+1's: the plan states an audit of the widening and the audit is incomplete.
+
+The goal, in my own words and without the phase list: an author who today spells a polymorphic
+mutation input as a bare `ID!` and hand-writes a `peekTypeId` plus `decodeValues` dispatch against
+three typeIds writes `@nodeId(typeName: "<Interface>")` instead, types the receiving Java slot as
+something every implementation's generated record is, and receives a loaded record whose class tells
+them which implementation the id named. A foreign id fails the request before the service runs, in
+the wording the read side already uses. Reachable here: the four "what exists today" facts are
+accurate to the symbol, `RecordDecodeFragments` really has three throwing public `decodeHelper`
+overloads over one private shared body so the fourth is the one primitive, `sql_table`'s primary key
+really is `(source_name, table_schema, table_name)` so the proposed capture relation keys cleanly
+onto it, `intent_node_id_decode.destination` really is a closed vocabulary of four, and
+`graphitron_field_navigation.navigated_type_name` carries the name-and-never-a-binding sentence
+verbatim as quoted. Fixtures and anchors check out: the `Signal` interface carries `@table` and
+`@discriminate` in `multischema.graphqls`, `AddressOccupant = Customer | Staff` is a fully
+node-backed union in the sakila-example schema, and both documentation subsections exist under the
+headings named.
+
+**Blocking: the widened instruction population has a sixth reader and a site edge, and the plan names
+neither. "Everywhere else the container rows are quiet by construction" is not true as written.**
+
+The seam paragraph says five carrier relations thread `node_type_name`'s promise forward, and step 1
+lists them. Six relations read `intent_node_id_instruction.node_type_name` directly:
+`intent_condition_param_decode`, `intent_node_id_decode_endpoint`, `intent_node_id_decode_slot`,
+`intent_node_id_encode`, `intent_node_id_decode_landing_defect`, and `intent_argument_filter_role`,
+whose `argument_node_id` CTE reaches the key shape with `LEFT JOIN intent_resolved_node_key_shape ks
+ON ks.graph_name = i.graph_name AND ks.type_name = i.node_type_name`. The sixth is the one the plan
+does not name, and it is the one where the container rows are not quiet.
+
+Follow a container-naming instruction into it. `implicit` is `basis = 'TARGET_ID_NAME'`, so on
+`EXPLICIT_TYPE_NAME` it is FALSE, and `wired` reduces through `NOT n.implicit` to `is_id AND NOT
+has_binding`: the arity, shadowing and list clauses short-circuit, and the `COALESCE(ks.arity, 1)`
+default the missing key shape produces is never read. So a container-naming `ID!` argument with no
+`@field(name:)` binding draws `role = 'NODE_ID'` at precedence 4, where today it draws no row in that
+CTE at all and the argument falls through to the name match or to nothing. That is a row flip on an
+incumbent relation, at this item's own supported coordinate (the plan's "the same shape holds at a
+top-level `@service` argument"), and it propagates: `intent_condition_membership` reads
+`intent_argument_filter_role` `WHERE r.role IN ('NODE_ID', 'NAME_MATCHED') AND r.suppressed = FALSE
+AND r.lookup_key = FALSE` into its contributor set. The relation's own comment says NODE_ID means
+"the predicate's columns come from the resolved node key rather than from a name", and its one escape
+hatch for a keyless type is that "such a type is a rejection's population", which is exactly what
+this item stops it from being.
+
+`intent_input_field_filter_role_live` is the second instance, one step further out. Its
+precedence-3 arm is driven by an `ID`-typed input field carrying a `graphitron_field_node_id_entry`
+and left-joins `node_id_at_table`, emitting `NODE_ID` when the join hits and `NONE` when it does not.
+Today a container-naming input field misses that join, lands `NONE`, and is dropped by the outer
+`role <> 'NONE'`. After the widening, `node_id_at_table` draws a group for it wherever the root
+argument's scope table resolves, so the role flips to NODE_ID; that condition holds at a read-side
+filter input rather than at a `@service` payload, which is why this one is the site edge below rather
+than a second flip at the item's own coordinate.
+
+That site edge is the other half of the finding, and it is the sharper half. The incumbent
+`EXPLICIT_TYPE_NAME` arm is site-agnostic: it joins `instructed`, which carries all three sites, to
+`intent_node_type` on `node_type_ref`. The plan's second arm swaps that join for a kind test plus the
+anti-join and says nothing about the site, so it is site-agnostic too, and `NodeIdLeafResolver.resolve`
+keeps its refusal by the plan's own decision. A container named at an output field, or at an argument
+or filter input on a fetch field, is therefore a coordinate the walk refuses and the store admits. At
+an output field the row is silent, `intent_node_id_encode` inner-joining the key-column count on
+`i.node_type_name`; at a read-side argument it is the NODE_ID role above. Neither draws a verdict:
+the sibling view's four verdicts are decided on the member set and the slot type, and none of them
+says "named where the slot-side walk does not reach". `intent_node_id_instruction`'s own population
+boundary rules that shape out: "admitting them would put an instruction in the population that
+neither resolves nor draws either of the defect view's verdicts, breaking the partition to restate a
+message". The plan's justification for admitting defective containers ("those coordinates are the
+sibling defect view's to name") covers the membership-defective container and not this one.
+
+What would satisfy the finding is the population edge stated as deliberately as the grain now is.
+Three shapes, and any of them is defensible; the pick decides the DDL and one relation's comment:
+
+* *A site predicate on the new arm*, admitting the container only where the slot side can resolve it.
+  Then say what states the refusal at the refused sites, since the walk's message becomes the only
+  signal and this plan elsewhere holds the store to agreeing with the walk.
+* *Admit every site and give the sibling view a fifth verdict* for a container named where the
+  slot-side walk does not reach, which keeps the partition whole on the incumbent's own terms.
+* *Admit every site and argue the rows are right*, which then owes the filter-role reading an answer
+  rather than leaving it to be discovered.
+
+Under all three, `intent_argument_filter_role` joins step 1's rename list, the seam paragraph's count
+goes from five to six, and the NODE_ID role for a container needs either a predicate excluding it or
+a sentence on that relation's comment replacing the rejection's-population escape hatch this item
+invalidates. The Tests section's negative assertions are the right instinct and want one more in the
+same spirit: that a container-naming argument draws whatever role the pick decides on, so the flip is
+a claim rather than a discovery.
+
+### Non-blocking
+
+* Step 2's aside says `intent_node_id_decode_defect` "keeps its body verbatim". It selects
+  `s.node_type_name` and joins on it, so the rename does touch its text. The intent, that no
+  predicate and no population changes there, holds and is the part that matters; the wording
+  overstates it.
+* `intent_input_field_filter_role_live` also reads the instruction relation for `i.basis` and
+  `i.path`, which the rename does not reach, so only the population half of the finding above lands
+  on it.
