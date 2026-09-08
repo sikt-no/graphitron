@@ -494,13 +494,24 @@ as a dependency rather than absorbing it into "What the rule gives up". First, w
 absorb: a gate that lets the four registrations pass has to exempt the two relations by name, which
 is a roster of exactly the shape rounds 2 and 3 refused twice, and it would sit beside a claim rule
 whose entire argument is that a source-keyed read needs no exemption because a writer retracts it.
-Second, what it would cost to fix: R872's likely change is four constants added to a set whose
-per-source deletes `CatalogFactCapture.clearSchemaSources` already performs, in the same loop body as
-the ten listed relations, and `sql_node_metadata`'s own table comment already claims the property the
-omission breaks, that the relation is "refreshed in the same clearing round by the same walk" as
-`sql_table` and that "a family boundary here would cut one refresh unit in half". A persisting wrong
-answer that four constants close is not a trade; it is a bug to depend on, and the assertion below
-is what turns it from a defect nobody watches into one the build states.
+Second, what it would cost to fix. A minimal fix does exist and is why this looked cheap when the
+dependency was taken: `CatalogFactCapture.clearSchemaSources` already deletes all four of these
+relations per source, in the same loop body as the ones the list does name, so adding four constants
+to `PARTITIONED` would stop `wholesale()` emptying them and nothing else would have to move. And
+`sql_node_metadata`'s own table comment already claims the property the omission breaks, that the
+relation is "refreshed in the same clearing round by the same walk" as `sql_table` and that "a family
+boundary here would cut one refresh unit in half".
+
+**R872 rejected that fix, and what this item now waits on is different in kind.** Its argument is
+that the list is the defect rather than its contents: nothing derives `PARTITIONED`, nothing checks
+it, and membership is an unverified promise that a per-source delete exists somewhere else, which is
+exactly the promise these four relations show can be broken. So R872 removes the list instead of
+extending it, and it is four phases rather than one constant edit. **Phase one is the whole of what
+this premise needs**: it cascades the `sql_`, `jvm_` and `java_` webs from their roots, replaces the
+per-source statements with one delete per root, and deletes `PARTITIONED` and `wholesale()`
+outright, after which these four relations are carried with nothing naming them. A persisting wrong
+answer is still not a trade and still a bug to depend on; the change is that the dependency is on a
+phase of a larger item, not on a one-line patch.
 
 **The closure, defined once because every assertion below ranges over it: recursion that ends only
 at base relations that are no registration's target, and passes through a registration target into
@@ -535,8 +546,8 @@ fail on the four registrations above.
 1. **Emptied.** No base relation in the closure is emptied by the clear's wholesale arm. Read from
    `StoreRefresh.wholesale()` itself rather than recomputed from a column or a prefix, because the
    predicate *is* that method's exemption list and a gate that restated it would drift from the thing
-   it is guarding. This is the assertion that fails on the four registrations named above, and it
-   goes green exactly when R872 lands. Nothing today detects that class of read at all: the relation
+   it is guarding. This is the assertion that fails on the four registrations named above, and R872's
+   phase one changes its shape rather than its colour: see the Tests section, which says why. Nothing today detects that class of read at all: the relation
    passes every shape check the store can state about it and is emptied anyway.
 
 2. **Shape.** Every base relation in the closure carries `graph_name` or `source_name`. Read off
@@ -733,14 +744,24 @@ every count-based or output-based assertion passes.
   `meta_family` column is a bigger question and is out of scope here.
 - **The premise gate, part two, in `FactSchemaGateTest`**: assertion 1, the same closure intersected
   with `StoreRefresh.wholesale()`, asserted empty. It lives in `graphitron` because that is where the
-  clear predicate lives, per the placement argument above. This case is red until R872 lands, which
+  clear predicate lives, per the placement argument above. This case is red until R872's phase one lands, which
   is the dependency stated in the front-matter rather than a case to write around; the failure
   message names the offending relation and the registrations that reach it, so a fifth registration
-  walking into the same hole reads as the same failure rather than as a puzzle. When R872 lands it
-  does not merely fix the four registrations: its four relations are `wholesale()`'s entire
-  base-relation set, so the set the closure intersects becomes empty and the assertion goes from red
-  to vacuously green. From then on it is a live instrument for exactly one future event, a relation
-  added without a partition, and that reader is the one the failure message is worded for.
+  walking into the same hole reads as the same failure rather than as a puzzle.
+
+  **What phase one does to this assertion is delete its instrument, not turn it green, and this
+  item has to say which it wants.** These four relations are `wholesale()`'s entire base-relation
+  set, so on the subject alone the intersection would become empty and the case would pass
+  vacuously. But phase one removes `StoreRefresh.wholesale()` and `PARTITIONED` themselves, and this
+  assertion is specified to read that method rather than restate its predicate, so it stops
+  compiling rather than going green. R872 declares both names in its retired vocabulary, so the
+  retirement sweep at its Done gate reaches this case if it exists by then. The instrument that
+  replaces it is R872's own structural gate over the reference web, which asserts that every base
+  relation of the five families reaches its root by declared cascading keys or is named in a small
+  declared aggregate set, and a relation added with no such path fails the build. That is the future
+  event this assertion was a live instrument for, stated over the keys instead of over an exemption
+  list, so the honest resolution is to drop assertion 1 when phase one lands and let R872's gate
+  carry it. Assertions 2 and 3 are unaffected.
 - **`MaterializationProgressTest`**: the new skip arm and the widened pass-finished event, on the
   same terms the existing cases hold for the two registration events. A reader-side pass that skips
   everything emits one skip per pair and a pass-boundary line saying so, which is the assertion that
@@ -811,6 +832,30 @@ either way round and only the reconciliation work moves. R872 is different, beca
 assertion of the gate is red until it lands and the premise it enforces is false until it lands. So this item can be
 specified, and its rule reviewed, ahead of R872; it cannot be marked Done ahead of it. The premise
 section carries the argument for taking it as a dependency instead of as a fourth accepted loss.
+
+**What R872 has become, and which of its phases this item actually needs.** It is four phases now.
+Phase one is the premise's dependency and nothing beyond it: the cascade over the `sql_`, `jvm_` and
+`java_` webs, with `PARTITIONED` and `wholesale()` deleted. Phase two moves the `java_` family into
+`store_source`. Phases three and four are the SDL half, and they matter to this item for a reason
+the premise does not cover: **a skip decision on a source two graphs share is unsound today, and
+this is the item that makes rounds skip.** `store_source.stamp` is one row per source, so graph A
+editing a shared schema file and re-walking leaves the registry stamp equal to what is on disk;
+graph B's next round then reads a stamp that matches, concludes it has nothing to re-read, and keeps
+rows built from content that is gone. Nothing in the tree makes that decision yet, which is why the
+hazard is latent rather than live, and this item is what would make it live. R872's phase four adds
+`store_graph_source.stamp`, the content identity each graph last read a source under, so the
+currency test becomes an equality between the two columns and each graph decides from its own
+record. Whether this item states its skip rule against that column or refuses to skip a shared
+source until phase four lands is a design question for this item, and it should be answered here
+rather than discovered in flight.
+
+**R876's first slice has landed and discharges something this item would otherwise have owed.** The
+graphitron decode used to run over a whole graph's transcription, so refreshing one document could
+not rewrite the 40 source-owned `graphitron_` relations without re-running the entire decode.
+`GraphitronFactCapture.decodingInto` now hands a decoder to `SdlFactCapture`, which drives it at each
+directive application it walks, so those relations are written per document like the `graphql_` ones.
+A per-document refresh is expressible for the whole SDL family rather than half of it, and this item
+does not have to arrange it.
 
 **This item and R865 agree, which is why the sequencing is worth getting right.** The rule below
 already draws the line R865 states as an API constraint: a writer never consults a claim, because a
