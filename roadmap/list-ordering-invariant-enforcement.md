@@ -646,3 +646,121 @@ attention because each is a departure from the body it was written against:
 * **A sixth candidate site**, an inline child list with an `@orderBy` argument, found by reading the
   multiset renderer's single ordering branch. Unverified: three code reads say the ordering is silently
   ignored, and phase 2 carries the recipe that confirms or refutes it before the invariant is written.
+
+## Reviewer findings
+
+### Round 1, Spec -> Ready, 2026-09-08
+
+Verdict: revisions requested. Phase 1 checks out end to end and I would hand it to an
+implementer as written. Phases 2 and 3 each carry a mechanism-level problem that an
+implementer would have to redesign in flight, so the item stays in `Spec`.
+
+**1. Phase 2's assertion pair contradicts its own exemption set, and the contradiction is live
+in this reactor (question 2, and question 1's viability half).** The two bullets under "What it
+asserts" are stated independently: the first requires a present `Ordering` slot whenever the
+leaf resolved a non-empty `Fixed` or an `Argument`, the second exempts an absent slot by
+`LaunchSource` arm. A root `@lookupKey` list coordinate satisfies the first bullet's antecedent
+and the second bullet's exemption at the same time. `OrderByResolver.resolveDefaultOrderSpec`
+falls back to the target table's primary key, so `QueryField.QueryTableField` for
+`filmById(film_id: [ID] @lookupKey): [Film]!` in `graphitron-sakila-example`'s schema resolves
+`OrderBySpec.Fixed(FILM_ID)`, while `LauncherCommands.lookupRow` builds
+`new ResultShape.RecordList(null)` unconditionally. A production fold reading the first bullet
+literally throws on the verification build.
+
+Resolving it the charitable way, letting the exemption gate both bullets, is where the finding
+bites rather than where it ends. For every non-exempt arm the slot is computed by
+`LauncherCommands.orderingOf` directly off the leaf's `OrderBySpec`, and a leaf resolving
+`OrderBySpec.None` never reaches the plan because `validateListRequiresOrdering` rejects it
+first. So the leaf-reading half asserts a total function against its own output, and the track
+reduces to "every non-exempt list-shaped row carries an `Ordering`". That is a defensible
+ratchet, but it is not the comparison of two ends that this item's own "Why this is its own
+item" section says all three predecessor items were reaching for, and phase 2's name promises.
+The four absent-slot sites are exactly the four the exemption list names (`lookupRow`,
+`serviceReentryRow`, and `dmlRowOf`'s two projected-list arms), so there is no launcher-family
+divergence left for the check to find.
+
+What would satisfy this: state the launcher half as one assertion over non-exempt arms and say
+plainly that it is a ratchet over a closed population rather than a two-ends comparison, or
+site the two-ends comparison where the ends can actually diverge. The plan already identifies
+that place, and it is the multiset half: `CallWrap.Multiset` carries the whole `OrderBySpec`
+while `ProjectionUnitRenderer` renders one arm of it, so nothing there derives the command from
+the render's capability. If phase 2 is worth shipping, that half is the reason, and the
+confirmation recipe is already written for it.
+
+**2. Phase 3's rule set verdicts the routine write path `ORDERED`, so the one live class-B site
+the plan names is admitted to the population and then passed (question 1's viability half).**
+`PRIMARY_KEY_FALLBACK` is stated as an unqualified fact join, "where the read's target table has
+a `sql_primary_key`". `Mutation.rentFilm: [Rental!]!` navigates as `Rental`, which binds
+`rental`, so it takes a `NAMED_TYPE_TABLE` row in `intent_field_scope_table` and `rental` has a
+primary key. The reduction therefore reads `ORDERED` with `PRIMARY_KEY_FALLBACK` as the winning
+rule, no `UNORDERED` row is minted, and the phase's own test list ("the routine write path ...
+as a case that fails before the phase and passes after") cannot be satisfied.
+
+The census's C-to-B reclassification is what opens the gap, and the reclassification's stated
+reason is what closes the escape. `MutationField.MutationRoutineWriteField` carries no ordering
+slot, so nothing resolved is discarded (correct, class C cannot see it), but an ordering is
+available at the fact tier (a primary key exists), so class B as defined cannot see it either.
+The defect is neither "no ordering resolves" nor "an ordering resolved and the lowering dropped
+it" but a third thing: an ordering is available and the coordinate's family has nowhere to lower
+it into. Class A is that comparison at the declaration grain; this is the same comparison with
+the fallback standing in for the declaration.
+
+What would satisfy this: either place the routine write path in a cell that can reject it (class
+A generalised from "declared" to "available", which the plan is closer to than it reads, since
+`intent_field_unlowerable_ordering`'s `verdict` column is already built for a second value), or
+drop the claim that phase 3 catches it and say which mechanism does. What the revision should
+not do is answer it with a fact about whether a family lowers an ordering, because that is a
+command-tier property and the "Why the source is facts" section rules the sourcing out; the
+class taxonomy is what has to move, not the tier.
+
+**3. The phase-1 main-source path names a module that cannot hold the class the same section
+describes (question 2).** `graphitron/src/main/java/no/sikt/graphitron/rewrite/derive/` holds
+shadow-agreement scaffolding (`ClaimDomain`, `DemandResidue`), not the store-derived detection
+families. `AuthoredClaimConflicts`, `AuthoredClaimRejectionRows`, `ArgmappingProjectionDefects`,
+`StoreDetections` and `FactCapture` all live in `graphitron-model`, and `graphitron` depends on
+`graphitron-model` one way, so a class under `no.sikt.graphitron.rewrite.derive` cannot be a
+component of `StoreDetections` nor be called from `FactCapture.detect`, which the same bullet
+list requires of it. Both test paths the plan names are already right by that precedent
+(`ArgmappingProjectionDefectTest` in `graphitron-model`'s `model/intent`, its decode sibling in
+`graphitron`'s `rewrite/derive`), which is what makes the main-source path read as the odd one
+out. Left as a finding rather than corrected in place because there are two coherent answers:
+move the class to `graphitron-model/src/main/java/no/sikt/graphitron/model/derive/`, or keep it
+in `graphitron` and reach the error stream by some route other than `StoreDetections`. The first
+is what the precedent implies; the choice is the author's.
+
+**4. No `## Goal` section (question 1, communication half).** `roadmap/workflow.adoc` puts the
+goal first and says the `Spec -> Ready` reviewer answers the first gate question by reading its
+opening paragraph. This body opens with an unlabelled problem statement and carries the goal's
+substance under `## What changes for a consumer`, after four analysis sections and the
+sequencing. The content is good, and I could state what changes for a consumer from it without
+reconstructing anything from the phase list, so this is a placement finding rather than a
+missing-goal one. Promoting that section to `## Goal` at the top would settle it.
+
+**Non-blocking.**
+
+* The `verdict` column's justification names "a routine terminus with no primary key" as the
+  next candidate value. After R704 that coordinate is not a class-A defect: a declared ordering
+  over a routine terminus is lowered, and the undeclared case is the class-B rejection
+  `validateListRequiresOrdering`'s routine arm already mints. Finding 2 above suggests a
+  different second value; if that lands, this sentence is the one to replace rather than keep.
+* `intent_field_unlowerable_ordering`'s stated column list carries no `argument_name`, while
+  `graphitron_order_by` is keyed at argument grain. Two `@orderBy` arguments on one coordinate
+  would collide on the view's key. Probably unreachable (`OrderByResolver.resolve` takes the
+  first `ArgumentRef.OrderByArg` it finds), but the view's key is worth one sentence either way.
+
+**What I verified against the tree.** Every symbol, relation, column, test class and document
+path the plan names exists as named, including the four quoted comment fragments
+(`intent_field_scope_table.basis`'s "several statements rather than one", `Ordering.Columns`'s
+empty-spec throw, `CallWrap.Multiset`'s single-arm note, `diagnostic.actionable`'s `DEFERRED`
+documentation). The pipeline-position argument holds: `Projection.VALIDATE` and
+`Projection.BUILD_OUTPUT` both carry `emit = false`, so no plan is produced on either, and
+`runPipeline` returns before `EmitPlan.produce` when the fused error stream is non-empty. The
+population argument holds: `QueryField.QueryInterfaceField` and `QueryField.QueryUnionField`
+declare no `orderBy` or `pagination` component and implement neither `SqlGeneratingField`, so
+both current checks skip them, and nothing else rejects an `@orderBy` argument at that
+coordinate. `@asConnection` over the multitable shape is admitted with a lint advisory, so the
+reported schema does build today. The sort-results correction is warranted: the section as
+written describes an ordering that is not lowered. The two closures the census records are real
+in `LauncherCommands.batchedResultOf` and `batchedLookupRow`, and the sixth site's premise holds
+as far as the validator goes, `validateTableField` checking only the reference path, the
+lookup-connection pair and cardinality.
