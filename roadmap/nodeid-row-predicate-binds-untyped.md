@@ -1,7 +1,7 @@
 ---
 id: R927
 title: "Generated filters over a converter-backed column are proven in all four predicate shapes"
-status: Ready
+status: In Progress
 bucket: testing
 priority: 4
 theme: codegen-correctness
