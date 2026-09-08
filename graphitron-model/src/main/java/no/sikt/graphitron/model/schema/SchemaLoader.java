@@ -23,8 +23,11 @@ import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -186,7 +189,7 @@ public final class SchemaLoader {
         var definitions = new ArrayList<Definition>();
         var failures = new ArrayList<SyntaxFailure>();
         definitions.addAll(parseDirectives().getDefinitions());
-        for (SchemaSource.File source : userSchemaSources) {
+        for (SchemaSource.File source : oldestFirst(userSchemaSources)) {
             Reader reader = openSource(source.path());
             try {
                 definitions.addAll(parseSource(source.sourceName(), reader).getDefinitions());
@@ -202,6 +205,42 @@ public final class SchemaLoader {
                 .ifPresent(e -> registryErrors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
         }
         return new PerSourceParse(registry, failures, List.copyOf(registryErrors));
+    }
+
+    /**
+     * The sources in the order they were last written, oldest first, with the name as a tie-break so
+     * two files sharing a timestamp still have one order rather than the caller's.
+     *
+     * <p>Reading order decides which of two documents saying something about one coordinate is read
+     * first, and the first reading is the one that wins. Left as the caller's order that answer is
+     * whatever the input list happened to be, which differs between a build listing a directory and
+     * an editor listing open tabs, so the same corpus would name a different newcomer depending on
+     * who asked. By modification time the answer is the corpus's own history and it is the one a
+     * developer expects: the file they just saved is the incursion, and the one that was there
+     * already is the incumbent.
+     *
+     * <p>The registry is built in this order too, which is the point of doing it here rather than in
+     * a reader. graphql-java names a loser of its own when it refuses a redefinition, and two orders
+     * would let its sentence blame one file while a derivation over the captured facts blames the
+     * other.
+     *
+     * <p>A source whose time cannot be read sorts as the epoch, so it is read before anything dated
+     * rather than throwing. That is the same choice the rest of this class makes about a source it
+     * cannot fully read: the ordering degrades and the reading still happens.
+     */
+    private static List<SchemaSource.File> oldestFirst(Collection<SchemaSource.File> sources) {
+        return sources.stream()
+            .sorted(Comparator.comparing(SchemaLoader::modifiedAt)
+                .thenComparing(SchemaSource.File::sourceName))
+            .toList();
+    }
+
+    private static FileTime modifiedAt(SchemaSource.File source) {
+        try {
+            return Files.getLastModifiedTime(source.path());
+        } catch (IOException e) {
+            return FileTime.from(Instant.EPOCH);
+        }
     }
 
     /**

@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -30,6 +32,54 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
  */
 @UnitTier
 class SchemaLoaderTest {
+
+    /**
+     * Sources are read oldest first, so the reading order is the corpus's own history rather than
+     * whatever order the caller assembled its input list in.
+     *
+     * <p>This matters where two documents say something about one coordinate. The first reading wins
+     * and the later one is the loser, so the order decides which of the two a report calls the
+     * incumbent and which the incursion. Ordering by modification time makes that answer the one a
+     * developer expects, the file they just saved being the incursion, and makes it stable across
+     * callers: a build assembling its inputs by directory listing and an editor assembling them by
+     * open-tab order must not disagree about which declaration is the newcomer.
+     *
+     * <p>It also has to be the order the final registry is built in, because graphql-java names a
+     * loser of its own when it refuses a redefinition. Two orders would let its sentence blame one
+     * file while the store's own derivation blames the other.
+     *
+     * <p>The two files here declare unrelated types, so nothing in the outcome depends on the merge
+     * rules; the assertion is only about which was read first. They are handed over newest first, so
+     * an implementation that kept the caller's order would produce the opposite of what is asserted
+     * rather than the same answer by luck.
+     */
+    @Test
+    void sourcesAreReadOldestFirst(@TempDir Path tmp) throws IOException {
+        Path older = tmp.resolve("older.graphqls");
+        Files.writeString(older, "type Older { a: String }\n", StandardCharsets.UTF_8);
+        Path newer = tmp.resolve("newer.graphqls");
+        Files.writeString(newer, "type Newer { b: String }\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(older, FileTime.from(Instant.parse("2020-01-01T00:00:00Z")));
+        Files.setLastModifiedTime(newer, FileTime.from(Instant.parse("2030-01-01T00:00:00Z")));
+
+        var parse = SchemaLoader.parsePerSource(
+            List.of(new SchemaSource.File(newer), new SchemaSource.File(older)));
+
+        assertThat(parse.registryErrors()).as("neither file refuses anything").isEmpty();
+        assertThat(declarationOrder(parse, "Older", "Newer"))
+            .as("the older file is read first however the caller ordered its inputs, so the first "
+                + "reading of a contested coordinate is the one that was there already")
+            .containsExactly("Older", "Newer");
+    }
+
+    /**
+     * Where the named types fall in the registry's own insertion order, which is the order the
+     * definitions were admitted and therefore the order the sources were read.
+     */
+    private static List<String> declarationOrder(SchemaLoader.PerSourceParse parse, String... names) {
+        var wanted = List.of(names);
+        return parse.registry().types().keySet().stream().filter(wanted::contains).toList();
+    }
 
     @Test
     void aRejectedSourceDoesNotSubtractFromItsSiblings(@TempDir Path tmp) throws IOException {
