@@ -503,9 +503,8 @@ class NodeIdInstructionTest {
     void aSingleTableDiscriminatedInterfaceIsOneRow() {
         withCatalog(dsl -> {
             seedNodeType(dsl, "Film", "film");
-            seedTableBinding(dsl, GRAPH, "MediaItem", "film");
+            seedTableBinding(dsl, GRAPH, "MediaItem", "film", "INTERFACE");
             seedImplements(dsl, GRAPH, "Film", "MediaItem");
-            seedType(dsl, GRAPH, "MediaItem", "INTERFACE");
             seedField(dsl, GRAPH, "Query", "media", "MediaItem", false);
             seedArgumentNodeId(dsl, GRAPH, "Query", "media", "someId", null);
 

@@ -367,6 +367,9 @@ CREATE TABLE graphql_type (
   description   VARCHAR,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  -- Free, the primary key already implying it, and what lets a relation carrying a fact that is
+  -- legal for only some kinds reference the type and its kind together rather than the type alone.
+  UNIQUE (graph_name, type_name, kind),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
 COMMENT ON TABLE graphql_type IS 'What a named type is: the two attributes of the type itself, hanging off graphql_type_element, which is where the name''s existence now lives and where everything else in the schema anchors. Read from whichever site capture meets first in merge order (macro-contributed sites included), which on a well-formed schema is the base definition; graphql_type_declaration carries every site and the kind each one wrote. Nothing references this relation, deliberately: the split exists so that what a later cadence owns cannot drag the reference web with it, and holding the reference web off the attribute relation is that split doing its job rather than an omission.';
@@ -527,6 +530,14 @@ CREATE TABLE graphql_poly_member (
   FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, declared_on, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
+  -- No reference from the container to graphql_type, deliberately, and the reason is what this
+  -- relation is. The container name is as the implementing type spelled it and resolves against
+  -- nothing: a document may implement an interface it never declares, capture transcribes the
+  -- document rather than a validated schema, and the row saying so is what a diagnostic reads to
+  -- report the omission. Tying container_kind to the anchor would refuse exactly that row, and
+  -- nodehood is derived from this edge whether or not Node is declared. A member whose kind
+  -- disagrees with what graphql_type calls the container is therefore a detection over the two
+  -- relations and not a refusal here, on the same footing as every other unresolved spelling.
   CHECK (container_kind IN ('UNION', 'INTERFACE')),
   CHECK (declared_on = CASE WHEN container_kind = 'UNION' THEN container_name
                             ELSE member_type_name END)
@@ -3033,11 +3044,18 @@ COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states,
 CREATE TABLE graphitron_tabletype (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
+  named_type_kind   VARCHAR NOT NULL,
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
   table_name        VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  -- The type and the kind it is, replacing the reference to the type element alone: boundness is a
+  -- fact about an object or an interface, and a reference to the element could not say so. The
+  -- element is still reached, graphql_type hanging off it, so the narrower reference gives up no
+  -- reach. Cascading, a type that stops being declared having no binding to keep.
+  FOREIGN KEY (graph_name, type_name, named_type_kind)
+    REFERENCES graphql_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (named_type_kind IN ('OBJECT', 'INTERFACE')),
   FOREIGN KEY (table_source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   -- Free, the primary key already implying it, and what lets a relation carrying both a type and
@@ -3046,7 +3064,8 @@ CREATE TABLE graphitron_tabletype (
 );
 COMMENT ON TABLE graphitron_tabletype IS 'A graph type that resolved to exactly one catalog table: one row per type whose @table spelling the catalog answered unambiguously. For example a Film type over @table(name: "film") draws a row naming the film table in the schema that declares it, while a spelling two schemas both declare draws none and is found by anti-join against the entry the author wrote.';
 COMMENT ON COLUMN graphitron_tabletype.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type_element. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
+COMMENT ON COLUMN graphitron_tabletype.type_name IS 'the graph type the binding is for, anchored by graphql_type through its kind. With the graph this is the whole key, and that is the resolution''s own claim: a type resolving to two tables is not a row here, so the key is what says the binding is settled rather than a count beside it saying how settled';
+COMMENT ON COLUMN graphitron_tabletype.named_type_kind IS 'which of the six named type kinds the bound type is, OBJECT or INTERFACE, carried here so the reference into graphql_type can name the pair and the store can refuse a binding on a kind that cannot carry one. Not a fact of its own and not a second answer to what kind a type is: the foreign key is what makes it the same answer, and a row disagreeing with the type relation cannot be written. A union, a scalar or an enum with a @table on it resolves to no row here at all, which puts the author''s mistake where every other unresolved application already sits, the anti-join against graphitron_table_entry';
 COMMENT ON COLUMN graphitron_tabletype.table_source_name IS 'the codegen source the table came from, the first of the three columns naming one catalog table';
 COMMENT ON COLUMN graphitron_tabletype.table_schema IS 'the table''s schema as the catalog spells it';
 COMMENT ON COLUMN graphitron_tabletype.table_name IS 'the table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table, which is what a resolved binding can carry and an unresolved one cannot. The first crossing in this schema from a graph-keyed relation into the source-keyed catalog, and it cascades on delete, which is what makes the crossing sound rather than merely permitted: a catalog source is shared between graphs and recrawled whole, so without the cascade a source could not be recrawled while any graph still named its tables. With it, a recrawled source takes the bindings that named it, and the graphs concerned rebuild theirs the next time they capture. That is the honest outcome of the two available: a reader finds no binding rather than one naming a table the catalog no longer has, which is what the relations this replaces leave behind because they carry no key here at all';

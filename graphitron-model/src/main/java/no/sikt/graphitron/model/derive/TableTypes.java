@@ -4,6 +4,7 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.coalesce;
@@ -33,6 +34,13 @@ import static org.jooq.impl.DSL.partitionBy;
  * <p>A type with no {@code name:} binds by its own name, and the three root operation types are
  * excluded because a table named after one of them would otherwise bind it. Both are resolution
  * rules and live here; the decode stays what the author wrote.
+ *
+ * <p>The kind is read rather than assumed, and it is the one rule here that refuses rather than
+ * resolves. Boundness is a fact about an object or an interface, so a {@code @table} written on a
+ * union, a scalar or an enum resolves to no row, which the relation's own reference would refuse
+ * anyway; deciding it here is what turns that refusal from a failed write into the same unresolved
+ * application every other authoring mistake becomes. The kind is projected because the dependent
+ * carries it, and carrying it is what lets the reference name the type and the kind together.
  */
 public final class TableTypes {
 
@@ -47,10 +55,12 @@ public final class TableTypes {
         // re-deriving in order to read the result makes it as often as it likes.
         dsl.deleteFrom(GRAPHITRON_TABLETYPE)
             .where(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(graphName)).execute();
+        var ty = GRAPHQL_TYPE;
         var resolved = dsl
-            .select(t.GRAPH_NAME, t.TYPE_NAME, st.SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
+            .select(t.GRAPH_NAME, t.TYPE_NAME, ty.KIND, st.SOURCE_NAME, st.TABLE_SCHEMA, st.TABLE_NAME,
                 count().over(partitionBy(t.GRAPH_NAME, t.TYPE_NAME)).as("candidates"))
             .from(t)
+            .join(ty).on(ty.GRAPH_NAME.eq(t.GRAPH_NAME)).and(ty.TYPE_NAME.eq(t.TYPE_NAME))
             .join(m).on(m.GRAPH_NAME.eq(t.GRAPH_NAME))
             .join(st).on(st.SOURCE_NAME.eq(m.SOURCE_NAME))
             .and(st.TABLE_NAME_UPPER.eq(coalesce(t.TABLE_REF_NAME_PART_UPPER, t.TYPE_NAME_UPPER)))
@@ -58,13 +68,15 @@ public final class TableTypes {
                 .or(st.TABLE_SCHEMA_UPPER.eq(t.TABLE_REF_NAMESPACE_PART_UPPER)))
             .where(t.GRAPH_NAME.eq(graphName))
             .and(t.TYPE_NAME.notIn("Query", "Mutation", "Subscription"))
+            .and(ty.KIND.in("OBJECT", "INTERFACE"))
             .asTable("resolved");
         dsl.insertInto(GRAPHITRON_TABLETYPE)
             .columns(GRAPHITRON_TABLETYPE.GRAPH_NAME, GRAPHITRON_TABLETYPE.TYPE_NAME,
-                GRAPHITRON_TABLETYPE.TABLE_SOURCE_NAME, GRAPHITRON_TABLETYPE.TABLE_SCHEMA,
-                GRAPHITRON_TABLETYPE.TABLE_NAME)
+                GRAPHITRON_TABLETYPE.NAMED_TYPE_KIND, GRAPHITRON_TABLETYPE.TABLE_SOURCE_NAME,
+                GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME)
             .select(dsl
                 .select(resolved.field(t.GRAPH_NAME), resolved.field(t.TYPE_NAME),
+                    resolved.field(ty.KIND),
                     resolved.field(st.SOURCE_NAME), resolved.field(st.TABLE_SCHEMA),
                     resolved.field(st.TABLE_NAME))
                 .from(resolved)

@@ -501,7 +501,12 @@ attempt owes before it can claim to be done.
    write. The writer move and the `_entry` suffix both landed 2026-09-07, behind the fixture and the
    widened gate, which closes the slice. Specified in full below, because what it moved was measured
    before the decision was taken.
-2. **The two hierarchies**, described below, which are one mechanism applied at two grains. A named
+2. **The two hierarchies**, described below, which are one mechanism applied at two grains. The
+   named-type half landed 2026-09-08: `graphql_type` carries the unique, `graphitron_tabletype`
+   carries `named_type_kind` and references the pair, and `TableTypes` reads the kind so a `@table`
+   on a union, a scalar or an enum resolves to no row instead of failing a write. The edge cascades,
+   which is one of the 39 R872's phase four owes and is why that phase now owes 38. What the slice
+   withdrew is recorded below with the reason. A named
    type is one of the specification's six kinds, and boundness, participants and fields are facts
    each legal for some of them. A producer is what runs to fetch a field's rows, which most fields
    do not have: a table-bound child is absorbed into its parent's query, and only a root slot,
@@ -889,14 +894,30 @@ and not on the target axis at all.
 structurally and an unbound node is already unwritable. That is the shape the other rungs want, and
 it is worth naming because it was arrived at once and not generalised.
 
-**Two refusals the store can take for free.** `graphitron_tabletype` keys into
-`graphql_type_element` with no kind constraint at all, so a union, a scalar or an enum can be
-table-bound and nothing refuses it. And `graphql_poly_member` carries `CHECK (container_kind IN
-('UNION', 'INTERFACE'))`, but the kind rides the member row with nothing tying it to the container's
-real kind, so a member may claim `UNION` for a type the anchor calls an object. Both are the same
-fix: a unique on `(graph_name, type_name, kind)` at the anchor, and a composite reference to that
-pair from each subtype with its own kind check. No new relation, one unique and a few foreign keys,
-and four illegal states stop being writable.
+**One refusal the store can take for free, and one it cannot, which is not what this said before
+it was built.** `graphitron_tabletype` kept into `graphql_type_element` with no kind constraint at
+all, so a union, a scalar or an enum could be table-bound and nothing refused it. That one is the
+mechanism: a unique on `(graph_name, type_name, kind)` at the anchor, and a composite reference to
+that pair from the dependent carrying its own kind check. No new relation, one unique and one
+foreign key, and three illegal states stopped being writable on 2026-09-08.
+
+`graphql_poly_member` was named beside it as the same fix and it is not the same fix. It carries
+`CHECK (container_kind IN ('UNION', 'INTERFACE'))` with nothing tying the value to what the type
+relation calls the container, and the reference that would tie them was written, run and withdrawn:
+it refused 103 captures. The container name is as the implementing type spelled it and resolves
+against nothing. A document may implement an interface it never declares, capture transcribes the
+parsed document rather than a validated schema, and the row saying so is what a diagnostic reads to
+report the omission; `Nodes.derive` reads the edge itself and never asks whether `Node` was
+declared. So the relation is a transcription and the proposed reference imposed resolution on it,
+which is this arc's own category error committed by this arc. The disagreement it would have caught
+is a detection over the two relations instead, on the same footing as every other spelling that
+resolves to nothing.
+
+What separates the two is the half of the family each sits in, which is the entry and anchor line
+read at the level of a constraint rather than a writer. `graphitron_tabletype` is a resolution and
+may be held to what resolved; `graphql_poly_member` transcribes and may not. The plan said "both are
+the same fix" because it was reading the shape of the defect rather than the tense of the relation,
+and the shape is what a hierarchy makes look alike.
 
 **The hierarchy spans two families, and that is the naming rule working rather than an exception.**
 Participants are `graphql_poly_member` because `union X = A | B` is a fact in GraphQL's vocabulary;
@@ -909,9 +930,17 @@ section carries a table headed "Element Kind" over named type, field, input fiel
 argument, directive and directive argument, which is exactly what `graphql_element.element_kind`
 holds. Section 3's six-way split is a different axis and the specification does not call it that; on
 its own phrasing it is the named type kind. Every named type has one element kind, `NAMED_TYPE`, and
-its six-way kind one level down, so the two must not share a column name. The store spells the
-second three ways today, bare `kind` on `graphql_type` and `graphitron_type` and `container_kind` on
-`graphql_poly_member`, and `named_type_kind` is the specification's word for all three.
+its six-way kind one level down, so the two must not share a column name.
+
+The store spells the second five ways and not three, counted off the DDL rather than from memory:
+bare `kind` on `graphql_type`, on `graphql_type_declaration`, on `graphitron_type` and on
+`graphitron_minted_type`, whose check admits the single value `OBJECT`, and `container_kind` on
+`graphql_poly_member`. `named_type_kind` is the specification's word for all five, and it is the
+name the new column on `graphitron_tabletype` already carries. Four other relations spell a bare
+`kind` that is a different axis entirely and must not be swept with them, `store_graph_schema_input`,
+`javac_diagnostic`, `intent_authored_claim_rejection` and
+`intent_field_unlowerable_ordering_rejection` among them, which is why the pass is per relation and
+not a substitution over the word.
 
 ### The producer hierarchy
 

@@ -810,7 +810,23 @@ public final class SeededStore {
      * matches nothing, or two things, is a state this helper is meant to reach.
      */
     public static void seedTableBinding(DSLContext dsl, String graphName, String typeName, String tableRef) {
-        seedDeclaredType(dsl, graphName, typeName, "OBJECT");
+        seedTableBinding(dsl, graphName, typeName, tableRef, "OBJECT");
+    }
+
+    /**
+     * The same application on a type of a stated kind, for the case where the bound type is an
+     * interface. Its own overload rather than a fifth parameter everywhere, an object being what a
+     * case binds unless it is about the difference.
+     *
+     * <p>Stating the kind is not optional in the way it looks. {@link #seedType} is idempotent on
+     * the type existing, so a case that binds first and declares the interface afterwards gets an
+     * object and no complaint, which is how one case here came to believe it was exercising a
+     * discriminated interface while exercising an object. The kind belongs on the call that first
+     * declares the type, and this overload is what lets a case put it there.
+     */
+    public static void seedTableBinding(DSLContext dsl, String graphName, String typeName,
+                                        String tableRef, String kind) {
+        seedDeclaredType(dsl, graphName, typeName, kind);
         dsl.insertInto(GRAPHITRON_TABLE_ENTRY)
             .set(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME, graphName)
             .set(GRAPHITRON_TABLE_ENTRY.TYPE_NAME, typeName)
@@ -2040,6 +2056,13 @@ public final class SeededStore {
      * A type's {@code implements} edge, in the declaration direction the relation stores. The
      * interface is a name the implementing type spelled and resolves against nothing, so a case can
      * state the edge without declaring the interface as a type.
+     *
+     * <p>That last clause is load-bearing rather than a convenience, and this slice tried to remove
+     * it and put it back. Capture transcribes the parsed document, so a type implementing an
+     * interface nobody declared has this row and no anchor to reach, which is the state a diagnostic
+     * reporting the omission reads. Nodehood is derived from this edge and not from a declaration of
+     * {@code Node}, so a fixture declaring the interface would be testing a corpus the shipped
+     * schemas happen to have rather than the rule.
      */
     public static void seedImplements(DSLContext dsl, String graphName, String typeName,
                                       String interfaceName) {
