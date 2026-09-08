@@ -226,16 +226,27 @@ relations to sweep are the ones the schema declares a set-null twin on, read fro
 metadata, so a family root added later is swept without anybody remembering to add it. A roster here
 would be `PARTITIONED` again in a new costume.
 
-**What this does not close, stated rather than left to be discovered.** The graph-keyed `graphitron_`
-decodes that hang off `sql_table` and `sql_column` are one copy under a shared parent, so when a
-capture reaps a flagged `sql_schema` those rows go with it, including a graph's that is not running.
-Symmetry moves when that happens, from the process that deleted the file to the next capture, and does
-not prevent it, because there is one copy and its parent is genuinely gone. That is acceptable on a
-distinction worth stating plainly: what a twin protects is anything recoverable only by re-reading a
-source, and a decode is recoverable from the graph's own surviving `graphql_` rows without re-reading
-anything. The graph re-decodes on its next capture, which it was going to do. Closing it properly would
-mean re-parenting those three relations away from the catalog, which is a different design and not this
-item's.
+**The three relations that key into the catalog need nothing, and it is worth saying why rather than
+leaving a reader to wonder.** `graphitron_tabletype`, `graphitron_field_table` and
+`graphitron_node_keycolumn` are the only relations of their family that reference the catalog, and each
+is an *anchor*: it holds what a spelling resolved to and nothing a reader could not recompute.
+`graphitron_tabletype` carries the resolved `(source, schema, table)` and no authored text at all,
+while the `@table` an author wrote lives beside it in `graphitron_table` with its `table_ref` and its
+declaration position, keyed into `graphql_type_declaration`. The other two pair off the same way, with
+`graphitron_node_entry` and `graphitron_node_keycolumn_entry` carrying the authored `type_id` and
+`column_ref`, and `graphitron_field_navigation` carrying the navigation `graphitron_field_table`
+resolves.
+
+So a removed jOOQ package deletes resolutions that name a table which no longer exists, which is the
+only correct outcome for them, and deletes nothing anybody wrote. Every entry hangs off the graph's SDL
+transcription and therefore off the membership row, where this graph's twin protects it whoever removed
+the source. The graph re-resolves on its next capture from entries that never left, with no source
+re-read anywhere.
+
+That is the rule the twins implement, stated positively: **an entry is owned and the twin protects it;
+an anchor is a function of both sides and dies with either.** The taxonomy above already puts these
+three in the descendant bucket with nothing to do, which is that rule applied. It is also R876's own
+vocabulary for this family, so the two items cut it the same way from opposite directions.
 
 It is also an operation the store does not currently have at all, which is worth stating as a gain
 rather than leaving implied. Nothing in the tree deletes a `store_source` row: there is no
@@ -1514,3 +1525,29 @@ happens and does not prevent it. The distinction that makes it acceptable is wor
 twin protects what is recoverable only by re-reading a source, and a decode is recoverable from the
 graph's own surviving `graphql_` rows without re-reading anything.
 
+### Author correction, 2026-09-08: the catalog-keyed decodes were never a limitation
+
+The revision above closed with a paragraph naming a residual: that reaping a flagged `sql_schema`
+takes a not-running graph's `graphitron_` decode rows, that symmetry only moves when it happens, and
+that closing it properly would mean re-parenting three relations. The user pushed on it, on the ground
+that a design should not ship a strange limitation, and they were right to. There is no limitation, and
+the paragraph was a misdiagnosis rather than a scope judgement.
+
+All three relations are anchors with entries already beside them, which the DDL says plainly and which
+nothing but my own inference contradicted. `graphitron_tabletype` holds a resolved
+`(table_source_name, table_schema, table_name)` and no authored text; `graphitron_table` holds the
+`@table` spelling in `table_ref` with its declaration position and keys into
+`graphql_type_declaration`. `graphitron_node` hangs off the anchor while `graphitron_node_entry` holds
+the authored `type_id` and position; `graphitron_node_keycolumn_entry` holds the authored `column_ref`;
+`graphitron_field_navigation` holds what `graphitron_field_table` resolves, keyed at
+`graphitron_field` with no catalog reference.
+
+So removing a jOOQ package deletes resolutions naming a table that is gone and deletes nothing an
+author wrote, every entry sitting under the graph's own membership row where its twin protects it. The
+body now says that, and states the rule positively: an entry is owned and the twin protects it, an
+anchor is a function of both sides and dies with either. That is the same line R876 cuts, which is
+confirmation rather than coincidence.
+
+The error is worth naming because it is the one this item's review has caught four times: a claim I
+reasoned to rather than executed. I inferred from a foreign key into `sql_table` that the row was a
+graph's owned fact, and one look at the relation beside it would have said otherwise.
