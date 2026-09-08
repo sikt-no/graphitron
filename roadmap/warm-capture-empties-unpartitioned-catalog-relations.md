@@ -1854,3 +1854,64 @@ The slice generalises what was arrived at twice and never named, which is the sa
 > for having it in the build.
 >
 > Nothing here changes the counts as they stand, and round 6's finding 7 is untouched by all of it.
+
+### Round 7 (2026-09-08, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold, on one relation. Finding 7 is answered, and answered with the stronger argument
+than the one the finding offered: I said "nothing per graph reads `read_at`" was a defensible answer,
+and the rework declines that as the weak form and gives the subject argument instead, that
+`store_source.stamp` and `read_at` are both about the bytes while `store_graph_source.stamp` is about
+the rows. That is right, and it is the reason rather than a rationalisation. `Observation.trusts`
+exists with the arity cited and reads `readAt` against a floor and a mark, `store_source.read_at`'s
+comment does say a value "written by another process while we were watching counts as ours" verbatim,
+and `java_file` carries no graph dimension, so the phase-two narrowing is sound too. Keeping both
+surviving sentences and naming the membership row beside them is better than deleting them.
+
+Two gaps this rework closed were mine to have caught in round 1 and I did not. The `NOT NULL`
+alteration step sat between two requirements and belonged to neither, and its population is right: 6
+`graphql_` and 29 `graphitron_` is 35 of the owned 52. And the chain-closing paragraph's cascade claim
+was false. I reproduced the correction independently: 42 `graphitron_` foreign keys reference a
+`graphql_` coordinate anchor, exactly 3 declare `ON DELETE CASCADE`, all three from the minting arc
+into `graphql_element`, and the other 39 sit on 39 distinct relations under the `NO ACTION` default.
+I had verified the catalog-side edges in round 1 and never checked the anchor-side ones, which is
+where the re-aggregation's delete actually lands. Credit for finding it belongs to R876's session.
+
+**Finding 8 (question two: round 3's disposition covers the transcription of the synthesised `@link`
+and not its decode).** `graphitron_link_entry` is the same defect one relation downstream, and it is
+the last one of its shape.
+
+`GraphitronFactCapture.captureSchemaDirective` returns immediately unless the directive's name is
+`FEDERATION_LINK`, which is `"link"`, and otherwise writes one `graphitron_link_entry` row taking
+`source_name` from `setPosition(directive.getSourceLocation(), ...)`. `captureSchema` walks
+`registry.getSchemaExtensionDefinitions()`, which includes the extension `TagLinkSynthesiser` injects,
+and that extension's directive carries `SourceLocation(1, 1, "<graphitron-synthesised:tag-link>")`. So
+the synthesised `@link` produces a `graphitron_link_entry` row whose source is the synthetic name.
+
+Round 3 established that this row's existence is a function of the recipe rather than of any document,
+and moved `graphql_schema_directive` to the re-aggregated set for it. But `graphitron_link_entry` is a
+different relation: it declares `source_name VARCHAR` nullable, keys `(graph_name, ordinal)`, and
+foreign-keys only to `store_graph`. Re-aggregating `graphql_schema_directive` does not reach it. It
+therefore sits in the owned 40, is one of the 29 `graphitron_` relations phase four alters to
+`NOT NULL`, and gains a cascading `(graph_name, source_name)` edge into `store_graph_source`, while
+phase three retires the only value its recipe-derived rows can carry. After phase three there is no
+honest value for that column on those rows, and the `ALTER` has nothing to write.
+
+By the plan's own rule it moves whole rather than by arm. A consumer that writes
+`extend schema @link(...)` gets a row attributed to their file, which is owned and honest, so the
+relation has a document arm and a recipe arm exactly as `graphql_root_operation` has an explicit arm
+and a convention arm; round 3's reason for moving that one whole, that "a taxonomy that classifies
+half a relation is not one", applies unchanged. That takes the counts to **76 / 30 / 18** and the
+`NOT NULL` population to 34, 6 `graphql_` and 28 `graphitron_`.
+
+**The class is worth stating, not just the instance, and it is bounded.** The shape is that a
+synthesised or convention-derived directive leaves *two* rows behind, a transcription in the
+`graphql_` family and a decode in the `graphitron_` family, and a disposition naming only the
+transcription leaves the decode in the owned set with no value to carry. Stating that in phase three
+closes the class. It is bounded rather than open-ended: the decode side is reached only by the
+tag-link synthesis, because `FederationLinkApplier` injects directive *definitions* rather than
+applications, so its rows land on `graphql_directive` and its kin and never on
+`captureSchemaDirective`, and the convention roots write no decode at all. So this is one relation and
+one sentence, not the start of an audit.
+
+Nothing else is outstanding. `SdlFactCapture.stampTarget`'s javadoc remains the one falsified
+description the sweep does not name, still non-blocking, still carried from round 4.
