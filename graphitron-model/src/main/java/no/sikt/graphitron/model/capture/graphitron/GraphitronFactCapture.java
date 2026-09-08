@@ -122,8 +122,8 @@ import static org.jooq.impl.DSL.when;
  * and effective-value defaulting are not.
  *
  * <p>The decode never rejects. A literal that does not fit its declared shape leaves its typed
- * column NULL and quarantines raw in {@code graphitron_undecoded_argument_entry} with its location, so the
- * authored text survives and the malformed-literal detection has its row. Those paths stay
+ * column NULL and quarantines raw in {@code graphitron_undecoded_argument_entry} with its
+ * location, so the authored text survives and the malformed-literal detection has its row. Those paths stay
  * dormant while schema assembly still runs upstream and rejects such schemas first.
  *
  * <p>Only what the author wrote is stored: an omitted argument is a NULL column or an absent row,
@@ -169,9 +169,10 @@ public final class GraphitronFactCapture {
      * driven by callbacks "cannot join the coordinate it is decoding against anything" is exactly
      * right about a resolution and says nothing about a relation that joins nothing.
      *
-     * <p>A flush inside the load's transaction is what lets one stage read the last one's rows, and
-     * it publishes nothing: macro expansion is driven by the {@code graphitron_connection_entry} rows the
-     * walk produced, and the navigation rule is stated over the population expansion completes.
+     * <p>A flush inside the load's transaction is what lets one stage read the last one's rows,
+     * and it publishes nothing: macro expansion is driven by the
+     * {@code graphitron_connection_entry} rows the walk produced, and the navigation rule is stated
+     * over the population expansion completes.
      */
     public static Map<String, Set<String>> capture(FactSink sink, DSLContext dsl, String graphName) {
         // First of the gatherer's own stages: it reads the transcription alone, and the written

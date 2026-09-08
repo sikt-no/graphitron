@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The generator module's corpus-isolation differential is the case that wanted it. Its scope was
  * {@code graphql_} alone, and widening it to the as-written {@code graphitron_} relations passed
- * over 57 relations of which only eight held a row under that gate's own fixture: the other 49
+ * over 56 relations of which only eight held a row under that gate's own fixture: the other 48
  * agreed by being empty in both arms. A differential over relations nobody wrote to is not a
  * differential, and this fixture is what turned the widening into a check rather than a count.
  *

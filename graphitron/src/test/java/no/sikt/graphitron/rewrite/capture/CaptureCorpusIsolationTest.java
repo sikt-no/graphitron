@@ -36,20 +36,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * crawler adds no reference, it changes which rows exist.
  *
  * <p>Two things are in scope and they are in scope for the same reason. {@code graphql_} is the
- * transcription of the documents, enumerated off the generated model by prefix so the next
- * cross-corpus read fails this without being named here. Beside it is the as-written half of
- * {@code graphitron_}, the relations whose rows are a function of one document and nothing else,
- * which {@link EntryFamilyFixture#entryRelations()} reads off the generated model by name and a
- * coverage gate in the model module holds to being populated. Those rows restate a directive application in graphitron's
- * vocabulary, so "does not vary with the catalog" is a property they have by construction and one
- * worth holding them to. The catalog's own families are deliberately out of scope, being exactly the
- * rows whose presence the two arms differ by.
+ * transcription of the documents. Beside it is the as-written half of {@code graphitron_}, the
+ * relations whose rows are a function of one document and nothing else, which
+ * {@link EntryFamilyFixture#entryRelations()} names and a coverage gate in the model module holds
+ * to being populated. Those rows restate a directive application in graphitron's vocabulary, so
+ * "does not vary with the catalog" is a property they have by construction and one worth holding
+ * them to. The catalog's own families are deliberately out of scope, being exactly the rows whose
+ * presence the two arms differ by.
  *
- * <p>The two arrive in the gate differently, and the difference is a claim rather than a
- * convenience. A prefix is the whole of a family, so a relation added to {@code graphql_} is in
- * scope without being named here. The as-written half is a partition of a family, so a relation
- * added to {@code graphitron_} has to be classified as one half or the other, and the coverage gate
- * beside the fixture is what refuses to let it go unclassified.
+ * <p>Neither half arrives as a list, and that is the point of both spellings. A prefix is the whole
+ * of the {@code graphql_} family and a {@code _entry} suffix is the whole of the as-written half, so
+ * both are read off the generated model and a relation added to either is in scope without being
+ * named here. What a name cannot do is hold a new decode relation to carrying the suffix in the
+ * first place, and that is {@code EntryNamingGuardTest}'s, over the decode's own source.
  *
  * <p>The resolved half of {@code graphitron_} is out of scope, and that is what the family is rather
  * than a concession: a stage joining an entry against the catalog varies with the catalog by

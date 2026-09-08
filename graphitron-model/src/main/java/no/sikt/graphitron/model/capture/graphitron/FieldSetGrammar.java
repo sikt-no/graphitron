@@ -7,7 +7,8 @@ import java.util.List;
 
 /**
  * Decodes federation's field-set grammar, the string form {@code @key(fields:)} carries, into the
- * ordered selections {@code graphitron_federation_key_field_entry} stores, each one a list of segments.
+ * ordered selections {@code graphitron_federation_key_field_entry} stores, each one a list of
+ * segments.
  *
  * <p>The grammar is a parse boundary SQL cannot express, so it decodes at capture. Nesting is part
  * of the grammar and survives the decode as the segments of a selection ({@code "a { b c }"} yields

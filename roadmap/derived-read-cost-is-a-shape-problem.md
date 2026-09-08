@@ -368,9 +368,11 @@ find that join, which is the whole justification and it does not depend on any g
 **What the suffix bought on top of that is that two gates stopped carrying a list.** Enumerating 56
 relations inside a test is the list that goes stale the first time somebody writes the 58th, and it
 did not survive first contact: the fixture's two lists were written on 2026-09-07 and were edited
-again the same day. Both halves are read off the generated model by name now. That retires the case
-holding the lists to partitioning the family, which is true by construction once the name decides
-it, and it moves what that case was really protecting to `EntryNamingGuardTest`: a scan of the
+again the same day. The entry half is read off the generated model by name now, and the anchor list
+is simply gone: the complement of the suffix is a bag rather than a half, holding both the stages'
+relations and a view nothing writes, and nothing needed it once the partition case went. That case
+is what the suffix retires, it being true by construction once the name decides which half a
+relation is in, and what it was really protecting moves to `EntryNamingGuardTest`: a scan of the
 decode's own source holding it to naming only suffixed relations, since a relation the decode writes
 is a relation whose rows are a function of one document and the name has to say so. Verified failing
 by naming an anchor inside the decode. What no source scan can say is the other direction, a
@@ -654,22 +656,24 @@ rest. What it shows is that "keyed to the coordinate" is a property of most entr
 definition of one; the definition is what the rows are a function of.
 
 **The falsifier came first and it has been built.** Widening `CaptureCorpusIsolationTest` to the
-entry half passed before any code moved, measured 2026-09-07 over the 57 relations that scope
-selects, and it passed for the wrong reason: eight of the 57 held a row under that gate's fixture,
-so 49 of them agreed by being empty twice, and a gate that cannot fail is what this arc has twice
+entry half passed before any code moved, measured 2026-09-07 over the 56 relations that scope
+selects, and it passed for the wrong reason: eight of the 56 held a row under that gate's fixture,
+so 48 of them agreed by being empty twice, and a gate that cannot fail is what this arc has twice
 mistaken for evidence. `EntryFamilyFixture` is the answer to that, landed 2026-09-07 ahead of the
-move, and the widened gate runs against it rather than against the transcription's own fixture. It applies every graphitron directive the decode writes a relation for, across two documents,
-and `EntryFamilyCoverageTest` holds it to writing a row into all 56 entry relations, to nine of them
-holding rows from both documents, and to its own two lists partitioning the family, so a 73rd
-relation has to be classified as an entry or an anchor rather than slipping into the uncovered set.
-The differential runs over 86 relations of which 83 are populated and none differs between the
-arms, and the shipped gate asserts that all 56 of the entry half are among the populated, so a
-fixture that stopped applying a directive fails on the relation rather than going quietly empty. The
-claim that the entry half reads no catalog now has a check that could have said otherwise.
+move, and the widened gate runs against it rather than against the transcription's own fixture. It
+applies every graphitron directive the decode writes a relation for, across two documents, and
+`EntryFamilyCoverageTest` holds it to writing a row into all 56 entry relations and to some of them
+holding rows from both documents, which is what a per-source delete needs to have a subject at all;
+nine do, measured, though what the gate holds is that at least one does. The differential runs over
+86 relations of which 83 are populated and none differs between the arms, and the shipped gate
+asserts that all 56 of the entry half are among the populated, so a fixture that stopped applying a
+directive fails on the relation rather than going quietly empty. The claim that the entry half reads
+no catalog now has a check that could have said otherwise.
 
 **Two things the fixture settles beyond the widening.** The classification this slice rests on is a
 stated artifact rather than a grep: 56 entries against 16 anchors, the sixteenth being the match
-view, enumerated in the fixture and gated against the generated model. And the entry half's source
+view. It was enumerated in the fixture and gated against the generated model while it was a list,
+and the suffix has since made it a name the model itself carries. And the entry half's source
 attribution is measured rather than assumed: 40 of the 56 carry a `source_name` and 16 are
 descendants that carry none, which is exactly the split the refresh work reads the family through.
 
@@ -1594,9 +1598,11 @@ need for the store decided the entries' home with it, and the entry and anchor s
 separates them.
 
 **Java, slice 1, the suffix.** `EntryFamilyFixture.ENTRY_RELATIONS` and `ANCHOR_RELATIONS`, the two
-enumerated lists, now `entryRelations()` and `anchorRelations()` read off the generated model by
-name; and `EntryFamilyCoverageTest`'s partition case, which held the two lists to covering the
-family and is true by construction once the name decides it.
+enumerated lists, now one `entryRelations()` read off the generated model by name; and
+`EntryFamilyCoverageTest`'s partition case, which held the two lists to covering the family and is
+true by construction once the name decides it. The anchor accessor went with its only reader: the
+complement of the suffix is a bag rather than a half, holding both the stages' relations and a view
+nothing writes, and telling those apart is the declaration pass's work rather than a name's.
 
 **Java, slice 1.** The store-driven half of `GraphitronFactCapture`: `schemaDirectives`,
 `typeDirectives`, `fieldDirectives`, `argumentDirectives` and `enumValueDirectives`, the five loops

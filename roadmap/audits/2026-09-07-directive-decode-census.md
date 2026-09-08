@@ -11,6 +11,11 @@ built, so nothing reads a printed literal back and the two alternatives have no 
 counts below were taken against the shipped family and a real corpus and are worth more than the
 plan they were taken for, which is why they are here rather than in the deleted file.
 
+Relation names below are as they were spelled on the date in the filename. The as-written half of
+the family has since taken the `_entry` suffix, so `graphitron_federation_key_field` here is
+`graphitron_federation_key_field_entry` in the tree, and so on for every relation the decode writes;
+a few named here were retired outright and are noted where they appear.
+
 The H2 function surface itself is measured in `2026-08-05-h2-functions-jooq-spike.md`, which reaches
 the same conclusions about `LATERAL`, correlated table functions and the `SYSTEM_RANGE` idiom. What
 is added below is the cost of driving that idiom with a graphql-java parse, and the classloader

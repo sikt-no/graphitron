@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Stream;
 
 /**
  * A schema that applies every graphitron directive the decode writes a relation for, spread over two
@@ -24,9 +23,9 @@ import java.util.stream.Stream;
  * <p>Two documents rather than one, and the second is not a spillover. A refresh that deletes one
  * source's rows has to be shown deleting one source's rows, which needs a relation holding rows from
  * two sources at once so that what survives is visible. Several relations are therefore written from
- * both documents deliberately, {@code graphitron_table_entry}, {@code graphitron_field_binding_entry} and
- * {@code graphitron_field_reference_entry} among them, and the coverage gate holds that overlap rather
- * than leaving it to whoever edits the SDL next.
+ * both documents deliberately, {@code graphitron_table_entry},
+ * {@code graphitron_field_binding_entry} and {@code graphitron_field_reference_entry} among them,
+ * and the coverage gate holds that overlap rather than leaving it to whoever edits the SDL next.
  *
  * <p>The schema is not meant to be a schema anybody would write. It names tables and columns that
  * need not exist, because an entry is what the author wrote and resolves against nothing: the whole
@@ -54,8 +53,9 @@ public final class EntryFamilyFixture {
      * <p>Federation's {@code @link} and {@code @key} are declared here rather than assumed, the way
      * a federated consumer's own schema declares them. {@code @link}'s import list carries both
      * spellings the grammar admits, a bare name and an aliased object, so that
-     * {@code graphitron_link_import_entry.alias} holds a value somewhere rather than being NULL on every
-     * row. The coverage gate counts rows and would not notice, which is the point of saying it here.
+     * {@code graphitron_link_import_entry.alias} holds a value somewhere rather than being NULL on
+     * every row. The coverage gate counts rows and would not notice, which is the point of saying
+     * it here.
      */
     public static final String CORE = """
         scalar link__Import
@@ -242,33 +242,18 @@ public final class EntryFamilyFixture {
      * is that a new decode relation gets named right, and that is deliberately somewhere else:
      * {@code EntryNamingGuardTest} holds the decode to naming only suffixed relations, and the
      * declaration pass will say it a second time by giving each relation a declared owner.
+     *
+     * <p>Only this half is offered. Its complement is every other {@code graphitron_} relation, and
+     * that is a bag rather than a half: the stages write most of it, but the
+     * {@code graphitron_argmapping_match} view is written by nothing at all, and a suffix cannot
+     * tell those apart. A caller wanting the resolved half wants a declared owner, which the
+     * declaration pass gives it and a name never could.
      */
     public static List<String> entryRelations() {
-        return family().filter(name -> name.endsWith(SUFFIX)).toList();
-    }
-
-    /**
-     * The resolved half: every relation of the family a gatherer stage writes by joining, ranking or
-     * reaching the catalog, plus {@code graphitron_argmapping_match}, which is a view joining an
-     * entry to a candidate and so is written by nothing at all. None of them is this fixture's
-     * subject, and none could be: a bare SDL capture has no catalog to resolve against, which is the
-     * same statement as their not being entries.
-     *
-     * <p>Stated as the complement, so the two halves cannot both claim a relation and cannot both
-     * miss one. That also means one non-entry shape it does not distinguish, a view, sits in it
-     * without a category of its own.
-     */
-    public static List<String> anchorRelations() {
-        return family().filter(name -> !name.endsWith(SUFFIX)).toList();
-    }
-
-    /** The suffix every as-written relation carries, which is what tells the two halves apart. */
-    private static final String SUFFIX = "_entry";
-
-    private static Stream<String> family() {
         return Public.PUBLIC.getTables().stream()
             .map(table -> table.getName().toLowerCase(Locale.ROOT))
-            .filter(name -> name.startsWith("graphitron_"))
-            .sorted();
+            .filter(name -> name.startsWith("graphitron_") && name.endsWith("_entry"))
+            .sorted()
+            .toList();
     }
 }

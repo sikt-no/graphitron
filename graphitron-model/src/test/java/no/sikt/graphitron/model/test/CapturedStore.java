@@ -5,9 +5,6 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.FactCapture;
-import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
-import no.sikt.graphitron.model.sink.FactSink;
-import no.sikt.graphitron.model.sources.ClasspathSources;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.classpath.CompletionData;
@@ -25,7 +22,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
@@ -76,15 +72,15 @@ public final class CapturedStore implements AutoCloseable {
     private final GraphitronModelStore store;
     private final String graphName;
     private final Path directory;
-    private final List<Path> files;
+    private final Path file;
     private final TypeDefinitionRegistry registry;
 
-    private CapturedStore(GraphitronModelStore store, String graphName, Path directory,
-                          List<Path> files, TypeDefinitionRegistry registry) {
+    private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
+                          TypeDefinitionRegistry registry) {
         this.store = store;
         this.graphName = graphName;
         this.directory = directory;
-        this.files = files;
+        this.file = file;
         this.registry = registry;
     }
 
@@ -153,7 +149,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
         captureFiles(store, files, directory, GRAPH, registry, jooq, List.of(), false);
-        return new CapturedStore(store, GRAPH, directory, files, registry);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
     }
 
     /**
@@ -226,7 +222,7 @@ public final class CapturedStore implements AutoCloseable {
         FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
             parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
-        return new CapturedStore(store, GRAPH, directory, files, parse.registry());
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
@@ -236,7 +232,7 @@ public final class CapturedStore implements AutoCloseable {
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = FactStores.inMemory();
         captureFile(store, file, directory, graphName, registry, jooq, census, false);
-        return new CapturedStore(store, graphName, directory, List.of(file), registry);
+        return new CapturedStore(store, graphName, directory, file, registry);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -277,8 +273,8 @@ public final class CapturedStore implements AutoCloseable {
      * location a function of the graph and could not state it at all.
      */
     public CapturedStore andGraphSharingTheFile(String otherGraph) {
-        captureFile(store, file(), directory, otherGraph,
-            SchemaLoader.load(List.of(SchemaSource.file(file()))), null, List.of(), false);
+        captureFile(store, file, directory, otherGraph,
+            SchemaLoader.load(List.of(SchemaSource.file(file))), null, List.of(), false);
         return this;
     }
 
@@ -417,7 +413,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /** The schema file this fixture captured, for a reader that needs the name the store spells. */
     public Path file() {
-        return files.getFirst();
+        return file;
     }
 
     /**

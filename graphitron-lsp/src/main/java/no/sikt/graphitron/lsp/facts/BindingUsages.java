@@ -60,7 +60,8 @@ public final class BindingUsages {
      * <p>Two carriers are deliberately absent. {@code graphitron_record_entry}'s class name is the
      * deprecated {@code @record(className:)}, which binds no live class, so listing it as a use
      * would show an author a site the generator ignores; the definition surface carves the same
-     * directive out for the same reason. {@code graphitron_error_handler_entry} names a class and records
+     * directive out for the same reason. {@code graphitron_error_handler_entry} names a class and
+     * records
      * no position for it, so there is nowhere to send an editor.
      */
     public static List<Location> ofClass(StoreHandle store, String fqn) {
