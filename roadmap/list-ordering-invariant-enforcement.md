@@ -977,8 +977,8 @@ Reviewer session: `https://claude.ai/code/session_01A782mxCy43Yi1jecwh5YGr`. Ver
 Both round-1 findings that bore on the mechanisms are closed in the body as the responses say.
 The write arm reads `intent_mutation_routine_seat` exactly as that relation is built (population is
 every mutation-root `@routine`, `ADMITTED` is its one emitting verdict, `READ_SURFACE_ON_WRITE` keys
-on `graphitron_order_by` and the conditions and never on `graphitron_default_order`), the multiset
-half is sited where `ProjectionCommands` hands `ttf.orderBy()` to `CallWrap.Multiset` unfiltered and
+on `graphitron_order_by_entry` and the conditions and never on
+`graphitron_default_order_entry`), the multiset half is sited where `ProjectionCommands` hands `ttf.orderBy()` to `CallWrap.Multiset` unfiltered and
 `ProjectionUnitRenderer` lowers the `Fixed` arm alone, and the launcher ratchet's exempt arms are the
 four `RecordList(null)` sites in `LauncherCommands` and no others. Phase 1 extends
 `AuthoredClaimConflicts` / `StoreDetections` / `FactCapture.detect` as they stand, phase 2 follows
