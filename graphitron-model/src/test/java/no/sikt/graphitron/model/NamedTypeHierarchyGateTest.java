@@ -43,12 +43,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The last case is a refusal this hierarchy deliberately does not make, recorded here because the
  * plan called for it and measuring said no. {@code graphql_poly_member} was to reference its
  * container's kind on the same mechanism, which would have refused a member claiming
- * {@code UNION} for a type declared an object. It cannot, because that relation transcribes a
- * document rather than a resolved schema: the container is a name the implementing type spelled, a
- * type may implement an interface nobody declared, and nodehood is derived from the edge and not
- * from a declaration. The reference was written, run against the corpus, and withdrawn when it
- * refused 103 captures. What it would have caught is a detection over the two relations instead, on
- * the same footing as every other spelling that resolves to nothing.
+ * {@code UNION} for a type declared an object. The reference was written, run against the corpus,
+ * and withdrawn when it refused 103 captures.
+ *
+ * <p>What it collides with is when capture runs, not what the container name means. Implementing an
+ * interface nobody declared is refused, and the refusal is real: graphql-java's assembly reports
+ * "The interface type 'Node' is not present when resolving type 'Inventory'" and no such schema
+ * builds. But capture reads the parsed registry before assembly and is handed the refusal as a
+ * value rather than an exception, so the store's record of a schema that did not build is this row
+ * and the {@code graphql_schema_error} row beside it. Measured on exactly that document, capture
+ * completes and both rows are there. A reference from {@code container_kind} would make that
+ * capture throw an integrity violation instead, so the store would refuse to record the one schema
+ * whose error it exists to explain. What the reference would have caught is a detection over the
+ * two relations instead.
  */
 class NamedTypeHierarchyGateTest {
 
@@ -107,9 +114,9 @@ class NamedTypeHierarchyGateTest {
                     .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 1)
                     .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 1)
                     .execute())
-                .as("a type implementing an interface nobody declared is exactly what a diagnostic "
-                    + "reads this row to report, so the container resolving to no anchor has to stay "
-                    + "writable; a reference from container_kind would refuse it")
+                .as("capture runs before assembly and records its refusal rather than throwing, so "
+                    + "the transcription of a schema that does not build has to be writable; this "
+                    + "row and the graphql_schema_error row beside it are that record")
                 .doesNotThrowAnyException();
         });
     }

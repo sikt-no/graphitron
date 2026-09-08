@@ -2058,11 +2058,11 @@ public final class SeededStore {
      * state the edge without declaring the interface as a type.
      *
      * <p>That last clause is load-bearing rather than a convenience, and this slice tried to remove
-     * it and put it back. Capture transcribes the parsed document, so a type implementing an
-     * interface nobody declared has this row and no anchor to reach, which is the state a diagnostic
-     * reporting the omission reads. Nodehood is derived from this edge and not from a declaration of
-     * {@code Node}, so a fixture declaring the interface would be testing a corpus the shipped
-     * schemas happen to have rather than the rule.
+     * it and put it back. Such a document does not build: assembly refuses it. But capture reads the
+     * parsed registry before assembly and records the refusal as a row rather than throwing, so the
+     * state is one the store holds on purpose and a fixture has to be able to reach. What a case
+     * seeded this way is exercising is a schema that failed to assemble, which is worth knowing when
+     * reading one; the shipped example schemas all declare the interface.
      */
     public static void seedImplements(DSLContext dsl, String graphName, String typeName,
                                       String interfaceName) {

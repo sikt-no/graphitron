@@ -904,20 +904,26 @@ foreign key, and three illegal states stopped being writable on 2026-09-08.
 `graphql_poly_member` was named beside it as the same fix and it is not the same fix. It carries
 `CHECK (container_kind IN ('UNION', 'INTERFACE'))` with nothing tying the value to what the type
 relation calls the container, and the reference that would tie them was written, run and withdrawn:
-it refused 103 captures. The container name is as the implementing type spelled it and resolves
-against nothing. A document may implement an interface it never declares, capture transcribes the
-parsed document rather than a validated schema, and the row saying so is what a diagnostic reads to
-report the omission; `Nodes.derive` reads the edge itself and never asks whether `Node` was
-declared. So the relation is a transcription and the proposed reference imposed resolution on it,
-which is this arc's own category error committed by this arc. The disagreement it would have caught
-is a detection over the two relations instead, on the same footing as every other spelling that
-resolves to nothing.
+it refused 103 captures.
 
-What separates the two is the half of the family each sits in, which is the entry and anchor line
-read at the level of a constraint rather than a writer. `graphitron_tabletype` is a resolution and
-may be held to what resolved; `graphql_poly_member` transcribes and may not. The plan said "both are
-the same fix" because it was reading the shape of the defect rather than the tense of the relation,
-and the shape is what a hierarchy makes look alike.
+What it collides with is when capture runs, and the first reading of this was wrong in a way worth
+recording. A type implementing an interface nobody declared is not a state an author can ship:
+graphql-java's assembly refuses it with "The interface type 'Node' is not present when resolving
+type 'Inventory'" and no such schema builds. The transcription argument on its own would therefore
+have been wrong. What makes the reference unaffordable is that capture reads the parsed registry
+before assembly and is handed the refusal as a value rather than an exception, so the store's record
+of a schema that did not build is the transcription plus the `graphql_schema_error` row beside it.
+Measured on exactly that document: capture completes, `graphql_poly_member` holds the row naming
+`Node`, `graphql_type` holds no `Node`, and one `ASSEMBLY` row carries the message and its position.
+A reference from `container_kind` makes that capture throw an integrity violation instead, so the
+store refuses to record the one schema whose error it exists to explain.
+
+What separates the two relations is the half of the family each sits in, read at the level of a
+constraint rather than a writer. `graphitron_tabletype` states a resolution and may be held to what
+resolved. `graphql_poly_member` transcribes, and a transcription has to survive the document being
+wrong, because a document being wrong is when it is read. The plan said "both are the same fix"
+because it was reading the shape of the defect rather than the tense of the relation, and the shape
+is what a hierarchy makes look alike.
 
 **The hierarchy spans two families, and that is the naming rule working rather than an exception.**
 Participants are `graphql_poly_member` because `union X = A | B` is a fact in GraphQL's vocabulary;

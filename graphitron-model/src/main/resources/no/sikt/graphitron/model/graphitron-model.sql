@@ -530,14 +530,16 @@ CREATE TABLE graphql_poly_member (
   FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, declared_on, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
-  -- No reference from the container to graphql_type, deliberately, and the reason is what this
-  -- relation is. The container name is as the implementing type spelled it and resolves against
-  -- nothing: a document may implement an interface it never declares, capture transcribes the
-  -- document rather than a validated schema, and the row saying so is what a diagnostic reads to
-  -- report the omission. Tying container_kind to the anchor would refuse exactly that row, and
-  -- nodehood is derived from this edge whether or not Node is declared. A member whose kind
-  -- disagrees with what graphql_type calls the container is therefore a detection over the two
-  -- relations and not a refusal here, on the same footing as every other unresolved spelling.
+  -- No reference from the container to graphql_type, deliberately, and the reason is when capture
+  -- runs rather than what the container name means. Implementing an interface nobody declared is
+  -- refused, but it is refused at assembly, and capture reads the parsed registry before that:
+  -- SchemaAssembly returns its refusal as a value, capture is handed it, and the refusal lands in
+  -- graphql_schema_error beside the transcription that provoked it. Measured on such a document,
+  -- the store holds this row naming Node and one ASSEMBLY row reading "The interface type 'Node'
+  -- is not present when resolving type 'Inventory'". A reference from container_kind would make
+  -- that capture throw instead, so the schema whose error this store exists to report would be the
+  -- one it cannot record. A member whose kind disagrees with what graphql_type calls the container
+  -- is therefore a detection over the two relations and not a refusal here.
   CHECK (container_kind IN ('UNION', 'INTERFACE')),
   CHECK (declared_on = CASE WHEN container_kind = 'UNION' THEN container_name
                             ELSE member_type_name END)
