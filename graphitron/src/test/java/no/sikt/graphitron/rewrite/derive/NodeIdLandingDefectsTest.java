@@ -202,6 +202,23 @@ class NodeIdLandingDefectsTest {
             .isEmpty();
     }
 
+    /**
+     * The same diverged key at an argument coordinate, which is where the lead spells the slot as
+     * an argument rather than as an input field. The two sites are one row shape in the view and
+     * two spellings in the report, so the argument one is asserted here rather than left to the
+     * site's other fixtures, all of which refuse nothing by design.
+     */
+    @Test
+    void anArgumentSiteRefusalNamesTheArgument() {
+        assertThat(messages(detect(CONVERTER_ORG + """
+            type Query {
+                divergedChildren(orgRef: ID @nodeId(typeName: "ConverterOrg")): [DivergedRefChild!]!
+            }
+            """))).singleElement(InstanceOfAssertFactories.STRING)
+            .startsWith("Field 'Query.divergedChildren': argument 'orgRef':"
+                + " @nodeId(typeName: \"ConverterOrg\") decodes key column 'org_code'");
+    }
+
     // ===== The route this family declines =====
 
     /**

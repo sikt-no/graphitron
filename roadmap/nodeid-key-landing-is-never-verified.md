@@ -81,6 +81,12 @@ from "it happened to". When this item lands, all four rows are refusals at `grap
 the fourth included, because a coincidence graphitron cannot see is not one it can keep emitting on
 purpose.
 
+The type half of that outcome is about the local tuple comparison and therefore about a key that
+landed whole. Where one position of a composite key lands nowhere the whole decode binds remotely,
+the landed positions appear in no comparison, and a Java type disagreeing there costs nothing: such
+a schema stays accepted, as it should, and the refusal is for a landing that reaches every position
+and disagrees at one of them.
+
 Which routes those refusals cover, stated here because it is part of the outcome and not a detail of
 the plan. A decoding `@nodeId` slot reaches its target one of three ways, and this item judges two:
 along an `@reference` path the author wrote, and across the single foreign key auto-discovery finds
@@ -210,8 +216,15 @@ the consumer that composes it. Its two verdicts:
   generated `column_name_upper`, since `key_column_name` is spelled as the winning key tier spells it
   and `local_column_name` as the catalog does. Excluded where the same endpoint draws a
   `PATH_STOPS_SHORT` row: on a mislanded path the "key column" the lift matched by name on the wrong
-  table is not the node's key at all, and the one fault should draw one row. Witnesses: `position`,
-  both column names, both binding types, both tables.
+  table is not the node's key at all, and the one fault should draw one row. Excluded too where the
+  endpoint's landing is partial, which is one `NOT EXISTS` over `intent_node_id_decode_column` at
+  the same endpoint with `local_column_name IS NULL`, the shape the exclusion above already has.
+  That is not strictness, it is what the verdict is about: the arm choice is per endpoint and total,
+  any position landing nowhere sending the whole decode to a correlated `EXISTS` on the node type's
+  own table, so on a partial landing a landed position's local column appears in no comparison and
+  its Java type can disagree for free. A row there would refuse a schema whose generated Java
+  compiles and whose SQL is right, which is the one thing neither verdict may do. Witnesses:
+  `position`, both column names, both binding types, both tables.
 
 **The judged endpoints, stated once.** Both arms drive off the endpoint relation and both are
 narrowed the same way, so the narrowing is one CTE of judged endpoints that each arm reads rather than
@@ -411,6 +424,12 @@ does:
 - A landed position whose two columns disagree on `binding_type` draws one `LANDING_TYPE_DISAGREEMENT`
   row carrying the position, both column names and both types; the same landing with agreeing types
   draws none; a position landing nowhere (`local_column_name IS NULL`) draws none.
+- The totality gate, pinned in both directions over a two-position key: an endpoint where one
+  position lands and another does not draws nothing even where the landed position's two columns
+  disagree, and an endpoint over the same key where both positions land still draws its row for the
+  one that disagrees. Both directions, because every other type fixture here uses a single-column
+  key, where a total landing and a partial one are the same predicate and a gate that silenced the
+  verdict outright would pass.
 - A mislanded path whose wrongly matched column also disagrees on type draws the one
   `PATH_STOPS_SHORT` row and no type row.
 - `SAME_TABLE` draws nothing; `DISCOVERED_KEY` draws only the type verdict; a sibling graph is
@@ -487,9 +506,9 @@ condition-step subsection. Draft:
 > key columns and binds against nothing else. A path that ends on an intermediate table is refused
 > naming both tables; add the remaining step, or name the type the path already reaches.
 >
-> *A landing whose Java type disagrees.* Where a key position lands on a column of the filtered row,
-> the two columns have to report the same Java type in the jOOQ catalog, since that is the pair the
-> generated predicate compares. A converter on one end and not the other is the usual way they
+> *A landing whose Java type disagrees.* Where a chain lands every position of the node type's key on
+> the filtered row's own columns rather than binding remotely, each pair of columns has to report the
+> same Java type in the jOOQ catalog, since those pairs are what the generated predicate compares. A converter on one end and not the other is the usual way they
 > disagree. The refusal names both columns and both types and prescribes nothing, because the fix
 > depends on which side is deliberately typed: align the two columns' catalog types, or route the
 > reference through a path that lands the key on a column of its own type.
@@ -827,3 +846,28 @@ as `Field 'Query.stock': argument 'orgRef': ...`, is asserted nowhere: the model
 rather than messages, and the pipeline tier's two argument-site fixtures both assert an empty report.
 The plan's Tests section does not ask for it, so this is not a shortfall against the contract, and
 the lead is three lines with no branch in it. Worth one assertion whenever this file is next opened.
+
+> *Author response, revision 2.* Taken on the finding, and the gate is the one the finding
+> prescribes. Reproduced it first as a failing case rather than reasoning from the SQL: a two-column
+> primary key on `pair_key` with a one-column unique key beside it, so one referring table lands both
+> positions and one lands only the leading position, each spelling its own copy of that column
+> `java.lang.Long` against the key's `java.lang.String`. Before the gate the partial one drew the
+> verdict at position 0, which is the finding exactly; with it, that case is empty and the total one
+> still refuses. The gate is one `NOT EXISTS` over `intent_node_id_decode_column` at the same
+> endpoint with `local_column_name IS NULL`, beside the `stopped` exclusion the arm already carried,
+> and it needed no new fact: that relation is total over key positions, as its own comment says.
+>
+> Said in the three places the finding names and one more. The **Goal** now closes its outcome
+> paragraph by saying the type half is about the local tuple comparison and therefore about a key
+> that landed whole, so a partly-landed key stays accepted; the verdict's population in **One defect
+> view, two verdicts** states the gate and why it is the verdict's subject rather than a strictness
+> setting; the view's `verdict` column comment says the same in the store, and the `meta_relation`
+> rationale gained the clause (it fits the 1500-character check with room). The one more is
+> `NodeIdLandingDefects.Verdict.LANDING_TYPE_DISAGREEMENT`'s javadoc, which decodes that vocabulary
+> for a Java reader and would otherwise have described the old population. **Tests** gained the
+> both-directions bullet, and the model tier the two cases it asks for.
+>
+> Non-blocking, both taken as read: the type verdict's `the reference path lands it` opening is
+> approved drafted text and stays, and the argument-site lead is now asserted, one case at the
+> pipeline tier over the diverged key at an argument coordinate, which is the fixture shape that
+> refuses when no participant route declines it.

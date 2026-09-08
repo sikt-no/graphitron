@@ -74,11 +74,14 @@ public final class NodeIdLandingDefects {
          */
         PATH_STOPS_SHORT,
         /**
-         * A key position landed on a column of the filtered row and the two columns disagree on
-         * the Java type jOOQ binds them as, so no predicate can compare one against the other.
-         * Excluded where the same branch draws the verdict above: on a mislanded path the column
-         * the lift matched by name is not the node's key column at all, and one fault draws one
-         * row.
+         * Every key position landed on a column of the filtered row and one of those pairs
+         * disagrees on the Java type jOOQ binds them as, so no predicate can compare one against
+         * the other. Fires only on a landing that is total, which is the local tuple comparison
+         * the verdict is about: a position landing nowhere sends the whole endpoint to a
+         * correlated {@code EXISTS} on the node type's own table, where a landed position's
+         * column appears in no comparison and its type can disagree for free. Excluded where the
+         * same branch draws the verdict above: on a mislanded path the column the lift matched by
+         * name is not the node's key column at all, and one fault draws one row.
          */
         LANDING_TYPE_DISAGREEMENT;
 

@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.seedTableBinding;
 import static no.sikt.graphitron.model.test.SeededStore.seedType;
 import static no.sikt.graphitron.model.test.SeededStore.seedUnionMember;
+import static no.sikt.graphitron.model.test.SeededStore.seedUniqueKey;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -175,6 +176,47 @@ class NodeIdDecodeLandingDefectTest {
                 "film_category_film_id_fkey", "film_category_category_id_fkey");
 
             assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * A key only half of which landed draws nothing, whatever the landed half's types say. The arm
+     * choice is per endpoint and total: one position landing nowhere sends the whole decode to a
+     * correlated {@code EXISTS} on the node type's own table, so the landed position's column
+     * appears in no comparison at all and its type has nothing to disagree with. Refusing here
+     * would refuse a schema whose generated Java compiles and whose SQL is right, which is the one
+     * thing this relation must not do.
+     */
+    @Test
+    void aPartiallyLandedKeyDrawsNoTypeVerdictEvenWhereTheLandedPositionDiverges() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Pair", "pair_key");
+            seedTableBinding(dsl, GRAPH, "PairPartial", "pair_partial");
+            seedField(dsl, GRAPH, "Query", "partials", "PairPartial", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "partials", "ofPair", "Pair");
+
+            assertThat(rows(dsl)).isEmpty();
+        });
+    }
+
+    /**
+     * The other direction over the same key: a landing that reaches every position is the local
+     * tuple comparison the verdict is about, and one diverging position in it still refuses. Stated
+     * beside the case above because a single-column key makes the two predicates indistinguishable,
+     * so a totality gate asserted only as an absence would pass equally well if it silenced the
+     * verdict outright.
+     */
+    @Test
+    void aFullyLandedCompositeKeyStillRefusesTheDivergingPosition() {
+        withCatalog(dsl -> {
+            seedNodeType(dsl, "Pair", "pair_key");
+            seedTableBinding(dsl, GRAPH, "PairOwner", "pair_owner");
+            seedField(dsl, GRAPH, "Query", "owners", "PairOwner", true);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "owners", "ofPair", "Pair");
+
+            assertThat(verdicts(dsl)).containsExactly(
+                "Query.owners(ofPair) pair_owner Pair LANDING_TYPE_DISAGREEMENT position 0"
+                    + " pair_key.a java.lang.String vs pair_owner.a java.lang.Long");
         });
     }
 
@@ -403,7 +445,11 @@ class NodeIdDecodeLandingDefectTest {
      * referencing it spell their own {@code org_code} {@code java.lang.Long} and one spells it
      * {@code java.lang.String}, so the same discovered key diverges at two departures and agrees at
      * the third. The mirror table is the mislanding whose column also diverges: it carries the
-     * node's key column name and is not the node's table.
+     * node's key column name and is not the node's table. A pair family carries the totality
+     * question: {@code pair_key} has a two-column primary key and a one-column unique key beside
+     * it, so a table referencing the first lands both positions and a table referencing the second
+     * lands one, and each spells its own copy of the key's leading column {@code java.lang.Long}
+     * against the key's own {@code java.lang.String}.
      */
     private static void withCatalog(Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
@@ -440,6 +486,14 @@ class NodeIdDecodeLandingDefectTest {
             seedForeignKey(dsl, PKG, PUBLIC, "org_child", "org_child_mirror_fkey",
                 "org_mirror", "org_mirror_pkey", "org_code");
 
+            seedTable(dsl, PKG, PUBLIC, "pair_key");
+            seedColumn(dsl, PKG, PUBLIC, "pair_key", "a", 0, "A", STRING);
+            seedColumn(dsl, PKG, PUBLIC, "pair_key", "b", 1, "B", STRING);
+            seedPrimaryKey(dsl, PKG, PUBLIC, "pair_key", "pair_key_pkey", "a", "b");
+            seedUniqueKey(dsl, PKG, PUBLIC, "pair_key", "pair_key_a_key", "a");
+            seedPairReferrer(dsl, "pair_owner", "pair_key_pkey", "a", "b");
+            seedPairReferrer(dsl, "pair_partial", "pair_key_a_key", "a");
+
             body.accept(dsl);
         });
     }
@@ -452,6 +506,25 @@ class NodeIdDecodeLandingDefectTest {
         seedPrimaryKey(dsl, PKG, PUBLIC, table, table + "_pkey", table + "_id");
         seedForeignKey(dsl, PKG, PUBLIC, table, table + "_org_fkey",
             "org", "org_pkey", "org_code");
+    }
+
+    /**
+     * One table referencing the pair key through the constraint named, carrying its own copy of
+     * each column that key covers. The first is spelled {@code java.lang.Long} against the key's
+     * {@code java.lang.String}, so the position it lands diverges; a table referencing the
+     * one-column constraint therefore lands that position and leaves the other unlanded.
+     */
+    private static void seedPairReferrer(DSLContext dsl, String table, String referencedConstraint,
+                                         String... columns) {
+        seedTable(dsl, PKG, PUBLIC, table);
+        seedColumn(dsl, PKG, PUBLIC, table, table + "_id", 0, table.toUpperCase() + "_ID");
+        for (int position = 0; position < columns.length; position++) {
+            seedColumn(dsl, PKG, PUBLIC, table, columns[position], position + 1,
+                columns[position].toUpperCase(), position == 0 ? LONG : STRING);
+        }
+        seedPrimaryKey(dsl, PKG, PUBLIC, table, table + "_pkey", table + "_id");
+        seedForeignKey(dsl, PKG, PUBLIC, table, table + "_pair_fkey",
+            "pair_key", referencedConstraint, columns);
     }
 
     private static void seedNodeType(DSLContext dsl, String typeName, String tableRef) {

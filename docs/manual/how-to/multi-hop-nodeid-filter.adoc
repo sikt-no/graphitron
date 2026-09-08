@@ -152,7 +152,7 @@ A chain that binds remotely still reads and filters. Four things refuse it.
 
 *A path that stops short of the node type's table.* The last step of the `@reference` path has to land on the table the `@nodeId` type is bound to, because a decoded id is a value of that table's key columns and binds against nothing else. A path that ends on an intermediate table is refused naming both tables; add the remaining step, or name the type the path already reaches.
 
-*A landing whose Java type disagrees.* Where a key position lands on a column of the filtered row, the two columns have to report the same Java type in the jOOQ catalog, since that is the pair the generated predicate compares. A converter on one end and not the other is the usual way they disagree. The refusal names both columns and both types and prescribes nothing, because the fix depends on which side is deliberately typed: align the two columns' catalog types, or route the reference through a path that lands the key on a column of its own type.
+*A landing whose Java type disagrees.* Where a chain lands every position of the node type's key on the filtered row's own columns rather than binding remotely, each pair of columns has to report the same Java type in the jOOQ catalog, since those pairs are what the generated predicate compares. A converter on one end and not the other is the usual way they disagree. The refusal names both columns and both types and prescribes nothing, because the fix depends on which side is deliberately typed: align the two columns' catalog types, or route the reference through a path that lands the key on a column of its own type.
 
 *A `{ condition: ... }` step*, at any coordinate:
 
