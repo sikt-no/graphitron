@@ -1,7 +1,7 @@
 ---
 id: R872
 title: "The keys say what a source owns, and the gatherer decides how to refresh it"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: tooling
@@ -2173,3 +2173,80 @@ rows", does not cover a descendant whose parent re-aggregates. That is not new w
 `graphitron_field_navigation` hangs off `graphitron_field`, one of the seven graph-keyed relations, and
 did so before. The treatment column is right either way, since such a row cascades from its parent
 whichever row the parent sits in, so this is wording rather than a gate question.
+
+### Round 9 (2026-09-08, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: sign off. Finding 9 is answered by the structural option rather than the local one, the two
+corrections the author's census turned up are both real and both were errors of mine, the federation
+fork is closed against a disposition I had approved and closed correctly, and phase three's
+population list is now closed by construction rather than by audit. I looked for a tenth finding and
+did not find one.
+
+**Two of my own claims were wrong, and the census caught both.** In round 3, and again in rounds 7
+and 8, I wrote that the synthesised `@link`'s rows carry the sentinel source and are therefore
+`NOT NULL`. They are NULL. `TagLinkSynthesiser` puts `SourceLocation(1, 1, SYNTHESISED_SOURCE_NAME)`
+on the `SchemaExtensionDefinition` and builds the `@link` directive with none, while
+`graphql_schema_directive` and `graphitron_link_entry` both read the *directive*. The sentinel reaches
+`store_source` because `captureSources` reads the extension, which is why the shipped test I cited in
+round 5 sees it there; I carried that observation across to the two fact relations without checking
+which node they read. The disposition is unaffected and its argument is simpler for the correction.
+And in round 6 I reported the federation jar's `store_source` row as verified. It does not exist.
+`ClasspathSources.record` claims a row only on the first class read from an entry, and its javadoc
+states the silence deliberately: "a classpath entry the scan skipped (a transitive-only jar) produces
+no `store_source` row at all". I had checked that the jar sits on the compile classpath and inferred
+the row from the pom rather than observing it in a store. Both errors are the same shape, a premise
+verified and a conclusion assumed, which is the shape I have been holding this plan to.
+
+**The federation re-disposition is right, and stronger than the one it replaces.** The trigger is the
+`@link` and not the artifact: with none, `loadFederationImportedDefinitions` returns null and a build
+with the library on the classpath gets no federation at all, so a jar-keyed cascade would never fire
+for the edit that actually changes the set. The mixed-arm argument then decides it, and it is sharper
+here than in general, since the `@link` may be the recipe's rather than a document's and splitting by
+arm would leave a nullable `source_name` carrying the edge for some rows and not others. Verified
+mechanically: exactly five foreign keys reference `graphql_directive`, its two children and the three
+from the minting arc, and not one declares a cascade today, so phase four owes all five.
+
+**Phase three's enumeration is now complete by construction, which is what I could not say at round
+four.** Between `SchemaLoader.parsePerSource` and the line `loadAttributedRegistry`'s own comment
+draws ("everything above is a loading rewrite and everything below is synthesis, which is the line
+the capture handle is cut on") there are exactly four registry mutators: `TagLinkSynthesiser`,
+`FederationLinkApplier`, `TagApplier` and `DescriptionNoteApplier`. Those four plus capture's own
+`captureConventionRoots` are precisely the five populations phase three dispositions, and each has one:
+the two `@link` relations re-aggregate, `graphql_directive` re-aggregates with
+`graphql_directive_argument` becoming its descendant, the three site-level captures and
+`graphql_argument` take `source_name` from the site as their type-level sibling already does,
+`DescriptionNoteApplier` needs nothing because a description is a column on the element's own row, and
+`graphql_root_operation` re-aggregates. A sixth population would require a fifth mutator above that
+line, which is a checkable claim about one method rather than a hope. That is the difference between
+this pass and my round-4 sign-off, which accepted a framing without testing whether it closed.
+
+Counts and propagation reconcile exactly. 74 plus 31 plus 19 is 124; the owned row's 14 `sql_`, 7
+`jvm_`, 4 `java_`, 10 `graphql_`, 39 `graphitron_` sums to 74; the `graphql_` family still tallies to
+28 as 10 owned, 7 descendants and 11 re-aggregated, and `graphitron_` to 71 as 39, 24, 7 and the entry
+relation; source-owned SDL reads 49 at five sites with 48 of 49 for the index argument and 49 new keys
+and indexes for the cost; the `NOT NULL` population reads 32 as 4 plus 28. Phase three's diagnostic
+figures stay at 38 of 56 and 29 of 40 and say on the line why, counting relations that carry the
+column rather than relations in the owned set. The author also caught a propagation I missed in round
+8, a sentence still reading 40 owned `graphitron_` relations where that figure has been 39 since round
+seven.
+
+The bundled directives still need phase three's disposition after the federation move, which I checked
+rather than assumed: the file declares nine non-directive types beside its thirty-one directives, so it
+feeds `graphql_type_declaration`, which is owned and already `NOT NULL`.
+
+Both gate questions are answered. A reader learns from the Goal that building one module stops
+destroying another module's facts and that the omission becomes unrepresentable rather than fixed. The
+outcome is reachable: over nine passes every structural claim this plan makes about the tree has been
+checked against the DDL and the capture code, the ones that were wrong are right, and two of the
+corrections were to my own findings. The design extends shapes already in the tree, the `jvm_`
+family's sibling edges into `jvm_class`, the cascade clauses the element family already calls its
+pattern, and `store_graph_source` as a root it already holds the key for. I would hand this to an
+implementer.
+
+### Non-blocking note (round 9)
+
+`SdlFactCapture.stampTarget`'s javadoc is still the one falsified description the sweep does not name,
+carried from round 4 and unchanged by this round's corrections: both members of its "whole miss set"
+are still sources with no file, and phase three retires one and stamps the other. It is a description
+to rewrite when the phase lands, not a gate question, and the retirement sweep reaches the constant
+either way.
