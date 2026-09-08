@@ -3,11 +3,11 @@ id: R762
 title: "The census stores every class member to answer questions only ever asked by name"
 status: Backlog
 bucket: architecture
-priority: 2
+priority: 1
 theme: dev-loop
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-20
+last-updated: 2026-09-08
 ---
 
 # The census stores every class member to answer questions only ever asked by name
@@ -20,6 +20,39 @@ census**. A name already written can be resolved from its classfile on demand in
 what makes the depth a choice rather than a requirement. This item stores class names and resolves
 members on demand. It is a second, independent lever on the same population R685 narrows by width,
 and the two compose.
+
+## A 2026-09-08 pass adds a second beneficiary of this cut, and raises the priority
+
+Measured at `7a3fae6e`. The persisted store a full build leaves under `~/.cache/graphitron/model`
+is 34 MB, and its rows are almost entirely this item's subject:
+
+| | rows | share |
+|---|---|---|
+| the census, the seven `jvm_` relations | 250,051 | **99.3%** |
+| everything else | 1,731 | 0.7% |
+| of which the 20 registered materialization targets | 25 | 0.0% |
+
+**That makes the census, and not anything the derived-read work touches, the thing that sets the
+store's size.** It matters now because size acquired a per-close price. The fact store compacts at
+the last handle's release, and compaction is linear in the *live* bytes it rewrites, about 47 to
+60 ms per MB, paid whether or not there is anything to reclaim:
+
+| Store | Live data | Compaction | Reclaimed |
+|---|---|---|---|
+| plugin test fixture | 0.7 MB | 41 ms | 70% |
+| capture-only fixture | 1.2 MB | 72 to 79 ms | 37% |
+| plugin it-store | 15.8 MB | 788 to 1069 ms | 4% |
+| the real build store | 33.4 MB | **1561 to 1791 ms** | **2%** |
+
+So every close of a real store now pays about 1.6 seconds, reclaiming almost nothing, and this item
+is what removes 97% of the bytes it is rewriting. That cost is consumer-facing rather than
+build-facing: `graphitron:generate`, a `graphitron:dev` session, the language server and the MCP
+server each close a real-sized store. The unconditional-compaction question is its own item; this
+entry records only that the two compose and that this item is the larger half.
+
+**R876 does not reach this.** The registered targets are 25 rows of 251,807, so dissolving the
+register changes the store's size by nothing measurable. Whoever sequences the performance work
+should not expect that item to absorb this one.
 
 ## The split, measured
 

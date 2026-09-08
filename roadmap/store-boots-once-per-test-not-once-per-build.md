@@ -7,7 +7,7 @@ priority: 1
 theme: tooling
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-20
+last-updated: 2026-09-08
 ---
 
 # The build boots the fact schema 1051 times, and a reset costs a fraction of a boot
@@ -31,6 +31,61 @@ deliberately, a dated measurement rather than a sighting to refresh; the live re
 other three modules, **631 boots and 262.8 s**. What that slice settled, and the one place it does not
 generalise, are folded into the bullets under "What a Spec pass has to settle" rather than restated
 here.
+
+## A fresh pass has re-priced this item, and it is worth more than it says below
+
+Taken 2026-09-08 at `7a3fae6e` on one 4 vCPU, 15 GB sandbox: two full green sequential
+`mvn install -Plocal-db` runs at 1110 s and 1054 s. The boot *counts* below are the 2026-08-20
+measurement and are left exactly as they stand. What has changed is the price of a boot, which is
+what those counts multiply against.
+
+**A boot costs three times what this item priced it at.** Decomposed by timing the store's own
+steps directly rather than by inference:
+
+| Step | Now | At filing |
+|---|---|---|
+| connect | 2.1 ms | |
+| `create`, the DDL | 283.5 ms mean, 193.8 best | about 125 ms |
+| `stamp` | 10.8 ms | |
+| `deriveDependencies` | 139.7 ms mean, 95.5 best | 8.41 ms |
+| **total** | **436.1 ms** | **138.0 ms** |
+
+The DDL executes 3111 statements against the 1894 this item was filed on. Per-statement cost is
+essentially unchanged (0.066 ms then, 0.062 ms best now), so this is schema growth and not a slower
+machine. `deriveDependencies` is the outlier at 16.6x, and it is now 32% of every boot where it was
+6%.
+
+**Spec this against a post-R876 boot of roughly 296 ms, not against 436 ms and not against 138 ms.**
+`deriveDependencies` walks outward from `meta_materialize`, so when R876 dissolves the register the
+step has no roots, parses nothing, and goes to zero. The DDL half does not go, and R876's own remedy
+pushes it the other way: it replaces registrations with stored keys and indexes, and while that item
+has been in progress the schema has gone from 0 to 22 `CREATE INDEX` and from 148 to 190 tables.
+
+**The lever is cheaper than this item assumed, and a second lever exists for the cases the first
+cannot serve.** Measured in one JVM with the arms alternated:
+
+| Per-test store setup | Cost |
+|---|---|
+| in-memory DDL boot, the status quo | 380 ms |
+| copy a 635 KB prebuilt template and `openAt` it | 171 ms |
+| the same, counting its close | 264 ms |
+| reuse one store and `TRUNCATE` all 178 tables | **7.0 ms mean, 4.1 best** |
+
+Reuse wins by roughly 25x over a template and 55x over the status quo, which confirms the direction
+this item already takes. The template earns its place only where reuse cannot go: a test whose
+subject *is* the file lifecycle cannot share a store, because warm start, stamping and reopening are
+what it asserts on. `PersistentStoreTest` (23 open sites, 198 s in the reactor) and
+`WarmStartRefreshTest` (18 sites, 162 s) are exactly that, they are the 5th and 8th most expensive
+classes in the build, and this item's mechanism does not reach them. A template would take each of
+their opens from a 380 ms cold boot to about 171 ms.
+
+Two things a template pass has to know. **It floors at 171 ms and cannot get near the 3 ms copy
+cost**, because H2 rebuilds its catalog at every open: the same template with its 120 views dropped
+opens in 25.7 to 31.3 ms against 91.7 to 129.6 ms with them, arms alternated over two rounds. A
+template skips executing the DDL and skips `deriveDependencies`, but not the catalog. And **a
+throwaway copy must not compact on close**, which currently costs 39 to 93 ms of pure waste because
+the copy is file-backed. Invalidation needs no new mechanism: `ddlHash()` already exists and the
+store already uses it as the stamp directory segment.
 
 ## The measurement
 

@@ -7,7 +7,7 @@ priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-20
-last-updated: 2026-08-25
+last-updated: 2026-09-08
 ---
 
 # graphitron-model ships its junit-platform.properties to four consumers that never asked for it
@@ -24,6 +24,18 @@ pom carries an explicit exclusion to prevent. Whichever way the parallelism ques
 provenance has to become visible: a contributor reading `graphitron-lsp`'s pom and test resources
 today cannot discover why its test classes run concurrently, and a test there that is not
 thread-safe will start flaking with no local cause to find.
+
+## Still live as of 2026-09-08
+
+Re-verified at `7a3fae6e` while measuring the build for R733's fourth pass, because a leak this
+quiet is worth confirming rather than assuming. `junit-platform.properties` is still an entry in
+the installed `graphitron-model-10-SNAPSHOT-tests.jar`, and `graphitron-lsp`, `graphitron-mcp` and
+`graphitron-maven-plugin` all still consume that test-jar at test scope. Nothing has changed about
+the mechanism or the exposure since this item was filed.
+
+One figure for the ordering argument, from the same pass: those three modules now spend 89.5 s,
+44.7 s and 33.3 s in `surefire:test`. The parallelism the leak supplies is real time nobody
+declared, so settling this cannot mean simply stripping the entry without deciding what replaces it.
 
 ## The predicted flake arrived
 

@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-07
+last-updated: 2026-09-08
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -1376,6 +1376,50 @@ was computed.
 What this does not settle: what orders two relations under one owner, which is the one mechanism
 `meta_materialize_dependency` provides today and nothing here replaces; and what becomes of the
 `java-source` and `compile` gatherers, whose eight relations no derivation reads.
+
+## Build-side evidence added 2026-09-08 from outside this item
+
+Added by R733's fourth measurement pass, which set out to ask where the build's wall clock goes and
+arrived here. Recorded as evidence for this item's owner and its Done gate to use or dispute, not as
+a change to its plan. Figures taken at `7a3fae6e` on one 4 vCPU 15 GB sandbox.
+
+**This item's subject is also the largest single regression in our own build.**
+`FixtureWarningsGateTest` is one full-fixture generator run and nothing else, and it is the
+reference instrument R733 has used across three passes. In isolation it was **2.862 s** on
+2026-08-20 and is **26.28 s** now. Both confounds were ruled out: the generator's input grew 13%
+(`schema.graphqls`, 4203 to 4742 lines), and the machine is not the cause, DDL cost per statement
+being 0.066 ms then against 0.062 ms best now. What grew between the two measurements is the fact
+model, views 71 to 120. So the cost tracks the view count rather than the schemas fed to it, which
+is this item's mechanism observed from the build side. The build pays it six times over, and
+`graphitron-sakila-example` is 223 s of a roughly 1080 s build.
+
+**A second cost of the register, which this item has not counted and which it removes for free.**
+`GraphitronModelStore` runs `MaterializeDependencies.populate` inside every boot. That walk starts
+at each `meta_materialize` row, parses each stored view definition it reaches with jOOQ's parser,
+and now reaches all 120 views. It has gone from **8.41 ms to 139.7 ms** and is **32% of a 436 ms
+boot**, up from 6% of a 138 ms one. With the register dissolved the walk has no roots, parses
+nothing, and the step goes to zero. The build performs on the order of a thousand boots, so this is
+worth roughly two minutes of build CPU on top of the read-side win, and it is paid by every
+consumer at every store open as well.
+
+Worth stating as a check rather than a credit: **the Done gate should confirm the step actually
+reaches zero rather than assume it.** The measurement is six lines, timing
+`MaterializeDependencies.populate` directly against a booted store.
+
+**One piece of counter-evidence, offered because it argues against a claim this item could
+otherwise be read as making.** The boot has two halves and only one of them goes. The DDL half is
+283.5 ms of the 436 ms, and this item's own remedy pushes it upward: it replaces registrations with
+stored keys and indexes, and while it has been in progress the schema has gone from 0 to 22
+`CREATE INDEX`, from 148 to 190 tables, and from 2138 to 3278 statements. That is a fair trade if
+the read-side win is as large as the figures above suggest, and it is almost certainly the right
+trade. It is recorded so that "the boot gets cheaper" is not inferred from "the register goes".
+
+**Two things this item does not absorb, recorded so they are not expected of it.** First, store
+size: the real 34 MB build store is 99.3% classpath census rows and the twenty registered targets
+hold **25 rows of 251,807**, so dissolving the register changes the store's size by nothing
+measurable. That belongs to R762, and through it to R937, compaction on close costing 1.6 s per
+close on a store that size. Second, boot *count*: R768's roughly one thousand boots per build are
+unaffected by what a boot contains.
 
 ## What is not done
 

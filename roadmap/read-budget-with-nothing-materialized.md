@@ -3,11 +3,11 @@ id: R899
 title: "A registration's alternative is counted from the schema, so the last lever stops being the first one reached for"
 status: Spec
 bucket: architecture
-priority: 1
+priority: 3
 theme: model-cleanup
 depends-on: []
 created: 2026-08-31
-last-updated: 2026-09-01
+last-updated: 2026-09-08
 ---
 
 # A registration's alternative is counted from the schema, so the last lever stops being the first one reached for
@@ -25,6 +25,36 @@ This item makes the alternative countable from the repository. Not the wall cloc
 captured consumer store and correctly stays outside the tree, but the one dimension in which a
 registration's necessity has a decisive answer that the schema alone contains: how large a statement
 the planner has to build before it reads a row, with the registration and without it.
+
+## This item may no longer have a subject, and it is demoted until that is settled
+
+Added 2026-09-08 from R733's fourth measurement pass, and offered as an argument for this item's
+Spec pass to weigh rather than as a decision taken over it. The `status:` is untouched; the
+`priority:` has moved from 1 to 3 on the reasoning below, and should move back if the reasoning is
+wrong.
+
+This item exists to make a registration's alternative countable, so that `meta_materialize` stops
+being the first lever reached for. R876 is In Progress and its stated outcome is that the register
+does not shrink to a defensible core but **dissolves entirely**: "give every rule an owner and there
+is nothing left for a register to schedule". If that lands as described, there are no registrations
+to price and this item's deliverable has no subject.
+
+Two things follow, and the second is the reason this is worth recording rather than leaving for
+whoever picks the item up.
+
+**The sequencing question is the whole question.** Spending a Spec cycle here before R876 resolves
+risks building an instrument for a mechanism that is being removed. Waiting costs little, because
+the doctrine this item defends is already being applied by R876 itself: its remedies are stored keys
+and indexes rather than registrations.
+
+**There is a live successor subject if this item wants one.** The lever order this item defends
+survives the register's dissolution; what changes is which lever needs pricing. Two costs of the
+current shape were measured in that pass and neither is a read cost: `deriveDependencies` walks the
+register at every store boot and now takes 139.7 ms, 32% of a 436 ms boot, up from 8.41 ms; and H2
+rebuilds the view catalog at every open, 65 to 115 ms of it attributable to the 120 views, which is
+filed as R938. A re-scoped version of this item might price the *whole* cost of a rule's shape,
+boot and open included, rather than only what a read costs. That is a different item and should be
+filed as one rather than folded in here.
 
 ## What this item's file used to say, and why none of it survives unchanged
 

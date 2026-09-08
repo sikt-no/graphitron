@@ -3,11 +3,11 @@ id: R733
 title: "Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured"
 status: Backlog
 bucket: dx
-priority: 3
+priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-08-20
+last-updated: 2026-09-08
 ---
 
 # Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured
@@ -21,9 +21,130 @@ choice and the remaining slices need numbers before they can be ordered against 
 Everything below restates the facts it needs rather than pointing into R732's body, because that
 body is deleted when R732 reaches Done.
 
-## A third measurement pass has run, and it is the current word
+## A fourth measurement pass has run, and it is the current word
 
-Two passes are recorded below this section. Read this one first: it was taken after R742 landed,
+Read this one first. It supersedes the third pass below wherever the two disagree, and it disagrees
+about most of the numbers, because the build has grown two and a half times since that pass was
+taken. Where it does not restate something, the third pass still stands.
+
+Taken 2026-09-08 at `7a3fae6e`, one 4 vCPU 15 GB sandbox, warm local repository, sequential
+`mvn install -Plocal-db`. Two full green runs: **1110 s and 1054 s**, 7440 tests in 758 classes.
+
+### Where the time goes, by goal rather than by module
+
+Attributed from a Maven log with per-line timestamps, which is a better instrument than the module
+spans the earlier passes used and the one this item should use from now on:
+
+| Goal | Time | Share |
+|---|---|---|
+| `surefire:test` | **769.6 s** | **73.3%** |
+| `graphitron:generate`, five executions | 83.1 s | 7.9% |
+| `compile` and `testCompile` | 71.6 s | 6.8% |
+| `antrun:run`, the plugin's integration tests | 40.3 s | 3.8% |
+| `javadoc:javadoc-no-fork`, the link gate | 21.6 s | 2.1% |
+| `asciidoctor:process-asciidoc` | 19.6 s | 1.9% |
+| everything else | about 25 s | 2.4% |
+
+Test time by module: `graphitron` 354.5 s, `graphitron-model` 125.4 s, `graphitron-sakila-example`
+109.3 s, `graphitron-lsp` 89.5 s, `graphitron-mcp` 44.7 s, `graphitron-maven-plugin` 33.3 s,
+`roadmap-tool` 12.7 s. Module wall clock: `graphitron` 384.0 s (34.8%), `graphitron-sakila-example`
+223.0 (20.2%), `graphitron-model` 190.0 (17.2%), `graphitron-lsp` 98.0 (8.9%),
+`graphitron-maven-plugin` 94.0 (8.5%), `graphitron-mcp` 55.7 (5.0%), `graphitron-docs` 29.7 (2.7%),
+`roadmap-tool` 24.1 (2.2%).
+
+**The javadoc link gate is not a slice, and can stop being suspected.** 21.6 s of 1050. This pass
+priced it because CLAUDE.md warns it costs real wall clock and no earlier pass had checked.
+
+**One instrument warning, which extends the third pass's warning about module spans.** Surefire
+class times are not additive under class-level parallelism: they sum to 7408 s against 1110 s of
+wall clock, because a class's reported time includes the intervals in which its thread was
+descheduled. Rank them, never add them, and never diff them across runs.
+
+### The reference instrument regressed between 7 and 9 times
+
+`FixtureWarningsGateTest` is one full-fixture generator run and nothing else. It still is; the
+class was checked rather than assumed. Measured in isolation, the way the third pass measured it:
+
+| | third pass, trunk | now |
+|---|---|---|
+| `FixtureWarningsGateTest` | 2.862 s | **26.28 s** |
+
+Both confounds were ruled out against a deepened clone rather than argued away. The generator's
+**input** grew 13%: `schema.graphqls` went 4203 to 4742 lines. The **machine** is not the cause:
+DDL cost per statement is 0.066 ms at the third pass against 0.062 ms best now. What grew is the
+fact model itself:
+
+| | 2026-08-21 | now |
+|---|---|---|
+| fact schema | 6930 lines | 11031 |
+| **views** | 71 | **120** |
+| tables | 148 | 178, and 190 by `f90691e3` |
+| DDL statements | 2138 | 3111 executed per boot |
+| `meta_materialize` registrations | 4 | 20 |
+| `CREATE INDEX` | 0 | 22 |
+
+So the cost tracks the fact model's view count rather than the schemas fed to it, which is R876's
+mechanism appearing in our own build rather than only at a consumer. Normalising by the most
+generous reading of the machine still leaves about 6.6x.
+
+### The store boot is 3.2x, and a third of it is one step
+
+Decomposed by timing the store's own `create`, `stamp` and `deriveDependencies` directly:
+
+| Step | Now | At the third pass |
+|---|---|---|
+| connect | 2.1 ms | |
+| `create`, the DDL | 283.5 ms mean, 193.8 best | about 125 ms |
+| `stamp` | 10.8 ms | |
+| `deriveDependencies` | 139.7 ms mean, 95.5 best | 8.41 ms |
+| **total** | **436.1 ms** | **138.0 ms** |
+
+`deriveDependencies` is 16.6x and is now 32% of a boot. It goes to zero when R876 dissolves
+`meta_materialize`, because it walks outward from the register and would have no roots. The DDL half
+does not go, and R876's remedy of stored keys and indexes pushes it the other way.
+
+### The compaction change is not in the boot, and that was checked rather than assumed
+
+`close` branches: an in-memory store takes a plain `SHUTDOWN`, costing **0.3 ms median**, and only a
+file-backed store reaches `SHUTDOWN COMPACT`. So compact-on-close contributes nothing to the ~1000
+in-memory boots the build performs. It does cost real time elsewhere, linear in live bytes at 47 to
+60 ms per MB and paid whether or not anything is reclaimed, which is filed as R937.
+
+### What this pass changes about the slices
+
+* **R768 is re-priced upward and is still the largest build lever.** A boot is 436 ms rather than
+  138 ms, so its own figures were understating by 3.2x. Its body now carries the decomposition, the
+  measured alternatives (reuse and clear at 7.0 ms against a 380 ms boot), and the instruction to
+  spec against a post-R876 boot of about 296 ms.
+* **R762 gains a second consumer and moves to priority 1.** The real 34 MB build store is 99.3%
+  census rows and 0.0% materialization targets, so the census is what sets store size, and store
+  size is now what sets compaction cost.
+* **R937 is filed** for unconditional compaction on close.
+* **R938 is filed** for the view count being paid at every store open, 65 to 115 ms of catalog
+  rebuild inside H2 before any row is read.
+* **R899 may lose its subject** and is demoted pending R876; a register that dissolves has no
+  registrations to price.
+* **R764's leak is still live**, re-verified in the installed test-jar.
+
+### The guardrail half of this item is now the interesting half
+
+Everything above was found by measuring, three weeks after the third pass, because somebody asked.
+In that window the build went from about 410 s to about 1080 s and a named reference instrument
+regressed between 7 and 9 times, and nothing in the repository noticed either. That is precisely
+the failure the budget this item was filed to add exists to catch, and it is the argument for
+raising this item from priority 3 to 2: the slices are being carried by other items now, and what
+is left here is the mechanism that would have caught the regression while it was one commit old
+rather than three weeks and two and a half times.
+
+A Spec pass should take the guardrail alone and let the slice list below stay as history. The
+cheapest credible shape is a budget on one isolated reference class rather than on build wall clock,
+which the module-span and class-time warnings above rule out as too noisy on this hardware:
+`FixtureWarningsGateTest` at a stated ceiling would have failed on the commit that moved it.
+
+## A third measurement pass has run, and it was the current word until 2026-09-08
+
+Superseded by the fourth pass above wherever the two disagree, and they disagree about most of the
+absolute numbers. Two further passes are recorded below this section; this one was taken after R742 landed,
 which moved the cost again, and unlike them it settles slices with numbers rather than reordering
 them. One is refuted, one loses its performance case, one is promoted from a footnote, and one that
 neither earlier pass considered is now the largest thing here. Where this section and a later one
