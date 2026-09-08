@@ -110,6 +110,19 @@ tighter than `?:`. A future `!<presence>` or `<presence> instanceof` splice brea
 
 ## Implementation
 
+Shipped at `f5e1ff0`, whole plan, no remaining work. Verified twice: the reactor build is green on
+the pushed tree, and the new fixture was separately built against the unfixed producer to confirm
+it fails, at all four new mutation fields, in both the `instanceof` and the `== null` operand slot.
+
+Two facts found in flight, both premises for anyone reading this next. `nestedMapValueExpr`'s own
+javadoc got the contract statement too, not just `WireMapChain.of`: it is the entry point all six
+hazardous sites actually call, and a caller who reads only the delegating method would otherwise
+see nothing. And `development-principles.adoc` enforces a 3500-word self-budget
+(`DocSizeBudgetTest`) that sat at 3486 before this item, so the correction the Documentation
+section below asks for could not carry its reasoning: the parenthetical is now the correction plus
+an xref, and the full narrative lives on the reference page, which is what the budget's own failure
+message prescribes. The page is at 3494, leaving six words.
+
 Make the descent a *primary expression* at the producer, so it is safe in every operand slot and no
 caller has to know the precedence of the operator it is being spliced into:
 
