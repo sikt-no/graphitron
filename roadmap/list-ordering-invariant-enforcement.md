@@ -303,7 +303,7 @@ read shape delivers no order at all and any available ordering is unhonoured. Th
 why this arm reads it rather than re-deriving the write recognition: `READ_SURFACE_ON_WRITE` refuses
 a coordinate carrying `@orderBy` or `@condition` because "neither write seat has a filter or an
 ordering to resolve them against", and `CONNECTION_RETURN` refuses `@asConnection`. Its predicate
-reads `graphitron_order_by` and not `graphitron_default_order`, so a `@defaultOrder` on a routine
+reads `graphitron_order_by_entry` and not `graphitron_default_order_entry`, so a `@defaultOrder` on a routine
 write is admitted today and is one of the two things this arm catches.
 
 The availability side is three relations, all captured or one join away:
@@ -350,7 +350,7 @@ one the view does not put.
   and a coordinate with two routes is two rows: the arity is the answer, as on every rule view in the
   family, and each remedy names one route. `argument_name` carries the declaring argument on the
   `ORDER_BY_ARGUMENT` arm and is NULL on the other two, and it is in the key, because
-  `graphitron_order_by` is keyed at argument grain and two `@orderBy` arguments on one coordinate
+  `graphitron_order_by_entry` is keyed at argument grain and two `@orderBy` arguments on one coordinate
   would otherwise collide on a row. Unreachable today, `OrderByResolver.resolve` taking the first
   `ArgumentRef.OrderByArg` it finds, but a view key is not the place to inherit a consumer's
   precedence. The location columns are the declaring directive's own where there is one, so the editor
@@ -693,7 +693,7 @@ One query per build for phase 1, over relations that are already registered or c
 (`intent_field_scope_table` is a table with a coordinate index, the directive relations are captured
 tables). `intent_mutation_routine_seat` is the one unknown in it, being a reduction over half a dozen
 sibling relations rather than a table; take its contribution separately, so a cost that turns out to
-sit in the write arm can be answered by keying that arm off `graphitron_routine` and the seat
+sit in the write arm can be answered by keying that arm off `graphitron_routine_entry` and the seat
 relation's verdict alone. Take the number before wiring it in, per `DerivedReadCostTest`'s discipline, and do
 not register the view: one reader, so a registration would pay a refresh to save an evaluation. Phase
 2 is one pass over rows already in memory. Phase 3's cost is unknown until the population exists and
@@ -944,7 +944,7 @@ the launcher ratchet beside it, and phase 3's drops the remedy count.
   `validateListRequiresOrdering`'s routine arm already mints. Finding 2 above suggests a
   different second value; if that lands, this sentence is the one to replace rather than keep.
 * `intent_field_unlowerable_ordering`'s stated column list carries no `argument_name`, while
-  `graphitron_order_by` is keyed at argument grain. Two `@orderBy` arguments on one coordinate
+  `graphitron_order_by_entry` is keyed at argument grain. Two `@orderBy` arguments on one coordinate
   would collide on the view's key. Probably unreachable (`OrderByResolver.resolve` takes the
   first `ArgumentRef.OrderByArg` it finds), but the view's key is worth one sentence either way.
 

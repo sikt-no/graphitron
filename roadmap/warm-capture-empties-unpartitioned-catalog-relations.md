@@ -231,7 +231,7 @@ leaving a reader to wonder.** `graphitron_tabletype`, `graphitron_field_table` a
 `graphitron_node_keycolumn` are the only relations of their family that reference the catalog, and each
 is an *anchor*: it holds what a spelling resolved to and nothing a reader could not recompute.
 `graphitron_tabletype` carries the resolved `(source, schema, table)` and no authored text at all,
-while the `@table` an author wrote lives beside it in `graphitron_table` with its `table_ref` and its
+while the `@table` an author wrote lives beside it in `graphitron_table_entry` with its `table_ref` and its
 declaration position, keyed into `graphql_type_declaration`. The other two pair off the same way, with
 `graphitron_node_entry` and `graphitron_node_keycolumn_entry` carrying the authored `type_id` and
 `column_ref`, and `graphitron_field_navigation` carrying the navigation `graphitron_field_table`
@@ -1312,7 +1312,7 @@ revision. Phases one, two and three are unaffected and still read as implementab
 Of R876's eight notes, two are gate-blocking and are restated as findings below so the author knows
 what must be answered. The rest are advisory, and I checked the two that make claims about the tree:
 exactly 40 `graphitron_` relations carry a `source_name` column, which is the same 40 this item calls
-owned, so the two decompositions do coincide; and `graphitron_spelled_reference` does key
+owned, so the two decompositions do coincide; and `graphitron_spelled_reference_entry` does key
 `(graph_name, spelling)` with no `source_name` and a foreign key only to `store_graph`, so it does
 belong in the re-aggregated set and "graph-keyed" is a better name for that set than "anchors". Both
 are fair and neither is a gate question.
@@ -1535,7 +1535,7 @@ the paragraph was a misdiagnosis rather than a scope judgement.
 
 All three relations are anchors with entries already beside them, which the DDL says plainly and which
 nothing but my own inference contradicted. `graphitron_tabletype` holds a resolved
-`(table_source_name, table_schema, table_name)` and no authored text; `graphitron_table` holds the
+`(table_source_name, table_schema, table_name)` and no authored text; `graphitron_table_entry` holds the
 `@table` spelling in `table_ref` with its declaration position and keys into
 `graphql_type_declaration`. `graphitron_node` hangs off the anchor while `graphitron_node_entry` holds
 the authored `type_id` and position; `graphitron_node_keycolumn_entry` holds the authored `column_ref`;
