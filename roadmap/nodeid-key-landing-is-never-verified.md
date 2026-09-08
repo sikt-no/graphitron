@@ -1,13 +1,13 @@
 ---
 id: R926
 title: "The @nodeId key landing is asserted, never verified"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-08
 ---
 
 # The @nodeId key landing is asserted, never verified
