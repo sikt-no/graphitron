@@ -403,6 +403,22 @@ COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned po
 COMMENT ON COLUMN graphql_type_declaration.is_extension IS 'FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint';
 COMMENT ON COLUMN graphql_type_declaration.kind IS 'the declaration form written at this site; a mismatch against the type row''s kind is a detection';
 
+CREATE TABLE graphql_schema_problem (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  error_class   VARCHAR NOT NULL,
+  message       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE graphql_schema_problem IS 'Creating this graph''s schema produced this problem: one of the errors graphql-java raised when the documents were assembled into a schema. For example a second file declaring a type an earlier file already declares is one row, carrying graphql-java''s own sentence about it.';
+COMMENT ON COLUMN graphql_schema_problem.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_schema_problem.ordinal IS 'this problem''s place in the order graphql-java raised them. Part of the key because a problem need not carry a position, so there is nothing else that tells two of them apart';
+COMMENT ON COLUMN graphql_schema_problem.touched_at IS 'when the reading that produced this row ran; the reading finishes by deleting this graph''s rows that still carry an older instant, which are the problems the corpus no longer has';
+COMMENT ON COLUMN graphql_schema_problem.error_class IS 'graphql-java''s own name for the kind of problem, its error class''s simple name, so a reader can group without parsing the sentence';
+COMMENT ON COLUMN graphql_schema_problem.message IS 'graphql-java''s own sentence, kept verbatim: this is the library''s verdict and rewording it here would make the store the second author of an error the build reports';
+
 CREATE TABLE graphql_object_type_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -410,6 +426,7 @@ CREATE TABLE graphql_object_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -419,6 +436,7 @@ COMMENT ON COLUMN graphql_object_type_entry.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN graphql_object_type_entry.source_name IS 'the file this declaration was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from the declaration itself';
 COMMENT ON COLUMN graphql_object_type_entry.source_line IS 'source line of the declaration, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_object_type_entry.source_column IS 'source column of the declaration, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_object_type_entry.name IS 'the name written here, which is ObjectTypeDefinition.getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_object_type_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 
@@ -430,6 +448,7 @@ CREATE TABLE graphql_interface_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -439,6 +458,7 @@ COMMENT ON COLUMN graphql_interface_type_entry.graph_name IS 'the owning graph''
 COMMENT ON COLUMN graphql_interface_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_interface_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_interface_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_interface_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_interface_type_entry.description IS 'the description written here, or NULL where none was';
 
@@ -448,6 +468,7 @@ CREATE TABLE graphql_object_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -457,6 +478,7 @@ COMMENT ON COLUMN graphql_object_type_extension_entry.graph_name IS 'the owning 
 COMMENT ON COLUMN graphql_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_union_type_entry (
@@ -466,6 +488,7 @@ CREATE TABLE graphql_union_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -475,6 +498,7 @@ COMMENT ON COLUMN graphql_union_type_entry.graph_name IS 'the owning graph''s pa
 COMMENT ON COLUMN graphql_union_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_union_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_union_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_union_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_union_type_entry.description IS 'the description written here, or NULL where none was';
 
@@ -485,6 +509,7 @@ CREATE TABLE graphql_enum_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -494,6 +519,7 @@ COMMENT ON COLUMN graphql_enum_type_entry.graph_name IS 'the owning graph''s par
 COMMENT ON COLUMN graphql_enum_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_enum_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_enum_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_enum_type_entry.description IS 'the description written here, or NULL where none was';
 
@@ -504,6 +530,7 @@ CREATE TABLE graphql_input_object_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -513,6 +540,7 @@ COMMENT ON COLUMN graphql_input_object_type_entry.graph_name IS 'the owning grap
 COMMENT ON COLUMN graphql_input_object_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_input_object_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_input_object_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_input_object_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_input_object_type_entry.description IS 'the description written here, or NULL where none was';
 
@@ -523,6 +551,7 @@ CREATE TABLE graphql_scalar_type_entry (
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -532,6 +561,7 @@ COMMENT ON COLUMN graphql_scalar_type_entry.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN graphql_scalar_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_scalar_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_scalar_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_scalar_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 COMMENT ON COLUMN graphql_scalar_type_entry.description IS 'the description written here, or NULL where none was';
 
@@ -541,6 +571,7 @@ CREATE TABLE graphql_interface_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -550,6 +581,7 @@ COMMENT ON COLUMN graphql_interface_type_extension_entry.graph_name IS 'the owni
 COMMENT ON COLUMN graphql_interface_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_interface_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_interface_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_interface_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_union_type_extension_entry (
@@ -558,6 +590,7 @@ CREATE TABLE graphql_union_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -567,6 +600,7 @@ COMMENT ON COLUMN graphql_union_type_extension_entry.graph_name IS 'the owning g
 COMMENT ON COLUMN graphql_union_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_union_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_union_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_union_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_enum_type_extension_entry (
@@ -575,6 +609,7 @@ CREATE TABLE graphql_enum_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -584,6 +619,7 @@ COMMENT ON COLUMN graphql_enum_type_extension_entry.graph_name IS 'the owning gr
 COMMENT ON COLUMN graphql_enum_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_enum_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_enum_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_input_object_type_extension_entry (
@@ -592,6 +628,7 @@ CREATE TABLE graphql_input_object_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -601,6 +638,7 @@ COMMENT ON COLUMN graphql_input_object_type_extension_entry.graph_name IS 'the o
 COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_input_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_scalar_type_extension_entry (
@@ -609,6 +647,7 @@ CREATE TABLE graphql_scalar_type_extension_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
@@ -618,6 +657,7 @@ COMMENT ON COLUMN graphql_scalar_type_extension_entry.graph_name IS 'the owning 
 COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
 COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
 COMMENT ON COLUMN graphql_scalar_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
 
 CREATE TABLE graphql_field (
@@ -10903,6 +10943,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('graph-schema-problem',
+   'one problem raised while creating one graph''s schema, at its place in the order they were raised',
+   'graph_name, ordinal', 'sdl'),
   ('sdl-declaration-site',
    'one position in one SDL document, where that document declared or extended something',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -11045,6 +11088,10 @@ INSERT INTO meta_grain VALUES
    'graph_name, file, line_number, column_number, ordinal', 'javac');
 
 INSERT INTO meta_relation VALUES
+  ('graphql_schema_problem', 'graph-schema-problem', 'sdl',
+   'Creating this graph''s schema produced this problem: one of the errors graphql-java raised when the documents were assembled into a schema.',
+   'For example a second file declaring a type an earlier file already declares is one row, carrying graphql-java''s own sentence about it.',
+   'graphql-java decides this and the store records it rather than deciding it again. Assembling the documents into a schema is the one step that checks whether they work together, and it is around thirty checks deep: references resolving, interface contracts, input against output position, directive locations and arguments, uniqueness inside a declaration, the schema''s own shape. Re-deriving any of that from the declaration entries would be a second implementation of a validation this build already runs, and the two would disagree the first time the library moved. One relation rather than one per stage, because the registry merge and the schema build are not two questions a reader has: both are what happened when we tried to make a schema out of these documents, and the merge''s own contribution is only whether a name was declared twice. Absence is success: a graph whose documents made a schema has no rows here, so a reader asking whether the corpus is sound counts rather than interprets. Keyed at the graph and the order the problems were raised rather than at a position, because a problem need not report one; the declaration entries hold every site at its own position, so a reader who wants the sites joins them by name.'),
   ('graphql_object_type_entry', 'sdl-declaration-site', 'sdl',
    'An ObjectTypeDefinition as one document wrote it: this position in this file declares an object type of this name.',
    'For example type Film { title: String } is one row, at the file, line and column it was written at.',

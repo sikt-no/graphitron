@@ -114,14 +114,13 @@ class SupertypeSignatureGateTest {
      * and six extensions. A thirteenth would mean graphql-java grew a node kind, which is a fact
      * about the language and not a sibling accumulating, and the same reasoning would admit it.
      *
-     * <p>They land as two sets rather than one, and the split is worth reading before it is trusted.
-     * A base declaration carries a description and an extension does not, the grammar putting one on
-     * the base only, so the two halves have different signatures. The six extensions then fall in
-     * with the three context-argument entries, which they have nothing to do with: what they share is
-     * a name at a position and nothing else. This gate groups by signature, so a payload that generic
-     * collides across families, and the set it produces is a statement about column shape rather than
-     * about meaning. Recorded as observed, because a roster that quietly reshaped what the gate
-     * measured would stop being a check on it.
+     * <p>They land as two sets rather than one: a base declaration carries a description and an
+     * extension does not, the grammar putting one on the base only, so the halves have different
+     * signatures. Both sets are the mirror and nothing else, which is worth noting because it was
+     * briefly untrue. Before these relations carried {@code touched_at} the extension half was a
+     * name at a position and nothing more, which is generic enough that it grouped with three
+     * context-argument entries it has no relationship to. The column separated them, so a set that
+     * was a statement about column shape is now a statement about the grammar again.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_object_type_entry", "graphql_interface_type_entry",
@@ -134,8 +133,8 @@ class SupertypeSignatureGateTest {
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
         Set.of("graphitron_argument_condition_context_arg_entry", "graphitron_field_condition_context_arg_entry",
-               "graphitron_service_context_arg_entry",
-               "graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
+               "graphitron_service_context_arg_entry"),
+        Set.of("graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
                "graphql_union_type_extension_entry", "graphql_enum_type_extension_entry",
                "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_field_condition_entry"),

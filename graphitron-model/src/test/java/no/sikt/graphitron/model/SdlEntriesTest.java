@@ -15,6 +15,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 
@@ -194,6 +195,77 @@ class SdlEntriesTest {
     }
 
     /**
+     * A store is not always empty. The same file gets read again on the next build, so writing it
+     * twice has to leave the same rows rather than double them or fail on the key.
+     */
+    @Test
+    @DisplayName("reading one file twice leaves one file's rows")
+    void readingTheSameFileTwiceIsIdempotent(@TempDir Path tmp) {
+        Path file = write(tmp, "again.graphqls", "type Twice { a: String }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            read(dsl, file);
+
+            assertThat(names(dsl, GRAPHQL_OBJECT_TYPE_ENTRY, GRAPHQL_OBJECT_TYPE_ENTRY.NAME, file))
+                .as("the second reading replaces the first rather than adding to it")
+                .containsExactly("Twice");
+        });
+    }
+
+    /**
+     * The case a per-file delete exists for, and the one deriving the file from the declarations
+     * would get wrong: an edit that removes a declaration. The rows that are gone from the document
+     * have to be gone from the store, which nothing but a delete scoped to the file can do.
+     */
+    @Test
+    @DisplayName("an edit that removes a declaration removes its row")
+    void anEditThatRemovesADeclarationRemovesItsRow(@TempDir Path tmp) {
+        Path file = write(tmp, "edited.graphqls", "type Kept { a: String }\ntype Dropped { b: Int }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            assertThat(names(dsl, GRAPHQL_OBJECT_TYPE_ENTRY, GRAPHQL_OBJECT_TYPE_ENTRY.NAME, file))
+                .as("both declarations, before the edit")
+                .containsExactlyInAnyOrder("Kept", "Dropped");
+
+            write(tmp, "edited.graphqls", "type Kept { a: String }\n");
+            read(dsl, file);
+
+            assertThat(names(dsl, GRAPHQL_OBJECT_TYPE_ENTRY, GRAPHQL_OBJECT_TYPE_ENTRY.NAME, file))
+                .as("what the author deleted is deleted; a reader that only inserted would leave "
+                    + "Dropped behind and no query over these rows could tell it was stale")
+                .containsExactly("Kept");
+        });
+    }
+
+    /**
+     * An edit that changes a declaration in place updates its row, which is the upsert's other half.
+     *
+     * <p>Worth asserting on its own because the failure would not look like staleness. A row the
+     * second reading failed to update would also keep the first reading's instant, so the sweep would
+     * delete it and the declaration would vanish from a document that still declares it.
+     */
+    @Test
+    @DisplayName("an edit in place updates the row rather than replacing or dropping it")
+    void anEditInPlaceUpdatesTheRow(@TempDir Path tmp) {
+        Path file = write(tmp, "described.graphqls", "\"first\" type Same { a: String }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            write(tmp, "described.graphqls", "\"second\" type Same { a: String }\n");
+            read(dsl, file);
+
+            assertThat(dsl.select(GRAPHQL_OBJECT_TYPE_ENTRY.DESCRIPTION)
+                    .from(GRAPHQL_OBJECT_TYPE_ENTRY)
+                    .where(GRAPHQL_OBJECT_TYPE_ENTRY.NAME.eq("Same"))
+                    .fetch(GRAPHQL_OBJECT_TYPE_ENTRY.DESCRIPTION))
+                .as("one row, carrying what the document says now")
+                .containsExactly("second");
+        });
+    }
+
+    /**
      * The names one document declared in one relation. Scoped to the file, because the bundled
      * directive vocabulary is read alongside it and declares enums and input objects of its own; an
      * unscoped count would be asserting something about that document too.
@@ -209,11 +281,13 @@ class SdlEntriesTest {
      * The bundled directive vocabulary is a document like any other and is read alongside them.
      */
     private static void read(DSLContext dsl, Path... files) {
+        // A distinct instant per reading, which is what the sweep tells readings apart by.
+        LocalDateTime touchedAt = LocalDateTime.now();
         seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
         Arrays.stream(files).forEach(file -> seedSource(dsl, file.toString(), "SCHEMA_FILE"));
         SchemaLoader.parsePerSource(Arrays.stream(files).map(SchemaSource::file).toList())
             .perSource()
-            .forEach(document -> SdlEntries.write(dsl, GRAPH, document.registry()));
+            .forEach(document -> SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
     }
 
     private static Path write(Path directory, String name, String sdl) {

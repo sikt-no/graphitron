@@ -470,7 +470,11 @@ class FactCaptureAgreementTest {
             "graphql_input_object_type_entry", "graphql_scalar_type_entry",
             "graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
             "graphql_union_type_extension_entry", "graphql_enum_type_extension_entry",
-            "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry")) {
+            "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry",
+            // What went wrong making a schema out of the documents, as graphql-java stated it.
+            // GraphitronSchema is only ever built from a corpus that made a schema, so it has
+            // nothing to say about one that did not.
+            "graphql_schema_problem")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);

@@ -215,33 +215,26 @@ public final class SchemaLoader {
     // need a cast through a wildcard list, which buys no checking the API can honour.
     @SuppressWarnings("rawtypes")
     public static PerSourceParse parsePerSource(Collection<SchemaSource.File> userSchemaSources) {
-        var definitions = new ArrayList<Definition>();
         var failures = new ArrayList<SyntaxFailure>();
         var perSource = new ArrayList<SourceParse>();
+        var merged = new TypeDefinitionRegistry();
+        var registryErrors = new ArrayList<SchemaError>();
 
-        var directives = parseDirectives().getDefinitions();
-        definitions.addAll(directives);
-        perSource.add(readingOf(DIRECTIVES_SOURCE_NAME, directives));
+        offer(DIRECTIVES_SOURCE_NAME, parseDirectives().getDefinitions(),
+            perSource, merged, registryErrors);
 
         for (SchemaSource.File source : oldestFirst(userSchemaSources)) {
             Reader reader = openSource(source.path());
             try {
-                var parsed = parseSource(source.sourceName(), reader).getDefinitions();
-                definitions.addAll(parsed);
-                perSource.add(readingOf(source.sourceName(), parsed));
+                offer(source.sourceName(), parseSource(source.sourceName(), reader).getDefinitions(),
+                    perSource, merged, registryErrors);
             } catch (InvalidSyntaxException e) {
                 failures.add(new SyntaxFailure(
                     source.sourceName(), brief(e), e.getLocation(), e));
             }
         }
 
-        var registry = new TypeDefinitionRegistry();
-        var registryErrors = new ArrayList<SchemaError>();
-        for (Definition definition : definitions) {
-            admit(registry, definition)
-                .ifPresent(e -> registryErrors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
-        }
-        return new PerSourceParse(registry, failures, List.copyOf(registryErrors),
+        return new PerSourceParse(merged, failures, List.copyOf(registryErrors),
             List.copyOf(perSource));
     }
 
@@ -303,6 +296,27 @@ public final class SchemaLoader {
             return Files.getLastModifiedTime(source.path());
         } catch (IOException e) {
             return FileTime.from(Instant.EPOCH);
+        }
+    }
+
+    /**
+     * One document's reading, and its definitions offered to the corpus, in the order the documents
+     * are read.
+     *
+     * <p>Offered one at a time rather than as a registry. {@link TypeDefinitionRegistry#merge} takes
+     * a whole registry and is all or nothing: on the first collision it throws and none of that
+     * document's other definitions land, so one clashing type would cost every good declaration
+     * beside it. Offering singly is what keeps a refusal from subtracting anything from what
+     * survived it, which is the same property the per-source readings exist for one level up.
+     */
+    @SuppressWarnings("rawtypes")
+    private static void offer(String sourceName, List<Definition> definitions,
+                              List<SourceParse> perSource, TypeDefinitionRegistry merged,
+                              List<SchemaError> errors) {
+        perSource.add(readingOf(sourceName, definitions));
+        for (Definition definition : definitions) {
+            admit(merged, definition)
+                .ifPresent(e -> errors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
         }
     }
 

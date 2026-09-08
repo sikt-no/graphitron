@@ -135,6 +135,32 @@ The count is the grammar's: six declaration kinds and six extension kinds. A thi
 graphql-java grew a node kind, which is a fact about the language rather than a sibling accumulating,
 and the same argument would admit it.
 
+=== The verdict on the corpus is one relation, and the anchors do not wait for it
+
+`graphql_schema_problem` holds what went wrong when the documents were made into a schema, as
+graphql-java stated it. One relation and not one per stage, because merging the documents into a
+registry and building a schema from that registry are not two questions a reader has. The merge only
+ever says whether a name was declared twice, three error classes in all; the build runs around thirty
+checks over references resolving, interface contracts, input against output position, directive
+locations and arguments, uniqueness inside a declaration, and the schema's own shape. Offering that
+split to a reader would cost them something to learn and buy nothing.
+
+Nothing here is re-derived, and that is the point. Computing any of those checks from the declaration
+entries would be a second implementation of a validation the build already runs, and the two would
+disagree the first time the library moved.
+
+Distinct, because the same problem said twice is not two problems. One absent type reached for from
+five fields raises five errors whose sentences are byte-identical: the message names the absent type
+and the type that reached for it, never the field. How many fields reached for it is a count over the
+entries, so keeping one row loses nothing.
+
+The anchors do not depend on any of this. They are derived from the entries, so a corpus that does
+not build still has them, which is the ordinary state of a schema while somebody is editing it: a
+developer halfway through a rename should not lose every answer the store can give. Going through the
+error classes, only the collisions contend for an anchor row at all, and there the rule is already
+settled by reading order, oldest first. Every other class is a broken relationship between
+declarations that all exist, which is an anti-join rather than a missing row.
+
 === Almost no foreign keys, and why that is the design
 
 A document may name a type nobody defines. It may implement an interface that does not exist, and it
