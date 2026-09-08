@@ -135,18 +135,17 @@ because the obvious answer is wrong in one place.
 So a gatherer taking that route deletes one row per root per changed source, the cascade clears
 everything beneath, and the walk rewrites.
 
-That last clause is precise for three of the four family groups and not yet for the fourth, which the
-roots table above cannot show because it names a joint root for two families one gatherer does not
-write. `GraphitronFactCapture.capture` takes a graph name and nothing else, and `SOURCE_NAME` appears
-once in the class, so the decode runs over the graph's whole transcription rather than over one source:
-a per-source delete of the `(graph, source)` root cascades the 40 owned `graphitron_` relations away
-and no per-source walk rewrites them. So the joint root buys per-source precision for the 12
-`graphql_` relations, and the `graphitron_` half is either re-decoded whole or left empty until one
-gatherer writes both halves; R876's first slice moves those 40 writes into the walk and closes it.
-Nothing ships broken from this, the item changing no gatherer's route and the SDL families still being
-re-walked per graph, and this item takes no dependency on that slice. What it does take is the
-project's family ordering, the transcription families first and the decode family after, which is the
-same ordering the gap already has.
+That last clause was not true of the `graphitron_` half when this plan was written, and it is now, so
+the joint root is precise rather than half precise. The roots table names one root for two families,
+and until R876's first slice the decode that wrote 40 of them ran over a graph's whole transcription
+rather than over one source: a per-source delete of the `(graph, source)` root cascaded them away with
+no per-source walk to rewrite them. That slice has landed. `SdlFactCapture` holds a decoder from
+`GraphitronFactCapture.decodingInto` and drives it at each directive application it walks, and the
+gatherer's own javadoc now states the division, that every relation whose rows are a function of one
+document is written by the walk and what remains is the half that needs the whole store.
+`GraphitronFactCapture.capture` still takes a graph name and nothing else, which is now correct rather
+than left over: what it keeps is eight resolving stages, and a resolution is an anchor. One walk of one
+source therefore rewrites exactly what the cascade deleted, for all 52.
 
 The registry row persists either way and its `stamp` and
 `read_at` update in place, which is where R922's currency comparison expects to find them. Nothing
@@ -1551,3 +1550,33 @@ confirmation rather than coincidence.
 The error is worth naming because it is the one this item's review has caught four times: a claim I
 reasoned to rather than executed. I inferred from a foreign key into `sql_table` that the row was a
 graph's owned fact, and one look at the relation beside it would have said otherwise.
+
+### Author revision, 2026-09-08: R876's first slice landed and closed finding 6
+
+Checked because trunk moved under this item twice while it was being revised, not because anything
+looked wrong. Three effects, and one of them retires a qualification the body was carrying.
+
+**Finding 6 is closed by a landing rather than by an argument.** It held that "the cascade clears
+everything beneath, and the walk rewrites" was false for the 40 owned `graphitron_` relations, the
+decode running over a graph's whole transcription rather than over one source. R876 slice 1 moved that
+decode into the walk: `SdlFactCapture` holds a `GraphitronFactCapture.decodingInto` decoder and drives
+it at each directive application, and the gatherer keeps eight resolving stages whose javadoc now says
+what divides them, a relation whose rows are a function of one document against a resolution that needs
+the whole store. Worth noting how the evidence behaved, since it is a trap: the two facts finding 6
+cited are both still true, `capture` taking a graph name and nothing else and `SOURCE_NAME` appearing
+once in the class, while the conclusion they supported is not. The code around them moved. The body now
+states the joint root as precise for all 52 and drops the sequencing note it carried instead.
+
+**The `_entry` rename swept this plan's citations and they are current.** 53 relations gained the
+suffix in one transform over 2111 identifiers, which rewrote this file along with the rest, and two
+follow-up commits caught spellings arriving from concurrent sessions including one of this item's.
+Re-checked here rather than assumed: every store identifier this plan names in a backtick span, 58 of
+them, resolves against the DDL as declared. The three that do not are `store_graph_source.source_ref`
+and `store_graph_source.stamp`, which this item proposes, and `store_source.graph_name`, the dropped
+rule that survives only as a dated record in the findings.
+
+**Every count still holds.** Recomputed against the current DDL: 177 base relations, 124 across the
+five families, 71 `graphitron_`, 28 `graphql_`, 14 `sql_`, 7 `jvm_`, 4 `java_`, and 40 `graphitron_`
+relations carrying a `source_name`, which is the owned figure the taxonomy uses. The rename preserved
+family sizes, and R926's DDL commit in the same window changed a predicate inside a view and no base
+relation.
