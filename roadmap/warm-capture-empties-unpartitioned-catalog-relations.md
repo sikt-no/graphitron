@@ -75,7 +75,9 @@ was given its own bookkeeping on the grounds that `store_source` is a capture ro
 being read on a different cadence by a different gatherer is what `meta_gatherer` and `meta_corpus`
 are for, and the SDL and classpath gatherers already share the registry while running on cadences of
 their own. `java_file` keeps `source_root`, which is a fact about the file, and its `stamp` and
-`read_at` move up to the registry row so currency is stated in one place for every corpus.
+`read_at` move up to the registry row so a *source's own* currency is stated in one place for every
+corpus. That is the registry's question and not the whole of currency; the sharing section below
+carries the other half.
 
 **The foreign keys declare ownership. They do not decide when anything is deleted.** They say what
 belongs to what, which is a fact about the model and is true whether or not a delete ever runs, and
@@ -149,7 +151,9 @@ resolving stages, and a resolution is an anchor rather than a partition. So one 
 rewrites exactly what the cascade deleted, for all 52.
 
 The registry row persists either way and its `stamp` and
-`read_at` update in place, which is where R922's currency comparison expects to find them. Nothing
+`read_at` update in place, which is where R922's currency comparison expects to find them; what a
+graph's own rows were built from is a separate fact on the membership row, which the sharing section
+below takes up. Nothing
 here obliges a gatherer to take that route, and the item ships no change to which route any existing
 gatherer takes; what changes is that the choice becomes theirs to make.
 
@@ -297,9 +301,23 @@ deletes it per changed source and retains the rest. Its table comment records th
 today's behaviour and is rewritten with the rest of the mechanism's prose. Retention keeping the stamp
 is what makes the column worth having.
 
-Nothing else moves onto the row. Per-graph *age*, when a graph last named a source in its inputs, is
-the eviction question `last_seen` answers store-global, and the reaping policy is another item's; a
-second timestamp here would be built for a reader that does not exist.
+**`read_at` stays on the registry, and the split is not arbitrary: the two columns are about different
+subjects.** `store_source.stamp` and `store_source.read_at` are both about the *bytes*, what they were
+and when we last established it, and the pair is what `Observation.trusts` reads to decide whether the
+stamp can be believed without re-hashing the file. Two graphs reading one file read the same bytes, so
+whoever hashed them last established a fact about the file rather than about a graph, and the column's
+own comment already says so: a value "written by another process while we were watching counts as
+ours". `store_graph_source.stamp` is about the *rows*, which content this graph's own rows were built
+from, and that is per graph because the rows are. So a graph's currency question resolves in two steps
+against two subjects: is the registry's stamp still current with what is on disk, which `read_at`
+answers store-global and shared, and does my stamp equal it, which the membership row answers per
+graph. Nothing per graph reads `read_at`, and a copy of it here would date a reading rather than a
+byte.
+
+Nothing else moves onto the row, then: `read_at` for the reason above, and per-graph *age*, when a
+graph last named a source in its inputs, because that is the eviction question `last_seen` answers
+store-global and the reaping policy is another item's. A second timestamp here would be built for a
+reader that does not exist.
 
 **One thing goes rather than moving: the null-stamp protocol.** `ClasspathSources.upsert` blanks an
 existing row's `stamp` and `read_at`, on the ground that "this run is about to (re)write the source's
@@ -448,7 +466,8 @@ which is orthogonal to how deletion happens.
 
 What does not appear anywhere is a delete of a registry row followed by an insert of the same registry
 row. A refresh never churns a source's identity to clear its facts; the row stays, and its `stamp` and
-`read_at` update in place, which is where R922's currency comparison reads them.
+`read_at` update in place, which is where R922's currency comparison reads them, beside the membership
+row's `stamp` for what a graph's own rows came from.
 
 ## The descriptions this settles, retires and falsifies
 
@@ -549,9 +568,12 @@ members and the membership row joins them in phase four without the sweep changi
 
 **Phase two, `java_` joins the registry.** Add the `JAVA_SOURCE` kind, give `java_file` the
 `source_ref` twin and its `CHECK` against `store_source` on phase one's pattern, and move its
-`stamp` and `read_at` up to the registry row so currency is stated once. `JavaSourceFacts` is the
-only reader or writer of either column, so the move is contained to one class; R922's comparison
-takes the instant as an argument and does not care which relation it came from.
+`stamp` and `read_at` up to the registry row so a source's own currency is stated once.
+`JavaSourceFacts` is the only reader or writer of either column, so the move is contained to one
+class; R922's comparison takes the instant as an argument and does not care which relation it came
+from. The `java_` family asks no per-graph currency question and so gains nothing from the membership
+row's `stamp`: its rows are a function of the bytes, and two graphs over one `.java` file want the
+same rows.
 
 **Phase three, the four populations no document produced.** The prerequisite for phase four. Every
 definition the parser reads is already attributed: `SchemaLoader.parseSource` builds a
@@ -1646,3 +1668,31 @@ three.
 
 `SdlFactCapture.stampTarget`'s javadoc remains the one falsified description the sweep does not name,
 carried forward from round 4's note and still non-blocking.
+
+> **Author, 2026-09-08.** Finding 7 accepted, and it is the better half of the finding that the plan
+> said two things rather than that it omitted one. Every claim reproduced first: `commitStamps` sets
+> `stamp` and `read_at` in one `UPDATE` on the same row, `store_source.READ_AT` is written nowhere
+> else in main sources but `ClasspathSources`, twice as the null this item deletes and once there, and
+> `store_source.read_at`'s comment does call it the currency half and never the age half.
+>
+> `read_at` stays store-global, and the sharing section now argues it rather than leaving it to be
+> inferred. The reason is not that nothing reads it per graph, which is true but is the weak form; it
+> is that the two columns are about different subjects. `store_source.stamp` and `store_source.read_at`
+> are both about the bytes, what they were and when we last established it, and `Observation.trusts`
+> reads the pair to decide whether the stamp can be believed without re-hashing. Two graphs reading one
+> file read the same bytes, so whoever hashed them last established a fact about the file and not about
+> a graph, which the column's own comment already states: a value "written by another process while we
+> were watching counts as ours". `store_graph_source.stamp` is about the rows, and rows are per graph.
+> A graph's question resolves in two steps against those two subjects, and neither step wants a
+> per-graph date.
+>
+> The two surviving sentences are not deleted, because both are still true of the registry row; they
+> were misleading by implying it was the only home. Each now names the membership row's `stamp` beside
+> them. Phase two's "one place for every corpus" is narrowed to a *source's own* currency, in the design
+> section and in the phase, and the phase says why the `java_` family asks no per-graph question at all:
+> its rows are a function of the bytes, so two graphs over one `.java` file want the same rows. That is
+> the narrowing you asked whether the phase needed, and it needed it.
+>
+> The stale "Two claims" heading you corrected to three is carried forward as you left it, and
+> `SdlFactCapture.stampTarget`'s javadoc is still the one falsified description the sweep does not name.
+
