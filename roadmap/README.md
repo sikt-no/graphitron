@@ -21,10 +21,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-08 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | Spec | 2026-09-08 | [plan](polymorphic-nodeid-service-input.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
+| `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | Ready | 2026-09-08 | [plan](polymorphic-nodeid-service-input.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
@@ -475,7 +475,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
-- `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — Spec, feature
+- `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — Ready, feature
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx

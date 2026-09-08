@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1100,3 +1100,99 @@ the parenthetical that step 1 does touch its text. And the `intent_input_field_f
 paragraph in the consequences says the CTE reads `basis`, `path` and `site` and never the renamed
 column, so only the population half reaches it and the predicate it takes is the new kind column
 alone.
+
+### Round 3 (2026-09-08, Spec -> Ready, reviewer session 01XoeWvqCi2MkseUEMSjWWn9)
+
+Verdict: signed off; status moves to `Ready`. Round 2's blocking finding is answered at the DDL
+rather than in prose, and both gate questions pass. No blocking findings.
+
+The goal, in my own words and without the phase list: a consumer whose mutation takes the global id
+of any one of several table-backed types behind an interface, deactivate *an application* where an
+application may be a Feide, Maskinporten or Maskinbruker application and each is its own table and
+node type, cannot say so in the schema today. `@nodeId(typeName:)` admits one `@table` object type,
+so the field is spelled as a bare `ID!` and the service base64-decodes the wire id itself, peeks the
+type prefix and branches on three typeIds by hand: the wire-format knowledge in author code that the
+directive exists to remove, and the field report shows it written twice. After this lands they write
+`@nodeId(typeName: "Applikasjon")`, type the receiving Java slot as something every implementation's
+generated record is, and the generated fetcher decodes into that implementation's own record before
+the service runs. The service dispatches on the record's runtime class and reads keys off loaded
+columns; an id belonging to no implementation fails the request naming every implementation, in the
+wording the read side already uses. The same at a top-level `@service` argument and at a list slot.
+
+Reachable here. Every code, test and symbol the plan names exists as named, checked FQN-aware, with
+the two new types (`AdmittedSlotType`, `NodeIdPolymorphicDecodeDefects`) correctly absent. The four
+"what exists today" facts hold to the symbol: `resolveNodeIdRecordDecode` and
+`NodeIdLeafResolver.resolve` both refuse with the `is not @table-annotated` fragment verbatim and
+both really ask the `@table`-object question ahead of nodehood, so the ordering rule is correctly
+stated as a change; `isJooqRecord` walks the hierarchy for `org.jooq.Record`, so an
+`UpdatableRecord<?>` bean member does route into `buildJooqRecordLeaf` today and the equality gate
+inside it is where the change goes; `takesTheNodeTablesRecord` compares javapoet `TypeName`s with
+one `List` unwrapped and falls to `ThrowOnMismatch`; `RecordDecodeFragments` has exactly three
+throwing public `decodeHelper` overloads over one private body taking `mismatchThrow`, whose only
+`return null` is the not-a-`String` case, so the fourth overload is precisely the one primitive;
+`MultiTablePolymorphicEmitter.dispatchFailureThrow` is private and its two-branch message is
+verbatim what the plan quotes, including that a right-prefix-wrong-arity id lands on "not a valid
+id". The capture the slot-typing fact rests on is in hand: `CatalogFactCapture` reads
+`table.getRecordType().getName()` for `sql_table.record_class_fqn`, so the live record `Class<?>` is
+at the walk the new relation sits beside. Every DDL claim checks out too, including each closed
+vocabulary count (`basis` five, `destination` four, the incumbent defect view's two decided by arity
+alone and excluding the input-field site as "owed an emitter rather than a verdict"), `candidates` as
+the windowed count with its overload reading, `graphitron_table_entry` and `graphitron_node_entry`
+keyed on the type with no kind constraint, `graphitron_tabletype` admitting `INTERFACE`,
+`intent_node_type` as the node-entry union, and every quoted comment sentence.
+
+The population edge is the round-2 finding and it is answered. The `EXPLICIT_TYPE_NAME` arm really is
+site-agnostic, joining `instructed` to `intent_node_type` on `node_type_ref` with no site predicate,
+and `intent_node_id_decode_slot` really is where the walk's fork lives, driving off the instruction
+relation and excluding `OUTPUT_FIELD`. So `CONTAINER_NOT_AT_A_SLOT` reading that relation's absence
+does cover all three refused coordinates: an output field by the slot relation's own `WHERE`, a
+read-side argument or filter input on a generated fetch field by there being neither an argMapping
+match nor a producer method, and a `@service` argument no parameter is fed from. The table arm's
+`NOT EXISTS` over the slot relation confirms the absence is a fork the family already reads. All
+three predicates are warranted at the DDL: `intent_node_id_decode_endpoint` joins
+`graphitron_tabletype` on the named type and that relation admits an interface, so the
+`SINGLE_TABLE_CONTAINER` shape would draw a bogus endpoint row; `intent_argument_filter_role`'s
+`argument_node_id` CTE reduces exactly as claimed, `implicit` being false on `EXPLICIT_TYPE_NAME` so
+`wired` collapses to `is_id AND NOT has_binding` and a container-naming `ID!` argument draws
+`NODE_ID` at precedence 4, and that relation's keyless-type escape hatch ("such a type is a
+rejection's population") is there verbatim and is what the item invalidates; and
+`intent_input_field_filter_role_live`'s `node_id_at_table` CTE reads `basis`, `path` and `site` and
+never the renamed column, so only the population half reaches it. The seam count is right: seven
+relations read the instruction relation directly, six of them the renamed column, and the seventh is
+disclosed as reading only the others.
+
+On the second gate question, each piece extends a shape already in the tree at the rung that shape
+reserves. The candidate set resolves through the existing single-type path, so per-candidate facts
+are the ones the single-type decode already carries. Slot typing is one captured fact read twice,
+the walk over the live class and the store over the captured closure composed with the census, which
+is the agree-by-construction discipline rather than a parallel type system. The emitted glue is a
+sibling leaf, and the argument holds: all five named emit consumers do read a single table off
+`NodeIdDecodeRecord`. The fifth destination lands as a `CASE` branch inside the existing slot arm,
+which the arm's shape makes a plain addition, rather than a second naming of what the DDL calls the
+deepest derived read in the schema. `intent_node_container_member` is keyed on the container and
+`intent_node_id_candidate_node_type` on the resolved type, both meeting the two-reader threshold and
+both matching the `intent_spelled_table` / `intent_bound_table` layering. The rename plus kind
+column is argued against splitting `basis` with a precedent in the store. The Implementation list is
+ordered so a build stays green through it and names the mechanical enforcers each new relation owes.
+Out of scope discloses what goes silent rather than leaving it latent. I would hand this to an
+implementer as-is: the grain, the population edge, the assignability fact, the sibling-versus-widening
+call and the ordering rule with its answer-preservation constraint are all decided, and what is left
+is implementation.
+
+#### Non-blocking
+
+* The pipeline tier offers "the test catalog's `Film | Inventory` or `Customer | Staff` union". There
+  is no `Film | Inventory` union in the tree; `Customer | Staff` exists as `union Person` in
+  `graphitron/src/test/resources/corpus/polymorphic-filter.graphqls`. The `or` leaves the implementer
+  a working fixture, so this is a stale alternative rather than a gap.
+* Slot typing says the walk answers with `Class.isAssignableFrom`, and `isJooqRecord`'s javadoc
+  explains that it deliberately avoids `org.jooq.Record.class.isAssignableFrom(cls)` so the result
+  cannot depend on classloader identity. The two are not in conflict, because the plan's comparison
+  puts both operands on one loader: `tryLoad` resolves through `ctx.codegenLoader()`, `JooqCatalog`
+  holds that same loader, and `ServiceCatalog.resolveTableByRecordClassName` already loads a record
+  class through it. Worth a sentence saying so, since an implementer who reads `isJooqRecord`'s
+  comment first will reasonably wonder.
+* The slot arm's admission is a `WHERE` clause as well as a `CASE`: today it admits a row only where
+  `s.java_type = k.record_class` or the arity-one single-column shape holds, and an
+  `UpdatableRecord<?>` slot satisfies neither. The plan's sentence about the branch being admitted by
+  a `NOT EXISTS` over the members covers this in substance; it reads as being about the `CASE` alone.
