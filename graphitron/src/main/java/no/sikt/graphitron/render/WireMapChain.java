@@ -36,7 +36,17 @@ public final class WireMapChain {
     private WireMapChain() {}
 
     /**
-     * Builds the whole descent.
+     * Builds the whole descent, as a <em>primary expression</em>: the result is parenthesised and
+     * so is safe to splice into any operand slot, including operands of operators that bind
+     * tighter than {@code ?:} such as {@code instanceof} and {@code ==}. Callers do not have to
+     * know the precedence of the operator their splice lands in, and do not have to wrap.
+     *
+     * <p>The wrap sits here at the boundary rather than inside the recursion, which is what makes
+     * the guarantee structural: no arm added inside the recursive descent can drop it, because no
+     * arm owns it. One pair suffices at any path depth. The non-leaf arms already parenthesise
+     * their recursive result and descend into {@code binding.get(key)}, itself a primary
+     * expression, so however long the path exactly one bare conditional expression escapes: the
+     * outermost, and it escapes through here.
      *
      * @param root        the expression the head is read out of, evaluated once at depth 0 and
      *                    only when {@code liftedLocal} is null
@@ -51,7 +61,7 @@ public final class WireMapChain {
      */
     public static CodeBlock of(CodeBlock root, List<String> path, TypeName leafType,
             String liftedLocal) {
-        return at(root, path, 0, leafType, liftedLocal);
+        return CodeBlock.of("($L)", at(root, path, 0, leafType, liftedLocal));
     }
 
     private static CodeBlock at(CodeBlock currentExpr, List<String> path, int depth,

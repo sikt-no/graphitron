@@ -2851,6 +2851,13 @@ public class TypeFetcherGenerator {
      * Map<?, ?>} chain over the prefix levels ending in {@code containsKey} on the leaf's parent
      * map, so an absent key or a non-{@code Map} (including {@code null}) at any layer reads as
      * absent. {@code salt} uniquifies the pattern variables across peer expressions.
+     *
+     * <p>Both results are primary expressions, safe to splice into any operand slot. The single
+     * segment already is one; the deeper arm is an {@code &&} chain and gets a paren pair, wrapped
+     * once around the built chain rather than per link, since the chain is flat at every depth.
+     * {@link no.sikt.graphitron.render.WireMapChain#of} carries the same guarantee for the value
+     * read, for the same reason: whether a splice compiles otherwise depends on an operator the
+     * producer cannot see and the caller does not think about.
      */
     private static CodeBlock nestedContainsKeyExpr(String mapLocal, List<String> accessPath, String salt) {
         if (accessPath.size() == 1) {
@@ -2865,7 +2872,7 @@ public class TypeFetcherGenerator {
             cur = inner;
         }
         b.add("$L.containsKey($S)", cur, accessPath.get(last));
-        return b.build();
+        return CodeBlock.of("($L)", b.build());
     }
 
     /** Leaf body for {@link #emitNestedPresenceGuardedLeaf}: emits the write(s) for the leaf, given

@@ -1,7 +1,7 @@
 ---
 id: R932
 title: "Nested wire-map descent is spliced into operand slots, emitting Java that cannot compile"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: codegen-correctness

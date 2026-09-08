@@ -250,6 +250,7 @@ descendants. No new emitter shape.
    classifier's `errors` list (the same `UnclassifiedArg`
    fallback already used for other classify-time failures).
 
+[#nested-input-arg-extraction]
 == Runtime: nested input-field arg extraction
 
 When a `@condition` method sits on an input field, the runtime values
@@ -267,6 +268,24 @@ the top-level argument Map down to the leaf value. The chain short-circuits
 to `null` at any level whose value is absent or is not a Map, so a
 `@condition` method always receives either the concrete leaf value or
 `null`; reflecting it with a Map or a wrong-shaped value is not possible.
+
+`WireMapChain.of` is the single home for that descent, and it returns a
+*primary expression*: the chain is parenthesised at the `of` boundary, so a
+caller may splice it into any operand slot without knowing the precedence of
+the operator it lands in. That guarantee is what the descent's consumers rely
+on rather than each wrapping for itself. The generated DML decode locals put
+it in an `instanceof` pattern test and the value-agreement preamble in a
+`== null` comparison, both of which bind tighter than `?:`; an unparenthesised
+chain reparses there with its own `: null` arm bound to the operator, which
+javac rejects at the consumer. `TypeFetcherGenerator.nestedContainsKeyExpr`
+carries the same guarantee for the presence test, whose deeper arm is an `&&`
+chain. The wrap sits at the boundary rather than inside the recursion so that
+no arm added later can drop it; one pair suffices at any path depth, because
+the recursive arms already parenthesise their own result and descend into
+`binding.get(key)`, so exactly one bare conditional expression ever escapes.
+Compile-tier coverage is the `endorsementNestedOverlap` mutation family in
+`graphitron-sakila-example`, which reaches both operand slots through a nested
+`@nodeId` leaf on a generated write.
 
 == Test assertions
 

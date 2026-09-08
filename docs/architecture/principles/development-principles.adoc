@@ -335,8 +335,10 @@ generator emits:
   `GeneratedSourcesLintTest`.
 
 The smell: an emitter building a `CodeBlock` of nested `? :` with `Object` casts and `_x` locals ;
-written for the emitter author's convenience, not the consumer's. (The NodeId-decode instance is
-cleaned up; the `@condition` arg-extraction instance is not.)
+written for the emitter author's convenience, not the consumer's. (Neither is cleaned up: the
+NodeId-decode locals and the `@condition` arg-extraction descent are both live; see
+xref:../reference/argument-resolution.adoc#nested-input-arg-extraction[Nested input-field arg
+extraction].)
 
 *Enforced by:* `GeneratedSourcesLintTest.emittedSourcesDoNotUseVar` and
 `GeneratedSourcesLintTest.emittedSourcesHaveNoDunderIdentifiers` (plus that class's sibling

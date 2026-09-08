@@ -284,6 +284,13 @@ public final class ArgCallEmitter {
      * descent applies no leaf cast (the value flows into {@code DSL.val(value, dataType)} / a decode
      * helper that takes {@code Object}), so it is shared by the SET-value, WHERE-value, INSERT-cell
      * and NodeId-decode-source reads alike.
+     *
+     * <p>Both results are primary expressions, so a caller may splice one into any operand slot
+     * without wrapping: {@code mapLocal.get(key)} already is one, and
+     * {@link no.sikt.graphitron.render.WireMapChain#of} parenthesises the deeper chain. That
+     * matters because the decode-locals and value-agreement consumers splice it into an
+     * {@code instanceof} pattern test and a {@code == null} comparison, both of which bind tighter
+     * than {@code ?:}.
      */
     public static CodeBlock nestedMapValueExpr(String mapLocal, List<String> path) {
         if (path.size() == 1) {

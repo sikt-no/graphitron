@@ -3811,6 +3811,36 @@ input UpdateEndorsementOverlapInput {
     endorsedFilm: Int @field(name: "endorsed_film")
 }
 
+# Nested-path counterparts of the two overlap inputs above, and the compile-tier coverage for the
+# wire-map descent's primary-expression guarantee. The descent that reads a nested wire value is one
+# Java expression; at a nested path it is a conditional expression, so a caller splicing it into the
+# operand slot of an operator that binds tighter than `?:` (an `instanceof` pattern test, a `== null`
+# comparison) used to get source javac rejects. The generated DML decode-locals walks are exactly
+# those callers, and the shape below is the minimum that reaches them: nesting alone does not
+# (FilmCreateNestedInput above nests and compiles), and a nested @nodeId alone does not
+# (CustomerUpsertInput's identity group is a @service param, so its descent lands in an argument
+# list, where any expression is legal). It takes a nested @nodeId leaf on a mutation whose write
+# graphitron generates.
+#
+# `ref` is a nullable group over `filmRef`, which reaches the INSERT and SET decode locals (the
+# `instanceof` operand); `endorsedFilm` beside it in the same group overlaps the column filmRef
+# writes, which reaches the value-agreement preamble (the `==` operand). The bulk carriers below
+# reach the per-row arms of both. Kept off the flat overlap inputs above rather than folded into
+# them: those pin the R322 dedup at a top-level path, which is the control this pair is read
+# against.
+input EndorsementNestedRefGroup {
+    filmRef: ID @nodeId(typeName: "Film")
+    endorsedFilm: Int @field(name: "endorsed_film")
+}
+input InsertEndorsementNestedOverlapInput {
+    ref: EndorsementNestedRefGroup
+    note: String @field(name: "note")
+}
+input UpdateEndorsementNestedOverlapInput {
+    endorsementId: Int! @field(name: "endorsement_id")
+    ref: EndorsementNestedRefGroup
+}
+
 # R328 execution-tier fixture: a self-FK @nodeId reference on a Graphitron-owned INSERT — the neutral
 # `email` form of the CAMPUS self-FK case. email's composite PK is (mailbox_id, message_no). mailbox_id
 # is written by BOTH the cross-table @nodeId(typeName: "Mailbox") reference (mailboxRef, landing on
@@ -4574,6 +4604,22 @@ type Mutation {
     # disagreeing row throws and rolls the batch back. An asymmetric row (only one writer supplied) still
     # updates the column from the present writer.
     updateEndorsementsOverlap(in: [UpdateEndorsementOverlapInput!]!): [FilmEndorsement!]! @mutation(typeName: UPDATE)
+
+    # Compile-tier pins for the wire-map descent's primary-expression guarantee, one per DML arm that
+    # splices the descent into an operand slot. `ref` nests the two overlapping writers one level
+    # down, so every read of them is a nested descent rather than a single `get`: the INSERT and SET
+    # decode locals splice it into an `instanceof` pattern test, and the value-agreement preamble
+    # splices it into a `== null` comparison. Both operators bind tighter than `?:`, so before the
+    # descent was parenthesised at its producer these four fields emitted Java javac rejects (the
+    # ternary's own null arm was swallowed into the operand, leaving Object where boolean was
+    # required and the pattern variable not definitely matched). The compiler is the assertion: a
+    # paren bug is invisible to a substring assertion on the emitted text and unmissable here.
+    # No execution test: the flat overlap carriers above already pin the runtime semantics of this
+    # shape, and what nesting changes is the emitted expression, not the SQL.
+    insertEndorsementNestedOverlap(in: InsertEndorsementNestedOverlapInput!): FilmEndorsement @mutation(typeName: INSERT)
+    insertEndorsementsNestedOverlap(in: [InsertEndorsementNestedOverlapInput!]!): [FilmEndorsement!]! @mutation(typeName: INSERT)
+    updateEndorsementNestedOverlap(in: UpdateEndorsementNestedOverlapInput!): FilmEndorsement @mutation(typeName: UPDATE)
+    updateEndorsementsNestedOverlap(in: [UpdateEndorsementNestedOverlapInput!]!): [FilmEndorsement!]! @mutation(typeName: UPDATE)
 
     # R328 self-FK @nodeId reference on a Graphitron-owned INSERT: inReplyTo (self-FK email_in_reply_to_fk)
     # and mailboxRef (cross-table email -> mailbox FK) both write mailbox_id. R322's per-column dedup

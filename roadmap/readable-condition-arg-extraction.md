@@ -7,7 +7,7 @@ priority: 3
 theme: model-cleanup
 depends-on: []
 created: 2026-06-18
-last-updated: 2026-07-28
+last-updated: 2026-09-08
 ---
 
 # Generated argument extraction is unreadable nested-ternary one-liners
@@ -64,6 +64,28 @@ named after the GraphQL argument or column):
 
 R521 (`generated-output-hygiene-sweep`) tracks the complementary naming/dedup/hygiene findings
 from the same audit and explicitly excludes statement-form defects in favour of this item.
+
+## The descent is now safe to splice, and that does not discharge this item (2026-09-08)
+
+The nested-map descent that reads a wire value (`WireMapChain.of`, and the presence-test sibling
+`TypeFetcherGenerator.nestedContainsKeyExpr`) now returns a *primary expression*: parenthesised at
+the producer, so a caller may splice it into any operand slot. That closed a correctness defect,
+not a readability one: before it, splicing the descent into an `instanceof` pattern test or a
+`== null` comparison emitted Java javac rejects, and the mutation DML decode-locals walks did
+exactly that at six emit statements. The fix is one paren pair, deliberately chosen over the
+statement-form migration so a shipped consumer blocker did not ride on a rewrite of those methods.
+
+So the ternaries this item is about are unchanged in shape, and the expanded scope above still
+names them. What changed is that they are no longer a trap for the next caller. The statement-form
+end state remains this item's: routing the mutation DML sites through
+`ArgPathHelperRegistry` collapses each call site to a method invocation (a primary expression by
+construction) and turns the descent into readable statements in a private static helper, which also
+discharges the "statement form over expression tricks" and the throwaway-pattern-variable naming
+rule that the `_s`-prefixed decode locals violate today. It was deferred there because
+`TypeFetcherGenerator`'s mutation walk is a chain of `private static` methods that would each grow
+a registry parameter, which is a signature sweep rather than a fix. When that lands, the paren pair
+becomes redundant at those sites and can go with them; it stays load-bearing for every other
+consumer of the descent until then.
 
 R85 (`helper-emission-non-fetcher-hosts`) reshapes the same method: it fixes the
 `ContextArg` arm of `ArgCallEmitter.buildArgExtraction` that fails to emit the

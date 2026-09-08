@@ -399,16 +399,13 @@ public final class ConditionGlueRenderer {
         switch (authored.presence()) {
             case PresenceGuard.Always ignored -> builder.addStatement("condition = condition.and($L)", expr);
             case PresenceGuard.FieldPresent guard -> {
-                // The read parenthesises: it is a conditional expression, and both `!=` and
-                // `instanceof` bind tighter than `?:`, so an unparenthesised read would parse as a
-                // test on the descent's null arm.
                 var read = fieldPresenceRead(guard, liftLocals);
                 if (guard.list()) {
                     builder.addStatement(
-                        "if (($L) instanceof $T<?> presentList && !presentList.isEmpty()) condition = condition.and($L)",
+                        "if ($L instanceof $T<?> presentList && !presentList.isEmpty()) condition = condition.and($L)",
                         read, LIST, expr);
                 } else {
-                    builder.addStatement("if (($L) != null) condition = condition.and($L)", read, expr);
+                    builder.addStatement("if ($L != null) condition = condition.and($L)", read, expr);
                 }
             }
         }
@@ -625,14 +622,14 @@ public final class ConditionGlueRenderer {
             // that, an enum-typed parameter at a nested input-field condition arrived as Direct and
             // the fall-through below cast a wire String to the enum type.
             var enumClass = ClassName.bestGuess(ev.enumClassName());
-            return CodeBlock.of("($L) instanceof $T enumWire ? $T.valueOf(enumWire) : null",
+            return CodeBlock.of("$L instanceof $T enumWire ? $T.valueOf(enumWire) : null",
                 WireMapChain.of(root, nif.path(), null, lifted), String.class, enumClass);
         }
         if (nif.leaf() instanceof CallSiteExtraction.JooqConvert jc) {
             CodeBlock chain = WireMapChain.of(root, nif.path(), null, lifted);
             if (param.list()) {
                 return CodeBlock.of(
-                    "($L) instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, table.$L.getDataType()).getValue()).toList() : null",
+                    "$L instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, table.$L.getDataType()).getValue()).toList() : null",
                     chain, LIST, DSL, jc.columnJavaName());
             }
             return CodeBlock.of("$T.val($L, table.$L.getDataType()).getValue()", DSL, chain, jc.columnJavaName());
