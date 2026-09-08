@@ -289,6 +289,10 @@ public final class SchemaLoader {
      */
     private static List<SchemaSource.File> oldestFirst(Collection<SchemaSource.File> sources) {
         return sources.stream()
+            // One reading per file. A caller naming the same file twice wants it read once, and a
+            // reader keyed by the position a declaration was written at would meet the second
+            // reading as a duplicate key rather than as extra facts.
+            .distinct()
             .sorted(Comparator.comparing(SchemaLoader::modifiedAt)
                 .thenComparing(SchemaSource.File::sourceName))
             .toList();

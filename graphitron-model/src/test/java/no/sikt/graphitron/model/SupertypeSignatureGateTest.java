@@ -93,8 +93,40 @@ class SupertypeSignatureGateTest {
      * {@code graphitron_element}, which carries what the two have in common at the grain they have
      * it in common at: the coordinate and the kind. Lifting the type expression up there would put
      * eight nullable columns on a supertype whose type rows can never fill them.
+     *
+     * The SDL declaration entries are the one recorded set whose members are meant to stay apart, so
+     * the reason belongs beside them rather than in a commit message.
+     *
+     * <p>They carry the same six columns at the same grain, a position in one document, which is
+     * exactly the shape this gate exists to challenge. What differs is the sentence: a position that
+     * declares an object type is not a position that extends a union. Every named type in the
+     * grammar has a name and an optional description, so the payloads coinciding is a property of the
+     * grammar and not evidence that one relation was split twelve ways.
+     *
+     * <p>The alternative was measured and rejected on this family's own terms. One relation with a
+     * kind column needs that column computed by a switch over the AST classes while capturing, which
+     * is interpretation inside the family whose whole job is transcription, and it is the switch this
+     * reader was rewritten to delete. The kind also decides which children are legal, and the
+     * children arrive from different registry accessors returning different node types, so a shared
+     * relation moves the branching one level down instead of removing it.
+     *
+     * <p>The count is twelve because the SDL grammar has twelve of these node kinds, six declarations
+     * and six extensions. A thirteenth would mean graphql-java grew a node kind, which is a fact
+     * about the language and not a sibling accumulating, and the same reasoning would admit it.
+     *
+     * <p>They land as two sets rather than one, and the split is worth reading before it is trusted.
+     * A base declaration carries a description and an extension does not, the grammar putting one on
+     * the base only, so the two halves have different signatures. The six extensions then fall in
+     * with the three context-argument entries, which they have nothing to do with: what they share is
+     * a name at a position and nothing else. This gate groups by signature, so a payload that generic
+     * collides across families, and the set it produces is a statement about column shape rather than
+     * about meaning. Recorded as observed, because a roster that quietly reshaped what the gate
+     * measured would stop being a check on it.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
+        Set.of("graphql_object_type_entry", "graphql_interface_type_entry",
+               "graphql_union_type_entry", "graphql_enum_type_entry",
+               "graphql_input_object_type_entry", "graphql_scalar_type_entry"),
         Set.of("graphitron_undecoded_argument_entry", "graphql_argument_directive_arg",
                "graphql_enum_value_directive_arg", "graphql_field_directive_arg",
                "graphql_schema_directive_arg", "graphql_type_directive_arg"),
@@ -102,7 +134,10 @@ class SupertypeSignatureGateTest {
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
         Set.of("graphitron_argument_condition_context_arg_entry", "graphitron_field_condition_context_arg_entry",
-               "graphitron_service_context_arg_entry"),
+               "graphitron_service_context_arg_entry",
+               "graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
+               "graphql_union_type_extension_entry", "graphql_enum_type_extension_entry",
+               "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_field_condition_entry"),
         Set.of("graphitron_external_field_entry", "graphitron_service_entry"),
         Set.of("graphitron_default_order_field_entry", "graphitron_order_field_entry"),

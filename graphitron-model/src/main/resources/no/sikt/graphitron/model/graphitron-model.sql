@@ -403,6 +403,223 @@ COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned po
 COMMENT ON COLUMN graphql_type_declaration.is_extension IS 'FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint';
 COMMENT ON COLUMN graphql_type_declaration.kind IS 'the declaration form written at this site; a mismatch against the type row''s kind is a detection';
 
+CREATE TABLE graphql_object_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_object_type_entry IS 'An ObjectTypeDefinition as one document wrote it: this position in this file declares an object type of this name. For example type Film { title: String } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_object_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_object_type_entry.source_name IS 'the file this declaration was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from the declaration itself';
+COMMENT ON COLUMN graphql_object_type_entry.source_line IS 'source line of the declaration, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_entry.source_column IS 'source column of the declaration, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_entry.name IS 'the name written here, which is ObjectTypeDefinition.getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_object_type_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+
+
+CREATE TABLE graphql_interface_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_interface_type_entry IS 'An InterfaceTypeDefinition as one document wrote it: this position in this file declares an interface type of this name. For example interface Node { id: ID! } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_interface_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_interface_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_interface_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_interface_type_entry.description IS 'the description written here, or NULL where none was';
+
+CREATE TABLE graphql_object_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_object_type_extension_entry IS 'An ObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an object type of this name. For example extend type Film { rating: Rating } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_object_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
+CREATE TABLE graphql_union_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_union_type_entry IS 'A UnionTypeDefinition as one document wrote it: this position in this file declares a union type of this name. For example union Payment = Card | Cash is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_union_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_union_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_union_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_union_type_entry.description IS 'the description written here, or NULL where none was';
+
+CREATE TABLE graphql_enum_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_enum_type_entry IS 'An EnumTypeDefinition as one document wrote it: this position in this file declares an enum type of this name. For example enum Rating { G PG } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_enum_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_enum_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_enum_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_enum_type_entry.description IS 'the description written here, or NULL where none was';
+
+CREATE TABLE graphql_input_object_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_input_object_type_entry IS 'An InputObjectTypeDefinition as one document wrote it: this position in this file declares an input object type of this name. For example input FilmFilter { title: String } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_input_object_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_input_object_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_input_object_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_input_object_type_entry.description IS 'the description written here, or NULL where none was';
+
+CREATE TABLE graphql_scalar_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_scalar_type_entry IS 'A ScalarTypeDefinition as one document wrote it: this position in this file declares a scalar type of this name. For example scalar Date is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_scalar_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_scalar_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON COLUMN graphql_scalar_type_entry.description IS 'the description written here, or NULL where none was';
+
+CREATE TABLE graphql_interface_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_interface_type_extension_entry IS 'An InterfaceTypeExtensionDefinition as one document wrote it: this position in this file extends an interface type of this name. For example extend interface Node { version: Int } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_interface_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
+CREATE TABLE graphql_union_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_union_type_extension_entry IS 'A UnionTypeExtensionDefinition as one document wrote it: this position in this file extends a union type of this name. For example extend union Payment = Invoice is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_union_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_union_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_union_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
+CREATE TABLE graphql_enum_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_enum_type_extension_entry IS 'An EnumTypeExtensionDefinition as one document wrote it: this position in this file extends an enum type of this name. For example extend enum Rating { R } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
+CREATE TABLE graphql_input_object_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_input_object_type_extension_entry IS 'An InputObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an input object type of this name. For example extend input FilmFilter { rating: Rating } is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_input_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
+CREATE TABLE graphql_scalar_type_extension_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE graphql_scalar_type_extension_entry IS 'A ScalarTypeExtensionDefinition as one document wrote it: this position in this file extends a scalar type of this name. For example extend scalar Date @specifiedBy(url: "") is one row, at the file, line and column it was written at.';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_scalar_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+
 CREATE TABLE graphql_field (
   graph_name          VARCHAR NOT NULL,
   type_name           VARCHAR NOT NULL,
@@ -10686,6 +10903,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('sdl-declaration-site',
+   'one position in one SDL document, where that document declared or extended something',
+   'graph_name, source_name, source_line, source_column', 'sdl'),
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
@@ -10825,6 +11045,54 @@ INSERT INTO meta_grain VALUES
    'graph_name, file, line_number, column_number, ordinal', 'javac');
 
 INSERT INTO meta_relation VALUES
+  ('graphql_object_type_entry', 'sdl-declaration-site', 'sdl',
+   'An ObjectTypeDefinition as one document wrote it: this position in this file declares an object type of this name.',
+   'For example type Film { title: String } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_interface_type_entry', 'sdl-declaration-site', 'sdl',
+   'An InterfaceTypeDefinition as one document wrote it: this position in this file declares an interface type of this name.',
+   'For example interface Node { id: ID! } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_union_type_entry', 'sdl-declaration-site', 'sdl',
+   'A UnionTypeDefinition as one document wrote it: this position in this file declares a union type of this name.',
+   'For example union Payment = Card | Cash is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_enum_type_entry', 'sdl-declaration-site', 'sdl',
+   'An EnumTypeDefinition as one document wrote it: this position in this file declares an enum type of this name.',
+   'For example enum Rating { G PG } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_input_object_type_entry', 'sdl-declaration-site', 'sdl',
+   'An InputObjectTypeDefinition as one document wrote it: this position in this file declares an input object type of this name.',
+   'For example input FilmFilter { title: String } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_scalar_type_entry', 'sdl-declaration-site', 'sdl',
+   'A ScalarTypeDefinition as one document wrote it: this position in this file declares a scalar type of this name.',
+   'For example scalar Date is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_object_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'An ObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an object type of this name.',
+   'For example extend type Film { rating: Rating } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_interface_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'An InterfaceTypeExtensionDefinition as one document wrote it: this position in this file extends an interface type of this name.',
+   'For example extend interface Node { version: Int } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_union_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'A UnionTypeExtensionDefinition as one document wrote it: this position in this file extends a union type of this name.',
+   'For example extend union Payment = Invoice is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_enum_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'An EnumTypeExtensionDefinition as one document wrote it: this position in this file extends an enum type of this name.',
+   'For example extend enum Rating { R } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_input_object_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'An InputObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an input object type of this name.',
+   'For example extend input FilmFilter { rating: Rating } is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_scalar_type_extension_entry', 'sdl-declaration-site', 'sdl',
+   'A ScalarTypeExtensionDefinition as one document wrote it: this position in this file extends a scalar type of this name.',
+   'For example extend scalar Date @specifiedBy(url: "") is one row, at the file, line and column it was written at.',
+   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
   ('graphql_element', 'schema-element', 'sdl',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',

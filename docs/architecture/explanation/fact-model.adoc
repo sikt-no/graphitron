@@ -94,6 +94,59 @@ This section makes three claims of different enforceability, and one enforcer li
 
 A claim whose enforcer does not close it still belongs here. The preamble's bar is that a claim *names* its enforcer, and a disclosed gap satisfies that where silence would not, so a later reader should not read the two paragraphs above as an oversight. This is the one place the page argues with its own preamble rather than obeying it, the preamble asking for the gate "that fails when the claim breaks"; making the disagreement visible is better than quietly satisfying the letter. And the registration arms of `FactCaptureAgreementTest` are not the stratum's reflection: they file `graphitron_` under the containment arm beside `graphql_`, because the arms answer how a relation's contents are pinned, not what its rows are computed from.
 
+== The `graphql_` family reads a document, not a corpus
+
+Two halves live under this prefix, and they answer different questions. Both are graphql-java's
+vocabulary, which is what the prefix names, and neither is the schema API's: that API is a stricter
+post-validation view of a schema that assembled, where this family is the document as parsed.
+
+The half that has always been here is keyed by coordinate. `graphql_type` holds one row per type and
+`graphql_field` one row per field, which is the corpus after its documents are merged into one
+namespace. That shape cannot hold a corpus that fails to merge. Two documents declaring `type X` is
+an error a developer commits by saving a file, and the merge reports it by refusing the second
+definition, so a coordinate-keyed relation has room for one of them and the writer has to choose.
+Choosing is where a claim, a first-wins rule and an overflow relation came from, and none of them is
+transcription.
+
+The half beside it is keyed by the position a declaration was written at. Two declarations cannot
+share one position in one file, so nothing collides, nothing is claimed and nothing is refused: both
+documents are rows and the collision becomes a query over them. Ordering the candidates is
+`store_source.mtime`'s job, which is the one question a content hash cannot answer and what lets a
+report name the incumbent and the incursion rather than listing two declarations symmetrically.
+
+=== Why twelve relations and not one with a kind column
+
+`graphql_object_type_entry` and its eleven siblings carry the same columns at the same grain, a
+position in one document. That is the shape `SupertypeSignatureGateTest` exists to challenge, and the
+set is recorded there with its reason rather than left to accumulate. The reason is that the payloads
+coinciding is a property of the grammar, every named type having a name and an optional description,
+while the sentences differ: a position that declares an object type is not a position that extends a
+union.
+
+One relation with a kind column is the alternative, and it costs the thing this half is for. The
+column has to be computed by a switch over the AST classes while capturing, which is interpretation
+inside the family whose whole job is transcription. graphql-java hands each kind back through its own
+accessor returning its own node type, so mirroring the API means the reader has no switch at all and
+no discriminator to derive. The kind also decides which children are legal, and those children arrive
+from different accessors returning different node types, so a shared relation would move the
+branching one level down rather than remove it.
+
+The count is the grammar's: six declaration kinds and six extension kinds. A thirteenth would mean
+graphql-java grew a node kind, which is a fact about the language rather than a sibling accumulating,
+and the same argument would admit it.
+
+=== Almost no foreign keys, and why that is the design
+
+A document may name a type nobody defines. It may implement an interface that does not exist, and it
+will not assemble, which is a refusal a reader wants reported rather than a row the store declines to
+hold. So a reference at this level is only sound where a well-formed file could not break it, which
+means the graph the row is partitioned by and the file the declaration was written in. Those two are
+what the entries carry and they carry nothing else.
+
+A reference between declarations is a different matter and stays available where nesting is lexical:
+a field is written inside the type site that encloses it, in the same file, so a child may reference
+its parent's position. What is never a key here is anything a second document has to supply.
+
 == Ownership: the second axis, and what `intent_` is for
 
 Stratum answers what a row is a function of. It does not answer who is responsible for keeping the row current, and that is a different question with different consequences. A relation has both answers, and `intent_` today conflates them: the family is named for the first and is being used to carry the second, which is why it holds rules that have no business being derived at read time and rules that could not be anything else, under one prefix that cannot tell them apart.

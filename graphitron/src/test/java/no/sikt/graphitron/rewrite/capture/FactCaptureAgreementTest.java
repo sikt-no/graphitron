@@ -356,6 +356,12 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       from and words each violation exactly as the build-error projection does, which is what
  *       the diagnostics surface's inner join over it rests on). Later derivation
  *       strata land as registrations here, not as exemptions.</li>
+ *   <li>{@link Arm#UNSHADOWED} for relations the shadowed model has no counterpart for, so that
+ *       agreement with it is not a question that can be asked of them. Every other arm answers
+ *       "does this match what {@code GraphitronSchema} says"; these are part of what replaces it,
+ *       and there is no row over there to match. The registration is not an exemption: it names
+ *       what does pin the rows instead, and a relation registered here whose facts the old model
+ *       turns out to hold is a registration somebody has to correct.</li>
  *   <li>{@link Arm#ORACLE} for relations an oracle writer owns, at the oracle's own cadence
  *       (javac writes after capture; the legacy classification walk's reach writes inside the
  *       capture-and-detect pass), where no independent second walk can re-derive the oracle's
@@ -373,7 +379,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
 class FactCaptureAgreementTest {
 
     /** How a relation's contents are pinned to the model it shadows. */
-    private enum Arm { CONTAINMENT, EQUALITY, DERIVED, ORACLE }
+    private enum Arm { CONTAINMENT, EQUALITY, DERIVED, ORACLE, UNSHADOWED }
 
     private static final Map<String, Arm> REGISTRATIONS = registrations();
 
@@ -451,6 +457,21 @@ class FactCaptureAgreementTest {
             "java_file", "java_class_declaration", "java_method_declaration",
             "java_field_declaration")) {
             registrations.put(relation, Arm.EQUALITY);
+        }
+        // The SDL declaration entries: one relation per node kind, read per document and keyed by
+        // the position a declaration was written at. GraphitronSchema has no counterpart, holding a
+        // merged schema where these hold each document as it was parsed, so there is nothing here to
+        // agree with. What pins them is SdlEntriesTest, over a corpus that does not merge: two files
+        // declaring one type are two rows, an extension lands in its own relation rather than twice
+        // in the base's, and the engine's built-in scalars land nowhere.
+        for (String relation : List.of(
+            "graphql_object_type_entry", "graphql_interface_type_entry",
+            "graphql_union_type_entry", "graphql_enum_type_entry",
+            "graphql_input_object_type_entry", "graphql_scalar_type_entry",
+            "graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
+            "graphql_union_type_extension_entry", "graphql_enum_type_extension_entry",
+            "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry")) {
+            registrations.put(relation, Arm.UNSHADOWED);
         }
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("graphql_element_field", Arm.DERIVED);
