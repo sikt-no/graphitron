@@ -479,3 +479,109 @@ service's `instanceof` dispatch, and the foreign-id error text (identical to the
   the existing view's verdicts are a function of arity over two relations, and these are not.
 * *A new directive argument* (`@nodeId(anyOf: [...])`) listing the implementations. The interface
   already lists them, and a hand-maintained list drifts from it when an implementation is added.
+
+## Reviewer findings
+
+### Round 1 (2026-09-08, Spec -> Ready, reviewer session 01PafYmb9t83c4Z5rmUdD9j7)
+
+Verdict: revisions requested; status stays `Spec`. One blocking finding on the second gate question
+(does the proposed solution fit the architecture we have), located in the fact-store slice. The first
+gate question passes: the goal is legible without reading the phase list, and it is reachable here.
+
+The goal reads clean. An author writes `@nodeId(typeName: "<Interface>")` on a `@service` input slot,
+types the receiving Java slot as something every implementation's generated record is, and receives a
+populated record whose class says which implementation the id named; a foreign id fails the request
+with the wording the read side already gives, before the service runs. What they write today is a
+bare `ID!` plus a hand-rolled `peekTypeId`/`decodeValues` dispatch, which is the wire-format
+knowledge the directive exists to remove, and the field report shows it written twice. Viability
+holds too: the four "what exists today" facts are accurate to the symbol. `resolveNodeIdRecordDecode`
+does reject a non-`@table` object type with the quoted message fragment; `buildJooqRecordLeaf` does
+compare the declared record class by string equality and `isJooqRecord` does already route an
+`UpdatableRecord<?>`-typed member into it, so the bean path really needs no new arm;
+`takesTheNodeTablesRecord` really compares a javapoet `TypeName` and really falls through to
+`ThrowOnMismatch`; `MultiTablePolymorphicEmitter.dispatchFailureThrow` is private and its message is
+verbatim what the plan quotes. `intent_jvm_ancestor`'s own comment states the gap
+`sql_table_record_supertype` is proposed to fill ("the scan drops nested classes and the generated
+jOOQ package"), and `intent_node_id_instruction`'s comment does reserve the participant-keyed grain
+in the exact spelling the plan reuses, including the sentence that the arm "is worth having the day a
+second one asks". `intent_node_id_decode.destination` is a closed vocabulary of four, so "a fifth
+destination" is the right count. `AddressOccupant = Customer | Staff` exists in the sakila-example
+schema with both members `@table @node`, and both documentation anchors exist under the headings
+named. Every code, test and symbol the plan names exists as named, with one exception noted below.
+
+**Blocking: the instruction grain the plan picks and the `candidates = 1` gate on the arm it extends
+are in conflict, and the plan's two arguments about the store assume opposite values for one
+column.**
+
+`intent_node_id_decode`'s slot arm reads `FROM intent_node_id_decode_slot s JOIN
+intent_resolved_node_key_shape k ... WHERE s.candidates = 1`, and
+`intent_node_id_decode_slot.candidates` is `COUNT(*) OVER (PARTITION BY graph_name, use_site)`. The
+plan's new instruction arm draws "one row per member" at one use site, so a two-member container
+gives `candidates = 2` and that arm emits nothing at all: `POLYMORPHIC_RECORD` cannot be produced
+where the plan puts it. That is not a filter the implementer can quietly drop, because `candidates`
+carries a meaning the neighbouring relations lean on. Its own comment reads any value above one as
+"an overloaded method or a class two classpath entries declare, and this relation distinguishes
+neither", and the slot relation's comment makes that reading load-bearing: keeping the ambiguous rows
+is what "makes that use site a decode with several candidate slots, which a consumer refuses to carry
+out rather than mistaking for a predicate". Member multiplicity arriving on that column is a legal
+shape being reported as producer ambiguity, not just rows being dropped.
+
+The same fork shows up as an internal contradiction. The sibling-defect-view bullet argues the two
+populations are "disjoint by construction (the incumbent joins `intent_resolved_node_key_shape` on
+`node_type_name`, which a container never resolves)". That holds only if `node_type_name` carries the
+container; the instruction bullet one paragraph earlier sets it to the *member*, which does resolve
+there. So the incumbent's join succeeds on the new rows, its remaining predicates are satisfied for
+the motivating shape (`site = 'ARGUMENT'`, `carrier = 'NAMED_PARAMETER'`, `java_type` of
+`org.jooq.UpdatableRecord` unequal to both `record_class` and the sole key column's Java type), and
+the only thing keeping it quiet is `candidates = 1`: the same predicate that silences the arm the
+item needs. The two bullets cannot both be describing the relation this item builds. The Tests
+section's "a polymorphic slot draws no row in `intent_node_id_decode_defect`" therefore currently
+asserts a true outcome for a reason the plan does not give, and has to be re-derived under whichever
+shape is chosen.
+
+Two shapes would satisfy this, and the pick decides the DDL, whether the incumbent relations are
+amended, and whether the sibling-view argument survives. Either is defensible; the plan has to choose
+one in the body rather than leave it to pickup.
+
+* *Member-keyed instruction rows*, what the instruction bullet says. Then state how a reader tells
+  member multiplicity from slot ambiguity: a second count column, a redefined `candidates` with its
+  comment rewritten, or the container column as the discriminator. Name which existing
+  `candidates = 1` readers change and how, the decode slot arm and the defect view being the two in
+  this family.
+* *One instruction row per use site carrying the container*, what the disjointness argument assumes.
+  Then say where member multiplicity lives instead (`intent_node_container_member`, joined at the
+  decode arm) and what the reserved participant-keyed grain is still for, since this item would no
+  longer be the second reader that asks for it.
+
+One fairness note so the revision does not chase a phantom: the conflation is not invented by this
+item. `intent_node_id_instruction`'s comment already describes a use site drawing one row per branch
+for the two bare inference bases at a multi-table container, so a `@service` producer field of that
+shape already reports member multiplicity as `candidates`. The plan may legitimately claim that as
+precedent, but it has to claim it out loud and say what the arm then reads, because as written the
+arm reads nothing.
+
+### Non-blocking
+
+* `RecordDecodeFragments.decodeHelper` has no null-returning form. All three public overloads throw
+  on an arity mismatch, either the generic `GraphqlErrorException` or `NodeIdDecodeFailure`'s client
+  error; the only `return null` is the not-a-`String` case. So "the candidate's record-materialising
+  helper in its null-returning form ... emitted through `RecordDecodeFragments.decodeHelper`" is a
+  fourth overload passing `return null` as the `mismatchThrow`, which the Implementation list does
+  not name. It follows that file's existing private-shared-body pattern and has no design
+  consequence, but the claim that the slot side "needs the three steps composed at one slot, not new
+  primitives" is slightly stronger than the tree supports.
+* The ordering rule says `resolveNodeIdRecordDecode` "asks 'does `typeName:` name a node type' first,
+  exactly as today". Today it asks the `@table`-object question first and node-ness only after,
+  through `resolveTargetKeys`, whose parameter is a `GraphQLObjectType` and so cannot be handed an
+  interface. The ordering the design wants is a change rather than the status quo. The plan's own
+  parenthetical already routes the consequence for a `@node`-carrying interface to pickup, so this is
+  precision rather than a second fork.
+* `dispatchFailureThrow` is to be "lifted to a shared fragment". There is already a home for exactly
+  this fragment, `no.sikt.graphitron.render.NodeIdDecodeFailure`, which holds the single-type
+  two-branch message and whose class comment gives the same reason this item gives (one bad id must
+  fail the same way at every grain that reads it). Worth naming as the destination so the multi-
+  candidate message lands beside its single-type sibling instead of in a third place.
+* In `global-id.adoc` the plan places the new subsection "after the polymorphic-argument subsection",
+  which puts it between `=== A @nodeId argument on a field returning an interface or union` and
+  `=== Multitable filter inputs`, splitting the two read-side siblings. Placing it after the filter
+  subsection may read better. Author's call; it bears on neither gate question.
