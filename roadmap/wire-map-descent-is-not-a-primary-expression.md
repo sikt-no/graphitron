@@ -1,13 +1,13 @@
 ---
 id: R932
 title: "Nested wire-map descent is spliced into operand slots, emitting Java that cannot compile"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-09-07
-last-updated: 2026-09-07
+last-updated: 2026-09-08
 ---
 
 # Nested wire-map descent is spliced into operand slots, emitting Java that cannot compile
@@ -97,12 +97,12 @@ any expression is legal. That split is the tell: whether a given splice compiles
 operator the producer cannot see and the caller does not think about.
 
 `ConditionGlueRenderer` already hand-wraps four of its own splices, three as `($L) instanceof ...`
-and one as `($L) != null`, across three methods: `appendAuthoredAnd`'s `FieldPresent` guard (both
-branches, and the one comment in the tree that names both operators), the `EnumValueOf` arm and the
-`JooqConvert` list arm. One consumer discovered the hazard independently and fixed it locally, in
-three places. `appendSetDecodeLocal` reaches the same end by a different route: it first binds the
-descent to a named `Object` local and splices the local. Three consumers, three answers, one of
-which is "nothing".
+and one as `($L) != null`, across two methods: `appendAuthoredAnd`'s `FieldPresent` guard (both
+branches, and the one comment in the tree that names both operators), and `nestedExtraction`'s
+`EnumValueOf` arm and `JooqConvert` list arm. One consumer discovered the hazard independently and
+fixed it locally, in four places. `appendSetDecodeLocal` reaches the same end by a different
+route: it first binds the descent to a named `Object` local and splices the local. Three
+consumers, three answers, one of which is "nothing".
 
 `nestedContainsKeyExpr` is the same shape one operator away. It returns an `&&`-chain, also not a
 primary expression, safe at its current call sites only because `&&` binds looser than `==` and
@@ -160,7 +160,7 @@ The load-bearing property of that fixture is that the mutation must be **DML**, 
 `@nodeId` alone does not reach the defect, and the corpus proves it: `customerUpsert` in
 `graphitron-sakila-example`'s `schema.graphqls` already declares
 `CustomerUpsertInput.identity -> CustomerIdentityGroup.customerId @nodeId(typeName: "Customer")`,
-compiles clean, and has three passing `GraphQLQueryTest` execution tests. It is a `@service`
+compiles clean, and has seven passing `GraphQLQueryTest` execution tests. It is a `@service`
 mutation, so its descent goes through `ArgCallEmitter.buildNestedInputFieldExtraction` into a
 service-call argument list, which is argument position and therefore one of the safe sites above.
 An implementer who builds the near-miss gets a green compile and no regression test.
@@ -183,8 +183,8 @@ compile-tier fixture as the load-bearing coverage and treat any producer-level t
 ## Other solutions we've considered
 
 **Parenthesise at each hazardous emit statement** (`(($L) instanceof $T _s$L)`). Two tokens per
-site, touches nothing else. Rejected: it spells one fact at nine sites with no enforcer, which is
-the "fact restated with no single enforcer" drift smell by name, and it leaves the tenth consumer
+site, touches nothing else. Rejected: it spells one fact at ten sites with no enforcer, which is
+the "fact restated with no single enforcer" drift smell by name, and it leaves the eleventh consumer
 to rediscover the hazard. The report that filed this defect already notes it is the second time the
 shape has cost something.
 
@@ -370,3 +370,73 @@ anywhere references `WireMapChain` or `nestedMapValueExpr`, so the no-golden-fil
 holds. Both documentation statements are where the spec says they are and both say what it says
 they say. `R334`'s 2026-07-24 expanded scope does name the deep-input-path chains and the
 insert-value ternaries with the fix shape the spec attributes to it.
+
+### Round 2 (2026-09-08, Spec -> Ready, reviewer session 01HkBTPpTDLngWmP9E1fi7P4)
+
+Verdict: sign off. Both round-1 findings are discharged and the revision holds against the tree.
+
+**Question one, restated without the plan.** A consumer publishing an input object nested inside
+another input object, where the inner one carries a `@nodeId` field, and reached by a mutation whose
+write graphitron generates, gets Java that javac rejects; the only workaround is flattening the
+published schema. After this lands that schema compiles, and the Graphitron 10 upgrade stops
+depending on a schema change the consumer did not want to make. Nothing in that had to be
+reconstructed from the phases.
+
+**Question one, reachability.** The load-bearing structural claim is the depth invariant, and it is
+the one worth re-deriving rather than taking on the spec's word, so: `at`'s two non-leaf arms emit
+`... ? ($L) : null` around their recursive result, and the `currentExpr` they recurse into is
+`CodeBlock.of("$L.get($S)", binding, key)`, a postfix expression. Every leaf arm and both non-leaf
+arms are conditional expressions, and every one of them except the outermost is already inside a
+paren pair its parent owns. So exactly one bare conditional escapes, through `of`, at any path
+length, and one wrap at the `of` boundary discharges the contract without a depth case. The same
+reasoning holds for `nestedContainsKeyExpr`: the builder emits a flat `&&` chain whatever the
+segment count, so one wrap closes it.
+
+**Question two.** The fix converges three answers into one at the party that can see the shape,
+which is the direction the tree already leans; the four `ConditionGlueRenderer` deletions are what
+make it a convergence rather than a fourth answer, and leaving `appendSetDecodeLocal`'s named local
+alone is right because it is read three times, not once. The accepted paren-pair debit at the
+argument-position consumers is named as a debit rather than waved off. The handoff to the
+statement-form migration is additive-then-cutover with the family-wide move left where it is owned,
+which is the right split for a shipped consumer blocker. I would hand this to an implementer as
+written.
+
+**Verified against the tree, so a later pass need not redo it.** The six hazardous emit statements
+are exactly the six named, in the methods named: `buildInsertDecodeLocals` (the descent in the
+`instanceof` operand), `emitAgreementDecodeLocal` (`_sa` salt), `emitBulkSetDecodeLocals`'s
+`CannotArrive` arm, the `appendDecodeLocal(..., CodeBlock, ...)` overload, `appendAgreementValue`'s
+`if ($L == null)` and `emitBulkSetDecodeLocals`'s plain-carrier `if ($L && $L == null)`. There are
+five `($L instanceof $T _s$L) ? ...` emits in `TypeFetcherGenerator`; the fifth is
+`appendSetDecodeLocal`, which is the one the spec correctly excludes. `nestedMapValueExpr` has
+twenty-three call sites and no seventh hazardous one: `KeyReader.valueAt` and `refValue` both land
+in `requireColumnAgreement` arguments, and the `appendSetDecodeLocal` delegation into
+`appendDecodeLocal` is only ever handed `innerMap.get(leafKey)`, so the overload's descent-fed
+callers are exactly six. `nestedContainsKeyExpr` is safe at every current site: `if ($L)`, the left
+operand of an `&&`, and the condition slot of a `$L ? DSL.val(...) : DSL.defaultValue(...)`.
+`buildInsertDecodeLocals` has eight call sites in a 6348-line file, and
+`TypeFetcherEmissionContext` does hold an `ArgPathHelperRegistry` that `TypeFetcherGenerator`
+drains with `ctx.argPathHelpers().emit().forEach(builder::addMethod)`, so the reason the registry
+route is deferred is the signature sweep and not a missing registry. `customerUpsert` is a
+`@service` mutation on `CustomerRecordService.describeCustomerUpsert`, which is why the near-miss
+misses. No test references `WireMapChain` or `nestedMapValueExpr`, the only
+`instanceof Map<?, ?> map1` string assertions are `ServiceMethodCallEmitterTest`'s on
+`ServiceMethodCallEmitter.walkSegments`, and the code-string ban is stated at
+`development-principles.adoc` as claimed, so the no-golden-file-sweep claim holds. Both
+documentation targets exist and say what the spec says they say, and `R334`'s 2026-07-24 scope
+names the chains and ternaries with the fix shape attributed to it.
+
+**Corrected in this commit, none of it load-bearing.** `ConditionGlueRenderer`'s four hand-wraps
+sit in two methods, not three: `appendAuthoredAnd` (both branches) and `nestedExtraction` (the
+`EnumValueOf` and `JooqConvert` arms), now named so the implementer can find them; the consumer
+fixed it in four places, not three. The rejected per-site alternative spells the fact at ten sites
+(six plus `ConditionGlueRenderer`'s four), not nine, so it is the eleventh consumer left to
+rediscover. `customerUpsert` has seven `GraphQLQueryTest` execution tests, not three.
+
+**Non-blocking, and scope rather than a finding.** Two more producers return non-primary descents
+and do not get the invariant: `ArgCallEmitter.walkSegments` (behind
+`buildListAwarePathExtraction`) and `ServiceMethodCallEmitter.walkSegments`, both bare conditional
+expressions, both safe only because their current consumers splice into argument position. The
+spec deliberately scopes to `WireMapChain` plus `nestedContainsKeyExpr` and names the
+`ServiceMethodCallEmitter` chain as separate, which is a defensible line and not a reason to
+withhold; the same one-line boundary wrap would close both, and an implementer who wants that
+should file it rather than widen this item.
