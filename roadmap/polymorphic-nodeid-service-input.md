@@ -134,8 +134,9 @@ of one of: A, B` (or `not a valid id, …` when the peek fails). Every node type
 generated per-type decode (`NodeIdEncoderClassGenerator.buildPerTypeDecode`), and
 `RecordDecodeFragments.decodeHelper` already emits the record-materialising
 `decode<X>Record(Object wire)` helper the single-type slot uses, named through
-`FetchersHelperNames.decodeSingular` / `decodeList`. The slot side needs the three steps composed at
-one slot, not new primitives.
+`FetchersHelperNames.decodeSingular` / `decodeList`. The slot side is mostly those three steps
+composed at one slot; the one primitive it adds is a fourth `decodeHelper` overload, because none of
+the three public ones returns null on an arity mismatch (see Emitted glue).
 
 ## Design
 
@@ -143,9 +144,20 @@ One rule, stated in the author's terms: **at a slot, `typeName:` may name a mult
 union whose `@table` members are all node types; the slot's declared Java type must be one every
 member's generated record is; the decode dispatches on the typeId into that member's record.** Five
 decisions carry it, and one ordering rule sits above them: `resolveNodeIdRecordDecode` asks "does
-`typeName:` name a node type" first, exactly as today, and asks about members only when it does not.
-So a type that is itself a node type keeps the single-type decode whatever its kind, and the
-container arms below never see it.
+`typeName:` name a node type" first, and asks about members only when it does not. So a type that is
+itself a node type keeps the single-type decode whatever its kind, and the container arms below never
+see it.
+
+That ordering is a change rather than the status quo, and stating it as one matters because it is
+what makes the two populations disjoint. Today the method asks the `@table`-object question first and
+node-ness only afterwards, inside `resolveTargetKeys`, whose parameter is a `GraphQLObjectType` and
+so cannot be handed an interface at all. The reordering has to be answer-preserving for every shape
+that resolves or refuses today: an object type carrying `@table` whose table backs a node type
+reaches the same `Resolved` arm, and both existing refusal messages keep their coordinates and their
+wording. The one shape the new order moves is a container that is itself a node type, which now
+fails the `@table`-object test after the nodehood question rather than before, with the same message,
+so no consumer sees a different answer. (Whether that shape should instead resolve is the
+pre-existing gap the parenthetical under Resolution reports rather than fixes.)
 
 ### Resolution: the candidate set
 
@@ -197,10 +209,23 @@ class live (`CatalogFactCapture` reads `table.getRecordType()` for `sql_table.re
 its declared supertypes are one more fact off that class. A new capture relation
 `sql_table_record_supertype (source_name, table_schema, table_name, supertype_name)`, the record
 class's transitive superclass chain and implemented interfaces as the JVM names them, is the top
-rung; the store answers assignability by "the slot's raw type name is a `supertype_name` of every
-candidate's record" (unioned with `intent_jvm_ancestor` for the consumer-side interface case, where
-the slot type itself may be a census class whose ancestors matter). The walk answers the same
-question with `Class.isAssignableFrom` against each candidate's live record class from the catalog:
+rung. It holds the *closure* and not the edges, unlike the census pair below it
+(`jvm_class_supertype` edges closed by `intent_jvm_ancestor`), and the comment has to say why or a
+reader will reasonably try to turn it into a view: the chain above a generated record runs through
+jOOQ's own runtime classes, which no census scans and which are not tables, so the store holds no
+edges to recompute a closure from. What the walk climbs is a live class hierarchy, and capture
+transcribing what it climbed is a stratum-one fact rather than a denormalized derivation.
+
+Assignability is then a composition and not a union of two relations. The `recordImplements` case is
+a slot typed as some supertype of the shared consumer interface, so the question is "some
+`supertype_name` of every candidate's record has the slot's type among its
+`intent_jvm_ancestor` ancestors", a join through the census rather than an alternative beside it. Two
+readers ask it on day one, the `POLYMORPHIC_RECORD` destination and `SLOT_NOT_SUPERTYPE_OF_MEMBER`,
+so it gets a relation of its own rather than the same expression written twice: a view keyed on
+(graph, node type, slot type name), driven by the distinct slot types
+`intent_node_id_decode_slot` reports, so it holds one row per pair the graph actually asks about.
+The walk answers the same question with `Class.isAssignableFrom` against each candidate's live record
+class from the catalog:
 the bean path already holds the member's loaded class (`isJooqRecord` walks it), and the producer
 path loads the parameter's raw type by name the way `InputBeanResolver.tryLoad` does, since
 `DecodedParam` carries only a `TypeName`. One fact, read twice, is what "agree by construction"
@@ -216,12 +241,14 @@ misleading arity/type messages above stop firing for this shape.
 
 ### Emitted glue: one helper per slot, composed from the existing ones
 
-A new leaf `CallSiteExtraction.NodeIdDecodePolymorphicRecord(encoderClass, SequencedMap<String typeId,
-per-candidate decode facts>, ClassName slotType, boolean nonNull)` beside `NodeIdDecodeRecord`, where
-the per-candidate facts are exactly what `NodeIdDecodeRecord` carries for one type (typeId, key
-columns, table) and `slotType` is the *resolved* admitted supertype the helper returns, a classifier
-acceptance carried in the type rather than a bare `TypeName` an emit site could be handed. Its
-compact constructor refuses fewer than two candidates: a one-candidate polymorphic leaf is the
+A new leaf `CallSiteExtraction.NodeIdDecodePolymorphicRecord(encoderClass, List<Candidate> candidates,
+AdmittedSlotType slotType, boolean nonNull)` beside `NodeIdDecodeRecord`, where each candidate
+carries exactly what `NodeIdDecodeRecord` carries for one type (typeId, key columns, table). A list
+rather than a map keyed on the typeId, which each entry already holds: the order is the emission
+order and a list states it without spelling one value twice. `slotType` is the admitted supertype the
+helper returns, wrapped in a one-component record the classifier mints only where the assignability
+check passed, so the acceptance is carried in the type instead of being a `ClassName` an emit site
+could be handed from anywhere. Its compact constructor refuses fewer than two candidates: a one-candidate polymorphic leaf is the
 single-type case, and that cross-axis invariant belongs to the compiler. It is a sibling rather than a widening because every consumer of `NodeIdDecodeRecord`
 (`InputBeanInstantiationEmitter`, `ServiceMethodCallEmitter.scalarLeaf`, `ArgCallEmitter`,
 `ConditionGlueRenderer`, `TypeFetcherGenerator`) reads a single table off it and emits a single
@@ -232,17 +259,29 @@ The emitter renders, per slot, one helper `decode<Container>Record(Object wire)`
 the list shape, mirroring the existing pair) on the enclosing `*Fetchers` class, returning the
 slot's declared supertype:
 
-1. `String peeked = NodeIdEncoder.peekTypeId(wire instanceof String s ? s : null)`.
-2. One arm per candidate, `if ("<typeId>".equals(peeked)) { r = decode<Candidate>Record(wire); if (r != null) return r; }`,
-   each calling the candidate's record-materialising helper in its *null-returning* form (the shape
-   `CompositeDecodeHelperRegistry.Mode.SKIP` gives the read side), emitted through
-   `RecordDecodeFragments.decodeHelper`, so a right-prefix-wrong-arity id falls through to the
-   failure arm below instead of surfacing that helper's own generic mismatch error.
+1. `String wireString = wire instanceof String ? (String) wire : null;` then
+   `String peeked = NodeIdEncoder.peekTypeId(wireString);`: named locals rather than throwaway
+   pattern-binding names, per the emitted-code readability rules.
+2. One arm per candidate, `if ("<typeId>".equals(peeked)) { <Candidate>Record decodedRecord = decode<Candidate>Record(wire); if (decodedRecord != null) return decodedRecord; }`,
+   each calling the candidate's record-materialising helper in a *null-returning* form, so a
+   right-prefix-wrong-arity id falls through to the failure arm below instead of surfacing that
+   helper's own mismatch error. That form does not exist yet and is the one primitive this item
+   adds: `RecordDecodeFragments.decodeHelper` has three public overloads and every one of them
+   throws on an arity mismatch, the generic `GraphqlErrorException` on one and
+   `NodeIdDecodeFailure`'s client error on another; the only `return null` in the shared body is
+   the not-a-`String` case. So the item adds a fourth overload passing `return null` as the
+   `mismatchThrow`, which is that file's existing private-shared-body pattern with a fourth caller
+   and no new decode logic. `decodeValues` already returns null for a foreign prefix, so one arm
+   answers both misses.
 3. Otherwise the client error, built by the message builder behind `dispatchFailureThrow` so a
    Relay client sees one wording for a bad id whether it hit a lookup argument or a mutation input:
    a malformed id, a foreign typeId, and a right-prefix-wrong-arity id all land here, classified
    the way the read side classifies them. The parity is pinned at the execution tier, not asserted
-   in prose.
+   in prose. The multi-candidate message lands in
+   `no.sikt.graphitron.render.NodeIdDecodeFailure`, which already holds the single-type two-branch
+   message and whose class comment gives this item's own reason for the move: one bad id must fail
+   the same way at every grain that reads it. So the fragment goes beside its single-type sibling
+   rather than into a third place, and `MultiTablePolymorphicEmitter` reads it there.
 
 An `if` chain rather than a string `switch`: the emitted source must compile at Java 17
 (`graphitron-sakila-example` pins `<release>17</release>`), and a `switch` on a null `String` throws,
@@ -252,54 +291,205 @@ nullable (`ID`) slot leaves the member unset when omitted and null on explicit `
 
 ### Fact store: the same rule as rows
 
-The store's job is to state the same predicate the walk applies, so the editor and the build refuse
-the same schemas and the LSP's node-type keyset moves with them. Four additions, each at the rung the
-existing relations reserve for it:
+The store's job is to state the predicate the walk applies, so the editor and the build refuse the
+same schemas and the LSP's node-type keyset moves with them. All of it at the container, and the
+slot-typing half only where the slot relation can see the slot; the limit is stated at the end of
+this section, because it lands on the field report's own shape.
 
-* *Record supertypes as a captured fact.* `sql_table_record_supertype`, described under Slot typing:
-  captured at the catalog walk beside `sql_table`, one row per (table, supertype name), with a
-  comment stating that it exists because the classpath census excludes the generated package and
-  that `intent_jvm_ancestor` is its census-side twin.
-* *Container members as a container-keyed rung.* A view `intent_node_container_member (graph_name,
-  container_name, member_type_name)` over `graphql_poly_member`, filtered to `@table` members that are
-  node types (`intent_node_type`). Keyed on the container, because "which node types are members of
-  `Applikasjon`" is a fact about `Applikasjon` and not about any slot that names it; keying it on a
-  use site would store one copy of the answer per consuming coordinate. This is the
+**The grain, decided first, because the rest of the slice follows from it: one instruction row per
+use site, carrying the container, and the member multiplicity kept on the container where it already
+lives.** A *use site* is the consuming coordinate an instruction is read at, an argument or one
+occurrence path of an input field. The rejected alternative is one instruction row per member at one
+use site, and it is rejected for three reasons that are one reason.
+
+First, it would report a determinate schema as producer ambiguity.
+`intent_node_id_decode_slot.candidates` is `COUNT(*) OVER (PARTITION BY graph_name, use_site)` over
+that relation's own rows, and its comment reads any value above one as "an overloaded method or a
+class two classpath entries declare, and this relation distinguishes neither". The slot relation
+leans on that reading: it deliberately keeps ambiguous rows rather than filtering them, because a use
+site with no row there reads as binding a table predicate, so keeping them "makes that use site a
+decode with several candidate slots, which a consumer refuses to carry out rather than mistaking for
+a predicate". Member rows would arrive on that same column, so a two-member container would be
+indistinguishable from an author whose `@service` names two overloads. Second, the arm this item
+needs would then produce nothing: the slot arm of `intent_node_id_decode` and
+`intent_node_id_decode_defect` both carry `WHERE s.candidates = 1`. Third, the member set is a fact
+about the container, so a row per member per use site stores one copy of it per consuming
+coordinate, which is the objection this plan already makes to a use-site-keyed candidate relation
+under "Other solutions we've considered"; and it would mint the participant-keyed grain
+`intent_node_id_instruction`'s comment reserves for a different question, that comment's grain being
+about which *branch* of a multi-table consuming field's scope resolved which node type, a fact on the
+departure axis rather than about membership in a container the author named.
+
+So the instruction row is one per use site and the type it names is the container. Three consequences
+carry the rest of the slice, and each is stated because a reader of this family will look for it.
+
+*The column that holds the named type is renamed and gains a kind beside it, and `basis` stays at
+five.* `intent_node_id_instruction.node_type_name` promises "the node type the instruction names,
+written or inferred; never NULL", and five carrier relations thread that promise forward restating
+it. A container is not a node type, so the honest move is not to bend the promise but to rename the
+column to what it actually holds, `resolved_type_name`, the type the instruction's basis resolved,
+with `resolved_type_kind` beside it in a closed vocabulary of two, `NODE_TYPE` and `POLY_CONTAINER`.
+The precedent is in the store already: `graphitron_field_navigation.navigated_type_name` is "a name
+and never a binding, so a consumer joins `intent_resolved_type_binding`, `intent_poly_member` or
+`graphql_type` on it according to what it actually needs to know". The kind is a column rather than a
+predicate each reader re-evaluates, on `carries_reference_path`'s own justification in the same
+relation. And `basis` stays at five deliberately: its comment defends those five as disjoint by
+*authored* predicates, and a written `typeName:` is one authored rule whatever it resolves to, so
+splitting `EXPLICIT_TYPE_NAME` in two would split one rule on a resolution fact, which is what the
+new kind column is for. The cost is a mechanical rename across the family's carriers, their comments
+and the fact-store tests that read the column; it is compiler- and gate-checked, and it is the price
+of the column meaning one thing.
+
+*One incumbent predicate changes, and exactly one; everywhere else the container rows are quiet by
+construction.* Most of the family judges an instruction by reaching the node key through the named
+type, and a container never resolves one: `graphitron_node_keycolumn`'s own column comment says "a
+type that is not a node has no key columns here however well its table is keyed", by a foreign key
+into the node population. So `intent_node_id_decode_defect` draws nothing on these rows, its join to
+`intent_resolved_node_key_shape` missing, and `intent_node_id_decode`'s table arm draws nothing, its
+key-column child finding no positions to pair. The exception is
+`intent_node_id_decode_endpoint`, which resolves the *arrival* through
+`graphitron_tabletype` on the named type, and `graphitron_tabletype` constrains no kind
+(`graphitron_table_entry` is keyed on the type alone): so a container that carries `@table` itself,
+which is exactly the `SINGLE_TABLE_CONTAINER` shape this item refuses, would draw a real endpoint row
+whose named type is not a node type, against that view's own column comment, and
+`intent_node_id_decode_landing_defect` drives off the endpoint and its hop child rather than off the
+key columns, so such a slot carrying an `@reference` path could draw `PATH_STOPS_SHORT` about a
+decode that should be refused as a single-table container. The amendment is one predicate,
+`resolved_type_kind = 'NODE_TYPE'`, on the endpoint relation, with the reason on its comment: the
+arrival is the node type's own binding, and a container that binds a table has one binding and no
+key.
+
+*The seam the rename dissolves.* On the two authored rungs, the instruction relation and
+`intent_node_id_decode_slot` that carries its columns forward, the column is the type the instruction
+resolved and the kind says which sort it is. On `intent_node_id_decode` the column stays
+`node_type_name` and stays the node type whose key the decode yields, which on the polymorphic
+destination is the member, one row per member. Two facts with two names and a keying between them,
+which is the `intent_spelled_table` / `intent_bound_table` layering rather than one name meaning two
+things at two rungs.
+
+*The precedent is declined rather than claimed.* The conflation is not invented here:
+`intent_node_id_instruction`'s comment already describes a use site drawing one row per branch for
+the two bare inference bases at a multi-table container, so a `@service` producer field of that shape
+already reports several node types at one use site and `candidates` already counts them. What that
+shape reads today is nothing at all, `candidates = 2` silencing the slot arm for it exactly as it
+would silence this item's, which is an argument against adding a second producer of the same
+conflation rather than for it. That pre-existing hole is reported under Out of scope, not fixed here.
+What the reading does show is that the relation welds two axes onto one row, the population (which
+use sites carry the instruction) and the resolution (which node types that instruction stands for);
+the shape above keeps the population axis at the instruction's own grain and moves the resolution
+axis onto a relation of its own, which is the normalization "Other solutions we've considered"
+describes and defers. It also answers what the reserved participant-keyed grain is still for: it is
+the *departure* discriminator, recovering which branch of a multi-table consuming field's scope
+resolved which node type, and for a container the member simply *is* the node type, so a participant
+column there would restate `node_type_name` rather than complete a key. This item is not that
+grain's second reader, and the grain stays reserved for the reader its own comment describes.
+
+Six additions, each at the rung the existing relations reserve for it:
+
+* *Record supertypes as a captured fact, and assignability as one derivation over it.*
+  `sql_table_record_supertype` and the assignability view above it, both described under Slot typing:
+  the capture sits at the catalog walk beside `sql_table`, one row per (table, supertype name), with
+  a comment stating that it exists because the classpath census excludes the generated package, that
+  `intent_jvm_ancestor` is its census-side twin, and why it holds the closure rather than edges; the
+  view composes the two and is the one relation both the destination and the slot-typing verdict
+  read.
+* *Container members as a container-keyed rung, total, with the two predicates as columns.* A view
+  `intent_node_container_member (graph_name, container_name, container_kind, member_type_name,
+  is_table_bound, is_node_type)` over `intent_poly_member` (the `intent_` family's own name for the
+  membership, which is where a derivation stands rather than on the captured `graphql_poly_member`
+  under it), one row per member of every container and not only the admissible ones. Keyed on the
+  container, because "which node types are members of `Applikasjon`" is a fact about `Applikasjon`
+  and not about any slot that names it; keying it on a use site would store one copy of the answer
+  per consuming coordinate. Total rather than filtered because three readers want three populations
+  off it: the resolution axis below wants the members that are both, `MEMBER_NOT_NODE_TYPE` wants
+  the table-bound members that are *not* node types and so could not read a filtered relation at
+  all, and the LSP keyset wants the containers with at least one of each. Two flags rather than a
+  name that bakes one caller's filter in, on `intent_bound_table.candidates`' own terms: a fact
+  "stated as a column rather than left to each reader's own count", because whether it holds decides
+  the reading. This is the
   `intent_spelled_table` / `intent_bound_table` layering, and the read side's per-participant
   candidate derivation can later re-source onto it.
+* *The resolution axis as its own relation.* A view `intent_node_id_candidate_node_type (graph_name,
+  resolved_type_name, node_type_name)`: one identity row for a resolved type that is a node type,
+  one row per admissible member for one that is a container. It is what makes the destination below a
+  branch inside the existing slot arm instead of a second arm, and it is keyed on the resolved type
+  rather than on a use site, so the member set is stored once for the container however many
+  coordinates name it. Two readers ask it on day one, the destination and the sibling defect view,
+  which is the threshold the fact model sets for a derivation to get a name.
 * *The instruction population widens where it lives.* `intent_node_id_instruction_live`'s
   `EXPLICIT_TYPE_NAME` arm joins the written `node_type_ref` to `intent_node_type`, so an instruction
-  naming a container draws no row today, none downstream, and no defect: silent. The fix is a new
-  arm in that relation, at the participant-keyed grain its own comment already reserves
-  (`(graph_name, site, type_name, field_name, argument_name or path, participant type name)`), one
-  row per member with `node_type_name` = the member, a `basis` value naming the container reading,
-  and the container name carried as a column so a message needs no second join. The relation's
-  population-boundary sentence ("an instruction whose named or inferred type resolves to no node
-  type is not a row") is amended in the same edit, since this item is what retires its
-  justification for the container case. `intent_node_id_decode_slot`, `intent_node_id_decode` and
-  the endpoint family then see the rows by join, and the `node_type_name` column comment across the
-  family ("the node type the instruction names, whose key the decode yields") is audited once: on
-  these rows it is the member, the container being the sibling column.
-* *A fifth destination and a sibling defect view.* The slot arm of `intent_node_id_decode` gains
-  `POLYMORPHIC_RECORD`, produced where the slot's type is an ancestor of every member's record (the
-  `sql_table_record_supertype` ∪ `intent_jvm_ancestor` test), one row per member with that member's
-  `arity`; its `destination` comment, which today says the slot arm's record is "the node type's own
-  table's record", is the sentence this item rewrites. Beside `intent_node_id_decode_defect`, a
-  sibling `intent_node_id_polymorphic_decode_defect` with a closed verdict vocabulary:
-  `MEMBER_NOT_NODE_TYPE` (one row per offending `@table` member), `NO_TABLE_MEMBERS`,
-  `SINGLE_TABLE_CONTAINER`, `SLOT_NOT_SUPERTYPE_OF_MEMBER` (one row per member whose record does not
-  declare the slot type). A sibling rather than new arms because the incumbent's whole design is
+  naming a container draws no row today, none downstream, and no defect: silent. The fix is a second
+  `EXPLICIT_TYPE_NAME` arm at the grain decided above, one row per use site, `resolved_type_name` =
+  the container, `resolved_type_kind` = `POLY_CONTAINER`, admitted where the written `node_type_ref`
+  names a type whose `graphql_type.kind` is `INTERFACE` or `UNION` and that name is *not* in
+  `intent_node_type`. Those two predicates are what keep it disjoint from the node-type arm by
+  construction, the way the five bases are disjoint from each other: a container carrying `@node`
+  resolves `NODE_TYPE` on the existing arm, which is the store's spelling of the walk's ordering
+  rule, and no instruction draws both rows. One authored rule, two resolved kinds, which is why the
+  kind is the new column and `basis` does not move. The population widens to every container-naming
+  instruction, including one whose membership is defective (no `@table` members, a non-node member,
+  a single-table container): those coordinates are the sibling defect view's to name, and admitting
+  them is what gives it a population to be keyed on.
+* *A fifth destination, inside the slot arm rather than as a third arm.* `intent_node_id_decode`'s
+  slot arm today joins `intent_resolved_node_key_shape` on the slot's named type; it instead joins
+  `intent_node_id_candidate_node_type` on that name and the key shape on *its* `node_type_name`, so
+  a node-typed instruction yields the one row it yields today and a container yields one row per
+  member with that member's own `arity`. `WHERE s.candidates = 1` survives verbatim, the
+  multiplicity having moved off the slot relation's partition and onto the resolution axis, and the
+  `destination` `CASE` gains one branch, `POLYMORPHIC_RECORD`, forked on `resolved_type_kind` rather
+  than on a re-derived predicate. A branch and not a third arm because a third arm would drive off
+  `intent_node_id_decode_slot` a second time and re-join the key shape, which is what that view's
+  own comment forbids ("they read different driving relations for different facts ... and neither
+  re-joins the other's operands") in the relation the DDL calls the deepest derived read in the
+  schema; `intent_node_id_decode_defect`'s comment makes the same argument against itself. The
+  branch is admitted only where no member's record fails the ancestry test, a `NOT EXISTS` over the
+  members rather than a per-member predicate, since one member that fails refuses the whole slot.
+  The `destination` comment, which today says the slot arm's record is "the node type's own table's
+  record", is the sentence this item rewrites, and the vocabulary goes from four values to five.
+* *A sibling defect view.* Beside `intent_node_id_decode_defect`, a sibling
+  `intent_node_id_polymorphic_decode_defect` with a closed verdict vocabulary:
+  `MEMBER_NOT_NODE_TYPE` (one row per member that `intent_node_container_member` reports table-bound
+  and not a node type), `NO_TABLE_MEMBERS` (no member reports table-bound),
+  `SINGLE_TABLE_CONTAINER` (the container is itself in `graphitron_tabletype`, which admits an
+  interface: `graphitron_table_entry` is keyed on the type and constrains no kind),
+  `SLOT_NOT_SUPERTYPE_OF_MEMBER` (one row per member whose record does not admit the slot type, read
+  off the assignability relation named under Slot typing rather than re-derived here). The first two
+  are counts and complements over one relation rather than three joins of their own, which is what
+  making the member relation total buys. Two grains in one relation, with
+  `member_type_name` NULL on the two container verdicts and set on the two member ones, determined
+  by the verdict the way the incumbent family determines nullness by its discriminator; and the
+  container verdicts take precedence over the member ones, the remedy being the container's. The
+  walk's two slot-side messages are one verdict here, a slot typed as one member's record and a
+  scalar slot both being the ancestry test failing, and the split is the walk shaping a remedy
+  rather than a second fact. A sibling rather than new arms because the incumbent's whole design is
   "decided by arity alone, one pass over two driving relations" and these verdicts are decided on
-  the member set and the slot type, a different fact base; and the two populations are disjoint by
-  construction (the incumbent joins `intent_resolved_node_key_shape` on `node_type_name`, which a
-  container never resolves), a fact the new view's comment states on the incumbent's terms rather
-  than leaves true by accident. Projected into `Rejection` arms by `NodeIdPolymorphicDecodeDefects`
-  beside `NodeIdDecodeDefects`, with the same `Verdict.of` drift guard and the same
-  `intent_type_domain` narrowing, and wired as a new component of `StoreDetections` (the seam
-  `FactCapture` fills), not as a call in `FactCapture` itself.
+  the member set and the slot type, a different fact base; and the two populations are disjoint for
+  the reason spelled out under the grain above, the incumbent's join to
+  `intent_resolved_node_key_shape` on the slot's resolved type missing on every container row, which
+  the new view's comment states on the incumbent's terms rather than leaving true by accident. Projected
+  into `Rejection` arms by `NodeIdPolymorphicDecodeDefects` beside `NodeIdDecodeDefects`, with the
+  same `Verdict.of` drift guard and the same `intent_type_domain` narrowing, and wired as a new
+  component of `StoreDetections` (the seam `FactCapture` fills), not as a call in `FactCapture`
+  itself.
 
-The walk's refusals and the store's verdicts are the same facts under two names; the pipeline tests
-below assert the walk, the fact-store tests assert the rows, and the existing
+One limit on how much of the rule the store can state, and it is the incumbent's own population edge
+rather than a hole this item opens. At an input-field site, which is the field report's own shape (a
+hand-written input record whose member is typed `UpdatableRecord<?>`),
+`intent_node_id_decode_slot.java_type` is the *bean's* type and not the member's: the slot relation
+resolves the parameter at the root of the use site and deliberately does not walk into the class,
+which is why `intent_node_id_decode_defect` excludes that site outright and calls the shape "owed an
+emitter rather than a verdict". So the container-side half of the rule is stated at both sites, and
+the slot-typing half, `SLOT_NOT_SUPERTYPE_OF_MEMBER` and the `POLYMORPHIC_RECORD` destination with
+it, only where the slot relation types the slot the author annotated: a producer parameter, or a bean
+that is itself a jOOQ record. The walk refuses the mistyped bean member on its own, so no build goes
+silent; what narrows is the store's agreement. The new view's comment says so on the incumbent's
+terms, and names what would close it: the descent from a bean parameter to the member receiving the
+value, which is `intent_class_member_slot`'s territory and the walk the slot relation deliberately
+declines to perform. Stating the edge is the point; a verdict that compared a container's type
+against a member's key would refuse a bean the author was right to declare.
+
+The walk's refusals and the store's verdicts are the same facts under two names, within the one limit
+just stated; the pipeline tests below assert the walk, the fact-store tests assert the rows, and the existing
 `NodeIdProducerSlotDecodePipelineTest` pattern (assert that the schema *builds* and that the slot's
 transform is the decode, because a silent detection and a red build look alike from above) carries
 over to the positive cases.
@@ -309,7 +499,8 @@ over to the positive cases.
 `Behavior.NodeTypeBinding` in `LspVocabulary` maps `@nodeId(typeName:)` onto the node-type keyset,
 and `Diagnostics` asks `questions.nodeTypeName` of the written value, so a schema this item makes
 valid gets an editor diagnostic and no completion for the container. The keyset the LSP reads is
-widened to the containers `intent_node_container_member` has members for, so completion and
+widened to the containers `intent_node_container_member` reports at least one table-bound node-type
+member for, which is one of the three readings that relation is total for, so completion and
 diagnostics move with the build from the same relation; a walk-side rule alone would fork the two
 views.
 
@@ -317,10 +508,11 @@ views.
 
 Symbol-anchored, no line numbers; re-find by search at pickup.
 
-* `BuildContext.resolveNodeIdRecordDecode`: after the node-type test, the `is not @table-annotated`
-  arm forks on `GraphQLInterfaceType` / `GraphQLUnionType` into the member walk, returning the new
-  `Polymorphic` arm or one of the three container refusals. `NodeIdLeafResolver.resolve` keeps its
-  refusal.
+* `BuildContext.resolveNodeIdRecordDecode`: the node-type test moves ahead of the `@table`-object
+  test (see the ordering rule under Design, which states what that reordering may not change), and
+  the `is not @table-annotated` arm then forks on `GraphQLInterfaceType` / `GraphQLUnionType` into
+  the member walk, returning the new `Polymorphic` arm or one of the three container refusals.
+  `NodeIdLeafResolver.resolve` keeps its refusal.
 * `InputBeanResolver.buildJooqRecordLeaf`: on `Polymorphic`, `isAssignableFrom` from the member's
   loaded class against each candidate's live record class (the catalog holds it; add an accessor on
   `JooqCatalog` beside `findTable` if none exposes `Table.getRecordType()`), then the new leaf; a miss
@@ -330,29 +522,51 @@ Symbol-anchored, no line numbers; re-find by search at pickup.
   (one `List` unwrapped, as `takesTheNodeTablesRecord` does today), the same test, the same leaf, and
   a refusal on a miss instead of the `ThrowOnMismatch` fall-through.
 * `CallSiteExtraction`: the `NodeIdDecodePolymorphicRecord` leaf with its compact-constructor
-  invariants; every exhaustive switch over the sealed interface gains its arm (the compiler lists
-  them).
+  invariants and the admitted-slot-type wrapper the classifier mints; every exhaustive switch over
+  the sealed interface gains its arm (the compiler lists them).
 * `InputBeanInstantiationEmitter`, `ServiceMethodCallEmitter.scalarLeaf`, `ArgCallEmitter`: render
   the `decode<Container>Record` / `…RecordList` call and collect the helper onto the `*Fetchers`
   class the way the single-type helpers are collected today; the helper body reuses
-  `RecordDecodeFragments.decodeHelper` (null-returning form) per candidate and the failure message
-  behind `MultiTablePolymorphicEmitter.dispatchFailureThrow`, lifted to a shared fragment since it is
-  private there.
+  `RecordDecodeFragments.decodeHelper` per candidate and the multi-candidate failure message.
+* `RecordDecodeFragments`: a fourth `decodeHelper` overload passing `return null` as the shared
+  body's `mismatchThrow`, the null-returning form step 2 above needs; the three existing overloads
+  all throw.
+* `NodeIdDecodeFailure`: the multi-candidate message beside the single-type one, moved off
+  `MultiTablePolymorphicEmitter.dispatchFailureThrow` (private there) so both grains read one
+  spelling; `MultiTablePolymorphicEmitter` then calls it.
 * `FetchersHelperNames`: a name for the container helper beside `decodeSingular` / `decodeList`.
-* `CatalogFactCapture` and `graphitron-model.sql`: `sql_table_record_supertype` capture and DDL;
-  `intent_node_container_member`; the participant-keyed arm on `intent_node_id_instruction_live`
-  with its amended population sentence; the `POLYMORPHIC_RECORD` arm and its rewritten comment; the
-  sibling defect view; comment audit of `node_type_name` across the decode family; the relation
-  register rows and the `meta_relation` declaration (or `undeclared-relations.txt` entry) each new
-  relation owes.
+* `CatalogFactCapture` and `graphitron-model.sql`, in the order a build can stay green through:
+  1. the `node_type_name` -> `resolved_type_name` rename plus the `resolved_type_kind` column on
+     `intent_node_id_instruction` and its `_live` rule view, threaded through every carrier that
+     reads it (`intent_node_id_decode_slot`, `intent_node_id_decode_endpoint`,
+     `intent_node_id_decode`, `intent_node_id_encode`, `intent_condition_param_decode`, and
+     `intent_node_id_decode_landing_defect` above them), with `NODE_TYPE` the only value any
+     existing arm writes, so this step changes no row;
+  2. `resolved_type_kind = 'NODE_TYPE'` on `intent_node_id_decode_endpoint`, with the reason on its
+     comment, which is the one incumbent predicate this item adds;
+  3. `sql_table_record_supertype` capture and DDL, the assignability view over it, and
+     `intent_node_container_member`;
+  4. the container arm on `intent_node_id_instruction_live` (kind `POLY_CONTAINER`, `basis` staying
+     `EXPLICIT_TYPE_NAME`) with the amended population sentence;
+  5. `intent_node_id_candidate_node_type`, the slot arm re-sourced onto it, `POLYMORPHIC_RECORD` in
+     the `destination` `CASE` and the rewritten `destination` comment (four values to five);
+  6. the sibling defect view.
+
+  Plus the relation register rows and the `meta_relation` declaration (or
+  `undeclared-relations.txt` entry) each new relation owes, and the comment audit the rename and the
+  new destination owe at both rungs, per the seam stated under Fact store. What the grain decision
+  buys is the shortness of step 2: `intent_node_id_decode_defect` keeps its body verbatim,
+  `candidates` keeps its definition and its comment, and the slot arm gains a join and a `CASE`
+  branch rather than a sibling arm.
 * `graphitron-model`: `NodeIdPolymorphicDecodeDefects` beside `NodeIdDecodeDefects`, a new
   `StoreDetections` component, filled where `FactCapture` fills the others.
 * `graphitron-lsp`: the node-type keyset behind `Behavior.NodeTypeBinding` re-sourced to include
-  containers with members, for both completion and diagnostics.
+  the containers with at least one table-bound node-type member, for both completion and
+  diagnostics.
 * Docs, per the draft below: `docs/manual/reference/directives/nodeId.adoc` (a subsection after
   "Decoding into a producer parameter named for the argument", and a Constraints bullet) and
-  `docs/manual/how-to/global-id.adoc` (a subsection after "A `@nodeId` argument on a field returning
-  an interface or union").
+  `docs/manual/how-to/global-id.adoc` (a subsection after "Multitable filter inputs", the last of
+  the two read-side siblings under "Decode-side errors", rather than between them).
 
 ## User documentation (first-client check)
 
@@ -400,17 +614,21 @@ Constraints bullet:
 >   `@discriminate` interface that is not itself a node type is refused here: name one of its object
 >   types, or make it a node type. See the subsection above.
 
-For `global-id.adoc`, after the polymorphic-argument subsection, the mutation-side sibling in the
-same voice, using the `AddressOccupant` schema that page already uses, showing the request, the
-service's `instanceof` dispatch, and the foreign-id error text (identical to the one shown above it).
+For `global-id.adoc`, the mutation-side sibling in the same voice, using the `AddressOccupant` schema
+that page already uses, showing the request, the service's `instanceof` dispatch, and the foreign-id
+error text (identical to the one shown above it). It goes after "Multitable filter inputs" rather
+than between the two read-side subsections, so the read side's argument and filter siblings stay
+adjacent and the write side follows both.
 
 ## Tests
 
 * Pipeline tier (`graphitron`, beside `NodeIdRecordInputBeanPipelineTest` and
   `NodeIdProducerSlotDecodePipelineTest`, over the test catalog's `Film | Inventory` or
   `Customer | Staff` union with `@node` members): an interface-typed `@nodeId` on a bean member typed
-  `UpdatableRecord<?>` classifies clean and the emitted helper has one arm per candidate typeId plus
-  the failure arm; the same at `TableRecord<?>`, `Record`, and the list shape; the same member typed
+  `UpdatableRecord<?>` classifies clean and the slot's leaf carries the candidates in member order,
+  asserted over the leaf's own candidate list rather than over the emitted source text (the dispatch
+  itself is pinned at the execution tier, where it is behaviour rather than a string); the same at
+  `TableRecord<?>`, `Record`, and the list shape; the same member typed
   as one candidate's record is refused naming the candidates and the shared supertypes; a scalar
   member is refused; a container with a non-node `@table` member is refused naming it; a `@table
   @discriminate` interface that is not a node type is refused with both remedies; an
@@ -420,9 +638,26 @@ service's `instanceof` dispatch, and the foreign-id error text (identical to the
   `typeName`.
 * Fact-store tier (`graphitron-model`, `intent` package, beside `NodeIdDecodeDestinationTest` and
   `NodeIdDecodeDefectTest`): seeded anchors for `sql_table_record_supertype`,
-  `intent_node_container_member`, the participant-keyed instruction rows, the `POLYMORPHIC_RECORD`
-  rows (one per member), each of the four verdicts, and that a polymorphic slot draws no row in
-  `intent_node_id_decode_defect`. The mechanical enforcers every new relation owes:
+  `intent_node_container_member` (a container with a non-node `@table` member, and one with none,
+  both drawing their rows with the flags they draw), the assignability view (a `recordImplements`
+  interface admitted through the census leg, not only the direct-supertype leg),
+  `intent_node_id_candidate_node_type` (the identity row for a node type and one row per member for
+  a container, which is what makes the destination one arm), the one instruction row per use site
+  with `resolved_type_kind = 'POLY_CONTAINER'` and `basis = 'EXPLICIT_TYPE_NAME'` (and that a
+  `@node`-carrying container draws `NODE_TYPE` instead, the kind fork being a claim and not a hope),
+  the `POLYMORPHIC_RECORD` rows (one per member, each with that member's arity, at a
+  producer-parameter slot where the store can see the slot's type), and each of the four verdicts.
+  Three negative assertions, which are the ones the grain decision is answerable for: `candidates`
+  is 1 at a polymorphic use site however many members the container has, so a two-member container
+  is still told apart from a two-overload producer; a polymorphic slot draws no row in
+  `intent_node_id_decode_defect`, which holds because that view joins
+  `intent_resolved_node_key_shape` on the slot's resolved type and a container resolves none, so the
+  seeded fixture asserts the absence *and* that the same use site's `candidates` is 1, pinning that
+  the quiet comes from the missing key shape rather than from the ambiguity filter; and a
+  `@table @discriminate` container at a slot draws no `intent_node_id_decode_endpoint` row and hence
+  no `intent_node_id_decode_landing_defect` row, which is the one incumbent predicate this item
+  adds and the one place the quiet is a predicate rather than a missing join. The mechanical
+  enforcers every new relation owes:
   `FactCaptureAgreementTest` registration (both legs), total comment coverage under
   `FactSchemaGateTest`, and the `meta_relation` declaration or `undeclared-relations.txt` entry
   `MetaDeclarationGateTest` binds.
@@ -448,6 +683,21 @@ service's `instanceof` dispatch, and the foreign-id error text (identical to the
   returning a payload has no return-type candidate set, and inventing one from `@mutation(table:)`
   would be a new inference. The interface has to be named.
 * The decoded-id value type the issue proposes; see below.
+* The pre-existing hole the grain decision reports rather than fixes: a bare `@nodeId` whose two
+  inference bases resolve one node type per branch at a multi-table container draws several
+  instruction rows at one use site, so `intent_node_id_decode_slot.candidates` counts them and the
+  slot arm of `intent_node_id_decode` produces nothing for that shape. That is the conflation this
+  item declines to add a second producer of, and closing it is the re-keying
+  `intent_node_id_instruction`'s comment describes (the participant-keyed grain), not a change any
+  relation this item touches can make.
+* A `@condition` parameter bound to a polymorphic `@nodeId` slot: `intent_condition_param_decode`
+  joins the key shape on the slot's resolved type, so a container row draws no exemption there. That
+  relation's own comment says absence is an assertion rather than a gap ("presence here is the whole
+  of what says the exception applies"), so the silence asserts the declared-type extraction rule at
+  a coordinate where a polymorphic decode is now legal. This item neither widens that relation nor
+  claims the assertion is right; the walk refuses what it refuses, and what a condition method
+  should receive from a polymorphic slot is its own question. Its population edge is stated on that
+  view's comment in the same edit, so the new silence is disclosed rather than latent.
 * Documenting the manual `peekTypeId` / `decodeValues` pattern as a canonical interim: once this
   lands the pattern is unnecessary, and documenting it first would bless the wire-format knowledge
   in author code the directive exists to remove.
@@ -469,10 +719,26 @@ service's `instanceof` dispatch, and the foreign-id error text (identical to the
   walk already holds, and a codegen guess (synthetic keys, function tables) where the record class
   itself says what it extends. Capturing the record's supertypes once answers the same question from
   one fact and admits the `recordImplements` case for free.
-* *A use-site-keyed candidate relation* joined into the slot arm. It cannot resurrect a use site the
-  instruction relation never admitted, it stores one copy of a container fact per consuming
-  coordinate, and it mints a second spelling of the participant-keyed grain the instruction
-  relation's comment already reserves.
+* *Member-keyed instruction rows*, one row per member at one use site with the member as the resolved
+  type. Rejected under Fact store, where the argument is spelled out: it reports a determinate schema
+  as producer ambiguity on `intent_node_id_decode_slot.candidates`, it silences the very arm this
+  item needs (`candidates = 1`), and it stores a container fact once per consuming coordinate. It
+  would also break `intent_condition_param_decode` outright, whose key is the coordinate plus the
+  condition class and method: several member rows there give one method several `key_arity` values
+  at one coordinate.
+* *A use-site-keyed candidate relation* joined into the slot arm, the same storage one relation
+  later. It stores one copy of a container fact per consuming coordinate, and it mints a second
+  spelling of the participant-keyed grain the instruction relation's comment reserves for the
+  departure axis. Keying the resolution axis on the resolved type instead, which is what
+  `intent_node_id_candidate_node_type` does, answers the same question once per container.
+* *Splitting the instruction relation's two axes now*: the population axis keyed on
+  `(graph, site, coordinate)` and a resolution relation keyed on
+  `(graph, use_site, node_type_name)` carrying the departure where it has one. That is the
+  normalization this item's shape half-performs and defers, and it is the change that would also
+  close the bare-inference silence named under Out of scope, since both silences come from welding
+  the two axes onto one row. Deferred because it re-keys the endpoint, slot, column, encode and
+  condition-decode readers plus the register and the index, over the store's most expensive family,
+  which is a change worth its own item rather than a rider on this one.
 * *Widening `NodeIdDecodeRecord`* to carry a candidate list instead of a sibling leaf. Rejected
   under Emitted glue: every consumer of the existing leaf reads one table off it.
 * *New arms on `intent_node_id_decode_defect`* instead of a sibling view. Rejected under Fact store:
