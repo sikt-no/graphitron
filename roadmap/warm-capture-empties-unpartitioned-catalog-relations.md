@@ -21,16 +21,16 @@ row in `store_source`; a *partition* is the rows one source owns in a relation t
 share; a *gatherer* is one of the passes that fill the store, each answering for one corpus.
 
 The foreign keys are that statement, and they carry it in two shapes because there are two things to
-say. Inside a family the edges are `ON DELETE CASCADE`: a fact cannot outlive the source that produced
-it, so any delete anybody does issue is complete without being told what else to remove. The edge from
-a family root into the registry is `ON DELETE SET NULL`, hung on a nullable twin of the root's own
-source column, so removing a source flags every root that read it instead of deleting them and each
-owner reaps its own on its own cadence rather than having its rows taken out from under it by whoever
-noticed the file was gone. Neither shape says when a delete happens or whether one happens at all. A gatherer that can work out what actually
-changed should reconcile against the store and touch only that; a gatherer for which that is not worth
-the effort can delete its root row and walk fresh, and gets a correct result in one statement. Both
-are legitimate, the choice belongs to the gatherer that knows its corpus, and the keys hold either
-way.
+say. Inside a family the edges are `ON DELETE CASCADE`: a fact cannot outlive the source that
+produced it, so any delete anybody does issue is complete without being told what else to remove.
+The edge from a family root into the registry is `ON DELETE SET NULL`, hung on a nullable twin of
+the root's own source column, so removing a source flags every root that read it instead of deleting
+them and each owner reaps its own on its own cadence rather than having its rows taken out from
+under it by whoever noticed the file was gone. Neither shape says when a delete happens or whether
+one happens at all. A gatherer that can work out what actually changed should reconcile against the
+store and touch only that; a gatherer for which that is not worth the effort can delete its root row
+and walk fresh, and gets a correct result in one statement. Both are legitimate, the choice belongs
+to the gatherer that knows its corpus, and the keys hold either way.
 
 Today no gatherer has that choice, and what this removes is a mechanism rather than a bug.
 `StoreRefresh` empties every relation outright unless it appears in `PARTITIONED`, a hand-maintained
@@ -89,10 +89,7 @@ below take the operations in turn, and they are not the same operation.
 
 The file still exists and its registry row still identifies it, so nothing deletes that row. What a
 content change invalidates is the facts read out of the file, and a gatherer has two honest strategies
-for reaching them.
-
-A gatherer with a changed source has two honest strategies, and the item's job is to make both
-available rather than to pick one.
+for reaching them. The item's job is to make both available rather than to pick one.
 
 **Reconcile.** Walk the source, compare against what the store holds, write what differs, delete what
 is gone, and leave what matches alone. This is the better answer wherever a gatherer can afford it,
@@ -141,17 +138,15 @@ because the obvious answer is wrong in one place.
 So a gatherer taking that route deletes one row per root per changed source, the cascade clears
 everything beneath, and the walk rewrites.
 
-That last clause was not true of the `graphitron_` half when this plan was written, and it is now, so
-the joint root is precise rather than half precise. The roots table names one root for two families,
-and until R876's first slice the decode that wrote 40 of them ran over a graph's whole transcription
-rather than over one source: a per-source delete of the `(graph, source)` root cascaded them away with
-no per-source walk to rewrite them. That slice has landed. `SdlFactCapture` holds a decoder from
-`GraphitronFactCapture.decodingInto` and drives it at each directive application it walks, and the
-gatherer's own javadoc now states the division, that every relation whose rows are a function of one
-document is written by the walk and what remains is the half that needs the whole store.
-`GraphitronFactCapture.capture` still takes a graph name and nothing else, which is now correct rather
-than left over: what it keeps is eight resolving stages, and a resolution is an anchor. One walk of one
-source therefore rewrites exactly what the cascade deleted, for all 52.
+That last clause holds for both families under the joint root, which is worth checking rather than
+assuming, the root being shared where the writers are not obviously one. `SdlFactCapture` holds a
+decoder from `GraphitronFactCapture.decodingInto` and drives it at each directive application it
+walks, so the 40 owned `graphitron_` relations are written per document exactly as the 12 `graphql_`
+ones are, and the gatherer's own javadoc states the division: every relation whose rows are a function
+of one document is written by the walk, and what remains is the half that needs the whole store.
+`GraphitronFactCapture.capture` takes a graph name and nothing else because what it keeps is eight
+resolving stages, and a resolution is an anchor rather than a partition. So one walk of one source
+rewrites exactly what the cascade deleted, for all 52.
 
 The registry row persists either way and its `stamp` and
 `read_at` update in place, which is where R922's currency comparison expects to find them. Nothing
@@ -162,12 +157,11 @@ gatherer takes; what changes is that the choice becomes theirs to make.
 being explicit about since the two look alike.** `store_source` holds the file's identity, which a
 refresh does not change and must not churn. `store_graph_source` holds *this graph's reading of that
 file*, and a re-read genuinely replaces the reading, so the row going and coming back is the fact
-being restated rather than an identity being churned to trigger a side effect. A reviewer should test
-that claim rather than take it: if the reading row ever acquires state worth preserving across a
-re-read, this stops being true and the family needs a root of its own. Phase four gives the row a
-`stamp`, which is the state that clause anticipates and does not trip it: the value is what the
-graph's last read established, so a re-read replaces it with the read just performed. What would trip
-it is state a re-read cannot restore, and the row carries none.
+being restated rather than an identity being churned to trigger a side effect. The claim has a
+precise condition and is worth checking against it: were the reading row to carry state a re-read
+cannot restore, the row going and coming back would lose it and the family would need a root of its
+own. Phase four's `stamp` is the nearest thing to that and does not trip it, being what the graph's
+last read established, which a re-read replaces with the read just performed.
 
 **A refresh in one corpus can validly delete rows in another family**, and the family-by-family table
 hides it. `graphitron_tabletype` and `graphitron_field_table` hang off `sql_table`, and
@@ -231,16 +225,15 @@ relations to sweep are the ones the schema declares a set-null twin on, read fro
 metadata, so a family root added later is swept without anybody remembering to add it. A roster here
 would be `PARTITIONED` again in a new costume.
 
-**The three relations that key into the catalog need nothing, and it is worth saying why rather than
-leaving a reader to wonder.** `graphitron_tabletype`, `graphitron_field_table` and
-`graphitron_node_keycolumn` are the only relations of their family that reference the catalog, and each
-is an *anchor*: it holds what a spelling resolved to and nothing a reader could not recompute.
-`graphitron_tabletype` carries the resolved `(source, schema, table)` and no authored text at all,
-while the `@table` an author wrote lives beside it in `graphitron_table_entry` with its `table_ref` and its
-declaration position, keyed into `graphql_type_declaration`. The other two pair off the same way, with
-`graphitron_node_entry` and `graphitron_node_keycolumn_entry` carrying the authored `type_id` and
-`column_ref`, and `graphitron_field_navigation` carrying the navigation `graphitron_field_table`
-resolves.
+**The three relations that key into the catalog need no twin.** `graphitron_tabletype`,
+`graphitron_field_table` and `graphitron_node_keycolumn` are the only relations of their family that
+reference the catalog, and each is an *anchor*: it holds what a spelling resolved to and nothing a
+reader could not recompute. `graphitron_tabletype` carries the resolved `(source, schema, table)`
+and no authored text at all, while the `@table` an author wrote lives beside it in
+`graphitron_table_entry` with its `table_ref` and its declaration position, keyed into
+`graphql_type_declaration`. The other two pair off the same way, with `graphitron_node_entry` and
+`graphitron_node_keycolumn_entry` carrying the authored `type_id` and `column_ref`, and
+`graphitron_field_navigation` carrying the navigation `graphitron_field_table` resolves.
 
 So a removed jOOQ package deletes resolutions that name a table which no longer exists, which is the
 only correct outcome for them, and deletes nothing anybody wrote. Every entry hangs off the graph's SDL
@@ -255,40 +248,39 @@ vocabulary for this family, so the two items cut it the same way from opposite d
 
 It is also an operation the store does not currently have at all, which is worth stating as a gain
 rather than leaving implied. Nothing in the tree deletes a `store_source` row: there is no
-`deleteFrom(STORE_SOURCE)` anywhere, and `StoreReaper` reaps whole store *files* from disk rather than
-partitions inside one. `StoreRefresh` says so from the other side, retaining a source absent from this
-run's input set on the correct ground that another graph may still need it, and nothing ever asks
-whether any graph still does. So a jar that leaves a consumer's classpath keeps its classes for the
-life of the workspace cache, and the store grows monotonically across a project's dependency churn.
-This item does not add the reaping policy, which is a question about when a source is known to be
-unwanted rather than about how to remove it, but it is what makes the removal expressible at all
-rather than as twenty-one hand-written deletes and a graph-by-graph sweep nobody has written. That bears on R917 and on the cache byte-budget item, and both should
-be told the mechanism exists rather than each inventing one.
+`deleteFrom(STORE_SOURCE)` anywhere, and `StoreReaper` reaps whole store *files* from disk rather
+than partitions inside one. `StoreRefresh` says so from the other side, retaining a source absent
+from this run's input set on the correct ground that another graph may still need it, and nothing
+ever asks whether any graph still does. So a jar that leaves a consumer's classpath keeps its
+classes for the life of the workspace cache, and the store grows monotonically across a project's
+dependency churn. This item does not add the reaping policy, which is a question about when a source
+is known to be unwanted rather than about how to remove it, but it is what makes the removal
+expressible at all rather than as twenty-one hand-written deletes and a graph-by-graph sweep nobody
+has written. That bears on R917 and on the cache byte-budget item, and both should be told the
+mechanism exists rather than each inventing one.
 
 ### A source file can belong to several graphs
 
-An earlier version of this section gave `store_source` a `graph_name` column and refused a second
-graph claiming a schema file another owns. The rule is dropped. It is unsatisfiable, on the file it
-was least likely to be tested against: `SdlFactCapture.captureSources` walks every source name the
-registry hands back and `ClasspathSources.upsert` writes the bundled `directives.graphqls` as one
-`SCHEMA_FILE` row, with a `store_graph_source` membership per graph, so the rule demands a single
-owner for a file every graph reads by construction and the refusal fires on the second module of every
-workspace. Two shipped tests pin it from both ends, `TaggedCaptureStampTest` on the single registry row
-and `FactCaptureAgreementTest.graphSourceMembershipEqualsTheRunsReadSet` on the two memberships. We
-also have consumer files shared between graphs, so the rule was not merely unsatisfiable in the
-generator's own corner.
+Two graphs can read one file, and nothing in this design refuses it. Consumers share schema files
+between graphs, and the store has a case of its own that no consumer can avoid:
+`SdlFactCapture.captureSources` walks every source name the registry hands back and
+`ClasspathSources.upsert` writes the bundled `directives.graphqls` as one `SCHEMA_FILE` row with a
+`store_graph_source` membership per graph. Two shipped tests pin that from both ends,
+`TaggedCaptureStampTest` on the single registry row and
+`FactCaptureAgreementTest.graphSourceMembershipEqualsTheRunsReadSet` on the two memberships. So a rule
+holding a schema file to one graph would fire on the second module of every workspace, which is the
+case this item was filed to fix.
 
-Of the three ways out, this takes the third: drop the column and hold the rule where the fact lives, or
-do not hold it at all. Sharing is supported, and the design already carries it because the two kinds of
-fact key differently. `jvm_class` keys `(source_name, class_name)` with no graph dimension, a class
-declaration being a function of the bytes, so two graphs reading one jar want the same rows.
-`graphql_type_declaration` keys `(graph_name, type_name, source_name, source_line, source_column)` and
-carries `merge_ordinal`, "capture-assigned position in merge order", which is a property of the graph's
-document set rather than of the file: two graphs listing one file beside different siblings assign it
-different values. A row of that family is the graph's *reading* of the file. So the source-keyed
-families root at `store_source`, the graph-keyed ones root at the `(graph, source)` row, each graph
-holds a root of its own over a shared file, and a refresh reaches exactly its own rows. That is the
-shape the roots table above already has, and sharing needs no structure the store does not have.
+Sharing needs no rule because the two kinds of fact key differently. `jvm_class` keys `(source_name,
+class_name)` with no graph dimension, a class declaration being a function of the bytes, so two
+graphs reading one jar want the same rows. `graphql_type_declaration` keys `(graph_name, type_name,
+source_name, source_line, source_column)` and carries `merge_ordinal`, "capture-assigned position in
+merge order", which is a property of the graph's document set rather than of the file: two graphs
+listing one file beside different siblings assign it different values. A row of that family is the
+graph's *reading* of the file. So the source-keyed families root at `store_source`, the graph-keyed
+ones root at the `(graph, source)` row, each graph holds a root of its own over a shared file, and a
+refresh reaches exactly its own rows. That is the shape the roots table above already has, and
+sharing needs no structure the store does not have.
 
 What is missing is one column. `store_source.stamp` says what the bytes are; nothing says what content
 a given graph's rows were built from, and with the reading per graph that is the fact a graph needs.
@@ -334,9 +326,7 @@ ask it.
 
 Every relation of these five families is one of three things, and the test is *whether the row's
 existence is a function of one source or of several*, not whether it happens to carry a source
-column. Getting that test wrong is what put two cross-file relations in the cascading set in an
-earlier draft. The counts are computed from the DDL over all 124 relations of the five families and
-they sum, which the previous version's did not.
+column. The counts are computed from the DDL over all 124 relations of the five families.
 
 [cols="3,1,5"]
 |===
@@ -359,23 +349,20 @@ they sum, which the previous version's did not.
 | Re-aggregate after the walk and delete what no longer matches.
 |===
 
-The last row is the case that cannot cascade, and it has five kinds in it. Two arrive from phase
-three and neither is a function of several documents, which is why the row's heading is wider than it
-was. `graphql_root_operation`'s convention arm exists because a `schema` block is *absent*, so the row
-is a function of no document at all. `graphql_schema_directive` holds the tag-link `@link`, whose
-existence is a function of the *recipe*: `TagLinkSynthesiser.apply` fires when any `SchemaInput` in
-the set carries a configured `tag`, and adds one extension for the registry however many do. Both are
-recomputed rather than deleted, which is what makes re-aggregation the right treatment for a shape
-neither the owned set nor a several-documents reading covers; the predicate each recomputes from is
-named in phase three so an implementer does not go looking for a declaration to survive. Six are the SDL coordinate
-anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists if
-*any* declaration site names it, and a type declared in one file may be extended in three others, so
-deleting one file's rows must not remove a coordinate another file still declares. Seven are the
-`graphitron_` anchors that key at `store_graph` rather than at a source, `graphitron_element` and its
-type, field and argument relations among them, which no source refresh reaches at all and which would
-otherwise keep coordinates whose declarations are gone.
+The last row is the case that cannot cascade, and it holds five kinds. `graphql_root_operation`'s
+convention arm exists because a `schema` block is *absent*, so the row is a function of no document
+at all. `graphql_schema_directive` holds the tag-link `@link`, whose existence is a function of the
+*recipe*: `TagLinkSynthesiser.apply` fires when any `SchemaInput` in the set carries a configured
+`tag`, and adds one extension for the registry however many do. Both are recomputed rather than
+deleted, and phase three names the predicate each recomputes from. Six are the SDL coordinate
+anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists
+if *any* declaration site names it, and a type declared in one file may be extended in three others,
+so deleting one file's rows must not remove a coordinate another file still declares. Seven are the
+`graphitron_` anchors that key at `store_graph` rather than at a source, `graphitron_element` and
+its type, field and argument relations among them, which no source refresh reaches at all and which
+would otherwise keep coordinates whose declarations are gone.
 
-Two are verdicts, and they are the ones an earlier draft had cascading. `graphql_schema_error` records
+Two are verdicts. `graphql_schema_error` records
 what the registry and assembly stages refuse, judged over the document set as a whole rather than one
 file at a time, and `graphql_duplicate_declaration` records a losing occurrence whose existence
 depends on the winner's file as much as its own: refreshing the winner can make the duplicate go away,
@@ -408,9 +395,8 @@ doing it rather than for patching the list.
   relations. `graphitron_argmapping_candidate` references itself on `(graph_name, coordinate,
   parent_path)`, already `ON DELETE CASCADE`, which terminates because it recurses on rows rather
   than on relations and which sits outside the cascading set anyway. Everywhere else the graph is
-  acyclic, so a cascade needs no ordering decision from any caller. A figure of this kind rots: 176
-  was correct when this plan was written and the DDL has gained a relation since, so the structural
-  gate below is what should be trusted rather than the number.
+  acyclic, so a cascade needs no ordering decision from any caller. A figure of this kind rots, so the
+  structural gate below is what should be trusted rather than the number.
 - **The idiom is already project doctrine.** The DDL carries 16 `ON DELETE CASCADE` clauses, and the
   element family's own comment declares it the pattern every relation there follows. The source-keyed
   families are the ones hand-rolling it instead.
@@ -481,7 +467,7 @@ The four relations this item was filed for are exactly the ones unreachable from
 the wholesale discard is exactly what happened to them. So the sentence describes a property nothing
 checks, and the structural gate this item adds is its enforcer.
 
-It is also **too wide**, and the revision narrows it rather than only citing the gate. "A refresh
+It is also **too wide**, and this item narrows it rather than only citing the gate. "A refresh
 deletes exactly the rows one source wrote and re-walks it" states a refresh strategy as though the
 schema mandated it, and the schema mandates no such thing: delete-and-rewalk is one option, it is the
 cheap one, and a gatherer that reconciles instead is not violating the store's design. A description
@@ -491,10 +477,8 @@ issues is therefore complete without naming what else to remove, and that how a 
 corpus is its own decision.
 
 The same comment's opening clause, "store-global rather than graph-keyed: it can say what a file
-hashed to, never which graph read it", is kept exactly as it stands and becomes load-bearing. An
-earlier version of this plan would have falsified it with a `graph_name` column on the row; the
-sharing case is what showed that column to be the wrong answer, and the clause it would have
-contradicted turns out to state the design.
+hashed to, never which graph read it", is kept exactly as it stands and becomes load-bearing: it is
+the reason a graph's reading of a source is recorded on the membership row and not here.
 
 **Two claims become false and have to be rewritten rather than trimmed.** The first has two homes.
 `store_source.stamp` says it is "Also NULL while the source's rows are being written, and set only
@@ -556,18 +540,18 @@ one delete per root per changed source, which is two for `sql_` and one each for
 the strategy those three gatherers take today; remove `PARTITIONED` and `wholesale()`. The four
 relations this item was filed for are carried by the cascade with nothing naming them.
 
-The three roots of these families take the set-null twin in this phase rather than in phase four, so
-the removal rule arrives with the families it governs: `sql_schema`, `sql_enum_binding` and
+The three roots take the set-null twin here, so the removal rule arrives with the families it
+governs: `sql_schema`, `sql_enum_binding` and
 `jvm_class` each swap the foreign key on their primary-key source column for a `source_ref` twin under
 its `CHECK`, and `java_file` takes the same treatment in phase two when it joins the registry. The
 metadata-derived sweep in `StoreRefresh.prepare` lands here too, since these three are its first
 members and the membership row joins them in phase four without the sweep changing.
 
 **Phase two, `java_` joins the registry.** Add the `JAVA_SOURCE` kind, give `java_file` the
-`source_ref` twin and its `CHECK` against `store_source` on phase one's pattern, and move its `stamp`
-and `read_at` up to the registry row so currency is stated once. `JavaSourceFacts` is the only reader or writer of either column, so the move is
-contained to one class; R922's comparison takes the instant as an argument and does not care which
-relation it came from.
+`source_ref` twin and its `CHECK` against `store_source` on phase one's pattern, and move its
+`stamp` and `read_at` up to the registry row so currency is stated once. `JavaSourceFacts` is the
+only reader or writer of either column, so the move is contained to one class; R922's comparison
+takes the instant as an argument and does not care which relation it came from.
 
 **Phase three, the four populations no document produced.** The prerequisite for phase four. Every
 definition the parser reads is already attributed: `SchemaLoader.parseSource` builds a
@@ -576,9 +560,8 @@ for every document including the bundled directives, which parse under
 `SchemaLoader.DIRECTIVES_SOURCE_NAME`. So the work is not to recover a document. It is to decide what
 four populations are, none of which came from one, and which between them are why `source_name` is
 nullable in 38 of the 56 relations of these two families that carry the column at all, 9 of the 16
-`graphql_` and 29 of the 40 `graphitron_`. Counted over the relations carrying the column rather than
-over the owned set, deliberately: the owned figure moved twice as the taxonomy was corrected, where
-this population is a property of the DDL and stays put.
+`graphql_` and 29 of the 40 `graphitron_`. Counted over the relations carrying the column, which is a
+property of the DDL rather than of the taxonomy above.
 
 They divide into two shapes, and both shapes already exist in the plan.
 
@@ -616,9 +599,7 @@ would be unsound in this item's own terms: with two tagged inputs, refreshing th
 row the other still requires, which is a partition losing rows it still owns.
 
 So `graphql_schema_directive` re-aggregates, recomputed after the walk from the surviving inputs and
-the same predicate, and the synthetic source name is retired. **This and the convention roots together
-move the counts to 77 / 30 / 17.** It also settles the schema-level ownership question an earlier
-version of this phase raised, `graphql_schema_directive` having been the other relation named there.
+the same predicate, and the synthetic source name is retired.
 
 `SdlFactCapture.stampTarget`'s javadoc names the bundled directives and the synthesised name as "the
 whole miss set", which is true of sources with no file and is why those two are the ones with rows and
@@ -730,42 +711,42 @@ rather than renames, so a surviving use is a description of a mechanism that is 
 
 ## Other solutions we've considered
 
-**Adding the four missing relations to `PARTITIONED`.** The one-line fix, and what this item was
-specified as until the mechanism was examined. Rejected because the list is the defect: nothing derives
-it, nothing checks it, and its 21 members are three different situations under one name, being deleted
-here, deleted elsewhere, and not capture's business at all. The four went missing because a
-hand-maintained exemption list has no way to notice an omission, and patching it leaves the next
-omission free to happen.
+**Adding the four missing relations to `PARTITIONED`.** The one-line fix. Rejected because the list
+is the defect: nothing derives it, nothing checks it, and its 21 members are three different
+situations under one name, being deleted here, deleted elsewhere, and not capture's business at all.
+The four went missing because a hand-maintained exemption list has no way to notice an omission, and
+patching it leaves the next omission free to happen.
 
 **Letting the removal cascade through the roots.** The obvious reading of "the keys declare
-ownership", and what this plan said until the mechanics of a shared file were worked through: give
-every root a cascading foreign key into `store_source` and let deleting a registry row take every
-family's rows with it. Rejected because it makes removal the one operation an owner does not own. Every
-other delete in this design is issued by the gatherer whose rows it clears, and this one would be
-issued by whichever process happened to notice the file was gone, against partitions whose owners are
-not running. It also destroys what the deletion knows, leaving the owner to re-walk where it could have
-reconciled, and it publishes a half-graph to any reader until that graph next boots.
+ownership": give every root a cascading foreign key into `store_source` and let deleting a registry
+row take every family's rows with it. Rejected because it makes removal the one operation an owner
+does not own. Every other delete in this design is issued by the gatherer whose rows it clears, and
+this one would be issued by whichever process happened to notice the file was gone, against
+partitions whose owners are not running. It also destroys what the deletion knows, leaving the owner
+to re-walk where it could have reconciled, and it publishes a half-graph to any reader until that
+graph next boots.
 
-**Twinning only the membership row.** The half-measure this plan held for one revision, on a suspicion
-that the twin would be expensive on `jvm_class`, which is the one root with many rows per source.
-Measured instead of argued, across five real consumer stores in the local cache: `jvm_class` holds
+**Twinning only the graph-keyed root.** Twin `store_graph_source`, where a graph's own readings are
+at stake, and let the source-keyed families cascade, on the suspicion that the twin would be expensive
+on `jvm_class`, the one root with many rows per source. Rejected on measurement rather than on
+symmetry, across five real consumer stores in the local cache: `jvm_class` holds
 3.4k to 11k rows over 26 to 173 sources, and the duplicated source name totals 262 KB to 964 KB against
 stores of 408 MB to 824 MB, which is under an eighth of a percent. The asymmetry cost more to explain
 than the column costs to carry, so every root takes the twin and the rule has no exception. Those
 stores each hold one graph, so they say nothing about how common sharing is; the byte figure is what
 they were read for.
 
-**One graph per schema file.** Carried by this plan for four rounds: a `graph_name` column on
-`store_source` with a `CHECK` tying it to the `SCHEMA_FILE` kind, and a typed rejection when a second
-graph claimed a file another owned, on the grounds that a shared schema file was not a thing we wanted
-to support and that two families are cheaper to reason about when a file has one owner. Rejected as
+**One graph per schema file.** A `graph_name` column on `store_source` with a `CHECK` tying it to the
+`SCHEMA_FILE` kind, and a typed rejection when a second graph claims a file another owns, on the
+grounds that a shared schema file is not a thing we want to support and that two families are cheaper
+to reason about when a file has one owner. Rejected as
 unsatisfiable rather than as undesirable: the bundled `directives.graphqls` is one `SCHEMA_FILE` row
 with a membership per graph, so no assignment of the column satisfies the `CHECK` and the refusal fires
 on the second module of every workspace, which is the case the item was filed to fix. Two other ways
 out were available, a `source_kind` of its own for the bundled file or a NULL `graph_name` for it, and
 both keep a column that answers "which graph read this source" a second time and kind-filtered, which
-is the shape `store_graph_source`'s own comment argues against and which round 1 flagged before the
-counterexample existed. Dropping it costs nothing the cascade needed: the SDL family roots at the
+is the shape `store_graph_source`'s own comment argues against. Dropping it costs nothing the cascade
+needed: the SDL family roots at the
 `(graph, source)` row either way, and the column would have falsified the clause of `store_source`'s
 own comment that turns out to state the design.
 
@@ -776,19 +757,19 @@ evidence of that, so a derived set would silently enrol a relation whose delete 
 rows whose partition went away. Cascade answers both halves at once: the edge granting membership is
 the edge performing the delete, so the two cannot disagree.
 
-**Keeping the wholesale arm behind an explicitly empty roster and a completeness gate.** The previous
-version of this plan. Rejected as careful work on a mechanism this design deletes, a gate whose only
+**Keeping the wholesale arm behind an explicitly empty roster and a completeness gate.** Rejected as
+careful work on a mechanism this design deletes, a gate whose only
 purpose is catching omissions from a list that would no longer exist.
 
-**Clearing a source's facts by deleting its registry row and inserting it again.** An earlier
-revision's mechanic, and the reason the plan now distinguishes two operations. It churns the identity
+**Clearing a source's facts by deleting its registry row and inserting it again.** The reason the
+plan distinguishes two operations rather than one. It churns the identity
 of a row that did not change to clear rows that did, it writes the registry twice per refresh, and it
 makes every future foreign key into `store_source` a hazard, since anything pointing at a source would
 be destroyed by a routine refresh of it. Deleting the family root instead leaves the registry row
 untouched and reaches exactly the facts the file produced.
 
-**Giving the `java_` family its own registry, as it has today.** Kept in an earlier revision on the
-grounds that its cadence differs. Rejected: cadence is what `meta_gatherer` and `meta_corpus` express,
+**Giving the `java_` family its own registry, as it has today.** Its own cadence is the argument for
+it. Rejected: cadence is what `meta_gatherer` and `meta_corpus` express,
 the SDL and classpath gatherers already share `store_source` while running on cadences of their own,
 and a second registry duplicates the freshness model that R922 had just finished stating once. A
 `.java` file is an input the store read, which is what the registry is for.
@@ -801,14 +782,14 @@ to reconciliation is a decision about that corpus, wants the measurement of its 
 and belongs with R857, which is the item that needs the knowledge reconciliation produces. Folding it
 in here would mix a data-loss fix with a per-corpus performance judgment.
 
-**Two of the three dispositions offered for the nullable `source_name`.** Filling the 37 columns with
+**Two of the three dispositions for the nullable `source_name`.** Filling the 38 columns with
 a sentinel, matching `store_graph_source`'s empty-string convention, makes the edge match but yields a
 synthetic source no refresh ever names, so those rows would never be deleted at all: the column would
 be `NOT NULL` and the mechanism still broken, which is worse than the honest NULL because the gate
 would then pass. Moving the schema-level relations into the re-aggregated set fixes
-`graphql_schema_directive` and `graphql_root_operation` and leaves 35 relations with the nullable
-column, so it treats the two instances the reviewer could name rather than the defect. Both bend the
-plan around the nullability; phase three removes it.
+`graphql_schema_directive` and `graphql_root_operation` and leaves 36 relations with the nullable
+column, so it treats two instances rather than the defect. Both bend the plan around the nullability;
+phase three removes it.
 
 **Extending the same treatment to the graph dimension.** Out of scope rather than rejected.
 `graphql_element` already keys into `store_graph`, so cascading from the graph row would retire
