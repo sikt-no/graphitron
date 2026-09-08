@@ -22,11 +22,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-08 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-01 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Ready | 2026-09-08 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -610,7 +610,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R663` [**@defaultOrder on a @splitQuery child list is dropped at emit**](split-query-child-list-drops-default-order.md) — In Review, bug
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
-- `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Spec, validation
+- `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Ready, validation
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture

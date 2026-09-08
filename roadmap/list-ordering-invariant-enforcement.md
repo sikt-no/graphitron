@@ -1,13 +1,13 @@
 ---
 id: R677
 title: "Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see"
-status: Spec
+status: Ready
 bucket: validation
 priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-14
-last-updated: 2026-09-01
+last-updated: 2026-09-08
 ---
 
 # Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see
@@ -969,3 +969,37 @@ written describes an ordering that is not lowered. The two closures the census r
 in `LauncherCommands.batchedResultOf` and `batchedLookupRow`, and the sixth site's premise holds
 as far as the validator goes, `validateTableField` checking only the reference path, the
 lookup-connection pair and cardinality.
+
+### Round 2, Spec -> Ready, 2026-09-08
+
+Reviewer session: `https://claude.ai/code/session_01A782mxCy43Yi1jecwh5YGr`. Verdict: sign off.
+
+Both round-1 findings that bore on the mechanisms are closed in the body as the responses say.
+The write arm reads `intent_mutation_routine_seat` exactly as that relation is built (population is
+every mutation-root `@routine`, `ADMITTED` is its one emitting verdict, `READ_SURFACE_ON_WRITE` keys
+on `graphitron_order_by` and the conditions and never on `graphitron_default_order`), the multiset
+half is sited where `ProjectionCommands` hands `ttf.orderBy()` to `CallWrap.Multiset` unfiltered and
+`ProjectionUnitRenderer` lowers the `Fixed` arm alone, and the launcher ratchet's exempt arms are the
+four `RecordList(null)` sites in `LauncherCommands` and no others. Phase 1 extends
+`AuthoredClaimConflicts` / `StoreDetections` / `FactCapture.detect` as they stand, phase 2 follows
+the production `IllegalStateException` precedent already in `LauncherCommands`, phase 3 follows
+`intent_resolved_field_demand` and its coverage gate. Nothing here stands a parallel mechanism beside
+an existing one. What was verified is in the commit message.
+
+**Non-blocking.**
+
+* Phase 2's exemption list names "the schema-free unit-tier assemblies" as a third exempt arm, but
+  the switch is over `LaunchSource`, which has no such arm. The schema-free path's only absent-slot
+  rows come from `serviceReentryRow`, whose source is `ProjectedReentry` and already exempt under the
+  second bullet, so the entry is redundant rather than wrong; fold it into that bullet or drop it
+  when the phase lands.
+* `LauncherCommands.orderingOf` returns null on an empty `OrderBySpec.Fixed` as well as on `None`,
+  while `validateListRequiresOrdering` rejects `None` alone. An empty `Fixed` reaching a non-exempt
+  list row would trip the ratchet, which is what the ratchet is for, but the implementer should
+  expect the corpus run to say whether that shape resolves today rather than assume the four sites
+  are the whole absent-slot population.
+* The `PARTICIPANT_TABLE` arm also covers child coordinates returning a multitable container:
+  `ChildField.InterfaceField`, `UnionField`, `BatchedInterfaceField` and `BatchedUnionField` carry
+  no ordering component, the same as the root leaves, so a declaration there is accepted and
+  discarded today too. Correct behaviour for the rule; worth one case in
+  `FieldUnlowerableOrderingTest` so the population's width is pinned.
