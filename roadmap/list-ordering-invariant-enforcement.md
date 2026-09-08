@@ -1,7 +1,7 @@
 ---
 id: R677
 title: "Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see"
-status: In Progress
+status: In Review
 bucket: validation
 priority: 3
 theme: codegen-correctness
@@ -269,7 +269,7 @@ Each one is a constraint the phases below are built against.
 
 ## Phase 1, class A: reject an available ordering the coordinate cannot lower
 
-Shipped 2026-09-08, at the commit this note is being written in. `intent_field_unlowerable_ordering` is the rule, `UnlowerableOrderings` the
+Shipped at `d61dc6b`. `intent_field_unlowerable_ordering` is the rule, `UnlowerableOrderings` the
 decode, `UnlowerableOrderingRejectionRows` the capture-cadence writer, and the `diagnostic` view
 gains an eighth arm over the pair. Six things the delivery settled that the plan did not, each a
 premise for phase 3 and for whoever picks up R660:
@@ -312,7 +312,8 @@ premise for phase 3 and for whoever picks up R660:
 
 ## Phase 2, class C: pin the multiset's two ends, and ratchet the launcher relation
 
-Shipped 2026-09-08, in the same commit as phase 1. `LauncherCommands.requireResolvedOrderingsAreLowered` is the fold, called from
+Shipped at `d61dc6b`, in the same commit as phase 1.
+`LauncherCommands.requireResolvedOrderingsAreLowered` is the fold, called from
 `EmitPlan.produce` once both relations exist, with `LauncherCommands.orderIsEntailedBySource` as the
 one home of the exemption set. Four things the delivery settled:
 
