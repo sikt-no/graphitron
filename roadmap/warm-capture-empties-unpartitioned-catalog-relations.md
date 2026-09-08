@@ -133,7 +133,7 @@ because the obvious answer is wrong in one place.
 
 | `graphql_`, `graphitron_`
 | `store_graph_source`, the `(graph, source)` row
-| a scoped delete across 52 relations, which is why this family needs its root named rather than
+| a scoped delete across 51 relations, which is why this family needs its root named rather than
   assumed
 |===
 
@@ -148,7 +148,7 @@ ones are, and the gatherer's own javadoc states the division: every relation who
 of one document is written by the walk, and what remains is the half that needs the whole store.
 `GraphitronFactCapture.capture` takes a graph name and nothing else because what it keeps is eight
 resolving stages, and a resolution is an anchor rather than a partition. So one walk of one source
-rewrites exactly what the cascade deleted, for all 52.
+rewrites exactly what the cascade deleted, for all 51.
 
 The registry row persists either way and its `stamp` and
 `read_at` update in place, which is where R922's currency comparison expects to find them; what a
@@ -176,7 +176,7 @@ find.
 
 `store_graph_source` earns its place here without being a second registry. It already exists, already
 keys `(graph_name, source_name)`, already carries foreign keys to both sides, and is already
-maintained by `GraphSourceMembership`. Making the 52 source-owned SDL relations hang off it
+maintained by `GraphSourceMembership`. Making the 51 source-owned SDL relations hang off it
 gives that family the same shape `sql_schema` and `jvm_class` give theirs: one row to delete, one
 cascade, no roster.
 
@@ -351,10 +351,10 @@ column. The counts are computed from the DDL over all 124 relations of the five 
 | Kind | Count | Treatment
 
 | Owned by one source
-| 77
+| 76
 | A cascading foreign key into its family root; a root reaches the registry by the set-null twin
   instead, which is what makes a removal flag rather than delete.
-  14 `sql_`, 7 `jvm_`, 4 `java_`, 12 `graphql_`, 40 `graphitron_`.
+  14 `sql_`, 7 `jvm_`, 4 `java_`, 12 `graphql_`, 39 `graphitron_`.
 
 | Descendant of an owned row
 | 30
@@ -363,22 +363,26 @@ column. The counts are computed from the DDL over all 124 relations of the five 
   `graphitron_` decodes hanging off owned rows or off catalog rows.
 
 | A function of more than one source, of none, or of the recipe
-| 17
+| 18
 | Re-aggregate after the walk and delete what no longer matches.
 |===
 
 The last row is the case that cannot cascade, and it holds five kinds. `graphql_root_operation`'s
 convention arm exists because a `schema` block is *absent*, so the row is a function of no document
-at all. `graphql_schema_directive` holds the tag-link `@link`, whose existence is a function of the
-*recipe*: `TagLinkSynthesiser.apply` fires when any `SchemaInput` in the set carries a configured
-`tag`, and adds one extension for the registry however many do. Both are recomputed rather than
-deleted, and phase three names the predicate each recomputes from. Six are the SDL coordinate
-anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists
-if *any* declaration site names it, and a type declared in one file may be extended in three others,
-so deleting one file's rows must not remove a coordinate another file still declares. Seven are the graph-keyed
-`graphitron_` relations that key at `store_graph` rather than at a source, `graphitron_element` and
-its type, field and argument relations among them, which no source refresh reaches at all and which
-would otherwise keep coordinates whose declarations are gone.
+at all. `graphql_schema_directive` and `graphitron_link_entry` hold the tag-link `@link`,
+transcribed and decoded, and both exist as a function of the *recipe*: `TagLinkSynthesiser.apply`
+fires when any `SchemaInput` in the set carries a configured `tag`, and adds one extension for the
+registry however many do. All three are recomputed rather than deleted, and phase three names the
+predicate each recomputes from. The two `@link` relations move whole rather than by arm, on the rule
+`graphql_root_operation` moves under: a consumer who writes `extend schema @link(...)` gets a row
+attributed to their own file, so each relation has a document arm beside its recipe arm, and a
+taxonomy that classifies half a relation is not one. Six are the SDL coordinate anchors,
+`graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists if *any*
+declaration site names it, and a type declared in one file may be extended in three others, so
+deleting one file's rows must not remove a coordinate another file still declares. Seven are the
+graph-keyed `graphitron_` relations that key at `store_graph` rather than at a source,
+`graphitron_element` and its type, field and argument relations among them, which no source refresh
+reaches at all and which would otherwise keep coordinates whose declarations are gone.
 
 Two are verdicts. `graphql_schema_error` records
 what the registry and assembly stages refuse, judged over the document set as a whole rather than one
@@ -427,7 +431,7 @@ doing it rather than for patching the list.
   with no loop at all.
 
 **The new SDL edges need indexes, and this is the item's main cost.** `source_name` sits outside the
-primary key of 51 of the 52 source-owned `graphql_` and `graphitron_` relations, only
+primary key of 50 of the 51 source-owned `graphql_` and `graphitron_` relations, only
 `graphql_type_declaration` carrying it in its key. So a
 `(graph_name, source_name)` foreign key has no supporting index on the child side, and without one
 H2 scans the child for every parent row deleted and on every referential check. Each of those
@@ -446,7 +450,7 @@ another source or in no captured source at all, and the schema already refuses t
 resolution as a reference. The owner-precise edge is not expressible either, the owner being a
 method, a record component or a method parameter by `owner_kind`, so the common ancestor is the right
 parent. The 12 source-owned `graphql_` relations carry `source_name` and reference no source
-registry at all, and the 40 source-owned `graphitron_` relations are in the same position; all 52
+registry at all, and the 39 source-owned `graphitron_` relations are in the same position; all 51
 gain a cascading `(graph_name, source_name)` foreign key into `store_graph_source`, which is what
 gives that family the single root row the other three already have.
 
@@ -626,6 +630,22 @@ row the other still requires, which is a partition losing rows it still owns.
 So `graphql_schema_directive` re-aggregates, recomputed after the walk from the surviving inputs and
 the same predicate, and the synthetic source name is retired.
 
+**A synthesised directive leaves two rows, and the disposition has to reach both.** The transcription
+lands in the `graphql_` family and the decode in the `graphitron_` one, so naming only the
+transcription leaves the decode in the owned set with no value its column can honestly carry.
+`GraphitronFactCapture.captureSchemaDirective` writes a `graphitron_link_entry` row for any directive
+named `link` on a schema definition or extension, taking `source_name` from the directive's
+`SourceLocation`, and the synthesised extension carries the synthetic one. That relation re-aggregates
+beside `graphql_schema_directive`, which is what takes the counts to **76 / 30 / 18** and the phase
+four `NOT NULL` population to 34.
+
+The class is bounded rather than open-ended, and the bound is why this is one relation and not an
+audit. `FederationLinkApplier` injects directive *definitions*, so its rows land on `graphql_directive`
+and its kin and never reach `captureSchemaDirective`; the convention roots write no decode at all; and
+`graphitron_link_import_entry` carries no `source_name` and hangs off the entry by
+`(graph_name, link_ordinal)`, so it follows its parent without being classified separately. The
+tag-link synthesis is the only path that reaches the decode side.
+
 `SdlFactCapture.stampTarget`'s javadoc names the bundled directives and the synthesised name as "the
 whole miss set", which is true of sources with no file and is why those two are the ones with rows and
 no stamps. This phase's population list is wider because it asks a different question, which rows have
@@ -640,14 +660,14 @@ the bundled directives need one. It is a live sealed arm at nine main-source sit
 **Phase four, the SDL families.** Add `store_graph_source.stamp` and delete the blanking branch in
 `ClasspathSources.upsert`; replace `store_graph_source`'s existing foreign key into `store_source`
 with the `source_ref` twin, its `CHECK` and its `ON DELETE SET NULL` edge, which the sweep phase one
-built picks up from the metadata without being told; make `source_name` `NOT NULL` on the 35 owned
-relations that declare it nullable, 6 `graphql_` and 29 `graphitron_`, which is what phase three's
+built picks up from the metadata without being told; make `source_name` `NOT NULL` on the 34 owned
+relations that declare it nullable, 6 `graphql_` and 28 `graphitron_`, which is what phase three's
 dispositions make honest and what both the edge below and the structural gate require, so it is a
 step and not a consequence; add the cascading `(graph_name, source_name)` foreign keys from the
-12 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
+12 `graphql_` and 39 `graphitron_` source-owned relations into `store_graph_source`, with the index
 each needs; declare `ON DELETE CASCADE` on the thirty-nine `graphitron_` edges into a coordinate anchor that
 declare nothing today, without which the re-aggregation's delete is refused rather than performed;
-write the re-aggregation over all seventeen relations that are a function of more than one
+write the re-aggregation over all eighteen relations that are a function of more than one
 source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file
 verdicts among them; reduce the graph-scoped clear to what does not now cascade, the membership row
 being a root this phase deletes per changed source rather than empties per graph. No ownership column
@@ -712,7 +732,7 @@ schema file, and the answer, established by two shipped tests, is that every sto
   them: refreshing a changed jar, which deletes its `jvm_class` root, and removing a jar outright,
   which deletes its registry row. Each reported as a row count and a duration beside the hand-written
   path it replaces, so a regression in refresh cost is visible here rather than in a dev loop. Insert
-  cost is measured too and is the one more likely to regress: 52 new foreign keys and 52 new indexes sit on
+  cost is measured too and is the one more likely to regress: 51 new foreign keys and 51 new indexes sit on
   the families capture writes most heavily, so capture wall-clock and store size on the sakila example
   are reported before and after.
 
@@ -734,22 +754,23 @@ unconditionally.
 **R924, "What must re-run is a walk of the keys the schema already declares"**, gets the keys. Its
 premise is that the schema already knows what depends on what, so staleness can be propagated by
 walking declared edges rather than by a hand-written rule per family. That premise is only as good as
-the edges: today `jvm_declared_type_ref` carries no foreign key at all, the 52 source-owned SDL
+the edges: today `jvm_declared_type_ref` carries no foreign key at all, the 51 source-owned SDL
 relations reference no source registry, and twenty-one deletes express ownership in Java where a walk
 cannot see them. Phases one and four move all of that into declared edges, which is the difference
 between a walk of the keys finding what went stale and a walk of the keys finding half of it.
 
 **R917, "A store too large to service is discarded rather than cleared"**, gets the alternative its
-title contrasts. Nothing in the tree deletes a `store_source` row, so the only lever available today is
-discarding the whole file; after phase one a source's partition goes in one statement, and the twin
-means the removal does not take a not-running graph's rows with it. **R918, "The fact store cache root
-is bounded in bytes, and quiet workspaces are reclaimed"**, reads the same mechanism from the other
-end, with `last_seen` left store-global as the age signal a reclaim policy wants. Neither gets a policy here: when a source is known to be
-unwanted is their question, and this item only makes acting on the answer expressible.
+title contrasts. Nothing in the tree deletes a `store_source` row, so the only lever available today
+is discarding the whole file; after phase one a source's partition goes in one statement, and the
+twin means the removal does not take a not-running graph's rows with it. **R918, "The fact store
+cache root is bounded in bytes, and quiet workspaces are reclaimed"**, reads the same mechanism from
+the other end, with `last_seen` left store-global as the age signal a reclaim policy wants. Neither
+gets a policy here: when a source is known to be unwanted is their question, and this item only
+makes acting on the answer expressible.
 
 **R876** is interlocked rather than waiting. Its first slice moved the entry half of the
 `graphitron_` decode into the SDL walk, which is what makes the joint root at `store_graph_source`
-precise for all 52 relations rather than for the 12 `graphql_` ones alone. Going the other way, phase
+precise for all 51 relations rather than for the 12 `graphql_` ones alone. Going the other way, phase
 three attributes the populations that reach the store with no position, so entries written by that
 walk are written against attribution that already resolves.
 
@@ -1915,3 +1936,32 @@ one sentence, not the start of an audit.
 
 Nothing else is outstanding. `SdlFactCapture.stampTarget`'s javadoc remains the one falsified
 description the sweep does not name, still non-blocking, still carried from round 4.
+
+> **Author, 2026-09-08.** Finding 8 accepted, reproduced first, and the class statement is the part
+> worth having. `captureSchemaDirective` does return unless the name equals `FEDERATION_LINK`, which is
+> `"link"`, and does take `source_name` from `setPosition(directive.getSourceLocation(), ...)`;
+> `graphitron_link_entry` does declare `source_name VARCHAR` nullable, key `(graph_name, ordinal)` and
+> foreign-key only to `store_graph`. So the row exists, its column is one phase four would have altered
+> to `NOT NULL`, and phase three would have retired the only value those rows can carry.
+>
+> Moved whole, on the rule `graphql_root_operation` moves under, since a consumer writing
+> `extend schema @link(...)` gets an honest owned row and a taxonomy that classifies half a relation is
+> not one. Counts recomputed from the DDL rather than carried from your text, and they agree: **76 / 30
+> / 18** summing to 124 over the 124 relations of the five families, the owned row reading 14 `sql_`, 7
+> `jvm_`, 4 `java_`, 12 `graphql_`, 39 `graphitron_`, and the `NOT NULL` population 34 as 6 plus 28.
+>
+> One propagation the finding did not name and the move requires: the source-owned SDL figure goes from
+> 52 to 51, which reaches eight sites including the roots table, the index argument, phase four's edge
+> list, the insert-cost measurement and the forward-pointing section. Phase three's diagnostic figures
+> stay at 38 of 56, 9 of 16 and 29 of 40, because those count the relations *carrying* the column and
+> `graphitron_link_entry` still carries it; it left the owned set, not the DDL.
+>
+> The class statement is in phase three with its bound: the tag-link synthesis is the only path that
+> reaches the decode side, `FederationLinkApplier` injecting definitions rather than applications, the
+> convention roots writing no decode, and `graphitron_link_import_entry` carrying no `source_name` and
+> following its parent by `(graph_name, link_ordinal)`. I checked that last one rather than assume the
+> child was clean, since a second relation there would have made this an audit after all.
+>
+> On rounds 1 and 7: the anchor-side edges were R876's session's catch, not mine either. What the two
+> misses have in common is that both were claims about edges I read as declared because a neighbouring
+> edge was.
