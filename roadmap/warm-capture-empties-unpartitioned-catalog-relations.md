@@ -20,10 +20,13 @@ store has read, a `.graphqls` file, a jar, a generated jOOQ package or a `.java`
 row in `store_source`; a *partition* is the rows one source owns in a relation that several sources
 share; a *gatherer* is one of the passes that fill the store, each answering for one corpus.
 
-The foreign keys carry `ON DELETE CASCADE`, and that is a statement about ownership rather than a
-schedule for deleting anything. It says a fact cannot outlive the source that produced it, so any
-delete anybody does issue is complete without being told what else to remove. What it does not say is
-when a delete happens or whether one happens at all. A gatherer that can work out what actually
+The foreign keys are that statement, and they carry it in two shapes because there are two things to
+say. Inside a family the edges are `ON DELETE CASCADE`: a fact cannot outlive the source that produced
+it, so any delete anybody does issue is complete without being told what else to remove. The edge from
+a family root into the registry is `ON DELETE SET NULL`, hung on a nullable twin of the root's own
+source column, so removing a source flags every root that read it instead of deleting them and each
+owner reaps its own on its own cadence rather than having its rows taken out from under it by whoever
+noticed the file was gone. Neither shape says when a delete happens or whether one happens at all. A gatherer that can work out what actually
 changed should reconcile against the store and touch only that; a gatherer for which that is not worth
 the effort can delete its root row and walk fresh, and gets a correct result in one statement. Both
 are legitimate, the choice belongs to the gatherer that knows its corpus, and the keys hold either
@@ -63,7 +66,7 @@ only one source.
 
 ## The design
 
-One registry, one web of ownership, and two operations over it.
+One registry, one web of ownership, two edge kinds and two operations over them.
 
 `store_source` is the registry: one row per input the store has read, whatever read it. It gains a
 `JAVA_SOURCE` kind alongside `SCHEMA_FILE`, `JAR`, `DIRECTORY` and `JOOQ_SCHEMA`, so a consumer's
@@ -74,10 +77,13 @@ are for, and the SDL and classpath gatherers already share the registry while ru
 their own. `java_file` keeps `source_root`, which is a fact about the file, and its `stamp` and
 `read_at` move up to the registry row so currency is stated in one place for every corpus.
 
-**The foreign keys declare ownership. They do not decide when anything is deleted.** `ON DELETE
-CASCADE` says what belongs to what, which is a fact about the model and is true whether or not a
-delete ever runs. What it buys is that any delete anybody does issue is complete by construction.
-Two different operations then use it, and they are not the same operation.
+**The foreign keys declare ownership. They do not decide when anything is deleted.** They say what
+belongs to what, which is a fact about the model and is true whether or not a delete ever runs, and
+what that buys is that any delete anybody does issue is complete by construction. The two edge kinds
+answer to the two operations. Within a family the edges cascade, which is what makes a refresh's
+delete complete. From a family root into the registry the edge is `ON DELETE SET NULL` on a twin of
+the root's source column, which is what makes a removal flag rather than delete. The two sections
+below take the operations in turn, and they are not the same operation.
 
 ### Refreshing a source that changed
 
@@ -396,7 +402,8 @@ doing it rather than for patching the list.
   `sql_routine`, `jvm_method_parameter` through `jvm_method` through `jvm_class`. The `java_` family
   is already a tree rooted at `java_file`, and `store_graph_source` already keys `(graph_name,
   source_name)` with foreign keys to both sides, so every root this design deletes already exists as
-  a relation.
+  a relation. The edges that change shape are the five root ones, which swap the key on their
+  primary-key source column for the twin; every edge above a root is untouched.
 - **The foreign-key graph carries one cycle and it is harmless**, checked over all 177 base
   relations. `graphitron_argmapping_candidate` references itself on `(graph_name, coordinate,
   parent_path)`, already `ON DELETE CASCADE`, which terminates because it recurses on rows rather
@@ -557,8 +564,8 @@ metadata-derived sweep in `StoreRefresh.prepare` lands here too, since these thr
 members and the membership row joins them in phase four without the sweep changing.
 
 **Phase two, `java_` joins the registry.** Add the `JAVA_SOURCE` kind, give `java_file` the
-`source_ref` twin and its `CHECK` against `store_source` on phase one's pattern, and move its `stamp` and `read_at` up to the registry row so currency
-is stated once. `JavaSourceFacts` is the only reader or writer of either column, so the move is
+`source_ref` twin and its `CHECK` against `store_source` on phase one's pattern, and move its `stamp`
+and `read_at` up to the registry row so currency is stated once. `JavaSourceFacts` is the only reader or writer of either column, so the move is
 contained to one class; R922's comparison takes the instant as an argument and does not care which
 relation it came from.
 
@@ -568,7 +575,10 @@ definition the parser reads is already attributed: `SchemaLoader.parseSource` bu
 for every document including the bundled directives, which parse under
 `SchemaLoader.DIRECTIVES_SOURCE_NAME`. So the work is not to recover a document. It is to decide what
 four populations are, none of which came from one, and which between them are why `source_name` is
-nullable in 37 of the 54 relations.
+nullable in 38 of the 56 relations of these two families that carry the column at all, 9 of the 16
+`graphql_` and 29 of the 40 `graphitron_`. Counted over the relations carrying the column rather than
+over the owned set, deliberately: the owned figure moved twice as the taxonomy was corrected, where
+this population is a property of the DDL and stays put.
 
 They divide into two shapes, and both shapes already exist in the plan.
 
