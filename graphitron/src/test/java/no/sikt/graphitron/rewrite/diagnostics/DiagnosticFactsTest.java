@@ -402,10 +402,14 @@ class DiagnosticFactsTest {
     /**
      * The file axis is a path wherever it is stored and wherever the view projects one, so nothing
      * in this stratum computes a spelling and the two wires that name a document by URI render one
-     * at their own boundary. Stated over rows in all seven arms, which takes three fixtures rather
-     * than one build: the three loaders share a store, while the pilot arm and the SDL toolchain's
-     * arms each need their own capture (a capture clears the graph's partition on the way in), and
-     * no one build both refuses a source at the parser and reaches javac with it.
+     * at their own boundary. Stated over rows in seven of the eight arms, which takes three
+     * fixtures rather than one build: the three loaders share a store, while the pilot arm and the
+     * SDL toolchain's arms each need their own capture (a capture clears the graph's partition on
+     * the way in), and no one build both refuses a source at the parser and reaches javac with it.
+     * The eighth, the unlowerable-ordering arm, projects a captured directive's own source name
+     * like the pilot beside it and is stated at its own tier
+     * ({@code UnlowerableOrderingRejectionPipelineTest}), whose fixture needs a catalog this one
+     * has no arm for.
      */
     @Test
     @DisplayName("no file column, and no projection of one, spells a file as a URI")

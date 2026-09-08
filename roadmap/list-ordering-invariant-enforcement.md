@@ -1,7 +1,7 @@
 ---
 id: R677
 title: "Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see"
-status: Ready
+status: In Progress
 bucket: validation
 priority: 3
 theme: codegen-correctness
@@ -16,10 +16,15 @@ last-updated: 2026-09-08
 
 A schema that asks graphitron for an ordering it cannot deliver stops building, instead of generating
 without a word and serving rows in whatever order the database happened to return them. Graphitron
-states an invariant, a list result is never unsorted, and today's two build-time checks enforce it
-over a population that misses most of the ways it breaks. Three things change when this item lands.
+states an invariant, a list result is never unsorted, and the two build-time checks that enforced it
+key on a population that misses most of the ways it breaks. Three things change over the item's
+three phases; two of them have shipped.
 
-**An ordering the coordinate cannot honour fails the build.** Today this
+**Phases 1 and 2 have shipped, and this item is in review for those two only.** Phase 3 remains and
+waits on R682, so sign-off returns the item to `Ready` rather than taking it to `Done`; the file is
+not deleted at this gate.
+
+**An ordering the coordinate cannot honour fails the build.** Shipped in phase 1. Before it, this
 
 ```graphql
 type Query {
@@ -29,35 +34,36 @@ type Query {
 }
 ```
 
-generates silently and serves every page in participant primary-key order, whichever direction the
-client asks for, because a field returning a multitable interface (one whose implementations each
+generated silently and served every page in participant primary-key order, whichever direction the
+client asked for, because a field returning a multitable interface (one whose implementations each
 live in their own table) is read as one statement per participant and no ordering is *lowered* onto
 those statements, lowering being the step that carries a schema-level declaration down into emitted
-SQL. After phase 1 that schema fails the build with a located message naming the coordinate, the
-directive, and the reason. This is the reporter's own fallback ask on
-https://github.com/sikt-no/graphitron/issues/523, and it is a **breaking change** for any schema that
-compiles today with that declaration; see "Compatibility". The same rule sees a second shape, the
+SQL. That schema now fails the build with two located messages, one per declaration, each naming the
+coordinate, the container's participants, and both remedies. This is the reporter's own fallback ask
+on https://github.com/sikt-no/graphitron/issues/523, and it is a **breaking change** for any schema
+that compiled with that declaration; see "Compatibility". The same rule sees a second shape, the
 list-returning `@routine` write, where the ordering that goes undelivered is the target table's
 primary-key fallback rather than anything the author wrote; that rejection is built and held, and
-R660 turns it on with the fix, so no consumer meets it in this item.
+R660 turns it on with the fix, so no consumer meets it from this item.
 
 **A resolved ordering the generator cannot render stops the build too**, with a generator-bug message
-rather than a schema error. `CallWrap.Multiset`, the command value behind a child list read as a
-correlated subquery, carries the whole resolved ordering while the renderer has a branch for one arm
-of it, so a client-supplied order on an inline child list is accepted and then dropped. Phase 2 pins
-those two ends against each other, and ratchets the launcher relation (the command rows saying how
-each root read is launched) so the ordering projections that shipped in August cannot regress.
-Nothing changes for a consumer whose schema is clean.
+rather than a schema error. Shipped in phase 2. `CallWrap.Multiset`, the command value behind a child
+list read as a correlated subquery, carries the whole resolved ordering while the renderer has a
+branch for one arm of it, so a client-supplied order on an inline child list was accepted and then
+dropped. The confirmation recipe found that shape live, and it is now refused at production; the
+lowering that empties the refusal's population is R935. The same fold ratchets the launcher relation
+(the command rows saying how each root read is launched) so the ordering projections that shipped in
+August cannot regress. Nothing changes for a consumer whose schema carries no inline child list with
+an `@orderBy` argument.
 
-**The never-unsorted rule starts being keyed on the question it asks.** Phase 3 replaces the two
-capability-keyed validator checks with one fact-derived verdict per list-shaped read coordinate, so
-the rule stops depending on a read resolving against exactly one table. For a consumer this shows up
-as coordinates that used to slip past the check now failing it, each with a message that names which
-remedy applies.
+**The never-unsorted rule starts being keyed on the question it asks.** Phase 3, which remains.
+It replaces the two capability-keyed validator checks with one fact-derived verdict per list-shaped
+read coordinate, so the rule stops depending on a read resolving against exactly one table. For a
+consumer this shows up as coordinates that used to slip past the check now failing it, each with a
+message that names which remedy applies.
 
-Phases 1 and 2 are independent of each other and of everything else; phase 3 waits on R682. The
-`In Review` transition happens per phase, per the multi-phase convention in `roadmap/workflow.adoc`.
-
+Phase 3 waits on R682. The `In Review` transition happens per phase, per the multi-phase convention
+in `roadmap/workflow.adoc`.
 ## Why today's checks miss most of it
 
 Two checks enforce the invariant today, `GraphitronSchemaValidator.validateListRequiresOrdering` and
@@ -100,9 +106,11 @@ this item is three tracks rather than one.
   outright ("only the `OrderBySpec.Fixed` arm renders inline"). Nothing rejects the `Argument` arm on
   an inline `ChildField.TableField`: `validateTableField` checks the lookup-connection pair only, and
   the leaf's constructor bars `Argument` on routine-node paths alone. So a client-supplied order on an
-  inline child list appears to be accepted and silently ignored. Three code reads say so and no test
-  does, which is exactly the confidence level a phase-2 invariant is for; see "Phase 2" for how it is
-  confirmed and what happens when it fires.
+  inline child list appeared to be accepted and silently ignored. **Confirmed by phase 2's own
+  recipe**: an inline child list carrying an `@orderBy` argument resolves `OrderBySpec.Argument` into
+  the multiset and the emitted projection carries no ORDER BY at all. Refused at production since
+  phase 2; the lowering that empties the refusal is R935
+  (`roadmap/inline-child-list-orderby-argument-not-lowered.md`).
 * Root query over a multitable interface or union: the arm carries no ordering component at all, so
   `@orderBy` and `@defaultOrder` are accepted and discarded and rows come back in participant
   primary-key order (`roadmap/multitable-interface-query-orderby-lowering.md`).
@@ -212,38 +220,23 @@ from a closed vocabulary, and a coverage gate counting resolved rows against the
 construction stays honest. That view is the item's one piece of genuine modelling work; everything
 else it needs is already derived.
 
-## Sequencing: three tracks, two of which can start now
+## Sequencing: one track left, and what it waits on
 
-Deliberately no `depends-on`. The three classes sequence differently and only one of them waits.
+Deliberately no `depends-on`. Classes A and C shipped independently of each other and of everything
+else, as phases 1 and 2; class B is what remains.
 
-* **Class A ships immediately and independently.** It turns a silent wrong answer into a build error
-  at coordinates where nothing is going to lower the ordering soon, and it is what unblocks the
-  consumer who reported it. Its home is a store-derived rule in
-  `graphitron-model/src/main/java/no/sikt/graphitron/model/derive/` with `AuthoredClaimConflicts` as
-  the precedent, plus a `diagnostic` view arm.
-* **Class C also ships immediately.** The launcher relation and `Ordering` exist today, and
-  `Ordering.Columns` already rejects an empty spec at construction ("an empty fixed order is
-  unordered; model it as an absent Ordering, not an empty Columns arm"), so the vocabulary is
-  already shaped for the assertion. Its home is a production fold in `LauncherCommands` with a
-  pipeline-tier test beside `LauncherRelationClosureTest`, which already reads `plan().launchers()`
-  off the carried plan rather than re-deriving it. Two halves that do different work: over the
-  launcher relation the fold is a ratchet holding a closed population fixed, and over the projection
-  relation's multiset arms it is the two-ends comparison, because that is the one command family
-  where the two ends can still diverge. Not a `ValidationError`.
-* **Class B lands after the launcher step of
-  `roadmap/planners-read-facts-emitters-read-commands.md`**, or alongside it. Deciding "does an
-  ordering resolve for this coordinate" from facts is the same derivation `LauncherCommands` performs
-  today and that item moves store-side; doing it twice from two sources is how the two ends drift.
-  Whether class B can go green before every per-site fix lands, or needs a temporary exemption list,
-  is a Spec question. An exemption list is acceptable only if each entry names the item that removes
-  it.
+**Class B lands after the launcher step of
+`roadmap/planners-read-facts-emitters-read-commands.md`**, or alongside it. Deciding "does an
+ordering resolve for this coordinate" from facts is the same derivation `LauncherCommands` performs
+today and that item moves store-side; doing it twice from two sources is how the two ends drift.
+Whether class B can go green before every per-site fix lands, or needs a temporary exemption list,
+is a Spec question. An exemption list is acceptable only if each entry names the item that removes
+it.
 
-Class C is not blocked on class B and should not be sequenced behind it. The two read different
-things: class C compares a resolved ordering against the command row that was supposed to carry it,
-which is available now; class B asks whether an ordering is available at all, which is the fact-tier
-question.
-
-The three tracks are phases 1 to 3 below, in that order.
+Class C was not blocked on class B and was not sequenced behind it, which the delivery bore out. The
+two read different things: class C compares a resolved ordering against the command row that was
+supposed to carry it, which needed nothing new; class B asks whether an ordering is available at all,
+which is the fact-tier question and the one that waits.
 
 ## Notes the plan holds to
 
@@ -276,237 +269,73 @@ Each one is a constraint the phases below are built against.
 
 ## Phase 1, class A: reject an available ordering the coordinate cannot lower
 
-Copies `AuthoredClaimConflicts` outright, which is the precedent this item's notes already name: the
-reduction lives in a view's SQL, the Java member decodes the view's closed vocabulary into located
-`ValidationError` values, and a capture-cadence writer stores the minted rejection so the editor's
-`diagnostic` view reads it as a plain column.
+Shipped 2026-09-08, at the commit this note is being written in. `intent_field_unlowerable_ordering` is the rule, `UnlowerableOrderings` the
+decode, `UnlowerableOrderingRejectionRows` the capture-cadence writer, and the `diagnostic` view
+gains an eighth arm over the pair. Six things the delivery settled that the plan did not, each a
+premise for phase 3 and for whoever picks up R660:
 
-### The population, in facts
-
-Two read shapes, each a fact the store already states, and one availability side joined against both.
-
-**The multitable read.** The coordinate is one whose read is several statements rather than one, and
-`intent_field_scope_table.basis` carries `PARTICIPANT_TABLE` for exactly this shape; its own column
-comment says so, "PARTICIPANT_TABLE being exactly where the coordinate is several statements rather
-than one". No new capture, and no restatement of the polymorphic recognition, whose own precondition
-(the container binds no table, each participant binds one) lives in
-`intent_field_participant_scope_table`. What such a read delivers is participant primary-key order,
-so only a declared ordering is unhonoured here.
-
-**The list-returning routine write.** `intent_mutation_routine_seat` is total over the mutation-root
-fields carrying `@routine` and carries exactly one verdict each, so the arm is that relation at
-`verdict = 'ADMITTED'` joined to `graphql_field.is_list`, which in practice selects the chain seat, a
-carrier seat returning its payload object rather than a list. An admitted write emits, and
-what it emits is step 1's key capture followed by a keyed re-fetch that sorts by nothing, so this
-read shape delivers no order at all and any available ordering is unhonoured. The relation's own
-`verdict` vocabulary already refuses the neighbouring shapes for the neighbouring reasons, which is
-why this arm reads it rather than re-deriving the write recognition: `READ_SURFACE_ON_WRITE` refuses
-a coordinate carrying `@orderBy` or `@condition` because "neither write seat has a filter or an
-ordering to resolve them against", and `CONNECTION_RETURN` refuses `@asConnection`. Its predicate
-reads `graphitron_order_by_entry` and not `graphitron_default_order_entry`, so a `@defaultOrder` on a routine
-write is admitted today and is one of the two things this arm catches.
-
-The availability side is three relations, all captured or one join away:
-
-* `graphitron_default_order_entry` at the coordinate, with `graphitron_default_order_field_entry` for the entries
-  and the directive's own `source_name` / `source_line` / `source_column` for the location.
-* `graphitron_order_by_entry` on any argument of the coordinate, with the argument's own position.
-* `intent_bound_table` joined to `sql_primary_key` for the fallback
-  `OrderByResolver.resolveDefaultOrderSpec` supplies where nothing is declared. This arm is what
-  makes the rule availability-keyed rather than declaration-keyed, and it is inert on the multitable
-  read, where the fallback is what the emitter already delivers.
-
-All of it is joined under `intent_type_domain` on the owning type, exactly as `AuthoredClaimConflicts`
-narrows its build-error population: only a coordinate the generator intends to classify can fail a
-build. The editor arm reads the view ungated, on the same reasoning that relation's comment gives.
-
-### What the rule compares, and why it is not an unsortedness rule
-
-Worth stating because it decides the message and the vocabulary. The comparison is between the
-ordering **available** at the coordinate and the ordering the coordinate's read shape **delivers**,
-and a row is minted where the available one is not the delivered one. Both sides are facts and
-neither is a fact about a command family's slots.
-
-That is what keeps the two arms honest in opposite directions. A multitable root with no declaration
-is **not** a violation: the polymorphic emitter projects a synthetic `__sort__` per branch and orders
-on it, so the rows come back in participant primary-key order, deterministically, and what is
-available is exactly what is delivered. The invariant "a list is never unsorted" holds there, and
-what fails is the author's declaration, which is accepted and then not lowered. A list-returning
-routine write with no declaration **is** a violation, because the same fallback is available and
-nothing delivers it.
-
-It is also why the rule cannot be folded into phase 3's verdict view. That view answers "is an
-ordering available", and at both of these coordinates one is; the question phase 1 asks is a second
-one the view does not put.
-
-### The two relations
-
-* `intent_field_unlowerable_ordering (graph_name, type_name, field_name, verdict, available_via,
-  argument_name, source_name, source_line, source_column)`. One row per coordinate and availability
-  route whose ordering the coordinate's own read shape cannot honour. `verdict` is the closed pair
-  `PARTICIPANT_FAN_OUT` and `KEY_CAPTURE_SCATTER`, one per read-shape arm above, and the two are
-  disjoint by construction: a mutation-root routine write takes no `PARTICIPANT_TABLE` row.
-  `available_via` is the closed triple `DEFAULT_ORDER` / `ORDER_BY_ARGUMENT` / `PRIMARY_KEY_FALLBACK`,
-  and a coordinate with two routes is two rows: the arity is the answer, as on every rule view in the
-  family, and each remedy names one route. `argument_name` carries the declaring argument on the
-  `ORDER_BY_ARGUMENT` arm and is NULL on the other two, and it is in the key, because
-  `graphitron_order_by_entry` is keyed at argument grain and two `@orderBy` arguments on one coordinate
-  would otherwise collide on a row. Unreachable today, `OrderByResolver.resolve` taking the first
-  `ArgumentRef.OrderByArg` it finds, but a view key is not the place to inherit a consumer's
-  precedence. The location columns are the declaring directive's own where there is one, so the editor
-  underlines the directive rather than the field; on `PRIMARY_KEY_FALLBACK` there is no directive to
-  point at, so they carry the field's own position.
-* `intent_field_unlowerable_ordering_rejection (graph_name, ordinal, type_name, field_name, kind,
-  variant, message)`, on `intent_authored_claim_rejection`'s shape and for its stated reason: a table
-  because the message is a render no view over this store can state, written by a capture-cadence
-  writer that clears its graph partition and re-mints after every flush.
-
-Both carry a `COMMENT ON` per relation and per column; `FactSchemaGateTest` fails the build otherwise,
-and the `intent_` prefix houses them in the family census with no `meta_` edit needed.
-
-### The Java side
-
-Main sources land in `graphitron-model/src/main/java/no/sikt/graphitron/model/derive/`, beside
-`AuthoredClaimConflicts`, `AuthoredClaimRejectionRows` and `ArgmappingProjectionDefects`. That is
-forced rather than chosen: the same bullets below make the family a component of `StoreDetections`
-and a call in `FactCapture.detect`, both of which live in `graphitron-model`, and `graphitron`
-depends on `graphitron-model` one way.
-
-* `UnlowerableOrderings.java`, structured like `AuthoredClaimConflicts`: a `Detection` record with
-  `violations()`, a typed per-coordinate verdict beside it, and one `rejectionOf` that is the single
-  mint of the `Rejection` value, shared with the rows writer so the report and the store cannot spell
-  one violation two ways.
-* `UnlowerableOrderingRejectionRows.java`, the writer, on `AuthoredClaimRejectionRows`'s cadence.
-* `StoreDetections` gains the family as a component, and `FactCapture.detect` gains the call. Both are
-  one-line joins by construction; that is what that record's javadoc says the shape is for.
-* A `diagnostic` view arm, joining the defect view to the rejection rows on the coordinate, matching
-  the claim-conflict arm column for column.
-
-The two test paths are unaffected by the placement: the view's own test is a `graphitron-model` unit
-test and the decode's test is a `graphitron` one, which is where `ArgmappingProjectionDefectTest` and
-`ArgmappingProjectionDefectsTest` already sit for the same split.
-
-### The rejection arm, the message, and the one verdict that is held
-
-`Rejection.deferred(summary)`, not `structural` or `invalidSchema`. The `diagnostic` view derives
-`actionable` as `kind <> 'DEFERRED'` and documents the `FALSE` case as "recognised but not yet
-generator-supported, a workaround rather than a schema fix", which is this violation exactly: the
-schema is well formed, the directive is real, and the remedy is to drop the declaration or wait for
-the lowering. A deferred rejection still fails the build, so the outcome the reporter asked for is
-unchanged; what the arm buys is that an editor triages it correctly and that the row leaves the
-population the moment the lowering lands.
-
-The message states the fact, the reason and both remedies, and names no roadmap item (a generated
-message may not carry an `R<n>`, per `CLAUDE.md`; `RoadmapReferenceGuardTest`'s string-literal scan
-fails the build on one):
-
-> Field 'Query.applikasjoner': `@defaultOrder` declares an ordering this field cannot honour. A
-> field returning the multitable interface 'Applikasjon' is read as one statement per participant
-> (Applikasjon1, Applikasjon2, Applikasjon3) and the results are combined on a synthetic key, so the
-> declared columns are not applied and rows arrive in participant primary-key order. Remove the
-> declaration, or return a single `@table` type.
-
-The participant list comes off the view's own join rather than a string built in SQL, on
-`AuthoredClaimConflicts`'s division of labour.
-
-**`KEY_CAPTURE_SCATTER` mints its row and holds its rejection.** The decode is a total switch over
-`verdict` with no `default`; the `PARTICIPANT_FAN_OUT` arm mints the `ValidationError` above and the
-`KEY_CAPTURE_SCATTER` arm mints none for now. The reason is a measurement rather than a preference:
-the only live instance is `Mutation.rentFilm: [Rental!]!` in `graphitron-sakila-example`'s own
-schema, so turning the rejection on reddens this reactor's verification build until R660
-(`roadmap/routine-write-key-capture-unordered.md`) gives that coordinate an order to deliver. Per
-this item's own rule an exemption is acceptable only where its entry names what removes it, and this
-one does; the entry in code names R660's mechanism (the write's step-2 re-fetch carrying an order)
-rather than its id, because `RoadmapReferenceGuardTest` bars the id from a comment.
-
-What the held arm still delivers is not nothing, and it is why the arm ships here rather than waiting
-for R660 to invent it. The view row is the population count and the pinned taxonomy: the coordinate
-sits in a cell that can reject it, so the next reviewer who meets a list-returning routine write does
-not have to re-run the class-B-or-class-C argument. `FieldUnlowerableOrderingTest` asserts the row
-exists at that coordinate, so a lowering that lands upstream shows up as a failing test rather than
-as a quietly empty population. R660's delivery is then one arm flip plus its own message, on the
-shape this phase leaves it:
-
-> Field 'Mutation.rentFilm': this write returns a list and delivers it in no defined order. The
-> routine's returned keys are captured and the rows re-read by key, and neither step sorts, so
-> 'rental''s primary key orders nothing here even though it is available. Return a single object
-> rather than a list.
+* **The view is keyed on availability exactly as planned, and the two inert pairings fall out of
+  construction rather than out of a filter.** `PRIMARY_KEY_FALLBACK` cannot fire on the
+  participant arm because that shape's own precondition is that the navigated container binds no
+  table, and `ORDER_BY_ARGUMENT` cannot fire on the write arm because `READ_SURFACE_ON_WRITE`
+  already refuses `@orderBy` there. So the availability side is stated once and joined against
+  both read shapes, and neither arm carries a mask the other needs.
+* **`PRIMARY_KEY_FALLBACK` locates on the `@routine` application, not on the field.** The plan said
+  the field's own position, which meant reading `graphql_field`, and
+  `ExpandedPopulationReaderGateTest` refuses a new view naming the transcription: that gate makes
+  the authored-versus-expanded choice an author's rather than a reviewer's, and its roster only
+  shrinks. The read-shape side supplies the position instead, `intent_mutation_routine_seat`
+  carrying the write's own `@routine` position, and the route side reads `graphitron_field` for
+  `is_list`. That is the better location as well as the permitted one: the fallback is written
+  nowhere, so the nearest thing an author wrote is the directive that made the coordinate a write.
+* **The rejection table carries `available_via` and `argument_name` beyond the plan's column
+  list.** The view is keyed per availability route and the `diagnostic` arm joins these rows to it,
+  so a rejection keyed on the coordinate alone would fan two locations onto one message.
+* **The writer runs after the materialization refresh, not beside the flush.** The view reads
+  `intent_field_scope_table`, which is materialized, so a call in `FactCapture`'s load transaction
+  would render the previous capture's rows. It runs in a transaction of its own after both refresh
+  cadences and after the analyse. The build path never reads these rows, minting the same value off
+  the view directly, so a reader arriving in that window sees the diagnostic missing rather than
+  wrong. That is a cadence no sibling writer has and the relation's comment says so.
+* **Both relations are declared in `meta_relation` rather than added to the undeclared roster**,
+  which is what `MetaDeclarationGateTest` requires of a new relation and what forces the short
+  relation comments: a declared relation's `COMMENT ON` is exactly its grain sentence plus its
+  example, and the essay lives in `meta_relation.rationale`. Two new `meta_grain` rows come with
+  them. `MaterializeRegistryGateTest`'s hand-written roster gains the rejection table, and
+  `FactCaptureAgreementTest` registers both on the claim-conflict pair's `DERIVED` arm.
+* **The write arm's verdict case lives at the graphitron tier, not the model tier.** The plan put
+  one case per verdict in `FieldUnlowerableOrderingTest`, and no seeded store can reach
+  `intent_mutation_routine_seat`'s one emitting verdict: it turns on a chain landing on a catalog
+  routine's own result. `UnlowerableOrderingsTest` states it against captured SDL and the test
+  catalog, which is the tier `MutationRoutineSeatTest` states that relation itself at, and the
+  model-tier file says so where a reader would look for the missing case.
 
 ## Phase 2, class C: pin the multiset's two ends, and ratchet the launcher relation
 
-The comparison all three predecessor items were reaching for, sited where the two ends can still
-diverge. It needs no new source and no new tier, and it ships now.
+Shipped 2026-09-08, in the same commit as phase 1. `LauncherCommands.requireResolvedOrderingsAreLowered` is the fold, called from
+`EmitPlan.produce` once both relations exist, with `LauncherCommands.orderIsEntailedBySource` as the
+one home of the exemption set. Four things the delivery settled:
 
-**Where it lives.** A fold over the finished relations inside `LauncherCommands`, throwing
-`IllegalStateException` with the "Graphitron generator bug (...)" prose the tree already uses for a
-shape the emitter cannot honour (see the batched-lookup throw in the same class, whose comment says
-"Failing at production keeps the gap loud until a single-shaped lookup emission or a validator
-rejection lands"). Production and not a test alone, because the track's value is the sites nobody has
-found and a test over our fixture corpus finds the sites our fixtures exercise, while a production
-invariant runs on every consumer's schema. The pipeline-tier test beside `LauncherRelationClosureTest`
-still ships, pinning the invariant in both directions, but it is the second artifact rather than the
-mechanism.
-
-The fold has two halves and they are not the same kind of check. Saying which is which is what keeps
-the phase honest about what it buys.
-
-**The multiset half is the two-ends comparison, and it is why the phase ships.** `CallWrap.Multiset`
-carries the whole `OrderBySpec` and `ProjectionUnitRenderer` renders one arm of it, the `Fixed` arm,
-which `CallWrap.Multiset`'s own javadoc states outright. Nothing derives the command from the
-renderer's capability, so the model can resolve an ordering into a multiset that will never render
-it, and neither end knows. The assertion that fits that shape is arm-shaped rather than
-slot-presence-shaped: a list-cardinality multiset may not carry an `OrderBySpec.Argument`, because no
-site lowers one.
-
-This is also what confirms or refutes the sixth census site. The confirmation recipe, to be run
-**before** the invariant is written, so the invariant is known to be able to fail: add
-`filmsOrderedInline(order: [FilmOrderBy] @orderBy): [Film!]!` as an inline child list on an existing
-sakila example type (no `@splitQuery`, no `@asConnection`), generate, and read the emitted projection.
-If the multiset carries no `orderBy`, the site is real and the phase owes it two things: a filed item
-for the lowering (or the rejection, if the render side is not worth building), and an exemption entry
-pointing at it. Per this item's own rule an exemption is acceptable only where its entry names what
-removes it, and in code that is the mechanism rather than the id, `RoadmapReferenceGuardTest` barring
-the id from a comment; this body records the pairing. If the emission turns out to reject or to lower
-it, the census bullet gets struck and this half becomes a ratchet like the other one.
-
-**The launcher half is a ratchet over a closed population.** One assertion, not two: every row of the
-launcher relation whose `ResultShape` is `RecordList` and whose `LaunchSource` is not an exempt arm
-carries a present `Ordering`.
-
-It is stated as one assertion because the second one has nothing to compare. On every non-exempt arm
-the slot is computed by `LauncherCommands.orderingOf` directly off the leaf's own `OrderBySpec`, and a
-leaf resolving `OrderBySpec.None` never reaches the plan at all, `validateListRequiresOrdering`
-rejecting it first, so an assertion that read the leaf and demanded a slot would be asserting a total
-function against its own output. On the exempt arms it would be worse than redundant: a root
-`@lookupKey` list resolves a non-empty `OrderBySpec.Fixed`, `OrderByResolver.resolveDefaultOrderSpec`
-falling back to the target table's primary key, while `LauncherCommands.lookupRow` builds
-`new ResultShape.RecordList(null)` unconditionally, so `filmById(film_id: [ID] @lookupKey): [Film]!`
-in the sakila example would throw on the verification build. The exemption gates the whole assertion,
-and the four absent-slot sites in the relation today are exactly the four arms the exemption list
-names, so there is no launcher-family divergence left to find. What the ratchet buys is that the
-population stays closed: a new source arm, or an existing arm that stops projecting the ordering it
-projects today, fails here.
-
-The exemption set is a total switch over `LaunchSource`, no `default`, so a new source arm is a
-compile-time decision by whoever adds it rather than a silent admission. Today's exempt arms and their
-reasons, each of which is already written down on the shape it belongs to:
-
-* `KeyedLookup`: input order is carried by the scatter onto the keys' slots, so there is no order to
-  sort by. `ResultShape.RecordList`'s own javadoc states this.
-* `ProjectedReentry` and the discriminated reentry source: the `ORDER BY idx` scatter re-keys the
-  re-projected rows to the upstream source order. Sound where that upstream order is itself defined,
-  which for a DML write's returned keys it is. It is **not** sound for a routine write, and that is
-  precisely the premise failure `roadmap/routine-write-key-capture-unordered.md` records against
-  `requiresReFetch()`; the exemption entry says so in its comment. The chain seat of that shape is
-  phase 1's `KEY_CAPTURE_SCATTER` verdict; the carrier's data field is R660's own, by narrowing
-  `requiresReFetch()` to re-fetches whose upstream order is defined.
-* The schema-free unit-tier assemblies, which carry no coordinate to read a leaf for.
-
-`ResultShape.Connection` needs no arm: its constructor already requires a non-null `Ordering`.
-
-**Why not a `ValidationError`.** A dropped ordering is not a schema defect. There is no coordinate for
-the author to fix, and a message pointing at their `@defaultOrder` would be pointing at the one thing
-they did right. The audience is whoever is changing the generator, and the register is the throw.
+* **The sixth census site is real.** The confirmation recipe ran before the invariant was written:
+  an inline child list carrying an `@orderBy` argument resolves `OrderBySpec.Argument`, hands it to
+  `CallWrap.Multiset`, and the emitted projection carries no ORDER BY at all. It is refused at
+  production now, and R935 (`roadmap/inline-child-list-orderby-argument-not-lowered.md`) is the
+  lowering that empties the refusal's population. No exemption entry was needed, because the shape
+  is not exercised anywhere in this reactor: a consumer meets the throw, our corpus does not, which
+  is the whole reason the invariant is production rather than a test.
+* **The launcher half was shown able to fail before it was trusted.** Reverting
+  `batchedLookupRow`'s ordering projection to the `RecordList(null)` it passed before 2026-08-31
+  makes the fold throw at `Film.actorsLookupSplit` naming `CorrelatedLookupChain`; restored, and the
+  fixture coordinate that caught it is kept in `LauncherOrderingClosureTest`'s corpus.
+* **The exemption switch has three arms, not four.** Round 2's non-blocking note was right that the
+  schema-free unit-tier assemblies are no arm of `LaunchSource`: `serviceReentryRow`'s source is
+  `ProjectedReentry` and already exempt. The switch names `KeyedLookup`, `ProjectedReentry` and
+  `DiscriminatedReentry` and returns false for the other nine.
+* **The corpus run found no empty-`Fixed` absent slot**, which round 2's other note asked the
+  implementer to check rather than assume: `orderingOf` returns null on an empty `OrderBySpec.Fixed`
+  as well as on `None`, and no non-exempt list row in the closure test's corpus or in the example
+  schema's own build reaches the fold with one. So the four `RecordList(null)` sites are the whole
+  absent-slot population, as round 2 read them.
 
 ## Phase 3, class B: the ordering-availability view
 
@@ -568,50 +397,33 @@ before writing the rejection, on the sakila example schema and on the fixture co
 
 Per phase, and each named test is what answers "how do we know the item is complete".
 
-**Phase 1.**
+**Phases 1 and 2, shipped.** Four files, and what each answers:
 
 * `graphitron-model/src/test/java/no/sikt/graphitron/model/intent/FieldUnlowerableOrderingTest.java`,
-  the view's own unit-tier test over a seeded store, on `ArgmappingProjectionDefectTest`'s pattern:
-  one case per `available_via` arm, the both-directives coordinate yielding two rows, one case per
-  `verdict`, and the boundaries, each of which is an absence some other surface owns. A
-  single-`@table` field with `@defaultOrder` is quiet. A multitable field with no declaration is
-  quiet, which is the "what the rule compares" section asserted as a property: what is available
-  there is what is delivered. A single-table discriminated interface (`@discriminate` on the
-  container) is quiet, because it lowers ordering today and the two shapes are one join apart. A
-  non-list routine write is quiet, and a mutation-root `@routine` the seat relation refuses is quiet,
-  since a coordinate that does not emit cannot deliver a wrong order.
+  the view's own algebra over a seeded store, on `ArgmappingProjectionDefectTest`'s pattern: the two
+  declaration routes, the both-declarations coordinate yielding two rows, two `@orderBy` arguments
+  yielding two rows (the reason the argument is in the grain), the child coordinate returning a
+  container, the interface arm beside the union arm, and four boundaries. The load-bearing boundary
+  is the multitable read with nothing declared, which is quiet and where the fallback route's
+  inertness on that arm is asserted rather than assumed: both participants have primary keys, so a
+  rule keyed on "the read's target table has a primary key" would have fired.
 * `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/UnlowerableOrderingsTest.java`, the
-  decode: the located `ValidationError` for the reported shape, message text and location asserted
-  against the declaring directive's own position and not the field's; the `PRIMARY_KEY_FALLBACK` arm
-  locating on the field, there being no directive to point at; the `KEY_CAPTURE_SCATTER` arm minting
-  a view row and no `ValidationError` while the rejection is held, which is the assertion R660 flips;
-  plus the domain narrowing (a violating coordinate on a type outside `intent_type_domain` mints no
-  build error while the view keeps its row).
-* One pipeline-tier case asserting the build actually fails on the reported schema, and one asserting
-  the store row reaches the `diagnostic` view with `actionable = FALSE`. The second is what the editor
-  reads; without it the phase ships a build error and an editor that stays silent.
-* The reported schema is the fixture: a three-implementation multitable interface, `@asConnection`, a
-  field-level `@defaultOrder(fields:)`, and an `@orderBy` argument, since that combination is what
-  arrived from the field and each half fails on its own.
-
-**Phase 2.**
-
-* The invariant must be shown able to fail before it is trusted: revert one of the two ordering
-  projections that shipped on 2026-08-31 in the working tree, confirm the fold throws at the right
-  coordinate, restore it. Record that in the delivery commit rather than as a checked-in test.
-* `LauncherOrderingClosureTest` (pipeline tier, beside `LauncherRelationClosureTest`, reading
-  `plan().launchers()` off the carried plan and never a re-derivation): every list-shaped row whose
-  `LaunchSource` is not an exempt arm carries a present `Ordering`. The exemption set is read off the
-  production switch, never restated in the test, on `LauncherRelationClosureTest`'s own rule about
-  reading the producer's declared membership data.
-* A membership pin over the exempt arms: the arms with an absent slot in the corpus are exactly the
-  arms the switch exempts, so an arm that quietly stops projecting its ordering fails here rather
-  than being absorbed by an exemption written for a different shape. It pins arm membership and not
-  the leaf's spec, a keyed lookup's leaf resolving a primary-key `Fixed` that the launcher row is
-  right to drop.
-* The multiset half: an assertion that no list-cardinality `CallWrap.Multiset` carries an
-  `OrderBySpec.Argument`, and, once the confirmation recipe has run, a case at the shape it turned
-  up, which is the one place in this phase where the two ends can actually disagree.
+  decode over captured SDL and the test catalog: the message and the directive-own location for the
+  reported shape, the argument arm's own remedy, the union arm's wording, the domain narrowing (a
+  violating coordinate outside `intent_type_domain` mints no build error while the view keeps its
+  row), and the `KEY_CAPTURE_SCATTER` pair of assertions R660 flips, a view row on the
+  `PRIMARY_KEY_FALLBACK` route and no `ValidationError`.
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/UnlowerableOrderingRejectionPipelineTest.java`:
+  the reported schema fails the build with both messages, the same paginated multitable root with no
+  declaration builds clean, and the stored rejection reaches the `diagnostic` view as two rows with
+  `actionable = FALSE`. The last is what the editor reads; without it the phase would ship a build
+  error and an editor that stays silent.
+* `graphitron/src/test/java/no/sikt/graphitron/rewrite/methodgraph/LauncherOrderingClosureTest.java`
+  (beside `LauncherRelationClosureTest`, reading the carried plan and never a re-derivation): the
+  multiset comparison over the corpus, the case at the shape the confirmation recipe turned up, the
+  launcher ratchet, and the exemption's membership read off the production switch rather than
+  restated. Its corpus carries one coordinate per list-returning launcher family, `Film.actorsLookupSplit`
+  among them, which is the coordinate the revert-and-restore exercise threw at.
 
 **Phase 3.**
 
@@ -626,41 +438,20 @@ Per phase, and each named test is what answers "how do we know the item is compl
 * Every existing case in `ListRequiresOrderingValidationTest` re-pointed at the new rule, with the
   message changes recorded. That file is the regression surface for the rule being replaced, and it
   is where a reviewer checks that the replacement covers what it replaced.
-
 ## User documentation (first-client check)
 
-Phase 1 has a user-visible surface (a new build rejection), so the docs draft is part of the design.
-Two pages, and one of them is a correction rather than an addition.
+Shipped with phase 1, at both pages the draft named.
 
 **`docs/manual/how-to/sort-results.adoc`, "Sort across polymorphism".** The section as written
-describes ordering across a multitable union as working and warns about a hazard that cannot arise:
-"every participating table must agree on the order's shape", and "mixing a `(LAST_NAME, FIRST_NAME)`
-ordering for `Customer` with a `(FIRST_NAME, LAST_NAME)` ordering for `Staff` does not compose". No
-declared ordering is lowered onto a multitable read at all, so a reader following this section writes a
-schema that silently ignores their order. The paragraph is rewritten to say what is true: the emitter
-sorts on a synthetic key built from each participant's primary key, a declared ordering is not lowered,
-and as of phase 1 declaring one fails the build. The single-table paragraph beneath it is accurate and
-stays.
+described ordering across a multitable union as working and warned about a hazard that cannot arise
+("every participating table must agree on the order's shape"), so a reader following it wrote a
+schema that silently ignored their order. It now says what is true: the emitter sorts on a synthetic
+key built from each participant's primary key, a declared ordering is not lowered, and declaring one
+fails the build. The single-table paragraph beneath it was accurate and stays.
 
 **`docs/manual/how-to/polymorphic-types.adoc`, "Constraints".** One bullet, in the register the
-existing bullets use ("... is rejected at build time as a deferred capability" is already the house
-phrasing there).
-
-Draft, for the sort page:
-
-> === Sort across polymorphism
->
-> A field returning a multi-table polymorphic interface or union is read as one statement per
-> participant, combined with `UNION ALL`. The emitter orders the combined result on a synthetic
-> `__sort__` column projected per branch from that participant's primary key (typed as JSONB for
-> composite keys, so PostgreSQL's lexicographic ordering reproduces the multi-column order). That
-> ordering is not configurable: `@defaultOrder` and `@orderBy` are not lowered onto the participant
-> branches, and declaring either on such a field fails the build rather than being ignored. Sort a
-> single-`@table` field instead, or narrow the field's return type to one participant.
->
-> For single-table polymorphism, ordering is unchanged from the non-polymorphic case: the
-> discriminator column is just another projected column, and the sort spec applies to the shared
-> backing table.
+existing bullets use ("is rejected at build time as a deferred capability" was already the house
+phrasing there), cross-linking the sort page.
 
 Phase 3 adds no page: it changes which coordinates the existing deterministic-order rule catches, and
 `sort-results.adoc`'s "Constraints and pitfalls" list already states the rule. Re-read that list at
@@ -668,36 +459,41 @@ phase 3 and correct any bullet the new population makes wrong. Phase 2 has no us
 neither does phase 1's held `KEY_CAPTURE_SCATTER` verdict; the page that shape needs (the routine
 write's list return and what it does or does not guarantee about order) belongs with R660's delivery,
 which is what decides the sentence.
-
 ## Compatibility
 
-Phase 1 breaks builds that pass today. That is the intent, and it is what the reporting consumer asked
+Phase 1 breaks builds that passed before it. That is the intent, and it is what the reporting consumer asked
 for, but it is a real upgrade cost for anyone who has `@defaultOrder` on a multitable field and has not
 noticed it does nothing. Three consequences for the delivery:
 
 * The `changelog.md` entry says so explicitly, in the "what a consumer has to do" register rather than
-  as a feature note.
+  as a feature note. It is owed at the Done gate, which this item does not reach until phase 3, so
+  the entry when it comes has to carry a breaking change that shipped two phases earlier.
 * The message must carry the remedy, not just the refusal. An author who hits this needs to know that
   removing the declaration loses them nothing they currently have.
 * When `roadmap/multitable-interface-query-orderby-lowering.md` lands the lowering, the rejection's
   population empties on its own: the rule keys on the coordinate's read shape, so nothing has to be
-  un-written. Say that on that item, so its implementer knows the rejection is theirs to retire.
+  un-written. Said on that item, in a section of its own, so its implementer knows the rejection is
+  theirs to retire.
 * The `KEY_CAPTURE_SCATTER` verdict adds no upgrade cost while its rejection is held, and the whole
   of it when R660 flips the arm: any schema with a list-returning `@routine` write then stops
-  building unless R660's fix gives that shape an order to deliver. Say that on R660, so its
-  implementer picks between the two deliberately rather than meeting it in a failing build.
+  building unless R660's fix gives that shape an order to deliver. Said on R660, so its implementer
+  picks between the two deliberately rather than meeting it in a failing build.
 
 ## Cost
 
-One query per build for phase 1, over relations that are already registered or cheap
-(`intent_field_scope_table` is a table with a coordinate index, the directive relations are captured
-tables). `intent_mutation_routine_seat` is the one unknown in it, being a reduction over half a dozen
-sibling relations rather than a table; take its contribution separately, so a cost that turns out to
-sit in the write arm can be answered by keying that arm off `graphitron_routine_entry` and the seat
-relation's verdict alone. Take the number before wiring it in, per `DerivedReadCostTest`'s discipline, and do
-not register the view: one reader, so a registration would pay a refresh to save an evaluation. Phase
-2 is one pass over rows already in memory. Phase 3's cost is unknown until the population exists and
-is the phase's own measurement to take.
+**Measured.** `intent_field_unlowerable_ordering` reads in 53 milliseconds and 25053 scans on
+`DerivedReadCostTest`'s twelve-unit fixture. The seat relation is the whole of it, as the plan
+suspected: `intent_mutation_routine_seat` reads in 55 milliseconds on its own, so the availability
+side and the participant arm add nothing measurable on top of a read another consumer already makes.
+The lever the plan held in reserve, keying the write arm off `graphitron_routine_entry` and the seat
+verdict alone, is therefore not worth taking: it would be the same relation. What the read does cost
+is two rows in `DerivedReadCostTest`'s pinned non-monotonic set, both inherited from the seat's own
+row against `intent_spelled_table` and both recorded there with their figures; the second is the
+`diagnostic` view, which reached no registration at all until it joined this rule.
+
+The view is not registered, on the plan's own reasoning: two readers per build, so a registration
+would pay a refresh to save two evaluations. Phase 2 is one pass over rows already in memory. Phase
+3's cost is unknown until the population exists and is the phase's own measurement to take.
 
 ## Retired vocabulary
 
@@ -761,6 +557,10 @@ derived independently, which in today's command tier is the multiset alone.
 * `roadmap/consumers-share-relations-not-queries.md` binds the class B view: it lands in the store at
   its own grain, and the launcher producer reads the same relation rather than a query shared with
   the rule.
+* `roadmap/inline-child-list-orderby-argument-not-lowered.md` (R935) is phase 2's own finding, filed
+  by this item's delivery: the sixth census site turned out to be real, and that item is the lowering
+  (or the author-facing refusal) whose landing empties phase 2's production throw. This item does not
+  wait on it and never did; the throw is what keeps the silence from returning meanwhile.
 * The four per-site items (`roadmap/split-query-child-list-drops-default-order.md`,
   `roadmap/lookup-unrealized-co-members.md`, `roadmap/routine-write-key-capture-unordered.md`,
   `roadmap/multitable-interface-query-orderby-lowering.md`) fix the sites. Class C is what keeps them
@@ -805,6 +605,15 @@ attention because each is a departure from the body it was written against:
 * **A sixth candidate site**, an inline child list with an `@orderBy` argument, found by reading the
   multiset renderer's single ordering branch. Unverified: three code reads say the ordering is silently
   ignored, and phase 2 carries the recipe that confirms or refutes it before the invariant is written.
+
+Phases 1 and 2 delivered 2026-09-08. Three things the delivery changed rather than elaborated,
+each recorded in the phase notes above with its reason: the fallback route's location moved from
+the field to the `@routine` application, because a new view may not name the transcription; the
+rejection writer's cadence moved after the materialization refresh, because the view reads a
+materialized relation; and both relations are declared in `meta_relation`, which is what forces
+their short comments and puts the essay in the declaration's own rationale. The confirmation recipe
+found the sixth census site real, which is the one open question in the plan the delivery answered
+by measurement rather than by argument.
 
 ## Reviewer findings
 

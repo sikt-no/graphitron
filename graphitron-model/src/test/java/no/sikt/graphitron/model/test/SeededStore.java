@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
@@ -1937,6 +1938,26 @@ public final class SeededStore {
             .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_ORDER_BY_ENTRY.SOURCE_COLUMN, 3)
+            .execute();
+    }
+
+    /**
+     * A {@code @defaultOrder(primaryKey: true)} application on a field: the field-grain half of the
+     * ordering declaration, which is the whole of what a relation asking whether an ordering was
+     * declared here turns on. What the ordering resolves to lives on the entry's own arguments and
+     * on {@code graphitron_default_order_field_entry} beside it, so a case whose subject is the
+     * resolved columns seeds those too.
+     */
+    public static void seedDefaultOrder(DSLContext dsl, String graphName, String typeName,
+                                        String fieldName) {
+        dsl.insertInto(GRAPHITRON_DEFAULT_ORDER_ENTRY)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.GRAPH_NAME, graphName)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.TYPE_NAME, typeName)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.FIELD_NAME, fieldName)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.SOURCE_LINE, 7)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.SOURCE_COLUMN, 11)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.PRIMARY_KEY, true)
             .execute();
     }
 

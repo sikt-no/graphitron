@@ -47,7 +47,8 @@ class MaterializeRegistryGateTest {
         "intent_type_backing_class",
         "intent_authored_claim_rejection",
         "intent_input_occurrence_path",
-        "intent_input_occurrence_path_step");
+        "intent_input_occurrence_path_step",
+        "intent_field_unlowerable_ordering_rejection");
 
     /**
      * How many registrations the register holds, and how many stages its refresh takes: the

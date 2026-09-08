@@ -23,6 +23,8 @@ import no.sikt.graphitron.model.derive.RefreshProgress;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.derive.TypeBackingRows;
+import no.sikt.graphitron.model.derive.UnlowerableOrderingRejectionRows;
+import no.sikt.graphitron.model.derive.UnlowerableOrderings;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.CapturePort;
@@ -226,6 +228,7 @@ public final class FactCapture {
                     NodeIdDecodeDefects.detect(dsl, graphName),
                     NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
+                    UnlowerableOrderings.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName));
             }
         };
@@ -422,6 +425,16 @@ public final class FactCapture {
         // path it is the idempotent restatement of what that pass already analysed, kept so that one
         // call states the whole register's statistics on every path out of a capture.
         Materializations.analyse(dsl);
+        // The one capture-cadence writer that cannot run beside its siblings above, and the reason
+        // is a dependency rather than a preference: the view it renders reads
+        // intent_field_scope_table, which the refresh above is what fills, so a call inside the
+        // load transaction would render the previous capture's rows. Its own transaction after the
+        // refresh, and after the analyse so the read is planned against current statistics, is
+        // therefore the earliest point at which it can see what this capture landed. Nothing the
+        // build path reads waits on it: the rejection it stores is for the diagnostics surface, and
+        // the error stream mints the same value off the view directly, so a reader arriving in the
+        // window between the refresh and this write sees the diagnostic missing rather than wrong.
+        dsl.transaction(tx -> UnlowerableOrderingRejectionRows.derive(tx.dsl(), graph.name()));
     }
 
     /**

@@ -124,7 +124,9 @@ Avoid them when:
 
 == Sort across polymorphism
 
-For xref:polymorphic-types.adoc[multi-table polymorphic] connections, the rewrite emits a single typed `__sort__` column per branch in the stage-1 `UNION ALL`, projected as JSONB for composite-PK participants. This means *every participating table must agree on the order's shape*: same column count, same types, same effective collation. The `MultiTablePolymorphicEmitter` projects one `__sort__` value per branch in stage 1, and the connection emitter sorts and seeks on that single column at the union level. Mixing a `(LAST_NAME, FIRST_NAME)` ordering for `Customer` with a `(FIRST_NAME, LAST_NAME)` ordering for `Staff` does not compose; pick one shared order, or run two separate connections.
+A field returning a xref:polymorphic-types.adoc[multi-table polymorphic] interface or union is read as one statement per participant, combined with `UNION ALL`. The emitter orders the combined result on a synthetic `__sort__` column projected per branch from that participant's primary key, typed as JSONB for composite keys so the database's lexicographic ordering reproduces the multi-column order.
+
+That ordering is not configurable. `@defaultOrder` and `@orderBy` are not lowered onto the participant branches, and declaring either on such a field fails the build rather than being ignored. Sort a single-`@table` field instead, or narrow the field's return type to one participant.
 
 For single-table polymorphism, ordering is unchanged from the non-polymorphic case: the discriminator column is just another projected column, and the sort spec applies to the shared backing table.
 

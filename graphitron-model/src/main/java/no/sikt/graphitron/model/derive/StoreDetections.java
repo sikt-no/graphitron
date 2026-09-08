@@ -36,6 +36,12 @@ import java.util.List;
  * different participant sets. Per use site the classifier treats a non-matching name as inert; that
  * this family exists is what keeps inertness from swallowing a typo.
  *
+ * <p>{@link #unlowerableOrderings} is the family whose question is neither about a name nor about
+ * a signature but about whether a fact the schema states reaches the SQL it was written for: an
+ * ordering is available at a coordinate and the coordinate's own read shape delivers none. It is
+ * separate from every family above because it judges no author spelling at all; the declaration is
+ * well formed, and what fails is that nothing lowers it.
+ *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
  * than to reject. It rides here because the store handle does, opened for the capture and closed with
@@ -48,6 +54,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
                               NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
+                              UnlowerableOrderings.Detection unlowerableOrderings,
                               ResolvedKeyProjections.Projections keyProjections) {
 
     /** The empty detection, for callers running capture without the detection pass. */
@@ -57,6 +64,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             NodeIdDecodeDefects.Detection.empty(),
             NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
+            UnlowerableOrderings.Detection.empty(),
             ResolvedKeyProjections.Projections.empty());
     }
 
@@ -67,6 +75,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(nodeIdDecodes.violations());
         out.addAll(nodeIdLandings.violations());
         out.addAll(referenceForParticipants.violations());
+        out.addAll(unlowerableOrderings.violations());
         return List.copyOf(out);
     }
 

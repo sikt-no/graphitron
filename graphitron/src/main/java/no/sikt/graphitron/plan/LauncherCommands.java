@@ -1,7 +1,10 @@
 package no.sikt.graphitron.plan;
 
 import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.Arity;
+import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.CarrierDsl;
+import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
@@ -1256,6 +1259,105 @@ public final class LauncherCommands {
             case OrderBySpec.Argument ignored -> new Ordering.Helper(
                 units.orderByHelperMethod(parentTypeName, fieldName), units.orderByResult());
             default -> null;
+        };
+    }
+
+    /**
+     * The never-unsorted invariant's other half, asserted over the finished relations: an ordering
+     * the model resolved must reach a command that can render it. Two folds that do different work,
+     * and saying which is which is what keeps the check honest about what it buys.
+     *
+     * <p><b>The multiset fold is the comparison of two ends, and it is why this exists.</b>
+     * {@link no.sikt.graphitron.command.CallWrap.Multiset} carries the coordinate's whole
+     * {@link OrderBySpec} while the projection renderer lowers the {@link OrderBySpec.Fixed} arm
+     * alone. Nothing derives the command from the renderer's capability, so the model can resolve a
+     * client-supplied ordering into a multiset that will never render it and neither end knows: an
+     * inline child list carrying an {@code @orderBy} argument is accepted today and its order
+     * dropped. The assertion is therefore arm-shaped rather than slot-shaped, a list-cardinality
+     * multiset carrying no {@link OrderBySpec.Argument}, because no site lowers one.
+     *
+     * <p><b>The launcher fold is a ratchet over a closed population.</b> One assertion and not two:
+     * on every non-exempt arm the slot is computed by {@link #orderingOf} directly off the leaf's
+     * own spec, and a leaf resolving no spec never reaches the plan, the deterministic-order
+     * validator rejecting it first, so an assertion that read the leaf and demanded a slot would be
+     * asserting a total function against its own output. What the ratchet buys is that the
+     * population stays closed: a new source arm, or an existing arm that stops projecting the
+     * ordering it projects today, fails here.
+     *
+     * <p>Production and not a test alone, because the value of the first fold is the schemas nobody
+     * has written yet and a test over our own fixture corpus finds only the shapes our fixtures
+     * exercise. {@link IllegalStateException} and not a {@code ValidationError}: a dropped ordering
+     * is not a schema defect, there is nothing at the author's coordinate to fix, and a message
+     * pointing at their declaration would point at the one thing they did right. The audience is
+     * whoever is changing the generator, and the register is the throw.
+     */
+    public static void requireResolvedOrderingsAreLowered(LauncherRelation launchers,
+            ProjectionRelation projections) {
+        for (var unit : projections.rows()) {
+            for (var contribution : unit.contributions()) {
+                if (contribution instanceof Contribution.Call call
+                        && call.wrap() instanceof CallWrap.Multiset multiset
+                        && multiset.arity() == Arity.LIST
+                        && multiset.orderBy() instanceof OrderBySpec.Argument argument) {
+                    throw new IllegalStateException(
+                        "Graphitron generator bug (projection ordering): the inline child list '"
+                        + call.field() + "' on projection unit '" + unit.unit().fqcn()
+                        + "' resolved the client-supplied ordering from argument '"
+                        + argument.name() + "' into a correlated multiset, and the projection"
+                        + " renderer lowers the fixed arm alone, so the order would be accepted and"
+                        + " dropped. Lower the argument arm onto the multiset, or refuse the shape"
+                        + " at its coordinate; emitting it unordered is what this invariant exists"
+                        + " to stop");
+                }
+            }
+        }
+        for (var row : launchers.rows()) {
+            if (row.result() instanceof ResultShape.RecordList list && list.ordering() == null
+                    && !orderIsEntailedBySource(row.source())) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (launcher ordering): the launcher row at '"
+                    + row.coordinate().getTypeName() + "." + row.coordinate().getFieldName()
+                    + "' returns a record list with no ordering slot, and its source arm "
+                    + row.source().getClass().getSimpleName() + " carries no order of its own."
+                    + " Every non-exempt list launch projects the coordinate's resolved ordering,"
+                    + " so either the producer stopped projecting it or a new source arm owes this"
+                    + " switch an entry saying why its rows arrive ordered");
+            }
+        }
+    }
+
+    /**
+     * Whether a source arm's own shape already fixes the row order, which is what makes an absent
+     * ordering slot correct rather than dropped. A total switch with no {@code default}, so a new
+     * source arm is a compile-time decision by whoever adds it rather than a silent admission.
+     *
+     * <p>The one home of the exemption set: the ratchet above reads its membership here, and so does
+     * the pipeline-tier closure test, which asserts over a generator run's own relation that the
+     * arms carrying an absent slot are exactly the arms this switch names. A test restating the set
+     * would pass an arm that quietly stopped projecting the ordering it projects today.
+     */
+    public static boolean orderIsEntailedBySource(LaunchSource source) {
+        return switch (source) {
+            // Input order is carried by the scatter onto the keys' slots, so there is no order to
+            // sort by; the result shape's own javadoc states this. The leaf does resolve an
+            // ordering here (the target table's primary key), and the row is right to drop it.
+            case LaunchSource.KeyedLookup ignored -> true;
+            // The re-projection's ORDER BY idx scatter re-keys the rows to the upstream source
+            // order, which for a DML write's returned keys and for a service method's returned
+            // records is itself defined. It is not defined for a routine write's key capture, whose
+            // step-two re-fetch sorts by nothing; that shape's exemption goes when the re-fetch
+            // carries an order, and until then the store-derived honesty rule is what names it.
+            case LaunchSource.ProjectedReentry ignored -> true;
+            case LaunchSource.DiscriminatedReentry ignored -> true;
+            case LaunchSource.AnchorTable ignored -> false;
+            case LaunchSource.RoutineChain ignored -> false;
+            case LaunchSource.DiscriminatedTable ignored -> false;
+            case LaunchSource.CorrelatedChain ignored -> false;
+            case LaunchSource.CorrelatedLookupChain ignored -> false;
+            case LaunchSource.DiscriminatedCorrelatedChain ignored -> false;
+            case LaunchSource.PivotAggregate ignored -> false;
+            case LaunchSource.ServiceCall ignored -> false;
+            case LaunchSource.ServiceTableLift ignored -> false;
         };
     }
 }

@@ -6643,6 +6643,90 @@ COMMENT ON COLUMN intent_mutation_routine_seat.source_name IS 'the schema docume
 COMMENT ON COLUMN intent_mutation_routine_seat.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_mutation_routine_seat.source_column IS 'source column, 1-based per the graphql-java convention. With the line and the document name, the site a refusal points an author at, which is the directive and not the field, every verdict here being about what the @routine composes with';
 
+CREATE VIEW intent_field_unlowerable_ordering
+  (graph_name, type_name, field_name, verdict, available_via, argument_name,
+   source_name, source_line, source_column) AS
+SELECT shape.graph_name, shape.type_name, shape.field_name, shape.verdict,
+       route.available_via, route.argument_name,
+       COALESCE(route.source_name, shape.source_name),
+       COALESCE(route.source_line, shape.source_line),
+       COALESCE(route.source_column, shape.source_column)
+  FROM (SELECT DISTINCT st.graph_name, st.type_name, st.field_name,
+               'PARTICIPANT_FAN_OUT' AS verdict, CAST(NULL AS VARCHAR) AS source_name,
+               CAST(NULL AS INT) AS source_line, CAST(NULL AS INT) AS source_column
+          FROM intent_field_scope_table st
+         WHERE st.basis = 'PARTICIPANT_TABLE'
+        UNION ALL
+        SELECT s.graph_name, s.type_name, s.field_name, 'KEY_CAPTURE_SCATTER',
+               s.source_name, s.source_line, s.source_column
+          FROM intent_mutation_routine_seat s
+          JOIN graphitron_field f
+            ON f.graph_name = s.graph_name AND f.type_name = s.type_name
+           AND f.field_name = s.field_name
+         WHERE s.verdict = 'ADMITTED' AND f.is_list = TRUE) shape
+  JOIN (SELECT d.graph_name, d.type_name, d.field_name,
+               'DEFAULT_ORDER' AS available_via, CAST(NULL AS VARCHAR) AS argument_name,
+               d.source_name, d.source_line, d.source_column
+          FROM graphitron_default_order_entry d
+        UNION ALL
+        SELECT o.graph_name, o.type_name, o.field_name,
+               'ORDER_BY_ARGUMENT', o.argument_name,
+               o.source_name, o.source_line, o.source_column
+          FROM graphitron_order_by_entry o
+        UNION ALL
+        SELECT nv.graph_name, nv.type_name, nv.field_name,
+               'PRIMARY_KEY_FALLBACK', CAST(NULL AS VARCHAR),
+               CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+          FROM intent_field_navigated_type nv
+          JOIN intent_bound_table bt
+            ON bt.graph_name = nv.graph_name AND bt.type_name = nv.navigated_type_name
+           AND bt.candidates = 1
+          JOIN sql_primary_key pk
+            ON pk.source_name = bt.table_source_name AND pk.table_schema = bt.table_schema
+           AND pk.table_name = bt.table_name
+         WHERE NOT EXISTS (SELECT 1 FROM graphitron_default_order_entry d
+                            WHERE d.graph_name = nv.graph_name AND d.type_name = nv.type_name
+                              AND d.field_name = nv.field_name)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_order_by_entry o
+                            WHERE o.graph_name = nv.graph_name AND o.type_name = nv.type_name
+                              AND o.field_name = nv.field_name)) route
+    ON route.graph_name = shape.graph_name AND route.type_name = shape.type_name
+   AND route.field_name = shape.field_name;
+COMMENT ON VIEW intent_field_unlowerable_ordering IS 'Where an ordering is available at a coordinate and the coordinate''s own read shape cannot honour it: one row per coordinate and availability route, in a closed verdict vocabulary of two. For example a root field returning a three-implementation multitable interface and carrying both @defaultOrder and an @orderBy argument draws two rows under PARTICIPANT_FAN_OUT, one per route, while the same field with no declaration at all draws none.';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.graph_name IS 'the owning graph''s partition, carried from the read-shape relation the row''s verdict came off';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.type_name IS 'the type owning the coordinate whose ordering goes unlowered';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.field_name IS 'the coordinate''s field name; with the type above and the two vocabulary columns below, the grain';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.verdict IS 'which read shape cannot honour the ordering, a closed pair: PARTICIPANT_FAN_OUT where the coordinate is read as one statement per participant of a multitable container and the branches are combined on a synthetic key, so no branch carries the declaration; KEY_CAPTURE_SCATTER where a mutation-root @routine write returns a list, its visible rows being the captured keys re-read by a keyed SELECT that sorts by nothing. Disjoint by construction rather than by precedence, a mutation-root routine write taking no PARTICIPANT_TABLE row';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.available_via IS 'which route made an ordering available at the coordinate, a closed triple: DEFAULT_ORDER for a field-level @defaultOrder, ORDER_BY_ARGUMENT for an @orderBy on one of the field''s arguments, PRIMARY_KEY_FALLBACK for the target table''s primary key the resolver supplies where nothing is written. Part of the grain and not provenance: a coordinate with two routes is two rows because each remedy names one route, and a consumer that folded them would have to word one remedy for two different things the author did';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.argument_name IS 'the argument carrying the @orderBy on the ORDER_BY_ARGUMENT route; NULL on the other two, which are declared at the field or at nothing. In the grain because graphitron_order_by_entry is keyed at argument grain, so two @orderBy arguments on one coordinate would otherwise collide on one row. Unreachable today, the ordering resolution taking the first such argument it finds, but a relation''s grain is not the place to inherit a consumer''s first-match precedence';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.source_name IS 'the document the declaring directive is written in, so a message underlines the directive rather than the field; the field''s own document on PRIMARY_KEY_FALLBACK, where there is no directive to point at';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.source_line IS 'source line of the declaring directive, 1-based per the graphql-java convention; the field''s own on PRIMARY_KEY_FALLBACK';
+COMMENT ON COLUMN intent_field_unlowerable_ordering.source_column IS 'source column of the declaring directive, 1-based per the graphql-java convention; the field''s own on PRIMARY_KEY_FALLBACK';
+
+CREATE TABLE intent_field_unlowerable_ordering_rejection (
+  graph_name    VARCHAR NOT NULL,
+  ordinal       INT     NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  available_via VARCHAR NOT NULL,
+  argument_name VARCHAR,
+  kind          VARCHAR NOT NULL CHECK (kind IN ('DEFERRED')),
+  variant       VARCHAR NOT NULL,
+  message       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE intent_field_unlowerable_ordering_rejection IS 'The rejection each minting row of intent_field_unlowerable_ordering carries: one row per rejected coordinate and availability route, holding the sealed Rejection hierarchy''s verdict on it and the message a report would print. For example the multitable root carrying @defaultOrder draws a DEFERRED row whose message names the interface, its participants and both remedies, while a list-returning @routine write draws none, its rejection being held.';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.ordinal IS 'mint order over the graph''s rejected routes, 0-based; the key''s tie-breaker on intent_authored_claim_rejection.ordinal''s convention, which this relation needs because its natural key carries a NULL on the two non-argument routes where a key may not';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.type_name IS 'the rejected coordinate''s owning type, joining intent_field_unlowerable_ordering''s own';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.field_name IS 'the rejected coordinate''s field name; never NULL, this family having no type grain';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.available_via IS 'the availability route this rejection words, joining the view''s own column; carried because the view is keyed per route and the remedy differs by route';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.argument_name IS 'the declaring argument on the ORDER_BY_ARGUMENT route, NULL on the other two; the rest of the view''s key, so the join to it cannot fan';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.kind IS 'RejectionKind.name() for the minted rejection, a closed CHECK over the one value this family can reach: DEFERRED, the schema being well formed and the remedy being to drop the declaration or wait for the lowering. Minted rather than mapped from the verdict in SQL, because the projection is RejectionKind''s and a CASE restating it here would be a second copy of a fork the hierarchy already owns';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.variant IS 'the minted rejection leaf''s class name with its package stripped, enclosing classes kept, on intent_authored_claim_rejection.variant''s spelling rule and through the same one Java site';
+COMMENT ON COLUMN intent_field_unlowerable_ordering_rejection.message IS 'the violation''s full report message, coordinate prefix included, byte-identical to what the report carries for this family; display material, never a dimension';
+
 CREATE VIEW intent_field_separate_fetch (graph_name, type_name, field_name, rule) AS
 SELECT s.graph_name, s.type_name, s.field_name, 'SPLIT_QUERY'
   FROM graphitron_split_query_entry s
@@ -10215,6 +10299,19 @@ SELECT c.graph_name, 'schema', 'error', m.kind <> 'DEFERRED', m.kind, m.variant,
     ON m.graph_name = c.graph_name AND m.type_name = c.type_name
    AND m.field_name IS NOT DISTINCT FROM c.field_name
 UNION ALL
+SELECT u.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       u.type_name, u.field_name,
+       u.type_name || '.' || u.field_name,
+       u.source_name,
+       u.source_line, u.source_column, r.message
+  FROM intent_field_unlowerable_ordering u
+  JOIN intent_field_unlowerable_ordering_rejection r
+    ON r.graph_name = u.graph_name AND r.type_name = u.type_name
+   AND r.field_name = u.field_name AND r.available_via = u.available_via
+   AND r.argument_name IS NOT DISTINCT FROM u.argument_name
+UNION ALL
 SELECT l.graph_name, 'schema', 'warning', TRUE,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
@@ -10263,7 +10360,7 @@ SELECT j.graph_name, 'compile',
        CASE WHEN j.column_number = -1 THEN NULL ELSE CAST(j.column_number AS INT) END,
        j.message
   FROM javac_diagnostic j;
-COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the parser and the SDL toolchain''s two document-wide stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
+COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all eight arms (the rejection residue, the store-native claim-conflict pilot, the unlowerable-ordering arm, the lint arm, the advisory arm, the parser and the SDL toolchain''s two document-wide stages, the compile oracle), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
 COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm';
 COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
@@ -10584,6 +10681,12 @@ INSERT INTO meta_grain VALUES
   ('nodeid-landing-defect',
    'one refused key landing of one @nodeId decode, at one use site and one branch of it, in one graph',
    'graph_name, site, use_site, origin_source_name, origin_schema, origin_table, verdict, position', 'sdl'),
+  ('unlowerable-ordering-route',
+   'one route by which an ordering is available at one coordinate whose own read shape cannot honour it, in one graph',
+   'graph_name, type_name, field_name, verdict, available_via, argument_name', 'sdl'),
+  ('unlowerable-ordering-rejection',
+   'one minted rejection of one unlowerable ordering, at its place in the graph''s mint order',
+   'graph_name, ordinal', 'sdl'),
   ('element-field-site',
    'one schema element whose coordinate sits on a field, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -10883,6 +10986,14 @@ INSERT INTO meta_relation VALUES
    'One @referenceFor application paired with a consuming coordinate that offers the participant it names: one row per application and consumer whose participant set holds the spelling.',
    'For example an application naming Film under an input type two queries consume draws a row for the query whose union holds Film and none for the query whose does not.',
    'Whether a per-participant route applies at a coordinate is a resolution two readers now ask, and a resolution living in one reader''s WHERE clause is one the next reader re-spells. ReferenceForParticipantDefects asks it negatively, an application matching nowhere being a typo, and the @nodeId landing verdicts ask it positively, a branch a participant route reaches being one whose stated navigation the store computed for a different route. The grain is the application and the consumer together because validity is two-layered: one input type may be consumed by two queries whose participant sets differ, so an application applies at one and is inert at the other, and that inertness is the classifier''s own rule rather than a scoping convenience. An application naming a participant no consumer offers has no row at all, which is the inertness rule as a population. Filed intent_ because it crosses graphitron_ capture and two intent_ resolutions.'),
+  ('intent_field_unlowerable_ordering', 'unlowerable-ordering-route', 'derivation',
+   'Where an ordering is available at a coordinate and the coordinate''s own read shape cannot honour it: one row per coordinate and availability route, in a closed verdict vocabulary of two.',
+   'For example a root field returning a three-implementation multitable interface and carrying both @defaultOrder and an @orderBy argument draws two rows under PARTICIPANT_FAN_OUT, one per route, while the same field with no declaration at all draws none.',
+   'Graphitron states that a list result is never unsorted, and the two checks that enforced it keyed on a read resolving against exactly one table while the question they asked was whether the read returns a list. Most known violations produced no signal at all, so the rows shipped unsorted. This relation is keyed on the question instead, and on availability rather than on declaration, which is what makes its two arms one comparison: a multitable read accepts a declaration and lowers it onto nothing, and a list-returning @routine write has the target table''s primary key available and delivers no order at all. Keying on the declaration would leave the write between all three classes. Both sides are facts some relation already states, intent_field_scope_table''s PARTICIPANT_TABLE basis and intent_mutation_routine_seat''s one emitting verdict, joined against three availability routes; two of the six pairings are inert by construction rather than by a filter. The route is in the grain because each remedy names one route. What the relation deliberately does not mint is the undeclared multitable read: the polymorphic emitter orders the combined result on a synthetic key per participant, so there what is available is what is delivered and the invariant holds.'),
+  ('intent_field_unlowerable_ordering_rejection', 'unlowerable-ordering-rejection', 'derivation',
+   'The rejection each minting row of intent_field_unlowerable_ordering carries: one row per rejected coordinate and availability route, holding the sealed Rejection hierarchy''s verdict on it and the message a report would print.',
+   'For example the multitable root carrying @defaultOrder draws a DEFERRED row whose message names the interface, its participants and both remedies, while a list-returning @routine write draws none, its rejection being held.',
+   'A table because no view over this store can state the render: the message names the multitable container''s participants in a sentence and picks its remedy off the availability route, which is Java''s composition of facts held separately rather than a fact of any graph. Written by a capture-cadence writer that clears its graph partition and re-mints, sharing the one mint of the value with the build-error consumer so a violation cannot be worded two ways. Its cadence is one step later than its siblings'', and that is a dependency rather than a preference: the view it renders reads the materialized intent_field_scope_table, so a call beside the flush would render the previous capture''s rows. Not total over the view, and the gap is the population''s own: the KEY_CAPTURE_SCATTER verdict mints no rejection while its only live instance sits in graphitron''s own example schema, so those coordinates are counted by the view and worded nowhere until that write is given an order to deliver. The two route columns are here because the view is keyed per route and the diagnostics arm joins these rows to it; a rejection keyed on the coordinate alone would fan two locations onto one message.'),
   ('intent_node_id_decode_landing_defect', 'nodeid-landing-defect', 'derivation',
    'One @nodeId decode whose key landing the store can show is wrong: one row per refused instruction, use site and branch, in a closed verdict vocabulary of two.',
    'For example a path stopping on film_category where the node type is bound to category draws PATH_STOPS_SHORT naming both tables, and a key column jOOQ binds as String landing on one it binds as Long draws LANDING_TYPE_DISAGREEMENT naming both.',

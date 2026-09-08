@@ -602,6 +602,14 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_occurrence_override", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
+        // The never-unsorted honesty rule and its post-capture mint, on the claim-conflict pair's
+        // terms exactly: there is no walk-side answer to agree with, the walk having no rule that
+        // compares an available ordering against the ordering a read shape delivers, and what the
+        // rule returns given rows is the relation's own algebra, stated in the module whose DDL
+        // declares it (FieldUnlowerableOrderingTest) with the decode's own report pinned above it
+        // (no.sikt.graphitron.rewrite.derive.UnlowerableOrderingsTest).
+        registrations.put("intent_field_unlowerable_ordering", Arm.DERIVED);
+        registrations.put("intent_field_unlowerable_ordering_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
         // is vacuous by construction on the graphql_directive_site precedent; the arm-specific
         // derived columns are pinned by DiagnosticFactsTest against their Java spellings.

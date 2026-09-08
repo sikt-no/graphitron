@@ -131,6 +131,12 @@ class DerivedReadCostTest {
      * landing verdicts reading the whole decode family and the application resolution reading the
      * type binding, so each enters the domain rather than merely the schema.
      *
+     * <p>Raised to 120 by {@code intent_field_unlowerable_ordering}, which names the coordinates
+     * where an ordering is available and the read shape cannot honour it. It reads the field scope
+     * table and the mutation routine seat, both of which reach registrations, so it enters the
+     * domain as well as the schema and the two figures below moved with it; and it moved the
+     * {@code diagnostic} view's own reach, that view joining it for the arm an editor reads.
+     *
      * <p>Lowered to 117 by {@code intent_expanded_type} and {@code intent_expanded_field} becoming
      * the tables {@code graphitron_type} and {@code graphitron_field}. This is the first move in
      * this history that takes a view out of the domain by writing its rows down rather than by
@@ -139,7 +145,7 @@ class DerivedReadCostTest {
      * one. What their readers gained is not in this count at all, a table being seekable where a
      * union is re-evaluated per reader.
      */
-    private static final int READERS_IN_SCHEMA = 119;
+    private static final int READERS_IN_SCHEMA = 120;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -155,12 +161,20 @@ class DerivedReadCostTest {
      * reduction the key columns used to be derived by, so reading them off a table takes it out of
      * the domain rather than making it cheaper inside one.
      *
+     * <p>Fifty-nine to sixty-one when the unlowerable-ordering rule arrived, and it is the first
+     * arrival that brought a second view in with it. The rule itself reads the field scope table
+     * and the mutation routine seat, so it enters the domain in the ordinary way; the second is
+     * {@code diagnostic}, which reached no registration at all until it joined that rule for the
+     * arm an editor reads, every other arm of it being a captured table or a view over one. Read
+     * that as the shape to expect the next time the read surface grows an arm: the union's own
+     * reach is whatever its widest arm reads.
+     *
      * <p>Fifty-seven to fifty-nine when the {@code @nodeId} landing verdicts and the
      * {@code @referenceFor} application resolution arrived. Two views in and two cells' worth of
      * reach each, which is the ordinary arrival rather than any of the three shapes above: nothing
      * was registered, captured or retired, so this figure moves by exactly the views.
      */
-    private static final int READERS_WITH_CELLS = 59;
+    private static final int READERS_WITH_CELLS = 61;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -228,6 +242,12 @@ class DerivedReadCostTest {
      * the twenty eight above is the point worth keeping: what a capture is worth to this measure is
      * how widely the relation it replaces was read, and this one was read by six.
      *
+     * <p>137 to 147 when the unlowerable-ordering rule arrived: ten cells added and none
+     * displaced, five each for the rule and for {@code diagnostic}, which the rule brought into
+     * the domain with it. The two fives are the same five registrations, the read surface's arm
+     * over the rule reaching exactly what the rule reaches, which is what makes a view that joins
+     * a derived relation cost this domain twice over rather than once.
+     *
      * <p>128 to 137 when the {@code @nodeId} landing verdicts and the {@code @referenceFor}
      * application resolution arrived: the plain case, nine cells added and none displaced. Seven
      * are the landing verdicts', which sit over the whole decode family and so reach every
@@ -236,7 +256,7 @@ class DerivedReadCostTest {
      * what the family it judges already costs it, where a resolution over two captured tables costs
      * it almost nothing, and neither figure is a function of how much the relation itself does.
      */
-    private static final int CELLS = 137;
+    private static final int CELLS = 147;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -566,6 +586,17 @@ class DerivedReadCostTest {
         // being non-monotonic outright, so the pairs go rather than being kept as history.
         "intent_spelled_table|intent_carrier_routine_hop",
         "intent_spelled_table|intent_mutation_routine_seat",
+        // The same unindexed named-type join a third and a fourth time, inherited rather than
+        // newly committed: the unlowerable-ordering rule names the seat relation above for its
+        // write arm, and the read surface joins that rule for the arm an editor reads, so both
+        // rows are the seat's charge arriving one and two readers further out. Registered against
+        // unregistered, in scans: the rule 25053 against 18963, the read surface 25061 against
+        // 18971, where the seat's own row is 12467 against 9423. The clocks are the more useful
+        // half and they say two different things: the rule is 53 milliseconds against 54, a wash,
+        // while the read surface is 102 against 63, which is the counter and the clock agreeing
+        // for once and is the row to look at first if the lever below is ever taken.
+        "intent_spelled_table|intent_field_unlowerable_ordering",
+        "intent_spelled_table|diagnostic",
         // The instrument's own floor, four scans apiece; measured above.
         "intent_field_reference_step_hop|intent_input_field_reference_step_target",
         "intent_field_reference_step_hop|intent_input_field_column_scope",

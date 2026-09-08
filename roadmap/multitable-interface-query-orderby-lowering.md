@@ -125,3 +125,31 @@ polymorphic variants lack it.
   the others: the model never resolves the ordering in the first place, so an invariant checked at
   the model-to-SQL boundary would not catch it. Whatever R677 lands has to notice a field with no
   ordering slot as well as one whose slot is dropped.
+
+## The rejection this item retires
+
+A declared ordering at this coordinate now fails the build rather than being accepted in silence:
+`intent_field_unlowerable_ordering` mints a `PARTICIPANT_FAN_OUT` row for every coordinate whose read
+fans out per participant and which makes an ordering available, and `UnlowerableOrderings` turns each
+into a deferred `ValidationError` naming the container, its participants and both remedies. That is
+the fallback the field report asked for while this item waited, and it is a **breaking change** that
+already shipped: a schema carrying `@defaultOrder` or an `@orderBy` argument on a multitable field no
+longer builds.
+
+Two consequences for whoever picks this item up.
+
+**The rejection is yours to retire, and retiring it is nothing but deleting the arm.** The rule keys
+on the coordinate's *read shape*, `intent_field_scope_table.basis = 'PARTICIPANT_TABLE'`, not on a
+list of coordinates, so nothing has to be un-written per schema: once the lowering lands, the
+`PARTICIPANT_FAN_OUT` arm of that view is refusing a shape the generator now honours and the arm
+comes out. Its tests come out with it, `FieldUnlowerableOrderingTest`'s fan-out cases and
+`UnlowerableOrderingsTest`'s and `UnlowerableOrderingRejectionPipelineTest`'s, and the
+`aMultitableRootWithNoDeclarationIsQuiet` case is the one to keep and invert: it asserts today that
+what is available at an undeclared multitable read is what is delivered, which is the property your
+lowering changes.
+
+**The two documentation paragraphs the rejection wrote are yours to correct.**
+`docs/manual/how-to/sort-results.adoc`'s "Sort across polymorphism" now says the ordering is not
+configurable and that declaring one fails the build, and
+`docs/manual/how-to/polymorphic-types.adoc`'s "Constraints" carries a bullet saying the same. Both
+become wrong the moment the lowering ships.

@@ -153,9 +153,11 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var routineWrites = RoutineWriteCommands.produce(store, schema, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
         var keyProjections = KeyProjectionCommands.produce(projections);
+        var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
         requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
+        LauncherCommands.requireResolvedOrderingsAreLowered(launchers, projectionRelation);
         return new EmitPlan(globals, conditions,
-            ProjectionCommands.produce(schema, conditions, outputPackage),
+            projectionRelation,
             launchers,
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
             TypeUnitCommands.produce(schema, outputPackage),
