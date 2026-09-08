@@ -375,8 +375,8 @@ at all. `graphql_schema_directive` holds the tag-link `@link`, whose existence i
 deleted, and phase three names the predicate each recomputes from. Six are the SDL coordinate
 anchors, `graphql_element`, the four `*_element` relations and `graphql_type`: a coordinate exists
 if *any* declaration site names it, and a type declared in one file may be extended in three others,
-so deleting one file's rows must not remove a coordinate another file still declares. Seven are the
-`graphitron_` anchors that key at `store_graph` rather than at a source, `graphitron_element` and
+so deleting one file's rows must not remove a coordinate another file still declares. Seven are the graph-keyed
+`graphitron_` relations that key at `store_graph` rather than at a source, `graphitron_element` and
 its type, field and argument relations among them, which no source refresh reaches at all and which
 would otherwise keep coordinates whose declarations are gone.
 
@@ -391,11 +391,14 @@ Reconciling them is one step wherever a gatherer puts it: after the changed sour
 re-read, whichever strategy read them, the coordinate set is recomputed from the surviving
 `graphql_type_declaration` and its kin, and coordinates with no remaining declaration are deleted.
 
-Those deletions cascade in turn, which is what closes the chain rather than needing a fourth
-mechanism: the `graphitron_` decodes hang off the coordinate anchors by foreign keys the DDL already
-declares `ON DELETE CASCADE`, its own comment naming that as the family's pattern, and `graphql_type`
-hangs off `graphql_type_element`. A coordinate that stops being declared takes its decode with it
-without anything being told to do so.
+Those deletions have to reach the decode hanging off the coordinate, and today they cannot. Forty-two
+`graphitron_` foreign keys reference a coordinate anchor and three of them declare `ON DELETE
+CASCADE`, all three into `graphql_element` from the minting arc; the other thirty-nine sit on
+thirty-nine distinct relations and declare nothing, so the default is `NO ACTION` and the database
+would refuse the re-aggregation's delete rather than let it orphan a decode. Refusal is the better of
+the two failures and is still not what this design needs, so phase four declares the cascade on those
+thirty-nine. After it a coordinate that stops being declared takes its decode with it without
+anything being told to do so, and `graphql_type` follows `graphql_type_element` the same way.
 
 ## What the schema already has
 
@@ -637,10 +640,14 @@ the bundled directives need one. It is a live sealed arm at nine main-source sit
 **Phase four, the SDL families.** Add `store_graph_source.stamp` and delete the blanking branch in
 `ClasspathSources.upsert`; replace `store_graph_source`'s existing foreign key into `store_source`
 with the `source_ref` twin, its `CHECK` and its `ON DELETE SET NULL` edge, which the sweep phase one
-built picks up from the metadata without being told; add the cascading
-`(graph_name, source_name)` foreign keys from the
+built picks up from the metadata without being told; make `source_name` `NOT NULL` on the 35 owned
+relations that declare it nullable, 6 `graphql_` and 29 `graphitron_`, which is what phase three's
+dispositions make honest and what both the edge below and the structural gate require, so it is a
+step and not a consequence; add the cascading `(graph_name, source_name)` foreign keys from the
 12 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
-each needs; write the re-aggregation over all seventeen relations that are a function of more than one
+each needs; declare `ON DELETE CASCADE` on the thirty-nine `graphitron_` edges into a coordinate anchor that
+declare nothing today, without which the re-aggregation's delete is refused rather than performed;
+write the re-aggregation over all seventeen relations that are a function of more than one
 source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file
 verdicts among them; reduce the graph-scoped clear to what does not now cascade, the membership row
 being a root this phase deletes per changed source rather than empties per graph. No ownership column
@@ -708,6 +715,43 @@ schema file, and the answer, established by two shipped tests, is that every sto
   cost is measured too and is the one more likely to regress: 52 new foreign keys and 52 new indexes sit on
   the families capture writes most heavily, so capture wall-clock and store size on the sakila example
   are reported before and after.
+
+## What this makes possible
+
+None of these is a dependency of this item and this item ships none of them. They are named because
+each is waiting on something the phases above build, and because a plan that only says what it fixes
+leaves a reader to guess why the schema work is worth its cost.
+
+**R857, "A dev round refreshes what the edit touched"**, already declares this item in its
+`depends-on`, and gets two things. A refresh that re-reads one source is only expressible if the store
+can clear exactly that source's facts, which is phase one for the three source-keyed corpora and phase
+four for the SDL families. Less obviously, it gets a correctness trap removed: without
+`store_graph_source.stamp` a graph deciding it has nothing to re-read on a shared file would be
+deciding on a stamp its sibling moved, so R857's central optimisation would be unsound on exactly the
+workspace this item was filed for. That hazard is latent today only because every round rewrites
+unconditionally.
+
+**R924, "What must re-run is a walk of the keys the schema already declares"**, gets the keys. Its
+premise is that the schema already knows what depends on what, so staleness can be propagated by
+walking declared edges rather than by a hand-written rule per family. That premise is only as good as
+the edges: today `jvm_declared_type_ref` carries no foreign key at all, the 52 source-owned SDL
+relations reference no source registry, and twenty-one deletes express ownership in Java where a walk
+cannot see them. Phases one and four move all of that into declared edges, which is the difference
+between a walk of the keys finding what went stale and a walk of the keys finding half of it.
+
+**R917, "A store too large to service is discarded rather than cleared"**, gets the alternative its
+title contrasts. Nothing in the tree deletes a `store_source` row, so the only lever available today is
+discarding the whole file; after phase one a source's partition goes in one statement, and the twin
+means the removal does not take a not-running graph's rows with it. **R918, "The fact store cache root
+is bounded in bytes, and quiet workspaces are reclaimed"**, reads the same mechanism from the other
+end, with `last_seen` left store-global as the age signal a reclaim policy wants. Neither gets a policy here: when a source is known to be
+unwanted is their question, and this item only makes acting on the answer expressible.
+
+**R876** is interlocked rather than waiting. Its first slice moved the entry half of the
+`graphitron_` decode into the SDL walk, which is what makes the joint root at `store_graph_source`
+precise for all 52 relations rather than for the 12 `graphql_` ones alone. Going the other way, phase
+three attributes the populations that reach the store with no position, so entries written by that
+walk are written against attribution that already resolves.
 
 ## Retired vocabulary
 
