@@ -83,18 +83,24 @@ Confirmed hazardous splice sites, all in `TypeFetcherGenerator`, all reached onl
   same and which is fed a descent from six call sites (the single-row and bulk lookup-key walks and
   their `MapGroup` / `DecodedRecordGroup` arms).
 * Two control-flow guards the original report did not name, where `==` is the tighter operator
-  rather than `instanceof`: the `if ($L == null)` null-agreement guard in the SET-list append and
-  the `if ($L && $L == null)` refused-clear guard in `emitBulkSetDecodeLocals`. Both reparse as
-  `... ? ... : (null == null)`, whose `Object` type then fails the enclosing `&&`.
+  rather than `instanceof`: the `if ($L == null)` null-agreement guard in `appendAgreementValue`
+  and the `if ($L && $L == null)` refused-clear guard in `emitBulkSetDecodeLocals`'s plain-carrier
+  arm. Both reparse with the comparison bound to the descent's own null arm,
+  `... ? ... : (null == null)`, leaving an `Object` where the `if` (or the enclosing `&&`) needs a
+  `boolean`.
 
-The safe sites splice the descent into argument position (`DSL.val(<descent>, <col>.getDataType())`,
-the `DSL.row(...)` lookup-key tuple), where any expression is legal. That split is the tell: whether
-a given splice compiles depends on an operator the producer cannot see and the caller does not think
-about.
+Six emit statements in all, since the `appendDecodeLocal` overload's six callers share one format
+string. An audit of all twenty-three `nestedMapValueExpr` call sites found no seventh: every other
+site splices the descent into argument position (`DSL.val(<descent>, <col>.getDataType())`, the
+`DSL.row(...)` lookup-key tuple, `requireColumnAgreement`'s value arguments, a `List.add`), where
+any expression is legal. That split is the tell: whether a given splice compiles depends on an
+operator the producer cannot see and the caller does not think about.
 
-`ConditionGlueRenderer` already hand-wraps two of its own splices as `($L) instanceof ...` with a
-comment naming both operators, so one consumer discovered the hazard independently and fixed it
-locally. `appendSetDecodeLocal` reaches the same end by a different route: it first binds the
+`ConditionGlueRenderer` already hand-wraps four of its own splices, three as `($L) instanceof ...`
+and one as `($L) != null`, across three methods: `appendAuthoredAnd`'s `FieldPresent` guard (both
+branches, and the one comment in the tree that names both operators), the `EnumValueOf` arm and the
+`JooqConvert` list arm. One consumer discovered the hazard independently and fixed it locally, in
+three places. `appendSetDecodeLocal` reaches the same end by a different route: it first binds the
 descent to a named `Object` local and splices the local. Three consumers, three answers, one of
 which is "nothing".
 
@@ -112,12 +118,20 @@ caller has to know the precedence of the operator it is being spliced into:
   added inside `at` can drop the parens, because it does not own the wrap. Its javadoc states the
   contract (the result is a primary expression, safe to splice anywhere) and drops the caller-beware
   silence it has now.
+* One wrap suffices at any path depth, and the reason is worth stating because it is what makes the
+  boundary the right place. `at`'s two non-leaf arms already parenthesise their recursive result
+  (`... ? ($L) : null`), and the `currentExpr` they descend into is always `binding.get(key)`, a
+  postfix expression. So however deep the path, exactly one bare conditional expression escapes, the
+  outermost one, and it escapes through `of`. Depth is not a case to handle; it is already handled.
 * `nestedContainsKeyExpr` gets the same wrap on its deeper-than-one-segment arm, for the same
-  reason and before it costs anything.
-* Delete the now-redundant hand-wraps in `ConditionGlueRenderer`'s enum and `JooqConvert` arms, so
-  the tree carries one answer rather than three. Leave `appendSetDecodeLocal`'s named `Object` local
-  alone: it exists to be read twice (the refusal guard and the mismatch guard both test it), not to
-  dodge precedence.
+  reason and before it costs anything. It is depth-independent for the analogous reason: the chain
+  it builds is flat `&&` at every depth, so one wrap closes it whatever the segment count.
+* Delete the now-redundant hand-wraps in `ConditionGlueRenderer`, all four: `appendAuthoredAnd`'s
+  two branches together with the comment that justifies them (which after this fix would assert a
+  caller obligation the producer discharges), the `EnumValueOf` arm and the `JooqConvert` list arm.
+  That is what leaves the tree carrying one answer rather than three. Leave `appendSetDecodeLocal`'s
+  named `Object` local alone: it exists to be read twice (the refusal guard and the mismatch guard
+  both test it), not to dodge precedence.
 
 The single-segment arms of both producers stay unparenthesised. `mapLocal.get(key)` and
 `mapLocal.containsKey(key)` are already primary expressions, and wrapping them would change emitted
@@ -126,7 +140,8 @@ output at every existing call site for no gain.
 The cost is a redundant paren pair at the argument-position consumers, `DSL.val((<descent>), ...)`.
 Accepted deliberately: generated code is a consumer artifact and this is a real debit against that,
 but a paren pair is not what a reader of that line notices, and the alternative is a fact restated
-at nine emit sites with nothing failing when one of them disagrees.
+at six emit sites in `TypeFetcherGenerator` plus the four `ConditionGlueRenderer` already carries,
+with nothing failing when one of them disagrees.
 
 There is no golden-file sweep. No generated-source snapshot asserts the descent's text, because
 code-string assertions on generated bodies are banned at every test tier; the one test that
@@ -138,9 +153,23 @@ string-matches an `instanceof Map<?, ?> map1` chain (`ServiceMethodCallEmitterTe
 The regression test is a fixture mutation whose input is a nested object carrying a `@nodeId` field,
 asserted by **compiling** the generated source. A paren bug is invisible to a substring assertion
 and unmissable to a compiler, and the compile tier is already the named enforcer for
-"classifier guarantees shape emitter assumptions". That the defect shipped is itself the finding:
-nothing in the fixture corpus reaches nested path x `@nodeId`-decoded leaf, so the whole family of
-descent-splice faults is currently uncovered.
+"classifier guarantees shape emitter assumptions".
+
+The load-bearing property of that fixture is that the mutation must be **DML**, a
+`@mutation(typeName: INSERT | UPDATE)` field whose write graphitron generates. Nesting plus
+`@nodeId` alone does not reach the defect, and the corpus proves it: `customerUpsert` in
+`graphitron-sakila-example`'s `schema.graphqls` already declares
+`CustomerUpsertInput.identity -> CustomerIdentityGroup.customerId @nodeId(typeName: "Customer")`,
+compiles clean, and has three passing `GraphQLQueryTest` execution tests. It is a `@service`
+mutation, so its descent goes through `ArgCallEmitter.buildNestedInputFieldExtraction` into a
+service-call argument list, which is argument position and therefore one of the safe sites above.
+An implementer who builds the near-miss gets a green compile and no regression test.
+
+So the coverage gap is narrower than "nested `@nodeId` is untested" and worth naming exactly: no
+fixture anywhere reaches a nested path with a `@nodeId`-decoded leaf *through the generated DML
+decode-locals walks*, which is why the whole family of descent-splice faults ships uncovered.
+`customerUpsert` is the fixture to sit the new one beside; the two together are the minimal pair
+that says which half of the shape is load-bearing.
 
 Cover both the `instanceof` operand and the `==` operand, since they are two operators and one
 fixture need not exercise both: a `@nodeId` leaf under a nested input reaches the decode locals, and
@@ -179,7 +208,7 @@ also discharges the "statement form over expression tricks" and "no throwaway pa
 is not being argued against. It is not this item because the registry does not reach these sites:
 `TypeFetcherGenerator` already holds one on its emission context and already drains it onto the
 class, but the mutation DML walk is a chain of `private static` methods that would each grow a
-parameter (`buildInsertDecodeLocals` alone has nine call sites), so the diff is a signature sweep
+parameter (`buildInsertDecodeLocals` alone has eight call sites), so the diff is a signature sweep
 through the mutation half of a 6000-line file rather than a fix. Landing the correctness fix first
 and the statement-form migration second is additive-then-cutover; doing it in one item is one
 rewrite of those methods with a shipped consumer blocker riding on it. R334 already owns the
@@ -194,7 +223,7 @@ found at the Done gate:
 
 * `docs/architecture/principles/development-principles.adoc`, readability-rules smell paragraph,
   asserts "(The NodeId-decode instance is cleaned up; the `@condition` arg-extraction instance is
-  not.)" The NodeId-decode ternary with `_s`-prefixed pattern variables is live at four sites in
+  not.)" The NodeId-decode ternary with `_s`-prefixed pattern variables is live at five sites in
   `TypeFetcherGenerator`. That parenthetical is the sentence a reader uses to decide whether this
   family is already handled, and it says yes for the half that is not.
 * `docs/architecture/reference/argument-resolution.adoc`, section "Runtime: nested input-field arg
@@ -269,6 +298,12 @@ guidance is half there; it is the headline claim and the one-line recipe that mi
 `customerUpsert` as the near-miss is worth a sentence too, since the next reader will find it and
 wonder whether the gap is real.
 
+*Author response (2026-09-08).* Done. The Tests section now states the DML requirement as the
+fixture's load-bearing property, names `customerUpsert` as the near-miss and says why it misses
+(a `@service` mutation splices into argument position), and narrows the coverage claim to
+"through the generated DML decode-locals walks". The two fixtures are called out as the minimal
+pair, since which half of the shape is load-bearing is the thing a later reader will get wrong.
+
 **Finding 2 (question two: architecture fit). `ConditionGlueRenderer` has three hand-wrap sites,
 not two, and the one the Implementation section omits is the one carrying the comment that states
 the caller obligation this fix retires.**
@@ -297,6 +332,13 @@ comment), and correct the "two splices" count in the defect section. This is a s
 cleanup bullet rather than a design change, but it is the author's because it changes the site list
 the implementer works from.
 
+*Author response (2026-09-08).* Done, and it was four wraps rather than three: `appendAuthoredAnd`
+guards both branches, the list one with `($L) instanceof` and the scalar one with `($L) != null`.
+The defect section now inventories all four across their three methods, and the Implementation
+bullet deletes all four plus the comment. Also corrected in passing: the `==` guard the bullet list
+called "the SET-list append" is `appendAgreementValue`, and only the `emitBulkSetDecodeLocals` one
+fails an enclosing `&&`; the other fails the `if` directly.
+
 **Non-blocking corrections, for the same revision.** Two counts in the body are off by one against
 the tree, neither load-bearing:
 
@@ -306,6 +348,13 @@ the tree, neither load-bearing:
 * The `ArgPathHelperRegistry` alternative says "`buildInsertDecodeLocals` alone has nine call
   sites". It has eight (lines 2333, 2347, 4175, 4192, 5471, 5485, 5516, 5814); the other four
   occurrences of the name are javadoc `{@link}`s.
+
+*Author response (2026-09-08).* Both corrected. While recounting I audited all twenty-three
+`nestedMapValueExpr` call sites rather than only the named ones, which settled the two remaining
+loose numbers: the hazardous sites are six emit statements, not nine, and there is no seventh. The
+two indirect consumers that looked like candidates (`SetKeyReader.valueAt` and the reference-side
+`refValue`) both land in `requireColumnAgreement` arguments, so they are safe. The cost paragraph
+now says six plus `ConditionGlueRenderer`'s four.
 
 **Checked and clean, so the next pass need not redo it.** Every other symbol the spec names exists
 as named: `WireMapChain.of`, `ArgCallEmitter.nestedMapValueExpr`, `nestedContainsKeyExpr`,
