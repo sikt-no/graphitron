@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.schema;
 
+import graphql.language.ObjectTypeDefinition;
 import graphql.language.SourceLocation;
 import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.model.diagnostics.SchemaParseException;
@@ -32,6 +33,53 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
  */
 @UnitTier
 class SchemaLoaderTest {
+
+    /**
+     * Two documents declaring one type is an error, and reporting it well means saying what each of
+     * them declared. The merge cannot: it refuses the second definition, so the merged registry
+     * holds one of them and offers no route to the other.
+     *
+     * <p>So each source keeps a reading of its own. The merged registry is unchanged and still
+     * reports the refusal, which is what the build fails on; beside it are the two documents as they
+     * were parsed, which is what a report reads to name the incumbent, the incursion, and what
+     * differs between them.
+     *
+     * <p>The older file is the incumbent because sources are read oldest first, so the assertion
+     * here is on both halves at once: which registry holds which declaration, and that the merge
+     * still refused something.
+     */
+    @Test
+    void eachSourceKeepsItsOwnReadingSoARefusedDeclarationIsStillReachable(@TempDir Path tmp)
+            throws IOException {
+        Path incumbent = tmp.resolve("incumbent.graphqls");
+        Files.writeString(incumbent, "type X { a: String }\n", StandardCharsets.UTF_8);
+        Path incursion = tmp.resolve("incursion.graphqls");
+        Files.writeString(incursion, "type X { b: Int }\n", StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(incumbent, FileTime.from(Instant.parse("2020-01-01T00:00:00Z")));
+        Files.setLastModifiedTime(incursion, FileTime.from(Instant.parse("2030-01-01T00:00:00Z")));
+
+        var parse = SchemaLoader.parsePerSource(
+            List.of(new SchemaSource.File(incursion), new SchemaSource.File(incumbent)));
+
+        assertThat(parse.registryErrors())
+            .as("the merge still refuses the redefinition, which is what the build fails on")
+            .isNotEmpty();
+
+        var byName = parse.perSource().stream()
+            .collect(java.util.stream.Collectors.toMap(
+                SchemaLoader.SourceParse::sourceName, r -> r, (a, b) -> a));
+        assertThat(byName)
+            .as("every source read has a reading of its own, the bundled directives included")
+            .containsKeys(incumbent.toString(), incursion.toString());
+
+        assertThat(byName.get(incumbent.toString()).registry().getTypeOrNull("X", ObjectTypeDefinition.class))
+            .as("the incumbent's own declaration of X, which the merge kept")
+            .isNotNull();
+        assertThat(byName.get(incursion.toString()).registry().getTypeOrNull("X", ObjectTypeDefinition.class))
+            .as("and the incursion's, which the merge refused; without this the store can say a "
+                + "second declaration exists and never what it said")
+            .isNotNull();
+    }
 
     /**
      * Sources are read oldest first, so the reading order is the corpus's own history rather than

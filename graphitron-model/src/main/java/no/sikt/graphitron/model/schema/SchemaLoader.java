@@ -141,6 +141,23 @@ public final class SchemaLoader {
     }
 
     /**
+     * One source's own reading: everything it declared, in a registry of its own.
+     *
+     * <p>Separate from the merged registry because merging is lossy in the one direction that
+     * matters here. Two documents declaring one type is an error, and the merge reports it by
+     * refusing the second definition, which leaves the merged registry holding one of them and no
+     * way to reach the other. A reader that wants to say what the losing document declared, rather
+     * than only that it lost, has to be handed the reading it came from.
+     *
+     * <p>{@code registryErrors} here are the ones this source raised against itself, which is a
+     * document declaring the same type twice in one file. They are not the merge's refusals; those
+     * are a fact about a pair of documents and stay on the parse as a whole.
+     */
+    public record SourceParse(String sourceName, TypeDefinitionRegistry registry,
+                              List<SchemaError> registryErrors) {
+    }
+
+    /**
      * The outcome of reading a source set: the registry that came of it, one {@link SyntaxFailure}
      * per source the parser rejected, and one {@link SchemaError} per declaration the registry
      * refused to admit.
@@ -155,9 +172,21 @@ public final class SchemaLoader {
      *                       included; never null, and complete with respect to exactly those
      * @param failures       the rejected sources, in the order they were parsed
      * @param registryErrors the refused declarations, in the order they were offered
+     * @param perSource      each source's own reading, in the order the sources were read, so a
+     *                       declaration the merge refused is still reachable through the document
+     *                       that made it
      */
     public record PerSourceParse(TypeDefinitionRegistry registry, List<SyntaxFailure> failures,
-                                 List<SchemaError> registryErrors) {
+                                 List<SchemaError> registryErrors, List<SourceParse> perSource) {
+
+        /**
+         * A parse with no per-source readings behind it, for a caller that assembled a registry
+         * itself rather than reading files.
+         */
+        public PerSourceParse(TypeDefinitionRegistry registry, List<SyntaxFailure> failures,
+                              List<SchemaError> registryErrors) {
+            this(registry, failures, registryErrors, List.of());
+        }
 
         /** Whether either stage refused anything, so a caller that must fail knows to. */
         public boolean rejectedAnything() {
@@ -188,23 +217,53 @@ public final class SchemaLoader {
     public static PerSourceParse parsePerSource(Collection<SchemaSource.File> userSchemaSources) {
         var definitions = new ArrayList<Definition>();
         var failures = new ArrayList<SyntaxFailure>();
-        definitions.addAll(parseDirectives().getDefinitions());
+        var perSource = new ArrayList<SourceParse>();
+
+        var directives = parseDirectives().getDefinitions();
+        definitions.addAll(directives);
+        perSource.add(readingOf(DIRECTIVES_SOURCE_NAME, directives));
+
         for (SchemaSource.File source : oldestFirst(userSchemaSources)) {
             Reader reader = openSource(source.path());
             try {
-                definitions.addAll(parseSource(source.sourceName(), reader).getDefinitions());
+                var parsed = parseSource(source.sourceName(), reader).getDefinitions();
+                definitions.addAll(parsed);
+                perSource.add(readingOf(source.sourceName(), parsed));
             } catch (InvalidSyntaxException e) {
                 failures.add(new SyntaxFailure(
                     source.sourceName(), brief(e), e.getLocation(), e));
             }
         }
+
         var registry = new TypeDefinitionRegistry();
         var registryErrors = new ArrayList<SchemaError>();
         for (Definition definition : definitions) {
             admit(registry, definition)
                 .ifPresent(e -> registryErrors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
         }
-        return new PerSourceParse(registry, failures, List.copyOf(registryErrors));
+        return new PerSourceParse(registry, failures, List.copyOf(registryErrors),
+            List.copyOf(perSource));
+    }
+
+    /**
+     * One source's definitions in a registry of their own, with whatever that document refused
+     * itself.
+     *
+     * <p>The same admitting loop the merge runs, over one document instead of the set, which is
+     * what makes the two readings comparable: a definition missing from a source's own registry was
+     * refused by that document declaring the same thing twice, and a definition present here and
+     * absent from the merged registry was refused by a sibling. Telling those apart is the whole
+     * reason this is kept.
+     */
+    @SuppressWarnings("rawtypes")
+    private static SourceParse readingOf(String sourceName, List<Definition> definitions) {
+        var registry = new TypeDefinitionRegistry();
+        var errors = new ArrayList<SchemaError>();
+        for (Definition definition : definitions) {
+            admit(registry, definition)
+                .ifPresent(e -> errors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e)));
+        }
+        return new SourceParse(sourceName, registry, List.copyOf(errors));
     }
 
     /**
