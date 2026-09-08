@@ -179,9 +179,50 @@ cascade, no roster.
 
 ### Removing a source that went away
 
-A schema file deleted, a jar dropped from the classpath, a `.java` file removed. Here the registry
-row is exactly what should go, and deleting it takes the family roots, their subtrees and the
-membership rows with it in one statement. This is the operation the cascade to `store_source` is for.
+A schema file deleted, a jar dropped from the classpath, a `.java` file removed. Here the registry row
+is exactly what should go, and deleting it takes the source-keyed families with it in one statement,
+`sql_schema` and `sql_enum_binding`, `jvm_class` and `java_file` and everything beneath them. Those
+are a function of the bytes, so no graph needs telling: the facts are gone and any graph that re-walks
+gets whatever replaced them.
+
+**The cascade stops before the graph-keyed families, at the membership row**, which is where a file's
+identity hands over to a graph's reading of it. `store_graph_source` gains a nullable `source_ref`
+carrying a second copy of `source_name`, under
+`CHECK (source_ref IS NULL OR source_ref = source_name)` and
+`FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL`. Deleting a
+registry row then nulls that column on every graph's membership row and deletes none of them, and the
+52-relation subtree hanging off the row's primary key survives with it. A null `source_ref` is not a
+missing attribution, the attribution being in the primary key where it always was; it is the registry
+withdrawing its vouch for a reading, and it is discoverable in one predicate.
+
+Each graph reaps its own, one statement and no roster:
+`DELETE FROM store_graph_source WHERE graph_name = ? AND source_ref IS NULL`, whose cascade clears the
+subtree beneath, after which the coordinate anchors re-aggregate like any other refresh. The graph
+whose round removed the source does it in that round; a graph that is not running does it on its next
+boot.
+
+Letting it cascade instead would be the one place this item contradicts its own thesis. Refresh is
+already each gatherer's decision about its own rows, and a removal that cascaded would have one
+process reach into every other graph's partition and delete rows there, on a cadence that graph knows
+nothing about. It would also destroy the information the deletion carries: a graph that finds its
+readings gone can only re-walk, where a graph that finds them flagged knows which source went and can
+reconcile, which is the same argument this plan makes for preferring reconciliation everywhere else.
+And it opens a window, between the removal and the other graph's next boot, in which that graph's
+coordinate anchors stand with their declarations deleted and any reader of its facts sees half a
+graph.
+
+**What the schema gives up, and what gives it back.** A child cannot carry both a cascading and a
+set-null edge to one parent: H2 accepts the declaration and the cascade wins, so the row is deleted
+and the null never happens. `store_graph_source.source_name` therefore loses its own foreign key, and
+with it the guarantee that a membership names a registered source. The gatherer enforces that key
+instead, on every refresh, in `StoreRefresh.prepare`, which already runs before the walk on the warm
+path and already takes the graph's name. One predicate covers both failures the missing key would have
+caught, because both are the same fact: a row whose `source_ref` is null is a reading the registry does
+not vouch for, whether the source was removed under it or a write left the column unset. Which of the
+two it is, a `store_source` row for the name existing or not, is worth reporting and changes nothing
+about the remedy: delete the membership row, let the cascade take the reading, and let the source be
+re-read if this round's inputs still name it. Scoped to the running graph's own rows, which is the
+whole point of stopping the cascade there in the first place.
 
 It is also an operation the store does not currently have at all, which is worth stating as a gain
 rather than leaving implied. Nothing in the tree deletes a `store_source` row: there is no
@@ -191,8 +232,8 @@ run's input set on the correct ground that another graph may still need it, and 
 whether any graph still does. So a jar that leaves a consumer's classpath keeps its classes for the
 life of the workspace cache, and the store grows monotonically across a project's dependency churn.
 This item does not add the reaping policy, which is a question about when a source is known to be
-unwanted rather than about how to remove it, but it is what makes the removal expressible in one
-statement instead of twenty-one. That bears on R917 and on the cache byte-budget item, and both should
+unwanted rather than about how to remove it, but it is what makes the removal expressible at all
+rather than as twenty-one hand-written deletes and a graph-by-graph sweep nobody has written. That bears on R917 and on the cache byte-budget item, and both should
 be told the mechanism exists rather than each inventing one.
 
 ### A source file can belong to several graphs
@@ -550,9 +591,10 @@ the bundled directives need one. It is a live sealed arm at nine main-source sit
 `KIND_NAMED`, so retiring it is a scope statement this item does not make.
 
 **Phase four, the SDL families.** Add `store_graph_source.stamp` and delete the blanking branch in
-`ClasspathSources.upsert`; give `store_graph_source`'s existing foreign key into `store_source` its
-`ON DELETE CASCADE`, which is the edge that makes removing a source reach the graph-keyed families at
-all; add the cascading `(graph_name, source_name)` foreign keys from the
+`ClasspathSources.upsert`; replace `store_graph_source`'s existing foreign key into `store_source`
+with the `source_ref` twin, its `CHECK` and its `ON DELETE SET NULL` edge, and write the enforcement in
+`StoreRefresh.prepare` that stands in for the key the primary-key column gives up; add the cascading
+`(graph_name, source_name)` foreign keys from the
 12 `graphql_` and 40 `graphitron_` source-owned relations into `store_graph_source`, with the index
 each needs; write the re-aggregation over all seventeen relations that are a function of more than one
 source, of none, or of the recipe, the coordinate anchors of both families and the two cross-file
@@ -587,9 +629,20 @@ schema file, and the answer, established by two shipped tests, is that every sto
   such path fails the build. The gate checks two things and not one, because the round-1 finding
   turned on the difference: that the edge is declared, and that its child column is `NOT NULL` so the
   edge reaches every row of the relation rather than only the rows that happen to carry a value. A
-  nullable child column fails the gate rather than passing as covered. It carries a floor on how many relations it classified, so a metadata
+  nullable child column fails the gate rather than passing as covered. `store_graph_source.source_ref`
+  is the one nullable source column in the store that is not a defect, and it is above the roots rather
+  than inside the families, so it is outside this gate's population by construction rather than by
+  exemption; what pins it is the removal test above. It carries a floor on how many relations it classified, so a metadata
   change cannot let it pass vacuously, that failure mode having been recorded against
   `FactSchemaGateTest.currencyAccompaniesEveryStamp` at R922's Done gate.
+- **Removing a source leaves every graph able to clean up, and does not clean up for them**: two
+  graphs over one shared file, the registry row deleted, asserting the delete itself removes neither
+  graph's rows, that both memberships come back with a null `source_ref`, that the running graph's
+  next refresh reaps its own subtree and re-aggregates its anchors, and that the other graph's rows
+  stand untouched until it captures and reaps them itself. Its companion is the enforcement's other
+  half, a membership row written with a null `source_ref` while its source still exists, which the
+  same pass reconciles: the predicate is the foreign key the primary-key column cannot carry, so the
+  test that pins it is the one that would otherwise be a `FOREIGN KEY` clause.
 - **The two operations are distinguishable**, which is the pin against the mechanic the design
   rejects: a refresh of a changed source leaves its `store_source` row in place with a new `stamp` and
   `read_at` and the same identity, while removing the source deletes the registry row and everything
@@ -637,6 +690,17 @@ it, nothing checks it, and its 21 members are three different situations under o
 here, deleted elsewhere, and not capture's business at all. The four went missing because a
 hand-maintained exemption list has no way to notice an omission, and patching it leaves the next
 omission free to happen.
+
+**Letting the removal cascade through the membership row.** The obvious reading of "the keys declare
+ownership", and what this plan said until the mechanics of a shared file were worked through: give
+`store_graph_source`'s foreign key `ON DELETE CASCADE` and let deleting a registry row take every
+graph's readings with it. Rejected because it makes the removal path the one operation a graph does
+not own. Every other delete in this design is issued by the gatherer whose rows it clears, and this one
+would be issued by whichever process happened to notice the file was gone, against partitions belonging
+to graphs that are not running. It also destroys what the deletion knows, leaving the other graph to
+re-walk where it could have reconciled, and it publishes a half-graph to any reader of those facts
+until that graph next boots. The set-null twin costs one column on one small relation and an
+enforcement pass the refresh was already the right place for.
 
 **One graph per schema file.** Carried by this plan for four rounds: a `graph_name` column on
 `store_source` with a `CHECK` tying it to the `SCHEMA_FILE` kind, and a typed rejection when a second
@@ -1350,4 +1414,39 @@ already known and it is the finding rather than a way around it.
 > file's single row, `FactCapture.capture` for the transaction boundary and `commitStamps` inside it,
 > `GraphitronFactCapture.capture`'s signature for finding 6, and `graphql_type_declaration`'s key and
 > `merge_ordinal` comment against `jvm_class`'s key for the sharing argument.
+
+### Author revision, 2026-09-08: the removal stops at the membership row
+
+No reviewer round between this and the one above; it is a design change the user directed after the
+shared-file rework, and it changes what phase four builds, so it is recorded here rather than left to
+be inferred from the body.
+
+The removal path cascaded through `store_graph_source` and took every graph's readings with it. It now
+stops there. The row gains a nullable `source_ref` holding a second copy of `source_name`, under a
+`CHECK` tying the two together and a foreign key with `ON DELETE SET NULL`, so deleting a registry row
+nulls the column on every graph's membership row and deletes none of them. Each graph reaps its own
+with one statement whose cascade clears its subtree, the running graph in that round and the others on
+their next boot.
+
+An earlier pass in this conversation dismissed `ON DELETE SET NULL` for this item, on the grounds that
+the coordinate anchors are foreign-key parents rather than children so the cascade already stops at
+them, and that a nulled attribution would be a lie about which file declared a row. The first half was
+true and answered a different question, the anchors being about refresh where this is about removal.
+The second was answered by the user's construction: with the attribution kept in the primary key and
+the twin carrying only the reference, the null is not a lost attribution but the registry withdrawing
+its vouch, which is a fact worth recording rather than one being destroyed.
+
+Four things were checked against H2 2.4.240 rather than assumed, and one of them changed the design.
+Set-null on a twin outside the primary key works and the `CHECK` survives it; the subtree hanging off
+the surviving row survives too, and one `WHERE source_ref IS NULL` delete reaps it by cascade; a child
+carrying both a cascading and a set-null edge to one parent is accepted by H2 and the cascade wins, so
+the row is deleted and the null never happens. That last one is why the primary-key column gives up its
+foreign key rather than keeping it, and the fourth check confirmed the cost: with no key there, a
+membership row naming an unregistered source inserts without complaint.
+
+The user's answer to that cost is the enforcement, and it is better than the key it replaces. Every
+refresh, in `StoreRefresh.prepare`, reconciles the readings the round inherited, and one predicate
+covers both failures: an orphan whose source was removed under it and a wrong row whose column was
+never set are both readings the registry does not vouch for. The remedy is the same for both, and it
+is scoped to the running graph's own rows, which is what stopping the cascade was for.
 
