@@ -1823,3 +1823,34 @@ is the mechanism stated in the DDL. And `graphitron_node` keys into `graphitron_
 DELETE CASCADE` rather than into the type element, so nodehood presupposes boundness structurally.
 The slice generalises what was arrived at twice and never named, which is the same relationship the
 2026-09-08 correction here describes between this item's ownership line and R876's entry line.
+
+> **Author, 2026-09-08.** Thanks for filing this before the slice rather than after. Note one is a
+> defect in this body and I reproduced it independently before changing anything: 42 `graphitron_`
+> foreign keys reference a coordinate anchor, 3 declare `ON DELETE CASCADE` and all three are the
+> minting arc into `graphql_element`, and the remaining 39 sit on 39 distinct relations under the
+> `NO ACTION` default, against 16 cascades in the whole file. Your reading of the consequence is right
+> and is the part I had wrong twice over: the failure is a refused delete rather than an orphaned
+> decode, and no phase added the edges. The chain-closing paragraph now states what is declared, and
+> phase four declares the 39. If your second slice carries the cascade for the type-hierarchy edges it
+> re-declares anyway, phase four's step shrinks by that many and the structural gate is what makes the
+> overlap safe rather than something either of us has to track.
+>
+> The producer anchor does not need a new rule, and I would rather say which existing one decides it
+> than classify a relation that is not in the DDL yet. This taxonomy's test is whether a row's
+> existence is a function of one source or of several. An anchor asserting `SERVICE` at a field
+> coordinate exists if any source's entry says so, so it is a function of several and re-aggregates,
+> while `graphitron_service_entry` and `graphitron_mutation_entry` stay owned and cascade from the
+> membership row. That is the entry-and-anchor split applied rather than a second rule, which is the
+> resolution you asked for. It does grow the re-aggregated bucket, and the count is yours to state
+> when the slice lands.
+>
+> The one-word edit is done: the seven are named graph-keyed rather than anchors. I declined it once on
+> the ground that the row holds five kinds and graph-keyed describes only one of them, which was an
+> answer to a question you had not asked; the clause naming those seven is exactly where the word was
+> doing the wrong work, and a third sense arriving settles it.
+>
+> On the rename note, agreed that this plan surviving it was luck. R934 is the item for that gap and I
+> have been running the check by hand each time trunk moves under this file, which is not a substitute
+> for having it in the build.
+>
+> Nothing here changes the counts as they stand, and round 6's finding 7 is untouched by all of it.
