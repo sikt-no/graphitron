@@ -1,7 +1,7 @@
 ---
 id: R677
 title: "Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see"
-status: In Review
+status: Ready
 bucket: validation
 priority: 3
 theme: codegen-correctness
@@ -813,3 +813,55 @@ an existing one. What was verified is in the commit message.
   no ordering component, the same as the root leaves, so a declaration there is accepted and
   discarded today too. Correct behaviour for the rule; worth one case in
   `FieldUnlowerableOrderingTest` so the population's width is pinned.
+
+### Round 3, In Review -> Ready (phases 1 and 2), 2026-09-08
+
+Reviewer session: `https://claude.ai/code/session_01JWyJQfF58JjTK1FEutvCLH`. Verdict: sign off on
+phases 1 and 2. Phase 3 remains, so the item returns to `Ready` rather than to `Done` and the file
+stays.
+
+Both gate questions are answered. The delivery is the change the revised plan approved, arm for arm:
+the rule is keyed on availability against read shape rather than on declaration, so the multitable
+root and the list-returning `@routine` write are two arms of one comparison; the availability side is
+stated once and joined against both read shapes, and the two inert pairings fall out of construction
+as the phase note claims (the fallback route joins the binding of the navigated container, which the
+fan-out shape's own precondition leaves unbound). Phase 2 is the split round 1 asked for and not the
+original single track: the multiset half is the two-ends comparison and carries the phase's case, the
+launcher half is one assertion over the arms `orderIsEntailedBySource` does not exempt, and that
+switch has the three arms round 2's note called for rather than four. All three departures the body
+records are real constraints rather than preferences: the transcription gate refuses a new view
+naming `graphql_field`, the view reads a materialized relation so its writer cannot sit in the load
+transaction, and the declared-relation gate is what forces the short comments.
+
+Completeness rests on the four files the plan named, and each answers what it was named for. The
+model-tier boundary is load-bearing rather than decorative: its fixture seeds a primary key on every
+table, so the quiet multitable-read-with-nothing-declared case would fire under a rule keyed on the
+target table's key, and the fallback route's inertness is asserted rather than assumed. The pipeline
+tier makes the two claims no tier below it can: the reported schema fails the build with both located
+messages, the same paginated shape without the declaration builds clean, and the stored rejection
+reaches the `diagnostic` surface as two rows with `actionable = FALSE`. The held `KEY_CAPTURE_SCATTER`
+arm carries both halves of the assertion R660 flips. Phase 2's two folds were each shown able to fail
+before they were trusted, by the confirmation recipe and by the revert-and-restore of
+`batchedLookupRow`'s ordering projection, which is the strongest evidence a ratchet admits and is not
+an appeal to a green build. No test in the delivery asserts on a generated method body.
+
+**Non-blocking.** None of these withholds the sign-off; the first is the one to settle before an
+implementer picks phase 3 up.
+
+* Phase 3's population still names `graphql_field.is_list`, which is the relation
+  `ExpandedPopulationReaderGateTest` refuses to a new view and the exact wall phase 1 hit and
+  answered with `graphitron_field`. The choice is real in both directions and the gate exists to make
+  it an author's, so it is left here rather than corrected in place, but phase 3's section reads as
+  though the question were still open when phase 1 has already taken it once.
+* The `PARTICIPANT_FAN_OUT` arm carries no list filter, where the write arm joins `graphitron_field`
+  for one. A single-valued field returning a multitable container takes a `PARTICIPANT_TABLE` row
+  too, and `@defaultOrder` is `on FIELD_DEFINITION` with no cardinality restriction, so a
+  declaration there is rejected as well. That is correct under class A as stated, nothing honouring
+  the declaration either way, and only the message's tail assumes a list ("rows arrive in participant
+  primary-key order" reads oddly at one row). Either narrow the arm or word the remedy without the
+  cardinality claim.
+* The multiset fold keys on `OrderBySpec.Argument`, which is the arm the plan approved and the arm no
+  site lowers. The renderer also drops an empty `OrderBySpec.Fixed` (`!fixed.columns().isEmpty()`),
+  and `Fixed` carries no non-empty invariant, so an empty one on a list multiset would pass the fold
+  and render no ORDER BY. Round 2 raised this for the launcher half and the delivery answered it by
+  corpus measurement; the multiset half's version of the same question is unmeasured.
