@@ -278,12 +278,25 @@ public final class ConditionGlueRenderer {
             columnCompare(term, hopAliases.get(hopAliases.size() - 1)));
     }
 
+    /**
+     * The four shapes a column term lowers to, as {@code receiver.op(local)} over shape times
+     * arity: single-column {@code eq} / {@code in}, and the row-value forms of both.
+     *
+     * <p>No shape spells a bind. jOOQ types every comparison operand at the receiving column's
+     * {@code DataType} ({@code Field.eq} and {@code Field.in} route each value through
+     * {@code DSL.val(value, field)}, and {@code Row.eq} / {@code Row.in} compare cell to cell), so
+     * a registered {@code Converter} on the receiver runs in all four. That is
+     * {@link ColumnComparison}'s companion bind rule already satisfied: for a generated filter the
+     * receiver <em>is</em> the column the value was read from. It holds only because the binding
+     * local is declared at the receiving column's own Java type, which is the guarantee
+     * {@link no.sikt.graphitron.rewrite.model.BodyParam.ColumnPredicate} records.
+     */
     private static CodeBlock columnCompare(ColumnTerm term, String alias) {
         String local = term.binding().localName();
         if (term.columns().size() == 1) {
             String col = term.columns().get(0).javaName();
             return term.match() == MatchKind.EQUALITY
-                ? CodeBlock.of("$L.$L.eq($T.val($L, $L.$L))", alias, col, DSL, local, alias, col)
+                ? CodeBlock.of("$L.$L.eq($L)", alias, col, local)
                 : CodeBlock.of("$L.$L.in($L)", alias, col, local);
         }
         var cells = CodeBlock.builder();

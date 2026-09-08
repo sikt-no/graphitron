@@ -365,6 +365,25 @@ type Query {
     # them without changing the SQL it renders.
     divergedRefChildren: [DivergedRefChild!]! @defaultOrder(primaryKey: true)
     divergedRefOrgs: [DivergedRefOrg!]! @defaultOrder(primaryKey: true)
+    # Execution-tier roots for the generated filter rail over a converter-backed column
+    # (ConverterFilterExecutionTest). A generated filter is a predicate minted from a schema
+    # argument bound to a column, with no developer method involved, and the condition glue lowers
+    # one to exactly four shapes: single-column eq / in, and the row-value forms of both. Each
+    # binds its value at the receiving column's DataType, so over org_code — a bigint domain
+    # generated as String — the bind must reach PostgreSQL as bigint; a varchar bind fails the
+    # request outright with "operator does not exist: org_code_domain = character varying".
+    # The two scalar shapes:
+    converterCampusesByOrgCode(orgCode: String @field(name: "ORG_CODE")): [ConverterCampus!]!
+        @defaultOrder(primaryKey: true)
+    converterCampusesByOrgCodes(orgCodes: [String!] @field(name: "ORG_CODE")): [ConverterCampus!]!
+        @defaultOrder(primaryKey: true)
+    # The listing the row-shape cases read their ids off, rather than minting them with the
+    # generated NodeIdEncoder: minting one would re-encode the very converted value under test.
+    converterCampusTerms: [ConverterCampusTerm!]! @defaultOrder(primaryKey: true)
+    # The two row-value shapes, over the converter-backed composite key: the singular filter lands
+    # on BodyParam.RowEq and the list one on BodyParam.RowIn.
+    converterCampusTermByNodeId(filter: ConverterCampusTermSingularNodeIdFilter): [ConverterCampusTerm!]!
+    converterCampusTermsByNodeIds(filter: ConverterCampusTermCompositeNodeIdFilter): [ConverterCampusTerm!]!
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -1833,6 +1852,30 @@ type ConverterCampus @table(name: "converter_campus") {
     # keyed on the converter-backed FK column.
     organisation: ConverterOrg @splitQuery
         @reference(path: [{key: "converter_campus_org_code_fkey"}])
+}
+
+# Converter-backed *composite* key: (org_code, term_no) over a bigint domain generated as String
+# and a plain integer, so a decoded @nodeId is a Row2<String, Integer>. This is the type the
+# row-value shapes of the generated filter rail run against; converter_campus is keyed on a plain
+# serial, so its filters can only reach the scalar shapes.
+type ConverterCampusTerm implements Node @table(name: "converter_campus_term") @node {
+    id:       ID!     @nodeId
+    orgCode:  String! @field(name: "ORG_CODE")
+    termNo:   Int!    @field(name: "TERM_NO")
+    termName: String! @field(name: "TERM_NAME")
+}
+
+# Row-value equality carrier (paired with `converterCampusTermByNodeId`): the singular composite-PK
+# same-table @nodeId reaches BodyParam.RowEq, emitting `DSL.row(t.ORG_CODE, t.TERM_NO).eq(decoded)`
+# where the decoded row's first cell carries OrgCodeStringConverter's user type.
+input ConverterCampusTermSingularNodeIdFilter {
+    id: ID! @nodeId(typeName: "ConverterCampusTerm")
+}
+
+# Row-value membership carrier (paired with `converterCampusTermsByNodeIds`): the list form reaches
+# BodyParam.RowIn, emitting `DSL.row(t.ORG_CODE, t.TERM_NO).in(decodedRows)` over the same key.
+input ConverterCampusTermCompositeNodeIdFilter {
+    ids: [ID!] @nodeId(typeName: "ConverterCampusTerm")
 }
 
 # Converter-diverged foreign key fixtures. diverged_ref_child.org_code is declared as plain bigint

@@ -60,6 +60,21 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * through it); the two are separate steps and getting them backwards is how a converter-backed
  * key produces bad SQL rather than a compile error. {@link #equalityAgainstValue} is the two rules
  * applied in that order, and is the only entry point that has to bind anything.
+ *
+ * <p>The rule says nothing about how the bind has to be <em>spelled</em>, and mostly it is not
+ * spelled at all. jOOQ types every comparison operand at the receiving column's {@code DataType}
+ * on its own, so wherever the receiver <em>is</em> the column the value came from the rule is
+ * already satisfied: {@code receiver.eq(value)} binds through that column's converter with no
+ * {@code DSL.val} anywhere. That is every generated filter: an argument bound to a column, compared against that
+ * same column (see {@link ConditionGlueRenderer}).
+ *
+ * <p>An explicit {@code DSL.val(value, col.getDataType())} appears exactly where the receiver is
+ * not the column the value came from, which happens two ways. There may be no receiver at all: a
+ * {@code VALUES} cell has nothing to be typed against, so {@link LookupRows} spells the
+ * {@code DataType} itself. Or the receiver may be a diverged sibling of the value's column, which
+ * is {@link #equalityAgainstValue}'s bind-then-coerce form above. Reading the two exemplars is the
+ * way to tell whether a new site needs a spelling; an inventory of call sites in prose would only
+ * rot.
  */
 public final class ColumnComparison {
 

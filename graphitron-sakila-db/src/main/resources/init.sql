@@ -1108,6 +1108,26 @@ INSERT INTO converter_campus (campus_id, campus_name, org_code) VALUES
     (2, 'Trondheim', 1120),
     (3, 'Gjøvik',    1120);
 
+-- Composite primary key whose first column is converter-backed: org_code is the org_code_domain
+-- the type-selected forcedType maps to java.lang.String via OrgCodeStringConverter, so a decoded
+-- (org_code, term_no) key is a Row2<String, Integer> over a (bigint domain, integer) pair. The
+-- row-value shapes of the generated filter rail, `DSL.row(c1, c2).eq(row)` and
+-- `DSL.row(c1, c2).in(rows)`, have no other fixture to run against: converter_campus is keyed on a
+-- plain serial and diverged_child_label on label_code alone. Exercised through the
+-- ConverterCampusTerm @nodeId roots in the example schema, whose single-column siblings over
+-- converter_campus.org_code cover the scalar eq / in shapes.
+CREATE TABLE converter_campus_term (
+    org_code   org_code_domain NOT NULL REFERENCES converter_org(org_code),
+    term_no    integer         NOT NULL,
+    term_name  varchar(50)     NOT NULL,
+    PRIMARY KEY (org_code, term_no)
+);
+
+INSERT INTO converter_campus_term (org_code, term_no, term_name) VALUES
+    (186,  1, 'Autumn UiT'),
+    (1120, 1, 'Autumn NTNU'),
+    (1120, 2, 'Spring NTNU');
+
 -- Converter-diverged foreign key fixture. The converter above is selected by type
 -- (`includeTypes: org_code_domain`), so it lands on both ends of the converter_campus FK at once
 -- and both sides generate as Field<String>. A consumer whose jOOQ codegen selects by column path

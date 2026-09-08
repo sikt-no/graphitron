@@ -40,6 +40,15 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * carries exactly the columns it needs, so the body emitter switches exhaustively over the
      * four arms with no arity or list ladders; a new operator is a new sealed arm plus an
      * emitter switch arm.
+     *
+     * <p>Every arm's binding local is declared at the predicate column's own Java type
+     * ({@code FieldBuilder.javaTypeFor} answers {@code column.columnClass()} for every
+     * column-bound extraction, and the row arms carry their typed {@code Row<N>} from the
+     * columns). That is what lets
+     * {@link no.sikt.graphitron.render.ConditionGlueRenderer} emit a bare
+     * {@code receiver.eq(local)} and still bind at the receiving column's {@code DataType}, with
+     * no explicit {@code DSL.val}. An arm answering a wire type instead would still compile there
+     * and bind at the wrong type, silently.
      */
     sealed interface ColumnPredicate extends BodyParam permits Eq, In, RowEq, RowIn {}
 
