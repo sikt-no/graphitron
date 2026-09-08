@@ -596,13 +596,43 @@ They divide into two shapes, and both shapes already exist in the plan.
 
 *Injected by an artifact, so attributed to that artifact.* The federation definitions
 `FederationLinkApplier.apply` injects before capture sees the registry come from
-`federation-graphql-java-support`, a jar on the compile classpath that already carries a
-`store_source` row of kind `JAR` with a real stamp. They are attributed there, which makes them
-`NOT NULL`, reachable by phase four's edge, and genuinely refreshed when the library version moves.
+`federation-graphql-java-support`, a jar on the compile classpath. They are attributed there, which
+makes them `NOT NULL`, reachable by phase four's edge, and refreshed when the library version moves.
+The jar's `store_source` row is not something the plan may assume, and this is the step that would
+otherwise be inferred from a requirement stated elsewhere: `ClasspathSources.record` writes a `JAR`
+row only for an entry the class scan read a class from, and its own javadoc states the silence, "a
+classpath entry the scan skipped (a transitive-only jar) produces no `store_source` row at all". A
+tagged capture measured against the current tree holds nineteen unattributed `graphql_directive` rows
+and twenty-one unattributed `graphql_directive_argument` rows, all of them the injected federation
+names, and no `JAR` row anywhere in the store. So phase three records the library's own artifact as a
+source and gives it the membership row phase four's edge resolves against, rather than expecting the
+completion scan to have happened to produce one.
 The bundled `directives.graphqls` is the same shape one step in: it ships inside graphitron's own
 artifact, it already has a `store_source` row from `captureSources`, and what it lacks is a stamp, so
 it gains one tied to the generator version that `store_stamp` already records. Neither is a sentinel,
 because both name a thing that changes and that something re-reads when it does.
+
+**One fork this leaves open, raised by the author against the author's own disposition.** The jar is
+not the only thing the injected set is a function of. `LinkDirectiveProcessor
+.loadFederationImportedDefinitions(registry)` reads the consumer's `@link`, so its URL version decides
+which of the library's bundled SDL files is used and its `import` list decides what each definition is
+named: the same fixture shows `inaccessible`, `link` and `tag` unprefixed because they were imported
+and sixteen `federation__`-prefixed names because they were not. Under a per-source refresh, an edit
+that changes only the `@link` refreshes the partition of the file it sits in and not the jar's, so the
+injected rows would keep the names and the version the previous edit produced. Attribution to the
+artifact is right about the library moving and silent about the document moving.
+
+Two ways to close it, and the item's own taxonomy prefers the first. Either `graphql_directive` and
+`graphql_directive_argument` move whole into the re-aggregated set, which is where a relation that is
+a function of the document set *and* an artifact belongs, and which is the treatment
+`graphql_root_operation` and `graphitron_link_entry` already take for the same mixed-arm reason; the
+cost is that authored directive definitions, thirty-one of the fixture's fifty rows, are recomputed
+after every walk rather than deleted per source. Or the rows stay attributed to the jar and the plan
+gains a dependency edge, recomputing the injected set whenever a source carrying a federation `@link`
+is refreshed, which is a fourth treatment beside the three this item defines. Taking the first moves
+the counts to **74 / 30 / 20**, the source-owned SDL figure to 49 and the `NOT NULL` population to 32;
+taking the second leaves every count where it stands. Unresolved on purpose: it is a design choice the
+next review should weigh rather than one the author settles quietly inside a rework round.
 
 *Derived from the document set, so re-aggregated.* `SdlFactCapture.captureConventionRoots` writes a
 `graphql_root_operation` row when a schema declares a `Query`, `Mutation` or `Subscription` type and
@@ -614,9 +644,15 @@ taxonomy that classifies half a relation is not one; recomputing it after the wa
 from the surviving declarations plus the convention rule.
 
 `TagLinkSynthesiser` is the fourth and it is the one the plan cannot leave alone, because it is the
-disposition the alternatives section refuses, already shipped: it stamps what it injects with
-`SourceLocation(1, 1, "<graphitron-synthesised:tag-link>")`, so those rows are `NOT NULL`, would
-satisfy phase four's edge and the strengthened gate, and belong to a source no refresh ever names.
+disposition the alternatives section refuses, already shipped. What it stamps is worth being exact
+about, because the sentinel and the rows part company. It builds its `@link` with
+`Directive.newDirective()` and no location, and hangs it on a `SchemaExtensionDefinition` carrying
+`SourceLocation(1, 1, "<graphitron-synthesised:tag-link>")`. `captureSources` reads the *extension's*
+location, so the sentinel becomes a `store_source` row of kind `SCHEMA_FILE` with no stamp, which is a
+source no refresh ever names. Both fact rows read the *directive's* location instead, which carries
+none, so a tagged capture leaves `graphql_schema_directive` and `graphitron_link_entry` with a NULL
+`source_name`. Measured on a tagged fixture: one row each, both NULL, and the sentinel present in
+`store_source` alone.
 
 It cannot be attributed to a document, because no document triggers it. `TagLinkSynthesiser.apply`
 fires on `bySource.values().stream().anyMatch(i -> i.tag().isPresent())`, and `SchemaInput.tag` is a
@@ -635,9 +671,9 @@ lands in the `graphql_` family and the decode in the `graphitron_` one, so namin
 transcription leaves the decode in the owned set with no value its column can honestly carry.
 `GraphitronFactCapture.captureSchemaDirective` writes a `graphitron_link_entry` row for any directive
 named `link` on a schema definition or extension, taking `source_name` from the directive's
-`SourceLocation`, and the synthesised extension carries the synthetic one. That relation re-aggregates
-beside `graphql_schema_directive`, which is what takes the counts to **76 / 30 / 18** and the phase
-four `NOT NULL` population to 34.
+`SourceLocation`, which the synthesiser leaves unset. That relation re-aggregates beside
+`graphql_schema_directive`, which is what takes the counts to **76 / 30 / 18** and the phase four
+`NOT NULL` population to 34.
 
 The class is bounded rather than open-ended, and the bound is why this is one relation and not an
 audit. `FederationLinkApplier` injects directive *definitions*, so its rows land on `graphql_directive`
@@ -645,6 +681,43 @@ and its kin and never reach `captureSchemaDirective`; the convention roots write
 `graphitron_link_import_entry` carries no `source_name` and hangs off the entry by
 `(graph_name, link_ordinal)`, so it follows its parent without being classified separately. The
 tag-link synthesis is the only path that reaches the decode side.
+
+**The fifth population is an injector that appends to a document's own elements, and the fix is the
+asymmetry that lets it produce a NULL.** `TagApplier` builds its `@tag` with
+`Directive.newDirective().name(TAG_DIRECTIVE_NAME).argument(...).build()` and no `sourceLocation`, then
+appends it to every field, argument, input field, enum value and union whose `SchemaInput` carries a
+configured tag. Measured on a tagged fixture: four `graphql_field_directive` rows, one
+`graphql_argument_directive` row and two `graphql_enum_value_directive` rows, every one of them with a
+NULL `source_name`, and all three relations are among the six phase four alters to `NOT NULL`. The
+directive's own argument reaches no such column, the four `*_directive_arg` relations carrying no
+`source_name` at all.
+
+The same fixture writes one `graphql_type_directive` row for the tagged union, and it is attributed
+correctly. That is the whole diagnosis: `captureTypeDirective` takes `source_name` from the declaring
+site and uses `setOwnPosition` for line and column only, whose javadoc gives the reason, "a position
+whose `source_name` column is already spoken for by the site key. The two always name the same file:
+an element sits lexically inside the site that declares it." Its three site-level siblings take the
+source from the directive instead, which is why one relation is already `NOT NULL` and the other three
+are not.
+
+So the three site-level captures take `source_name` from the site, as their type-level sibling already
+does, rather than `TagApplier` stamping what it appends. Stamping fixes the rows and leaves the
+asymmetry for the next injector; taking the source from the site fixes the class, and the value the two
+would write is the same. `graphql_argument` joins them, since `captureArguments` takes its source from
+the argument node and is handed no site today: it has no NULL population (one row, none null, on the
+same fixture) and this makes that structural rather than incidental.
+
+Site attribution here is not merely honest, it is the partition the row belongs in.
+`TagApplier.tagToApply` resolves the binding by `bySource.get(loc.getSourceName())` on the *element's
+own* location, so an applied tag is a function of exactly the file the element sits in: re-read that
+file and the row is rewritten, delete it and the row goes with it. The configuration half is already
+governed, a tag being a build-file field and `store_graph.build_file_stamp` being what the remembered
+recipe is trusted against. `DescriptionNoteApplier` is the same shape of injector and needs nothing,
+because a description is a column on the element's own row rather than a row of its own, so it has no
+`source_name` to leave unset.
+
+This population is attributable rather than derived, so nothing moves in the taxonomy and no count
+changes: the three relations stay owned, and phase four's `ALTER` has an honest value for their rows.
 
 `SdlFactCapture.stampTarget`'s javadoc names the bundled directives and the synthesised name as "the
 whole miss set", which is true of sources with no file and is why those two are the ones with rows and
@@ -656,6 +729,11 @@ belongs in the same account. It carries its label as `source_name` so it produce
 part of this defect, but it is a source with no file and no stamp, which is the property that makes
 the bundled directives need one. It is a live sealed arm at nine main-source sites and persisted as
 `KIND_NAMED`, so retiring it is a scope statement this item does not make.
+
+The site-level captures are the one code change phase three makes outside the dispositions
+themselves, and they are small: `captureFieldDirectives`, `captureArgumentDirectives`,
+`captureEnumValueDirectives` and `captureArguments` take the `SiteRef` their callers already hold, and
+write its source name instead of reading the node's own location.
 
 **Phase four, the SDL families.** Add `store_graph_source.stamp` and delete the blanking branch in
 `ClasspathSources.upsert`; replace `store_graph_source`'s existing foreign key into `store_source`
@@ -2017,6 +2095,49 @@ appends with the element's own location. The first removes the asymmetry that pr
 second leaves it in place for the next injector. Which one, and whether `DescriptionNoteApplier` needs
 the same treatment (it appends descriptions rather than directives, so I expect not, but it is the
 same shape of injector and phase three should say so), is the author's.
+
+> **Author response (round 8).** Finding 9 stands, and I reproduced it before acting on it rather than
+> reading the code twice: on a tagged fixture, four `graphql_field_directive` rows, one
+> `graphql_argument_directive` row and two `graphql_enum_value_directive` rows, every one with a NULL
+> `source_name`, beside one correctly attributed `graphql_type_directive` row for the tagged union.
+> That last row is the finding's own diagnosis holding still: the site key is what saves the type-level
+> sibling.
+>
+> I took the first of the two options, the site-level captures taking `source_name` from the site.
+> Stamping `TagApplier` fixes these rows and leaves the asymmetry for the next injector, and the value
+> the two would write is identical, so the one that removes the class is the better buy.
+> `graphql_argument` joins the three, since it has the same shape and no NULL population today, which
+> makes the property structural rather than incidental. On the question the finding left open:
+> `DescriptionNoteApplier` needs nothing, and phase three now says why, a description being a column on
+> the element's own row rather than a row of its own. No count moves.
+>
+> The census I ran to check the finding also caught two things of mine, one wrong and one assumed.
+>
+> *Wrong.* Phase three said the synthesiser's rows are `NOT NULL` and would satisfy phase four's edge.
+> They are NULL. `TagLinkSynthesiser` puts the sentinel location on the `SchemaExtensionDefinition` and
+> builds the `@link` directive itself with no location; `captureSources` reads the extension, which is
+> how the sentinel reaches `store_source`, while both `graphql_schema_directive` and
+> `graphitron_link_entry` read the directive and get nothing. The disposition is unchanged and the
+> argument gets simpler: those rows are a NULL producer like the other four, and the sentinel lives in
+> `store_source` alone. This is the round-7 wording as much as the round-5 one, so it is the same
+> mistake twice, and the same shape as the previous two: a value I read as written because a
+> neighbouring node carried it.
+>
+> *Assumed.* Phase three said the federation library's jar "already carries a `store_source` row of
+> kind `JAR` with a real stamp". Nothing guarantees that. `ClasspathSources.record` writes a `JAR` row
+> only for an entry the class scan read a class from, and says so in its own javadoc; the fixture holds
+> nineteen unattributed `graphql_directive` rows and twenty-one unattributed
+> `graphql_directive_argument` rows, all of them the injected federation names, and no `JAR` row at all.
+> Phase three now records the artifact and its membership row rather than expecting the completion scan
+> to have produced one.
+>
+> One fork I did not settle, and did not want to settle quietly. The injected set is a function of the
+> consumer's `@link` as well as of the jar: its URL picks the library's SDL file and its `import` list
+> names the definitions, which the fixture shows directly as three unprefixed names beside sixteen
+> `federation__` ones. So an edit that changes only the `@link` refreshes its own file's partition and
+> not the jar's, and the injected rows keep the previous edit's names. The body states both ways to
+> close it, my preference for moving the two relations into the re-aggregated set, and what each does
+> to the counts. It bears on question one, so it is the reviewer's to weigh.
 
 ### Non-blocking note (round 8)
 
