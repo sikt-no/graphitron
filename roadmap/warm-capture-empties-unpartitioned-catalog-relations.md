@@ -1696,3 +1696,86 @@ carried forward from round 4's note and still non-blocking.
 > The stale "Two claims" heading you corrected to three is carried forward as you left it, and
 > `SdlFactCapture.stampTarget`'s javadoc is still the one falsified description the sweep does not name.
 
+### Notes from R876's session (2026-09-08): what its second slice changes here
+
+Not a review round, and it arrives after the author answered round 6's finding 7, which none of
+this touches. R876's second slice is about to start and it changes the DDL this plan's taxonomy is
+computed over, so the heads-up comes before the work rather than after it. Six notes. The first is a
+measured defect in this body rather than a consequence of the slice, and it is the one to read first.
+
+**The cascade the chain-closing paragraph rests on is declared three times out of forty-two.** The
+closing sentence of "What cascades, and what has to be re-aggregated" reads that "the `graphitron_`
+decodes hang off the coordinate anchors by foreign keys the DDL already declares `ON DELETE
+CASCADE`, its own comment naming that as the family's pattern". Measured against the current DDL:
+`graphitron_` relations carry 42 foreign keys into a coordinate anchor, counting `graphql_element`,
+the four `*_element` relations and `graphql_type`, and 3 of them declare a cascade. The three are
+`graphitron_minted_type`, `graphitron_minted_field` and `graphitron_minted_argument`, all into
+`graphql_element`, all from R876's own minting arc. The other 39 sit on 39 distinct relations and
+declare nothing, so the default is `NO ACTION`. The whole file holds 16 `ON DELETE CASCADE` and 4 of
+them run from `graphitron_` into `graphql_`, the fourth being
+`graphitron_field_chain_application` into `graphql_field_directive`.
+
+The comment the sentence appeals to appears to be `graphitron_tabletype.table_name`'s, which is
+about a different edge: the crossing into `sql_table`, which does cascade and whose comment argues
+at length for why that crossing needs it. Nothing in the DDL states a cascade as the pattern for the
+coordinate-anchor edges.
+
+What that changes is the failure rather than the design. Under `NO ACTION` the re-aggregation step
+this plan specifies, deleting coordinates with no remaining declaration, is refused by the database
+rather than leaving decode rows behind. That is the better of the two failures and still not the one
+the body describes, and the plan currently has no phase that adds the 39 edges. R876's second slice
+re-declares the type-hierarchy edges anyway, so it is a natural place to carry the cascade for the
+ones it touches. Whether it should, or whether this item wants all 39 in one phase of its own, is
+this item's call and not that slice's. Reproduce with:
+`grep -c 'ON DELETE CASCADE' graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql`.
+
+**The producer anchor is a new relation and its bucket is not obvious.** The slice mints one anchor
+at the field coordinate grain, discriminated by `QUERY`, `SERVICE`, `ROUTINE` and `MUTATION`, with
+each subtype referencing the anchor's key plus its discriminator so a coordinate carrying two
+producers stops being writable. Its parentage splits across two of this taxonomy's rows.
+`graphitron_service_entry` and `graphitron_mutation_entry` both key `(graph_name, type_name,
+field_name)`, both carry `source_name`, and both are in the 40 owned. The coordinate they would hang
+off is graph-keyed: `graphitron_field` carries no `source_name` and is one of the seven this plan
+re-aggregates. So a source-owned entry would sit under a parent no source refresh reaches, and
+deleting one source's `graphitron_service_entry` rows leaves an anchor row asserting `SERVICE` with
+nothing beneath it. That is this taxonomy's third row exactly, and the bucket it sizes at 17 grows by
+at least one.
+
+Which bucket it belongs in is a genuine question and neither item answers it. Producer-hood is a
+function of one document's directive applications, which argues owned; the coordinate it keys at is
+graph-keyed because a field declared in one file can be extended from another, which argues
+re-aggregate. That is the same tension this item already resolved once for the entry and anchor pair,
+and the resolution should be the same one rather than a second rule.
+
+**The counts move, and this item's reviews keep catching counts.** The taxonomy is 124 relations over
+77 owned, 30 descendant and 17 re-aggregated, and the family census is 71 `graphitron_`. The slice
+adds at least the producer anchor and adds edges to existing relations. R876 will state the delta
+against these figures explicitly when the slice lands, rather than leaving the next round to
+rediscover that a table stopped summing.
+
+**The word `anchor` is about to carry a third sense.** The 2026-09-07 note asked that the
+re-aggregated set be named by what it is, graph-keyed, rather than by `anchor`. That is still
+unapplied: the section reads "Seven are the `graphitron_` anchors that key at `store_graph`". The
+second slice makes the collision worse rather than leaving it where it was, because it takes `anchor`
+as the name for a discriminated hierarchy's parent, and that sense does not coincide with the
+entry-and-anchor one. The named-type hierarchy's anchor is `graphql_type`, which is not a
+`graphitron_` anchor at all and sits in this plan's re-aggregated row for unrelated reasons. Three
+senses of one word across two items in review is worth the one-word edit.
+
+**Two column renames, and this plan is untouched by them.** The slice spells the named-type kind one
+way instead of three, so `graphql_type.kind`, `graphitron_type.kind` and
+`graphql_poly_member.container_kind` become `named_type_kind`, distinct from
+`graphql_element.element_kind`, which is the specification's other kind axis. Checked rather than
+assumed: this plan cites none of those three columns, so the rename does not reach its text. That is
+luck and not safety. R934 records that nothing in the build reads roadmap bodies for store
+identifiers, and a 1600-line plan in Spec is the largest thing standing behind that gap.
+
+**Where the two designs agree, the tree got there first and twice.** The slice's mechanism is a
+unique on the parent's key plus its discriminator and a composite reference from each dependent, and
+two sites already run it. `graphitron_tabletype` carries a redundant `UNIQUE (graph_name, type_name,
+table_source_name, table_schema, table_name)` whose comment says it is "what lets a relation carrying
+both a type and the table it resolved to reference the pair rather than each half separately", which
+is the mechanism stated in the DDL. And `graphitron_node` keys into `graphitron_tabletype` with `ON
+DELETE CASCADE` rather than into the type element, so nodehood presupposes boundness structurally.
+The slice generalises what was arrived at twice and never named, which is the same relationship the
+2026-09-08 correction here describes between this item's ownership line and R876's entry line.
