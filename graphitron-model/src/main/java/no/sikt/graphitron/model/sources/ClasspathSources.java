@@ -5,9 +5,11 @@ import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -174,12 +176,41 @@ public final class ClasspathSources {
             if (stamp != null) {
                 dsl.update(STORE_SOURCE)
                     .set(STORE_SOURCE.STAMP, stamp)
+                    .set(STORE_SOURCE.MTIME, modifiedAt(entry))
                     .set(STORE_SOURCE.READ_AT, readAt)
                     .where(STORE_SOURCE.SOURCE_NAME.eq(entry.toString()))
                     .execute();
             }
         }
         recorded.clear();
+    }
+
+    /**
+     * The filesystem's last-modified time for one entry, or null where it cannot be read.
+     *
+     * <p>Written beside the stamp and answering a different question, which is worth stating because
+     * the class comment above argues at length against using a modification time as a currency
+     * signal and that argument still stands. A time is a poor answer to "did the bytes change",
+     * which is why the stamp is a hash. It is the only answer to "which of these two was written
+     * later", and nothing else the registry holds can order two sources at all. That ordering is
+     * what lets a report about several documents declaring one coordinate name the incumbent and the
+     * incursion instead of listing both and leaving the developer to work out which file they just
+     * saved.
+     *
+     * <p>Truncated to the second, which is the resolution a reader can compare against the working
+     * tree across the filesystems this runs on; a finer value would be precision the comparison
+     * cannot honour. A failure to read is null rather than a throw, on the same footing as an
+     * unstamped source: the ordering degrades to unknown and every other fact about the source
+     * survives, which is what a gatherer that reports rather than refuses owes.
+     */
+    private static LocalDateTime modifiedAt(Path entry) {
+        try {
+            return LocalDateTime
+                .ofInstant(Files.getLastModifiedTime(entry).toInstant(), ZoneId.systemDefault())
+                .withNano(0);
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /**

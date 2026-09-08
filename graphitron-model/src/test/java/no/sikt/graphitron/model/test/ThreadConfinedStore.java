@@ -99,8 +99,14 @@ final class ThreadConfinedStore {
      * home reopened to meet its own previous rows) cannot ask it for what it needs, which is the
      * reason {@code LentStoreTest}'s three and {@code EntryFamilyCoverageTest}'s one are counted
      * here rather than routed away.
+     *
+     * <p>Raised to 77 on 2026-09-08 for {@code SourceMtimeTest}, recounted rather than nudged. Its
+     * subject is what capture writes into {@code store_source} from files that exist on disk, so it
+     * is the handle shape this paragraph describes: the funnel hands a body a context over a store
+     * nothing captured into, which has no source rows and no files behind them to have a
+     * modification time. One boot for the class, on {@code EntryFamilyCoverageTest}'s terms.
      */
-    private static final int BOOT_BUDGET = 76;
+    private static final int BOOT_BUDGET = 77;
 
     private final GraphitronModelStore store;
 

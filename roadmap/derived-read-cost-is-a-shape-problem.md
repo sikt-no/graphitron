@@ -948,6 +948,49 @@ name the new column on `graphitron_tabletype` already carries. Four other relati
 `intent_field_unlowerable_ordering_rejection` among them, which is why the pass is per relation and
 not a substitution over the word.
 
+### The graphql_ family has one entry and eleven anchors, and the walk is the difference
+
+Found by trying to state the named-type hierarchy and being unable to. The rule this arc applies to
+`graphitron_` applies to `graphql_` and was never applied there, and the cost is paid in Java.
+
+**The measurement.** `SdlFactCapture` carries 42 sites of first-wins logic: 20 `sink.claim`, 5
+coordinate claims and 17 quarantines. None of it is transcription. Of the 18 relations it claims, 16
+are keyed by the coordinate and only `graphql_type_declaration` and the overflow relation carry the
+declaration site. So when two documents declare one coordinate the relation has room for one row, and
+the walk picks the winner because the schema cannot hold the loser.
+
+**The data is already there, which is what makes this a defect rather than a trade.** Eleven of the
+twelve relations the walk writes already record `source_name`, `source_line` and `source_column`, and
+none of them keys by it. Making them entries is a key change, not a capture change.
+
+**`graphql_duplicate_declaration` is question-shaped and fails the one-sentence test.** The honest
+completion of "one row of this table says that" is "the walk declined to write this", which is a fact
+about the walk and not about a document. Its payload is `AstPrinter.printAstCompact`, so a
+declaration that was parsed into a tree is flattened back to a string and the loser's fields and
+directives are unqueryable. Over site-keyed entries the same question is a group-by, so the relation
+dissolves into a view along with the 42 sites.
+
+**The family already contains the worked example.** `graphql_type_declaration` is an entry, site-keyed
+and carrying `merge_ordinal` and `is_extension`; `graphql_type` is its anchor. One grain has the pair
+and eleven have only the anchor, and the claim machinery is what stands in for the eleven missing
+entries.
+
+**What this makes possible, and why it is this item's.** The developer adds `type X` to a file while
+another declares it, and today capture is never told: the loader offers every definition to one
+shared registry, whose second `add` refuses, and the losing definition is dropped there. Measured, the
+store's whole account of that edit is one declaration and graphql-java's sentence. Under the split it
+is two declarations, both with their fields, and the disagreement is a query. The loader stops
+throwing and the gatherer gathers what it can, on the ground that a document that cannot be merged is
+still a document that was read, and refusing to capture it withholds every fact the author got right.
+Ordering comes from `store_source.mtime`, landed 2026-09-08, which is the one question a content hash
+cannot answer and is what lets a report name the incumbent and the incursion rather than listing both.
+The final registry is then built by adding files in that same order, so graphql-java's own errors
+agree with what the store derives.
+
+Additive throughout: the entries are created and populated beside the anchors, and the anchors keep
+their names, shapes and coordinate uniques, so readers and the foreign keys that need a unique to
+point at are untouched until the derivation can hold the weight.
+
 ### The producer hierarchy
 
 A producer is what runs to fetch a field's rows. The first thing to say about it is that most fields
