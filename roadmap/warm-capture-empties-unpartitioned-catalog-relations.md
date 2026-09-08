@@ -480,7 +480,7 @@ The same comment's opening clause, "store-global rather than graph-keyed: it can
 hashed to, never which graph read it", is kept exactly as it stands and becomes load-bearing: it is
 the reason a graph's reading of a source is recorded on the membership row and not here.
 
-**Two claims become false and have to be rewritten rather than trimmed.** The first has two homes.
+**Three claims become false and have to be rewritten rather than trimmed.** The first has two homes.
 `store_source.stamp` says it is "Also NULL while the source's rows are being written, and set only
 once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one
 that claims to be complete", and `ClasspathSources.upsert`'s javadoc states the same rule from the
@@ -1571,3 +1571,78 @@ five families, 71 `graphitron_`, 28 `graphql_`, 14 `sql_`, 7 `jvm_`, 4 `java_`, 
 relations carrying a `source_name`, which is the owned figure the taxonomy uses. The rename preserved
 family sizes, and R926's DDL commit in the same window changed a predicate inside a view and no base
 relation.
+
+### Round 6 (2026-09-08, Spec -> Ready, reviewer session 01BnH5mPddDZACkr4BfodYag)
+
+Verdict: withhold, on new design this rework introduced rather than on anything a previous round
+raised. Findings 5 and 6 are both properly answered and I checked both against the tree.
+
+Finding 5 is answered by dropping the rule outright, which is the best of the outcomes on offer and
+better than the three ways out R876 listed. "A source file can belong to several graphs" now argues
+the positive case from a real key difference rather than asserting a policy: `jvm_class` keys
+`(source_name, class_name)` with no graph dimension so two graphs reading one jar want the same rows,
+while `graphql_type_declaration` keys `(graph_name, type_name, source_name, source_line,
+source_column)` and carries `merge_ordinal`, whose comment reads verbatim "capture-assigned position
+in merge order", so a row of that family is the graph's reading of the file. Both quoted keys and that
+comment check out. Dropping the column also lets `store_source`'s opening clause stay exactly as it
+stands and become load-bearing, which retires my round-1 non-blocking note and round 4's descriptions
+note in the same move.
+
+Finding 6 is answered and the enabling change really landed. `GraphitronFactCapture.decodingInto`
+exists, `SdlFactCapture` holds the decoder and drives it at all five directive-application sites
+(schema, type, field, argument, enum value), and `GraphitronFactCapture.capture` now retains only
+resolving stages (`FieldChainApplications`, `TableTypes`, `Nodes`, `NodeKeyColumns`, `ElementAnchors`,
+`FieldEndpoints`). So the 40 owned `graphitron_` relations are written per document and one walk of
+one source does rewrite what the cascade deleted, for all 52.
+
+Also verified: the nullable figure now counts over a population that does not move, and it is right.
+38 of the 56 relations of the two families carrying the column at all, 9 of 16 `graphql_` and 29 of 40
+`graphitron_`, which is exactly what the DDL gives. `graphitron_spelled_reference_entry` is the
+post-rename name and both citations already carry it. The counts table still reads 77 / 30 / 17 and
+the five families still hold 124 of the 177 base relations, so R876's renames moved no relation
+between rows.
+
+**Finding 7 (question two: the plan states two homes for the same fact, and asserts closure over a
+column it does not enumerate).** The new `store_graph_source.stamp` is well argued and the hazard it
+names is real: with the reading per graph, A editing a shared file and re-walking leaves the registry
+stamp matching disk, so B concludes it has nothing to re-read and keeps rows built from content that
+is gone. I also traced the null-stamp removal and it holds. `ClasspathSources.upsert`'s quoted
+rationale is verbatim at its line 132, `FactCapture.capture` is one transaction with
+`commitStamps` inside it on the warm path, and on the `firstGraph` path the null comes from the insert
+arm rather than from blanking, so the ordering rule is indeed all that path needs. That argument is
+sound and I am not asking for it back.
+
+What the rework did not propagate is `read_at`. Three things put it squarely inside the reasoning that
+moved `stamp`, and the plan has it in two places at once.
+
+`commitStamps` sets `stamp` and `read_at` in one `UPDATE` on the same `store_source` row, and writes
+`read_at` nowhere else, so an implementer standing in that statement is deciding both columns at once.
+`store_source.read_at`'s own comment calls it "the currency half of the distinction last_seen names the
+age half of, and never the same question", so it is currency rather than age. And it carries the same
+shared-file hazard in the same shape: A reads a shared file and dates it, B finds a `read_at` above its
+own floor and mark, concludes the row is current and skips re-reading content B never read. The
+paragraph that closes the question, "Nothing else moves onto the row", disposes of `last_seen` on the
+correct ground that age is the eviction question, and never mentions `read_at`.
+
+Worse than an omission, the body now says both things. The new section says "the currency test becomes
+an equality between the two columns", while two surviving sentences say the registry row's `stamp` and
+`read_at` "update in place, which is where R922's currency comparison expects to find them" and
+"reads them". Those cannot both be the design. Phase two then pushes *more* currency onto the registry
+row, moving `java_file`'s `stamp` and `read_at` up so "currency is stated in one place for every
+corpus", which is the rationale the new section's argument undercuts for a shared source.
+
+A sentence may be all this costs. The answer that `read_at` stays store-global looks defensible to me:
+if a graph's currency question is answered by the stamp-to-stamp equality with no file I/O, then
+nothing per-graph reads `read_at` for an SDL source and its grain does not matter. But the plan has to
+say which, because the two surviving sentences currently say the opposite, and because phase two's
+consolidation and the new section's split are stated as general principles that collide over exactly
+this column. Which way it goes, and whether phase two's "one place for every corpus" needs narrowing to
+the corpora that are not shared, is the author's.
+
+One correction landed in this commit as a stale count: the descriptions sweep's "Two claims become
+false" heading is followed by three, the null-stamp protocol across its two homes,
+`store_graph_source`'s wholesale-clear clause, and `meta_relation`'s `java_file` row. It now reads
+three.
+
+`SdlFactCapture.stampTarget`'s javadoc remains the one falsified description the sweep does not name,
+carried forward from round 4's note and still non-blocking.
