@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.sdl;
+package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.schema.SchemaError;
 import org.jooq.DSLContext;

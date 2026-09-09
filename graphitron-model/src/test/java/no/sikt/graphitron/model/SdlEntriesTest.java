@@ -17,7 +17,7 @@ import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
-import no.sikt.graphitron.model.capture.sdl.SdlEntries;
+import no.sikt.graphitron.model.capture.document.SdlEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;

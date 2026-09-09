@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.sdl;
+package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Argument;
 import graphql.language.DescribedNode;

@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.sdl.SdlEntries;
-import no.sikt.graphitron.model.capture.sdl.SdlSchemaProblems;
+import no.sikt.graphitron.model.capture.document.SdlEntries;
+import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;

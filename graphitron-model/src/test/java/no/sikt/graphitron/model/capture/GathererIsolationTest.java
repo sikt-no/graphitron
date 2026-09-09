@@ -52,6 +52,9 @@ class GathererIsolationTest {
         roll.put("capture/config", "ConfigurationFactCapture");
         roll.put("capture/catalog", "CatalogFactCapture");
         roll.put("capture/sdl", "SdlFactCapture");
+        // The document reader that replaces it, beside it while the anchors still come
+        // from the walk. Two gatherers over one source for as long as the switch takes.
+        roll.put("capture/document", "SdlCapture");
         roll.put("capture/verdict", "SdlVerdictCapture");
         roll.put("capture/graphitron", "GraphitronFactCapture");
         roll.put("capture/macro", "MacroCapture");
