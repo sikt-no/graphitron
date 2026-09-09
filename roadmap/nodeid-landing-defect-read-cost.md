@@ -382,3 +382,101 @@ real and still unfiled: it is roughly three orders of magnitude below this one, 
 publish cadence rather than the dev round, and it wants its own item rather than a paragraph here.
 The verdict's own item, R926, is Done and a Done item has no file to reopen, so a defect in shipped
 work gets this fresh item, as R925 and R927 did before it.
+
+## Reviewer findings
+
+### Round 1 (2026-09-09, Spec -> Ready, reviewer session 836fbf3b-85c9-4fbb-ba99-5b2db94cae8d)
+
+Verdict: withhold. One blocking finding on question two, plus three claims about code that are
+wrong as written and that the author should fold into the same revision.
+
+Question one passes, and without reconstruction from the phase list: today a `graphitron:dev`
+session on the `sis` schema never becomes usable, because one of the reads the detection pass makes
+on every pass, at boot and again after every save, re-expands a 23-second relation once per driving
+row; after this lands that read costs seconds, the loop is usable at that schema size, and the
+consumer's own validation gate can finally run over the fixes waiting on their migration branch,
+with no change to which schemas are refused. The outcome is reachable here, and the structural
+claims the measurement rests on hold: `intent_node_id_decode_landing_defect` has exactly zero
+`FROM`/`JOIN` references in the DDL, `stopped` is a non-recursive `WITH` whose only reference from
+arm 2 is inside a correlated `NOT EXISTS`, the hop names the endpoint once and carries the three
+`LEFT JOIN`s and both windows the plan describes across twenty-one columns, `use_site`'s own comment
+states the six-column key the plan proposes as the target's primary key, the register holds twenty
+registrations of which five targets are keyed, `DerivedReadCostTest` prices the landing-defect cell
+at 224 ms against 709 with one `KNOWN_NON_MONOTONIC` row spelling the hop, and the rung-1 seam is
+real: the argument reference-target walk joins `intent_argument_scope_table`, a registered target,
+and `FactCapture.capture` runs every hand-written producer before `Materializations.refresh`. The
+guard is the right shape and cheaper than the plan claims: `registrationsReachedFrom` already
+maintains the `walked` set the sibling would return, so exposing it is a return value rather than a
+second walk.
+
+**Finding 1 (question two, architecture fit). Every registration-shaped outcome makes its `_live`
+view the first declared `_live` view in the tree, and the plan's comment instruction cannot satisfy
+the gates that then bind it.**
+
+The plan is right that the new view cannot go on the frozen roster and must carry a `meta_relation`
+row. What it does not say is what that costs, because all twenty existing `_live` views are on that
+roster and none of them is declared. `intent_node_id_decode_hop_live` would be the first, and three
+gates bind a declared relation that have never bound a `_live` view:
+`MetaDeclarationGateTest.theCommentEchoesTheDeclaration` requires the relation's `COMMENT ON` to
+equal `grain_text` and `example` joined, verbatim, with `grain_text` the comment's first sentence by
+`GrainSentence`'s rule; `meta_relation`'s own `CHECK`s cap each of those at 300 characters; and
+`meta_relation.grain_text`'s column comment defines the sentence as the one saying what one row is.
+
+The plan's diff instructs the opposite. It says the `_live` view's comment "becomes the standard
+`_live` note (the `intent_node_id_decode_hop_column_live` comment beside it is the form)". That
+exemplar is 457 characters, and it is the form it is precisely because it is exempt: its relation is
+undeclared. Split at its first sentence it yields a `grain_text` of "This states the rule and is
+evaluated on demand.", which is not a statement about a row, and an `example` of about 400
+characters, which fails the `CHECK` outright. So an implementer who follows both bullets goes red,
+and the fix is not local: it means authoring what a declared `_live` view's grain sentence and
+example say when its rows are by construction identical to its target's, and where the `_live` note
+then lives, which is a convention binding all twenty-one registrations rather than a line of DDL.
+That is the design fork this gate exists to settle before an implementer meets it at a red build.
+
+Two smaller consequences of the same discovery. The plan's "Gates a new registration moves" list
+does not include `MetaDeclarationGateTest` at all, though the item is the first registration that
+moves it. And the `FactSchemaGateTest` bullet attributes a "comment-echo" gate to that class; the
+column-comment half is there ("every table and every column carries a `COMMENT ON`"), but the echo
+gate is `MetaDeclarationGateTest`'s and binds declared relations only, which is exactly why no
+registration has met it before.
+
+The finding is scoped to registration-shaped outcomes, which is the plan's default and two of its
+three named outcomes. It does not touch the `d`-promotion outcome, where a new ordinary derivation
+relation is declared and the `intent_node_id_decode_landing_defect` row really is the exemplar.
+
+What would satisfy question two: say what the new `_live` view's declaration holds, or say that the
+registration outcome declares only the canonical table and state how the `_live` view then stays off
+the observed-relation gate, or make the convention question an explicit first step of the
+registration outcome with the decision recorded where the next registration will read it. Any of the
+three is an answer; what the plan cannot do is assert a `meta_relation` row and the standard `_live`
+note in the same breath.
+
+**Finding 2 (question one, a claim about code). The detection pass issues eight reads, not seven.**
+
+R933 landed on trunk after this spec's last commit and added `NodeIdPolymorphicDecodeDefects.detect`
+to the same switch, so `FactCapture.detect` now issues eight reads and
+`intent_node_id_polymorphic_decode_defect` carries no figure in the table. Left to the author rather
+than corrected here, because the count is load-bearing in three sentences of the measurement
+section ("issues seven reads", "Six of them", "The seventh") and rewriting those is authoring, not
+a number fix. Nothing about the finding changes: the six figures and the localisation stand, and the
+new read is one more relation the guard's pin will carry a row for, which reads as a point in the
+guard's favour.
+
+**Finding 3 (question one, a claim about code). A Java reader does name the hop relation.**
+
+"no Java reader names the hop relation at all" is false as written:
+`NodeIdDecodeReachTest` imports and reads `Tables.INTENT_NODE_ID_DECODE_HOP` in the model tier. The
+spec's own later sentence carries the right qualifier ("no Java reader *in main* names it"), and the
+`store-performance` skill's step 7 asks specifically for Java readers to be counted, so the
+qualified form is the one to keep. This does not disturb the regression argument, which is about
+read cadence in a generator pass, and the test reader is a second pin the registration outcome gets
+for free.
+
+**Finding 4 (question one, minor, non-blocking). Only one of the two reference-target views recurses
+over a registered relation.**
+
+"the two reference-target views ... each a recursive walk over a registered hop relation" holds for
+`intent_input_field_reference_step_target`, which recurses over `intent_field_reference_step_hop`, a
+registered target. `intent_argument_reference_step_target` recurses over
+`intent_argument_reference_step_hop`, which is an unregistered view. Step 1 prices both standalone
+either way, so nothing in the plan changes; if anything it raises the prior on `tg` being the term.
