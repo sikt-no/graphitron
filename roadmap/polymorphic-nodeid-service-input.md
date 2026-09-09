@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1227,3 +1227,83 @@ is implementation.
   `s.java_type = k.record_class` or the arity-one single-column shape holds, and an
   `UpdatableRecord<?>` slot satisfies neither. The plan's sentence about the branch being admitted by
   a `NOT EXISTS` over the members covers this in substance; it reads as being about the `CASE` alone.
+
+### Round 4 (2026-09-09, In Review -> Done, reviewer session 01AJtvRiz8xHfz1RzGh7CqAL)
+
+Verdict: rework; status moves back to `Ready`. The goal is delivered and demonstrated, the first
+gate question passes, and the second fails narrowly on evidence the Tests section named and the
+delivery did not produce, plus one substitution the spec body does not carry. Both are small; the
+round exists because the gate holds the delivery to its own named evidence, not because the code is
+in doubt.
+
+The first question passes. Every piece the Design names is in the tree as designed, checked at the
+symbol: `resolveNodeIdRecordDecode` asks nodehood before kind and forks into
+`resolvePolymorphicRecordDecode`, whose three refusals carry the precedence and wording the spec
+gives them; `admitPolymorphicSlotType` answers assignability with `isAssignableFrom` against the
+catalog's live record classes on the codegen loader, and both slot kinds reach it and build one leaf
+through `InputBeanResolver.polymorphicLeaf`; `NodeIdDecodePolymorphicRecord` is a sibling with the
+two-candidate invariant in its compact constructor and `AdmittedSlotType` minted only at the
+admission; `RecordDecodeFragments.decodeHelperOrNull` is the one primitive, and the container helper
+is the `if` chain the spec draws; the multi-candidate message lives in `NodeIdDecodeFailure` and
+`MultiTablePolymorphicEmitter` reads it there. On the store: the rename plus `resolved_type_kind`,
+the container arm on `intent_node_id_instruction_live` disjoint from the node-type arm by the
+`NOT EXISTS` on `intent_node_type`, the three `resolved_type_kind = 'NODE_TYPE'` predicates at the
+endpoint, the argument-filter CTE and the input-field-filter CTE, `sql_table_record_supertype` as a
+captured closure, `intent_node_container_member` total with its two flags,
+`intent_node_id_candidate_node_type` with the identity arm, `POLYMORPHIC_RECORD` as a `CASE` branch
+inside the slot arm admitted by a `NOT EXISTS` over the members, and the sibling defect view with the
+five verdicts in the stated precedence. The LSP keyset reads the member relation. The census-leg
+retirement is a substitution made on a measurement and it is in the spec body, which is where it
+belongs.
+
+**Finding 1 (question 2, blocking): the LSP tier's diagnostic half is missing.** The Tests section
+names three LSP assertions. The delivery adds two completion tests
+(`NodeTypeCompletionsTest.typeNameCompletionAlsoOffersContainersWithNodeMembers` and
+`aContainerCompletesAtAReadSideCoordinateToo`) and no diagnostic test: nothing pins that a container
+at `@nodeId(typeName:)` draws no unknown-node-type diagnostic after `DiagnosticFacts` widened the
+keyset, and nothing pins that a container with no node members still draws it. `DiagnosticsTest`
+already holds the template (`nodeIdTypeName_knownNodeType_producesNoError`, over `Film`), so both are
+one seeded case each. This matters because the widening is the whole of what the Editor section
+delivers for a valid schema: if the union arm in `nodeTypeBindingArm` were wrong, every polymorphic
+slot in a consumer's editor would carry a false squiggle and nothing in the tree would say so, which
+is the "green build compatible with the goal being half-delivered" case this gate exists for. The
+third named assertion, a `CONTAINER_NOT_AT_A_SLOT` diagnostic at a read-side argument, is a different
+matter: the verdict reaches the editor through the rejection residue the build writes and
+`RejectionSeverityCoverageTest` replays every `Rejection` permit generically, so a per-verdict LSP
+test would restate that meta-test; the Tests section should say so rather than promise a test that
+does not arrive. Satisfied by: the two `DiagnosticsTest` cases, and the LSP bullet in Tests amended to
+name the residue replay as the third assertion's evidence.
+
+**Finding 2 (question 1, recording): one design substitution is not in the spec body.**
+`CONTAINER_NOT_AT_A_SLOT` stands aside where the coordinate's producer class has no `jvm_class` row
+under the graph's sources, on `intent_field_producer_method`'s reading of that absence as the
+census's rather than the author's. That is a narrowing of the verdict's population the Fact store
+section does not state; it lives in the view's comment and in the implementation commit's message,
+and the determinism run that motivated it (three false refusals) is recorded nowhere a reader of the
+plan would find it. It is the right call, and `aProducerClassTheCensusNeverReachedDrawsNoCoordinateVerdict`
+pins it, so this is a body edit and not a code change: state the stand-aside under the population
+edge, with its reason, beside the incumbent's own "owed an emitter rather than a verdict" edge.
+
+The spec-body precondition has two smaller drifts to take in the same revision. The Tests bullet for
+the assignability view still promises a `recordImplements` interface "admitted through the census leg,
+not only the direct-supertype leg", and the census leg is retired; the delivered test
+(`aSlotTypedAboveARecordImplementsInterfaceResolvesOffTheCapturedClosure`) is the right one and the
+sentence should describe it. And the Implementation section carries no "shipped at `ad09411`" note,
+which `roadmap/workflow.adoc` asks of a shipped phase.
+
+#### Non-blocking
+
+* The walk's new read-side refusal in `NodeIdLeafResolver` ("names a polymorphic container, and a
+  polymorphic node id is decoded into a @service slot") has no test at any tier. The store's
+  `CONTAINER_NOT_AT_A_SLOT` rows are pinned three ways, so the fact is covered; the wording that is
+  supposed to agree with it is not. One pipeline case over a `@nodeId(typeName: "AddressOccupant")`
+  lookup argument would close it, and it can ride in the same revision or in a Backlog item.
+* `SLOT_NOT_SUPERTYPE_OF_MEMBER` and the `POLYMORPHIC_RECORD` admission are restricted to
+  `site = 'ARGUMENT'`. That is the population edge the spec states, narrowed one step further than
+  the prose ("a producer parameter, or a bean that is itself a jOOQ record"): a jOOQ-record bean
+  carrying a container-naming field is refused outright by `buildRecordKeyDecode`, so the store has
+  no admitted shape to type there and the view's comment discloses the edge. Consistent, and noted
+  only so the next reader does not take the prose as a gap.
+* `DerivedReadCostTest`'s three budgets move (120 to 124, 61 to 62, 147 to 149) with the arithmetic
+  written on each; read and agreed, not a finding.
+* Build: `mvn install -Plocal-db` on the rebased tree at `fb07d4f` passes: BUILD SUCCESS, every module, 13 min wall clock, no test failures.
