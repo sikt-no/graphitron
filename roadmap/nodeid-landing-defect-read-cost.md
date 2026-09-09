@@ -275,7 +275,7 @@ names changed when the bisection points at a reference-target view.
   The canonical table keeps its roster line, which still matches once it is a table, and stays
   undeclared. Declaring it is a separate question with a real constraint behind it: a declared
   relation's visible comment is capped at 601 characters by the two `CHECK`s the echo gate joins,
-  and this rule's comment is 3436. Where a multi-paragraph rule argument lives once its relation is
+  and this rule's comment is 3371. Where a multi-paragraph rule argument lives once its relation is
   declared is owed by whichever item drains the roster, not by this one.
 - No index on the new table in this item. The verdict joins the hop on its five branch columns plus
   `position = last_position`, and the primary key's index serves that as a prefix. The
@@ -320,7 +320,11 @@ alone.
 
 No docs change beyond the DDL comments. The fact-model page counts registrations as "twenty" and
 "twenty-two" in measured narratives about specific passes, which are history rather than a live
-roster, and stay.
+roster, and stay. One of those counts is not a narrative and is wrong today: the refresh-observer
+paragraph says "twenty-two registrations refreshed on every save" of a register holding twenty, so it
+reads as a live claim and drifts with every registration. It is wrong before this item and wrong by
+one more after it, and repairing it here would leave the next registration to repair it again, so it
+belongs with whoever gives that sentence a count it cannot outlive.
 
 ## Tests
 
@@ -367,12 +371,46 @@ registration outcome, the walk stopping at the table, and `intent_node_id_decode
 it, read live by the `judged` CTE at 115 ms on the exposing population, which the pin records as
 known.
 
-The reader roots come from the detection families rather than from a list in the test. Each family
-class exposes the relation its `detect` reads as one public constant used by the query itself, and
-`StoreDetections` exposes the roster of those constants beside its components, so a family swapped or
-repointed edits the roster where its component sits; the gate reads the roster. Scope is the
-detection pass, not every consumer read: the diagnostic surface the language server reads has the
-scan-count ceilings in `graphitron-lsp`.
+**The roots are a set per component, not one relation per component.** The reads come from the
+detection components rather than from a list in the test, and a component reads more than one
+relation. Each component exposes every relation its own statements name as one public set its
+statements take their table references from, and `StoreDetections` exposes the roster of those sets
+beside its components, so a component swapped or repointed edits its set where the component sits and
+the gate reads the roster. The set is stated over relations rather than over views, and the walk
+stops at tables, so a component's reads of `intent_type_domain`, `intent_input_occurrence_path` and
+the base families contribute nothing and need no curating: what survives the walk is exactly the
+view bodies that component evaluates per pass. The roster is over components and not over a method
+name, the eighth being `ResolvedKeyProjections.read` rather than a `detect`.
+
+What that domain is today, which the gate computes and this list only starts the implementer from.
+`AuthoredClaimConflicts` reads three views, `intent_authored_claim_conflict` at both grains,
+`intent_authored_type_claim` in `typeClaims`, and `intent_authored_field_claim` in `claimsAt`, that
+last once per violated field coordinate. `UnlowerableOrderings` reads three,
+`intent_field_unlowerable_ordering` and `intent_field_navigated_type` in `read` and
+`intent_field_participant_scope_table` in `participantsOf`. `ReferenceForParticipantDefects` reads
+`intent_reference_for_application` and, per coordinate, `intent_field_participant_scope_table`.
+`NodeIdPolymorphicDecodeDefects` reads `intent_node_id_polymorphic_decode_defect` and, once per
+container in `memberNames`, `intent_node_container_member` and `intent_poly_member`.
+`ArgmappingProjectionDefects` reads `intent_argmapping_projection_defect` and
+`intent_resolved_node_key_projection`. `NodeIdDecodeDefects`, `NodeIdLandingDefects` and
+`ResolvedKeyProjections` read one view each. So five of the eight components read a view this item's
+own shape reaches, a body evaluated once per driving row, with the per-row loop in Java rather than
+in a correlated subquery and no SQL text to notice it in; a roster of one relation per component
+would have left those outside the pin while reporting a clean equality, which is the recurrence this
+gate exists to refuse.
+
+One residue, disclosed in the gate's javadoc rather than left to be found, on the precedent
+`CollectionValuedColumnGateTest` sets for a gate that states its own gap. The set is authored, so a
+component that names a relation without putting it in its set is a read the gate cannot see. Having
+the statements take their references from the set is what makes that visible in review rather than
+invisible, the bypass being a static import beside a declared set that does not carry it. Closing it
+mechanically is a lexical scan of the eight components for a relation constant outside their sets,
+which is cheap and idiomatic here, and it is deliberately not in this item: the gate's value is the
+delta it forces an author to write down, and a scan that has never caught anything is scope this
+item did not measure.
+
+Scope is the detection pass, not every consumer read: the diagnostic surface the language server
+reads has the scan-count ceilings in `graphitron-lsp`.
 
 One thing the register subtraction above does not fix, named here so it is not mistaken for
 something this item closed. `MetaDeclarationGateTest`'s owner-read case filters
@@ -676,3 +714,26 @@ the ceiling it is weighed against is 601 either way.
 save", which reads as a live claim about the register rather than one of the measured narratives the
 plan's docs bullet exempts, and the register holds twenty. Pre-existing, not this item's, and noted
 only because that bullet reasons about these counts by name.
+
+*Author response, 2026-09-09.* Taken as the first of the two ways out, the roots being a set per
+component. The guard's roots paragraph is rewritten: each component exposes every relation its own
+statements name as one public set the statements take their references from, `StoreDetections`
+carries the roster of those sets, and the set is stated over relations rather than over views so the
+walk's stop at tables does the filtering instead of an author curating which reads matter. The
+body now also states the domain as it stands today, five of the eight components reading a view once
+per driving row from Java, which is this item's own shape with no SQL text to notice it in, so the
+list the implementer starts from is checked rather than re-derived. The roster is over components
+rather than over `detect`, which answers the eighth-component precision.
+
+The finding's other precision, that no such constant exists in the tree today, is right and the
+paragraph no longer reads as though one does; the sets are authoring work and the plan says so. That
+leaves one residue the finding implies and does not name: an authored set can omit a read. It is
+disclosed in the gate's javadoc on the precedent `CollectionValuedColumnGateTest` sets, with the
+mechanical closure named as a lexical scan and deliberately left out of this item, a scan that has
+caught nothing yet being scope this item has not measured.
+
+*Author response to the non-blocking notes, 2026-09-09.* The character count is corrected to 3371,
+the string measurement, since the ceiling it is weighed against is a `CHAR_LENGTH` on the same
+string. The docs bullet now says the refresh-observer count is a live claim and wrong today rather
+than history that stays, and why repairing it here would only leave the next registration to repair
+it again.
