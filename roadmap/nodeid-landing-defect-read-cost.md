@@ -1,7 +1,7 @@
 ---
 id: R939
 title: "A graphitron:dev round on a consumer schema answers in seconds again: the @nodeId landing verdict expands an unregistered expensive view per driving row"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: nodeid
@@ -737,3 +737,72 @@ the string measurement, since the ceiling it is weighed against is a `CHAR_LENGT
 string. The docs bullet now says the refresh-observer count is a live claim and wrong today rather
 than history that stays, and why repairing it here would only leave the next registration to repair
 it again.
+
+### Round 3 (2026-09-09, Spec -> Ready, reviewer session 5e64f65d-3ece-4e59-b80b-cba2e79fd7ae)
+
+Verdict: sign off. Round 2's blocking finding is answered, and answered by making the two sets one
+set rather than by narrowing the domain: the roots are now every relation each component's own
+statements name, `StoreDetections` carries the roster, and the walk's stop at tables does the
+filtering. I checked the revised domain component by component against the Java rather than taking
+the list, and it is right about the views, right that only three components read a single
+`intent_` relation, and right that the two relations the list omits, `intent_type_domain` and
+`intent_input_occurrence_path`, are tables the walk stops at.
+
+Question one passes, without the phase list. A `graphitron:dev` round on a consumer schema the size
+of `sis` never becomes usable today: one of the reads the detection pass makes at boot and again
+after every save re-expands a 23-second relation once per driving row inside a correlated
+`NOT EXISTS`, so the round runs tens of minutes and never opens its port. When this lands that read
+costs seconds, the loop works at that schema size, the consumer's own validation gate can finally
+run over the 13 fixes waiting on their migration branch, and no schema's verdict or message changes.
+Reachable, and the structural claims hold where I checked them independently: the landing-defect view
+has zero `FROM`/`JOIN` references in the DDL, `judged` and `stopped` are non-recursive `WITH` terms
+and arm 2's only reference to `stopped` is inside a correlated `NOT EXISTS`, the hop drives from the
+endpoint relation across twenty-one columns with the three `LEFT JOIN`s (`tg`, `itg`, the `d` derived
+table computing `COUNT(*) OVER` across `sql_referential_constraint`) and closes on
+`MAX(position) OVER` partitioned by exactly the five branch columns, its only two DDL readers are
+`intent_node_id_decode_hop_column_live` and the landing-defect view, `NodeIdDecodeReachTest` is the
+one Java reader and it is in the model tier, the hop's view comment is 3371 characters as a string
+and 3387 escaped, the register holds twenty registrations of which five targets are keyed, and
+`FactCapture.detect` yields eight components with `ResolvedKeyProjections.read` as the eighth.
+Every test case the Tests section names as a pin exists under the name given, in both tiers.
+
+Question two passes. The three levers each extend a shape the tree carries, the order is the
+fact-model page's own and the register's own recorded lesson (`intent_mutation_payload_key_membership_live`
+says in those words that a rule with a re-evaluation inside it should be rewritten before it is
+priced, and names the 326-second figure), and the declaration bullet is sound where I re-checked it:
+`theUndeclaredRosterOnlyShrinks` computes `undeclared` as observed-minus-declared and compares by
+equality, the roster's twenty `_live` lines are its only consumer in the tree, and
+`meta_relation_family` is a census whose `exempted` column places a relation in a family rather than
+excusing it. The guard is the right shape and the residue is disclosed where
+`CollectionValuedColumnGateTest` discloses its own. I would hand this to an implementer as written.
+
+**Non-blocking, none of them a revision this gate asks for.**
+
+A registration-shaped outcome owes one more gate line than the plan lists.
+`MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot` reads
+`INFORMATION_SCHEMA.INDEXES` with `IS_GENERATED` false, so a primary key's backing index does not
+count as declared: `intent_field_column_scope` and `intent_argument_column_scope` are keyed targets
+sitting in `NO_INDEX` today, which is the proof. A target keyed and carrying no `CREATE INDEX`
+therefore needs an `intent_node_id_decode_hop` line in `NO_INDEX`, and the plan's gate bullet names
+only `REGISTRATIONS` and `REFRESH_STAGES`. One line, and the plan's index bullet already carries the
+argument that roster row exists to hold. The performance claim beside it checks out independently:
+the verdict's seekable prefix is the five branch columns, `position = last_position` being a
+self-comparison no plan can seek on.
+
+Two counts in the body count different things than the sentences around them. "Five of the eight
+components read a view this item's own shape reaches, a body evaluated once per driving row" holds as
+"five read more than one relation", which is the revision commit's own framing, but the per-row half
+is three: `AuthoredClaimConflicts.claimsAt` per coordinate, `ReferenceForParticipantDefects.consumersOf`
+and `participantsOf` per row, `NodeIdPolymorphicDecodeDefects.memberNames` per container.
+`UnlowerableOrderings.participantsOf` takes only a graph name and its javadoc says "Two statements
+and not one per row", and `ArgmappingProjectionDefects`' two reads are two whole-population
+statements. The argument the sentence carries holds on either count, a secondary read being outside a
+one-relation roster whether it is per-row or not. Separately, the measurement's "eight reads per
+pass" is eight components' driving reads while the Tests section establishes the pass names about
+fourteen relations; nothing in the localisation turns on it at four orders of magnitude, but the two
+sentences are counting different things.
+
+One trap for the implementer of the sibling walk, since the plan says the table-valued roots "need no
+curating". `ViewReferences.readBy` throws where the catalog holds no definition for the name, so a
+walk handed `intent_type_domain` fails rather than yielding nothing; the kind filter
+`registrationsReachedByView` already applies is what makes the roots pass through harmlessly.
