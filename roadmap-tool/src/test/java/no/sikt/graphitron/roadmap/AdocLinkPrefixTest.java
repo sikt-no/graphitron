@@ -40,6 +40,6 @@ class AdocLinkPrefixTest {
         return new Main.Item(
             slug, "R" + Math.abs(slug.hashCode() % 1000), slug,
             "In Progress", null, null, false, null, null, dependsOn,
-            null, null, "");
+            null, null, null, "");
     }
 }

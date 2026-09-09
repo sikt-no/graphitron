@@ -277,7 +277,7 @@ class ConceptPagesTest {
 
     private static Main.Item item(String slug, String id, String status) {
         return new Main.Item(slug, id, slug, status, null, null, false, null, null,
-            List.of(), null, null, "");
+            List.of(), null, null, null, "");
     }
 
     private static ConceptIndex index(List<Main.Item> items,

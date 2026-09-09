@@ -19,7 +19,7 @@ When echoing items back to the user, prefer `R24: <slug>` so both ID and human-r
 
 ## Subcommands
 
-The skill recognises three intents from the user's request. Pick one and execute.
+The skill recognises four intents from the user's request. Pick one and execute.
 
 ### add `<slug>` `--title "<title>"` `[--bucket <b>]` `[--priority <n>]` `[--theme <t>]`
 
@@ -75,12 +75,42 @@ Valid transitions (see `roadmap/workflow.adoc`):
 | In Progress   | In Review    | none                                                        |
 | In Review     | Ready        | rework; reviewer ≠ implementer                              |
 | In Review     | Done         | approve; reviewer ≠ implementer; **delete the item file**   |
+| Done          | Spec         | none — the file is restored, not transitioned; see `revive` |
 
 For guarded transitions, run `git log -1 --pretty='%an <%ae>' roadmap/<slug>.md` and tell the user who last touched the file. If the current Claude session would be the same party, surface that and stop — a different party (typically the human user, or an independent agent session) must perform the flip. The reviewer-rule guard is the skill's responsibility; the tool performs the mechanical edit unconditionally once invoked.
 
 For `In Review → Done`, delete the file rather than editing it; if the milestone is worth preserving, append a one-line entry to `roadmap/changelog.md` capturing the landing commit SHA and the `R<n>` ID.
 
 The `status` subcommand regenerates the README as part of its run; no separate regenerate step needed.
+
+### revive `<R<n>>`
+
+For an item whose Done verdict turned out to be wrong. It comes back as itself: same id, same plan body, same reviewer rounds. **Read the discriminator first** (`roadmap/workflow.adoc` § Revive): revive when the item's own `## Goal` still states an outcome that is not delivered; file a successor (the `add` intent above) when the goal was met and a different goal has appeared. A change that breaks a consumer's development process is undelivered, whatever the Done round said.
+
+Sync trunk first, exactly as `status` above does and for the same reasons. Then restore the body out of git history and hand the restored file to the tool:
+
+```bash
+id=R<n>
+sha=$(git log -1 -G"^id: $id\$" --diff-filter=D --format=%H \
+      -- roadmap ':(exclude)roadmap/README.md' ':(exclude)roadmap/changelog.md')
+path=$(git show --format= --name-only --diff-filter=D "$sha" -- roadmap \
+      | grep -vE 'README|changelog')
+git cat-file -e "$sha^:$path"          # stop and surface if this fails
+git restore --source="$sha^" -- "$path"
+# author ## Revived directly under ## Goal; collapse shipped plan sections; dispose of successors
+mvn -pl roadmap-tool exec:java -q -Dexec.args="revive roadmap $id --retracted $sha"
+```
+
+The sharp edges, each next to the line that handles it:
+
+- The pathspec **excludes `README.md` and `changelog.md`** because both carry the id, and a `-G` over them finds the wrong commit.
+- `-1` picks the **most recent** deletion. A slug can be deleted more than once and the latest body is the wanted one.
+- `$sha^` is the **first parent**, which carries the file: a pathspec-restricted `git log` without `-m` never attributes a deletion to a merge commit. The `cat-file -e` line turns that residual assumption into a stop rather than a silent restore of nothing.
+- The restored file reads `status: In Review`, which is a **precondition of the command, not a state to commit**. Don't hand-edit it; the tool moves it to `Spec`.
+
+What the tool does: checks the preconditions (status, a non-empty `## Revived` section, a well-shaped SHA), retracts every `changelog.md` bullet the id heads, writes `status: Spec` plus `revived-from: <sha>` and a fresh `last-updated:`, and regenerates the README. What it does **not** do, and you own: authoring the `## Revived` section, collapsing the shipped plan sections into "shipped at `<sha>`" notes, disposing of any successors already filed (`Discarded` for total supersession, Backlog tombstone for a live redirect, `depends-on:` for one with a goal of its own), and the revive commit itself.
+
+The `Spec → Ready` guard then applies as usual, and it bites here: you are the last committer of the plan, so a different session signs off the revive.
 
 ### regenerate
 

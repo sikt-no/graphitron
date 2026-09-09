@@ -50,6 +50,22 @@ public final class Main {
     private static final Pattern ID_PATTERN = Pattern.compile("^R(\\d+)$");
 
     /**
+     * Head of a top-level {@code changelog.md} bullet. The word boundary after
+     * the digits is what makes the match a head rather than a prefix: it
+     * admits every shape the file carries ({@code - R<n> (…)},
+     * {@code - R<n> commit 5 (…)}, {@code - R<n>: …}, {@code - R<n>, …}) and
+     * rejects a bullet opening on a word that merely starts with {@code R}.
+     */
+    private static final Pattern CHANGELOG_BULLET_HEAD = Pattern.compile("^- (R\\d+)\\b");
+
+    /**
+     * Shape of the {@code --retracted} SHA a revive records: an abbreviated or
+     * full git object name. Checked for shape only; the module owns no git, so
+     * whether the commit exists is the recipe's business, not the tool's.
+     */
+    private static final Pattern RETRACTED_SHA = Pattern.compile("[0-9a-f]{7,40}");
+
+    /**
      * Closed set of cross-cutting tags. {@code theme:} answers "what area is
      * this in?" orthogonal to {@code bucket:} (which answers "what kind of
      * work?"). Adding a new theme requires editing this list and the
@@ -164,6 +180,7 @@ public final class Main {
             case "next-id" -> runNextId(dir);
             case "create" -> runCreate(dir, sliceArgs(args, 2));
             case "status" -> runStatus(dir, sliceArgs(args, 2));
+            case "revive" -> runRevive(dir, sliceArgs(args, 2));
             case "render-adoc" -> runRenderAdoc(dir, sliceArgs(args, 2));
             default -> usage();
         }
@@ -177,6 +194,7 @@ public final class Main {
         System.err.println("  create      <roadmap-dir> <slug> --title \"<title>\""
             + " [--bucket <bucket>] [--priority <n>] [--theme <theme>]");
         System.err.println("  status      <roadmap-dir> <R<n>-or-slug> <new-state>");
+        System.err.println("  revive      <roadmap-dir> <R<n>-or-slug> --retracted <sha>");
         System.err.println("  render-adoc <roadmap-dir> <output-dir>");
         System.err.println("  directive-support <legacy-directives.graphqls>"
             + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]"
@@ -204,7 +222,7 @@ public final class Main {
 
     private static void runGenerate(Path dir) throws IOException {
         List<Item> items = readItems(dir);
-        validate(items);
+        validate(items, readChangelogDoneIds(dir));
         Path readme = dir.resolve("README.md");
         Files.writeString(readme, render(items, ConceptIndex.of(items, ConceptPages.readPages(dir))));
         System.out.println("wrote " + readme);
@@ -212,7 +230,7 @@ public final class Main {
 
     private static void runVerify(Path dir) throws IOException {
         List<Item> items = readItems(dir);
-        validate(items);
+        validate(items, readChangelogDoneIds(dir));
         Path readme = dir.resolve("README.md");
         String rendered = render(items, ConceptIndex.of(items, ConceptPages.readPages(dir)));
         String existing = Files.exists(readme) ? Files.readString(readme) : "";
@@ -279,6 +297,103 @@ public final class Main {
     }
 
     /**
+     * Every {@code R<n>} id that <em>heads</em> a top-level bullet in
+     * {@code changelog.md}, which is the surface a Done verdict writes to.
+     * Read beside {@link #readChangelogNextId} and handed to
+     * {@link #validate}, which holds the invariant that an id is either a Done
+     * entry here or on the board, never both.
+     *
+     * <p>An id merely named inside another entry's prose is not in the set:
+     * the invariant is about which id an entry is filed under, not which ids
+     * it mentions. {@code Discarded:} bullets fall outside by construction,
+     * naming the discarded id in prose rather than heading with it, which is
+     * right, since discarding is not a landing and makes no claim about
+     * whether a file should exist. Returns an empty set when the file is
+     * absent.
+     */
+    static Set<String> readChangelogDoneIds(Path roadmapDir) throws IOException {
+        Path changelog = roadmapDir.resolve("changelog.md");
+        if (!Files.exists(changelog)) return Set.of();
+        return changelogDoneIds(Files.readString(changelog));
+    }
+
+    /** {@link #readChangelogDoneIds} over content already in hand. */
+    static Set<String> changelogDoneIds(String content) {
+        Set<String> ids = new LinkedHashSet<>();
+        for (String line : content.split("\n", -1)) {
+            var m = CHANGELOG_BULLET_HEAD.matcher(line);
+            if (m.find()) ids.add(m.group(1));
+        }
+        return ids;
+    }
+
+    /**
+     * Removes every top-level {@code changelog.md} bullet that {@code id}
+     * heads, returning the rewritten content, or {@code null} when the id
+     * heads none. A revive retracts these entries because they asserted a
+     * landing that did not hold; the second Done verdict writes one again.
+     * {@code next-id:} is untouched, so ids the retracted verdict burned stay
+     * burned as gaps.
+     *
+     * <p>Two facts about the file shape the rule. The unit of removal is the
+     * entry's <em>span</em> rather than its first line, because entries run to
+     * several paragraphs carried as indented continuation lines beneath the
+     * bullet; a span therefore reaches from the bullet to the next line that
+     * opens a block of its own. And retraction is total over the id, because
+     * one id can head several bullets, so removing a single span would leave
+     * the very invariant {@link #validate} then checks failing.
+     */
+    static String retractChangelogEntries(String content, String id) {
+        List<String> lines = new ArrayList<>(List.of(content.split("\n", -1)));
+        boolean removedAny = false;
+        while (removeFirstEntry(lines, id)) removedAny = true;
+        return removedAny ? String.join("\n", lines) : null;
+    }
+
+    /** Removes the first span {@code id} heads; false when none is left. */
+    private static boolean removeFirstEntry(List<String> lines, String id) {
+        for (int i = 0; i < lines.size(); i++) {
+            var m = CHANGELOG_BULLET_HEAD.matcher(lines.get(i));
+            if (!m.find() || !m.group(1).equals(id)) continue;
+            int end = i + 1;
+            while (end < lines.size() && !opensBlock(lines.get(end))) end++;
+            lines.subList(i, end).clear();
+            collapseBlankSeam(lines, i);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Whether the line opens a block of its own, which ends the span above it.
+     * Any non-blank line at zero indentation does: the next bullet, a heading,
+     * a horizontal rule, or the free prose the file carries mid-way. Entry
+     * continuations are indented, so they never end a span.
+     */
+    private static boolean opensBlock(String line) {
+        String s = line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
+        return !s.isBlank() && !Character.isWhitespace(s.charAt(0));
+    }
+
+    /**
+     * Leaves exactly one blank line at the seam a removed span left behind, so
+     * the surviving neighbours read as they did. Spans end on their own
+     * trailing blank, so the seam is normally already one blank and this is a
+     * no-op; it earns its keep where an entry was separated by more. A seam at
+     * either edge of the file is left alone, having no two neighbours to
+     * separate.
+     */
+    private static void collapseBlankSeam(List<String> lines, int at) {
+        int start = at;
+        while (start > 0 && lines.get(start - 1).isBlank()) start--;
+        int end = at;
+        while (end < lines.size() && lines.get(end).isBlank()) end++;
+        if (start == 0 || end == lines.size()) return;
+        lines.subList(start, end).clear();
+        lines.add(start, "");
+    }
+
+    /**
      * Updates {@code changelog.md}'s front-matter so {@code next-id:} reflects
      * {@code "R" + nextId}, preserving any other front-matter keys and the
      * body verbatim. Creates the front-matter block if absent.
@@ -315,7 +430,7 @@ public final class Main {
             usage();
         }
         String slug = rest.get(0);
-        Map<String, String> opts = parseOptions(rest.subList(1, rest.size()));
+        Map<String, String> opts = parseOptions("create", rest.subList(1, rest.size()));
         String title = opts.get("title");
         if (title == null || title.isBlank()) {
             System.err.println("create: --title is required");
@@ -331,7 +446,7 @@ public final class Main {
             System.exit(64);
         }
         List<Item> items = readItems(dir);
-        validate(items);
+        validate(items, readChangelogDoneIds(dir));
         int counter = readChangelogNextId(dir);
         String id = nextId(items, counter);
         int allocated = Integer.parseInt(id.substring(1));
@@ -441,14 +556,167 @@ public final class Main {
                 + "' -> '" + newState + "'. Allowed from '" + currentState + "': " + allowed + ".");
         }
 
-        // Patch status: and last-updated: in place, leaving every other line
-        // (notably an already-quoted title:) byte-for-byte untouched. created:
-        // is strictly untouched; never invented, never overwritten.
+        Files.writeString(target, patchStatusAndStamp(content, newState, Map.of()));
+        return currentState;
+    }
+
+    /**
+     * Writes {@code status:} plus a fresh {@code last-updated: <today>} and any
+     * {@code extra} keys, leaving every other front-matter line (notably an
+     * already-quoted {@code title:}) byte-for-byte untouched. {@code created:}
+     * is strictly untouched: never invented, never overwritten.
+     *
+     * <p>Single writer for both paths that stamp an item, the {@code status}
+     * transition and the revive, so the stamp cannot drift between them.
+     */
+    static String patchStatusAndStamp(String content, String newState, Map<String, String> extra) {
         Map<String, String> updates = new LinkedHashMap<>();
         updates.put("status", newState);
         updates.put("last-updated", LocalDate.now().toString());
-        Files.writeString(target, patchFrontMatter(content, updates));
-        return currentState;
+        updates.putAll(extra);
+        return patchFrontMatter(content, updates);
+    }
+
+    private static void runRevive(Path dir, List<String> rest) throws IOException {
+        if (rest.isEmpty()) {
+            usage();
+        }
+        String idOrSlug = rest.get(0);
+        Map<String, String> opts = parseOptions("revive", rest.subList(1, rest.size()));
+
+        Revived revived;
+        try {
+            revived = applyRevive(dir, idOrSlug, opts.get("retracted"));
+        } catch (IllegalArgumentException e) {
+            System.err.println("revive: " + e.getMessage());
+            System.exit(1);
+            return; // unreachable
+        }
+        System.out.println(revived.retractedEntries()
+            ? "revive: retracted " + revived.id() + "'s changelog.md entries"
+            : "revive: no changelog.md entry heads " + revived.id()
+                + "; nothing to retract (a routine completion writes none).");
+        System.out.println("revive: " + revived.target().getFileName()
+            + ": In Review -> Spec (revived-from: " + opts.get("retracted") + ")");
+
+        // Refresh the rolled-up README, which also runs validate over the pair
+        // this revive just changed on both sides.
+        runGenerate(dir);
+    }
+
+    /**
+     * Brings an item whose Done verdict was wrong back onto the board as
+     * itself: same id, same plan body, same reviewer rounds. Operates on a
+     * file <em>already restored</em> from the deleting commit's parent, which
+     * is what keeps this module free of git and subprocesses; the roadmap
+     * skill's revive recipe owns the restore half.
+     *
+     * <p>Three things happen, each of which a hurried session skips by hand.
+     * The changelog entries the retracted verdict wrote are retracted, since
+     * they asserted a landing that did not hold; {@code next-id:} is untouched,
+     * so ids that verdict's commit burned stay burned as gaps. The
+     * front-matter lands at {@code Spec} rather than {@code Ready}, because a
+     * retracted verdict is evidence about the plan too and the existing
+     * {@code Spec -> Ready} guard is where the fresh independent judgment on
+     * the revive lives. And {@code revived-from:} records the retracted
+     * commit, which is what lets {@link #validate} keep enforcing the
+     * {@code ## Revived} section on every later build rather than only at the
+     * moment this ran.
+     *
+     * <p>Throws {@link IllegalArgumentException}, each message naming what
+     * failed, when: the reference resolves to no file; the file's
+     * {@code status:} is not {@code In Review}, which is the state the
+     * retracted verdict left it in and the only one Done is reachable from;
+     * the body carries no {@code ## Revived} section; or the retracted SHA is
+     * absent or misshapen. The reviewer rule is not enforced here: the edge is
+     * unguarded, withdrawing a verdict rather than granting one.
+     */
+    static Revived applyRevive(Path dir, String idOrSlug, String retractedSha) throws IOException {
+        if (retractedSha == null || !RETRACTED_SHA.matcher(retractedSha).matches()) {
+            throw new IllegalArgumentException("--retracted <sha> is required: the commit that"
+                + " granted the retracted Done verdict, as 7 to 40 hex characters."
+                + (retractedSha == null ? "" : " Got '" + retractedSha + "'."));
+        }
+
+        Path target = resolveItemFile(dir, idOrSlug);
+        if (target == null) {
+            throw new IllegalArgumentException("no roadmap item matches '" + idOrSlug + "' in "
+                + dir + ". revive works on a file already restored out of git history; restore it"
+                + " from the deleting commit's parent first (see the roadmap skill's recipe).");
+        }
+
+        String content = Files.readString(target);
+        ParsedFile parsed = parseFrontMatter(content);
+        String currentState = (String) parsed.frontMatter().getOrDefault("status", "Backlog");
+        if (!"In Review".equals(currentState)) {
+            throw new IllegalArgumentException(target.getFileName() + " reads 'status: "
+                + currentState + "'. A revive starts from the file as the retracted verdict left"
+                + " it, and Done is reachable only from 'In Review'. Restore the body from the"
+                + " deleting commit's parent rather than hand-editing status:.");
+        }
+        String id = (String) parsed.frontMatter().get("id");
+        if (id == null) {
+            throw new IllegalArgumentException(target.getFileName() + " has no 'id:' front-matter"
+                + " field, so there is no id whose changelog entries to retract.");
+        }
+        if (!hasNonEmptySection(parsed.body(), "Revived")) {
+            throw new IllegalArgumentException(target.getFileName() + " has no '## Revived'"
+                + " section with a body. A restored body without it presents landed work as"
+                + " forthcoming, and the next implementer rebuilds it. Author it directly after"
+                + " '## Goal', stating what the Done gate missed, what remains, and the"
+                + " disposition of any successors already filed.");
+        }
+
+        boolean retractedEntries = retractChangelog(dir, id);
+        Files.writeString(target,
+            patchStatusAndStamp(content, "Spec", Map.of("revived-from", retractedSha)));
+        return new Revived(target, id, retractedEntries);
+    }
+
+    /** What a revive did: the file and id it landed on, and whether entries went. */
+    record Revived(Path target, String id, boolean retractedEntries) {}
+
+    /**
+     * Retracts {@code id}'s Done entries from {@code changelog.md}, returning
+     * whether any were there. A file with no entry for the id is a no-op
+     * rather than a failure: routine completions never write one, so an
+     * absence carries no claim about whether the work landed.
+     */
+    private static boolean retractChangelog(Path dir, String id) throws IOException {
+        Path changelog = dir.resolve("changelog.md");
+        String retracted = Files.exists(changelog)
+            ? retractChangelogEntries(Files.readString(changelog), id)
+            : null;
+        if (retracted == null) return false;
+        // Assert the retraction was total before it reaches disk: a partial one
+        // leaves validate failing with a message telling the session to run the
+        // command that just ran.
+        if (changelogDoneIds(retracted).contains(id)) {
+            throw new IllegalStateException("retraction of " + id + " left a bullet the id still"
+                + " heads in changelog.md; refusing to write a partial retraction.");
+        }
+        Files.writeString(changelog, retracted);
+        return true;
+    }
+
+    /**
+     * Whether {@code body} carries a {@code ## <heading>} section with at
+     * least one non-blank line under it. A bare heading is not the section:
+     * what a revived body owes is the prose. Shared by the {@code revive}
+     * precondition and the {@link #validate} check, so a body that satisfies
+     * one satisfies the other.
+     */
+    static boolean hasNonEmptySection(String body, String heading) {
+        String[] lines = body.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].strip().equals("## " + heading)) continue;
+            for (int j = i + 1; j < lines.length; j++) {
+                String next = lines[j].strip();
+                if (next.startsWith("## ")) break;
+                if (!next.isEmpty()) return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -508,7 +776,7 @@ public final class Main {
         Files.createDirectories(plansDir);
 
         List<Item> items = readItems(roadmapDir);
-        validate(items);
+        validate(items, readChangelogDoneIds(roadmapDir));
         ConceptIndex concepts = ConceptIndex.of(items, ConceptPages.readPages(roadmapDir));
 
         Files.writeString(outDir.resolve("index.adoc"), renderAdocStatusBoard(items, concepts));
@@ -1282,16 +1550,16 @@ public final class Main {
         return s.replace("|", "\\|");
     }
 
-    private static Map<String, String> parseOptions(List<String> tokens) {
+    private static Map<String, String> parseOptions(String command, List<String> tokens) {
         Map<String, String> out = new HashMap<>();
         for (int i = 0; i < tokens.size(); i++) {
             String t = tokens.get(i);
             if (!t.startsWith("--")) {
-                System.err.println("create: unexpected positional argument: " + t);
+                System.err.println(command + ": unexpected positional argument: " + t);
                 System.exit(64);
             }
             if (i + 1 >= tokens.size()) {
-                System.err.println("create: missing value for " + t);
+                System.err.println(command + ": missing value for " + t);
                 System.exit(64);
             }
             out.put(t.substring(2), tokens.get(++i));
@@ -1423,8 +1691,16 @@ public final class Main {
      * A {@code depends-on:} entry that has shipped is expected to be removed
      * from the dependent item by the author who closes the dep; that keeps
      * {@code depends-on:} a record of <em>currently</em> blocking work only.
+     *
+     * <p>The board is validated as a pair: the item files, plus the ids
+     * heading a Done entry in {@code changelog.md} (see
+     * {@link #readChangelogDoneIds}). An id belongs to one of the two, never
+     * both, and every entry point that renders or verifies the board passes
+     * the set, so the check cannot be entry-point dependent. The pair is also
+     * what makes the {@code ## Revived} section enforceable on every build
+     * rather than only when {@code revive} ran.
      */
-    static void validate(List<Item> items) {
+    static void validate(List<Item> items, Set<String> changelogDoneIds) {
         Set<String> known = new java.util.HashSet<>();
         for (Item i : items) {
             known.add(i.slug());
@@ -1449,6 +1725,19 @@ public final class Main {
             if (i.theme() != null && !VALID_THEMES.contains(i.theme())) {
                 errors.add(i.slug() + ": unknown theme '" + i.theme()
                     + "'. Valid themes: " + VALID_THEMES);
+            }
+            if (i.id() != null && changelogDoneIds.contains(i.id())) {
+                errors.add(i.id() + ": on the board as '" + i.slug()
+                    + ".md' and also heading a Done entry in changelog.md. An id is one or the"
+                    + " other. If its Done verdict was retracted, retract the entries too:"
+                    + " roadmap-tool revive <roadmap-dir> " + i.id() + " --retracted <sha>."
+                    + " If the work shipped, the item has no file; delete " + i.slug() + ".md.");
+            }
+            if (i.revivedFrom() != null && !hasNonEmptySection(i.body(), "Revived")) {
+                errors.add(i.slug() + ": carries 'revived-from: " + i.revivedFrom()
+                    + "' but no '## Revived' section. A revived body without it presents landed"
+                    + " work as forthcoming; author it directly after '## Goal', stating what the"
+                    + " Done gate missed, what remains, and the disposition of any successors.");
             }
             for (String dep : i.dependsOn()) {
                 if (!known.contains(dep)) {
@@ -1869,7 +2158,7 @@ public final class Main {
     record Item(String slug, String id, String title, String status, String bucket,
                 Integer priority, boolean deferred, String notes,
                 String theme, List<String> dependsOn,
-                LocalDate created, LocalDate lastUpdated, String body) {
+                LocalDate created, LocalDate lastUpdated, String revivedFrom, String body) {
 
         static Item from(String slug, Map<String, Object> fm, String body) {
             String id = (String) fm.get("id");
@@ -1883,8 +2172,12 @@ public final class Main {
             List<String> dependsOn = parseSlugList(fm.get("depends-on"));
             LocalDate created = parseDate(slug, "created", fm.get("created"));
             LocalDate lastUpdated = parseDate(slug, "last-updated", fm.get("last-updated"));
+            // Written by `revive` and never by hand: the machine-read fact that
+            // this item's Done verdict was retracted, and the SHA a reader
+            // starts from when reconstructing what that round approved.
+            String revivedFrom = (String) fm.get("revived-from");
             return new Item(slug, id, title, status, bucket, priority, deferred, notes,
-                theme, dependsOn, created, lastUpdated, body);
+                theme, dependsOn, created, lastUpdated, revivedFrom, body);
         }
 
         // SnakeYAML auto-parses ISO dates as java.util.Date; bare strings stay String.

@@ -262,13 +262,13 @@ class RoadmapDateColumnTest {
     private static Main.Item item(String slug, String id, String status,
                                   LocalDate created, LocalDate lastUpdated) {
         return new Main.Item(slug, id, slug, status, null, null,
-            false, null, null, List.of(), created, lastUpdated, "");
+            false, null, null, List.of(), created, lastUpdated, null, "");
     }
 
     private static Main.Item backlogItem(String slug, String id, String bucket,
                                          LocalDate created, LocalDate lastUpdated) {
         return new Main.Item(slug, id, slug, "Backlog", bucket, null,
-            false, null, null, List.of(), created, lastUpdated, "");
+            false, null, null, List.of(), created, lastUpdated, null, "");
     }
 
     private static Path writePlan(Path dir, String slug, int id, String status,

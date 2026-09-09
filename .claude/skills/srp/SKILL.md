@@ -35,7 +35,7 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
    grep -lE "^id: R<n>$" roadmap/*.md
    ```
 
-   Multiple matches: roadmap-tool bug; stop and surface. No matches: ID is unallocated, or the item shipped (file deleted on Done) and only its changelog entry remains; tell the user.
+   Multiple matches: roadmap-tool bug; stop and surface. No matches: ID is unallocated, or the item shipped (file deleted on Done) and only its changelog entry remains; tell the user. If the item shipped but its goal is undelivered, the `roadmap` skill's `revive` is the move.
 
 2. **Read the front-matter.** Pick `status:` and `title:` from the YAML block.
 
