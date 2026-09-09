@@ -3087,6 +3087,22 @@ input FilmActorRecordListAssignmentInput {
     filmActors: [ID!] @nodeId(typeName: "FilmActor")
 }
 
+# Polymorphic node-id fixture: the input field names the AddressOccupant union rather than one node
+# type, so it accepts the id of either member and the Java member is typed as the record supertype
+# both members' records are. decodeAddressOccupantRecord peeks the wire id's type prefix and hands
+# it to decodeAddressOccupantRecordCustomer or decodeAddressOccupantRecordStaff; the service
+# dispatches on the record's runtime class. A Film id, a malformed id and a Customer-prefixed id of
+# the wrong arity all raise the multi-candidate client error naming both members.
+input OccupantRecordAssignmentInput {
+    occupant: ID! @nodeId(typeName: "AddressOccupant")
+}
+
+# The list shape of the same: each element decodes on its own prefix, so one request may carry a
+# Customer id and a Staff id together.
+input OccupantRecordListAssignmentInput {
+    occupants: [ID!] @nodeId(typeName: "AddressOccupant")
+}
+
 # R311: a jOOQ FilmRecord bound DIRECTLY as a @service input param (not a bean member). The SDL
 # input names jOOQ columns through @field(name:) and carries a @nodeId identity that decodes into the
 # record's scalar key. The generator emits a createFilmRecord(Map) helper (NodeIdEncoder.decodeValues
@@ -4552,6 +4568,31 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "assignFilmActorRecordList"
+        })
+
+    # Polymorphic node-id at a @service input-bean member: the bean member is typed
+    # UpdatableRecord<?>, which both CustomerRecord and StaffRecord are, and the fetcher decodes the
+    # wire id into whichever member's record its type prefix names. The service reads the record's
+    # runtime class and its loaded key back, which is what says the type survived the decode.
+    assignOccupantRecord(in: OccupantRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignOccupantRecord"
+        })
+
+    # The list shape of the same, where one request carries ids of both members.
+    assignOccupantRecordList(in: OccupantRecordListAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignOccupantRecordList"
+        })
+
+    # The producer-parameter twin: no bean at all, the parameter named for the argument takes the
+    # decoded record directly. Same helper, a different slot kind reaching it.
+    assignOccupantByArgument(occupant: ID! @nodeId(typeName: "AddressOccupant")): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignOccupantByArgument"
         })
 
     # R154 execution-tier fixture: @service mutation whose payload class uses the mutable-bean

@@ -763,6 +763,39 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Fixture: takes a {@link TestNodeIdPolymorphicRecordBean} whose member is an
+     * {@code UpdatableRecord<?>} backed by an {@code ID! @nodeId(typeName: "<container>")} SDL field.
+     * The service dispatches on the decoded record's runtime class, which is the whole point of
+     * naming the container: one input field takes the id of any implementation.
+     */
+    public static String assignOccupant(TestNodeIdPolymorphicRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The same one supertype up, {@code TableRecord<?>}. */
+    public static String assignOccupantTableRecord(TestNodeIdPolymorphicTableRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The same at the top of the hierarchy, bare {@code Record}. */
+    public static String assignOccupantPlainRecord(TestNodeIdPolymorphicPlainRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The list shape: {@code [ID!]} into {@code List<UpdatableRecord<?>>}. */
+    public static String assignOccupantList(TestNodeIdPolymorphicRecordListBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Fixture: the polymorphic member mistyped as one candidate's own record, which the classifier
+     * refuses rather than resolving to that candidate's single-type decode.
+     */
+    public static String assignOccupantOneMember(TestNodeIdPolymorphicOneMemberBean in) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== jOOQ TableRecord @service input param fixtures (root + child coordinate) =====
 
     /**

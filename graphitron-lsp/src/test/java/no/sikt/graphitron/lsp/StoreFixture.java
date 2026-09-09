@@ -123,6 +123,15 @@ final class StoreFixture implements AutoCloseable {
     }
 
     /**
+     * The catalog shape under a graph the caller names, for a class holding several fixtures in one
+     * temp directory: the graph name is what keeps their stores apart.
+     */
+    static StoreFixture ofCatalog(Path directory, String graphName, String sdl) {
+        return new StoreFixture(CapturedStore.ofCatalog(directory, graphName, sdl,
+            new JooqCatalog(JOOQ_PACKAGE)), directory);
+    }
+
+    /**
      * The catalog shape over the multi-schema generated model, for the reads whose answer depends on
      * a name being ambiguous across schemas rather than on any one table's contents.
      */

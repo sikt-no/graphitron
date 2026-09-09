@@ -49,6 +49,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -3250,7 +3251,43 @@ class BuildContext {
         record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeId,
                         List<ColumnRef> keyColumns,
                         no.sikt.graphitron.model.jooq.TableRef table) implements NodeIdRecordDecode {}
+
+        /**
+         * {@code typeName:} named a multitable interface or union, and every {@code @table} member
+         * resolved as a node type of its own. The slot decodes on the wire id's own type prefix into
+         * whichever member it belongs to, so the resolution carries one {@link Candidate} per member
+         * in member order rather than one table.
+         *
+         * <p>Two or more candidates always: a one-member container is the single-type case, which
+         * the container arms below refuse rather than resolve, so no consumer of this arm has to
+         * decide whether a list of one means dispatch or not.
+         */
+        record Polymorphic(String containerName, List<Candidate> candidates)
+                implements NodeIdRecordDecode {
+            public Polymorphic {
+                candidates = List.copyOf(candidates);
+                if (candidates.size() < 2) {
+                    throw new IllegalArgumentException(
+                        "Polymorphic node id decode needs at least two candidates; one candidate is"
+                        + " the single-type decode, which Resolved carries");
+                }
+            }
+        }
+
         record Rejected(String message) implements NodeIdRecordDecode {}
+
+        /**
+         * One member of a polymorphic container, carrying exactly what {@link Resolved} carries for
+         * one type plus the member's own GraphQL name, which the dispatch message quotes and the
+         * per-member decode helper is named from.
+         */
+        record Candidate(String typeName, no.sikt.graphitron.javapoet.ClassName encoderClass,
+                         String typeId, List<ColumnRef> keyColumns,
+                         no.sikt.graphitron.model.jooq.TableRef table) {
+            public Candidate {
+                keyColumns = List.copyOf(keyColumns);
+            }
+        }
     }
 
     /**
@@ -3268,11 +3305,34 @@ class BuildContext {
             return new NodeIdRecordDecode.Rejected(
                 "@nodeId(typeName: '" + typeName + "') type does not exist in the schema");
         }
+        // Nodehood first, kind second. A named type that is a node type of its own keeps the
+        // single-type decode whatever kind it is declared as, so the container arm below never sees
+        // one and the two populations are disjoint by construction rather than by a filter each
+        // applies. Answer-preserving for every shape that resolved or refused before the reorder: an
+        // object type falls through to the same @table test either way, and an interface or union
+        // carrying @node itself now meets that test after this question rather than before, with the
+        // same message.
+        if (!namesANodeType(typeName, rawGqlType)
+                && (rawGqlType instanceof GraphQLInterfaceType
+                    || rawGqlType instanceof GraphQLUnionType)) {
+            return resolvePolymorphicRecordDecode(typeName, rawGqlType);
+        }
         if (!(rawGqlType instanceof GraphQLObjectType targetObj)
                 || !targetObj.hasAppliedDirective(DIR_TABLE)) {
             return new NodeIdRecordDecode.Rejected(
                 "@nodeId(typeName: '" + typeName + "') type is not @table-annotated");
         }
+        return resolveOneRecordDecode(targetObj, typeName);
+    }
+
+    /**
+     * The single-type resolution for one {@code @table} object type: the wire {@code typeId} and key
+     * columns through {@link #resolveTargetKeys}, and the {@link TableRef} off the catalog entry.
+     * Split out of {@link #resolveNodeIdRecordDecode} so a polymorphic container's members resolve
+     * through the very path the single-type decode uses, which is what makes every per-candidate
+     * fact the fact that decode already carries.
+     */
+    private NodeIdRecordDecode resolveOneRecordDecode(GraphQLObjectType targetObj, String typeName) {
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)
             .orElse(typeName.toLowerCase());
         var keys = resolveTargetKeys(targetObj, typeName, targetTableName);
@@ -3290,6 +3350,308 @@ class BuildContext {
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         return new NodeIdRecordDecode.Resolved(encoderClass, keys.typeId(), keys.keyColumns(),
             tableEntry.get().toTableRef(targetTableName));
+    }
+
+    /**
+     * Whether {@code typeName} names a node type, on the declaration-level terms the store's
+     * {@code intent_node_type} states: {@code @node} written on the declaration, whatever kind it is
+     * declared as, or a type the classified {@link NodeIndex} holds, which is where an inferred node
+     * lands. Read here to order the two arms of {@link #resolveNodeIdRecordDecode} and nowhere else;
+     * the single-type path resolves its own key metadata through {@link #resolveTargetKeys}, which
+     * has three arms of its own.
+     */
+    private boolean namesANodeType(String typeName, GraphQLType rawGqlType) {
+        if (rawGqlType instanceof GraphQLDirectiveContainer dc && dc.hasAppliedDirective(DIR_NODE)) {
+            return true;
+        }
+        return nodes.forName(typeName).isPresent();
+    }
+
+    /**
+     * Resolves a {@code @nodeId(typeName:)} naming a multitable interface or union into the
+     * per-member decode set a polymorphic slot dispatches over, or one of three structural refusals.
+     *
+     * <p>The candidate set is the container's {@code @table} object-type members, each resolved
+     * through {@link #resolveOneRecordDecode}, so a candidate carries the same facts the single-type
+     * decode carries for that member. Every {@code @table} member has to be a node type: a candidate
+     * set with a hole in it would silently reject one member's ids at runtime, which is worse than
+     * refusing the schema.
+     *
+     * <p>The three refusals, in the precedence the store's sibling defect view states. A container
+     * that binds a table itself is a single-table {@code @discriminate} interface, whose members all
+     * share one record class, so the single-type decode is what the author wants and a second
+     * spelling of it would be a trap; the message offers both remedies. A container with no
+     * {@code @table} members has nothing to decode into. A {@code @table} member that is not a node
+     * type is named, on the model of the single-type path's own not-a-node message.
+     */
+    private NodeIdRecordDecode resolvePolymorphicRecordDecode(String typeName, GraphQLType rawGqlType) {
+        // The container's own @table binding is asked about first: on a single-table discriminated
+        // interface every member carries the same @table, so the member-side questions below would
+        // all fire and each would describe a mistake the author did not make.
+        if (rawGqlType instanceof GraphQLDirectiveContainer container
+                && container.hasAppliedDirective(DIR_TABLE)) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') names a single-table container: '" + typeName
+                + "' carries @table itself, so every implementation shares one record class and one"
+                + " key. Name one of its object types instead, or make '" + typeName
+                + "' a @node type, and the single-type decode is what you get either way");
+        }
+        var members = polyMembers(rawGqlType);
+        var tableBound = members.stream()
+            .filter(m -> m.hasAppliedDirective(DIR_TABLE))
+            .toList();
+        if (tableBound.isEmpty()) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') names '" + typeName
+                + "', which has no @table implementations, so there is nothing to decode an id into");
+        }
+        var candidates = new ArrayList<NodeIdRecordDecode.Candidate>(tableBound.size());
+        for (var member : tableBound) {
+            if (!namesANodeType(member.getName(), member)) {
+                return new NodeIdRecordDecode.Rejected(
+                    "@nodeId(typeName: '" + typeName + "') names '" + typeName
+                    + "', whose implementation '" + member.getName() + "' is not a @node type."
+                    + " Every @table implementation of a polymorphic node id must be a node type, or"
+                    + " ids of that implementation would be rejected at runtime with nothing in the"
+                    + " build saying so; annotate '" + member.getName() + "' with @node");
+            }
+            var one = resolveOneRecordDecode(member, member.getName());
+            if (one instanceof NodeIdRecordDecode.Rejected rejected) {
+                return rejected;
+            }
+            var resolved = (NodeIdRecordDecode.Resolved) one;
+            candidates.add(new NodeIdRecordDecode.Candidate(member.getName(),
+                resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
+                resolved.table()));
+        }
+        if (candidates.size() < 2) {
+            return new NodeIdRecordDecode.Rejected(
+                "@nodeId(typeName: '" + typeName + "') names '" + typeName
+                + "', which has one @table implementation ('" + candidates.getFirst().typeName()
+                + "'), so there is nothing to dispatch on. Name that type instead");
+        }
+        return new NodeIdRecordDecode.Polymorphic(typeName, candidates);
+    }
+
+    /**
+     * Outcome of the slot-typing question at a polymorphic {@code @nodeId} slot: whether the slot's
+     * declared Java type is one every candidate's generated record <em>is</em>.
+     * {@link Admitted} carries the wrapper the emitted helper's return type is read off, which the
+     * classifier mints here and nowhere else; {@link Refused} carries a formatted reason.
+     */
+    sealed interface PolymorphicSlotAdmission {
+        record Admitted(no.sikt.graphitron.rewrite.model.CallSiteExtraction.AdmittedSlotType slotType)
+                implements PolymorphicSlotAdmission {}
+        record Refused(String message) implements PolymorphicSlotAdmission {}
+    }
+
+    /**
+     * Whether {@code slotTypeName} can hold the decode of any of {@code poly}'s candidates: the slot
+     * type has to be a type every candidate's generated jOOQ record declares as an ancestor.
+     * {@code org.jooq.Record}, {@code TableRecord<?>}, {@code UpdatableRecord<?>} over primary-keyed
+     * tables and a consumer-side interface jOOQ's {@code recordImplements} puts on the records all
+     * pass; one candidate's own record class, and a scalar, do not.
+     *
+     * <p>{@code slotTypeName} is the slot's declared element type with one {@code List<…>} already
+     * unwrapped, since a list-shaped slot hands one decoded record to each element.
+     *
+     * <p>Answered against the live classes rather than against a name list. A closed set of jOOQ
+     * supertype names compared by string would be a parallel type system bound to jOOQ by nothing,
+     * and the primary-key rule that admits {@code UpdatableRecord} would be a guess about codegen
+     * configuration where the record class itself says what it extends. Both operands sit on one
+     * loader, which is what makes {@code isAssignableFrom} the right question here even though
+     * {@link InputBeanResolver}'s own record test deliberately avoids it: the slot type resolves
+     * through {@link #codegenLoader()} and the candidates' record classes come off the catalog, which
+     * holds that same loader.
+     */
+    PolymorphicSlotAdmission admitPolymorphicSlotType(NodeIdRecordDecode.Polymorphic poly,
+                                                      String slotTypeName) {
+        Class<?> slotClass = loadForSlot(slotTypeName);
+        if (slotClass == null) {
+            // Refused rather than resolved on some weaker fact, and this is where the polymorphic
+            // slot parts from the one-column projection: that destination stands aside on an
+            // unreadable type and is carried out on the key's arity alone, with javac as the
+            // backstop. Here the slot's own type is what the emitted helper returns, so an
+            // unreadable one leaves nothing to emit rather than something to emit unchecked.
+            return new PolymorphicSlotAdmission.Refused(
+                slotTypeName == null
+                    ? "the slot's declared type is not a class name (a primitive, a type variable or"
+                        + " a wildcard), so there is no type for the decoded records to land in;"
+                        + " declare it as a type every implementation's record is"
+                    : "the slot is typed '" + slotTypeName + "', which is not on the codegen"
+                        + " classpath, so nothing says whether the decoded records can land there");
+        }
+        var recordClasses = new LinkedHashMap<String, Class<?>>();
+        for (var candidate : poly.candidates()) {
+            var recordClass = catalog.findRecordClass(candidate.table().tableName());
+            if (recordClass.isEmpty()) {
+                return new PolymorphicSlotAdmission.Refused("implementation '"
+                    + candidate.typeName() + "' binds table '" + candidate.table().tableName()
+                    + "', for which the jOOQ catalog carries no record class");
+            }
+            recordClasses.put(candidate.typeName(), recordClass.get());
+        }
+        for (var entry : recordClasses.entrySet()) {
+            if (!slotClass.isAssignableFrom(entry.getValue())) {
+                return new PolymorphicSlotAdmission.Refused(slotRefusal(poly, slotTypeName,
+                    entry.getKey(), entry.getValue(), recordClasses.values(), slotClass));
+            }
+        }
+        return new PolymorphicSlotAdmission.Admitted(
+            new no.sikt.graphitron.rewrite.model.CallSiteExtraction.AdmittedSlotType(
+                admittedTypeName(slotClass)));
+    }
+
+    /**
+     * The admitted class as javapoet spells it: the class name, and where the class declares type
+     * parameters, one unbounded wildcard per parameter. So {@code org.jooq.UpdatableRecord} is
+     * admitted as {@code UpdatableRecord<?>}, which is both what the author declared at the slot and
+     * what keeps a raw type out of the consumer's generated sources.
+     */
+    private static no.sikt.graphitron.javapoet.TypeName admittedTypeName(Class<?> slotClass) {
+        // A nested type's binary name carries $ where javapoet spells the nesting with a dot;
+        // bestGuess reads the dotted form and reconstructs the enclosing chain.
+        var raw = no.sikt.graphitron.javapoet.ClassName.bestGuess(
+            slotClass.getName().replace('$', '.'));
+        int arity = slotClass.getTypeParameters().length;
+        if (arity == 0) {
+            return raw;
+        }
+        var args = new no.sikt.graphitron.javapoet.TypeName[arity];
+        java.util.Arrays.fill(args,
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        return no.sikt.graphitron.javapoet.ParameterizedTypeName.get(raw, args);
+    }
+
+    /**
+     * The refusal at a slot no candidate's record fits, forked on what the author actually wrote. A
+     * slot typed as some jOOQ record none of the others is is the single-type behaviour the author
+     * declined by naming the container, so the remedy is to name a type; anything else is a scalar
+     * slot, which has no column that means "the key" across several tables and nowhere to carry
+     * which type the id belonged to. Both name the candidates and the supertypes every candidate's
+     * record shares, so the author has a type to write rather than a search to perform.
+     */
+    private static String slotRefusal(NodeIdRecordDecode.Polymorphic poly, String slotTypeName,
+                                      String failingCandidate, Class<?> failingRecord,
+                                      Collection<Class<?>> recordClasses, Class<?> slotClass) {
+        String candidates = poly.candidates().stream()
+            .map(NodeIdRecordDecode.Candidate::typeName)
+            .collect(Collectors.joining(", "));
+        String shared = String.join(", ", sharedRecordSupertypes(recordClasses));
+        String lead = "@nodeId(typeName: \"" + poly.containerName() + "\") decodes an id of any of: "
+            + candidates + ", but the slot is typed '" + slotTypeName + "', which '"
+            + failingRecord.getName() + "' (implementation '" + failingCandidate + "') is not.";
+        if (isJooqRecordClass(slotClass)) {
+            return lead + " Declare the slot as a type every implementation's record is ("
+                + shared + "), or, if one implementation is what you meant, point typeName: at that"
+                + " type instead of at '" + poly.containerName() + "'";
+        }
+        return lead + " A polymorphic node id decodes into a record, not into a column value: there"
+            + " is no single column that means the key across several tables, and a scalar slot has"
+            + " nowhere to carry which implementation the id belonged to. Declare the slot as one of:"
+            + " " + shared;
+    }
+
+    /**
+     * The record supertypes every candidate's generated record shares, jOOQ-record types only, most
+     * specific first. What an author can actually write at the slot, which is why the intersection is
+     * narrowed to record types: the shared ancestry also holds {@code Object} and a handful of jOOQ
+     * internals that are true of the records and useless as a remedy.
+     */
+    private static List<String> sharedRecordSupertypes(Collection<Class<?>> recordClasses) {
+        var shared = new LinkedHashSet<Class<?>>();
+        boolean first = true;
+        for (Class<?> recordClass : recordClasses) {
+            var ancestors = ancestorsOf(recordClass);
+            if (first) {
+                shared.addAll(ancestors);
+                first = false;
+            } else {
+                shared.retainAll(ancestors);
+            }
+        }
+        return shared.stream()
+            .filter(BuildContext::isJooqRecordClass)
+            .filter(c -> !recordClasses.contains(c))
+            .sorted(Comparator.comparingInt((Class<?> c) -> -ancestorsOf(c).size())
+                .thenComparing(Class::getName))
+            .map(Class::getName)
+            .toList();
+    }
+
+    /** Every type {@code cls} is, itself included: superclasses and interfaces, transitively. */
+    private static Set<Class<?>> ancestorsOf(Class<?> cls) {
+        var out = new LinkedHashSet<Class<?>>();
+        collectAncestors(cls, out);
+        return out;
+    }
+
+    private static void collectAncestors(Class<?> cls, Set<Class<?>> out) {
+        if (cls == null || !out.add(cls)) {
+            return;
+        }
+        for (Class<?> i : cls.getInterfaces()) {
+            collectAncestors(i, out);
+        }
+        collectAncestors(cls.getSuperclass(), out);
+    }
+
+    /**
+     * Whether {@code cls} is a jOOQ {@code Record} type, matched by interface name so the answer
+     * does not turn on which loader holds {@code org.jooq.Record}. The same discipline
+     * {@link InputBeanResolver}'s own record test keeps, and used here only to fork a message.
+     */
+    private static boolean isJooqRecordClass(Class<?> cls) {
+        return ancestorsOf(cls).stream().anyMatch(c -> c.getName().equals("org.jooq.Record"));
+    }
+
+    /**
+     * The slot's declared element type as a live class, or {@code null} when the codegen classpath
+     * does not hold it. Loaded without initialising: the class is inspected, never used.
+     *
+     * <p>The declared name arrives as a signature spells it, so a generic argument is stripped
+     * ({@code org.jooq.UpdatableRecord<?>} is the raw {@code UpdatableRecord}) and a nested class is
+     * retried with the JVM's {@code $}: the same two normalisations {@code InputBeanResolver.tryLoad}
+     * performs on the member types it reads off the very same signatures.
+     */
+    private Class<?> loadForSlot(String slotTypeName) {
+        if (slotTypeName == null) {
+            return null;
+        }
+        int lt = slotTypeName.indexOf('<');
+        String candidate = lt < 0 ? slotTypeName : slotTypeName.substring(0, lt);
+        while (true) {
+            try {
+                // nameability: exempt (a declared Java type read off a signature, not a name anyone wrote)
+                return Class.forName(candidate, false, codegenLoader());
+            } catch (ClassNotFoundException e) {
+                int lastDot = candidate.lastIndexOf('.');
+                if (lastDot < 0) {
+                    return null;
+                }
+                candidate = candidate.substring(0, lastDot) + '$' + candidate.substring(lastDot + 1);
+            } catch (LinkageError e) {
+                return null;
+            }
+        }
+    }
+
+    /**
+     * The object types a polymorphic container resolves to, in the order the schema lists them: an
+     * interface's implementations, or a union's members. The same two populations
+     * {@code intent_poly_member} unions in the store, read here off the live schema.
+     */
+    private List<GraphQLObjectType> polyMembers(GraphQLType rawGqlType) {
+        if (rawGqlType instanceof GraphQLInterfaceType iface) {
+            return schema.getImplementations(iface);
+        }
+        if (rawGqlType instanceof GraphQLUnionType union) {
+            return union.getTypes().stream()
+                .filter(GraphQLObjectType.class::isInstance)
+                .map(GraphQLObjectType.class::cast)
+                .toList();
+        }
+        return List.of();
     }
 
     /**

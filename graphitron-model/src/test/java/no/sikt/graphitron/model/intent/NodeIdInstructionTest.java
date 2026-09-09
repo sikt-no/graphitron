@@ -425,7 +425,7 @@ class NodeIdInstructionTest {
     }
 
     /**
-     * The two rows differ in the node type and in nothing else: no column says which participant
+     * The two rows differ in the resolved type and in nothing else: no column says which participant
      * resolved which. That is the relation's stated limit at this coordinate, and closing it is what
      * a participant-keyed arm would be for.
      */
@@ -437,10 +437,10 @@ class NodeIdInstructionTest {
 
             var rows = rows(dsl);
             assertThat(rows).hasSize(2);
-            assertThat(rows.map(r -> r.get(INTENT_NODE_ID_INSTRUCTION.NODE_TYPE_NAME)))
+            assertThat(rows.map(r -> r.get(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)))
                 .containsExactly("Actor", "Film");
             for (var column : INTENT_NODE_ID_INSTRUCTION.fields()) {
-                if (column.getName().equals(INTENT_NODE_ID_INSTRUCTION.NODE_TYPE_NAME.getName())) {
+                if (column.getName().equals(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME.getName())) {
                     continue;
                 }
                 assertThat(rows.get(1).get(column))
@@ -595,7 +595,7 @@ class NodeIdInstructionTest {
             .orderBy(INTENT_NODE_ID_INSTRUCTION.SITE,
                 INTENT_NODE_ID_INSTRUCTION.USE_SITE,
                 INTENT_NODE_ID_INSTRUCTION.BASIS,
-                INTENT_NODE_ID_INSTRUCTION.NODE_TYPE_NAME)
+                INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME)
             .fetch();
     }
 
@@ -604,6 +604,6 @@ class NodeIdInstructionTest {
         return row.get(INTENT_NODE_ID_INSTRUCTION.SITE) + " "
             + row.get(INTENT_NODE_ID_INSTRUCTION.USE_SITE) + " "
             + row.get(INTENT_NODE_ID_INSTRUCTION.BASIS) + " "
-            + row.get(INTENT_NODE_ID_INSTRUCTION.NODE_TYPE_NAME);
+            + row.get(INTENT_NODE_ID_INSTRUCTION.RESOLVED_TYPE_NAME);
     }
 }

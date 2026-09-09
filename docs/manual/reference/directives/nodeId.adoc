@@ -179,6 +179,42 @@ Two shapes leave nothing to inherit, and both are refused rather than passed alo
 neither returns a table-bound type nor names a table with `@mutation(table:)`, and a table more than
 one node type declares itself over, which is two different key tuples. Write `typeName:` at either.
 
+[#polymorphic-record-slot]
+=== Decoding an id of any implementation into a record supertype
+
+At a xref:service.adoc[`@service`] slot, `typeName:` may name a multitable interface or a union
+instead of one node type. The slot then accepts the id of any `@table` implementation, and the Java
+side is typed as something every implementation's generated record is: `org.jooq.Record`,
+`TableRecord<?>`, `UpdatableRecord<?>` when every implementation's table has a primary key, or an
+interface your jOOQ configuration makes the records implement. The generated fetcher reads the id's
+type prefix, decodes it into that implementation's own record, and hands the service a record whose
+runtime class says which implementation it was; an id of a type outside the interface fails the
+request naming every implementation, before the service runs.
+
+[source,graphql]
+----
+union AddressOccupant = Customer | Staff
+
+input DeactivateOccupantInput {
+    occupantId: ID! @nodeId(typeName: "AddressOccupant")
+}
+----
+
+[source,java]
+----
+public record DeactivateOccupantInput(UpdatableRecord<?> occupantId) {}
+
+public static Boolean deactivate(DeactivateOccupantInput in) {
+    if (in.occupantId() instanceof CustomerRecord c) { ... }
+    if (in.occupantId() instanceof StaffRecord s)    { ... }
+}
+----
+
+The same works at a producer parameter named for the argument, and at a list slot (`[ID!]` into
+`List<UpdatableRecord<?>>`). Every implementation must be a node type; the build names one that is
+not. Typing the slot as one implementation's record is refused: that is the single-type spelling, so
+name the type instead of the interface.
+
 == Where the ID resolves
 
 One invariant governs every coordinate: **a consumer neither receives nor supplies the wire format.**
@@ -231,6 +267,7 @@ either resolves or is refused by name, and no arm hands the wire format on.
 == Constraints
 
 * The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. The build fails when `typeName:` resolves to a non-node type.
+* At a xref:service.adoc[`@service`] slot, `typeName:` may instead name a multitable interface or union. The slot must then be typed as a supertype of every implementation's generated record (`org.jooq.Record`, `TableRecord<?>`, `UpdatableRecord<?>` over primary-keyed tables), never one implementation's record or a scalar, and every `@table` implementation must be a node type. A single-table xref:discriminate.adoc[`@discriminate`] interface that is not itself a node type is refused here: name one of its object types, or make it a node type. Naming a container anywhere the value does not reach a `@service` slot is refused too, the polymorphic decode being a slot rule. See <<polymorphic-record-slot,the record-supertype section>>.
 * `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table. At an argument feeding a producer parameter by name, that is a field that neither returns a table-bound type nor names a table with xref:mutation.adoc[`@mutation`]`(table:)`, or a table several node types declare themselves over; see <<named-parameter-decode,the producer-parameter section>>.
 * `@nodeId` does not stand alone on a non-node type as its identity. Use it on the `id: ID!` field of a node type, or on slots that *reference* a node from elsewhere. On a node's own `id:` field the directive is optional: that field is a node ID by construction, and `typeName:` is rejected there because the containing type has already answered which node it is.
 * The directive is likewise optional at an input field or argument *named for the target's own `id`*: `id` on an input consumed against a node-backed table, or on an argument of a field returning a node type, reads as that node's global ID. The name is what carries it, so a differently-named slot (`ids`, `customerId`) still needs the directive; graphitron does not guess at plurals or suffixes. Where the target table backs more than one node type the build fails and asks for `typeName:` rather than picking one.
@@ -251,7 +288,7 @@ either resolves or is refused by name, and no arm hands the wire format on.
 
 == Editor support
 
-The graphitron LSP completes `typeName:` against the schema's node types, whether they declare xref:node.adoc[`@node`] or take their identity from catalog metadata; typing into the empty quoted value offers every node-bearing type, and a value that does not resolve to one surfaces as an error inline. Hover on a resolved `typeName:` shows the type's `typeId` and key-column list, pulling each column's GraphQL type from xref:field.adoc[`@field`] / xref:table.adoc[`@table`] metadata.
+The graphitron LSP completes `typeName:` against the schema's node types, whether they declare xref:node.adoc[`@node`] or take their identity from catalog metadata, and against the multitable interfaces and unions whose `@table` implementations are node types; typing into the empty quoted value offers every node-bearing type, and a value that does not resolve to one surfaces as an error inline. Hover on a resolved `typeName:` shows the type's `typeId` and key-column list, pulling each column's GraphQL type from xref:field.adoc[`@field`] / xref:table.adoc[`@table`] metadata.
 
 == See also
 

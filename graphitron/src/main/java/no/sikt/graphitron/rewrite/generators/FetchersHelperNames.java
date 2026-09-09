@@ -32,7 +32,13 @@ import java.util.Set;
  *       are orthogonal and compose as {@code create<stem><ordinal>}.</li>
  *   <li>the <b>{@code decode*}</b> namespace, whose stem set spans the {@code @nodeId} record-decode
  *       target classes ({@code decode<stem>} / {@code decode<stem>List}; scalar and list variants
- *       share one stem).</li>
+ *       share one stem) <em>and</em> the polymorphic containers a {@code @nodeId(typeName:)} names at
+ *       a slot, whose helper decodes into whichever member's record the wire id belongs to. A
+ *       container is named by its GraphQL type name and not by a class, having no record class of its
+ *       own; the two families share one namespace because they emit into one method namespace, and a
+ *       container's stem is resolved against the names the record classes claimed so a container
+ *       called {@code Foo} and a record class {@code FooRecord} cannot both claim
+ *       {@code decodeFooRecord}.</li>
  * </ul>
  *
  * <h3>Stem rule</h3>
@@ -63,14 +69,18 @@ final class FetchersHelperNames {
     private final Map<ClassName, String> createStems;
     /** {@code decode*}-namespace class → base stem. */
     private final Map<ClassName, String> decodeStems;
+    /** {@code decode*}-namespace polymorphic container (GraphQL type name) → base stem. */
+    private final Map<String, String> containerStems;
     /** The jOOQ-record shape-contention arm, built with base stems drawn from {@link #createStems}. */
     private final JooqRecordHelperNames jooqRecord;
 
     private FetchersHelperNames(boolean populated, Map<ClassName, String> createStems,
-            Map<ClassName, String> decodeStems, JooqRecordHelperNames jooqRecord) {
+            Map<ClassName, String> decodeStems, Map<String, String> containerStems,
+            JooqRecordHelperNames jooqRecord) {
         this.populated = populated;
         this.createStems = createStems;
         this.decodeStems = decodeStems;
+        this.containerStems = containerStems;
         this.jooqRecord = jooqRecord;
     }
 
@@ -80,7 +90,8 @@ final class FetchersHelperNames {
      * by construction carry at most one class per simple name.
      */
     static FetchersHelperNames bare() {
-        return new FetchersHelperNames(false, Map.of(), Map.of(), JooqRecordHelperNames.bare());
+        return new FetchersHelperNames(false, Map.of(), Map.of(), Map.of(),
+            JooqRecordHelperNames.bare());
     }
 
     /**
@@ -93,6 +104,20 @@ final class FetchersHelperNames {
      */
     static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
             Collection<ClassName> beanClasses, Collection<ClassName> decodeRecordClasses) {
+        return of(jooqCarriers, beanClasses, decodeRecordClasses, List.of());
+    }
+
+    /**
+     * The four-input form, adding the polymorphic containers a {@code @nodeId(typeName:)} names at a
+     * slot on this class. The container stems are resolved <em>after</em> the record-class stems and
+     * against the names those claimed, because the two families write into one method namespace and
+     * only the record classes have a package to disambiguate from: a container is a GraphQL type name,
+     * unique in its own schema, so the only collision it can have is with a claimed
+     * {@code decode<stem>} name, which an ordinal settles.
+     */
+    static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
+            Collection<ClassName> beanClasses, Collection<ClassName> decodeRecordClasses,
+            Collection<String> decodeContainerNames) {
         var createClasses = new LinkedHashSet<ClassName>();
         for (var jr : jooqCarriers) {
             createClasses.add(CatalogRefs.recordClass(jr.table()));
@@ -101,8 +126,39 @@ final class FetchersHelperNames {
 
         var createStems = disambiguate("create", createClasses);
         var decodeStems = disambiguate("decode", new LinkedHashSet<>(decodeRecordClasses));
+        var containerStems = containerStems(decodeStems.values(),
+            new LinkedHashSet<>(decodeContainerNames));
         var jooqRecord = JooqRecordHelperNames.of(jooqCarriers, createStems);
-        return new FetchersHelperNames(true, createStems, decodeStems, jooqRecord);
+        return new FetchersHelperNames(true, createStems, decodeStems, containerStems, jooqRecord);
+    }
+
+    /**
+     * Base stem per polymorphic container: {@code <Container>Record}, or that name with a 1-based
+     * ordinal appended while either emitted form ({@code decode<stem>} or {@code decode<stem>List})
+     * is already claimed by a record class's stem or by an earlier container. Iteration is in the
+     * caller's order and each container's own stem is claimed as it is resolved, so the answer is a
+     * function of that order and not of a second pass.
+     */
+    private static Map<String, String> containerStems(Collection<String> recordStems,
+            Set<String> containerNames) {
+        var claimed = new LinkedHashSet<String>();
+        for (String stem : recordStems) {
+            claimed.add("decode" + stem);
+            claimed.add("decode" + stem + "List");
+        }
+        var out = new LinkedHashMap<String, String>();
+        for (String container : containerNames) {
+            String base = container + "Record";
+            String stem = base;
+            int ordinal = 1;
+            while (claimed.contains("decode" + stem) || claimed.contains("decode" + stem + "List")) {
+                stem = base + ordinal++;
+            }
+            claimed.add("decode" + stem);
+            claimed.add("decode" + stem + "List");
+            out.put(container, stem);
+        }
+        return out;
     }
 
     /** The jOOQ-record shape-aware {@code create<Record>} resolver for this class. */
@@ -130,6 +186,30 @@ final class FetchersHelperNames {
         return decodeSingular(recordClass) + "List";
     }
 
+    /**
+     * {@code decode<Container>Record} scalar helper name for a polymorphic container, the helper that
+     * reads the wire id's type prefix and decodes into whichever member's record it names.
+     */
+    String decodeContainerSingular(String containerName) {
+        return "decode" + containerStem(containerName);
+    }
+
+    /** {@code decode<Container>RecordList} list form of the container helper. */
+    String decodeContainerList(String containerName) {
+        return decodeContainerSingular(containerName) + "List";
+    }
+
+    /**
+     * The null-returning per-member helper one container arm calls, named inside the container's own
+     * claimed stem rather than in the record-class namespace. Deliberately not
+     * {@link #decodeSingular} of the member's record class: that name is the <em>throwing</em>
+     * single-type helper's, and the same class can host both for the same record, so sharing the name
+     * would make one member's arm raise instead of standing aside.
+     */
+    String decodeContainerMember(String containerName, String memberTypeName) {
+        return decodeContainerSingular(containerName) + memberTypeName;
+    }
+
     private String createStem(ClassName c) {
         if (!populated) {
             return c.simpleName();
@@ -142,6 +222,23 @@ final class FetchersHelperNames {
             return c.simpleName();
         }
         return required(decodeStems, c, "decode");
+    }
+
+    private String containerStem(String containerName) {
+        if (!populated) {
+            return containerName + "Record";
+        }
+        String stem = containerStems.get(containerName);
+        if (stem == null) {
+            // Same routing hole the class-keyed namespaces refuse, for the same reason: a silent
+            // fallback would name a helper nothing emitted.
+            throw new IllegalStateException(
+                "FetchersHelperNames was asked to name a decode* helper for a polymorphic container"
+                + " it never collected: " + containerName + ". Every naming site must route through"
+                + " the resolver built from this <Type>Fetchers class's carriers, beans, decoders and"
+                + " containers.");
+        }
+        return stem;
     }
 
     private static String required(Map<ClassName, String> stems, ClassName c, String namespace) {

@@ -553,8 +553,20 @@ public class TypeFetcherGenerator {
         // needs. Registered alongside those so one class hosts one body under one name, whichever
         // coordinate calls it.
         collectParamRecordDecoders(fields, scalarDecoders, listDecoders);
+        // The polymorphic containers a @nodeId(typeName:) names at a slot on this class, from both
+        // slot kinds, keyed on the container. Collected before the resolver is built so the decode*
+        // namespace is sized over the record classes and the containers together: the container's
+        // helper is decode<Container>Record, which a record class named <Container>Record would
+        // otherwise claim.
+        var scalarPolyDecoders = new java.util.LinkedHashMap<String,
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord>();
+        var listPolyDecoders = new java.util.LinkedHashMap<String,
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord>();
+        InputBeanInstantiationEmitter.collectPolymorphicDecoders(beanHelpers.values(),
+            scalarPolyDecoders, listPolyDecoders);
+        collectParamPolymorphicDecoders(fields, scalarPolyDecoders, listPolyDecoders);
         var fetchersHelperNames = FetchersHelperNames.of(
-            jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet());
+            jooqCarriers, beanHelpers.keySet(), scalarDecoders.keySet(), scalarPolyDecoders.keySet());
         ctx.setFetchersHelperNames(fetchersHelperNames);
 
         // One decode-helper registry per <Type>Fetchers class: split rows-method and lookup-rows
@@ -977,6 +989,21 @@ public class TypeFetcherGenerator {
         }
         for (var rec : listDecoders.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildRecordDecodeHelperList(rec, fetchersHelperNames));
+        }
+
+        // Per polymorphic container: the null-returning per-candidate helpers and the container
+        // helper that peeks the wire id's prefix and dispatches over them, plus the list variant
+        // where any slot naming the container is list-shaped. Same dedup discipline as the
+        // single-type pair above, one rung up: the container is the key, and the scalar helper is
+        // always emitted because the list one delegates to it.
+        for (var poly : scalarPolyDecoders.values()) {
+            InputBeanInstantiationEmitter
+                .buildPolymorphicDecodeHelpers(poly, fetchersHelperNames, outputPackage)
+                .forEach(builder::addMethod);
+        }
+        for (var poly : listPolyDecoders.values()) {
+            builder.addMethod(InputBeanInstantiationEmitter
+                .buildPolymorphicDecodeHelperList(poly, fetchersHelperNames));
         }
 
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
@@ -2042,6 +2069,49 @@ public class TypeFetcherGenerator {
         }
     }
 
+    /**
+     * Sibling of {@link #collectParamRecordDecoders} for the polymorphic leaf: every
+     * {@link CallSiteExtraction.NodeIdDecodePolymorphicRecord} sitting directly on a producer
+     * parameter of this class, across the same two coordinates.
+     *
+     * <p>List-ness is read off the slot's declared Java type against the leaf's own admitted slot
+     * type, which is the element type the container helper returns: a
+     * {@code List<UpdatableRecord<?>>} parameter is what asks for the plural variant.
+     */
+    private static void collectParamPolymorphicDecoders(List<GraphitronField> fields,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> scalarOut,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> listOut) {
+        for (var field : fields) {
+            if (field instanceof MethodBackedField mbf) {
+                for (var p : mbf.method().callParams()) {
+                    if (p.extraction() instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly) {
+                        poly0(poly, p.list(), scalarOut, listOut);
+                    }
+                }
+            }
+            if (field instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
+                for (var e : allServiceEntries(sf.serviceMethodCall())) {
+                    if (e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg
+                            && fromArg.shape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.Scalar sc
+                            && sc.leafTransform() instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly) {
+                        poly0(poly, isListOfTypeName(sc.javaType(), poly.slotType().typeName()),
+                            scalarOut, listOut);
+                    }
+                }
+            }
+        }
+    }
+
+    /** One container registration: the scalar body always, the plural variant on a list slot. */
+    private static void poly0(CallSiteExtraction.NodeIdDecodePolymorphicRecord poly, boolean list,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> scalarOut,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> listOut) {
+        scalarOut.putIfAbsent(poly.containerName(), poly);
+        if (list) {
+            listOut.putIfAbsent(poly.containerName(), poly);
+        }
+    }
+
     /** One decode-record registration: the scalar body always, the plural variant on a list slot. */
     private static void record0(CallSiteExtraction.NodeIdDecodeRecord rec, boolean list,
             java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
@@ -2051,6 +2121,20 @@ public class TypeFetcherGenerator {
         if (list) {
             listOut.putIfAbsent(key, rec);
         }
+    }
+
+    /**
+     * Whether a slot's declared Java type is {@code List<elementType>}, for an element type that is
+     * not a plain class name: the polymorphic leaf's admitted slot type is a wildcard-parameterized
+     * form ({@code UpdatableRecord<?>}), so the sibling below, which is keyed on a
+     * {@link no.sikt.graphitron.javapoet.ClassName}, cannot answer for it.
+     */
+    private static boolean isListOfTypeName(no.sikt.graphitron.javapoet.TypeName javaType,
+            no.sikt.graphitron.javapoet.TypeName elementType) {
+        return javaType instanceof no.sikt.graphitron.javapoet.ParameterizedTypeName ptn
+            && ptn.rawType().equals(no.sikt.graphitron.javapoet.ClassName.get(List.class))
+            && ptn.typeArguments().size() == 1
+            && ptn.typeArguments().getFirst().equals(elementType);
     }
 
     /** Whether a slot's declared Java type is {@code List<elementClass>}. */

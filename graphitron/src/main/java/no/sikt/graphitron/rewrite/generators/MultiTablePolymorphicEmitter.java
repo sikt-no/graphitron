@@ -714,7 +714,6 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock nodeIdDispatchGuard(List<NodeIdArgDispatch> dispatches,
             CompositeDecodeHelperRegistry registry, String outputPackage) {
         if (dispatches.isEmpty()) return CodeBlock.of("");
-        var clientException = ClassName.get(outputPackage + ".schema", "GraphitronClientException");
         var b = CodeBlock.builder();
         for (var dispatch : dispatches) {
             String wireLocal = dispatch.argName() + "NodeIdWire";
@@ -726,14 +725,14 @@ public final class MultiTablePolymorphicEmitter {
                 b.beginControlFlow("if ($L instanceof $T<?> $L)", wireLocal, LIST, listLocal);
                 b.beginControlFlow("for ($T $L : $L)", Object.class, elementLocal, listLocal);
                 b.beginControlFlow("if ($L)", noBranchDecodes(dispatch, registry, elementLocal));
-                b.add(dispatchFailureThrow(dispatch, clientException, elementLocal));
+                b.add(dispatchFailureThrow(dispatch, outputPackage, elementLocal));
                 b.endControlFlow();
                 b.endControlFlow();
                 b.endControlFlow();
             } else {
                 b.beginControlFlow("if ($L != null && $L)",
                     wireLocal, noBranchDecodes(dispatch, registry, wireLocal));
-                b.add(dispatchFailureThrow(dispatch, clientException, wireLocal));
+                b.add(dispatchFailureThrow(dispatch, outputPackage, wireLocal));
                 b.endControlFlow();
             }
         }
@@ -760,27 +759,19 @@ public final class MultiTablePolymorphicEmitter {
      * The throw: peek the wire prefix, then raise the client error with the two-branch message. A
      * prefix matching one of the candidates means the id is that type's but its key arity is wrong,
      * which reads as malformed rather than as a wrong type.
+     *
+     * <p>The message itself lives on {@link no.sikt.graphitron.render.NodeIdDecodeFailure} beside its
+     * single-candidate sibling, because a {@code @service} slot's polymorphic decode raises the same
+     * failure at a different grain and one bad id must fail the same way at both.
      */
     private static CodeBlock dispatchFailureThrow(NodeIdArgDispatch dispatch,
-            ClassName clientException, String wireLocal) {
+            String outputPackage, String wireLocal) {
         var encoderClass = dispatch.decodeByParticipant().firstEntry().getValue().encoderClass();
-        String textLocal = wireLocal + "Text";
-        String peekedLocal = wireLocal + "Peeked";
-        String candidates = String.join(", ", dispatch.candidateNodeTypeNames());
-        var malformed = CodeBlock.builder().add("$L == null", peekedLocal);
-        for (var decode : dispatch.decodeByParticipant().values()) {
-            malformed.add(" || $S.equals($L)", decode.typeId(), peekedLocal);
-        }
-        return CodeBlock.builder()
-            .addStatement("$T $L = $T.peekTypeId($L instanceof String $L ? $L : null)",
-                String.class, peekedLocal, encoderClass, wireLocal, textLocal, textLocal)
-            .addStatement("throw new $T($L\n    ? $S + $L + $S\n    : $S + $L + $S + $L + $S)",
-                clientException, malformed.build(),
-                "Invalid node id \"", wireLocal,
-                "\" for this argument: not a valid id, expected an id of one of: " + candidates,
-                "Invalid node id \"", wireLocal, "\" for this argument: decodes to type \"",
-                peekedLocal, "\", expected an id of one of: " + candidates)
-            .build();
+        return no.sikt.graphitron.render.NodeIdDecodeFailure.multiCandidateThrowStatement(
+            outputPackage, encoderClass,
+            dispatch.decodeByParticipant().values().stream()
+                .map(no.sikt.graphitron.rewrite.model.HelperRef.Decode::typeId).toList(),
+            String.join(", ", dispatch.candidateNodeTypeNames()), wireLocal);
     }
 
     /**

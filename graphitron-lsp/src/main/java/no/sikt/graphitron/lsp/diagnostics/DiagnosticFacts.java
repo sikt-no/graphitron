@@ -415,10 +415,18 @@ final class DiagnosticFacts {
         }
 
         /**
-         * What the graph's {@code @node} declarations say about a referenced type. The census this arm
-         * defers on is the store itself rather than a population: a capture writes every {@code @node}
-         * in the graph, so no row means the schema declares none and the reference is wrong, while no
-         * store at all means nothing has been captured yet.
+         * What the graph says about a type a {@code @nodeId(typeName:)} names: a {@code @node}
+         * declaration, or a polymorphic container with at least one table-bound node-type member,
+         * which a {@code @service} slot may name to take the id of any implementation. The census
+         * this arm defers on is the store itself rather than a population: a capture writes every
+         * {@code @node} and every membership in the graph, so no row means the schema offers neither
+         * and the reference is wrong, while no store at all means nothing has been captured yet.
+         *
+         * <p>The answer is about the <em>name</em> and not about the coordinate. A container is a
+         * legal value for {@code typeName:} wherever the directive is written, and whether the
+         * polymorphic rule reaches that coordinate is the store's {@code CONTAINER_NOT_AT_A_SLOT}
+         * verdict rather than this keyset's, which is the same division the incumbent family already
+         * runs between what a value may name and what happened where it was named.
          */
         Resolution nodeTypeName(String typeName) {
             return resolution(resolvedNodeTypeNames.contains(typeName), storeAnswered);
@@ -703,12 +711,7 @@ final class DiagnosticFacts {
                     .convertFrom(rows -> rows.map(Record1::value1)),
                 censusHolds(selectOne().from(JVM_CLASS).where(store.reads(JVM_CLASS.SOURCE_NAME))),
                 parameterArm(store, questions.methods),
-                multiset(selectDistinct(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
-                    .from(GRAPHITRON_NODE_ENTRY)
-                    .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
-                    .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.in(questions.nodeTypeNames))
-                    .orderBy(GRAPHITRON_NODE_ENTRY.TYPE_NAME))
-                    .convertFrom(rows -> rows.map(Record1::value1)),
+                nodeTypeBindingArm(store, questions.nodeTypeNames),
                 overrideArm(store, questions.memberSites),
                 parentArm(store, questions.memberTypeNames),
                 backingArm(store, questions.memberTypeNames, INTENT_TYPE_BACKING_SEED.TYPE_NAME,
@@ -862,6 +865,36 @@ final class DiagnosticFacts {
     /** Whether a census holds anything at all, which every arm over it reads absence against. */
     private static Field<Boolean> censusHolds(Select<?> probe) {
         return field(exists(probe));
+    }
+
+    /**
+     * What a {@code @nodeId(typeName:)} may legally name: the graph's {@code @node} declarations, and
+     * the polymorphic containers with at least one table-bound node-type member, which a
+     * {@code @service} slot may name to take the id of any implementation.
+     *
+     * <p>A union of two populations rather than the node declarations alone, so completion and the
+     * diagnostic move with the build from one relation: a walk-side rule admitting a container while
+     * this arm still refused it would fork the two views, and the author would be offered no
+     * completion for a value the build accepts and a squiggle under the value they wrote. The keyset
+     * is keyed on the type name and not on the coordinate, so it says a container is a legal value
+     * for {@code typeName:} and never that this is a coordinate the polymorphic rule reaches; that
+     * half is {@code CONTAINER_NOT_AT_A_SLOT}, which reaches the editor through the projected
+     * rejection arms the way the incumbent family's verdicts do.
+     */
+    private static org.jooq.Field<List<String>> nodeTypeBindingArm(
+            StoreHandle store, java.util.Set<String> asked) {
+        var m = no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
+        return multiset(selectDistinct(GRAPHITRON_NODE_ENTRY.TYPE_NAME)
+            .from(GRAPHITRON_NODE_ENTRY)
+            .where(GRAPHITRON_NODE_ENTRY.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_NODE_ENTRY.TYPE_NAME.in(asked))
+            .union(selectDistinct(m.CONTAINER_NAME)
+                .from(m)
+                .where(m.GRAPH_NAME.eq(store.graphName()))
+                .and(m.CONTAINER_NAME.in(asked))
+                .and(m.IS_TABLE_BOUND.isTrue())
+                .and(m.IS_NODE_TYPE.isTrue())))
+            .convertFrom(rows -> rows.map(Record1::value1));
     }
 
     /**

@@ -187,6 +187,61 @@ What the method owns here is the predicate, not the wire format. That split is w
 
 Mixing the two contracts on one leaf, some branches generator-routed and some method-owned, is rejected at build time. The reason the build has to say so is that nothing downstream would: the two contracts hand the method different tables, and the method is free to accept both, whether it takes a `Table<?>` parameter or an overload set with one concrete declaration per participant. Either way a split compiles and shows up only as a wrong `WHERE` at request time; the build names the split participants and the two remedies that work.
 
+[#polymorphic-service-slot]
+=== A mutation that takes the id of any implementation
+
+The write side of the same shape, and here the decode has to cross into your own code rather than being consumed by a generated query. A `@service` mutation takes the id of any implementation of an interface as one input field by naming the interface in `typeName:`, and types the receiving Java slot as something every implementation's generated record is:
+
+[source,graphql]
+----
+union AddressOccupant = Customer | Staff
+
+input DeactivateOccupantInput {
+    "The id of a Customer or a Staff."
+    occupantId: ID! @nodeId(typeName: "AddressOccupant")
+}
+
+type Mutation {
+    deactivateOccupant(input: DeactivateOccupantInput!): Boolean
+        @service(service: {className: "com.example.OccupantService", method: "deactivate"})
+}
+----
+
+[source,java]
+----
+public record DeactivateOccupantInput(UpdatableRecord<?> occupantId) {}
+
+public static Boolean deactivate(DeactivateOccupantInput in) {
+    if (in.occupantId() instanceof CustomerRecord c) {
+        return deactivateCustomer(c.getCustomerId());
+    }
+    if (in.occupantId() instanceof StaffRecord s) {
+        return deactivateStaff(s.getStaffId());
+    }
+    throw new IllegalStateException("unreachable: the fetcher decodes one of the two");
+}
+----
+
+A request supplies one opaque id and the generated fetcher decodes it before the service runs:
+
+[source,graphql]
+----
+mutation {
+    deactivateOccupant(input: {occupantId: "Q3VzdG9tZXI6NA=="})
+}
+----
+
+The record's runtime class is what says which implementation the id belonged to, and its loaded key columns are the key. An id belonging to no implementation fails the request in the same wording the read side gives it, before your method runs:
+
+[source]
+----
+Invalid node id "RmlsbTo0Mg==" for this argument: decodes to type "Film", expected an id of one of: Customer, Staff
+----
+
+`UpdatableRecord<?>` is the slot type to reach for when every implementation's table has a primary key; where one does not, jOOQ generates a `TableRecordImpl` for it and the slot has to be `TableRecord<?>`, which the build says. `org.jooq.Record` works for any candidate set, and an interface your jOOQ configuration's `recordImplements` puts on the records works too. Typing the slot as one implementation's own record is refused: decoding the one and rejecting the others is the single-type spelling, so `typeName:` should name that type instead.
+
+The same shape works at a top-level `@service` argument whose producer parameter is named for it, and at a list slot (`[ID!]` into `List<UpdatableRecord<?>>`), where each element decodes on its own prefix. What it does not do is reach a read-side coordinate: naming an interface at an output field, or at a filter input or lookup argument of a generated query, is refused, the polymorphic decode being a rule about a slot that hands a record to your code. The read side's own polymorphic readings are the two sections above.
+
 == `Query.node` and `Query.nodes` dispatch
 
 The two Relay entry points are emitted automatically when at least one `@node` type is classified for the schema:

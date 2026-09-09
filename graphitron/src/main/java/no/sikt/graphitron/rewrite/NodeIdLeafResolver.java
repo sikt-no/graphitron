@@ -313,6 +313,21 @@ final class NodeIdLeafResolver {
         }
         if (!(rawGqlType instanceof GraphQLObjectType targetObj)
                 || !targetObj.hasAppliedDirective(DIR_TABLE)) {
+            // A multitable interface or union is named on purpose, so "is not @table-annotated"
+            // describes a mistake that author did not make: what is wrong is where the type was
+            // named, not what it is. The accurate refusal says the polymorphic spelling is a
+            // @service slot rule and this coordinate is not one, which is the same fact the store's
+            // CONTAINER_NOT_AT_A_SLOT verdict states, so the walk and the store agree at the refused
+            // coordinates and not only at the reached ones.
+            if (rawGqlType instanceof graphql.schema.GraphQLInterfaceType
+                    || rawGqlType instanceof graphql.schema.GraphQLUnionType) {
+                return new Resolved.Rejected(Rejection.structural("@nodeId(typeName: '"
+                    + refTypeName + "') names a polymorphic container, and a polymorphic node id is"
+                    + " decoded into a @service slot typed as a record supertype. At '" + leafName
+                    + "' the value binds a table predicate rather than reaching Java, so there is no"
+                    + " slot to decode into; name one node type here, or move the polymorphic"
+                    + " spelling to the @service input that receives the id"));
+            }
             return new Resolved.Rejected(Rejection.structural("@nodeId(typeName:) type '" + refTypeName + "' is not @table-annotated"));
         }
         String targetTableName = argString(targetObj, DIR_TABLE, ARG_NAME)

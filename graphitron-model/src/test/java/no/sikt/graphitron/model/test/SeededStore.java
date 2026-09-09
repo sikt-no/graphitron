@@ -93,6 +93,7 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -2218,6 +2219,28 @@ public final class SeededStore {
             .set(SQL_TABLE.CLASS_FQN, sourceName + ".tables." + tableName)
             .set(SQL_TABLE.RECORD_CLASS_FQN, sourceName + ".tables.records." + tableName + "Record")
             .execute();
+    }
+
+    /**
+     * The types a table's generated record is, as the catalog walk captures them. Explicit rather
+     * than seeded by {@link #seedTable}, because which jOOQ supertypes a record has is exactly what
+     * a case about slot typing is choosing: a primary-keyed table's record is an
+     * {@code UpdatableRecord} and a keyless one's is only a {@code TableRecord}, and a fixture that
+     * got both for free would be asserting against the seeder rather than against the rule.
+     *
+     * <p>The closure and not the declared parents, on the relation's own terms, so a case states
+     * every name it wants the assignability question answered for.
+     */
+    public static void seedRecordSupertypes(DSLContext dsl, String sourceName, String tableSchema,
+                                            String tableName, String... supertypes) {
+        for (String supertype : supertypes) {
+            dsl.insertInto(SQL_TABLE_RECORD_SUPERTYPE)
+                .set(SQL_TABLE_RECORD_SUPERTYPE.SOURCE_NAME, sourceName)
+                .set(SQL_TABLE_RECORD_SUPERTYPE.TABLE_SCHEMA, tableSchema)
+                .set(SQL_TABLE_RECORD_SUPERTYPE.TABLE_NAME, tableName)
+                .set(SQL_TABLE_RECORD_SUPERTYPE.SUPERTYPE_NAME, supertype)
+                .execute();
+        }
     }
 
     /**

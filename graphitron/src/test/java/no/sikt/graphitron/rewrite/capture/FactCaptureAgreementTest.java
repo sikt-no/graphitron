@@ -441,7 +441,7 @@ class FactCaptureAgreementTest {
             "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_index",
             "sql_index_column", "sql_routine", "sql_routine_parameter",
-            "sql_node_metadata", "sql_node_key_column",
+            "sql_node_metadata", "sql_node_key_column", "sql_table_record_supertype",
             "jvm_class", "jvm_class_supertype", "jvm_method",
             "jvm_method_parameter", "jvm_record_component", "jvm_declared_type_ref",
             "jvm_scalar_type_field", "store_source", "store_stamp",
@@ -558,6 +558,10 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_decode_hop_column", Arm.DERIVED);
         registrations.put("intent_node_id_decode_column", Arm.DERIVED);
         registrations.put("intent_node_id_decode_slot", Arm.DERIVED);
+        registrations.put("intent_record_slot_assignable", Arm.DERIVED);
+        registrations.put("intent_node_container_member", Arm.DERIVED);
+        registrations.put("intent_node_id_candidate_node_type", Arm.DERIVED);
+        registrations.put("intent_node_id_polymorphic_decode_defect", Arm.DERIVED);
         registrations.put("intent_node_id_decode", Arm.DERIVED);
         registrations.put("intent_node_id_decode_defect", Arm.DERIVED);
         registrations.put("intent_node_id_decode_landing_defect", Arm.DERIVED);

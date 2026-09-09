@@ -138,6 +138,62 @@ public final class FilmReviewService {
     }
 
     /**
+     * Polymorphic fixture: takes an {@link OccupantRecordAssignment} whose member is typed
+     * {@code UpdatableRecord<?>} and backed by an {@code ID! @nodeId(typeName: "AddressOccupant")}
+     * field. The generated fetcher peeks the wire id's type prefix and decodes it into whichever
+     * member's record it names, so the body dispatches on the record's runtime class exactly as a
+     * consumer would; reporting the class and the loaded key back is what says the type survived the
+     * decode rather than the key alone arriving.
+     */
+    public static String assignOccupantRecord(OccupantRecordAssignment in) {
+        if (in == null || in.occupant() == null) {
+            return "none";
+        }
+        return "occupant:" + describeOccupant(in.occupant());
+    }
+
+    /**
+     * The list shape of {@link #assignOccupantRecord}: one request carrying ids of both members, each
+     * element decoded on its own prefix.
+     */
+    public static String assignOccupantRecordList(OccupantRecordListAssignment in) {
+        if (in == null || in.occupants() == null) {
+            return "none";
+        }
+        return "occupants:" + in.occupants().stream()
+            .map(FilmReviewService::describeOccupant)
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    /**
+     * The producer-parameter twin of {@link #assignOccupantRecord}: no bean, the parameter named for
+     * the argument receives the decoded record directly. Same helper, a different slot kind reaching
+     * it, which is what says the two slot kinds agree.
+     */
+    public static String assignOccupantByArgument(org.jooq.UpdatableRecord<?> occupant) {
+        if (occupant == null) {
+            return "none";
+        }
+        return "occupant:" + describeOccupant(occupant);
+    }
+
+    /**
+     * One decoded occupant as the fixtures report it: the record's runtime class, then its loaded key
+     * column. Dispatching on {@code instanceof} rather than reading the key generically is the point
+     * of the shape being tested: what the polymorphic decode delivers is a typed record, so a service
+     * can reach each member's own accessors.
+     */
+    private static String describeOccupant(org.jooq.Record occupant) {
+        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord c) {
+            return "Customer:" + c.getCustomerId();
+        }
+        if (occupant instanceof no.sikt.graphitron.rewrite.test.jooq.tables.records.StaffRecord st) {
+            return "Staff:" + st.getStaffId();
+        }
+        return "unexpected:" + occupant.getClass().getSimpleName();
+    }
+
+    /**
      * Fixture: identical branching to {@link #submit} but returns the setter-shape sibling
      * payload class. Drives the {@code MutationServiceRecordField} emit through the
      * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution

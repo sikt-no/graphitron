@@ -562,6 +562,9 @@ public final class ConditionGlueRenderer {
                 "JooqRecord is a @service parameter concept and never a condition binding");
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> throw new IllegalStateException(
                 "NodeIdDecodeRecord is an input-bean field leaf only and never a condition binding");
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored ->
+                throw new IllegalStateException("NodeIdDecodePolymorphicRecord is a @service slot"
+                    + " leaf only and never a condition binding");
         };
     }
 

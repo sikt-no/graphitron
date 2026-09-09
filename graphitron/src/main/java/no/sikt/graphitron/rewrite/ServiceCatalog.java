@@ -1485,6 +1485,20 @@ class ServiceCatalog {
         if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Rejected rejected) {
             return new ArgExtraction.Rejected(Rejection.structural(site + ": " + rejected.message()));
         }
+        if (recordDecode instanceof BuildContext.NodeIdRecordDecode.Polymorphic poly) {
+            // A container at this slot is decided by assignability, not by equality, and a miss is a
+            // refusal rather than the one-value fall-through below. Falling through would route an
+            // UpdatableRecord<?> parameter to the one-column projection and leave the store to
+            // refuse it as KEY_ARITY_EXCEEDS_SLOT, a message about a mistake the author did not make.
+            var admission = ctx.admitPolymorphicSlotType(poly, elementTypeName(slotType));
+            if (admission instanceof BuildContext.PolymorphicSlotAdmission.Refused refused) {
+                return new ArgExtraction.Rejected(
+                    Rejection.structural(site + ": " + refused.message()));
+            }
+            var admitted = (BuildContext.PolymorphicSlotAdmission.Admitted) admission;
+            return new ArgExtraction.Resolved(InputBeanResolver.polymorphicLeaf(poly,
+                admitted.slotType(), GraphQLTypeUtil.isNonNull(declaration.getType())));
+        }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) recordDecode;
         if (takesTheNodeTablesRecord(slotType, CatalogRefs.recordClass(resolved.table()))) {
             return new ArgExtraction.Resolved(new CallSiteExtraction.NodeIdDecodeRecord(
@@ -1557,6 +1571,26 @@ class ServiceCatalog {
             element = ptn.typeArguments().getFirst();
         }
         return element.equals(recordClass);
+    }
+
+    /**
+     * The slot's element type as a binary class name: one {@code List<…>} unwrapped, on
+     * {@link #takesTheNodeTablesRecord}'s own terms, since a list-shaped {@code @nodeId} slot hands
+     * one decoded record to each element. {@code null} where the peeled type is not a class name
+     * javapoet can spell as one (a primitive, a type variable, a wildcard), which the admission
+     * check reads as a slot nothing says the records can land in.
+     */
+    private static String elementTypeName(TypeName slotType) {
+        TypeName element = slotType;
+        if (element instanceof ParameterizedTypeName ptn
+                && ptn.rawType().equals(ClassName.get(java.util.List.class))
+                && ptn.typeArguments().size() == 1) {
+            element = ptn.typeArguments().getFirst();
+        }
+        if (element instanceof ParameterizedTypeName ptn) {
+            element = ptn.rawType();
+        }
+        return element instanceof ClassName cn ? cn.reflectionName() : null;
     }
 
     /** Unwraps one NonNull, one optional List, one inner NonNull to the named SDL leaf type, or null. */

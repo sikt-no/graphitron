@@ -3042,6 +3042,21 @@ COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, w
 COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored table or routine reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view. intent_field_reference_discovery is the worked example of that second sentence: both of its table names are catalog values, so it joins this relation twice on its key to compare them here';
 
+CREATE TABLE sql_table_record_supertype (
+  source_name    VARCHAR NOT NULL,
+  table_schema   VARCHAR NOT NULL,
+  table_name     VARCHAR NOT NULL,
+  supertype_name VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, table_schema, table_name, supertype_name),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE sql_table_record_supertype IS 'Every type a table''s generated jOOQ record is, itself excluded: the superclass chain above the record class and every interface it or they implement, transitively. For example public.customer''s CustomerRecord being an UpdatableRecordImpl, an UpdatableRecord, a TableRecord and a Record. Captured rather than derived, which is the one thing about this relation a reader has to know before reading it: the classpath census deliberately drops the generated jOOQ package, so jvm_class_supertype holds no edges above CustomerRecord and intent_jvm_ancestor cannot climb from it. The catalog walk holds the record Class itself, Table.getRecordType() being what sql_table.record_class_fqn is read from, so its declared ancestry is one more fact off a class the walk already has. It holds the closure and not the edges, unlike the census pair below it, and the reason is the same fact: the chain above a generated record runs through jOOQ''s own runtime classes, which no census scans and which are not tables, so the store holds no edges a closure could be recomputed from. A reader that wants a closure over consumer classes uses intent_jvm_ancestor, which is this relation''s census-side twin; a reader whose question spans both, a slot typed as a supertype of an interface jOOQ''s recordImplements option puts on the records, composes the two, which is what intent_record_slot_assignable does. java.lang.Object is a row here, unlike on jvm_class_supertype where its absence keeps that relation to declarations the source made: this states what the class is rather than what it declared, and a record is an Object, which is also what a live Class.isAssignableFrom says. Absent for a table jOOQ generated no record for, the catalog answering org.jooq.Record there, which is no record class rather than a record named that.';
+COMMENT ON COLUMN sql_table_record_supertype.source_name IS 'the generated package the table''s schema lives in, as on sql_table; the key''s leading dimension and the refresh unit the whole sql_ family is scoped by';
+COMMENT ON COLUMN sql_table_record_supertype.table_schema IS 'the table''s SQL schema, as on sql_table';
+COMMENT ON COLUMN sql_table_record_supertype.table_name IS 'the table''s SQL name, as on sql_table; with the two columns above, the table whose record class this row is about. Keyed on the table rather than on the record class, so the row is deleted with its table and no reader has to reconcile two spellings of one identity';
+COMMENT ON COLUMN sql_table_record_supertype.supertype_name IS 'the fully-qualified binary name of one type the record class is, a nested one spelled with the $ the JVM uses, and spelled the way jvm_ spells a class name so a declared parameter type compares to it exactly. Every element of the closure and not only the declared parents, the relation holding a closure for the reason its own comment gives; the record class itself is deliberately not a row, a reader asking about it holding sql_table.record_class_fqn already. Frequently not a census row and never a foreign key, on jvm_class_supertype.supertype_name''s terms: jOOQ''s runtime classes are not scanned, which is what makes capturing this necessary rather than derivable';
+
 CREATE TABLE sql_column (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
@@ -7985,7 +8000,7 @@ COMMENT ON COLUMN intent_argmapping_projection_defect.source_column IS 'source c
 
 CREATE VIEW intent_node_id_instruction_live
   (graph_name, site, type_name, field_name, argument_name, path, use_site,
-   basis, node_type_name, carries_reference_path,
+   basis, resolved_type_name, resolved_type_kind, carries_reference_path,
    source_name, source_line, source_column) AS
 WITH instructed (graph_name, site, type_name, field_name, argument_name, path, use_site,
                  node_type_ref, has_reference, source_name, source_line, source_column) AS (
@@ -8079,14 +8094,40 @@ table_node (graph_name, table_source_name, table_schema, table_name, type_name, 
       ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
 )
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'EXPLICIT_TYPE_NAME', nt.type_name, i.has_reference,
+       'EXPLICIT_TYPE_NAME', nt.type_name, 'NODE_TYPE', i.has_reference,
        i.source_name, i.source_line, i.source_column
   FROM instructed i
   JOIN intent_node_type nt
     ON nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref
  UNION ALL
+-- The second EXPLICIT_TYPE_NAME arm: a written typeName: naming a polymorphic container. One
+-- authored rule, two resolved kinds, which is why basis does not move and the kind is a column.
+-- Disjoint from the arm above by construction rather than by precedence: this one demands the
+-- written name be an INTERFACE or a UNION and not be in intent_node_type, so a container carrying
+-- @node resolves NODE_TYPE above (the store's spelling of the walk's ordering rule) and no
+-- instruction draws both rows.
+--
+-- Admitted at every site, with no site predicate, and that is a decision rather than an omission.
+-- What the walk forks on is whether the instruction's value descends into a Java slot, which is
+-- intent_node_id_decode_slot's whole content and drives off this relation; restating it here would
+-- be one rule spelled twice and would pull consumer-side facts into a population this relation
+-- keeps SDL-shaped. A container named where the slot side does not reach draws
+-- CONTAINER_NOT_AT_A_SLOT on the sibling defect view, and the three kind predicates downstream keep
+-- it out of every filter surface meanwhile. The population is every container-naming instruction,
+-- a defective membership included: those coordinates are the defect view's to name, and admitting
+-- them is what gives it a population to be keyed on.
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'CONTAINING_NODE_TYPE', nt.type_name, i.has_reference,
+       'EXPLICIT_TYPE_NAME', ct.type_name, 'POLY_CONTAINER', i.has_reference,
+       i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  JOIN graphql_type ct
+    ON ct.graph_name = i.graph_name AND ct.type_name = i.node_type_ref
+   AND ct.kind IN ('INTERFACE', 'UNION')
+ WHERE NOT EXISTS (SELECT 1 FROM intent_node_type nt
+                    WHERE nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref)
+ UNION ALL
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       'CONTAINING_NODE_TYPE', nt.type_name, 'NODE_TYPE', i.has_reference,
        i.source_name, i.source_line, i.source_column
   FROM instructed i
   JOIN intent_node_type nt
@@ -8094,7 +8135,7 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
  WHERE i.node_type_ref IS NULL AND i.site = 'OUTPUT_FIELD' AND NOT i.has_reference
  UNION ALL
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       'TARGET_TABLE_NODE_TYPE', tn.type_name, i.has_reference,
+       'TARGET_TABLE_NODE_TYPE', tn.type_name, 'NODE_TYPE', i.has_reference,
        i.source_name, i.source_line, i.source_column
   FROM instructed i
   JOIN slot_table s
@@ -8110,7 +8151,7 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
  UNION ALL
 SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
        f.type_name || '.' || f.field_name,
-       'OWN_ID_FIELD', nt.type_name,
+       'OWN_ID_FIELD', nt.type_name, 'NODE_TYPE',
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
                           WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
                             AND s.field_name = f.field_name)
@@ -8126,7 +8167,7 @@ SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
  UNION ALL
 SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NULL,
        a.type_name || '.' || a.field_name || '(' || a.argument_name || ')',
-       'TARGET_ID_NAME', nt.type_name,
+       'TARGET_ID_NAME', nt.type_name, 'NODE_TYPE',
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_argument_reference_step_entry s
                           WHERE s.graph_name = a.graph_name AND s.type_name = a.type_name
                             AND s.field_name = a.field_name
@@ -8145,7 +8186,7 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NUL
                       AND n.field_name = a.field_name AND n.argument_name = a.argument_name)
  UNION ALL
 SELECT f.graph_name, 'INPUT_FIELD', f.type_name, f.field_name, NULL, p.path, p.path,
-       'TARGET_ID_NAME', tn.type_name,
+       'TARGET_ID_NAME', tn.type_name, 'NODE_TYPE',
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
                           WHERE s.graph_name = f.graph_name AND s.type_name = f.type_name
                             AND s.field_name = f.field_name)
@@ -8178,7 +8219,8 @@ COMMENT ON COLUMN intent_node_id_instruction_live.argument_name IS 'the argument
 COMMENT ON COLUMN intent_node_id_instruction_live.path IS 'the path of a row of this rule, materialized into intent_node_id_instruction.path, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_instruction_live.use_site IS 'the use_site of a row of this rule, materialized into intent_node_id_instruction.use_site, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_instruction_live.basis IS 'the basis of a row of this rule, materialized into intent_node_id_instruction.basis, whose comment carries what the value means';
-COMMENT ON COLUMN intent_node_id_instruction_live.node_type_name IS 'the node_type_name of a row of this rule, materialized into intent_node_id_instruction.node_type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_instruction_live.resolved_type_name IS 'the resolved_type_name of a row of this rule, materialized into intent_node_id_instruction.resolved_type_name, whose comment carries what the value means';
+COMMENT ON COLUMN intent_node_id_instruction_live.resolved_type_kind IS 'the resolved_type_kind of a row of this rule, materialized into intent_node_id_instruction.resolved_type_kind, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_instruction_live.carries_reference_path IS 'the carries_reference_path of a row of this rule, materialized into intent_node_id_instruction.carries_reference_path, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_instruction_live.source_name IS 'the source_name of a row of this rule, materialized into intent_node_id_instruction.source_name, whose comment carries what the value means';
 COMMENT ON COLUMN intent_node_id_instruction_live.source_line IS 'the source_line of a row of this rule, materialized into intent_node_id_instruction.source_line, whose comment carries what the value means';
@@ -8193,14 +8235,15 @@ CREATE TABLE intent_node_id_instruction (
   path                   VARCHAR,
   use_site               VARCHAR,
   basis                  VARCHAR,
-  node_type_name         VARCHAR,
+  resolved_type_name     VARCHAR,
+  resolved_type_kind     VARCHAR,
   carries_reference_path BOOLEAN,
   source_name            VARCHAR,
   source_line            INTEGER,
   source_column          INTEGER,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE intent_node_id_instruction IS 'Every slot carrying the @nodeId instruction, and which node type it names. The population the resolution relations and the defect view both partition, and the reason this exists as a relation rather than as each of their own WHERE clauses: the detection is "instructed and not carried out", so an instruction the population misses is a coordinate that stays silent, and a population two readers spell separately is two populations. Three sites, and site is the discriminator every other column''s nullness is determined by, on graphitron_argmapping_entry''s terms: an argument name where the site is an argument, an occurrence path where it is an input field, and the stated absent bucket elsewhere. Direction is deliberately not a column: an OUTPUT_FIELD encodes and the other two decode, which follows from the site and from which resolution relation answered, so a column would be a third spelling of a fact two relations already carry. The instruction has three authored forms and this relation states five bases over them, because the two inference rules and the two name-carried cases are different rules rather than one rule with cases. They are disjoint rather than ranked, which is what lets this be a plain union with no windowed collapse over it, and the disjointness is by construction: the three directive bases require a captured row and the two name-carried bases require the absence of one, EXPLICIT_TYPE_NAME requires a written typeName: and the two inference bases its absence, and the two inference bases split on the site-and-@reference predicate the manual states them with. Grain is the instruction and its use site. An argument and an output field are their own use site; an input field''s use sites come from intent_input_occurrence_path, so one input field carrying one directive is as many rows as there are coordinates consuming it. That is load-bearing rather than tidy: one input type may be consumed where the target resolves and where it cannot, so a row keyed on the instruction alone would have to pick one answer for two consumers, which is the argument ArgmappingProjectionDefects already makes for its own messages. An input field on an input type nothing reaches produces no occurrence path, so no use site, so no row; that is not a reachability gate but the observation that a decode is "these values go here" and with no consuming coordinate there is no here. Population boundary, stated because a hole here reads as a fact everywhere downstream: an instruction whose named or inferred type resolves to no node type is not a row. Those coordinates already meet a shipped rejection naming the type, so admitting them would put an instruction in the population that neither resolves nor draws either of the defect view''s verdicts, breaking the partition to restate a message. The one shape this relation cannot yet enumerate is an input field carrying its own @reference path: the target views resolve a path from a type''s table binding, an input type has none, and no relation resolves an input-field path''s terminal. Such a slot with an explicit typeName: is a row here like any other; only its bare form is missing, and closing it wants an input-site target view rather than a wider rule here. One further multiplicity comes in through the departure the two inference bases read, and it is the classifier''s own rather than this relation''s: the argument scope those bases resolve against is one table per branch at a field returning a multi-table polymorphic container, so an inferred instruction there names one node type per branch. At a top-level argument that is the per-branch decode the resolver supports outright, each branch decoding ids of its own participant. At a nested input field it is the divergence the resolver rejects, one leaf meaning a different id on each branch, and the two rows carrying two node types are what makes that rejection a detection over this relation rather than a walk check with nothing behind it. Neither is a case in the rules above; both are the departure relation''s grain arriving here, which is why the bases stay five. What those rows do not carry is which branch each came from, and that is this relation''s limit rather than the departure''s. The grain here is the use site and the one table the site''s content binds against, so a use site with two table-bound participants is two rows differing in node_type_name and in nothing else, and no column says which participant resolved which. The pairing can be recovered by joining a row''s node type back to its own table and that table to the participant binding it, and the recovery is not sound in general: two participants over one table, or a node type that is not the participant type itself, each break it. So a reader can see that the branches disagree, which is what makes the rejection at a nested leaf a detection over these rows, and cannot assemble one branch''s decode from them. Only the two bare inference bases reach this shape. A written typeName: resolves on EXPLICIT_TYPE_NAME at every coordinate and is one row here as anywhere else, and a discriminated interface carrying its own @table binds one table for every participant and is likewise one row; the multiplicity is the multi-table container''s alone. Closing it wants a participant-keyed arm at the grain the answer actually has, (graph_name, site, type_name, field_name, argument_name or path, participant type name), and that spelling is stated here once so that a later widening and any reader threading participants outside the store cannot mint two spellings of one key. It is unwritten because one reader asks this question and answers it for itself; the arm is worth having the day a second one asks. What closing it must not reach for is relaxing the single-candidate demand the two inference bases make: the branches are several because the departure is several, and each branch''s own table must still back exactly one node type for the inference to name anything at all. Materialized: this relation is a table refilled from intent_node_id_instruction_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
+COMMENT ON TABLE intent_node_id_instruction IS 'Every slot carrying the @nodeId instruction, and which type it names. The population the resolution relations and the defect view both partition, and the reason this exists as a relation rather than as each of their own WHERE clauses: the detection is "instructed and not carried out", so an instruction the population misses is a coordinate that stays silent, and a population two readers spell separately is two populations. Three sites, and site is the discriminator every other column''s nullness is determined by, on graphitron_argmapping_entry''s terms: an argument name where the site is an argument, an occurrence path where it is an input field, and the stated absent bucket elsewhere. Direction is deliberately not a column: an OUTPUT_FIELD encodes and the other two decode, which follows from the site and from which resolution relation answered, so a column would be a third spelling of a fact two relations already carry. The instruction has three authored forms and this relation states five bases over them, because the two inference rules and the two name-carried cases are different rules rather than one rule with cases. They are disjoint rather than ranked, which is what lets this be a plain union with no windowed collapse over it, and the disjointness is by construction: the three directive bases require a captured row and the two name-carried bases require the absence of one, EXPLICIT_TYPE_NAME requires a written typeName: and the two inference bases its absence, and the two inference bases split on the site-and-@reference predicate the manual states them with. Grain is the instruction and its use site. An argument and an output field are their own use site; an input field''s use sites come from intent_input_occurrence_path, so one input field carrying one directive is as many rows as there are coordinates consuming it. That is load-bearing rather than tidy: one input type may be consumed where the target resolves and where it cannot, so a row keyed on the instruction alone would have to pick one answer for two consumers, which is the argument ArgmappingProjectionDefects already makes for its own messages. An input field on an input type nothing reaches produces no occurrence path, so no use site, so no row; that is not a reachability gate but the observation that a decode is "these values go here" and with no consuming coordinate there is no here. Population boundary, stated because a hole here reads as a fact everywhere downstream: an instruction whose named or inferred type resolves to neither a node type nor a polymorphic container is not a row. Those coordinates already meet a shipped rejection naming the type, so admitting them would put an instruction in the population that neither resolves nor draws any defect view''s verdict, breaking the partition to restate a message. Two resolved kinds, and the boundary is what admits the second: a written typeName: naming a multitable interface or union resolves POLY_CONTAINER, and it is admitted at every site rather than only where a Java slot receives it, because the fork the walk makes there is whether the value descends into a slot, which is intent_node_id_decode_slot''s whole content and drives off this relation. Restating it here would be one rule spelled twice and would pull an argMapping pair and a producer method''s parameter names into a population this relation keeps SDL-shaped. A container named where the slot side does not reach draws CONTAINER_NOT_AT_A_SLOT on intent_node_id_polymorphic_decode_defect, which is a verdict about where the directive was written rather than a restatement of a shipped message, and three relations one rung out take resolved_type_kind = ''NODE_TYPE'' so a container contributes to no filter surface at any site meanwhile. A container whose membership is itself defective is a row here too, its coordinates being that view''s to name, and admitting them is what gives it a population to be keyed on. The one shape this relation cannot yet enumerate is an input field carrying its own @reference path: the target views resolve a path from a type''s table binding, an input type has none, and no relation resolves an input-field path''s terminal. Such a slot with an explicit typeName: is a row here like any other; only its bare form is missing, and closing it wants an input-site target view rather than a wider rule here. One further multiplicity comes in through the departure the two inference bases read, and it is the classifier''s own rather than this relation''s: the argument scope those bases resolve against is one table per branch at a field returning a multi-table polymorphic container, so an inferred instruction there names one node type per branch. At a top-level argument that is the per-branch decode the resolver supports outright, each branch decoding ids of its own participant. At a nested input field it is the divergence the resolver rejects, one leaf meaning a different id on each branch, and the two rows carrying two node types are what makes that rejection a detection over this relation rather than a walk check with nothing behind it. Neither is a case in the rules above; both are the departure relation''s grain arriving here, which is why the bases stay five. What those rows do not carry is which branch each came from, and that is this relation''s limit rather than the departure''s. The grain here is the use site and the one table the site''s content binds against, so a use site with two table-bound participants is two rows differing in resolved_type_name and in nothing else, and no column says which participant resolved which. The pairing can be recovered by joining a row''s node type back to its own table and that table to the participant binding it, and the recovery is not sound in general: two participants over one table, or a node type that is not the participant type itself, each break it. So a reader can see that the branches disagree, which is what makes the rejection at a nested leaf a detection over these rows, and cannot assemble one branch''s decode from them. Only the two bare inference bases reach this shape. A written typeName: resolves on EXPLICIT_TYPE_NAME at every coordinate and is one row here as anywhere else, and a discriminated interface carrying its own @table binds one table for every participant and is likewise one row; the multiplicity is the multi-table container''s alone. Closing it wants a participant-keyed arm at the grain the answer actually has, (graph_name, site, type_name, field_name, argument_name or path, participant type name), and that spelling is stated here once so that a later widening and any reader threading participants outside the store cannot mint two spellings of one key. It is unwritten because one reader asks this question and answers it for itself; the arm is worth having the day a second one asks. What closing it must not reach for is relaxing the single-candidate demand the two inference bases make: the branches are several because the departure is several, and each branch''s own table must still back exactly one node type for the inference to name anything at all. Materialized: this relation is a table refilled from intent_node_id_instruction_live on the capture cadence, per graph, under the registration in meta_materialize, which carries why. The rule above is stated once, in that view; these rows are what it computed for each captured graph.';
 COMMENT ON COLUMN intent_node_id_instruction.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
 COMMENT ON COLUMN intent_node_id_instruction.site IS 'which SDL site carries the instruction, in a closed vocabulary of three: OUTPUT_FIELD, INPUT_FIELD, ARGUMENT. The column a consumer switches on, the one that decides the direction, and the one every other column''s nullness is determined by. The two field sites share one captured relation and are told apart by the owning type''s kind, which is how the capture side already tells them apart';
 COMMENT ON COLUMN intent_node_id_instruction.type_name IS 'the type owning the slot: an object type on OUTPUT_FIELD, an input object type on INPUT_FIELD, the argument''s owning type on ARGUMENT';
@@ -8209,7 +8252,8 @@ COMMENT ON COLUMN intent_node_id_instruction.argument_name IS 'the argument carr
 COMMENT ON COLUMN intent_node_id_instruction.path IS 'the occurrence path this row''s use site is, on the INPUT_FIELD site; NULL on the other two, whose slot is its own use site. The serialized key of intent_input_occurrence_path, so the use site''s own coordinate and every step of the descent are one join away and nothing here is parsed';
 COMMENT ON COLUMN intent_node_id_instruction.use_site IS 'the consuming coordinate serialized, in graphitron_argmapping_entry''s vocabulary: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
 COMMENT ON COLUMN intent_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
-COMMENT ON COLUMN intent_node_id_instruction.node_type_name IS 'the node type the instruction names, written or inferred; never NULL, the population being instructions whose target resolved. What the opaque format''s other end is: intent_resolved_node_key_column on this name and the graph gives the key columns in order, and intent_resolved_node_type_id gives the typeId';
+COMMENT ON COLUMN intent_node_id_instruction.resolved_type_name IS 'the type the instruction''s basis resolved, written or inferred; never NULL, the population being instructions whose target resolved to something. A name and never a binding, on graphitron_field_navigation.navigated_type_name''s terms: what sort of type it is, and therefore which relation answers for it, is the kind column beside it. Where the kind is NODE_TYPE this is the node type itself and the opaque format''s other end is one join away, intent_resolved_node_key_column on this name and the graph giving the key columns in order and intent_resolved_node_type_id the typeId. Where the kind is POLY_CONTAINER it is a multitable interface or union that resolves no key of its own, and intent_node_id_candidate_node_type on this name is the node types an id at this slot may belong to. Renamed from node_type_name when the container population landed, rather than widening that name''s promise: a container is not a node type, and a column that meant one thing at two kinds would have every reader restating which';
+COMMENT ON COLUMN intent_node_id_instruction.resolved_type_kind IS 'which sort of type the name beside it is, in a closed vocabulary of two. NODE_TYPE: a node type, whose key the decode yields directly. POLY_CONTAINER: a multitable interface or union whose @table members are node types, where the wire id''s own type prefix decides which member''s key the decode yields. A column rather than a predicate each reader re-evaluates, on carries_reference_path''s own justification in this relation: three relations fork on it and several more take it as a filter, and re-deriving it would mean each of them joining intent_node_type or graphql_type to answer a question this view has already answered. Deliberately not a sixth basis: basis states which authored rule stood the instruction up, and a written typeName: is one rule whatever it resolves to, so splitting it would split one authored predicate on a resolution fact';
 COMMENT ON COLUMN intent_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read on the captured relation the slot''s site keys: the argument-site steps on ARGUMENT, the field-site steps on the two field sites. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the reference-target views'' answer and a slot whose path reaches nothing is TRUE here all the same';
 COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
 COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
@@ -8229,7 +8273,7 @@ key_shape (graph_name, type_name, arity) AS (
    GROUP BY graph_name, type_name
 )
 SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.node_type_name, k.arity, a.is_list
+       c.class_name, c.method, i.resolved_type_name, k.arity, a.is_list
   FROM graphitron_argument_condition_entry c
   JOIN graphql_argument a
     ON a.graph_name = c.graph_name AND a.type_name = c.type_name
@@ -8239,11 +8283,11 @@ SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.p
    AND i.type_name = c.type_name AND i.field_name = c.field_name
    AND i.argument_name = c.argument_name
   JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
  WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
  UNION ALL
 SELECT i.graph_name, 'INPUT_FIELD', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.node_type_name, k.arity, f.is_list
+       c.class_name, c.method, i.resolved_type_name, k.arity, f.is_list
   FROM graphitron_field_condition_entry c
   JOIN graphql_type t
     ON t.graph_name = c.graph_name AND t.type_name = c.type_name
@@ -8255,11 +8299,11 @@ SELECT i.graph_name, 'INPUT_FIELD', i.type_name, i.field_name, i.argument_name, 
     ON i.graph_name = c.graph_name AND i.site = 'INPUT_FIELD'
    AND i.type_name = c.type_name AND i.field_name = c.field_name
   JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
  WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
  UNION ALL
 SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       c.class_name, c.method, i.node_type_name, k.arity, a.is_list
+       c.class_name, c.method, i.resolved_type_name, k.arity, a.is_list
   FROM graphitron_field_condition_entry c
   JOIN graphql_type t
     ON t.graph_name = c.graph_name AND t.type_name = c.type_name
@@ -8271,7 +8315,7 @@ SELECT i.graph_name, 'ARGUMENT', i.type_name, i.field_name, i.argument_name, i.p
     ON a.graph_name = i.graph_name AND a.type_name = i.type_name
    AND a.field_name = i.field_name AND a.argument_name = i.argument_name
   JOIN key_shape k
-    ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+    ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
  WHERE c.class_name IS NOT NULL AND c.method IS NOT NULL
    AND NOT EXISTS (SELECT 1
                      FROM graphitron_argument_condition_entry ac
@@ -8288,7 +8332,7 @@ COMMENT ON COLUMN intent_condition_param_decode.path IS 'the occurrence path rea
 COMMENT ON COLUMN intent_condition_param_decode.use_site IS 'the consuming coordinate this row is about, carried whole from intent_node_id_instruction.use_site so a reader holding one joins straight across. Part of the key, and what makes this relation use-keyed rather than method-keyed';
 COMMENT ON COLUMN intent_condition_param_decode.class_name IS 'the condition class as the author wrote it, fully qualified; the same spelling intent_condition_param_extraction.class_name carries, so a reader holding one row of each is holding two statements about one method. Part of the key with the method beside it, one argument being nameable by its own @condition and by its field''s at once';
 COMMENT ON COLUMN intent_condition_param_decode.method_name IS 'the condition method name as the author wrote it, completing the key with the class beside it. No descriptor there, unlike intent_condition_param_extraction: this row is a statement about a slot and not about a signature, and every overload a name resolves to receives the same decoded key at this coordinate';
-COMMENT ON COLUMN intent_condition_param_decode.node_type_name IS 'the node type the slot''s instruction resolved, carried from intent_node_id_instruction.node_type_name; what the decode is a decode of, and the type whose key columns intent_resolved_node_key_column lists';
+COMMENT ON COLUMN intent_condition_param_decode.node_type_name IS 'the node type the slot''s instruction resolved, carried from intent_node_id_instruction.resolved_type_name; what the decode is a decode of, and the type whose key columns intent_resolved_node_key_column lists. A node type and not a container, which the arity join is what enforces rather than a predicate here: a container resolves no key columns, so a slot whose typeName: names one draws no row on any of the three arms, which is the silence the view comment discloses';
 COMMENT ON COLUMN intent_condition_param_decode.key_arity IS 'how many key columns the node type resolved, one or more. One means the bound parameter receives the key column''s own Java type; above one means the typed jOOQ Row of the key columns in key order. Never zero: a slot whose node type resolves no key columns is not a row at all, that coordinate meeting a shipped rejection instead';
 COMMENT ON COLUMN intent_condition_param_decode.list_valued IS 'whether the slot is list-shaped in the SDL, read off the slot''s own captured declaration. The wrapping applied over the shape key_arity names, and carried rather than derived because list-ness is a fact of the slot and the arity is a fact of the node type; the two are independent and a reader needs both to name the parameter type';
 
@@ -8297,7 +8341,7 @@ CREATE VIEW intent_node_id_decode_endpoint
    navigation, from_source_name, from_schema, from_table,
    to_source_name, to_schema, to_table) AS
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-       i.node_type_name,
+       i.resolved_type_name,
        CASE WHEN i.carries_reference_path THEN 'AUTHORED_PATH'
             WHEN bt.table_source_name = sc.table_source_name
              AND bt.table_schema = sc.table_schema
@@ -8314,8 +8358,17 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
    AND sc.field_name = COALESCE(p.root_field_name, i.field_name)
    AND sc.argument_name = COALESCE(p.root_argument_name, i.argument_name)
   JOIN graphitron_tabletype bt
-    ON bt.graph_name = i.graph_name AND bt.type_name = i.node_type_name
- WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD');
+    ON bt.graph_name = i.graph_name AND bt.type_name = i.resolved_type_name
+ WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD')
+   -- Node types only, and the predicate is warranted rather than defensive: the arrival above is
+   -- resolved through graphitron_tabletype, which constrains no kind, so a container carrying
+   -- @table itself would draw a real endpoint row whose named type is not a node type and has no
+   -- key. That shape is exactly the single-table container a polymorphic typeName: refuses, and the
+   -- landing defect view drives off this relation rather than off the key columns, so such a slot
+   -- carrying an @reference path could otherwise draw PATH_STOPS_SHORT about a decode that is
+   -- refused outright. The arrival is the node type's own binding; a container that binds a table
+   -- has one binding and no key.
+   AND i.resolved_type_kind = 'NODE_TYPE';
 COMMENT ON VIEW intent_node_id_decode_endpoint IS 'Where a decode starts and where it has to arrive: for every slot carrying the @nodeId instruction on a decoding site, the table the slot''s own predicate binds on and the table the named node type''s keys live on. The relation the decode''s hop child, its key-column child and the destination over them all read, and it exists because those three would otherwise each resolve the same two tables: the destination is a reduction over the key-column child, the key-column child walks the hops, and the hops need a departure, so the endpoints have to be stated once below all three rather than recomputed inside each. Decoding sites only, which is the direction rule stated as a population rather than as a column: an output field encodes and the two input-side sites decode, so this relation''s WHERE clause is where the direction lives and no reader switches on one. The departure is intent_argument_scope_table''s answer at the consuming argument, which for an argument is its own coordinate and for an input field is the coordinate at the head of its occurrence path, both reached in one pass over the population; that answer is one table per branch where the consuming field returns a multi-table polymorphic container, so such a slot has one endpoint pair per branch and the decode is stated once per branch, which is what the resolver does with it; the two would be a union arm each and each would name the instruction relation again, which is the multiplicity the fact model''s own measurements warn about, so the occurrence path joins outer and the coordinate is picked by COALESCE. The arrival is the node type''s resolved binding, demanded unambiguous for the reason the departure is: two candidate tables are two different key tuples, and a decode against a table the author never named is worse than a decode that does not resolve. The navigation column is the whole reading this relation adds beyond the two tables, and it is a closed vocabulary of three. SAME_TABLE is own-row identity: the slot supplies encoded ids of the very rows it binds on, so the keys land on the row''s own key columns and there is nothing to walk. AUTHORED_PATH is an @reference the author wrote, whose hops the reference-target views resolve, one such view per site. DISCOVERED_KEY is neither written nor identity, where the resolution is the one foreign key declared on the departing table that reaches the arriving one. A fourth value stood here and no longer does. UNRESOLVED_PATH named an input field carrying its own @reference, whose path departs an input type that binds no table, and it existed because no relation walked such a path: the two reference-target views of the time departed from a field''s own binding and from an argument''s scope, and an input field has neither. The value was a statement that the question could not be asked, kept as a value rather than an absence so a consumer could not read it as a chain that legitimately lifted nothing. The input-field walk now exists, departing from the table the consuming field hands the expansion, so the same path resolves the same way an argument''s does and the shape is an AUTHORED_PATH like any other. What the retired value protected against is worth keeping in view, because the protection is now structural rather than nominal: an empty hop set still means own-row identity under one navigation and a chain that stopped under another, and the hop relation states which.';
 COMMENT ON COLUMN intent_node_id_decode_endpoint.graph_name IS 'the owning graph''s partition, carried from the instruction';
 COMMENT ON COLUMN intent_node_id_decode_endpoint.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site is absent by construction, an output field encoding rather than decoding';
@@ -8601,16 +8654,57 @@ COMMENT ON COLUMN intent_node_id_decode_column.key_column_name IS 'the node type
 COMMENT ON COLUMN intent_node_id_decode_column.local_column_name IS 'the column on the slot''s own table this position lifts back to, spelled as the catalog spells it, or NULL where the walk reached no such column. The whole discriminator of the two table destinations: every position carrying one is a local tuple predicate, none carrying one is a correlated EXISTS on the node type''s own table. NULL is a stated absence rather than a missing value, and the site is what determines it in the sense the nullable-by-kind discipline allows: on the identity navigation it is the key column itself, on a lifting chain the column the chain reached, and on a translating chain nothing, which is a rule about the navigation rather than an unfilled slot';
 
 
+CREATE VIEW intent_node_container_member
+  (graph_name, container_name, container_kind, member_type_name,
+   is_table_bound, is_node_type) AS
+SELECT m.graph_name, m.container_name, m.container_kind, m.member_type_name,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                          WHERE bt.graph_name = m.graph_name
+                            AND bt.type_name = m.member_type_name)
+            THEN TRUE ELSE FALSE END,
+       CASE WHEN EXISTS (SELECT 1 FROM intent_node_type nt
+                          WHERE nt.graph_name = m.graph_name
+                            AND nt.type_name = m.member_type_name)
+            THEN TRUE ELSE FALSE END
+  FROM intent_poly_member m;
+COMMENT ON VIEW intent_node_container_member IS 'What a polymorphic container holds, read as the node-id family asks it: one row per member of every container, carrying whether that member binds a table and whether it is a node type. Keyed on the container, because which node types are members of an interface is a fact about the interface and not about any slot that names it; keying it on a use site would store one copy of the answer per consuming coordinate. Total rather than filtered to the admissible members, and that is the whole of why it is a relation rather than a predicate inside its readers: three readers want three populations off it. The resolution axis above it, intent_node_id_candidate_node_type, wants the members that are both; intent_node_id_polymorphic_decode_defect''s MEMBER_NOT_NODE_TYPE wants the table-bound members that are not node types and so could not read a filtered relation at all; and the editor''s node-type keyset wants the containers with at least one of each. The two predicates are columns rather than a name that bakes one caller''s filter in, on intent_bound_table.candidates'' own terms: whether either holds decides the reading, so it is stated as a column rather than left to each reader''s own existence test. This is the intent_spelled_table / intent_bound_table layering at the container grain, over intent_poly_member rather than over the captured relation beneath it, which is where a derivation over membership stands. The read side''s per-participant candidate derivation can re-source onto this relation the day someone wants the two to agree by construction rather than by both being right.';
+COMMENT ON COLUMN intent_node_container_member.graph_name IS 'the owning graph''s partition, carried from intent_poly_member; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN intent_node_container_member.container_name IS 'the polymorphic type holding the member: the union on one arm of the membership beneath, the interface on the other. The key''s second dimension, and the name a @nodeId(typeName:) writes when it names a container';
+COMMENT ON COLUMN intent_node_container_member.container_kind IS 'UNION or INTERFACE, carried from intent_poly_member.container_kind. Provenance, and carried rather than dropped because a refusal about a container names what sort of type it is when it offers the author a remedy';
+COMMENT ON COLUMN intent_node_container_member.member_type_name IS 'the object type the container resolves to; completing the key. Source order is deliberately not carried: a reader that needs the members in order reads intent_poly_member.position, and this relation''s readers ask about the set rather than about the sequence';
+COMMENT ON COLUMN intent_node_container_member.is_table_bound IS 'whether the member binds a table, read off graphitron_tabletype at the member''s own name. What separates a member a polymorphic node id could decode into from one it could not: a member with no table has no record and no key. TRUE alone is not admissibility, the column beside it being the other half';
+COMMENT ON COLUMN intent_node_container_member.is_node_type IS 'whether the member is a node type, read off intent_node_type at the member''s own name. With the column beside it, admissibility: a polymorphic decode needs every table-bound member to be a node type of its own, because a candidate set with a hole in it would reject one member''s ids at runtime with nothing in the build saying so. A member that is a node type and binds no table is not a contradiction to be resolved here; nodehood is a declaration-level answer, on intent_node_type''s own terms, and this relation reports both readings rather than reconciling them';
+
+CREATE VIEW intent_node_id_candidate_node_type
+  (graph_name, resolved_type_name, node_type_name) AS
+SELECT graph_name, type_name, type_name
+  FROM intent_node_type
+ UNION
+SELECT m.graph_name, m.container_name, m.member_type_name
+  FROM intent_node_container_member m
+ WHERE m.is_table_bound AND m.is_node_type
+   -- Disjoint from the identity arm by construction, the same predicate the instruction relation's
+   -- container arm carries: a container that is itself a node type resolves NODE_TYPE there, so its
+   -- candidates are itself and the members below it are not read.
+   AND NOT EXISTS (SELECT 1 FROM intent_node_type nt
+                    WHERE nt.graph_name = m.graph_name AND nt.type_name = m.container_name);
+COMMENT ON VIEW intent_node_id_candidate_node_type IS 'The node types an id arriving at a @nodeId instruction may belong to: one identity row for a resolved type that is a node type, one row per admissible member for one that is a polymorphic container. The resolution axis of the node-id family, keyed on the resolved type rather than on a use site, so a container''s member set is stored once however many coordinates name it. What it buys is that the polymorphic destination is a branch inside the decode relation''s existing slot arm rather than a second arm over the same driving relation: that arm joins this on the slot''s resolved type and the key shape on the node type this yields, so a node-typed instruction yields the one row it always yielded and a container yields one row per member with that member''s own key. Two readers ask it on day one, that destination and the sibling polymorphic defect view, which is the threshold this schema sets for a derivation to get a name of its own. The two arms are disjoint by construction and not by precedence, which is what lets this be a plain union: the identity arm is every node type, and the member arm excludes a container that is itself one, the same predicate intent_node_id_instruction_live''s container arm carries. The identity arm is total over the node population rather than restricted to types some instruction names, because keying on the resolved type means the relation answers a question about a type and a population trimmed to today''s readers would be a filter one of them made for itself.';
+COMMENT ON COLUMN intent_node_id_candidate_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row; the leading key dimension';
+COMMENT ON COLUMN intent_node_id_candidate_node_type.resolved_type_name IS 'the type an instruction''s basis resolved, as intent_node_id_instruction.resolved_type_name spells it: the node type itself on the identity arm, the container on the member arm. The join key a reader holding a slot row already has';
+COMMENT ON COLUMN intent_node_id_candidate_node_type.node_type_name IS 'one node type an id at such an instruction may belong to, and always a node type whatever the arm: equal to the resolved type on the identity arm, an admissible member of it on the member arm. The name intent_resolved_node_key_shape and intent_resolved_node_type_id answer for, which is what makes this the axis the decode joins the key shape through';
+
 CREATE VIEW intent_node_id_decode_slot
-  (graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+  (graph_name, site, type_name, field_name, argument_name, path, use_site,
+   resolved_type_name, resolved_type_kind,
    root_type_name, root_field_name, root_argument_name,
    carrier, param_name, java_type, candidates,
    source_name, source_line, source_column) AS
 WITH rooted (graph_name, site, type_name, field_name, argument_name, path, use_site,
-             node_type_name, root_type_name, root_field_name, root_argument_name,
+             resolved_type_name, resolved_type_kind,
+             root_type_name, root_field_name, root_argument_name,
              source_name, source_line, source_column) AS (
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
-         i.node_type_name,
+         i.resolved_type_name, i.resolved_type_kind,
          COALESCE(op.root_type_name, i.type_name),
          COALESCE(op.root_field_name, i.field_name),
          COALESCE(op.root_argument_name, i.argument_name),
@@ -8620,12 +8714,14 @@ WITH rooted (graph_name, site, type_name, field_name, argument_name, path, use_s
       ON i.site = 'INPUT_FIELD' AND op.graph_name = i.graph_name AND op.path = i.path
    WHERE i.site IN ('ARGUMENT', 'INPUT_FIELD')
 )
-SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, node_type_name,
+SELECT graph_name, site, type_name, field_name, argument_name, path, use_site,
+       resolved_type_name, resolved_type_kind,
        root_type_name, root_field_name, root_argument_name, carrier, param_name, java_type,
        CAST(COUNT(*) OVER (PARTITION BY graph_name, use_site) AS INT),
        source_name, source_line, source_column
   FROM (SELECT r.graph_name, r.site, r.type_name, r.field_name, r.argument_name, r.path,
-               r.use_site, r.node_type_name, r.root_type_name, r.root_field_name,
+               r.use_site, r.resolved_type_name, r.resolved_type_kind,
+               r.root_type_name, r.root_field_name,
                r.root_argument_name, 'MAPPED_PARAMETER' AS carrier,
                ap.param_name, bp.java_type,
                r.source_name, r.source_line, r.source_column
@@ -8643,7 +8739,8 @@ SELECT graph_name, site, type_name, field_name, argument_name, path, use_site, n
            AND bp.use_site = ap.use_site AND bp.position = ap.position
         UNION ALL
         SELECT r.graph_name, r.site, r.type_name, r.field_name, r.argument_name, r.path,
-               r.use_site, r.node_type_name, r.root_type_name, r.root_field_name,
+               r.use_site, r.resolved_type_name, r.resolved_type_kind,
+               r.root_type_name, r.root_field_name,
                r.root_argument_name, 'NAMED_PARAMETER',
                mp.parameter_name, tr.referenced_class,
                r.source_name, r.source_line, r.source_column
@@ -8675,7 +8772,8 @@ COMMENT ON COLUMN intent_node_id_decode_slot.field_name IS 'the instruction''s f
 COMMENT ON COLUMN intent_node_id_decode_slot.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
 COMMENT ON COLUMN intent_node_id_decode_slot.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. Carried for a reader that wants the descent as rows, never as a join key';
 COMMENT ON COLUMN intent_node_id_decode_slot.use_site IS 'the consuming coordinate serialized, carried from the instruction; with the graph, the key of the instruction this row is about, and what the decode relation joins on';
-COMMENT ON COLUMN intent_node_id_decode_slot.node_type_name IS 'the node type the instruction named, carried from the instruction so a message about this parameter needs no second join';
+COMMENT ON COLUMN intent_node_id_decode_slot.resolved_type_name IS 'the type the instruction''s basis resolved, carried whole from the instruction so a message about this parameter needs no second join. A node type or a polymorphic container, on that relation''s terms, and the kind beside it says which; a consumer that needs the node types themselves joins intent_node_id_candidate_node_type on this name, which answers for both kinds';
+COMMENT ON COLUMN intent_node_id_decode_slot.resolved_type_kind IS 'NODE_TYPE or POLY_CONTAINER, carried from the instruction. The column the decode relation''s record destination forks on, a container''s decode landing in whichever member''s record the wire id names rather than in one settled record class';
 COMMENT ON COLUMN intent_node_id_decode_slot.root_type_name IS 'the type owning the field the value''s descent starts at: the instruction''s own type on ARGUMENT, the occurrence path''s root type on INPUT_FIELD. The coordinate both arms resolve the parameter against, carried because it is the coordinate a message has to name when the parameter it found is several steps above the slot the author annotated';
 COMMENT ON COLUMN intent_node_id_decode_slot.root_field_name IS 'the field the descent starts at, on the same terms as the type beside it; the field whose producer method declares the parameter';
 COMMENT ON COLUMN intent_node_id_decode_slot.root_argument_name IS 'the argument the descent starts at: the instruction''s own argument on ARGUMENT, the occurrence path''s root argument on INPUT_FIELD. Equal to argument_name exactly on the ARGUMENT site, which is how that value is decided rather than a coincidence a reader has to check';
@@ -8683,9 +8781,29 @@ COMMENT ON COLUMN intent_node_id_decode_slot.carrier IS 'which rule found the pa
 COMMENT ON COLUMN intent_node_id_decode_slot.param_name IS 'the parameter''s own name in Java, which on both arms is the name the match was made on: the pair''s left side, or the declared parameter name the argument matched';
 COMMENT ON COLUMN intent_node_id_decode_slot.java_type IS 'the fully qualified binary name of the type the parameter takes, at the root of its declared type. NULL where no census could read it: a consumer compiled without -parameters, a reference resolving no method, a primitive parameter, or a position naming no class. The root and not the peel, deliberately, so that this is the same value intent_argmapping_bound_parameter_type states and a type agreement a projection already performs cannot answer differently depending on which arm found the parameter. A container-typed parameter therefore reports the container, and that a list of node ids is a coherent request rather than a mistake is stated on the leaf relation and is a consumer''s reading, not this relation''s';
 COMMENT ON COLUMN intent_node_id_decode_slot.candidates IS 'how many rows this use site resolved, counted over both carriers. One is the ordinary answer; more than one is an overloaded method or a class two classpath entries declare, and this relation distinguishes neither. A reader requiring one type requires this to be one rather than picking, which is the discipline intent_argmapping_bound_parameter_type states for its own version of this column; a reader asking only whether the value reaches Java ignores it';
-COMMENT ON COLUMN intent_node_id_decode_slot.source_name IS 'the SDL file the instruction was captured from, carried from the instruction. Here for the reason node_type_name is: a refusal about this parameter is located at the slot the author annotated, and a consumer that had to re-join the instruction for its position would name the population relation a second time, which is the multiplicity the fact model measures as dominant';
+COMMENT ON COLUMN intent_node_id_decode_slot.source_name IS 'the SDL file the instruction was captured from, carried from the instruction. Here for the reason resolved_type_name is: a refusal about this parameter is located at the slot the author annotated, and a consumer that had to re-join the instruction for its position would name the population relation a second time, which is the multiplicity the fact model measures as dominant';
 COMMENT ON COLUMN intent_node_id_decode_slot.source_line IS 'source line, 1-based per the graphql-java convention, carried from the instruction';
 COMMENT ON COLUMN intent_node_id_decode_slot.source_column IS 'source column, 1-based per the graphql-java convention, carried from the instruction';
+
+CREATE VIEW intent_record_slot_assignable
+  (graph_name, node_type_name, record_class, slot_type_name) AS
+SELECT DISTINCT k.graph_name, k.type_name, k.record_class, k.record_class
+  FROM intent_resolved_node_key_shape k
+ WHERE k.record_class IS NOT NULL
+ UNION
+SELECT DISTINCT k.graph_name, k.type_name, k.record_class, st.supertype_name
+  FROM intent_resolved_node_key_shape k
+  JOIN sql_table t
+    ON t.record_class_fqn = k.record_class
+  JOIN sql_table_record_supertype st
+    ON st.source_name = t.source_name AND st.table_schema = t.table_schema
+   AND st.table_name = t.table_name
+ WHERE k.record_class IS NOT NULL;
+COMMENT ON VIEW intent_record_slot_assignable IS 'Whether a node type''s generated record can land in a slot of a given declared type: one row per (node type, slot type) pair where the record is that type. The store''s answer to the question a live Class.isAssignableFrom answers at the walk, asked of a generated record against a slot the author declared, and the one relation both the polymorphic record destination and the polymorphic defect view''s slot verdict read, which is why it has a name rather than being the same expression written twice. Two arms over one captured fact and not a composition of two censuses, which is the whole of what makes it affordable, and the reason is that sql_table_record_supertype holds a closure rather than edges: the catalog walk climbs the live record class, so an interface a consumer''s jOOQ recordImplements option puts on the records is a row there and so is every supertype of that interface, at any depth. A census leg was written first, joining intent_jvm_ancestor to climb from a record-declared interface, and it was both redundant and unaffordable: redundant because the capture had already climbed that far, and unaffordable because H2 inlines a recursive view and re-evaluated the whole closure once per driving row, measured at two orders of magnitude over the two arms below and never returning against a real capture at all. Two rewrites of that leg were measured and neither helped, one unchanged and one worse; what fixed it was deleting it. The reflexive arm is there because assignability is reflexive and the walk''s comparison is: a slot typed as one candidate''s own record is assignable for that candidate and not for its siblings, and it is the sibling that refuses the slot. Total over the node population rather than seeded from the slot types a graph asks about, which was also tried and also cost: seeding pulled the decode-slot relation into the join and H2 re-evaluated it per driving row. Absence is not-known-to-be-assignable and never not-assignable, on intent_jvm_ancestor''s terms, and the shortfall falls in one direction only; what bounds it here is that the closure is captured off a live class rather than reconstructed from anything, so the only pairs it misses are those of a table jOOQ generated no record for, which has no row at any slot type because the record class is NULL there.';
+COMMENT ON COLUMN intent_record_slot_assignable.graph_name IS 'the owning graph''s partition, carried from the key shape; the leading key dimension';
+COMMENT ON COLUMN intent_record_slot_assignable.node_type_name IS 'the node type whose generated record the question is asked about. Keyed on the node type rather than on the record class because both readers hold a node type and neither holds a record class, and the class is carried beside it for a message that has to name it';
+COMMENT ON COLUMN intent_record_slot_assignable.record_class IS 'the fully qualified name of that node type''s generated jOOQ record, carried from intent_resolved_node_key_shape.record_class. Payload rather than key, the node type beside it already fixing it; here because a refusal naming the slot type has to name the record that could not land in it';
+COMMENT ON COLUMN intent_record_slot_assignable.slot_type_name IS 'one declared type the record is, spelled the way jvm_ spells a class name so a slot''s declared type compares to it exactly: the record class itself on the reflexive arm, one element of its captured closure on the other. Completing the key';
 
 CREATE VIEW intent_node_id_decode
   (graph_name, site, type_name, field_name, argument_name, path, use_site,
@@ -8712,22 +8830,38 @@ SELECT DISTINCT w.graph_name, w.site, w.type_name, w.field_name, w.argument_name
                     WHERE s.graph_name = w.graph_name AND s.use_site = w.use_site)
 UNION ALL
 SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path,
-       s.use_site, s.node_type_name,
+       s.use_site, c.node_type_name,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-       CASE WHEN s.java_type = k.record_class THEN 'JOOQ_RECORD'
+       CASE WHEN s.resolved_type_kind = 'POLY_CONTAINER' THEN 'POLYMORPHIC_RECORD'
+            WHEN s.java_type = k.record_class THEN 'JOOQ_RECORD'
             ELSE 'SINGLE_KEY_COLUMN' END,
        k.arity
   FROM intent_node_id_decode_slot s
+  JOIN intent_node_id_candidate_node_type c
+    ON c.graph_name = s.graph_name AND c.resolved_type_name = s.resolved_type_name
   JOIN intent_resolved_node_key_shape k
-    ON k.graph_name = s.graph_name AND k.type_name = s.node_type_name
+    ON k.graph_name = s.graph_name AND k.type_name = c.node_type_name
  WHERE s.candidates = 1
-   AND (s.java_type = k.record_class
-        OR (k.arity = 1
-            AND (s.java_type IS NULL OR k.sole_column_java_type IS NULL
-                 OR s.java_type = k.sole_column_java_type)
-            AND NOT EXISTS (SELECT 1 FROM sql_table t
-                             WHERE t.record_class_fqn = s.java_type)));
-COMMENT ON VIEW intent_node_id_decode IS 'How one decoding @nodeId instruction is carried out: one row per instruction, use site and branch, naming the destination that receives the decoded tuple. The branch is the table the decode departs from, and it is part of the key rather than a column carried along: a slot whose consuming field returns a multi-table polymorphic container is rooted in one table per branch, the endpoint relation states one pair per branch, and each branch is a predicate the generator emits, so each gets its own destination and its own arity here. On the slot arm the three origin columns are NULL, determined by destination in the sense the nullable-by-kind discipline allows: a slot is reached at the root of the use site and departs no table at all. An instruction with no row here was not carried out, and absence is therefore never a message but the membership condition a defect view is keyed on, which is what keeps a resolution and a rejection from restating one fact. The reduction this relation performs is the whole of the junction-table case. A decode whose every key position lifted to a column of the row''s own table binds locally on a tuple of that table; one where any position did not binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a chain through a junction table is the second because its lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset, so the remote shape was unreachable for a multi-hop path and a chain that translated a column met a rejection before the question was asked. Here they are a count against a count. Anything short of every position is remote, which is always correct where a tuple predicate is not, and which position failed to arrive is the key-column child''s answer rather than this relation''s. All four destinations, in two arms over populations that are disjoint by construction rather than by a filter either arm applies twice. A decode landing in a Java slot is the slot arm''s, on intent_node_id_decode_slot''s answer, and the table arm excludes exactly that population, because a slot receives the value and the departing table then binds nothing. The arms are not a per-destination decomposition of one query, which the derivation-depth rule forbids: they read different driving relations for different facts, the table arm reducing the key-column child''s lift and the slot arm reading a parameter and the node key''s shape, and neither re-joins the other''s operands. Within the slot arm the record destination is tested first and wins, which is a precedence and is stated as one: a record holds a tuple whatever the key''s arity, so a single-column key reaching the node type''s own record is that record''s row and not a bare column value. The record has to be the node type''s own table''s record, and a slot typed as some other table''s generated record is deliberately no row here rather than falling through to the single-column destination: a record standing for the enclosing input type receives the tuple on its own table''s columns rather than on the argument''s scope table, so its lift departs somewhere this relation''s endpoints do not resolve, and reading it as a single-column slot would bind one value into a row type. The single-column destination requires arity one and then stands aside on either type being unknown, on intent_resolved_node_key_projection''s discipline for the same operands: a parameter no census could type and a key column no catalog could type both resolve here and are carried out on arity alone, with javac as the backstop, because refusing on an operand nobody could read is the silence this family exists to close. A slot whose type is known and disagrees is no row, and so is a composite key at a slot that is not a record; both are the defect view''s to name. An overloaded producer is also no row, this arm requiring one candidate rather than picking a type, which the slot relation''s own comment asks of a reader that needs the type; that leaves such an instruction in neither population, which is a gap in the partition and named as one rather than absorbed here. Population boundary, stated because a hole here reads as a fact everywhere downstream, and the two arms have different ones. The table arm''s rows come from the endpoint population, so an instruction whose departing or arriving table did not resolve unambiguously has no row and is a defect rather than a decode. The slot arm needs no departing table at all, a slot being reached at the root of the use site, and needs the node type''s key to have resolved, which is the one binding it does read. The node type''s key arity is carried rather than counted by each reader, both because a message about a single-valued slot names the count and because it is the operand the single-column destination turns on. Expensive, and the cost is invisible at the call site, which is why it is stated here: this is the deepest derived read in the schema, it reaches most of the targets meta_materialize registers, and one read of it against a real capture has been measured in seconds rather than milliseconds. A reader that wants it takes it once and pairs it on its key, never correlated per row, per the rule under "Derived reads are views, not stored facts". It carries no registration of its own because nothing on the build path reads it yet; the sibling that is read there is intent_node_id_decode_defect, over intent_node_id_decode_slot rather than over this relation.';
+   AND (CASE WHEN s.resolved_type_kind = 'POLY_CONTAINER'
+             -- Every member or none: one member's record failing the ancestry test refuses the
+             -- whole slot, so the admission is a NOT EXISTS over the members rather than a
+             -- predicate each member row applies for itself.
+             THEN NOT EXISTS (SELECT 1 FROM intent_node_id_candidate_node_type c2
+                               WHERE c2.graph_name = s.graph_name
+                                 AND c2.resolved_type_name = s.resolved_type_name
+                                 AND NOT EXISTS (
+                                       SELECT 1 FROM intent_record_slot_assignable a
+                                        WHERE a.graph_name = s.graph_name
+                                          AND a.node_type_name = c2.node_type_name
+                                          AND a.slot_type_name = s.java_type))
+             ELSE s.java_type = k.record_class
+                  OR (k.arity = 1
+                      AND (s.java_type IS NULL OR k.sole_column_java_type IS NULL
+                           OR s.java_type = k.sole_column_java_type)
+                      AND NOT EXISTS (SELECT 1 FROM sql_table t
+                                       WHERE t.record_class_fqn = s.java_type))
+        END);
+COMMENT ON VIEW intent_node_id_decode IS 'How one decoding @nodeId instruction is carried out: one row per instruction, use site, branch and, where the instruction named a polymorphic container, member, naming the destination that receives the decoded tuple. The branch is the table the decode departs from, and it is part of the key rather than a column carried along: a slot whose consuming field returns a multi-table polymorphic container is rooted in one table per branch, the endpoint relation states one pair per branch, and each branch is a predicate the generator emits, so each gets its own destination and its own arity here. On the slot arm the three origin columns are NULL, determined by destination in the sense the nullable-by-kind discipline allows: a slot is reached at the root of the use site and departs no table at all. An instruction with no row here was not carried out, and absence is therefore never a message but the membership condition a defect view is keyed on, which is what keeps a resolution and a rejection from restating one fact. The reduction this relation performs is the whole of the junction-table case. A decode whose every key position lifted to a column of the row''s own table binds locally on a tuple of that table; one where any position did not binds the node type''s own key columns on the node type''s own table inside a correlated EXISTS; and a chain through a junction table is the second because its lift contributes no local column, not because anything rejects it. Those were one conjunct in the resolution this replaces, which picked the local shape when the terminal key''s referenced columns were the node key as a multiset, so the remote shape was unreachable for a multi-hop path and a chain that translated a column met a rejection before the question was asked. Here they are a count against a count. Anything short of every position is remote, which is always correct where a tuple predicate is not, and which position failed to arrive is the key-column child''s answer rather than this relation''s. All five destinations, in two arms over populations that are disjoint by construction rather than by a filter either arm applies twice. The fifth is a branch inside the slot arm and not a third arm: that arm joins intent_node_id_candidate_node_type on the slot''s resolved type and the key shape on the node type it yields, so a node-typed instruction yields the one row it always yielded and a container yields one row per member with that member''s own arity, and the destination CASE forks on resolved_type_kind rather than on a re-derived predicate. WHERE s.candidates = 1 survives verbatim, the multiplicity having moved off the slot relation''s partition and onto the resolution axis. A third arm would drive off intent_node_id_decode_slot a second time and re-join the key shape, which is what the derivation-depth rule forbids in the relation this comment calls the deepest derived read in the schema. The polymorphic branch is admitted by a NOT EXISTS over the members rather than by a per-member predicate, because one member whose record the slot''s type is not refuses the whole slot; and it is therefore silent at an input-field site, where the slot relation types the bean rather than the annotated member and no member''s record is that type. That silence is the polymorphic defect view''s stated edge and not a hole here. A decode landing in a Java slot is the slot arm''s, on intent_node_id_decode_slot''s answer, and the table arm excludes exactly that population, because a slot receives the value and the departing table then binds nothing. The arms are not a per-destination decomposition of one query, which the derivation-depth rule forbids: they read different driving relations for different facts, the table arm reducing the key-column child''s lift and the slot arm reading a parameter and the node key''s shape, and neither re-joins the other''s operands. Within the slot arm the record destination is tested first and wins, which is a precedence and is stated as one: a record holds a tuple whatever the key''s arity, so a single-column key reaching the node type''s own record is that record''s row and not a bare column value. The record has to be the node type''s own table''s record, and a slot typed as some other table''s generated record is deliberately no row here rather than falling through to the single-column destination: a record standing for the enclosing input type receives the tuple on its own table''s columns rather than on the argument''s scope table, so its lift departs somewhere this relation''s endpoints do not resolve, and reading it as a single-column slot would bind one value into a row type. The single-column destination requires arity one and then stands aside on either type being unknown, on intent_resolved_node_key_projection''s discipline for the same operands: a parameter no census could type and a key column no catalog could type both resolve here and are carried out on arity alone, with javac as the backstop, because refusing on an operand nobody could read is the silence this family exists to close. A slot whose type is known and disagrees is no row, and so is a composite key at a slot that is not a record; both are the defect view''s to name. An overloaded producer is also no row, this arm requiring one candidate rather than picking a type, which the slot relation''s own comment asks of a reader that needs the type; that leaves such an instruction in neither population, which is a gap in the partition and named as one rather than absorbed here. Population boundary, stated because a hole here reads as a fact everywhere downstream, and the two arms have different ones. The table arm''s rows come from the endpoint population, so an instruction whose departing or arriving table did not resolve unambiguously has no row and is a defect rather than a decode. The slot arm needs no departing table at all, a slot being reached at the root of the use site, and needs the node type''s key to have resolved, which is the one binding it does read. The node type''s key arity is carried rather than counted by each reader, both because a message about a single-valued slot names the count and because it is the operand the single-column destination turns on. Expensive, and the cost is invisible at the call site, which is why it is stated here: this is the deepest derived read in the schema, it reaches most of the targets meta_materialize registers, and one read of it against a real capture has been measured in seconds rather than milliseconds. A reader that wants it takes it once and pairs it on its key, never correlated per row, per the rule under "Derived reads are views, not stored facts". It carries no registration of its own because nothing on the build path reads it yet; the sibling that is read there is intent_node_id_decode_defect, over intent_node_id_decode_slot rather than over this relation.';
 COMMENT ON COLUMN intent_node_id_decode.graph_name IS 'the owning graph''s partition, carried from the instruction';
 COMMENT ON COLUMN intent_node_id_decode.site IS 'ARGUMENT or INPUT_FIELD, as on the instruction; the OUTPUT_FIELD site encodes and is answered by intent_node_id_encode instead';
 COMMENT ON COLUMN intent_node_id_decode.type_name IS 'the type owning the slot, as on the instruction';
@@ -8735,7 +8869,7 @@ COMMENT ON COLUMN intent_node_id_decode.field_name IS 'the slot''s field name, o
 COMMENT ON COLUMN intent_node_id_decode.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on INPUT_FIELD, determined by site as on the instruction';
 COMMENT ON COLUMN intent_node_id_decode.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on ARGUMENT. Carried for a reader that wants the descent as rows, never as a join key';
 COMMENT ON COLUMN intent_node_id_decode.use_site IS 'the consuming coordinate serialized, carried from the instruction; with the graph and the branch below, this relation''s key, and the key its two children carry';
-COMMENT ON COLUMN intent_node_id_decode.node_type_name IS 'the node type the instruction named, whose key the decode yields; intent_resolved_node_key_column on this name and the graph is the other end of the opaque format, and intent_node_id_decode_column is that key already paired with where each position lands';
+COMMENT ON COLUMN intent_node_id_decode.node_type_name IS 'the node type whose key the decode yields, which on the polymorphic destination is the member rather than the type the instruction named: this stays node_type_name and stays a node type at every destination, while the two authored rungs beneath it carry resolved_type_name and the kind beside it. Two facts with two names and a keying between them, on the intent_spelled_table / intent_bound_table layering''s terms rather than one name meaning two things at two rungs; intent_resolved_node_key_column on this name and the graph is the other end of the opaque format, and intent_node_id_decode_column is that key already paired with where each position lands';
 COMMENT ON COLUMN intent_node_id_decode.origin_source_name IS 'the catalog partition of the table this decode departs from, carried from the key-column child on the table arm; NULL on the slot arm, which departs no table. With the two columns below it this is the branch, and with the graph and the use site it is the key';
 COMMENT ON COLUMN intent_node_id_decode.origin_schema IS 'the departing table''s SQL schema on the table arm; NULL on the slot arm';
 COMMENT ON COLUMN intent_node_id_decode.origin_table IS 'the departing table''s SQL name on the table arm; NULL on the slot arm. The table a local tuple predicate binds on, which is what makes the destination beside it a statement about this branch rather than about the coordinate';
@@ -8744,8 +8878,8 @@ COMMENT ON COLUMN intent_node_id_decode.arity IS 'how many key columns the node 
 
 CREATE VIEW intent_node_id_encode
   (graph_name, type_name, field_name, use_site, node_type_name, source, arity) AS
-SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arity
-  FROM (SELECT i.graph_name, i.type_name, i.field_name, i.use_site, i.node_type_name,
+SELECT graph_name, type_name, field_name, use_site, resolved_type_name, source, arity
+  FROM (SELECT i.graph_name, i.type_name, i.field_name, i.use_site, i.resolved_type_name,
                CASE WHEN bt.table_name IS NOT NULL AND pm.field_name IS NULL
                     THEN 'PROJECTED_COLUMNS' ELSE 'READ_VALUE' END AS source,
                k.arity
@@ -8753,7 +8887,7 @@ SELECT graph_name, type_name, field_name, use_site, node_type_name, source, arit
           JOIN (SELECT graph_name, type_name, CAST(COUNT(*) AS INT) AS arity
                   FROM graphitron_node_keycolumn
                  GROUP BY graph_name, type_name) k
-            ON k.graph_name = i.graph_name AND k.type_name = i.node_type_name
+            ON k.graph_name = i.graph_name AND k.type_name = i.resolved_type_name
           LEFT JOIN graphitron_tabletype bt
             ON bt.graph_name = i.graph_name AND bt.type_name = i.type_name
           LEFT JOIN (SELECT DISTINCT graph_name, type_name, field_name
@@ -8777,15 +8911,19 @@ CREATE VIEW intent_node_id_decode_defect
    root_type_name, root_field_name, root_argument_name,
    source_name, source_line, source_column) AS
 SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path, s.use_site,
-       s.node_type_name,
+       s.resolved_type_name,
        CASE WHEN k.arity > 1 THEN 'KEY_ARITY_EXCEEDS_SLOT'
             ELSE 'KEY_COLUMN_TYPE_DISAGREEMENT' END,
        k.arity, k.sole_column_name, k.sole_column_java_type, s.java_type, s.param_name,
        s.root_type_name, s.root_field_name, s.root_argument_name,
        s.source_name, s.source_line, s.source_column
   FROM intent_node_id_decode_slot s
+  -- The key shape on the slot's own resolved type, which is what keeps this population and the
+  -- polymorphic sibling's disjoint by construction rather than by a predicate either applies: a
+  -- container resolves no key of its own, so every container row misses this join and draws
+  -- nothing here.
   JOIN intent_resolved_node_key_shape k
-    ON k.graph_name = s.graph_name AND k.type_name = s.node_type_name
+    ON k.graph_name = s.graph_name AND k.type_name = s.resolved_type_name
  WHERE s.site = 'ARGUMENT' AND s.carrier = 'NAMED_PARAMETER' AND s.candidates = 1
    AND (k.record_class IS NULL OR s.java_type IS NULL OR s.java_type <> k.record_class)
    AND (k.arity > 1
@@ -8812,6 +8950,148 @@ COMMENT ON COLUMN intent_node_id_decode_defect.root_argument_name IS 'the argume
 COMMENT ON COLUMN intent_node_id_decode_defect.source_name IS 'the SDL file the instruction was captured from, carried through the slot relation so a located error needs no join to the population';
 COMMENT ON COLUMN intent_node_id_decode_defect.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN intent_node_id_decode_defect.source_column IS 'source column, 1-based per the graphql-java convention';
+
+CREATE VIEW intent_node_id_polymorphic_decode_defect
+  (graph_name, site, type_name, field_name, argument_name, path, use_site,
+   container_name, container_kind, verdict, member_type_name, member_record_class,
+   slot_java_type, param_name, root_type_name, root_field_name, root_argument_name,
+   source_name, source_line, source_column) AS
+WITH instructed (graph_name, site, type_name, field_name, argument_name, path, use_site,
+                 container_name, root_type_name, root_field_name,
+                 source_name, source_line, source_column) AS (
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+         i.resolved_type_name,
+         COALESCE(op.root_type_name, i.type_name), COALESCE(op.root_field_name, i.field_name),
+         i.source_name, i.source_line, i.source_column
+    FROM intent_node_id_instruction i
+    -- The root coordinate, on intent_node_id_decode_slot's own terms: an input field's slot is
+    -- resolved at the head of its occurrence path, so that is also the coordinate whose producer
+    -- reference the census either reached or did not.
+    LEFT JOIN intent_input_occurrence_path op
+      ON i.site = 'INPUT_FIELD' AND op.graph_name = i.graph_name AND op.path = i.path
+   WHERE i.resolved_type_kind = 'POLY_CONTAINER'
+),
+shape (graph_name, container_name, container_kind, table_members, non_node_table_members) AS (
+  SELECT m.graph_name, m.container_name, MIN(m.container_kind),
+         CAST(SUM(CASE WHEN m.is_table_bound THEN 1 ELSE 0 END) AS INT),
+         CAST(SUM(CASE WHEN m.is_table_bound AND NOT m.is_node_type THEN 1 ELSE 0 END) AS INT)
+    FROM intent_node_container_member m
+   GROUP BY m.graph_name, m.container_name
+),
+-- At a slot, and typed once. The slot relation keeps an ambiguous producer's rows rather than
+-- filtering them, on its own comment's terms, so the single-candidate demand is made here where a
+-- verdict about the slot's type needs one type to be about.
+slotted (graph_name, site, type_name, field_name, argument_name, path, use_site,
+         container_name, java_type, param_name, root_type_name, root_field_name,
+         root_argument_name, source_name, source_line, source_column) AS (
+  SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+         i.container_name, s.java_type, s.param_name, s.root_type_name, s.root_field_name,
+         s.root_argument_name, i.source_name, i.source_line, i.source_column
+    FROM instructed i
+    JOIN intent_node_id_decode_slot s
+      ON s.graph_name = i.graph_name AND s.use_site = i.use_site
+   WHERE s.candidates = 1
+)
+SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
+       i.container_name, sh.container_kind, 'CONTAINER_NOT_AT_A_SLOT',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), i.type_name, i.field_name, i.argument_name,
+       i.source_name, i.source_line, i.source_column
+  FROM instructed i
+  LEFT JOIN shape sh
+    ON sh.graph_name = i.graph_name AND sh.container_name = i.container_name
+ WHERE NOT EXISTS (SELECT 1 FROM intent_node_id_decode_slot s
+                    WHERE s.graph_name = i.graph_name AND s.use_site = i.use_site)
+   -- And stand aside where the slot relation's silence is the classpath census's rather than the
+   -- schema's. intent_field_producer_method's own comment separates the two causes of its absence:
+   -- no jvm_class row under the graph's sources means the census never reached the class, while a
+   -- class row with no method row means the class declares no method of that name. Only the second
+   -- is an author error; the first is a graph captured without the entry the producer lives in, and
+   -- a verdict fired on it would refuse a schema nobody could read the other half of. That is the
+   -- silence this family exists to close rather than a second one to open, and it falls in one
+   -- direction: a coordinate whose producer class the census missed draws nothing here.
+   AND NOT EXISTS (SELECT 1 FROM intent_field_producer_reference r
+                    WHERE r.graph_name = i.graph_name AND r.type_name = i.root_type_name
+                      AND r.field_name = i.root_field_name
+                      AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                                        JOIN jvm_class c
+                                          ON c.source_name = g.source_name
+                                         AND c.class_name = r.class_name
+                                       WHERE g.graph_name = r.graph_name))
+ UNION ALL
+SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path, s.use_site,
+       s.container_name, sh.container_kind, 'SINGLE_TABLE_CONTAINER',
+       NULL, NULL, s.java_type, s.param_name, s.root_type_name, s.root_field_name,
+       s.root_argument_name, s.source_name, s.source_line, s.source_column
+  FROM slotted s
+  LEFT JOIN shape sh
+    ON sh.graph_name = s.graph_name AND sh.container_name = s.container_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                WHERE bt.graph_name = s.graph_name AND bt.type_name = s.container_name)
+ UNION ALL
+SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path, s.use_site,
+       s.container_name, sh.container_kind, 'NO_TABLE_MEMBERS',
+       NULL, NULL, s.java_type, s.param_name, s.root_type_name, s.root_field_name,
+       s.root_argument_name, s.source_name, s.source_line, s.source_column
+  FROM slotted s
+  LEFT JOIN shape sh
+    ON sh.graph_name = s.graph_name AND sh.container_name = s.container_name
+ WHERE COALESCE(sh.table_members, 0) = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                    WHERE bt.graph_name = s.graph_name AND bt.type_name = s.container_name)
+ UNION ALL
+SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path, s.use_site,
+       s.container_name, m.container_kind, 'MEMBER_NOT_NODE_TYPE',
+       m.member_type_name, NULL, s.java_type, s.param_name, s.root_type_name, s.root_field_name,
+       s.root_argument_name, s.source_name, s.source_line, s.source_column
+  FROM slotted s
+  JOIN intent_node_container_member m
+    ON m.graph_name = s.graph_name AND m.container_name = s.container_name
+   AND m.is_table_bound AND NOT m.is_node_type
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                    WHERE bt.graph_name = s.graph_name AND bt.type_name = s.container_name)
+ UNION ALL
+SELECT s.graph_name, s.site, s.type_name, s.field_name, s.argument_name, s.path, s.use_site,
+       s.container_name, m.container_kind, 'SLOT_NOT_SUPERTYPE_OF_MEMBER',
+       m.member_type_name, k.record_class, s.java_type, s.param_name, s.root_type_name,
+       s.root_field_name, s.root_argument_name, s.source_name, s.source_line, s.source_column
+  FROM slotted s
+  JOIN shape sh
+    ON sh.graph_name = s.graph_name AND sh.container_name = s.container_name
+  JOIN intent_node_container_member m
+    ON m.graph_name = s.graph_name AND m.container_name = s.container_name
+   AND m.is_table_bound AND m.is_node_type
+  JOIN intent_resolved_node_key_shape k
+    ON k.graph_name = s.graph_name AND k.type_name = m.member_type_name
+ WHERE s.site = 'ARGUMENT' AND s.java_type IS NOT NULL
+   AND sh.table_members > 0 AND sh.non_node_table_members = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                    WHERE bt.graph_name = s.graph_name AND bt.type_name = s.container_name)
+   AND NOT EXISTS (SELECT 1 FROM intent_record_slot_assignable a
+                    WHERE a.graph_name = s.graph_name
+                      AND a.node_type_name = m.member_type_name
+                      AND a.slot_type_name = s.java_type);
+COMMENT ON VIEW intent_node_id_polymorphic_decode_defect IS 'What is wrong with a @nodeId instruction whose typeName: names a polymorphic container: one row per refused instruction, use site and, on the two member verdicts, member, in a closed verdict vocabulary of five. The sibling of intent_node_id_decode_defect and deliberately not new arms on it: that view''s whole design is two verdicts decided by the node key''s arity alone in one pass over two driving relations, and these five are decided on the coordinate, the member set and the slot''s type, which is a different fact base. The two populations are disjoint for a reason the incumbent already states rather than one asserted here: it joins intent_resolved_node_key_shape on the slot''s resolved type, and a container resolves no key of its own, so every row of this population misses that join and draws nothing there. Precedence runs outward in, and it is the remedy''s order rather than a ranking invented for tidiness. CONTAINER_NOT_AT_A_SLOT first, the coordinate deciding whether the polymorphic rule reaches the instruction at all before the member set is worth reading; then the two container verdicts, whose remedy is the container''s; then the two member ones. Two grains in one relation, with member_type_name NULL on the three container-grain verdicts and set on the two member ones, determined by the verdict the way the incumbent family determines nullness by its discriminator. One limit on how much of the rule this states, and it is the incumbent''s own population edge rather than a hole opened here. At an input-field site intent_node_id_decode_slot.java_type is the bean''s type and not the annotated member''s, the slot relation resolving the parameter at the root of the use site and deliberately declining to walk into the class, which is why the incumbent excludes that site outright and calls the shape owed an emitter rather than a verdict. So the container-side half of the rule is stated at every site and the slot-typing half, SLOT_NOT_SUPERTYPE_OF_MEMBER and the POLYMORPHIC_RECORD destination with it, only where the slot relation types the slot the author annotated. The walk refuses a mistyped bean member on its own, so no build goes silent; what narrows is the store''s agreement, and what would close it is the descent from a bean parameter to the member receiving the value, which is intent_class_member_slot''s territory. Stating the edge is the point: a verdict that compared a container''s type against a member''s key would refuse a bean the author was right to declare. Two further shapes fall outside the partition and are enumerated rather than left to be discovered, both refused by the walk on its own. A polymorphic slot whose declared type no census could read draws neither a destination nor a verdict: unlike the single-column destination there is no arity-only fallback to stand aside onto, the emitted helper''s return type being the slot''s own type, so the walk refuses such a slot outright and a verdict comparing an unreadable type against a record would be inventing one of its operands. And an overloaded producer draws neither, this relation demanding one candidate rather than picking a type, which is the demand the slot relation''s own comment makes of a reader that needs the type and the same shape the incumbent enumerates for itself. There is no accept line and no population filter of its own, on intent_node_id_decode_defect''s settled terms: the build-error consumer joins the classification domain and the editor''s diagnostic arm reads these rows ungated, a refused instruction at an unreached coordinate being exactly where an author most needs to be told.';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.graph_name IS 'the owning graph''s partition, carried from the instruction; the leading key dimension';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.site IS 'the instruction''s site, carried from the instruction: all three reach this relation, unlike the incumbent''s one, because CONTAINER_NOT_AT_A_SLOT is exactly the verdict an output field and an unreached read-side coordinate draw';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.type_name IS 'the type owning the slot carrying the instruction, as on the instruction; with the field below, the coordinate a located error attaches to';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.field_name IS 'the instruction''s field name, or on ARGUMENT the field the argument sits on';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.argument_name IS 'the argument carrying the instruction on ARGUMENT; NULL on the two field sites, determined by site as on the instruction';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.path IS 'the occurrence path this row''s use site is, on INPUT_FIELD; NULL on the other two sites, as on the instruction';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.use_site IS 'the consuming coordinate serialized, carried from the instruction; with the graph and, on the member verdicts, the member, this relation''s key';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.container_name IS 'the polymorphic container the instruction named, carried from intent_node_id_instruction.resolved_type_name; the name every one of the five refusals quotes, and the join key to intent_node_container_member for the members themselves';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.container_kind IS 'UNION or INTERFACE, carried from intent_node_container_member. NULL where the container has no member row at all, which a union with no members and an interface nothing implements both are; that absence is the NO_TABLE_MEMBERS verdict''s own subject rather than a missing reading';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.verdict IS 'which precondition stopped the polymorphic decode, in a closed vocabulary of five, precedence running outward in. CONTAINER_NOT_AT_A_SLOT: the use site draws no slot row, so the value binds a table predicate or encodes rather than descending into Java, and the polymorphic rule does not reach this coordinate; read as the slot relation''s absence rather than re-derived, which is the same absence the decode relation''s own arm fork reads. One cause of that absence is excluded, on intent_field_producer_method''s own terms: a producer class the classpath census never reached leaves the slot relation empty for a reason that is the capture''s and not the author''s, so such a coordinate draws nothing here rather than a refusal nobody could act on. SINGLE_TABLE_CONTAINER: the container carries @table itself, so every member shares one record class and one key and the single-type decode is what the author wants; the remedy is to name an object type or to make the container a node type. NO_TABLE_MEMBERS: no member binds a table, so there is nothing to decode an id into. MEMBER_NOT_NODE_TYPE: one row per table-bound member that is not a node type, a candidate set with a hole in it rejecting that member''s ids at runtime with nothing in the build saying so. SLOT_NOT_SUPERTYPE_OF_MEMBER: one row per member whose generated record the slot''s declared type is not, read off intent_record_slot_assignable rather than re-derived here. The walk splits that last one in two when it shapes a remedy, a slot typed as one member''s record and a scalar slot reading differently to an author; that is the walk shaping a message and not a second fact, so it is one verdict here';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.member_type_name IS 'the member the verdict is about, on the two member-grain verdicts; NULL on the three container-grain ones, determined by the verdict beside it the way the incumbent family determines nullness by its discriminator';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.member_record_class IS 'the member''s generated jOOQ record, on SLOT_NOT_SUPERTYPE_OF_MEMBER; the type a refusal names beside the slot''s own. NULL on every other verdict, none of which is about a record class';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.slot_java_type IS 'the slot''s declared type as intent_node_id_decode_slot.java_type spells it, carried on the four verdicts that reach a slot at all and NULL on CONTAINER_NOT_AT_A_SLOT, whose whole subject is that no slot was reached. NULL too where the census could read no type, which the arity-independent verdicts are indifferent to and which SLOT_NOT_SUPERTYPE_OF_MEMBER demands against, refusing on an operand nobody could read being a new silence rather than the closing of one';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.param_name IS 'the parameter the value would have reached, carried from the slot relation; NULL on CONTAINER_NOT_AT_A_SLOT, there being no slot. The name a refusal quotes when it tells an author which signature to change';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.root_type_name IS 'the type owning the field the value''s descent starts at, carried from the slot relation; the instruction''s own type on CONTAINER_NOT_AT_A_SLOT, where no descent resolved and the coordinate is its own root';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.root_field_name IS 'the field the descent starts at, on the same terms as the type beside it';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.root_argument_name IS 'the argument the descent starts at, on the same terms; NULL where the instruction''s own coordinate has none';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.source_name IS 'the SDL file the instruction was captured from, carried from the instruction so a located error needs no second join';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN intent_node_id_polymorphic_decode_defect.source_column IS 'source column, 1-based per the graphql-java convention';
 
 CREATE VIEW intent_reference_for_application
   (graph_name, site, type_name, field_name, argument_name, ordinal,
@@ -8877,7 +9157,7 @@ WITH judged (graph_name, site, type_name, field_name, argument_name, path, use_s
     FROM intent_node_id_decode_endpoint e
     JOIN intent_node_id_instruction i
       ON i.graph_name = e.graph_name AND i.site = e.site AND i.use_site = e.use_site
-     AND i.node_type_name = e.node_type_name
+     AND i.resolved_type_name = e.node_type_name
     LEFT JOIN intent_input_occurrence_path p
       ON e.site = 'INPUT_FIELD' AND p.graph_name = e.graph_name AND p.path = e.path
    WHERE e.navigation IN ('AUTHORED_PATH', 'DISCOVERED_KEY')
@@ -9038,8 +9318,15 @@ WITH argument_node_id (graph_name, type_name, field_name, argument_name,
               ON a.graph_name = i.graph_name AND a.type_name = i.type_name
              AND a.field_name = i.field_name AND a.argument_name = i.argument_name
             LEFT JOIN intent_resolved_node_key_shape ks
-              ON ks.graph_name = i.graph_name AND ks.type_name = i.node_type_name
-           WHERE i.site = 'ARGUMENT') n
+              ON ks.graph_name = i.graph_name AND ks.type_name = i.resolved_type_name
+           -- Node types only. The role below means the predicate's columns come from the resolved
+           -- node key, and a container resolves none: without this predicate a container-naming ID
+           -- argument with no @field(name:) binding would reduce through NOT implicit to
+           -- is_id AND NOT has_binding and draw NODE_ID at precedence 4, which
+           -- intent_condition_membership then carries into a contributor set with nothing behind
+           -- it. Excluded by what the type is rather than read as the single-column shape a node
+           -- has when nothing says otherwise.
+           WHERE i.site = 'ARGUMENT' AND i.resolved_type_kind = 'NODE_TYPE') n
 )
 SELECT graph_name, type_name, field_name, argument_name, role, lookup_key, suppressed,
        source_name, source_line, source_column
@@ -9142,7 +9429,13 @@ node_id_at_table (graph_name, type_name, field_name,
     JOIN intent_argument_scope_table sc
       ON sc.graph_name = p.graph_name AND sc.type_name = p.root_type_name
      AND sc.field_name = p.root_field_name AND sc.argument_name = p.root_argument_name
-   WHERE i.site = 'INPUT_FIELD'
+   -- Node types only, for the reason intent_argument_filter_role states one rung over: this arm
+   -- emits NODE_ID wherever the group hits, and a container-naming input field missed the group
+   -- before the instruction population admitted containers. It would now hit wherever the root
+   -- argument's scope table resolves, flipping the role at a read-side filter input on a type that
+   -- resolves no key. This CTE reads basis, path and site and never the resolved name, so the kind
+   -- column is the whole of what the widening owes it.
+   WHERE i.site = 'INPUT_FIELD' AND i.resolved_type_kind = 'NODE_TYPE'
    GROUP BY i.graph_name, i.type_name, i.field_name,
             sc.table_source_name, sc.table_schema, sc.table_name
 ),

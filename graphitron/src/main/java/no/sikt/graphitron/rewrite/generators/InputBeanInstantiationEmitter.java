@@ -210,9 +210,20 @@ final class InputBeanInstantiationEmitter {
         return sb.toString();
     }
 
-    /** The Java type of the per-field local variable (with {@code List<...>} when list-shaped). */
+    /**
+     * The Java type of the per-field local variable (with {@code List<...>} when list-shaped).
+     *
+     * <p>The polymorphic leaf's own admitted slot type rather than the member's declared name, on
+     * {@code ServiceMethodCallWalker}'s terms: the member is declared as a jOOQ record supertype,
+     * which a reflected signature spells with its generic argument
+     * ({@code org.jooq.UpdatableRecord<?>}), and that string is not a class name javapoet can read.
+     * The admitted type is the same supertype with the wildcard rebuilt, which is what the container
+     * helper returns and therefore the right type for the local it lands in.
+     */
     private static TypeName fieldLocalType(CallSiteExtraction.FieldBinding fb) {
-        ClassName elt = ClassName.bestGuess(fb.javaElementTypeName());
+        TypeName elt = fb.leaf() instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly
+            ? poly.slotType().typeName()
+            : ClassName.bestGuess(fb.javaElementTypeName());
         return fb.list() ? ParameterizedTypeName.get(LIST, elt) : elt;
     }
 
@@ -229,7 +240,8 @@ final class InputBeanInstantiationEmitter {
             FetchersHelperNames names, String root) {
         String sdl = fb.mapKey();
         // Exhaustive over CallSiteExtraction with no default: the classifier (InputBeanResolver)
-        // produces only Direct / EnumValueOf / InputBean / NodeIdDecodeRecord on a FieldBinding
+        // produces only Direct / EnumValueOf / InputBean / NodeIdDecodeRecord /
+        // NodeIdDecodePolymorphicRecord on a FieldBinding
         // leaf, and the remaining permits are unreachable-by-construction here. Listing every
         // permit (rather than a catch-all default) keeps "validator mirrors classifier invariants"
         // honest: a new CallSiteExtraction permit fails *this* compile until it is handled or
@@ -239,6 +251,8 @@ final class InputBeanInstantiationEmitter {
             case CallSiteExtraction.EnumValueOf ev -> enumExpr(fb, ev, sdl, root);
             case CallSiteExtraction.InputBean nested -> nestedBeanExpr(fb, nested, sdl, names, root);
             case CallSiteExtraction.NodeIdDecodeRecord rec -> recordDecodeExpr(fb, rec, sdl, names, root);
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord poly ->
+                polymorphicDecodeExpr(fb, poly, sdl, names, root);
             case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
@@ -267,6 +281,20 @@ final class InputBeanInstantiationEmitter {
                                               CallSiteExtraction.NodeIdDecodeRecord rec, String sdl,
                                               FetchersHelperNames names, String root) {
         String helper = fb.list() ? recordDecodeListHelperName(rec, names) : recordDecodeHelperName(rec, names);
+        return CodeBlock.of("$L($L.get($S))", helper, root, sdl);
+    }
+
+    /**
+     * Routes a member whose {@code @nodeId(typeName:)} named a multitable container through the
+     * container helper (or its list variant), which peeks the wire id's own type prefix and decodes
+     * into whichever member's record it names. The same one-liner shape the single-type arm keeps.
+     */
+    private static CodeBlock polymorphicDecodeExpr(CallSiteExtraction.FieldBinding fb,
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord poly, String sdl,
+            FetchersHelperNames names, String root) {
+        String helper = fb.list()
+            ? names.decodeContainerList(poly.containerName())
+            : names.decodeContainerSingular(poly.containerName());
         return CodeBlock.of("$L($L.get($S))", helper, root, sdl);
     }
 
@@ -381,6 +409,80 @@ final class InputBeanInstantiationEmitter {
                 }
             }
         }
+    }
+
+    /**
+     * Collects the {@link CallSiteExtraction.NodeIdDecodePolymorphicRecord} leaves across the given
+     * beans into two dedup maps keyed by container name, on
+     * {@link #collectRecordDecoders}'s own terms: the scalar container helper is always emitted
+     * because the list variant delegates to it per element, and list-ness is read off the enclosing
+     * binding rather than off the leaf.
+     *
+     * <p>Keyed on the container name and not on the slot type, even though the helper's return type
+     * is the slot's: two slots naming one container are one dispatch, and a class hosting the same
+     * container at {@code Record} and at {@code UpdatableRecord<?>} would need two bodies, which the
+     * container name alone cannot distinguish. That shape draws an ordinal here rather than a wrong
+     * helper, since the first slot's type wins the body and the second slot's call would not compile;
+     * it is unreached today (one container, one slot per class in every fixture) and named so the day
+     * it lands is a compile error at the consumer rather than a silent mistype.
+     */
+    static void collectPolymorphicDecoders(java.util.Collection<CallSiteExtraction.InputBean> beans,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> scalarOut,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodePolymorphicRecord> listOut) {
+        for (var ib : beans) {
+            for (var fb : ib.fields()) {
+                if (fb.leaf() instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly) {
+                    scalarOut.putIfAbsent(poly.containerName(), poly);
+                    if (fb.list()) {
+                        listOut.putIfAbsent(poly.containerName(), poly);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Every method one polymorphic container's decode needs on this class: one null-returning
+     * per-candidate helper, in candidate order, then the container helper that peeks the prefix and
+     * dispatches over them.
+     *
+     * <p>The per-candidate helpers are the null-returning form and are named inside the container's
+     * own stem, so a class hosting both a single-type decode and a polymorphic one over the same
+     * record keeps the throwing helper and the standing-aside helper apart; see
+     * {@link FetchersHelperNames#decodeContainerMember}.
+     */
+    static java.util.List<MethodSpec> buildPolymorphicDecodeHelpers(
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord poly, FetchersHelperNames names,
+            String outputPackage) {
+        var out = new java.util.ArrayList<MethodSpec>(poly.candidates().size() + 1);
+        var typeIds = new java.util.ArrayList<String>(poly.candidates().size());
+        var helpers = new java.util.ArrayList<String>(poly.candidates().size());
+        var records = new java.util.ArrayList<ClassName>(poly.candidates().size());
+        for (var candidate : poly.candidates()) {
+            String helper = names.decodeContainerMember(poly.containerName(), candidate.typeName());
+            out.add(no.sikt.graphitron.render.RecordDecodeFragments.decodeHelperOrNull(
+                helper, poly.encoderClass(), candidate.typeId(), candidate.keyColumns(),
+                candidate.table()));
+            typeIds.add(candidate.typeId());
+            helpers.add(helper);
+            records.add(CatalogRefs.recordClass(candidate.table()));
+        }
+        out.add(no.sikt.graphitron.render.RecordDecodeFragments.polymorphicDecodeHelper(
+            names.decodeContainerSingular(poly.containerName()), poly.slotType().typeName(),
+            poly.encoderClass(), typeIds, helpers, records,
+            poly.candidates().stream()
+                .map(CallSiteExtraction.PolymorphicCandidate::typeName)
+                .collect(java.util.stream.Collectors.joining(", ")),
+            outputPackage));
+        return out;
+    }
+
+    /** The list form of the container helper, delegating to the scalar one per element. */
+    static MethodSpec buildPolymorphicDecodeHelperList(
+            CallSiteExtraction.NodeIdDecodePolymorphicRecord poly, FetchersHelperNames names) {
+        return no.sikt.graphitron.render.RecordDecodeFragments.polymorphicDecodeHelperList(
+            names.decodeContainerList(poly.containerName()), poly.slotType().typeName(),
+            names.decodeContainerSingular(poly.containerName()));
     }
 
     /**

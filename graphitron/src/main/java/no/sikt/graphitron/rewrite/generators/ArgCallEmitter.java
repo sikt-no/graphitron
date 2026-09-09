@@ -228,6 +228,14 @@ public final class ArgCallEmitter {
                     ? ctx.fetchersHelperNames().decodeList(CatalogRefs.recordClass(rec.table()))
                     : ctx.fetchersHelperNames().decodeSingular(CatalogRefs.recordClass(rec.table())),
                 param.name());
+            // The container form of the arm above: one helper per container rather than per record,
+            // since which record the id decodes into is the wire value's own answer.
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord poly ->
+                CodeBlock.of("$L(env.getArgument($S))",
+                    isListShaped(param)
+                        ? ctx.fetchersHelperNames().decodeContainerList(poly.containerName())
+                        : ctx.fetchersHelperNames().decodeContainerSingular(poly.containerName()),
+                    param.name());
         };
     }
 

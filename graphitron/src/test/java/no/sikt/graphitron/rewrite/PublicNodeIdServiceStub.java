@@ -51,6 +51,40 @@ public class PublicNodeIdServiceStub {
     }
 
     /**
+     * A producer parameter typed as a jOOQ record <em>supertype</em>, which is the polymorphic slot's
+     * shape at the producer coordinate: the parameter takes whichever implementation's record the
+     * wire id belongs to, and the service dispatches on its runtime class.
+     */
+    public static Result<FilmRecord> getOccupantByUpdatableRecord(org.jooq.UpdatableRecord<?> key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The same one supertype up, which is what a primary-key-less candidate forces. */
+    public static Result<FilmRecord> getOccupantByTableRecord(org.jooq.TableRecord<?> key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The same at the top of the jOOQ record hierarchy. */
+    public static Result<FilmRecord> getOccupantByPlainRecord(org.jooq.Record key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The list shape of the polymorphic producer slot. */
+    public static Result<FilmRecord> getOccupantsByUpdatableRecords(
+            java.util.List<org.jooq.UpdatableRecord<?>> key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * A producer parameter typed as one candidate's own record, which a container-naming
+     * {@code typeName:} refuses: that is the single-type spelling.
+     */
+    public static Result<FilmRecord> getOccupantByCustomerRecord(
+            no.sikt.graphitron.rewrite.test.jooq.tables.records.CustomerRecord key) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * A producer whose own return type binds no table, so a bare {@code @nodeId} at its argument has
      * no table to inherit a target from and the inference has to say so.
      */

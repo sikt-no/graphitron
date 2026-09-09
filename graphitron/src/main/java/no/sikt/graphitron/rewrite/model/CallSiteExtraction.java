@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -25,6 +26,7 @@ public sealed interface CallSiteExtraction
                 CallSiteExtraction.ContextArg,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
+                CallSiteExtraction.NodeIdDecodePolymorphicRecord,
                 CallSiteExtraction.InputBean, CallSiteExtraction.JooqRecord {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
@@ -233,6 +235,102 @@ public sealed interface CallSiteExtraction
             keyColumns = List.copyOf(keyColumns);
             if (table == null) {
                 throw new IllegalArgumentException("NodeIdDecodeRecord table must be non-null");
+            }
+        }
+    }
+
+    /**
+     * The Java type a polymorphic {@code @nodeId} slot declares, admitted: every candidate's
+     * generated record is one of these, which is what the emitted helper returns.
+     *
+     * <p>A wrapper rather than a bare {@link TypeName} because it is an <em>acceptance</em> and not
+     * a name. It is minted where the assignability check passes,
+     * {@code BuildContext.admitPolymorphicSlotType}, and an emit site holding one therefore knows
+     * the records it is about to return can land in this type; a {@code TypeName} field would be a
+     * value any caller could supply from anywhere.
+     *
+     * <p>Parameterized where the admitted class is generic, each type argument an unbounded
+     * wildcard: {@code org.jooq.UpdatableRecord<?>} and never the raw {@code UpdatableRecord}. The
+     * raw form would compile but emit a raw type into the consumer's own sources, and the wildcard
+     * form is also what the author wrote at the slot the value lands in.
+     */
+    record AdmittedSlotType(TypeName typeName) {
+        public AdmittedSlotType {
+            if (typeName == null) {
+                throw new IllegalArgumentException("AdmittedSlotType typeName must be non-null");
+            }
+        }
+    }
+
+    /**
+     * One candidate of a polymorphic {@code @nodeId} decode: exactly what {@link NodeIdDecodeRecord}
+     * carries for one node type, plus the GraphQL type name the dispatch's failure message quotes
+     * and the per-candidate helper is named from.
+     */
+    record PolymorphicCandidate(String typeName, String typeId, List<ColumnRef> keyColumns,
+                                TableRef table) {
+        public PolymorphicCandidate {
+            if (typeName == null || typeName.isEmpty()) {
+                throw new IllegalArgumentException("PolymorphicCandidate typeName must be non-empty");
+            }
+            if (typeId == null || typeId.isEmpty()) {
+                throw new IllegalArgumentException("PolymorphicCandidate typeId must be non-empty");
+            }
+            if (keyColumns == null || keyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "PolymorphicCandidate keyColumns must be non-empty");
+            }
+            keyColumns = List.copyOf(keyColumns);
+            if (table == null) {
+                throw new IllegalArgumentException("PolymorphicCandidate table must be non-null");
+            }
+        }
+    }
+
+    /**
+     * Decode a wire node id into whichever candidate's generated record it belongs to, and hand that
+     * record to a slot typed as something every candidate's record is. Produced where
+     * {@code @nodeId(typeName:)} names a multitable interface or a union at a {@code @service} slot;
+     * consumed by the three emit sites that host a {@code @service} slot's decode, each rendering one
+     * {@code decode<Container>Record(Object wire)} helper on the enclosing {@code *Fetchers} class
+     * (plus a {@code …RecordList} variant for a list-shaped slot).
+     *
+     * <p>A sibling of {@link NodeIdDecodeRecord} rather than a widening of it. Every consumer of that
+     * leaf reads a single table off it and emits a single helper call, so a widened record would hand
+     * each of them a list they must not receive, and the exhaustive switches over this interface would
+     * lose the compiler's help telling the two apart.
+     *
+     * <p>{@code candidates} is a list and not a map keyed on the typeId each entry already holds: the
+     * order is the emission order, and a list states it without spelling one value twice. At least
+     * two of them, which the compact constructor holds: a one-candidate polymorphic decode is the
+     * single-type case, and {@link NodeIdDecodeRecord} is what carries that.
+     *
+     * <p>{@code slotType} is the {@link AdmittedSlotType} the assignability check minted, which is
+     * the helper's return type; {@code nonNull} reflects the SDL slot's nullability on
+     * {@link NodeIdDecodeRecord}'s own terms.
+     */
+    record NodeIdDecodePolymorphicRecord(ClassName encoderClass, String containerName,
+                                         List<PolymorphicCandidate> candidates,
+                                         AdmittedSlotType slotType, boolean nonNull)
+            implements CallSiteExtraction {
+        public NodeIdDecodePolymorphicRecord {
+            if (encoderClass == null) {
+                throw new IllegalArgumentException(
+                    "NodeIdDecodePolymorphicRecord encoderClass must be non-null");
+            }
+            if (containerName == null || containerName.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "NodeIdDecodePolymorphicRecord containerName must be non-empty");
+            }
+            candidates = List.copyOf(candidates == null ? List.<PolymorphicCandidate>of() : candidates);
+            if (candidates.size() < 2) {
+                throw new IllegalArgumentException(
+                    "NodeIdDecodePolymorphicRecord needs at least two candidates; one candidate is"
+                    + " the single-type decode, which NodeIdDecodeRecord carries");
+            }
+            if (slotType == null) {
+                throw new IllegalArgumentException(
+                    "NodeIdDecodePolymorphicRecord slotType must be non-null");
             }
         }
     }

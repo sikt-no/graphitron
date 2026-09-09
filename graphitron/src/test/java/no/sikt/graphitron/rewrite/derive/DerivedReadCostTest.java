@@ -144,8 +144,14 @@ class DerivedReadCostTest {
      * reached a registration's target, being the union two strata meet at rather than a rule over
      * one. What their readers gained is not in this count at all, a table being seekable where a
      * union is re-evaluated per reader.
+     *
+     * <p>Raised to 124 by the polymorphic {@code @nodeId} slice: {@code intent_node_container_member},
+     * {@code intent_node_id_candidate_node_type} and {@code intent_record_slot_assignable}, which read
+     * membership, nodehood and a captured ancestry and reach no registration, and
+     * {@code intent_node_id_polymorphic_decode_defect}, which drives off the decode-slot relation and
+     * so reaches the instruction registration through it.
      */
-    private static final int READERS_IN_SCHEMA = 120;
+    private static final int READERS_IN_SCHEMA = 124;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -173,8 +179,20 @@ class DerivedReadCostTest {
      * {@code @referenceFor} application resolution arrived. Two views in and two cells' worth of
      * reach each, which is the ordinary arrival rather than any of the three shapes above: nothing
      * was registered, captured or retired, so this figure moves by exactly the views.
+     *
+     * <p>Sixty-one to sixty-two when the polymorphic {@code @nodeId} slice arrived, and it is the
+     * arrival that makes the difference between the two figures legible: four views entered the
+     * schema and one entered the domain. {@code intent_node_id_polymorphic_decode_defect} drives off
+     * the decode-slot relation, which reads the registered instruction table, so it reaches a
+     * registration through it. The other three read membership, nodehood and a captured ancestry,
+     * none of which is registered, so they are views in the schema and not readers in the domain.
+     * {@code intent_record_slot_assignable} is the one to read twice: it was written as a
+     * composition with {@code intent_jvm_ancestor} and so did enter the domain, and dropping that
+     * leg on a measurement took it out again. A relation's membership here is a fact about what it
+     * reads and moves when that changes, which is the same thing the two capture entries above say
+     * from the other direction.
      */
-    private static final int READERS_WITH_CELLS = 61;
+    private static final int READERS_WITH_CELLS = 62;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -255,8 +273,16 @@ class DerivedReadCostTest {
      * table spelling. The split is the useful half: a verdict relation costs this domain roughly
      * what the family it judges already costs it, where a resolution over two captured tables costs
      * it almost nothing, and neither figure is a function of how much the relation itself does.
+     *
+     * <p>Raised to 149 by the polymorphic {@code @nodeId} slice's one domain reader, two cells. It
+     * drives off the decode-slot relation, whose own reach is what it inherits, and that reach is
+     * short: the walk stops at the instruction registration it meets rather than descending past it,
+     * so a relation sitting directly on the slot relation costs this domain the same two cells
+     * whatever it goes on to join. Which is the arithmetic worth reading off this move: the cells a
+     * new view adds are a function of where it sits relative to the registrations, not of how much
+     * work it does.
      */
-    private static final int CELLS = 147;
+    private static final int CELLS = 149;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the

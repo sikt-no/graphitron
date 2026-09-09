@@ -233,15 +233,24 @@ public final class ServiceMethodCallWalker {
 
     private ValueShape fieldBindingShape(CallSiteExtraction.FieldBinding fb, ArgPath path) {
         CallSiteExtraction leaf = fb.leaf();
-        TypeName elementType = ClassName.bestGuess(fb.javaElementTypeName());
+        // The polymorphic leaf's own admitted slot type rather than the declared name: the member is
+        // declared as a supertype, which a signature spells with its generic argument
+        // (org.jooq.UpdatableRecord<?>), and the admitted type is that supertype's raw class, which
+        // is what the container helper returns.
+        TypeName elementType =
+            leaf instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord poly
+                ? poly.slotType().typeName()
+                : ClassName.bestGuess(fb.javaElementTypeName());
 
         ValueShape inner;
         if (leaf instanceof CallSiteExtraction.InputBean nestedBean) {
             inner = inputBeanToValueShape(nestedBean, path);
-        } else if (leaf instanceof CallSiteExtraction.NodeIdDecodeRecord) {
-            // A jOOQ-record member decoded from @nodeId. Carry the leaf through unchanged so
-            // the create<Bean> helper emits the decode<Record> call; downgrading to Direct would
-            // pass the wire String where a *Record is expected and throw ClassCastException at runtime.
+        } else if (leaf instanceof CallSiteExtraction.NodeIdDecodeRecord
+                || leaf instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord) {
+            // A jOOQ-record member decoded from @nodeId, at one node type or over a container's
+            // members. Carry the leaf through unchanged so the create<Bean> helper emits the decode
+            // call; downgrading to Direct would pass the wire String where a record is expected and
+            // throw ClassCastException at runtime.
             inner = new ValueShape.Scalar(elementType, path, leaf);
         } else if (isLeaf(leaf)) {
             inner = new ValueShape.Scalar(elementType, path, leaf);
@@ -258,17 +267,19 @@ public final class ServiceMethodCallWalker {
 
     /**
      * Whether an extraction turns one wire value into one Java value, which is what a
-     * {@link ValueShape.Scalar} carries. {@link CallSiteExtraction.NodeIdDecodeRecord} qualifies at a
-     * parameter even though its result is a record: one opaque id arrives and one record leaves, and
-     * the per-field bindings a composite shape would carry are exactly what a decoded key tuple does
-     * not have.
+     * {@link ValueShape.Scalar} carries. The two record-decode leaves qualify at a parameter even
+     * though their result is a record: one opaque id arrives and one record leaves, and the per-field
+     * bindings a composite shape would carry are exactly what a decoded key tuple does not have.
+     * That holds for the polymorphic leaf too, which one id in and one record out describes just as
+     * well; which record is the wire value's answer, not the shape's.
      */
     private static boolean isLeaf(CallSiteExtraction extraction) {
         return extraction instanceof CallSiteExtraction.Direct
             || extraction instanceof CallSiteExtraction.EnumValueOf
             || extraction instanceof CallSiteExtraction.JooqConvert
             || extraction instanceof CallSiteExtraction.NodeIdDecodeKeys
-            || extraction instanceof CallSiteExtraction.NodeIdDecodeRecord;
+            || extraction instanceof CallSiteExtraction.NodeIdDecodeRecord
+            || extraction instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord;
     }
 
     private static boolean isListType(TypeName javaType, ClassName elementClass) {

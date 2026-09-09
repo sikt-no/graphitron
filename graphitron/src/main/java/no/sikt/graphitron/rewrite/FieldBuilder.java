@@ -1363,6 +1363,7 @@ class FieldBuilder {
             // this switch fails to compile and forces a deliberate decision at this gate rather
             // than silently rejecting.
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> false;
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
             case CallSiteExtraction.JooqRecord ignored -> false;
         };
@@ -2633,6 +2634,9 @@ class FieldBuilder {
             // InputBean arm above it cannot reach a column-bound predicate, so the column's own type
             // is the trivially-correct (unreached) answer.
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> column.columnClass();
+            // A polymorphic record decode is a @service slot leaf on the same terms as the arm
+            // above, so the column's own type is the same unreached answer.
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> column.columnClass();
             // JooqRecord is a top-level @service param extraction, never a column-bound BodyParam;
             // unreached here, same trivially-correct answer as the NodeIdDecodeRecord arm above.
             case CallSiteExtraction.JooqRecord ignored -> column.columnClass();

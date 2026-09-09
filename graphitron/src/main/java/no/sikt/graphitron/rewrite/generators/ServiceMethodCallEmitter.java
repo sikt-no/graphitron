@@ -265,13 +265,14 @@ public final class ServiceMethodCallEmitter {
      * Whether a leaf transform makes the slot's value something other than the wire value, which is
      * what decides whether a top-level argument needs the transform applied at all. A {@code Direct}
      * or {@code JooqConvert} leaf at a top-level argument reads through
-     * {@code <T> T env.getArgument} inference and wants no cast; the three below each turn the wire
+     * {@code <T> T env.getArgument} inference and wants no cast; the four below each turn the wire
      * value into a different one, so skipping them would hand the slot the wire format.
      */
     private static boolean transformsTheWireValue(CallSiteExtraction leaf) {
         return leaf instanceof CallSiteExtraction.EnumValueOf
             || leaf instanceof CallSiteExtraction.NodeIdDecodeKeys
-            || leaf instanceof CallSiteExtraction.NodeIdDecodeRecord;
+            || leaf instanceof CallSiteExtraction.NodeIdDecodeRecord
+            || leaf instanceof CallSiteExtraction.NodeIdDecodePolymorphicRecord;
     }
 
     private static CodeBlock scalarLeaf(CallSiteExtraction leaf, TypeName javaType, CodeBlock rawValue,
@@ -282,10 +283,11 @@ public final class ServiceMethodCallEmitter {
                 "$L == null ? null : $T.valueOf(($T) $L)",
                 rawValue, ClassName.bestGuess(ev.enumClassName()), ClassName.get(String.class), rawValue);
             case CallSiteExtraction.JooqConvert jc -> CodeBlock.of("($T) $L", javaType, rawValue);
-            // The @nodeId slot arms. Both hand the wire id to a per-class helper: the key arm to the
-            // decode-and-project helper the collector lifts, whose arity-1 form returns the sole key
-            // column's own value, and the record arm to the decode<Record> helper the same class
-            // hosts for an input-bean member decoding the same node type.
+            // The @nodeId slot arms. Each hands the wire id to a per-class helper: the key arm to
+            // the decode-and-project helper the collector lifts, whose arity-1 form returns the sole
+            // key column's own value, the record arm to the decode<Record> helper the same class
+            // hosts for an input-bean member decoding the same node type, and the container arm to
+            // the decode<Container>Record helper that peeks the prefix and dispatches.
             case CallSiteExtraction.NodeIdDecodeKeys nid -> {
                 if (nodeIdDecodes == null) {
                     throw new IllegalStateException(
@@ -301,6 +303,13 @@ public final class ServiceMethodCallEmitter {
                 isListType(javaType)
                     ? helperNames.decodeList(CatalogRefs.recordClass(rec.table()))
                     : helperNames.decodeSingular(CatalogRefs.recordClass(rec.table())),
+                rawValue);
+            // The container form of the arm above: the helper is named for the container, the wire
+            // value deciding which member's record it returns.
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord poly -> CodeBlock.of("$L($L)",
+                isListType(javaType)
+                    ? helperNames.decodeContainerList(poly.containerName())
+                    : helperNames.decodeContainerSingular(poly.containerName()),
                 rawValue);
             // Unreachable for well-formed Scalar leaves; defensive fallback.
             default -> CodeBlock.of("($T) $L", javaType, rawValue);

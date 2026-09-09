@@ -40,6 +40,7 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
@@ -69,6 +70,60 @@ public final class CatalogFactCapture {
 
     /** {@code store_source.source_kind}'s catalog arm; the classpath arms are the scan's. */
     private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
+
+    /**
+     * Every type the table's generated jOOQ record <em>is</em>, the class itself excluded: the
+     * superclass chain above it and every interface it or they implement, transitively.
+     *
+     * <p>Captured rather than derived because the classpath census drops the generated jOOQ package,
+     * so nothing above a generated record has a census edge and {@code intent_jvm_ancestor} cannot
+     * climb from one. The walk holds the record {@link Class} already, {@code getRecordType()} being
+     * what {@code sql_table.record_class_fqn} is read from, so the ancestry is one more fact off a
+     * class in hand rather than a second probe.
+     *
+     * <p>The closure and not the declared parents, which is what makes it a stratum-one fact rather
+     * than a denormalization: the chain runs through jOOQ's own runtime classes, which no census
+     * scans and which are not tables, so the store holds no edges to recompute a closure from.
+     * {@code java.lang.Object} is included, unlike on the census relation, because this states what
+     * the class is rather than what its source declared, and it is what a live
+     * {@code isAssignableFrom} says too.
+     *
+     * <p>A table jOOQ generated no record for writes nothing: the catalog answers
+     * {@code org.jooq.Record} there, which is the absence of a generated record rather than a record
+     * named that, and the same exclusion the key-shape relation makes as a join predicate.
+     */
+    private static void captureRecordSupertypes(FactSink sink, Table<?> table, String source,
+                                                String schema, String name) {
+        Class<?> recordClass = table.getRecordType();
+        if (recordClass == null || recordClass.getName().equals("org.jooq.Record")) {
+            return;
+        }
+        var seen = new LinkedHashSet<Class<?>>();
+        collectSupertypes(recordClass, seen);
+        seen.remove(recordClass);
+        for (Class<?> supertype : seen) {
+            if (!sink.claim(SQL_TABLE_RECORD_SUPERTYPE, source, schema, name, supertype.getName())) {
+                continue;
+            }
+            var record = sink.dsl().newRecord(SQL_TABLE_RECORD_SUPERTYPE);
+            record.setSourceName(source);
+            record.setTableSchema(schema);
+            record.setTableName(name);
+            record.setSupertypeName(supertype.getName());
+            sink.add(record);
+        }
+    }
+
+    /** {@code cls} and every type it is, superclasses and interfaces alike, transitively. */
+    private static void collectSupertypes(Class<?> cls, Set<Class<?>> out) {
+        if (cls == null || !out.add(cls)) {
+            return;
+        }
+        for (Class<?> i : cls.getInterfaces()) {
+            collectSupertypes(i, out);
+        }
+        collectSupertypes(cls.getSuperclass(), out);
+    }
 
     /**
      * The standard's {@code ROUTINES.ROUTINE_TYPE} vocabulary, as far as the table census reaches
@@ -139,6 +194,7 @@ public final class CatalogFactCapture {
             record.setDescription(nullIfBlank(table.getComment()));
             sink.add(record);
 
+            captureRecordSupertypes(sink, table, source, schema, name);
             captureColumns(sink, jooq, table, source, schema, name);
             captureNodeMetadata(sink, jooq, table, source, schema, name);
             captureConstraints(sink, jooq, table, source, schema, name);
@@ -203,6 +259,8 @@ public final class CatalogFactCapture {
             dsl.deleteFrom(SQL_ENUM_BINDING)
                 .where(SQL_ENUM_BINDING.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_COLUMN).where(SQL_COLUMN.SOURCE_NAME.eq(source)).execute();
+            dsl.deleteFrom(SQL_TABLE_RECORD_SUPERTYPE)
+                .where(SQL_TABLE_RECORD_SUPERTYPE.SOURCE_NAME.eq(source)).execute();
             dsl.deleteFrom(SQL_TABLE).where(SQL_TABLE.SOURCE_NAME.eq(source)).execute();
             // After sql_table, which references it.
             dsl.deleteFrom(SQL_SCHEMA).where(SQL_SCHEMA.SOURCE_NAME.eq(source)).execute();

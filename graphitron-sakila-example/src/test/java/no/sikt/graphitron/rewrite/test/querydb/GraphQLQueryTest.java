@@ -7098,6 +7098,97 @@ class GraphQLQueryTest {
         assertThat(data).extractingByKey("assignFilmActorRecordList").isEqualTo("filmActors:1:2,2:4");
     }
 
+    // ===== A polymorphic @nodeId at a @service slot (record-supertype destination) =====
+
+    @Test
+    void assignOccupantRecord_decodesACustomerIdIntoACustomerRecord() {
+        // The reported shape: one input field takes the id of any member of AddressOccupant, the
+        // Java member is UpdatableRecord<?>, and the service dispatches on the record's runtime
+        // class. Reporting the class back is the assertion that matters: a decode that delivered the
+        // key alone would leave the service unable to say which member it was, which is the
+        // hand-rolled peekTypeId this shape removes.
+        String customerId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 4);
+        Map<String, Object> data = execute(
+            "mutation { assignOccupantRecord(in: {occupant: \"" + customerId + "\"}) }");
+        assertThat(data).extractingByKey("assignOccupantRecord").isEqualTo("occupant:Customer:4");
+    }
+
+    @Test
+    void assignOccupantRecord_decodesAStaffIdIntoAStaffRecord() {
+        // The other member through the same slot and the same helper, which is what says the
+        // dispatch is on the wire id's own prefix rather than on anything settled at build time.
+        String staffId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Staff", 1);
+        Map<String, Object> data = execute(
+            "mutation { assignOccupantRecord(in: {occupant: \"" + staffId + "\"}) }");
+        assertThat(data).extractingByKey("assignOccupantRecord").isEqualTo("occupant:Staff:1");
+    }
+
+    @Test
+    void assignOccupantRecord_refusesAnIdOfATypeOutsideTheUnion() {
+        // A well-formed id of a type the union does not hold: the request fails naming every
+        // candidate, before the service runs. The same wording the read side gives the same fault,
+        // which is the parity this fixture pins rather than asserting in prose.
+        String filmId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 42);
+        var result = executeRaw(
+            "mutation { assignOccupantRecord(in: {occupant: \"" + filmId + "\"}) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("decodes to type \"Film\"")
+            .contains("expected an id of one of: Customer, Staff");
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("assignOccupantRecord"))
+            .as("the mutation does not succeed with an id of a foreign type")
+            .isNull();
+    }
+
+    @Test
+    void assignOccupantRecord_refusesAMalformedId() {
+        // Not base64, or no colon after the prefix: the peek answers null and the message reads as
+        // malformed rather than as a wrong type, exactly as the single-type decode classifies it.
+        var result = executeRaw(
+            "mutation { assignOccupantRecord(in: {occupant: \"not-a-node-id\"}) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("not a valid id, expected an id of one of: Customer, Staff");
+    }
+
+    @Test
+    void assignOccupantRecord_refusesARightPrefixIdOfTheWrongArity() {
+        // A Customer-prefixed id carrying two key values where the key is one column. The
+        // per-candidate helper stands aside rather than raising its own arity error, so the id falls
+        // through to the dispatch's own message and is classified as malformed, which is what the
+        // read side calls it too.
+        String wrongArity = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 4, 9);
+        var result = executeRaw(
+            "mutation { assignOccupantRecord(in: {occupant: \"" + wrongArity + "\"}) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("not a valid id, expected an id of one of: Customer, Staff");
+    }
+
+    @Test
+    void assignOccupantRecordList_decodesEachElementOnItsOwnPrefix() {
+        // One request carrying ids of both members: the list helper delegates to the container
+        // helper per element, so each element resolves its own record class.
+        String customerId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 4);
+        String staffId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Staff", 2);
+        Map<String, Object> data = execute(
+            "mutation { assignOccupantRecordList(in: {occupants: [\"" + customerId + "\", \""
+                + staffId + "\"]}) }");
+        assertThat(data).extractingByKey("assignOccupantRecordList")
+            .isEqualTo("occupants:Customer:4,Staff:2");
+    }
+
+    @Test
+    void assignOccupantByArgument_decodesAtAProducerParameterToo() {
+        // The producer-parameter twin: no bean, the parameter named for the argument takes the
+        // decoded record. The two slot kinds reach one helper, which is what makes the rule one rule.
+        String staffId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Staff", 1);
+        Map<String, Object> data = execute(
+            "mutation { assignOccupantByArgument(occupant: \"" + staffId + "\") }");
+        assertThat(data).extractingByKey("assignOccupantByArgument").isEqualTo("occupant:Staff:1");
+    }
+
     // ===== A jOOQ TableRecord bound directly as a @service input param =====
 
     @Test

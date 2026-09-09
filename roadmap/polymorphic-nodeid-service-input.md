@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: nodeid
@@ -216,14 +216,24 @@ jOOQ's own runtime classes, which no census scans and which are not tables, so t
 edges to recompute a closure from. What the walk climbs is a live class hierarchy, and capture
 transcribing what it climbed is a stratum-one fact rather than a denormalized derivation.
 
-Assignability is then a composition and not a union of two relations. The `recordImplements` case is
-a slot typed as some supertype of the shared consumer interface, so the question is "some
-`supertype_name` of every candidate's record has the slot's type among its
-`intent_jvm_ancestor` ancestors", a join through the census rather than an alternative beside it. Two
-readers ask it on day one, the `POLYMORPHIC_RECORD` destination and `SLOT_NOT_SUPERTYPE_OF_MEMBER`,
-so it gets a relation of its own rather than the same expression written twice: a view keyed on
-(graph, node type, slot type name), driven by the distinct slot types
-`intent_node_id_decode_slot` reports, so it holds one row per pair the graph actually asks about.
+Assignability is then one relation over that one captured fact. Two readers ask it on day one, the
+`POLYMORPHIC_RECORD` destination and `SLOT_NOT_SUPERTYPE_OF_MEMBER`, so it gets a relation of its own
+rather than the same expression written twice: a view keyed on (graph, node type, slot type name).
+
+*The composition this section first specified is retired, and both halves of it were measured.* The
+plan said the `recordImplements` case wanted a join through `intent_jvm_ancestor`, on the reading
+that the capture held a record's direct parents and the census had to climb from the shared consumer
+interface upward. That was wrong twice. It is redundant, because the capture climbs the live record
+class and therefore already holds every supertype of that interface at any depth, which is what "it
+holds the closure and not the edges" means. And it is unaffordable: H2 inlines a recursive view and
+re-evaluated the whole closure once per driving row, which against the sakila capture never returned
+at all, where the two arms that remain answer in about a tenth of a second. Two rewrites of the
+census leg were measured and neither helped, one unchanged and one worse; the snapshot control put
+the leg at 20 s against 0.13 s with the closure as a table, which is what identified it. Deleting it
+is what fixed it, and the relation's own comment carries the arithmetic. The seeding half fell to the
+same measurement: driving the view from the distinct slot types `intent_node_id_decode_slot` reports
+pulled that relation into the join and H2 re-evaluated it per driving row, so the relation is total
+over the node population instead.
 The walk answers the same question with `Class.isAssignableFrom` against each candidate's live record
 class from the catalog:
 the bean path already holds the member's loaded class (`isJooqRecord` walks it), and the producer
@@ -857,6 +867,27 @@ adjacent and the write side follows both.
   the existing view's verdicts are a function of arity over two relations, and these are not.
 * *A new directive argument* (`@nodeId(anyOf: [...])`) listing the implementations. The interface
   already lists them, and a hand-maintained list drifts from it when an implementation is added.
+
+## Retired vocabulary
+
+Two column names, both renamed rather than removed, and both compiler- and gate-checked so nothing
+reads the old spelling silently:
+
+* `intent_node_id_instruction.node_type_name` and its `_live` sibling: now `resolved_type_name`,
+  with `resolved_type_kind` beside it. The old name promised a node type and the column now holds
+  either a node type or a polymorphic container.
+* `intent_node_id_decode_slot.node_type_name`: now `resolved_type_name`, plus a new
+  `resolved_type_kind`, carried forward from the instruction it drives off.
+
+Both survive under their old names one rung out: `intent_node_id_decode`,
+`intent_node_id_decode_defect`, `intent_node_id_decode_endpoint`, `intent_node_id_encode` and
+`intent_condition_param_decode` each keep `node_type_name` as their own output name and each still
+means a node type there. That is the seam the Design section describes rather than an inconsistency,
+and the destination relation's own column comment states it.
+
+No Java symbol is retired. `intent_argument_filter_role`'s comment loses one sentence, the
+keyless-type escape hatch ("such a type is a rejection's population"), which the widening
+invalidates by making a keyless named type legal somewhere; it is replaced by the kind fork.
 
 ## Reviewer findings
 

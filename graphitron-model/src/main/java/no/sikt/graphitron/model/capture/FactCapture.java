@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
+import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
 import no.sikt.graphitron.model.derive.NodeIdLandingDefects;
 import no.sikt.graphitron.model.derive.ReferenceForParticipantDefects;
 import no.sikt.graphitron.model.derive.RefreshProgress;
@@ -226,6 +227,7 @@ public final class FactCapture {
                 yield new StoreDetections(AuthoredClaimConflicts.detect(dsl, graphName),
                     ArgmappingProjectionDefects.detect(dsl, graphName),
                     NodeIdDecodeDefects.detect(dsl, graphName),
+                    NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
                     NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),

@@ -506,6 +506,18 @@ final class InputBeanResolver {
                 + ": @nodeId(typeName: \"" + typeName.get() + "\") on field '" + f.getName() + "': "
                 + r.message()));
         }
+        if (resolution instanceof BuildContext.NodeIdRecordDecode.Polymorphic poly) {
+            // A field of a jOOQ-record parameter loads its decoded values onto that record's own
+            // columns, which is the single-type premise: several candidates have several key shapes
+            // and no shared column set to land on. The polymorphic spelling is a slot rule, so the
+            // refusal says where it applies rather than describing a mistake the author did not make.
+            return new KeyDecodeResult.Fail(Rejection.structural(where
+                + ": @nodeId(typeName: \"" + poly.containerName() + "\") on field '" + f.getName()
+                + "' names a multitable container, and this field's value is loaded onto the"
+                + " record's own columns rather than into a slot of its own. A polymorphic node id"
+                + " is decoded into a record-supertype slot at a @service input; name one of the"
+                + " implementations here"));
+        }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
         boolean nonNull = GraphQLTypeUtil.isNonNull(f.getType());
         List<ColumnRef> targetColumns;
@@ -999,11 +1011,11 @@ final class InputBeanResolver {
 
     /**
      * Classification of a jOOQ-{@code Record}-typed input-bean member: either a
-     * {@link CallSiteExtraction.NodeIdDecodeRecord} decode leaf or a structural rejection. A record
-     * member never falls through to {@link CallSiteExtraction.Direct}.
+     * decode leaf, single-type or polymorphic, or a structural rejection. A record member never
+     * falls through to {@link CallSiteExtraction.Direct}.
      */
     private sealed interface RecordLeaf {
-        record Ok(CallSiteExtraction.NodeIdDecodeRecord leaf) implements RecordLeaf {}
+        record Ok(CallSiteExtraction leaf) implements RecordLeaf {}
         record Fail(Rejection rejection) implements RecordLeaf {}
     }
 
@@ -1038,6 +1050,9 @@ final class InputBeanResolver {
         if (resolution instanceof BuildContext.NodeIdRecordDecode.Rejected r) {
             return new RecordLeaf.Fail(Rejection.structural(where + ": " + r.message()));
         }
+        if (resolution instanceof BuildContext.NodeIdRecordDecode.Polymorphic poly) {
+            return polymorphicRecordLeaf(poly, recordTypeName, nonNull, where);
+        }
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) resolution;
         // The NodeId for `typeName` decodes into the record of that NodeType's own @table. Loading
         // those key values into a *different* jOOQ record is unsound: the Tables.<NodeTable>.<col>
@@ -1056,6 +1071,44 @@ final class InputBeanResolver {
         return new RecordLeaf.Ok(new CallSiteExtraction.NodeIdDecodeRecord(
             resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
             resolved.table(), nonNull));
+    }
+
+    /**
+     * The leaf for a member whose {@code @nodeId(typeName:)} named a multitable container: the
+     * member's declared type has to be one every candidate's generated record is, and the decode then
+     * dispatches on the wire id's own type prefix.
+     *
+     * <p>The assignability question is {@link BuildContext#admitPolymorphicSlotType}'s, asked of the
+     * member's declared type, so the walk and the store's own {@code SLOT_NOT_SUPERTYPE_OF_MEMBER}
+     * read one rule. A member typed as one candidate's record is refused there rather than resolved:
+     * that is the single-type behaviour the author declined by naming the container.
+     */
+    private RecordLeaf polymorphicRecordLeaf(BuildContext.NodeIdRecordDecode.Polymorphic poly,
+            String recordTypeName, boolean nonNull, String where) {
+        var admission = ctx.admitPolymorphicSlotType(poly, recordTypeName);
+        if (admission instanceof BuildContext.PolymorphicSlotAdmission.Refused refused) {
+            return new RecordLeaf.Fail(Rejection.structural(where + ": " + refused.message()));
+        }
+        var admitted = (BuildContext.PolymorphicSlotAdmission.Admitted) admission;
+        return new RecordLeaf.Ok(polymorphicLeaf(poly, admitted.slotType(), nonNull));
+    }
+
+    /**
+     * The polymorphic decode leaf built from a resolution and an admitted slot type. Here rather than
+     * inline at either call site because the producer-parameter path
+     * ({@code ServiceCatalog.nodeIdSlotExtraction}) builds the very same leaf from the very same two
+     * operands, and one spelling is what keeps the two slot kinds emitting one helper shape.
+     */
+    static CallSiteExtraction.NodeIdDecodePolymorphicRecord polymorphicLeaf(
+            BuildContext.NodeIdRecordDecode.Polymorphic poly,
+            CallSiteExtraction.AdmittedSlotType slotType, boolean nonNull) {
+        return new CallSiteExtraction.NodeIdDecodePolymorphicRecord(
+            poly.candidates().getFirst().encoderClass(), poly.containerName(),
+            poly.candidates().stream()
+                .map(c -> new CallSiteExtraction.PolymorphicCandidate(
+                    c.typeName(), c.typeId(), c.keyColumns(), c.table()))
+                .toList(),
+            slotType, nonNull);
     }
 
     /**

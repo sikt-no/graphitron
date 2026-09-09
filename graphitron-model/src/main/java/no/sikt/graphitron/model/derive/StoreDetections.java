@@ -23,7 +23,15 @@ import java.util.List;
  * keys its rows on the coordinate its own remedy names. One family spanning both would have had to
  * pick one keying and restate the other's rows under it.
  *
- * <p>{@link #nodeIdLandings} is the third {@code @nodeId} family and the one whose question is
+ * <p>{@link #nodeIdPolymorphicDecodes} is the {@code @nodeId} family whose question is about the
+ * <em>set</em> of node types an id may belong to rather than about one: a {@code typeName:} naming a
+ * multitable interface or union. Separate from {@link #nodeIdDecodes} for the reason its view is
+ * separate from that family's, and the two populations are disjoint by construction: the incumbent
+ * joins the node key's shape on the slot's resolved type, and a container resolves no key of its own.
+ * It is also the one {@code @nodeId} family that reports at every site, its first verdict being that
+ * the coordinate is not one the polymorphic rule reaches at all.
+ *
+ * <p>{@link #nodeIdLandings} is the {@code @nodeId} family whose question is
  * about a predicate rather than about a signature: whether the key a decode yields lands on the
  * columns the author's path says it does. It is separate from {@link #nodeIdDecodes} because the
  * two judge different operands at different grains, a producer parameter against a key's shape and
@@ -52,6 +60,7 @@ import java.util.List;
 public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
                               NodeIdDecodeDefects.Detection nodeIdDecodes,
+                              NodeIdPolymorphicDecodeDefects.Detection nodeIdPolymorphicDecodes,
                               NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
@@ -62,6 +71,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         return new StoreDetections(AuthoredClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
             NodeIdDecodeDefects.Detection.empty(),
+            NodeIdPolymorphicDecodeDefects.Detection.empty(),
             NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
@@ -73,6 +83,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         var out = new ArrayList<>(claims.violations());
         out.addAll(argmappingProjections.violations());
         out.addAll(nodeIdDecodes.violations());
+        out.addAll(nodeIdPolymorphicDecodes.violations());
         out.addAll(nodeIdLandings.violations());
         out.addAll(referenceForParticipants.violations());
         out.addAll(unlowerableOrderings.violations());
