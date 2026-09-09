@@ -458,18 +458,22 @@ class FactCaptureAgreementTest {
             "java_field_declaration")) {
             registrations.put(relation, Arm.EQUALITY);
         }
-        // The SDL node entries: one relation per node kind, read per document and keyed by the
+        // The SDL node entries: one relation per node kind and site, read per document and keyed by the
         // position the node was written at. GraphitronSchema has no counterpart, holding a merged schema where these hold
         // each document as it was parsed, so there is nothing here to agree with. What pins them is
         // SdlEntriesTest, over a corpus that does not merge: two files declaring one type are two
         // rows, a child names its parent by the position that parent was written at, and the
         // engine's built-in scalars land nowhere.
         for (String relation : List.of(
-            "graphql_ast_type_declaration_entry", "graphql_ast_field_definition_entry", "graphql_ast_input_value_definition_entry",
+            "graphql_ast_type_declaration_entry", "graphql_ast_field_definition_entry",
+            "graphql_ast_field_argument_entry", "graphql_ast_input_field_entry",
+            "graphql_ast_directive_argument_entry",
             "graphql_ast_enum_value_definition_entry", "graphql_ast_implements_entry",
             "graphql_ast_union_member_entry", "graphql_ast_directive_definition_entry",
             "graphql_ast_directive_location_entry", "graphql_ast_schema_definition_entry",
-            "graphql_ast_operation_type_definition_entry", "graphql_ast_applied_directive_entry",
+            "graphql_ast_operation_type_definition_entry", "graphql_ast_type_directive_entry",
+            "graphql_ast_field_directive_entry", "graphql_ast_input_value_directive_entry",
+            "graphql_ast_enum_value_directive_entry", "graphql_ast_schema_directive_entry",
             "graphql_ast_applied_argument_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it.
             // GraphitronSchema is only ever built from a corpus that made a schema, so it has

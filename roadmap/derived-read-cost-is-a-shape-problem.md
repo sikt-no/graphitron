@@ -2013,3 +2013,34 @@ choice. `SchemaLoader.oldestFirst` already imposes it on the reading, and
 `graphql_type_declaration.merge_ordinal` already records the result, so the aggregation reads the
 order the corpus already has rather than inventing a second one that could disagree with the
 sentence graphql-java writes about a collision.
+
+## The entry keys, and the split that earned them (2026-09-09)
+
+A node written inside another names its parent's position. That position was a column nobody could
+key on, and the reason was that three of the relations had a parent that was a union: an input
+value is a field's argument, an input object's field or a directive definition's argument, and a
+directive application sits at any of five kinds of site. A foreign key names one table, so the
+merged relation could carry the position and nothing more.
+
+The two merged relations are now nine. `graphql_ast_input_value_definition_entry` becomes
+`graphql_ast_field_argument_entry`, `graphql_ast_input_field_entry` and
+`graphql_ast_directive_argument_entry`; `graphql_ast_applied_directive_entry` becomes
+`graphql_ast_type_directive_entry`, `graphql_ast_field_directive_entry`,
+`graphql_ast_input_value_directive_entry`, `graphql_ast_enum_value_directive_entry` and
+`graphql_ast_schema_directive_entry`. `graphql_ast_applied_argument_entry` stays one relation.
+
+Thirteen references follow, six on relations that were always single-parent and seven on the new
+ones. Two rows keep a position and no key, and for the same reason as before rather than a new one:
+a directive on an input value has a parent in one of three relations, and an applied argument has a
+parent in one of five. A position is unique in a file whichever relation holds the parent, so those
+two references are sound and only unspellable, which makes them detections over the union.
+
+Not chased further. Closing those last two would split the input-value directives three ways and
+the applied arguments five, taking three relations to seventeen rather than nine, and one of the
+arms it would add holds a directive on a directive definition's argument, which no consumer schema
+we have writes.
+
+The keys decide two orders that used to be free. The writers run outermost first, and the sweep
+walks the same list backwards, both spelled out where the list is declared. Splitting also creates
+two payload-identical sibling sets, which `SupertypeSignatureGateTest` reports and its roster now
+carries: the union those sets ask for belongs in the anchors, once, rather than in each reader.

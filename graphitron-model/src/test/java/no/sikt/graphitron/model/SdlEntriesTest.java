@@ -42,21 +42,28 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_IMPLEMENTS_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -72,25 +79,34 @@ class SdlEntriesTest {
     private static final String GRAPH = "entries";
 
     /**
-     * Which relation holds which node kind. Stated here rather than derived, so a relation added to
+     * Which relations hold which node kind. Stated here rather than derived, so a relation added to
      * the family without a line here is a relation the census cannot see and the roster below fails
      * on: the map is pinned by the same equality the counts are.
+     *
+     * <p>A kind maps to a list because two of them are held at more than one relation: the parser
+     * gives an input value one shape at all three sites it can be written and a directive
+     * application one shape at all five, where the store keeps a relation per site so that a row
+     * can name its parent by key. The census is indifferent to that, one node being one row
+     * wherever the row lives.
      */
-    private static final Map<String, Table<?>> RELATIONS = new LinkedHashMap<>(Map.of(
-        "TYPE_DECLARATION", GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
-        "FIELD_DEFINITION", GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
-        "INPUT_VALUE_DEFINITION", GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY,
-        "ENUM_VALUE_DEFINITION", GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY,
-        "IMPLEMENTS", GRAPHQL_AST_IMPLEMENTS_ENTRY,
-        "UNION_MEMBER", GRAPHQL_AST_UNION_MEMBER_ENTRY,
-        "DIRECTIVE_DEFINITION", GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY,
-        "DIRECTIVE_LOCATION", GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY,
-        "SCHEMA_DEFINITION", GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY,
-        "OPERATION_TYPE_DEFINITION", GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY));
+    private static final Map<String, List<Table<?>>> RELATIONS = new LinkedHashMap<>(Map.of(
+        "TYPE_DECLARATION", List.of(GRAPHQL_AST_TYPE_DECLARATION_ENTRY),
+        "FIELD_DEFINITION", List.of(GRAPHQL_AST_FIELD_DEFINITION_ENTRY),
+        "INPUT_VALUE_DEFINITION", List.of(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY,
+            GRAPHQL_AST_INPUT_FIELD_ENTRY, GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY),
+        "ENUM_VALUE_DEFINITION", List.of(GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY),
+        "IMPLEMENTS", List.of(GRAPHQL_AST_IMPLEMENTS_ENTRY),
+        "UNION_MEMBER", List.of(GRAPHQL_AST_UNION_MEMBER_ENTRY),
+        "DIRECTIVE_DEFINITION", List.of(GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY),
+        "DIRECTIVE_LOCATION", List.of(GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY),
+        "SCHEMA_DEFINITION", List.of(GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY),
+        "OPERATION_TYPE_DEFINITION", List.of(GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY)));
 
     static {
-        RELATIONS.put("APPLIED_DIRECTIVE", GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY);
-        RELATIONS.put("APPLIED_ARGUMENT", GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY);
+        RELATIONS.put("APPLIED_DIRECTIVE", List.of(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY,
+            GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY, GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY,
+            GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY));
+        RELATIONS.put("APPLIED_ARGUMENT", List.of(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY));
     }
 
     @Test
@@ -192,11 +208,18 @@ class SdlEntriesTest {
                     GRAPHQL_AST_FIELD_DEFINITION_ENTRY.NAME, file))
                 .as("fields, on the interface and on the object alike")
                 .containsExactlyInAnyOrder("name", "name", "rated");
-            assertThat(named(dsl, GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY,
-                    GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY.NAME, file))
-                .as("one node kind for all three hosts: a field argument, an input object's field, "
-                    + "and a directive definition's argument")
-                .containsExactlyInAnyOrder("scale", "q", "fields");
+            assertThat(named(dsl, GRAPHQL_AST_FIELD_ARGUMENT_ENTRY,
+                    GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.NAME, file))
+                .as("one node kind, three relations: this is the field's argument")
+                .containsExactly("scale");
+            assertThat(named(dsl, GRAPHQL_AST_INPUT_FIELD_ENTRY,
+                    GRAPHQL_AST_INPUT_FIELD_ENTRY.NAME, file))
+                .as("the input object's field")
+                .containsExactly("q");
+            assertThat(named(dsl, GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY,
+                    GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY.NAME, file))
+                .as("and the directive definition's argument")
+                .containsExactly("fields");
             assertThat(named(dsl, GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY,
                     GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY.NAME, file))
                 .containsExactlyInAnyOrder("G", "PG");
@@ -219,10 +242,14 @@ class SdlEntriesTest {
                     GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY.OPERATION, file))
                 .as("the operation as the grammar spells it, which is lower case")
                 .containsExactly("query");
-            assertThat(named(dsl, GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY,
-                    GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY.NAME, file))
-                .as("applications, wherever they were written; the definition above is not one")
-                .containsExactlyInAnyOrder("key", "deprecated");
+            assertThat(named(dsl, GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY,
+                    GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME, file))
+                .as("the application on the type; the definition above it is not one")
+                .containsExactly("key");
+            assertThat(named(dsl, GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY,
+                    GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME, file))
+                .as("and the one on the field, which is a relation of its own")
+                .containsExactly("deprecated");
             assertThat(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.NAME,
                         GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.VALUE_SDL)
                     .from(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY)
@@ -273,6 +300,29 @@ class SdlEntriesTest {
     }
 
     /**
+     * What the parent key buys, stood up by breaking it. Every child row a reading writes points at
+     * a parent row of the one relation that holds its site, so a row pointing at a position nothing
+     * was written at is refused rather than kept for a reader to trip over later.
+     */
+    @Test
+    @DisplayName("a directive naming a position no declaration was written at is refused")
+    void aChildNamingNoParentIsRefused(@TempDir Path tmp) {
+        Path file = write(tmp, "keyed.graphqls", "type A @deprecated { a: String }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+
+            assertThatThrownBy(() -> dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
+                        t.SOURCE_COLUMN, t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                    .values(GRAPH, file.toString(), 99, 1, LocalDateTime.now(), 99, 1, "nowhere")
+                    .execute())
+                .as("no declaration was written at that position, so the row is about nothing")
+                .hasMessageContaining("Referential integrity");
+        });
+    }
+
+    /**
      * The claim the dropped ordinal column rests on: within one parent, ordering the nodes of a kind
      * by the position they were written at is the order the author wrote them in.
      *
@@ -296,7 +346,7 @@ class SdlEntriesTest {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, file);
             var field = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-            var argument = GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY;
+            var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 
             assertThat(dsl.select(field.NAME).from(field)
                     .where(field.SOURCE_NAME.eq(file.toString()))
@@ -508,9 +558,9 @@ class SdlEntriesTest {
             read(dsl, file);
 
             Map<String, Long> stored = new TreeMap<>();
-            RELATIONS.forEach((kind, table) -> {
-                long rows = dsl.fetchCount(table,
-                    table.field("SOURCE_NAME", String.class).eq(file.toString()));
+            RELATIONS.forEach((kind, tables) -> {
+                long rows = tables.stream().mapToLong(table -> dsl.fetchCount(table,
+                    table.field("SOURCE_NAME", String.class).eq(file.toString()))).sum();
                 if (rows > 0) {
                     stored.put(kind, rows);
                 }

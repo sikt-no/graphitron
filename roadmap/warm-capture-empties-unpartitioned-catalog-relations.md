@@ -2283,7 +2283,7 @@ when the decode stops referencing anchors; and its five into `graphql_directive`
 becomes an aggregate over `graphql_ast_directive_definition_entry`.
 
 **The taxonomy loses its subject in the `graphql_` family.** Of the twenty-nine non-entry `graphql_`
-relations, six become views over the entries, ten collapse into `graphql_ast_applied_directive_entry`
+relations, six become views over the entries, ten collapse into the `graphql_ast_type_directive_entry` family
 and `graphql_ast_applied_argument_entry`, and the ten that survive are all graph-keyed aggregates.
 That is one treatment applied uniformly, not a three-way sort.
 

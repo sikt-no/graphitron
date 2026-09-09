@@ -93,8 +93,21 @@ class SupertypeSignatureGateTest {
      * {@code graphitron_element}, which carries what the two have in common at the grain they have
      * it in common at: the coordinate and the kind. Lifting the type expression up there would put
      * eight nullable columns on a supertype whose type rows can never fill them.
+     *
+     * <p>Two of these sets are chosen, and the payload is identical because the node is: an input
+     * value has one shape at all three sites it can be written and a directive application one
+     * shape at all five. What differs is the parent, which is a different relation at each site, so
+     * one relation per site is what lets a row name its parent by key where a relation per node
+     * kind could only carry a position. The union these sets ask a reader for is the anchors' work
+     * and happens once into a relation rather than in every reader, which is the cost this gate is
+     * really about.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
+        Set.of("graphql_ast_directive_argument_entry", "graphql_ast_field_argument_entry",
+               "graphql_ast_input_field_entry"),
+        Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
+               "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
+               "graphql_ast_type_directive_entry"),
         Set.of("graphitron_undecoded_argument_entry", "graphql_argument_directive_arg",
                "graphql_enum_value_directive_arg", "graphql_field_directive_arg",
                "graphql_schema_directive_arg", "graphql_type_directive_arg"),

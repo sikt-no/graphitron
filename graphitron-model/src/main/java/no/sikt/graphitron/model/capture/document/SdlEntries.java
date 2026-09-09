@@ -40,28 +40,40 @@ import java.util.stream.Stream;
 
 import static graphql.language.AstPrinter.printAstCompact;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_IMPLEMENTS_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes one parsed document into the store, as written. One relation per SDL node kind, keyed by the
- * position the node was written at, so two documents declaring one name are two rows and this class
- * has nothing to decide: no claim, no first-wins, no ordinal.
+ * Writes one parsed document into the store, as written. One relation per SDL node kind and site,
+ * keyed by the position the node was written at, so two documents declaring one name are two rows
+ * and this class has nothing to decide: no claim, no first-wins, no ordinal.
  *
- * <p>Twelve relations and twelve methods, each saying for itself where in the document its nodes
- * live. Nothing orders them, these relations referencing each other not at all, so a method is
- * changed alone.
+ * <p>Eighteen relations and eighteen methods, each saying for itself where in the document its
+ * nodes live, so a method is changed alone.
+ *
+ * <p>A node written inside another names its parent's position, and where that parent is one
+ * relation the position is a key into it: both rows come out of one parse of one file and one
+ * method writes both, so nothing a document can say breaks the reference. Two of the relations
+ * have a parent that is a union and carry a position with no key. A directive applied to an input
+ * value has one of three parents, and an argument of an application has one of five. The keys are
+ * why the writers run outermost first and the sweep runs their list backwards.
  *
  * <p>Nothing here resolves, counts or compares. What a written name refers to, which of two
  * declarations the corpus honours, and whether a collision is an error are queries over these rows.
@@ -80,7 +92,7 @@ public final class SdlEntries {
      *
      * <p>The file is a parameter rather than read off the nodes: a document whose every declaration
      * was deleted still has rows to sweep and no nodes left to say which file it was. The instant is
-     * the caller's for the same reason, the twelve relations having to agree on which reading is
+     * the caller's for the same reason, the eighteen relations having to agree on which reading is
      * current.
      */
     public static void write(DSLContext dsl, String graph, String source,
@@ -89,30 +101,41 @@ public final class SdlEntries {
         directiveDefinitions(dsl, graph, touchedAt, document);
         schemaDefinitions(dsl, graph, touchedAt, document);
         fieldDefinitions(dsl, graph, touchedAt, document);
-        inputValueDefinitions(dsl, graph, touchedAt, document);
         enumValueDefinitions(dsl, graph, touchedAt, document);
         implementsClauses(dsl, graph, touchedAt, document);
         unionMembers(dsl, graph, touchedAt, document);
         directiveLocations(dsl, graph, touchedAt, document);
         operationTypeDefinitions(dsl, graph, touchedAt, document);
-        appliedDirectives(dsl, graph, touchedAt, document);
+        fieldArguments(dsl, graph, touchedAt, document);
+        inputFields(dsl, graph, touchedAt, document);
+        directiveArguments(dsl, graph, touchedAt, document);
+        typeDirectives(dsl, graph, touchedAt, document);
+        fieldDirectives(dsl, graph, touchedAt, document);
+        inputValueDirectives(dsl, graph, touchedAt, document);
+        enumValueDirectives(dsl, graph, touchedAt, document);
+        schemaDirectives(dsl, graph, touchedAt, document);
         appliedArguments(dsl, graph, touchedAt, document);
         sweep(dsl, graph, source, touchedAt);
     }
 
     /**
      * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
-     * prefix: a relation added above and not here would keep its stale rows silently, and a list that
-     * has to be edited alongside is the cheapest way to make that visible. In no particular order,
-     * these relations referencing one another not at all.
+     * prefix: a relation added above and not here would keep its stale rows silently, and a list
+     * that has to be edited alongside is the cheapest way to make that visible.
+     *
+     * <p>In writing order, parents first, which is the order the keys demand. The sweep walks it
+     * backwards.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHQL_AST_TYPE_DECLARATION_ENTRY, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
-        GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY, GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY,
-        GRAPHQL_AST_IMPLEMENTS_ENTRY, GRAPHQL_AST_UNION_MEMBER_ENTRY,
-        GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY, GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY,
-        GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY, GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY,
-        GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY);
+        GRAPHQL_AST_TYPE_DECLARATION_ENTRY, GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY,
+        GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
+        GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY, GRAPHQL_AST_IMPLEMENTS_ENTRY,
+        GRAPHQL_AST_UNION_MEMBER_ENTRY, GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY,
+        GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY, GRAPHQL_AST_FIELD_ARGUMENT_ENTRY,
+        GRAPHQL_AST_INPUT_FIELD_ENTRY, GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY,
+        GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY, GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY,
+        GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY,
+        GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY);
 
     /**
      * Deletes this file's rows that this reading did not touch, which are the nodes the author
@@ -120,9 +143,9 @@ public final class SdlEntries {
      */
     private static void sweep(DSLContext dsl, String graph, String source, LocalDateTime touchedAt) {
         // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's three name them on all twelve.
+        // relation's three name them on all eighteen.
         var named = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        for (Table<?> table : TABLES_TO_SWEEP) {
+        for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
             dsl.deleteFrom(table)
                 .where(table.field(named.GRAPH_NAME).eq(graph))
                 .and(table.field(named.SOURCE_NAME).eq(source))
@@ -256,10 +279,95 @@ public final class SdlEntries {
             .execute();
     }
 
-    private static void inputValueDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                               TypeDefinitionRegistry document) {
-        var t = GRAPHQL_AST_INPUT_VALUE_DEFINITION_ENTRY;
-        var rows = inputValues(document).stream().collect(Rows.toRowList(
+    private static void fieldArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+        var rows = argumentsOfFields(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME),
+            nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
+            nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
+            nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
+            nested -> val(isList(nested.node().getType()), t.IS_LIST),
+            nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(printAstCompact(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(text(nested.node()), t.DESCRIPTION)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+            .set(t.NON_NULL, excluded(t.NON_NULL))
+            .set(t.IS_LIST, excluded(t.IS_LIST))
+            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+            .execute();
+    }
+    private static void inputFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        var rows = fieldsOfInputObjects(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME),
+            nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
+            nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
+            nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
+            nested -> val(isList(nested.node().getType()), t.IS_LIST),
+            nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(printAstCompact(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(text(nested.node()), t.DESCRIPTION)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+            .set(t.NON_NULL, excluded(t.NON_NULL))
+            .set(t.IS_LIST, excluded(t.IS_LIST))
+            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+            .execute();
+    }
+    /** What a directive definition declares, where appliedArguments below is what an application passes. */
+    private static void directiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
+        var rows = argumentsOfDirectiveDefinitions(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
@@ -443,10 +551,119 @@ public final class SdlEntries {
             .execute();
     }
 
-    private static void appliedDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           TypeDefinitionRegistry document) {
-        var t = GRAPHQL_AST_APPLIED_DIRECTIVE_ENTRY;
-        var rows = applications(document).stream().collect(Rows.toRowList(
+    private static void typeDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var rows = directivesOnTypes(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .execute();
+    }
+    private static void fieldDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var rows = directivesOnFields(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .execute();
+    }
+    /** All three input-value sites in one relation: the parent is a union whichever way this is cut. */
+    private static void inputValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var rows = directivesOnInputValues(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .execute();
+    }
+    private static void enumValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+        var rows = directivesOnEnumValues(document).stream().collect(Rows.toRowList(
+            nested -> val(graph, t.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
+            nested -> val(touchedAt, t.TOUCHED_AT),
+            nested -> parentLine(nested.parent()),
+            nested -> parentColumn(nested.parent()),
+            nested -> val(nested.node().getName(), t.NAME)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.NAME, excluded(t.NAME))
+            .execute();
+    }
+    private static void schemaDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   TypeDefinitionRegistry document) {
+        var t = GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
+        var rows = directivesOnSchemas(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
@@ -576,8 +793,8 @@ public final class SdlEntries {
     // ------------------------------------------------------- a node and the node it was written in
 
     /**
-     * A node and the node it was written inside, which is what a row with a parent needs and what the
-     * nine gatherers below hand back. Parent is graphql-java's own word for it and the columns are
+     * A node and the node it was written inside, which is what a row with a parent needs and what
+     * the gatherers below hand back. Parent is graphql-java's own word for it and the columns are
      * named for it too. The three top-level kinds have no parent and stream the node alone.
      */
     private record Nested<N extends Node<?>>(Node<?> parent, N node) {}
@@ -593,11 +810,33 @@ public final class SdlEntries {
     }
 
     /** The three parents an input value may have, which are the same node kind to the parser. */
-    private static List<Nested<InputValueDefinition>> inputValues(TypeDefinitionRegistry document) {
+    private static List<Nested<InputValueDefinition>> argumentsOfFields(TypeDefinitionRegistry document) {
         List<Nested<InputValueDefinition>> nested = new ArrayList<>();
         fields(document).forEach(field -> nest(nested, field.node(), field.node().getInputValueDefinitions()));
+        return nested;
+    }
+
+    private static List<Nested<InputValueDefinition>> fieldsOfInputObjects(TypeDefinitionRegistry document) {
+        List<Nested<InputValueDefinition>> nested = new ArrayList<>();
         inputObjects(document).forEach(parent -> nest(nested, parent, parent.getInputValueDefinitions()));
+        return nested;
+    }
+
+    private static List<Nested<InputValueDefinition>> argumentsOfDirectiveDefinitions(TypeDefinitionRegistry document) {
+        List<Nested<InputValueDefinition>> nested = new ArrayList<>();
         directives(document).forEach(parent -> nest(nested, parent, parent.getInputValueDefinitions()));
+        return nested;
+    }
+
+    /**
+     * The three sites' input values as one list, for the one reader that takes an input value
+     * whatever encloses it.
+     */
+    private static List<Nested<InputValueDefinition>> inputValues(TypeDefinitionRegistry document) {
+        List<Nested<InputValueDefinition>> nested = new ArrayList<>();
+        nested.addAll(argumentsOfFields(document));
+        nested.addAll(fieldsOfInputObjects(document));
+        nested.addAll(argumentsOfDirectiveDefinitions(document));
         return nested;
     }
 
@@ -632,13 +871,47 @@ public final class SdlEntries {
     }
 
     /** The five kinds of node a directive may be written on. */
-    private static List<Nested<Directive>> applications(TypeDefinitionRegistry document) {
+    private static List<Nested<Directive>> directivesOnTypes(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         declarations(document).forEach(parent -> nest(nested, parent, parent.getDirectives()));
+        return nested;
+    }
+
+    private static List<Nested<Directive>> directivesOnFields(TypeDefinitionRegistry document) {
+        List<Nested<Directive>> nested = new ArrayList<>();
         fields(document).forEach(field -> nest(nested, field.node(), field.node().getDirectives()));
+        return nested;
+    }
+
+    private static List<Nested<Directive>> directivesOnInputValues(TypeDefinitionRegistry document) {
+        List<Nested<Directive>> nested = new ArrayList<>();
         inputValues(document).forEach(value -> nest(nested, value.node(), value.node().getDirectives()));
+        return nested;
+    }
+
+    private static List<Nested<Directive>> directivesOnEnumValues(TypeDefinitionRegistry document) {
+        List<Nested<Directive>> nested = new ArrayList<>();
         enumValues(document).forEach(value -> nest(nested, value.node(), value.node().getDirectives()));
+        return nested;
+    }
+
+    private static List<Nested<Directive>> directivesOnSchemas(TypeDefinitionRegistry document) {
+        List<Nested<Directive>> nested = new ArrayList<>();
         schemas(document).forEach(parent -> nest(nested, parent, parent.getDirectives()));
+        return nested;
+    }
+
+    /**
+     * Every application, whichever site it sits at, for the one reader that takes them all: an
+     * argument's parent is a directive and nothing narrower.
+     */
+    private static List<Nested<Directive>> applications(TypeDefinitionRegistry document) {
+        List<Nested<Directive>> nested = new ArrayList<>();
+        nested.addAll(directivesOnTypes(document));
+        nested.addAll(directivesOnFields(document));
+        nested.addAll(directivesOnInputValues(document));
+        nested.addAll(directivesOnEnumValues(document));
+        nested.addAll(directivesOnSchemas(document));
         return nested;
     }
 
