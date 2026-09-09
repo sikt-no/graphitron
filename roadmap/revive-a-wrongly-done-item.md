@@ -1,7 +1,7 @@
 ---
 id: R940
 title: "An item whose Done verdict was wrong comes back as itself, rather than as a successor that renumbers the work"
-status: Spec
+status: Ready
 bucket: dx
 priority: 2
 theme: tooling
