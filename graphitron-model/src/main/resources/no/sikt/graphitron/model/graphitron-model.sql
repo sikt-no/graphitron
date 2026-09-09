@@ -3733,6 +3733,115 @@ COMMENT ON COLUMN jvm_scalar_type_field.input_type IS 'the fully-qualified Java 
 -- Graph scoping, for a query that needs it, happens on the jvm_ or sql_ side of the name join
 -- through store_graph_source; this family answers for a file, and a file belongs to whoever
 -- compiles it.
+CREATE TABLE jvm_classfile (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  class_kind  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
+);
+COMMENT ON TABLE jvm_classfile IS 'One class of one classpath entry, as its classfile declares it. For example org.jooq.Result, an INTERFACE read from the jOOQ jar.';
+COMMENT ON COLUMN jvm_classfile.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile.class_kind IS 'which form the classfile declares, read off its own flags and attributes';
+COMMENT ON COLUMN jvm_classfile.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
+CREATE TABLE jvm_classfile_supertype (
+  source_name    VARCHAR NOT NULL,
+  class_name     VARCHAR NOT NULL,
+  supertype_name VARCHAR NOT NULL,
+  declared_via   VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, supertype_name),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name),
+  CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
+);
+COMMENT ON TABLE jvm_classfile_supertype IS 'One supertype one class declares, in the clause it was declared in. For example a service interface extending nothing and implementing java.io.Serializable draws one IMPLEMENTS row.';
+COMMENT ON COLUMN jvm_classfile_supertype.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile_supertype.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile_supertype.supertype_name IS 'the binary name written above this class. Nothing says a classfile for it was read: a chain''s last hop is usually a JDK type no entry on this classpath holds';
+COMMENT ON COLUMN jvm_classfile_supertype.declared_via IS 'which clause the name was written in, the classfile''s superclass slot or its interface list';
+COMMENT ON COLUMN jvm_classfile_supertype.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
+CREATE TABLE jvm_classfile_method (
+  source_name          VARCHAR NOT NULL,
+  class_name           VARCHAR NOT NULL,
+  method_name          VARCHAR NOT NULL,
+  descriptor           VARCHAR NOT NULL,
+  return_type          VARCHAR NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
+);
+COMMENT ON TABLE jvm_classfile_method IS 'One public method of one class, overloads told apart by descriptor. For example a service method returning java.util.List declared as List<Film> draws one row carrying both forms.';
+COMMENT ON COLUMN jvm_classfile_method.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile_method.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile_method.method_name IS 'the method''s name as the classfile spells it';
+COMMENT ON COLUMN jvm_classfile_method.descriptor IS 'the JVM method descriptor, which is what tells two overloads apart; a rendering of the erased parameter types would fuse a method taking com.foo.Result with one taking com.bar.Result';
+COMMENT ON COLUMN jvm_classfile_method.return_type IS 'the return type''s binary name, erased as the descriptor carries it';
+COMMENT ON COLUMN jvm_classfile_method.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
+CREATE TABLE jvm_classfile_parameter (
+  source_name             VARCHAR NOT NULL,
+  class_name              VARCHAR NOT NULL,
+  method_name             VARCHAR NOT NULL,
+  descriptor              VARCHAR NOT NULL,
+  position                INT     NOT NULL,
+  parameter_name          VARCHAR,
+  parameter_type          VARCHAR NOT NULL,
+  touched_at              TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES jvm_classfile_method (source_name, class_name, method_name, descriptor)
+);
+COMMENT ON TABLE jvm_classfile_parameter IS 'One position in one method''s parameter list. For example a condition method taking a table and an argument draws two rows, at positions 0 and 1.';
+COMMENT ON COLUMN jvm_classfile_parameter.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile_parameter.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile_parameter.method_name IS 'the method''s name as the classfile spells it';
+COMMENT ON COLUMN jvm_classfile_parameter.descriptor IS 'the JVM method descriptor, which is what tells two overloads apart; a rendering of the erased parameter types would fuse a method taking com.foo.Result with one taking com.bar.Result';
+COMMENT ON COLUMN jvm_classfile_parameter.position IS '0-based position in the declaration''s own order';
+COMMENT ON COLUMN jvm_classfile_parameter.parameter_name IS 'the name the MethodParameters attribute carries, or NULL where the class was compiled without it. Absence is a compiler flag, not a fact about the method';
+COMMENT ON COLUMN jvm_classfile_parameter.parameter_type IS 'the parameter type''s binary name, erased as the descriptor carries it';
+COMMENT ON COLUMN jvm_classfile_parameter.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
+CREATE TABLE jvm_classfile_record_component (
+  source_name             VARCHAR NOT NULL,
+  class_name              VARCHAR NOT NULL,
+  component_name          VARCHAR NOT NULL,
+  position                INT     NOT NULL,
+  component_type          VARCHAR NOT NULL,
+  touched_at              TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, component_name),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
+);
+COMMENT ON TABLE jvm_classfile_record_component IS 'One component of one record class, at its place in the declaration. For example record FilmRow(int id, String title) draws two rows, at positions 0 and 1.';
+COMMENT ON COLUMN jvm_classfile_record_component.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile_record_component.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile_record_component.component_name IS 'the component''s name as the Record attribute carries it';
+COMMENT ON COLUMN jvm_classfile_record_component.position IS '0-based position in the declaration''s own order';
+COMMENT ON COLUMN jvm_classfile_record_component.component_type IS 'the component type''s binary name, erased';
+COMMENT ON COLUMN jvm_classfile_record_component.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
+CREATE TABLE jvm_classfile_field (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  field_name  VARCHAR NOT NULL,
+  field_type  VARCHAR NOT NULL,
+  is_static   BOOLEAN NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, field_name),
+  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
+);
+COMMENT ON TABLE jvm_classfile_field IS 'One public field of one class, whatever its type. For example a class holding two GraphQL scalar constants and an unrelated int draws three rows.';
+COMMENT ON COLUMN jvm_classfile_field.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
+COMMENT ON COLUMN jvm_classfile_field.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
+COMMENT ON COLUMN jvm_classfile_field.field_name IS 'the field''s name as the classfile spells it';
+COMMENT ON COLUMN jvm_classfile_field.field_type IS 'the field type''s binary name, erased as the descriptor carries it. A reader wanting the fields of one type asks for it here rather than being handed a relation that was filtered to one type when the classfile was read';
+COMMENT ON COLUMN jvm_classfile_field.is_static IS 'whether the field is static, which is what tells a constant from an instance member';
+COMMENT ON COLUMN jvm_classfile_field.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
+
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -11232,6 +11341,7 @@ INSERT INTO meta_gatherer VALUES
   ('sdl', 'no.sikt.graphitron.model.capture.sdl.SdlFactCapture'),
   ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture'),
   ('catalog', 'no.sikt.graphitron.model.capture.catalog.CatalogFactCapture'),
+  ('classpath', 'no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture'),
   ('java-source', 'no.sikt.graphitron.model.capture.java.JavaSourceFacts'),
   ('compile', 'no.sikt.graphitron.model.capture.compile.CompileFacts'),
   ('derivation', 'no.sikt.graphitron.model.derive.Materializations');
@@ -11252,6 +11362,7 @@ INSERT INTO meta_gatherer_corpus VALUES
   ('sdl', 'sdl'),
   ('catalog', 'catalog'),
   ('catalog', 'classpath'),
+  ('classpath', 'classpath'),
   ('java-source', 'java-source'),
   ('compile', 'javac');
 
@@ -11498,6 +11609,9 @@ INSERT INTO meta_grain VALUES
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
    'source_name, class_name, field_name', 'classpath'),
+  ('class-field',
+   'one field of one class',
+   'source_name, class_name, field_name', 'classpath'),
   ('source-file',
    'one .java source file this store holds declarations from',
    'file', 'java-source'),
@@ -11715,6 +11829,30 @@ INSERT INTO meta_relation VALUES
    'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType, and the Java type it coerces a value to.',
    'For example a DATE_TIME field an author names in @scalarType, coercing to java.time.OffsetDateTime.',
    '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants. What a field coerces to sits here rather than in a relation of its own because it is a fact about the field and nothing else can be keyed by one: every such field declares the same type, so the answer is only readable off a loaded class, which is why the classfile scan records the field and this column is filled beside it rather than by it.'),
+  ('jvm_classfile', 'classpath-class', 'classpath',
+   'One class of one classpath entry, as its classfile declares it.',
+   'For example org.jooq.Result, an INTERFACE read from the jOOQ jar.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('jvm_classfile_supertype', 'class-supertype', 'classpath',
+   'One supertype one class declares, in the clause it was declared in.',
+   'For example a service interface extending nothing and implementing java.io.Serializable draws one IMPLEMENTS row.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('jvm_classfile_method', 'class-method', 'classpath',
+   'One public method of one class, overloads told apart by descriptor.',
+   'For example a service method returning java.util.List declared as List<Film> draws one row carrying both forms.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('jvm_classfile_parameter', 'method-parameter', 'classpath',
+   'One position in one method''s parameter list.',
+   'For example a condition method taking a table and an argument draws two rows, at positions 0 and 1.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('jvm_classfile_record_component', 'record-component', 'classpath',
+   'One component of one record class, at its place in the declaration.',
+   'For example record FilmRow(int id, String title) draws two rows, at positions 0 and 1.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('jvm_classfile_field', 'class-field', 'classpath',
+   'One public field of one class, whatever its type.',
+   'For example a class holding two GraphQL scalar constants and an unrelated int draws three rows.',
+   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
   ('java_file', 'source-file', 'java-source',
    'One .java file whose declarations this store holds, and the stamp they were read at.',
    'For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.',
