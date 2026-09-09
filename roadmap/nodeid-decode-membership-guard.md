@@ -244,3 +244,127 @@ appended note about the surprise.
   decides whether a consumer's build stops or reports.
 * *Encode side.* The symmetric question on `intent_node_id_encode` (an output field whose encode was
   dropped) is deliberately out of scope. Named so nobody reads the omission as an oversight.
+
+## Reviewer findings
+
+### Round 1 (2026-09-09, Spec -> Ready, reviewer session 01DdweB3L6tSQ4C489RwT1zH)
+
+Verdict: withhold. Two blocking findings on question two, one on question one.
+
+The goal comes through without reconstruction, and it is a good one: today a `@nodeId` on a filter
+argument or filter input field whose decode the generator cannot install compiles clean and fails per
+request, and after this lands it fails the build instead. The diagnosis is unusually well evidenced,
+the two probes are the right measurements, and the reasoning that moves the install fact off
+`intent_node_id_decode` and onto the walk is sound: probe B's over-claim is real, and I confirmed the
+comment on `intent_node_id_decode` does assert what the plan says it asserts. Nearly every claim about
+the tree checks out, including the scoping of `intent_node_id_decode_defect` (`site = 'ARGUMENT'`,
+`carrier = 'NAMED_PARAMETER'`, two parameter-typing verdicts), the fold point beside
+`StoreDetections.violations()` in `GraphQLRewriteGenerator`, the ordering that puts `EmitPlan.produce`
+after the error list is empty, and `intent_node_id_instruction` being the materialized table.
+
+What withholds sign-off is that the plan's picture of where a decode gets installed is one rail and one
+arm out of date, and that the third of its three operands has no home.
+
+**Finding 1 (question two: architecture fit). "The decode lives in three arms" misses a fourth arm and
+a whole non-walk rail, and under the rule as written both read as dropped instructions.**
+
+The rule reads "a decode was installed" off the classification walk and enumerates three carriers. The
+tree has more than three, and two of the misses are live:
+
+* `CallSiteExtraction.NodeIdDecodePolymorphicRecord` is a fourth decode arm, minted by
+  `InputBeanResolver` for a `@nodeId(typeName:)` naming an interface at a `@service` slot. It landed
+  under R933 on 2026-09-09, after this plan's `last-updated`. Its coordinate is an input-field site, so
+  the census covers it.
+* The projected-key-column rail is not a `CallSiteExtraction` decode arm at all.
+  `ProjectedKeyReads` is, in its own words, "the node-id decodes one emitted method performs":
+  `ConditionGlueRenderer` and `RoutineWriteFetcherRenderer` drain it, and it reaches a decode helper per
+  `KeyProjection` row. `ProjectedKeyReads.installRailOwns` exists precisely to say when the whole-slot
+  install rail owns a binding and this rail therefore stands aside; where it returns false, this rail is
+  the one that installs the decode.
+
+Both are silent under the rule as specified, and silence here is not a missed report. A coordinate the
+census holds and the ledger does not anti-joins to a row, and the check fails a build on a schema that
+works. That is the same hazard the plan names for a composed join key ("it reads as a dropped
+instruction and fails a build that should pass"), arriving through the operand rather than through the
+key.
+
+The projection rail also pushes on the plan's stated anchor. "It is the classified model, not the emit
+plan" is argued from `EmitPlan.produce` running after validation, and that argument is correct as far as
+it goes, but this rail's positive fact is neither a walk product nor unavailable at `validate()` time:
+it is `StoreDetections.keyProjections()`, which the capture callback already holds at the fold point
+where slice 2 wants to live, one statement before `EmitPlan.produce` is reached. So the operand exists
+and is in hand; the plan just does not admit it. An anchor that is "walk products only" cannot state
+this install, and slice 1's single mint cannot reach it either, since nothing mints it in the walk.
+
+What would satisfy: an enumeration of install rails checked against the tree as it stands, and an anchor
+that admits an install stated outside the classification walk, or an argument for why the projection
+rail's coordinates fall outside the census.
+
+Incidentally load-bearing and not true as written: "The three share no supertype, which is why the first
+slice below is a type-system change rather than a survey." `NodeIdDecodeKeys`, `NodeIdDecodeRecord`,
+`NodeIdDecodePolymorphicRecord` and `JooqRecord` are all arms of the sealed `CallSiteExtraction`; only
+`RecordKeyDecode` sits outside it, as a leaf inside `JooqRecord`. Slice 1's recommendation may well
+survive the correction, but its justification has to be restated on what is actually there.
+
+**Finding 2 (question two: architecture fit). The third operand has no home in the plan, and no surface
+in the tree states it at the grain the plan requires.**
+
+Slice 1 mints the install fact at coordinate-component grain and gives a whole slice to it. The
+refusals operand is described as something to read: "drop what the classifier refused by name", "the
+classifier's own typed `Rejection` at the same coordinate". No slice mints it, and nothing in the tree
+states it at that grain:
+
+* `Rejection` carries no coordinate at all. The plan's own exemplar,
+  `InputBeanResolver.singleValuedMemberDeferral`, bakes the field path, the parameter name, the method
+  and the class into the `Rejection.deferred` summary prose.
+* `ValidationError.coordinate` is documented as a type name or a `Type.field` qualified name, which is
+  the grain the plan rejects as too coarse.
+* `GraphitronField.UnclassifiedField` carries `(parentTypeName, name, location, rejection)`, the same
+  grain.
+* The stored form is no finer: `RejectionFacts` transcribes the walk's stream into
+  `rejection_validation_error` as a `(type_name, field_name)` pair, and its own javadoc says the sealed
+  coordinate component has not landed.
+
+So the plan rules out the one existing surface, then requires strictly finer grain than any surface
+provides (the granularity enforcer's fixture, two `@nodeId` instructions on one owning field, is exactly
+a demand for argument or occurrence-path grain), and allocates no work for it. This is the same
+threading job slice 1 exists to do, and an implementer handed this plan would design it mid-flight,
+which is what the second gate question asks about.
+
+What would satisfy: say where the refusal fact is minted and at what grain, as a slice of its own or as
+stated scope on slice 1. If the answer is that the refusal ledger rides the same mint as the install
+ledger, that is a good answer and worth one sentence.
+
+**Finding 3 (question one: is the outcome reachable, and is it the outcome claimed). The item's only
+enumerated build failure has shipped.**
+
+"What lands as a build failure the day this ships" is the right section to owe, and its one member is
+R884's shape. R884 is Done: `roadmap/changelog.md` carries its entry, its Done gate landed 2026-09-08,
+a week after this plan's `last-updated`, and `ProjectedKeyReads.installRailOwns` plus
+`ResolvedKeyProjections` are its fix. `docs/manual/reference/directives/condition.adoc` now documents
+that descent as working: "Either way the parameter receives a decoded column's own value and never the
+encoded id."
+
+That makes five statements in this plan describe a state that no longer holds: the `CallParam` installs
+no decode ("that is what R884 *is*"), the check reports the shape by construction, the row drains when
+R884 lands, the `depends-on` rationale about a drain rather than a prerequisite, and the tests bullet
+placing that descent in the ratchet's expected-deferral set rather than its clean set. Probe A's third
+row and the paragraph that reads it also predate the fix.
+
+This is not only staleness, which is why it blocks rather than sitting below. With that member gone the
+section enumerates nothing, and a reviewer cannot tell from the plan whether this check converts any
+live silent drop into a reported one on the day it ships, or whether it is now purely a ratchet against
+future ones. Both are defensible goals and the second is a real one, but they are different goals with
+different value, and the plan's own standard is to owe the list rather than discover it in a consumer's
+build.
+
+What would satisfy: re-run the enumeration against the current tree and state what this reports on the
+day it ships. If the answer is nothing, say so and state the goal as the ratchet.
+
+**Non-blocking.**
+
+* The body opens with `## What this is about` rather than the `## Goal` section
+  `roadmap/workflow.adoc` § Item file conventions now prescribes. The goal is stated plainly in that
+  section's third paragraph, so nothing is lost; the heading is the only miss.
+* "the rule would live as a fifth component on `StoreDetections`" is a stale count (the record now
+  carries eight components), but it describes the discarded Backlog approach, so nothing turns on it.
