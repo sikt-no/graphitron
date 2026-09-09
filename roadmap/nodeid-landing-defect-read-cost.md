@@ -591,3 +591,88 @@ either way, so nothing in the plan changes; if anything it raises the prior on `
 *Author response, 2026-09-09.* Corrected. The body now says which of the two hop relations is a
 registered target and which is a view, which raises rather than lowers the prior on `tg` that
 step 1 is testing.
+### Round 2 (2026-09-09, Spec -> Ready, reviewer session 85825d23-2352-4bd7-b1bc-65822ef02f4f)
+
+Verdict: withhold. One blocking finding on question two, and it is about the guard rather than the
+lever. Round 1's four findings are answered, and the first one is answered by a better shape than
+any of the three ways out it posed: the register subtraction lands as the revision describes, which
+I checked against the gate rather than taking on the argument.
+
+Question one passes. Stated without the phase list: a `graphitron:dev` session on a consumer schema
+the size of `sis` never becomes usable, because one of the eight reads `FactCapture.detect` makes on
+every pass, at boot and again after every save, re-expands a 23-second relation once per driving row
+inside a correlated `NOT EXISTS`; when this lands that read costs seconds, the loop works at that
+schema size, the consumer's own validation gate can run over the fixes waiting on their migration
+branch, and no schema's verdict or message changes. Reachable here, and the structural claims hold
+where I checked them, including every claim round 1's revision added.
+
+Question two passes on the levers. The registration outcome, the promotion of the `d` derived table
+to a catalog-family relation, and the marker-relation outcome each extend a shape the register and
+the fact model already carry, the lever order is the page's own, and the declaration bullet is
+sound: `theUndeclaredRosterOnlyShrinks` computes `undeclared` exactly as the plan says, compares by
+equality, and the roster's twenty `_live` lines are its only consumer in the tree, so the
+subtraction is twenty out and none in with nothing else to keep in step.
+
+**Finding 1 (question two, architecture fit). The guard's domain and its roots are two different
+sets. Five of the eight detection components read more than one relation, several of them views read
+once per driving row, so the pin as specified misses the shape this item is a defect report about.**
+
+The Tests section states the guard's domain as "for each relation the detection pass reads", then
+states where the roots come from: "Each family class exposes the relation its `detect` reads as one
+public constant used by the query itself, and `StoreDetections` exposes the roster of those
+constants". One constant per component is not the set the first sentence names. What the components
+read today:
+
+- `AuthoredClaimConflicts.detect` reads three views. It drives `typeGrain` and `fieldGrain` from
+  `intent_authored_claim_conflict`, joins `intent_authored_type_claim` in `typeClaims`, and calls
+  `claimsAt` over `intent_authored_field_claim` once per violated field coordinate.
+- `UnlowerableOrderings.detect` reads three. `read` drives from `intent_field_unlowerable_ordering`
+  and joins `intent_field_navigated_type`; `participantsOf` reads
+  `intent_field_participant_scope_table`.
+- `ReferenceForParticipantDefects.detect` reads `intent_reference_for_application`,
+  `intent_input_occurrence_path` and, in `participantsOf`, `intent_field_participant_scope_table`.
+- `NodeIdPolymorphicDecodeDefects.detect` reads its verdict view, then `memberNames` reads
+  `intent_node_container_member` and `intent_poly_member` once per container.
+- `ArgmappingProjectionDefects.detect` reads `intent_argmapping_projection_defect` and
+  `intent_resolved_node_key_projection`.
+
+Every relation named above except `intent_input_occurrence_path` is a view, so the walk does not
+stop at it. Only `NodeIdDecodeDefects`, `NodeIdLandingDefects` and `ResolvedKeyProjections` read one
+`intent_` relation each, `intent_type_domain` beside them being a table the walk stops at anyway.
+
+So a per-component single constant pins roughly half of the pass's read-cadence reach, and what it
+leaves out is this item's own shape: a view body evaluated once per driving row. `claimsAt`,
+`memberNames` and `consumersOf` are all per-row reads of views, from Java rather than from a
+correlated subquery, which is the same cost with no SQL text to notice it in. A future reader that
+adds one of those is outside the pin, which is exactly the recurrence the guard exists to make
+impossible, and the guard would report a clean equality while it happened.
+
+Two precisions from the same reading, both of which bear on what the roster has to be. Nothing in
+the tree exposes such a constant today: the components static-import `Tables.INTENT_*` at their use
+sites and `StoreDetections` carries components only, so this sentence is authoring work and not a
+description of a seam already there. And the eighth component is `ResolvedKeyProjections.read`, not
+a `detect`, so a roster keyed on "the relation its `detect` reads" has one member with no `detect`
+to read.
+
+What would satisfy question two: state the roots as the relations each component reads rather than
+one per component, which is what makes the equality pin mean what the section claims for it; or
+scope the pin explicitly to each component's driving relation, and say why the secondary per-row
+reads are outside the guard's reach and what covers them instead. Either is an answer, and the first
+looks cheap, the walk already taking a set of starts. What the section cannot do is state its domain
+as every relation the pass reads and its roots as one constant per family in the same paragraph, and
+leave the implementer to notice the gap.
+
+Nothing else in the plan moves under this finding. The measurement, the localisation, the lever
+hierarchy, the three outcomes and the declaration bullet stand as written, and the finding widens
+the blind spot the guard is aimed at rather than questioning that it is there.
+
+**Non-blocking, and neither is a revision this gate asks for.**
+
+The hop's view comment measures 3371 characters as a string, 3387 as the escaped DDL literal, not
+3436. Left to the author because the counting convention is the author's, and nothing turns on it:
+the ceiling it is weighed against is 601 either way.
+
+`fact-model.adoc`'s refresh-observer paragraph says "twenty-two registrations refreshed on every
+save", which reads as a live claim about the register rather than one of the measured narratives the
+plan's docs bullet exempts, and the register holds twenty. Pre-existing, not this item's, and noted
+only because that bullet reasons about these counts by name.
