@@ -1,7 +1,7 @@
 ---
 id: R941
 title: "The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: model-cleanup
