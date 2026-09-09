@@ -214,7 +214,7 @@ register that already exists. A column on the census costs a `COMMENT ON COLUMN`
 **Buying real reach now by declaring one registered pair.** It would make the widening bind on
 shipped rows instead of on seeded ones. Declined because the constraint it runs into is not this
 item's to move: `meta_relation`'s two `CHECK`s cap a declared relation's visible comment at 601
-characters, registered targets carry multi-paragraph rule arguments (3436 characters on
+characters, registered targets carry multi-paragraph rule arguments (3083 characters on
 `intent_spelled_table`), and R939 already records where that question belongs, with whichever item
 drains the undeclared roster. Declaring a pair would also owe the primary key the key gate then
 demands. This item closes the hole; the roster item fills the population.
@@ -237,3 +237,73 @@ registered source view is exempt from declaration by construction. That item tak
 data, subtracting `meta_materialize.source_view_name` from the declaration domain, and deliberately
 does not widen this gate. The general fix is this item's, and R939's guard section names it as the
 one thing its register subtraction does not fix.
+
+## Reviewer findings
+
+### Round 1 (2026-09-09, Spec -> Ready, reviewer session 9cef2296-a9b3-4821-93f7-530dae44c1b4)
+
+Verdict: withhold. Two blocking findings, both on question one, and both of the same kind: the plan
+states a mechanism against a state the tree does not have. Question two passes and nothing below
+asks for a different design.
+
+Question one's first half passes, and without reconstruction from the phase list. Today the one
+build gate that reads a relation's body to check what it reads selects its population with
+`relation_type = 'VIEW'`, so the moment a relation is materialized its rule text moves to a `_live`
+view nothing declares and the relation itself becomes a table, and the gate silently stops reading
+it: registering a relation costs it a check, which is the one thing a registration is supposed not
+to do. After this lands the census says which relation states each relation's rule, the gate walks
+that, and registering changes nothing about which gates apply. For a consumer of graphitron nothing
+changes today, and the plan says so itself in the paragraph that states what this is worth: the 62
+declared relations and the 20 registered targets are disjoint, so the widened gate reports nothing
+new and the seeded arms are the whole demonstration. That disclosure is the right shape rather than
+a weakness, and *Every invariant has an enforcer* is the principle it stands on.
+
+Question two passes. The change extends a shape already in the tree rather than standing a
+mechanism beside one: the census is already the single relational answer to a relation-level
+question, `meta_family_bridge.relation_name`'s own comment already predicts this exact reader in
+these words, and two hand-built target-to-source-view maps already stand in
+`MaterializeDependencies` (one in `populate`, one in `registrationsReachedByView`), so carrying the
+fact once in the census is the tree's own answer to the drift smell that axiom names rather than a
+fourth spelling of it. The alternatives section engages the real forks and prices them honestly,
+including the one it declines to buy.
+
+**Finding 1, question one: the census cannot join the register where the census stands.** The plan
+is "one `LEFT JOIN` onto the register and one `CASE` in the census body ... Nothing else about the
+census moves". `CREATE VIEW meta_relation_family` is at `graphitron-model.sql:11026` and
+`CREATE TABLE meta_materialize` is at `:11184`, and `GraphitronModelStore` boots by executing the
+file's statements in file order. H2 2.4.240, the pinned version, rejects a forward table reference
+in a non-`FORCE` `CREATE VIEW`; probed directly on that jar, the statement fails with
+`Table "REG" not found`. So the census body as specified does not boot, and something in the file
+has to move. Which one is a design decision inside the `meta_` section's own narrative order rather
+than a mechanical fix, which is why it is the author's: moving the register and its `INSERT` above
+the census puts the register ahead of the declaration model it currently follows, and moving the
+census below the register drags `meta_relation_reference` (`:11036`-`:11051`, which joins the census
+twice) along with it. What would satisfy: name which relation moves and to where, and, if it is the
+census, say what becomes of `meta_relation_reference`.
+
+**Finding 2, question one: the first seeded arm is written against a state the case does not have
+at the point the arm is appended.** The arm is "Declare `intent_spelled_table` ... owned by
+`compile`, and keep `sql_table` declared under `catalog` as the case already has it", with "`compile`
+has no `meta_gatherer_dependency` row at all" as what makes the crossing fire and "Inserting the
+`compile` to `catalog` edge clears it" as what closes the arm. Both halves of that state are gone by
+the end of `theGatesDetectWhatTheyClaimTo`. The corpus arm updates `sql_table`'s owner to
+`derivation` to demonstrate the no-corpus exemption and never restores it, so an appended arm
+inherits `sql_table` owned by `derivation`, not `catalog`. And the existing ownership arm's last
+statement is `insertInto(META_GATHERER_DEPENDENCY).values("compile", "catalog")`, so `compile` does
+carry a dependency row there and inserting it again clears nothing. The first assertion happens to
+survive both facts, since the crossing becomes `compile` to `derivation` and no edge covers that
+either, but the second assertion fails as specified. What would satisfy: say where the arm sits
+relative to the existing ownership arm and what the seeded state is at that point, and pick a
+gatherer pair whose edge is genuinely absent when the arm runs, so the clearing half demonstrates
+something. The second arm, the null-filter one, is unaffected by this.
+
+Non-blocking, and neither changes what gets built. "The six corpus gatherers" is one more than the
+roster supports: `meta_gatherer_corpus` gives `graphitron` no corpus row, so `derivation`'s six
+edges reach five corpus-reading gatherers plus `graphitron`. The claim they carry, that a
+derivation-owned rule may read anything, holds and is in fact stronger, the six being every other
+gatherer there is. And "none of them selecting `*`" has one exception: `FactSchemaGateTest` uses
+`select().from(META_RELATION_FAMILY)` inside two `whereNotExists` (`:288`, `:342`), which renders
+`select *`. The conclusion still holds, a `SELECT *` under `NOT EXISTS` being indifferent to a new
+column, so this is a correction to the sentence rather than to the plan. `intent_spelled_table`'s
+comment measures 3083 characters against the register's cited 3436; corrected in this commit, since
+the point it makes about the 601-character ceiling is unchanged by it.
