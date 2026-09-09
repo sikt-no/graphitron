@@ -419,246 +419,352 @@ COMMENT ON COLUMN graphql_schema_problem.touched_at IS 'when the reading that pr
 COMMENT ON COLUMN graphql_schema_problem.error_class IS 'graphql-java''s own name for the kind of problem, its error class''s simple name, so a reader can group without parsing the sentence';
 COMMENT ON COLUMN graphql_schema_problem.message IS 'graphql-java''s own sentence, kept verbatim: this is the library''s verdict and rewording it here would make the store the second author of an error the build reports';
 
-CREATE TABLE graphql_object_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_type_declaration_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  kind           VARCHAR NOT NULL,
+  is_extension   BOOLEAN NOT NULL,
+  name           VARCHAR NOT NULL,
+  description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name),
+  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
-COMMENT ON TABLE graphql_object_type_entry IS 'An ObjectTypeDefinition as one document wrote it: this position in this file declares an object type of this name. For example type Film { title: String } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_object_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_object_type_entry.source_name IS 'the file this declaration was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from the declaration itself';
-COMMENT ON COLUMN graphql_object_type_entry.source_line IS 'source line of the declaration, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_object_type_entry.source_column IS 'source column of the declaration, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_object_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_object_type_entry.name IS 'the name written here, which is ObjectTypeDefinition.getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_object_type_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+COMMENT ON TABLE graphql_ast_type_declaration_entry IS 'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name. For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.kind IS 'which of the six declaration forms was written here, read off the node class the parser produced rather than off the text';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.is_extension IS 'whether this position extends a type rather than defining it. TRUE and FALSE are both ordinary states of a well-formed corpus, and a name carrying only extensions is an author error some detection reports, never a refusal here';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.description IS 'the description written here, or NULL where none was. Always NULL on an extension, the grammar giving extensions nowhere to put one; stated in a comment rather than a CHECK, because a gatherer that refuses a row is a gatherer that stops gathering';
 
-
-CREATE TABLE graphql_interface_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_field_definition_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  name           VARCHAR NOT NULL,
+  type_sdl       VARCHAR NOT NULL,
+  named_type     VARCHAR NOT NULL,
+  non_null       BOOLEAN NOT NULL,
+  is_list        BOOLEAN NOT NULL,
+  item_non_null  BOOLEAN,
+  description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name),
+  CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphql_interface_type_entry IS 'An InterfaceTypeDefinition as one document wrote it: this position in this file declares an interface type of this name. For example interface Node { id: ID! } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_interface_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_interface_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_interface_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_interface_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_interface_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_interface_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_interface_type_entry.description IS 'the description written here, or NULL where none was';
+COMMENT ON TABLE graphql_ast_field_definition_entry IS 'A FieldDefinition as one document wrote it: this position in this file declares a field of this name on the declaration it was written inside. For example the title: String inside type Film { title: String } is one row, naming the position that type declaration was written at.';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 
-CREATE TABLE graphql_object_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_input_value_definition_entry (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  source_ref         VARCHAR,
+  touched_at         TIMESTAMP NOT NULL,
+  parent_line        INT     NOT NULL,
+  parent_column      INT     NOT NULL,
+  name               VARCHAR NOT NULL,
+  type_sdl           VARCHAR NOT NULL,
+  named_type         VARCHAR NOT NULL,
+  non_null           BOOLEAN NOT NULL,
+  is_list            BOOLEAN NOT NULL,
+  item_non_null      BOOLEAN,
+  default_value_sdl  VARCHAR,
+  description        VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name),
+  CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphql_object_type_extension_entry IS 'An ObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an object type of this name. For example extend type Film { rating: Rating } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_object_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that otherwise declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_object_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_input_value_definition_entry IS 'An InputValueDefinition as one document wrote it: this position in this file declares an input value of this name on the node it was written inside. For example the lang: Lang = NB inside title(lang: Lang = NB): String is one row, and so is the q: String inside input Filter { q: String }, the parser giving both the same node kind.';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
+COMMENT ON COLUMN graphql_ast_input_value_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 
-CREATE TABLE graphql_union_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_enum_value_definition_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  name           VARCHAR NOT NULL,
+  description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_union_type_entry IS 'A UnionTypeDefinition as one document wrote it: this position in this file declares a union type of this name. For example union Payment = Card | Cash is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_union_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_union_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_union_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_union_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_union_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_union_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_union_type_entry.description IS 'the description written here, or NULL where none was';
+COMMENT ON TABLE graphql_ast_enum_value_definition_entry IS 'An EnumValueDefinition as one document wrote it: this position in this file declares an enum value of this name on the declaration it was written inside. For example the G inside enum Rating { G PG } is one row, at ordinal 0 of that declaration''s values.';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 
-CREATE TABLE graphql_enum_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_implements_entry (
+  graph_name      VARCHAR NOT NULL,
+  source_name     VARCHAR NOT NULL,
+  source_line     INT     NOT NULL,
+  source_column   INT     NOT NULL,
+  source_ref      VARCHAR,
+  touched_at      TIMESTAMP NOT NULL,
+  parent_line     INT     NOT NULL,
+  parent_column   INT     NOT NULL,
+  interface_name  VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_enum_type_entry IS 'An EnumTypeDefinition as one document wrote it: this position in this file declares an enum type of this name. For example enum Rating { G PG } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_enum_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_enum_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_enum_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_enum_type_entry.description IS 'the description written here, or NULL where none was';
+COMMENT ON TABLE graphql_ast_implements_entry IS 'An interface named in an implements clause as one document wrote it: this position in this file says the declaration it was written inside implements an interface of this name. For example type Film implements Node & Aged draws two rows, Node at ordinal 0 and Aged at ordinal 1.';
+COMMENT ON COLUMN graphql_ast_implements_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_implements_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_implements_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_implements_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_implements_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_implements_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_implements_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_implements_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_implements_entry.interface_name IS 'the interface name written here. Nothing says a type of this name was declared anywhere: an implements clause naming an absent interface is exactly the state this row exists to hold';
 
-CREATE TABLE graphql_input_object_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_union_member_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  member_name    VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_input_object_type_entry IS 'An InputObjectTypeDefinition as one document wrote it: this position in this file declares an input object type of this name. For example input FilmFilter { title: String } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_input_object_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_input_object_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_input_object_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_input_object_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_input_object_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_input_object_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_input_object_type_entry.description IS 'the description written here, or NULL where none was';
+COMMENT ON TABLE graphql_ast_union_member_entry IS 'A member named in a union as one document wrote it: this position in this file says the union it was written inside has a member of this name. For example union Media = Film | Show draws two rows, Film at ordinal 0 and Show at ordinal 1.';
+COMMENT ON COLUMN graphql_ast_union_member_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_union_member_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_union_member_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_union_member_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_union_member_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_union_member_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_union_member_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_union_member_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_union_member_entry.member_name IS 'the member type name written here. Nothing says a type of this name was declared anywhere, on graphql_ast_implements_entry.interface_name''s terms';
 
-CREATE TABLE graphql_scalar_type_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  description   VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_directive_definition_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  name           VARCHAR NOT NULL,
+  repeatable     BOOLEAN NOT NULL,
+  description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_scalar_type_entry IS 'A ScalarTypeDefinition as one document wrote it: this position in this file declares a scalar type of this name. For example scalar Date is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_scalar_type_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_scalar_type_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_scalar_type_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_scalar_type_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_scalar_type_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
-COMMENT ON COLUMN graphql_scalar_type_entry.description IS 'the description written here, or NULL where none was';
+COMMENT ON TABLE graphql_ast_directive_definition_entry IS 'A DirectiveDefinition as one document wrote it: this position in this file defines a directive of this name. For example directive @key(fields: String!) repeatable on OBJECT is one row, its argument and its two locations being rows of their own that name this position.';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.repeatable IS 'whether the definition carried the repeatable keyword';
+COMMENT ON COLUMN graphql_ast_directive_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 
-CREATE TABLE graphql_interface_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_directive_location_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  location       VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_interface_type_extension_entry IS 'An InterfaceTypeExtensionDefinition as one document wrote it: this position in this file extends an interface type of this name. For example extend interface Node { version: Int } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_interface_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_directive_location_entry IS 'A DirectiveLocation as one document wrote it: this position in this file names a place the directive defined above it may be applied. For example the OBJECT and the INTERFACE of directive @key on OBJECT | INTERFACE are two rows.';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_directive_location_entry.location IS 'the location name written here, kept as written and not checked against the specification''s list, which is graphql-java''s to police and the schema problems'' to report';
 
-CREATE TABLE graphql_union_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_schema_definition_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  is_extension   BOOLEAN NOT NULL,
+  description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_union_type_extension_entry IS 'A UnionTypeExtensionDefinition as one document wrote it: this position in this file extends a union type of this name. For example extend union Payment = Invoice is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_union_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_union_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_union_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_union_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_union_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_union_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_schema_definition_entry IS 'A SchemaDefinition as one document wrote it: this position in this file declares or extends the schema''s own node. For example schema { query: Query } is one row, and extend schema { subscription: Sub } is another marked an extension.';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.is_extension IS 'whether this position extends the schema node rather than declaring it';
+COMMENT ON COLUMN graphql_ast_schema_definition_entry.description IS 'the description written here, or NULL where none was';
 
-CREATE TABLE graphql_enum_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_operation_type_definition_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  operation      VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_enum_type_extension_entry IS 'An EnumTypeExtensionDefinition as one document wrote it: this position in this file extends an enum type of this name. For example extend enum Rating { R } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_enum_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_operation_type_definition_entry IS 'An OperationTypeDefinition as one document wrote it: this position in this file binds one root operation to one type name. For example the query: Query inside schema { query: Query } is one row.';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.operation IS 'the root operation named here, spelled as the author wrote it, which the grammar makes lower case. Not checked against the three the specification allows, on graphql_ast_directive_location_entry.location''s terms';
+COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.type_name IS 'the type name bound to that operation. Nothing says a type of this name was declared anywhere';
 
-CREATE TABLE graphql_input_object_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_applied_directive_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_input_object_type_extension_entry IS 'An InputObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an input object type of this name. For example extend input FilmFilter { rating: Rating } is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_input_object_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_applied_directive_entry IS 'A directive application as one document wrote it: this position in this file applies a directive of this name to the node it was written on. For example the @external on a field and the @key(fields: "id") on a type are one row each, naming the position of the node they were written on.';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_applied_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
 
-CREATE TABLE graphql_scalar_type_extension_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
+CREATE TABLE graphql_ast_applied_argument_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  source_ref     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  parent_line    INT     NOT NULL,
+  parent_column  INT     NOT NULL,
+  name           VARCHAR NOT NULL,
+  value_sdl      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name)
 );
-COMMENT ON TABLE graphql_scalar_type_extension_entry IS 'A ScalarTypeExtensionDefinition as one document wrote it: this position in this file extends a scalar type of this name. For example extend scalar Date @specifiedBy(url: "") is one row, at the file, line and column it was written at.';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_name IS 'the file this was written in, anchored by store_source so a reader reaches the source''s stamp and modification time from it. A declaration is in the file it was written in by definition, which is what makes this reference sound at a level that declares almost none: the document may name types nobody defines, and no key here pretends otherwise';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.touched_at IS 'when the reading that produced this row ran. Every row one reading writes carries that reading''s instant, which is what lets the reading finish by deleting its file''s rows that still carry an older one: those are the declarations the author removed, and nothing else can find them, an upsert having no incoming row to match them against. Not provenance and not a modification time for the declaration, which is store_source.mtime''s; a row rewritten unchanged carries a new instant here and says nothing about the author having touched anything';
-COMMENT ON COLUMN graphql_scalar_type_extension_entry.name IS 'the name written here, which is the node''s getName(). Deliberately not unique: two sites naming one type is the state this relation exists to hold';
+COMMENT ON TABLE graphql_ast_applied_argument_entry IS 'An argument of a directive application as one document wrote it: this position in this file passes a value of this name to the application it was written inside. For example the fields: "id" inside @key(fields: "id") is one row, carrying the value as it was written.';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
+COMMENT ON COLUMN graphql_ast_applied_argument_entry.value_sdl IS 'the value exactly as written, in SDL. Kept whole rather than decomposed, because a directive argument''s value may be a list or an object literal and what a reader of this family wants is what the author typed';
 
 CREATE TABLE graphql_field (
   graph_name          VARCHAR NOT NULL,
@@ -11385,54 +11491,54 @@ INSERT INTO meta_relation VALUES
    'Creating this graph''s schema produced this problem: one of the errors graphql-java raised when the documents were assembled into a schema.',
    'For example a second file declaring a type an earlier file already declares is one row, carrying graphql-java''s own sentence about it.',
    'graphql-java decides this and the store records it rather than deciding it again. Assembling the documents into a schema is the one step that checks whether they work together, and it is around thirty checks deep: references resolving, interface contracts, input against output position, directive locations and arguments, uniqueness inside a declaration, the schema''s own shape. Re-deriving any of that from the declaration entries would be a second implementation of a validation this build already runs, and the two would disagree the first time the library moved. One relation rather than one per stage, because the registry merge and the schema build are not two questions a reader has: both are what happened when we tried to make a schema out of these documents, and the merge''s own contribution is only whether a name was declared twice. Absence is success: a graph whose documents made a schema has no rows here, so a reader asking whether the corpus is sound counts rather than interprets. Keyed at the graph and the order the problems were raised rather than at a position, because a problem need not report one; the declaration entries hold every site at its own position, so a reader who wants the sites joins them by name.'),
-  ('graphql_object_type_entry', 'sdl-declaration-site', 'sdl',
-   'An ObjectTypeDefinition as one document wrote it: this position in this file declares an object type of this name.',
-   'For example type Film { title: String } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_interface_type_entry', 'sdl-declaration-site', 'sdl',
-   'An InterfaceTypeDefinition as one document wrote it: this position in this file declares an interface type of this name.',
-   'For example interface Node { id: ID! } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_union_type_entry', 'sdl-declaration-site', 'sdl',
-   'A UnionTypeDefinition as one document wrote it: this position in this file declares a union type of this name.',
-   'For example union Payment = Card | Cash is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_enum_type_entry', 'sdl-declaration-site', 'sdl',
-   'An EnumTypeDefinition as one document wrote it: this position in this file declares an enum type of this name.',
-   'For example enum Rating { G PG } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_input_object_type_entry', 'sdl-declaration-site', 'sdl',
-   'An InputObjectTypeDefinition as one document wrote it: this position in this file declares an input object type of this name.',
-   'For example input FilmFilter { title: String } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_scalar_type_entry', 'sdl-declaration-site', 'sdl',
-   'A ScalarTypeDefinition as one document wrote it: this position in this file declares a scalar type of this name.',
-   'For example scalar Date is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_object_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'An ObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an object type of this name.',
-   'For example extend type Film { rating: Rating } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_interface_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'An InterfaceTypeExtensionDefinition as one document wrote it: this position in this file extends an interface type of this name.',
-   'For example extend interface Node { version: Int } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_union_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'A UnionTypeExtensionDefinition as one document wrote it: this position in this file extends a union type of this name.',
-   'For example extend union Payment = Invoice is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_enum_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'An EnumTypeExtensionDefinition as one document wrote it: this position in this file extends an enum type of this name.',
-   'For example extend enum Rating { R } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_input_object_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'An InputObjectTypeExtensionDefinition as one document wrote it: this position in this file extends an input object type of this name.',
-   'For example extend input FilmFilter { rating: Rating } is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
-  ('graphql_scalar_type_extension_entry', 'sdl-declaration-site', 'sdl',
-   'A ScalarTypeExtensionDefinition as one document wrote it: this position in this file extends a scalar type of this name.',
-   'For example extend scalar Date @specifiedBy(url: "") is one row, at the file, line and column it was written at.',
-   'One relation per SDL node kind, mirroring graphql-java''s own, because this family is the parsed document in graphql-java''s vocabulary and the registry hands each kind back through its own accessor returning its own node type. The twelve share this grain and carry the same columns, which is why they are a recorded sibling set rather than an accidental one. The alternative is one relation with a kind column, and that column has to be computed by a switch over the AST classes while capturing, which is interpretation inside the family whose whole job is transcription; the kind also decides which children are legal, and those children arrive from different accessors returning different node types, so a shared relation moves the branching one level down instead of removing it. Keyed by the position and not by the name, so a corpus where two documents declare one name is two rows and no writer chooses between them: which one the corpus honours, and whether the collision is an error, are queries over these rows and over store_source.mtime. No reference to any other declaration, because at this level a document may name types nobody defines; the only keys that hold are the ones a well-formed file cannot break, its graph and its own file.'),
+  ('graphql_ast_type_declaration_entry', 'sdl-declaration-site', 'sdl',
+   'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name.',
+   'For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.',
+   'One relation for all six declaration forms and their extensions, the form being a column, because a child names its parent by position and a reader following that reference would otherwise union six relations to find what is there. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_field_definition_entry', 'sdl-declaration-site', 'sdl',
+   'A FieldDefinition as one document wrote it: this position in this file declares a field of this name on the declaration it was written inside.',
+   'For example the title: String inside type Film { title: String } is one row, naming the position that type declaration was written at.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_input_value_definition_entry', 'sdl-declaration-site', 'sdl',
+   'An InputValueDefinition as one document wrote it: this position in this file declares an input value of this name on the node it was written inside.',
+   'For example the lang: Lang = NB inside title(lang: Lang = NB): String is one row, and so is the q: String inside input Filter { q: String }, the parser giving both the same node kind.',
+   'One node kind with three hosts: a field''s arguments, an input object''s fields and a directive definition''s arguments are the same node to the parser, so they are one relation and the host is whatever sits at the parent position. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_enum_value_definition_entry', 'sdl-declaration-site', 'sdl',
+   'An EnumValueDefinition as one document wrote it: this position in this file declares an enum value of this name on the declaration it was written inside.',
+   'For example the G inside enum Rating { G PG } is one row, at ordinal 0 of that declaration''s values.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_implements_entry', 'sdl-declaration-site', 'sdl',
+   'An interface named in an implements clause as one document wrote it: this position in this file says the declaration it was written inside implements an interface of this name.',
+   'For example type Film implements Node & Aged draws two rows, Node at ordinal 0 and Aged at ordinal 1.',
+   'The name written here need not be declared anywhere in the corpus. Holding a reference to something absent is the point: that is an author error some detection reports, and a relation that refused the row could not report it. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_union_member_entry', 'sdl-declaration-site', 'sdl',
+   'A member named in a union as one document wrote it: this position in this file says the union it was written inside has a member of this name.',
+   'For example union Media = Film | Show draws two rows, Film at ordinal 0 and Show at ordinal 1.',
+   'The name written here need not be declared anywhere in the corpus. Holding a reference to something absent is the point: that is an author error some detection reports, and a relation that refused the row could not report it. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_directive_definition_entry', 'sdl-declaration-site', 'sdl',
+   'A DirectiveDefinition as one document wrote it: this position in this file defines a directive of this name.',
+   'For example directive @key(fields: String!) repeatable on OBJECT is one row, its argument and its two locations being rows of their own that name this position.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_directive_location_entry', 'sdl-declaration-site', 'sdl',
+   'A DirectiveLocation as one document wrote it: this position in this file names a place the directive defined above it may be applied.',
+   'For example the OBJECT and the INTERFACE of directive @key on OBJECT | INTERFACE are two rows.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_schema_definition_entry', 'sdl-declaration-site', 'sdl',
+   'A SchemaDefinition as one document wrote it: this position in this file declares or extends the schema''s own node.',
+   'For example schema { query: Query } is one row, and extend schema { subscription: Sub } is another marked an extension.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_operation_type_definition_entry', 'sdl-declaration-site', 'sdl',
+   'An OperationTypeDefinition as one document wrote it: this position in this file binds one root operation to one type name.',
+   'For example the query: Query inside schema { query: Query } is one row.',
+   'The name written here need not be declared anywhere in the corpus. Holding a reference to something absent is the point: that is an author error some detection reports, and a relation that refused the row could not report it. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_applied_directive_entry', 'sdl-declaration-site', 'sdl',
+   'A directive application as one document wrote it: this position in this file applies a directive of this name to the node it was written on.',
+   'For example the @external on a field and the @key(fields: "id") on a type are one row each, naming the position of the node they were written on.',
+   'The name written here need not be declared anywhere in the corpus. Holding a reference to something absent is the point: that is an author error some detection reports, and a relation that refused the row could not report it. Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
+  ('graphql_ast_applied_argument_entry', 'sdl-declaration-site', 'sdl',
+   'An argument of a directive application as one document wrote it: this position in this file passes a value of this name to the application it was written inside.',
+   'For example the fields: "id" inside @key(fields: "id") is one row, carrying the value as it was written.',
+   'Keyed by the position the node was written at, so two documents writing one name are two rows and nothing here chooses between them. Neither the parent reference nor the names this row carries are keys: following them means resolving, which is the anchors'' work, not a transcription''s.'),
   ('graphql_element', 'schema-element', 'sdl',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',

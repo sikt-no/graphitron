@@ -458,19 +458,19 @@ class FactCaptureAgreementTest {
             "java_field_declaration")) {
             registrations.put(relation, Arm.EQUALITY);
         }
-        // The SDL declaration entries: one relation per node kind, read per document and keyed by
-        // the position a declaration was written at. GraphitronSchema has no counterpart, holding a
-        // merged schema where these hold each document as it was parsed, so there is nothing here to
-        // agree with. What pins them is SdlEntriesTest, over a corpus that does not merge: two files
-        // declaring one type are two rows, an extension lands in its own relation rather than twice
-        // in the base's, and the engine's built-in scalars land nowhere.
+        // The SDL node entries: one relation per node kind, read per document and keyed by the
+        // position the node was written at. GraphitronSchema has no counterpart, holding a merged schema where these hold
+        // each document as it was parsed, so there is nothing here to agree with. What pins them is
+        // SdlEntriesTest, over a corpus that does not merge: two files declaring one type are two
+        // rows, a child names its parent by the position that parent was written at, and the
+        // engine's built-in scalars land nowhere.
         for (String relation : List.of(
-            "graphql_object_type_entry", "graphql_interface_type_entry",
-            "graphql_union_type_entry", "graphql_enum_type_entry",
-            "graphql_input_object_type_entry", "graphql_scalar_type_entry",
-            "graphql_object_type_extension_entry", "graphql_interface_type_extension_entry",
-            "graphql_union_type_extension_entry", "graphql_enum_type_extension_entry",
-            "graphql_input_object_type_extension_entry", "graphql_scalar_type_extension_entry",
+            "graphql_ast_type_declaration_entry", "graphql_ast_field_definition_entry", "graphql_ast_input_value_definition_entry",
+            "graphql_ast_enum_value_definition_entry", "graphql_ast_implements_entry",
+            "graphql_ast_union_member_entry", "graphql_ast_directive_definition_entry",
+            "graphql_ast_directive_location_entry", "graphql_ast_schema_definition_entry",
+            "graphql_ast_operation_type_definition_entry", "graphql_ast_applied_directive_entry",
+            "graphql_ast_applied_argument_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it.
             // GraphitronSchema is only ever built from a corpus that made a schema, so it has
             // nothing to say about one that did not.

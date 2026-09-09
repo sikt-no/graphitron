@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_OBJECT_TYPE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -75,10 +75,10 @@ class SdlSchemaProblemsTest {
                     assertThat(row.value2()).contains("tried to redefine existing");
                 });
 
-            assertThat(dsl.select(GRAPHQL_OBJECT_TYPE_ENTRY.SOURCE_NAME)
-                    .from(GRAPHQL_OBJECT_TYPE_ENTRY)
-                    .where(GRAPHQL_OBJECT_TYPE_ENTRY.NAME.eq("X"))
-                    .fetch(GRAPHQL_OBJECT_TYPE_ENTRY.SOURCE_NAME))
+            assertThat(dsl.select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME)
+                    .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
+                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("X"))
+                    .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME))
                 .as("the corpus did not build and both declarations are still captured, which is "
                     + "what a report about the collision reads")
                 .hasSize(2);

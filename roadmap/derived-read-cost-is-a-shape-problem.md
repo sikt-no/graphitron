@@ -991,6 +991,37 @@ Additive throughout: the entries are created and populated beside the anchors, a
 their names, shapes and coordinate uniques, so readers and the foreign keys that need a unique to
 point at are untouched until the derivation can hold the weight.
 
+**The entries landed in two increments, and the second reversed a decision the first made.** The
+first wrote twelve relations, one per registry accessor, and held the named type declarations only:
+three of the registry's accessors were never called and no node was descended into, so the store had
+twelve declaration headers and nothing inside any brace. The second added the rest and collapsed those
+twelve into one, `graphql_ast_type_declaration_entry`, because a reader following a child's parent
+reference would otherwise union four relations to find a field's parent and twelve to find any
+declaration's, and because the switch over AST classes the twelve were meant to avoid never went away.
+Twelve relations again, one per node kind the grammar has, and none of them payload twins. Twelve
+population methods beside them, each naming where in the document its own nodes live: one descent
+collecting into twelve lists was written first and refused, on the ground that relations holding
+different data change for different reasons and should not share the machinery that finds them.
+No node carries an ordinal either. Within a parent the nodes of a kind are ordered by the position
+they were written at, which is the key, so a column would have restated it.
+
+**A supertype was tried in between and was the wrong shape.** The intent was a relation every node
+writes into, keyed by position, so a child's parent reference could be a foreign key rather than two
+undefended columns. It was built, it worked, and the user refused it on the order of construction: the
+aggregate over the twelve is an anchor, derived from the entries for downstream readers, so an entry
+with a foreign key into it makes the entries conditional on something built out of them. The parent
+reference is two plain columns, and following it is a resolution the anchors do the once rather than
+every reader doing it in a join. Recorded because the argument for the supertype was good and still
+lost, and because the same argument will come back when the anchors are built, where it is correct.
+
+**The source is named twice, per R872's twin.** `source_name` sits in the primary key carrying no
+foreign key, and a nullable `source_ref` beside it carries the reference under
+`ON DELETE SET NULL` with a `CHECK` tying the two together. This is the first instance of that design
+in the schema; R872 specifies it for five family roots, and with no supertype above them these twelve
+entries are roots. The key column gives up its foreign key because H2 lets a cascade win over a
+set-null on one column, and what that buys is the thing R872 wants: removing a file flags every
+reading of it instead of deleting them, and the owning graph reaps its own on its next refresh.
+
 ### The producer hierarchy
 
 A producer is what runs to fetch a field's rows. The first thing to say about it is that most fields

@@ -114,26 +114,44 @@ documents are rows and the collision becomes a query over them. Ordering the can
 `store_source.mtime`'s job, which is the one question a content hash cannot answer and what lets a
 report name the incumbent and the incursion rather than listing two declarations symmetrically.
 
-=== Why twelve relations and not one with a kind column
+=== The AST entries reference nothing, and their file is named twice
 
-`graphql_object_type_entry` and its eleven siblings carry the same columns at the same grain, a
-position in one document. That is the shape `SupertypeSignatureGateTest` exists to challenge, and the
-set is recorded there with its reason rather than left to accumulate. The reason is that the payloads
-coinciding is a property of the grammar, every named type having a name and an optional description,
-while the sentences differ: a position that declares an object type is not a position that extends a
-union.
+One relation per SDL node kind, from `graphql_ast_type_declaration_entry` through
+`graphql_ast_applied_argument_entry`. The shared `ast` segment is the one place a family is
+subdivided by name, because the `graphql_` family now spans two levels: the anchors are schema elements keyed
+by coordinate, in the specification's vocabulary, and these are parser nodes keyed by position, in
+graphql-java's.
 
-One relation with a kind column is the alternative, and it costs the thing this half is for. The
-column has to be computed by a switch over the AST classes while capturing, which is interpretation
-inside the family whose whole job is transcription. graphql-java hands each kind back through its own
-accessor returning its own node type, so mirroring the API means the reader has no switch at all and
-no discriminator to derive. The kind also decides which children are legal, and those children arrive
-from different accessors returning different node types, so a shared relation would move the
-branching one level down rather than remove it.
+Four things about them are not what a reader would expect.
 
-The count is the grammar's: six declaration kinds and six extension kinds. A thirteenth would mean
-graphql-java grew a node kind, which is a fact about the language rather than a sibling accumulating,
-and the same argument would admit it.
+*The relations reference each other not at all.* A node names the node it was written inside by that
+node's position, in plain columns nothing defends. Following that reference means picking the relation
+that holds the parent's kind, which is a resolution, and this family resolves nothing. The aggregate
+over all twelve is an anchor derived from these rows; an entry with a foreign key into it would make
+the entries conditional on something built out of them.
+
+*No node carries an ordinal.* Within a parent, ordering the nodes of a kind by the position they were
+written at is total, two nodes being unable to share a position, and it is the order the author wrote
+them in. A column would restate the key.
+
+*The file is named twice.* `source_name` sits in the primary key carrying no foreign key, and a
+nullable `source_ref` beside it carries the reference under
+`CHECK (source_ref IS NULL OR source_ref = source_name)` and
+`FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL`. One column cannot
+be both a key that refuses a delete and a twin that survives one; H2 resolves that ambiguity by
+letting the cascade win. So the key gives up its foreign key, and removing a file from the registry
+nulls a column on every row that read it instead of deleting them or being refused. The attribution
+stays in the key; what the null withdraws is the registry's vouch, and one predicate,
+`source_ref IS NULL`, finds both a source removed under a reading and a write that left the column
+unset. The graph that owns the rows reaps its own on its next refresh, which is what keeps one process
+from reaching into another partition on a cadence its owner knows nothing about.
+
+*The reader does not use graphql-java's `NodeTraverser`,* which is the obvious tool. It walks the
+untyped child list, so an interface named in an implements clause and a union's member arrive as the
+same `TypeName` under a type definition, indistinguishable without asking what kind the parent is.
+`getImplements` and `getMemberTypes` are the answer the API already gives. Each relation is populated
+by its own method naming where its nodes live, rather than by one shared descent, because relations
+holding different data change for different reasons.
 
 === The verdict on the corpus is one relation, and the anchors do not wait for it
 
