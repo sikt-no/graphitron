@@ -1,9 +1,14 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.Public;
+import no.sikt.graphitron.model.capture.document.GraphitronEntries;
+import no.sikt.graphitron.model.capture.document.SdlEntries;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 
@@ -40,6 +45,13 @@ import java.util.Locale;
 public final class EntryFamilyFixture {
 
     private EntryFamilyFixture() {}
+
+    /**
+     * The instant every row of a capture carries, fixed rather than read off the clock. Two
+     * captures of this fixture are compared row for row by the corpus-isolation differential, and a
+     * stamp taken at capture time would make every stamped row differ on when the test ran.
+     */
+    private static final LocalDateTime READ_AT = LocalDateTime.of(2026, 1, 1, 12, 0);
 
     /** The first document's name, and so the stem of the file the fixture writes it to. */
     public static final String FIRST = "core";
@@ -144,7 +156,8 @@ public final class EntryFamilyFixture {
 
         type FilmError @error(handlers: [
           {handler: GENERIC, className: "java.lang.IllegalStateException", matches: "missing", description: "The film is gone"},
-          {handler: DATABASE, sqlState: "23503"}
+          {handler: DATABASE, sqlState: "23503"},
+          {handler: VALIDATION}
         ]) {
           path: [String]
           message: String
@@ -227,7 +240,26 @@ public final class EntryFamilyFixture {
      * arms are compared on is the decode's own output rather than a resolution.
      */
     public static CapturedStore capture(Path directory, JooqCatalog jooq) {
-        return CapturedStore.ofFiles(directory, FIRST, CORE, SECOND, EXTENSION, jooq);
+        var captured = CapturedStore.ofFiles(directory, FIRST, CORE, SECOND, EXTENSION, jooq);
+        perDocument(captured, directory);
+        return captured;
+    }
+
+    /**
+     * The per-document writers over the same two files. They take one parse at a time where the
+     * walk above takes the merged registry, because their rows are keyed by the position a node was
+     * written at and two documents writing one name are two rows.
+     */
+    private static void perDocument(CapturedStore captured, Path directory) {
+        var files = List.of(SchemaSource.file(CapturedStore.fixtureFile(directory, FIRST)),
+            SchemaSource.file(CapturedStore.fixtureFile(directory, SECOND)));
+        for (var document : SchemaLoader.parsePerSource(files).perSource()) {
+            SeededStore.seedSource(captured.dsl(), document.sourceName(), "SCHEMA_FILE");
+            SdlEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
+                document.registry(), READ_AT);
+            GraphitronEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
+                document.registry(), READ_AT);
+        }
     }
 
     /**

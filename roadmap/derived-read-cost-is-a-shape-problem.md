@@ -2044,3 +2044,42 @@ The keys decide two orders that used to be free. The writers run outermost first
 walks the same list backwards, both spelled out where the list is declared. Splitting also creates
 two payload-identical sibling sets, which `SupertypeSignatureGateTest` reports and its roster now
 carries: the union those sets ask for belongs in the anchors, once, rather than in each reader.
+
+## The decode, keyed where the directive was written (2026-09-09)
+
+The type-site directives now have a second family beside the coordinate-keyed one:
+`graphitron_ast_table_entry`, `graphitron_ast_scalar_type_entry`, `graphitron_ast_enum_entry`,
+`graphitron_ast_record_entry`, and one relation per handler kind under `@error`. Each is keyed by
+the position of the `@` token, which is `graphql_ast_type_directive_entry`'s key, so a row is the
+decode of exactly one row there and carries no position, no type name and no file of its own.
+
+What that buys is the thing the coordinate key could not give. Two documents binding one type are
+two rows, neither refused, so the collision is a query over the rows resolved oldest source first
+rather than a first-write-wins the writer had to arbitrate. Nothing in this writer claims,
+deduplicates or orders.
+
+`@error` gets no relation of its own. Its only argument is the handler list, so a row carrying its
+key and nothing else would say exactly what the applied-directive row already says. That is the
+position keying paying for itself: a relation that exists only to be a coordinate disappears.
+
+A handler gets a relation per kind, for the same reason the directive applications do: the kind
+decides which of the input's six fields mean anything. `GENERIC` matches by class identity and the
+directive rejects both SQL discriminators on it; `DATABASE` matches any SQLException on one of two
+discriminators and rejects a class name; `VALIDATION` takes nothing at all, so its row is its
+position, which is a fact the applied-directive row does not carry. One relation for the three
+would be six nullable columns whose legal combinations no constraint over that shape could state.
+
+There is no quarantine relation. Every argument of every application is already transcribed
+verbatim in `graphql_ast_applied_argument_entry`, so a value that is not the shape the directive
+asked for, and a field written on a handler kind that rejects it, decode to nothing here and are
+still one join away. That is the cost of the per-kind split, and it is what pays for it.
+
+The reference cascades on delete, and that is the one place a cascade is doing real work: it lets
+the two writers of one document sweep independently. An application the author moved or deleted is
+swept with the directive row it hung on; what is left for the decode's own sweep is the application
+whose position another directive now occupies. Both halves are held by a test that goes red when
+its half is removed.
+
+Not yet done. The field site is eighteen directive names and most of the complexity, and it should
+wait until the co-keyed shape has been read back by something other than a test. The coordinate-keyed
+family is still what the pipeline reads.

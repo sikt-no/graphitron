@@ -1570,6 +1570,179 @@ COMMENT ON COLUMN graphitron_argmapping_candidate.closes_cycle IS 'whether this 
 COMMENT ON COLUMN graphitron_argmapping_candidate.deprecated IS 'whether this spelling repeats the coordinate''s own name as its head, which every argument-level and input-field-level argMapping in the wild does today and which the clean spelling beside it replaces. A candidate all the same, because refusing what authors have already written is not this relation''s business: both spellings resolve and this column is what lets a warning tell them apart. False at every candidate under a field coordinate, where a head names an argument and repeats nothing, and false on the coordinate''s own name, that being the only spelling for binding the whole value';
 COMMENT ON COLUMN graphitron_argmapping_candidate.ambiguous IS 'whether more than one reading produced this exact spelling at this coordinate, the surviving row being the one the resolution picked. The relation cannot hold both because an author cannot write both, so the loser is not a row and this column is what keeps its absence from being silent. Which other reading it was needs no column of its own, both being recoverable here: the deprecated reading of a dotted spelling is the row at the same coordinate whose path is this one with its head removed, and the other reading of the coordinate''s own name is the coordinate itself';
 
+CREATE TABLE graphitron_ast_table_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  table_ref     VARCHAR,
+  table_ref_namespace_part VARCHAR,
+  table_ref_name_part      VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_table_entry IS 'What an @table application says: the table this declaration is bound to, as written. For example type Film @table(name: "film") gives one row reading film.';
+COMMENT ON COLUMN graphitron_ast_table_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_table_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_table_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_table_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_table_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_table_entry.table_ref IS 'the name argument exactly as written, or NULL on a bare @table. Nothing here supplies the type''s own name in its place: what an absent argument resolves to is the anchors'' business';
+COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_name_part IS 'the table half of the same';
+
+CREATE TABLE graphitron_ast_scalar_type_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  scalar_ref    VARCHAR,
+  scalar_ref_class_part VARCHAR,
+  scalar_ref_field_part VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_scalar_type_entry IS 'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written. For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref IS 'the scalar argument exactly as written. Nullable although the definition marks it required, because a document that omits it still applied the directive and the row is what says so';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref_class_part IS 'the class half of the written constant, or NULL where the string does not split; ConstantReferenceGrammar only cuts it';
+COMMENT ON COLUMN graphitron_ast_scalar_type_entry.scalar_ref_field_part IS 'the field half of the same';
+
+CREATE TABLE graphitron_ast_enum_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_enum_entry IS 'What an @enum application says: the external code reference this enum declaration is bound to, as written. For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.';
+COMMENT ON COLUMN graphitron_ast_enum_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_enum_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_enum_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_enum_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_enum_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_enum_entry.class_name IS 'the className field of the reference, as written';
+COMMENT ON COLUMN graphitron_ast_enum_entry.method IS 'the method field of the reference, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_enum_entry.argmapping IS 'the argMapping field of the reference, as written, or NULL where none was. Kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
+
+CREATE TABLE graphitron_ast_record_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_record_entry IS 'What a @record application says: the class this declaration is backed by, as written. For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row.';
+COMMENT ON COLUMN graphitron_ast_record_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_record_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_record_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_record_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_record_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_record_entry.class_name IS 'the className field of the reference, as written, or NULL where the argument was left out. Only the class is lifted: the directive''s argument is the same object literal @enum takes, and a method on a record backing has no meaning for a reader to ask about';
+
+CREATE TABLE graphitron_ast_error_generic_handler_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  matches       VARCHAR,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_error_generic_handler_entry IS 'A GENERIC handler of an @error application, at its position in the list, as written. For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_line IS 'source line of the at sign of the @error this handler was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_column IS 'source column of the same. The four columns are the application''s own key, so the handler hangs off exactly one row of graphql_ast_type_directive_entry';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.position IS '0-based position in the handler list as written. One index space across the three handler relations, an element taking its index whichever kind it is';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.class_name IS 'the exception class this handler matches by identity, as written. The directive requires it on this kind, and it is nullable here all the same: an author who left it out still wrote a handler, and saying so is what this row is for';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.matches IS 'a substring the exception message must contain, as written, or NULL where the handler takes every exception of the class';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.description IS 'the client-facing message this handler returns, as written, or NULL where the exception''s own message is used';
+
+CREATE TABLE graphitron_ast_error_database_handler_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  code          VARCHAR,
+  sql_state     VARCHAR,
+  matches       VARCHAR,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_error_database_handler_entry IS 'A DATABASE handler of an @error application, at its position in the list, as written. For example {handler: DATABASE, sqlState: "23503"} at position 0.';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_line IS 'source line of the at sign of the @error this handler was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_column IS 'source column of the same. The four columns are the application''s own key, so the handler hangs off exactly one row of graphql_ast_type_directive_entry';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.position IS '0-based position in the handler list as written. One index space across the three handler relations, an element taking its index whichever kind it is';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.code IS 'the vendor error code this handler matches on, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.sql_state IS 'the standard SQL state this handler matches on, as written, or NULL where none was. The directive rejects a handler carrying this and code together, and no constraint says so here: an author who wrote both wrote something, and the refusal is a reader''s to report rather than a reason to lose the transcription';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.matches IS 'a substring the exception message must contain, as written, or NULL where the handler takes every SQLException it discriminates to';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.description IS 'the client-facing message this handler returns, as written, or NULL where the exception''s own message is used';
+
+CREATE TABLE graphitron_ast_error_validation_handler_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_error_validation_handler_entry IS 'A VALIDATION handler of an @error application, at its position in the list. For example {handler: VALIDATION} at position 1 of a two-handler list.';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.source_line IS 'source line of the at sign of the @error this handler was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.source_column IS 'source column of the same. The four columns are the application''s own key, so the handler hangs off exactly one row of graphql_ast_type_directive_entry';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.position IS '0-based position in the handler list as written. One index space across the three handler relations, an element taking its index whichever kind it is';
+COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the directive row it hangs on';
+
 CREATE TABLE graphitron_table_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -11712,6 +11885,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-declaration-site',
    'one position in one SDL document, where that document declared or extended something',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-application-value',
+   'one value written inside one directive application, at its position in the list',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
@@ -11934,6 +12110,34 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
+  ('graphitron_ast_table_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @table application says: the table this declaration is bound to, as written.',
+   'For example type Film @table(name: "film") gives one row reading film.',
+   'A decode of one directive application, keyed by the application''s own position. Nothing positional is duplicated: the type this is written on, the file, and whether the declaration was an extension are all one join away on the key, so a reader that wants them reads the AST row and this relation says only what the arguments meant. Two documents applying @table to one type are two rows and neither is refused, which is the whole difference from a relation keyed by the type name: a collision is a query over these rows, resolved oldest source first, rather than a first-write-wins the writer had to arbitrate. The split of the written name is a cut of the string and nothing else; whether the table exists is a question for the catalog and belongs where the resolving happens.'),
+  ('graphitron_ast_scalar_type_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
+   'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
+  ('graphitron_ast_enum_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @enum application says: the external code reference this enum declaration is bound to, as written.',
+   'For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census, which is a different relation and a different reading.'),
+  ('graphitron_ast_record_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @record application says: the class this declaration is backed by, as written.',
+   'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. One column out of the object literal rather than three, because the directive''s argument shares its shape with @enum''s and not its meaning: a record backing names a class and nothing calls a method on it.'),
+  ('graphitron_ast_error_generic_handler_entry', 'sdl-application-value', 'graphitron',
+   'A GENERIC handler of an @error application, at its position in the list, as written.',
+   'For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.',
+   'One relation per handler kind, because the kind decides which fields mean anything. A GENERIC handler matches by class identity, so it carries a class name and nothing about SQL; the directive rejects sqlState and code on it outright. Merged with its siblings this would be six nullable columns of which a row fills three, and which three is a rule no constraint over that shape can state. A field an author wrote where their handler''s kind rejects it has no column here and is not lost: the whole handler list stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
+  ('graphitron_ast_error_database_handler_entry', 'sdl-application-value', 'graphitron',
+   'A DATABASE handler of an @error application, at its position in the list, as written.',
+   'For example {handler: DATABASE, sqlState: "23503"} at position 0.',
+   'One relation per handler kind, because the kind decides which fields mean anything. A DATABASE handler discriminates on one of two SQL codes and matches any SQLException, so it carries no class name; the directive rejects className on it outright. Merged with its siblings this would be six nullable columns of which a row fills two or three, and which of them is a rule no constraint over that shape can state. Both discriminators are columns here although the directive admits only one at a time, because refusing the row would lose what the author wrote and the conflict is a detection over these two columns.'),
+  ('graphitron_ast_error_validation_handler_entry', 'sdl-application-value', 'graphitron',
+   'A VALIDATION handler of an @error application, at its position in the list.',
+   'For example {handler: VALIDATION} at position 1 of a two-handler list.',
+   'One relation per handler kind, because the kind decides which fields mean anything, and this kind takes none: the directive rejects className, sqlState, code, matches and description on it, the pre-execution step matching nothing and emitting one error per constraint violation with that violation''s own message. So the row is its position and nothing else, and unlike @error itself that is a fact worth a row: which positions of the list ask for the validation channel is not something the applied-directive row says. A field an author wrote here anyway stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
   ('graphitron_field_chain_application', 'field-chain-application', 'graphitron',
    'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0.',
    'For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.',

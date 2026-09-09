@@ -475,6 +475,15 @@ class FactCaptureAgreementTest {
             "graphql_ast_field_directive_entry", "graphql_ast_input_value_directive_entry",
             "graphql_ast_enum_value_directive_entry", "graphql_ast_schema_directive_entry",
             "graphql_ast_applied_argument_entry",
+            // The decode of a type-site directive application, keyed by the application's own
+            // position. GraphitronSchema holds one binding per type where these hold one per
+            // application, so two documents binding one type have nothing to agree about here.
+            // What pins them is GraphitronEntriesTest, over a corpus that binds one type twice.
+            "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
+            "graphitron_ast_enum_entry", "graphitron_ast_record_entry",
+            "graphitron_ast_error_generic_handler_entry",
+            "graphitron_ast_error_database_handler_entry",
+            "graphitron_ast_error_validation_handler_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it.
             // GraphitronSchema is only ever built from a corpus that made a schema, so it has
             // nothing to say about one that did not.

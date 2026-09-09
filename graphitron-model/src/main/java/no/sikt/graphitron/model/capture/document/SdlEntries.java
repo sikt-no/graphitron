@@ -796,8 +796,11 @@ public final class SdlEntries {
      * A node and the node it was written inside, which is what a row with a parent needs and what
      * the gatherers below hand back. Parent is graphql-java's own word for it and the columns are
      * named for it too. The three top-level kinds have no parent and stream the node alone.
+     *
+     * <p>Visible to the package because {@link GraphitronEntries} decodes the same walk this one
+     * transcribes, and two walks over one document would be two answers to which nodes it holds.
      */
-    private record Nested<N extends Node<?>>(Node<?> parent, N node) {}
+    record Nested<N extends Node<?>>(Node<?> parent, N node) {}
 
     private static <N extends Node<?>> void nest(List<Nested<N>> into, Node<?> parent, List<N> nodes) {
         nodes.forEach(node -> into.add(new Nested<>(parent, node)));
@@ -870,8 +873,7 @@ public final class SdlEntries {
         return nested;
     }
 
-    /** The five kinds of node a directive may be written on. */
-    private static List<Nested<Directive>> directivesOnTypes(TypeDefinitionRegistry document) {
+    static List<Nested<Directive>> directivesOnTypes(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         declarations(document).forEach(parent -> nest(nested, parent, parent.getDirectives()));
         return nested;
@@ -938,16 +940,21 @@ public final class SdlEntries {
 
     // ------------------------------------------------------------------------ reading a node's parts
 
-    /** The position columns, bound to the Java type each holds rather than to any one relation's column. */
-    private static Field<String> sourceName(Node<?> node) {
+    /**
+     * The position columns, bound to the Java type each holds rather than to any one relation's
+     * column. Visible to the package for the reason {@link Nested} is: {@link GraphitronEntries}
+     * keys its rows at the position of a node this class also writes, and two readings of one
+     * node's location are two chances to disagree about it.
+     */
+    static Field<String> sourceName(Node<?> node) {
         return val(node.getSourceLocation().getSourceName(), String.class);
     }
 
-    private static Field<Integer> sourceLine(Node<?> node) {
+    static Field<Integer> sourceLine(Node<?> node) {
         return val(node.getSourceLocation().getLine(), Integer.class);
     }
 
-    private static Field<Integer> sourceColumn(Node<?> node) {
+    static Field<Integer> sourceColumn(Node<?> node) {
         return val(node.getSourceLocation().getColumn(), Integer.class);
     }
 

@@ -66,8 +66,13 @@ import static org.jooq.impl.DSL.table;
  */
 class SupertypeSignatureGateTest {
 
-    /** Where a captured row was read from. Shared by every capture relation, so it is not a fact. */
-    private static final Set<String> PROVENANCE = Set.of("SOURCE_NAME", "SOURCE_LINE", "SOURCE_COLUMN");
+    /**
+     * Columns that say where a row came from and when, which everything that shares nothing shares.
+     * {@code TOUCHED_AT} is one of them: a swept relation carries the instant of the reading that
+     * wrote it, so two relations agreeing on that column agree about a reading rather than a fact.
+     */
+    private static final Set<String> PROVENANCE =
+        Set.of("SOURCE_NAME", "SOURCE_LINE", "SOURCE_COLUMN", "TOUCHED_AT");
 
     /** The families a capture walk writes. A derived relation is not a candidate to be one of these. */
     private static final List<String> CAPTURE_FAMILIES =

@@ -30,6 +30,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * <p>It reads what the author wrote. A tag or note that configuration stamps onto every element of
  * a source is a fact about the build, recorded as one in {@code store_graph_schema_input}, and a
  * consumer wanting the decorated schema joins the two.
+ *
+ * <p>Two writers per document, in this order: the AST entries transcribe every node, and the
+ * graphitron entries decode the directive applications among them onto the rows the first wrote.
  */
 public final class SdlCapture {
 
@@ -53,6 +56,8 @@ public final class SdlCapture {
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
             SdlEntries.write(dsl, graph.name(), document.sourceName(), document.registry(), readAt);
+            GraphitronEntries.write(dsl, graph.name(), document.sourceName(), document.registry(),
+                readAt);
         }
         for (var failure : parse.failures()) {
             writeSource(dsl, failure.sourceName(), readAt);
