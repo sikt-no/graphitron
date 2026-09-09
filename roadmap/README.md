@@ -53,7 +53,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R893` | A decoding @nodeId instruction with no installed decode fails the build | Spec | 2026-09-01 <sub>created 2026-08-31</sub> | [plan](nodeid-decode-membership-guard.md) |
+| `R893` | A decoding @nodeId instruction with no installed decode fails the build | Spec | 2026-09-09 <sub>created 2026-08-31</sub> | [plan](nodeid-decode-membership-guard.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
