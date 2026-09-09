@@ -29,10 +29,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Ready | 2026-09-08 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | In Progress | 2026-09-08 | [plan](polymorphic-nodeid-service-input.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R663` | @defaultOrder on a @splitQuery child list is dropped at emit | In Review | 2026-09-01 <sub>created 2026-08-13</sub> | [plan](split-query-child-list-drops-default-order.md) |
+| `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | In Review | 2026-09-09 <sub>created 2026-09-08</sub> | [plan](polymorphic-nodeid-service-input.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -481,7 +481,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R939` [**A graphitron:dev round on a consumer schema answers in seconds again: the @nodeId landing verdict expands an unregistered expensive view per driving row**](nodeid-landing-defect-read-cost.md) — Spec, bug
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
-- `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — In Progress, feature
+- `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — In Review, feature
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx

@@ -1,13 +1,13 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-09-08
-last-updated: 2026-09-08
+last-updated: 2026-09-09
 ---
 
 # @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot
