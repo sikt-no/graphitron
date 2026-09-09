@@ -1,13 +1,13 @@
 ---
 id: R872
 title: "The keys say what a source owns, and the gatherer decides how to refresh it"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 2
 theme: tooling
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-08
+last-updated: 2026-09-09
 ---
 
 # The keys say what a source owns, and the gatherer decides how to refresh it
@@ -2250,3 +2250,59 @@ carried from round 4 and unchanged by this round's corrections: both members of 
 are still sources with no file, and phase three retires one and stamps the other. It is a description
 to rewrite when the phase lands, not a gate question, and the retirement sweep reaches the constant
 either way.
+
+### Author reopen, 2026-09-09: the plan is computed over a shape that is being replaced
+
+Not a review round. Ready to Spec, on the author's own motion, because the document capture that
+reached trunk at `e7bcc390c`, `8c054703f` and `7cf4d1ad6` is the successor to the capture family this
+plan repairs. That was an open question while the new gatherers were reachable only from their own
+tests; it is settled now, and the plan is not wrong about the shape it describes so much as describing
+a shape that is going away.
+
+**What landed.** Twelve `graphql_ast_*_entry` relations, one per SDL node kind, keyed by position and
+referencing each other not at all: the family carries 24 foreign keys, every one into `store_graph` or
+`store_source`, and nothing references any of them. A `sql_` writer, `JooqFactCapture`, that mark and
+sweeps on `touched_at` keyed on the source. And this item's set-null twin, shipped on all twelve entry
+relations, `source_name` in the primary key carrying no foreign key beside a nullable `source_ref`
+under `ON DELETE SET NULL` and its `CHECK`. Sixty occurrences of `source_ref` in the DDL where trunk
+held none a week ago, and none of them on the five roots this plan names.
+
+**Phase three loses its subject entirely.** Its five populations are all artifacts of the decorated
+registry, built by `TagLinkSynthesiser`, `FederationLinkApplier`, `TagApplier` and
+`DescriptionNoteApplier`. `SdlCapture` stops at `SchemaLoader.parsePerSource` and never reaches
+`loadAttributedRegistry`, so none of those rows is written at all: the recipe's decoration is recorded
+once in `store_graph_schema_input`'s `tag` and `description_note` columns and joined by a reader that
+wants the decorated schema. Round 9 signed this item off on the ground that the population list closes
+by construction between `parsePerSource` and the line `loadAttributedRegistry` draws. The new capture's
+boundary is that same line, and it falls on the other side of it.
+
+**Phase four goes with it.** Its four `graphql_` targets for `NOT NULL` are relations that derive from
+the entries or collapse into them; its twenty-eight `graphitron_` targets take `source_name` into the
+primary key under a position-keyed decode; its thirty-eight edges into a coordinate anchor disappear
+when the decode stops referencing anchors; and its five into `graphql_directive` go when that relation
+becomes an aggregate over `graphql_ast_directive_definition_entry`.
+
+**The taxonomy loses its subject in the `graphql_` family.** Of the twenty-nine non-entry `graphql_`
+relations, six become views over the entries, ten collapse into `graphql_ast_applied_directive_entry`
+and `graphql_ast_applied_argument_entry`, and the ten that survive are all graph-keyed aggregates.
+That is one treatment applied uniformly, not a three-way sort.
+
+**What survives, and it is the core rather than the remainder.** The removal doctrine is the part
+nothing else has done: the twelve entry relations carry the twin and nothing reaps, and `sql_schema`
+still carries a foreign key that refuses a delete. The `jvm_` and `java_` families are untouched by any
+of this, and phase two, `java_` joining the registry, is the most durable thing in the item. Retiring
+`StoreRefresh.PARTITIONED` and `wholesale()` stands for as long as the old pipeline runs. And the
+membership question reopens rather than closing: `store_graph_source` exists and carries no stamp, so
+whether a per-graph currency row is still wanted is now a question the new shape asks again.
+
+**The counts are stale independent of all of this.** The five families were 124 relations when the
+taxonomy was computed and are 138 now, the twelve entries having arrived after the sign-off and a
+fifteenth `sql_` relation with them. Every
+figure in the table above, the owned row, the source-owned 49 and the `NOT NULL` 32, is computed over
+the smaller number.
+
+**What the rewrite owes.** A goal restated against the successor capture, the removal doctrine carried
+forward whole, phases one and two narrowed to the families that still exist in the old shape, and
+phases three and four withdrawn rather than repaired. The anchor derivation and the position-keyed
+graphitron decode are their own items and not this one's scope; this plan should name them as
+neighbours and stop there.
