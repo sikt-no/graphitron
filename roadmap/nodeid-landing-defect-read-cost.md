@@ -131,6 +131,11 @@ reader stood. The landing-defect verdict is where the reader stood. The hop is o
 own body has not been bisected, so registering it now would price a rule with a possible re-evaluation
 still inside it and then blindfold the planner to whatever that was.
 
+**Precondition for pickup.** Steps 1 and 3 run against the `sis` store copy and the `sis`
+workspace, neither of which is in this repository, so the session that takes this item to
+In Progress is a local one on the machine that holds that consumer clone. A sandbox session cannot
+take a single figure the plan turns on, and should not start the item.
+
 **Step 1: bisect the hop on the exposing population.** On the `sis` store copy, with
 `SET OPTIMIZE_REUSE_RESULTS FALSE`, query statistics on and at least three runs per slice, per the
 skill's step 3. The slices, each a standalone statement:
