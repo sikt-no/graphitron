@@ -20,15 +20,13 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 /**
  * Reads a graph's schema files and writes what each one says.
  *
- * <p>This gatherer finds its own inputs. It is handed the configuration rather than a parsed
- * document, so the per-file parses exist here where the rows are keyed by the file they came from,
- * and no caller can hand over a merged registry that has already dropped one of two documents
- * declaring a name.
+ * <p>Handed the configuration rather than a parsed document, so the per-file parses happen here
+ * where the rows are keyed by the file they came from. Two documents declaring one name are two
+ * rows; a merged registry could only carry one.
  *
- * <p>It reads what the author wrote and nothing else. Loading rewrites that stamp a tag or append a
- * note onto every element of a configured source are not applied: those are facts about the build's
- * configuration, they are already recorded as such in {@code store_graph_schema_input}, and a
- * consumer that wants the decorated schema joins the two.
+ * <p>It reads what the author wrote. A tag or note that configuration stamps onto every element of
+ * a source is a fact about the build, recorded as one in {@code store_graph_schema_input}, and a
+ * consumer wanting the decorated schema joins the two.
  */
 public final class SdlCapture {
 

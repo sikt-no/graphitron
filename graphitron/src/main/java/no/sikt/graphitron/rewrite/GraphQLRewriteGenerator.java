@@ -578,6 +578,7 @@ public class GraphQLRewriteGenerator {
     private SubjectConfig subjectConfig() {
         return new SubjectConfig(
             Optional.ofNullable(ctx.schemaRecipe()),
+            Optional.ofNullable(ctx.jooqPackage()),
             Optional.ofNullable(ctx.supergraph()),
             ctx.declaredOutputCoordinates(),
             Optional.ofNullable(ctx.tenantColumn()),

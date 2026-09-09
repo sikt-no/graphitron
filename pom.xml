@@ -12,12 +12,15 @@
     <url>https://github.com/sikt-no/graphitron</url>
 
     <modules>
-        <module>graphitron-javapoet</module>
-        <module>graphitron-model</module>
-        <module>graphitron</module>
+        <!-- The three fixture modules lead: they depend on nothing here, and the fact tier tests
+             its catalog gatherers against the jOOQ classes and services they generate. -->
         <module>graphitron-fixtures-codegen</module>
         <module>graphitron-sakila-db</module>
         <module>graphitron-sakila-service</module>
+        <module>graphitron-model</module>
+        <!-- graphitron is its only consumer. -->
+        <module>graphitron-javapoet</module>
+        <module>graphitron</module>
         <module>graphitron-mcp</module>
         <module>graphitron-jakarta-rest</module>
         <module>graphitron-maven-plugin</module>

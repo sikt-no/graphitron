@@ -3112,6 +3112,7 @@ CREATE TABLE sql_schema (
   table_schema     VARCHAR NOT NULL,
   keys_class_fqn   VARCHAR,
   tables_class_fqn VARCHAR,
+  touched_at       TIMESTAMP,
   PRIMARY KEY (source_name, table_schema),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
@@ -3120,6 +3121,7 @@ COMMENT ON COLUMN sql_schema.source_name IS 'the generated package the schema li
 COMMENT ON COLUMN sql_schema.table_schema IS 'SQL schema name; empty string when the generated model declares no schema for its tables, which is the same fallback sql_table applies';
 COMMENT ON COLUMN sql_schema.keys_class_fqn IS 'the fully qualified name of the generated Keys class holding this schema''s key constants, resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Keys". The guess and the fact diverge under multi-schema layouts, where each schema gets its own Keys class in its own package. Null when the generated model carries no Keys class for the schema, which is a fact: a schema with no keys has no constants to name. Goto-definition on @reference(key:) lands in this class, so it is a join key rather than a completion nicety.';
 COMMENT ON COLUMN sql_schema.tables_class_fqn IS 'the fully qualified name of the generated Tables class holding this schema''s table constants, on exactly the terms the column beside it states: resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Tables", the guess and the fact diverging under multi-schema layouts where each schema gets its own Tables class in its own package. Null when the generated model carries no Tables class for the schema, which is a fact rather than a gap. This is the column that lets a reader assemble a table reference without a live catalog: every other part of one is already here or on sql_table, and the constants class was the single piece reachable only through the codegen loader, so its absence was what kept table references a walk-side construction';
+COMMENT ON COLUMN sql_schema.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_table (
   source_name  VARCHAR NOT NULL,
@@ -3132,6 +3134,7 @@ CREATE TABLE sql_table (
   description  VARCHAR,
   table_schema_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_schema)),
   table_name_upper   VARCHAR GENERATED ALWAYS AS (UPPER(table_name)),
+  touched_at         TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
@@ -3147,6 +3150,7 @@ COMMENT ON COLUMN sql_table.jooq_name IS 'the generated jOOQ Java field name for
 COMMENT ON COLUMN sql_table.description IS 'the database comment on the table, when present';
 COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored table or routine reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view. intent_field_reference_discovery is the worked example of that second sentence: both of its table names are catalog values, so it joins this relation twice on its key to compare them here';
+COMMENT ON COLUMN sql_table.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_table_record_supertype (
   source_name    VARCHAR NOT NULL,
@@ -3176,6 +3180,7 @@ CREATE TABLE sql_column (
   description  VARCHAR,
   column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name)),
   jooq_name_upper   VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
+  touched_at        TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, column_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
@@ -3192,12 +3197,14 @@ COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
 COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';
 COMMENT ON COLUMN sql_column.column_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against an authored column reference or the field name standing in for one. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_column on its key rather than by having it forwarded through a derived view. intent_name_matched_key_pair is the worked example of that second sentence: both of its column names are catalog values, so it reaches a key column''s fold through the foreign key sql_constraint_column already declares here';
 COMMENT ON COLUMN sql_column.jooq_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against an authored column reference or the field name standing in for one, which is the tier tried before the SQL name. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_column on its key rather than by having it forwarded through a derived view';
+COMMENT ON COLUMN sql_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_enum_binding (
   source_name  VARCHAR NOT NULL,
   class_fqn    VARCHAR NOT NULL,
   table_schema VARCHAR,
   type_name    VARCHAR,
+  touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, class_fqn),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
@@ -3206,6 +3213,7 @@ COMMENT ON COLUMN sql_enum_binding.source_name IS 'the owning partition''s gener
 COMMENT ON COLUMN sql_enum_binding.class_fqn IS 'the fully qualified name of the enum class, as Field.getType() reports it; the value a declared parameter type is compared against, and the reason the comparison can be an equality rather than a fold: both sides are binary names nobody wrote by hand. An array-typed column contributes no row, its bound type being the array and not the element';
 COMMENT ON COLUMN sql_enum_binding.table_schema IS 'the SQL schema declaring the database enum type this class was generated for; NULL where the class names no catalog type, which is the converter-bound Java enum the table comment describes, and NULL again where it names one that is not schema-scoped. Not a foreign key into sql_schema for the first reason: that half is not a schema the walk failed to resolve, it is a row for which no schema is the right answer';
 COMMENT ON COLUMN sql_enum_binding.type_name IS 'the database enum type''s own name, as the generated class reports it; NULL where the class names no catalog type, which is the wider of the two silences beside it. Carried so a reader can name the type an author would see in their database rather than only the class jOOQ generated from it';
+COMMENT ON COLUMN sql_enum_binding.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_constraint (
   source_name     VARCHAR NOT NULL,
@@ -3218,6 +3226,7 @@ CREATE TABLE sql_constraint (
   table_schema_upper    VARCHAR GENERATED ALWAYS AS (UPPER(table_schema)),
   constraint_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(constraint_name)),
   jooq_name_upper       VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
+  touched_at            TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
   CHECK (constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY'))
@@ -3233,6 +3242,7 @@ COMMENT ON COLUMN sql_constraint.constraint_type IS 'the standard''s TABLE_CONST
 COMMENT ON COLUMN sql_constraint.table_schema_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the namespace half of an authored key reference, which names the schema of the table holding the constraint rather than any schema of the constraint''s own. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_constraint on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_constraint.constraint_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored key reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_constraint on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_constraint.jooq_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored key reference, eligible only where no SQL constraint name answers it. NULL where jooq_name is, which is the constraint that resolves to no constant and therefore matches no reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_constraint on its key rather than by having it forwarded through a derived view';
+COMMENT ON COLUMN sql_constraint.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_constraint_column (
   source_name     VARCHAR NOT NULL,
@@ -3241,6 +3251,7 @@ CREATE TABLE sql_constraint_column (
   constraint_name VARCHAR NOT NULL,
   position        INT     NOT NULL,
   column_name     VARCHAR NOT NULL,
+  touched_at      TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name, position),
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name),
@@ -3254,12 +3265,14 @@ COMMENT ON COLUMN sql_constraint_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_constraint_column.constraint_name IS 'SQL constraint name';
 COMMENT ON COLUMN sql_constraint_column.position IS '0-based position in the constraint''s column list';
 COMMENT ON COLUMN sql_constraint_column.column_name IS 'SQL column name';
+COMMENT ON COLUMN sql_constraint_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_primary_key (
   source_name     VARCHAR NOT NULL,
   table_schema    VARCHAR NOT NULL,
   table_name      VARCHAR NOT NULL,
   constraint_name VARCHAR NOT NULL,
+  touched_at      TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name),
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name)
@@ -3269,6 +3282,7 @@ COMMENT ON COLUMN sql_primary_key.source_name IS 'the owning partition''s genera
 COMMENT ON COLUMN sql_primary_key.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_primary_key.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_primary_key.constraint_name IS 'the name of the PRIMARY KEY constraint in sql_constraint';
+COMMENT ON COLUMN sql_primary_key.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_referential_constraint (
   source_name                VARCHAR NOT NULL,
@@ -3279,6 +3293,7 @@ CREATE TABLE sql_referential_constraint (
   referenced_schema          VARCHAR NOT NULL,
   referenced_table           VARCHAR NOT NULL,
   referenced_constraint_name VARCHAR NOT NULL,
+  touched_at                 TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name),
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name),
@@ -3294,12 +3309,14 @@ COMMENT ON COLUMN sql_referential_constraint.referenced_source_name IS 'the refe
 COMMENT ON COLUMN sql_referential_constraint.referenced_schema IS 'schema of the referenced constraint''s table; part of the composite reference, not a denormalisation';
 COMMENT ON COLUMN sql_referential_constraint.referenced_table IS 'the referenced constraint''s table';
 COMMENT ON COLUMN sql_referential_constraint.referenced_constraint_name IS 'the referenced constraint''s name';
+COMMENT ON COLUMN sql_referential_constraint.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_index (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
   table_name   VARCHAR NOT NULL,
   index_name   VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, index_name),
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
@@ -3308,6 +3325,7 @@ COMMENT ON COLUMN sql_index.source_name IS 'the owning partition''s generated-pa
 COMMENT ON COLUMN sql_index.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_index.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_index.index_name IS 'SQL index name';
+COMMENT ON COLUMN sql_index.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_index_column (
   source_name  VARCHAR NOT NULL,
@@ -3316,6 +3334,7 @@ CREATE TABLE sql_index_column (
   index_name   VARCHAR NOT NULL,
   position     INT     NOT NULL,
   column_name  VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, index_name, position),
   FOREIGN KEY (source_name, table_schema, table_name, index_name)
     REFERENCES sql_index (source_name, table_schema, table_name, index_name)
@@ -3327,6 +3346,7 @@ COMMENT ON COLUMN sql_index_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
 COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s column list';
 COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
+COMMENT ON COLUMN sql_index_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_routine (
   source_name          VARCHAR NOT NULL,
@@ -3335,6 +3355,7 @@ CREATE TABLE sql_routine (
   routine_type         VARCHAR NOT NULL,
   routines_class_fqn   VARCHAR,
   routines_method_name VARCHAR,
+  touched_at           TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, routine_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
@@ -3346,6 +3367,7 @@ COMMENT ON COLUMN sql_routine.routine_name IS 'SQL routine name; for a table-val
 COMMENT ON COLUMN sql_routine.routine_type IS 'the standard''s ROUTINE_TYPE vocabulary: FUNCTION or PROCEDURE. Single-valued today, every captured routine reaching the store through the table census and therefore being a function; it is the discriminator that lets the other form arrive without reshaping, which is the whole argument for a supertype relation';
 COMMENT ON COLUMN sql_routine.routines_class_fqn IS 'the fully qualified name of the generated Routines class carrying this routine''s call surface, or NULL when the generated model exposes none. Captured beside the method name because the parameters below are a fact about one method: jOOQ generates several forms per routine (a Configuration-first execute form, a value-parameter form, a Field-expression form), and a parameter list that did not name its method would not say which one it described. NULL here and on the method name is also what distinguishes a routine with no parameters from one whose call surface the generated model does not expose, the two being the same zero rows in sql_routine_parameter otherwise.';
 COMMENT ON COLUMN sql_routine.routines_method_name IS 'the Routines-class method the parameters below describe: the value-parameter form, the one an emitted FROM clause calls. NULL exactly when routines_class_fqn is';
+COMMENT ON COLUMN sql_routine.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_routine_parameter (
   source_name  VARCHAR NOT NULL,
@@ -3354,6 +3376,7 @@ CREATE TABLE sql_routine_parameter (
   position     INT     NOT NULL,
   jooq_name    VARCHAR NOT NULL,
   binding_type VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, routine_name, position),
   FOREIGN KEY (source_name, table_schema, routine_name)
     REFERENCES sql_routine (source_name, table_schema, routine_name)
@@ -3365,6 +3388,7 @@ COMMENT ON COLUMN sql_routine_parameter.routine_name IS 'SQL routine name';
 COMMENT ON COLUMN sql_routine_parameter.position IS '0-based position in the call surface''s parameter list, which is the routine''s declaration order';
 COMMENT ON COLUMN sql_routine_parameter.jooq_name IS 'the generated method parameter''s Java name, read reflectively; jOOQ''s camelCase transform of the database''s own parameter name, and the closest this relation gets to it. Reflection reports it only when the consumer compiled their jOOQ output with -parameters, and reports arg0, arg1 otherwise. The generator already depends on that flag, matching @routine(argMapping:) against these names, so recording the name makes an existing dependency visible rather than creating one.';
 COMMENT ON COLUMN sql_routine_parameter.binding_type IS 'the fully qualified Java type the generated method takes at this position, as on sql_column.binding_type. Unlike a column, a parameter carries no declared SQL type beside it: jOOQ generates no Routine object for a table-valued function, so the declared type survives only as an anonymous bind placeholder behind a protected field on TableImpl, and was left out rather than shipped always-null';
+COMMENT ON COLUMN sql_routine_parameter.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_node_metadata (
   source_name       VARCHAR NOT NULL,
@@ -3375,6 +3399,7 @@ CREATE TABLE sql_node_metadata (
   type_id_class     VARCHAR,
   key_columns_form  VARCHAR NOT NULL,
   key_columns_class VARCHAR,
+  touched_at        TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name),
   FOREIGN KEY (source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name),
@@ -3394,6 +3419,7 @@ COMMENT ON COLUMN sql_node_metadata.type_id IS 'the stated value, exactly when t
 COMMENT ON COLUMN sql_node_metadata.type_id_class IS 'the stated value''s runtime class, fully qualified, exactly when type_id_form is OTHER; NULL otherwise. The class name and deliberately not a rendering of the value: an arbitrary object''s toString may carry an identity hash, and a column that varied between two reads of one classpath would fail the warm-and-cold agreement sweep this relation sits under';
 COMMENT ON COLUMN sql_node_metadata.key_columns_form IS 'what the key-columns constant stated, on the same terms as type_id_form: FIELD_ARRAY when it held an array of jOOQ fields, NULL when it held null, OTHER when it held anything else, ABSENT when the class declares no such constant. Child rows exist exactly under FIELD_ARRAY, so an empty array is that form with no children rather than a flag of its own';
 COMMENT ON COLUMN sql_node_metadata.key_columns_class IS 'the stated value''s runtime class, fully qualified, exactly when key_columns_form is OTHER; NULL otherwise, on the same determinism ground as type_id_class';
+COMMENT ON COLUMN sql_node_metadata.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_node_key_column (
   source_name  VARCHAR NOT NULL,
@@ -3401,6 +3427,7 @@ CREATE TABLE sql_node_key_column (
   table_name   VARCHAR NOT NULL,
   position     INT     NOT NULL,
   column_name  VARCHAR,
+  touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, position),
   FOREIGN KEY (source_name, table_schema, table_name)
     REFERENCES sql_node_metadata (source_name, table_schema, table_name)
@@ -3411,6 +3438,7 @@ COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table live
 COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode different ids than the ones already issued. Dense from zero within a parent, and present only under a FIELD_ARRAY parent, both gated';
 COMMENT ON COLUMN sql_node_key_column.column_name IS 'the name the entry states, as jOOQ reports it for the field; NULL exactly when the array entry itself is null, which is a stated fact about the entry rather than an absence of one. Resolution against the table''s own columns is the derivation''s business, and it matches the reading side: case-insensitively, against the generated Java name or the SQL name';
+COMMENT ON COLUMN sql_node_key_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 -- ==== JVM classpath facts =========================================================
 -- What the classfiles on the compile classpath declare, in the JVM's vocabulary: classes, the

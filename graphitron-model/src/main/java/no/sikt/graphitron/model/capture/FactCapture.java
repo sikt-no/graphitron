@@ -351,7 +351,7 @@ public final class FactCapture {
         var sources = new ClasspathSources(classpathStamps, readAt);
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
-            var sink = new FactSink(txDsl, graph.name());
+            var sink = new FactSink(txDsl, graph.name(), readAt);
             // The budget is narrowed for the anchor row alone and restored the moment it is held;
             // ANCHOR_LOCK_MILLIS carries why the two rows deserve different answers. Set per
             // capture rather than once at open because SET LOCK_TIMEOUT is a session command and

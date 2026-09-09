@@ -983,7 +983,7 @@ class FactSchemaGateTest {
 
     private static void captureUnder(GraphitronModelStore store, String graphName, Path dir,
                                      String supergraph) {
-        var config = new SubjectConfig(java.util.Optional.empty(),
+        var config = new SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
             java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
             java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
             no.sikt.graphitron.model.config.SessionStateConfig.none());

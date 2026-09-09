@@ -2851,7 +2851,7 @@ class FactCaptureAgreementTest {
             Set.of("rule-a"), List.of("Legacy*", "Deprecated*"));
         var session = no.sikt.graphitron.model.config.SessionStateConfig.from(
             "com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
-        var config = new SubjectConfig(java.util.Optional.empty(),
+        var config = new SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
             java.util.Optional.of("checkout-supergraph"), java.util.Optional.of(output),
             java.util.Optional.of("tenant_id"), lint, session);
 
@@ -2942,7 +2942,7 @@ class FactCaptureAgreementTest {
     private static SubjectConfig withSessionState(
             no.sikt.graphitron.model.config.SessionStateConfig sessionState) {
         return new SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
-            java.util.Optional.empty(), java.util.Optional.empty(),
+            java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
             no.sikt.graphitron.model.lint.LintConfig.empty(), sessionState);
     }
 

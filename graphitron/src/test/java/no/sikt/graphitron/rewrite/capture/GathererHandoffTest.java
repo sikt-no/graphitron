@@ -26,6 +26,9 @@ import no.sikt.graphitron.model.sink.FactSink;
 @PipelineTier
 class GathererHandoffTest {
 
+    /** A fixed instant, so a failure reads the same on every run. */
+    private static final LocalDateTime PROBE_INSTANT = LocalDateTime.of(2020, 1, 1, 0, 0);
+
     private static final String SOURCE = "example.jar";
 
     @Test
@@ -34,7 +37,7 @@ class GathererHandoffTest {
         try (var store = FactStores.inMemory()) {
             store.dsl().transaction(tx -> {
                 var dsl = tx.dsl();
-                var sink = new FactSink(dsl, "graph");
+                var sink = new FactSink(dsl, "graph", PROBE_INSTANT);
 
                 var source = dsl.newRecord(STORE_SOURCE);
                 source.setSourceName(SOURCE);
@@ -70,7 +73,7 @@ class GathererHandoffTest {
             try {
                 store.dsl().transaction(tx -> {
                     var dsl = tx.dsl();
-                    var sink = new FactSink(dsl, "graph");
+                    var sink = new FactSink(dsl, "graph", PROBE_INSTANT);
                     var source = dsl.newRecord(STORE_SOURCE);
                     source.setSourceName(SOURCE);
                     source.setSourceKind("JAR");

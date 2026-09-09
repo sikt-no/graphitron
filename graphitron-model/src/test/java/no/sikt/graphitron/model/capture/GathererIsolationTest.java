@@ -51,9 +51,10 @@ class GathererIsolationTest {
         roll.put("capture", "FactCapture");
         roll.put("capture/config", "ConfigurationFactCapture");
         roll.put("capture/catalog", "CatalogFactCapture");
+        // And two read the classpath: this one writes the sql_ family from the jOOQ catalog.
+        roll.put("capture/jooq", "JooqFactCapture");
         roll.put("capture/sdl", "SdlFactCapture");
-        // The document reader that replaces it, beside it while the anchors still come
-        // from the walk. Two gatherers over one source for as long as the switch takes.
+        // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document.
         roll.put("capture/document", "SdlCapture");
         roll.put("capture/verdict", "SdlVerdictCapture");
         roll.put("capture/graphitron", "GraphitronFactCapture");

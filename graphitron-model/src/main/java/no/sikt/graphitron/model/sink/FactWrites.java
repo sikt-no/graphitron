@@ -530,8 +530,9 @@ final class FactWrites {
                          t.JOOQ_NAME,
                          t.CLASS_FQN,
                          t.RECORD_CLASS_FQN,
-                         t.DESCRIPTION)
-                .values(markers(8)))
+                         t.DESCRIPTION,
+                         t.TOUCHED_AT)
+                .values(markers(9)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -541,7 +542,8 @@ final class FactWrites {
                                row.get(t.JOOQ_NAME),
                                row.get(t.CLASS_FQN),
                                row.get(t.RECORD_CLASS_FQN),
-                               row.get(t.DESCRIPTION));
+                               row.get(t.DESCRIPTION),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }
@@ -555,8 +557,9 @@ final class FactWrites {
                          t.CONSTRAINT_NAME,
                          t.CONSTRAINT_TYPE,
                          t.JOOQ_NAME,
-                         t.KEY_POSITION)
-                .values(markers(7)))
+                         t.KEY_POSITION,
+                         t.TOUCHED_AT)
+                .values(markers(8)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -565,7 +568,8 @@ final class FactWrites {
                                row.get(t.CONSTRAINT_NAME),
                                row.get(t.CONSTRAINT_TYPE),
                                row.get(t.JOOQ_NAME),
-                               row.get(t.KEY_POSITION));
+                               row.get(t.KEY_POSITION),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }
@@ -583,8 +587,9 @@ final class FactWrites {
                          t.SQL_TYPE,
                          t.BINDING_TYPE,
                          t.NULLABLE,
-                         t.DESCRIPTION)
-                .values(markers(10)))
+                         t.DESCRIPTION,
+                         t.TOUCHED_AT)
+                .values(markers(11)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -596,7 +601,8 @@ final class FactWrites {
                                row.get(t.SQL_TYPE),
                                row.get(t.BINDING_TYPE),
                                row.get(t.NULLABLE),
-                               row.get(t.DESCRIPTION));
+                               row.get(t.DESCRIPTION),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }
@@ -607,14 +613,16 @@ final class FactWrites {
                 .columns(t.SOURCE_NAME,
                          t.CLASS_FQN,
                          t.TABLE_SCHEMA,
-                         t.TYPE_NAME)
-                .values(markers(4)))
+                         t.TYPE_NAME,
+                         t.TOUCHED_AT)
+                .values(markers(5)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
                                row.get(t.CLASS_FQN),
                                row.get(t.TABLE_SCHEMA),
-                               row.get(t.TYPE_NAME));
+                               row.get(t.TYPE_NAME),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }

@@ -30,6 +30,9 @@ import java.util.Optional;
  *                   output coordinates at all, which is a validate-only run: the package sentinel
  *                   such a run carries is its own admission of that, and transcribing the
  *                   sentinel would mint the derived fact that can disagree
+ * @param jooqPackage the package the consumer's jOOQ classes were generated into, from
+ *                   {@code <jooqPackage>}; empty on a build with no database behind it, which
+ *                   captures no catalog facts
  * @param tenantColumn the database-per-tenant column declaration, from {@code <tenantColumn>};
  *                   empty on a single-tenant build
  * @param lint       the {@code <lint>} suppression, decomposed rather than rendered.
@@ -39,11 +42,13 @@ import java.util.Optional;
  *                   {@link SessionStateConfig#none()} is the no-configuration arm, so this
  *                   component is never absent and the arm carries what absence would have
  */
-public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> supergraph,
-                            Optional<OutputCoordinates> output, Optional<String> tenantColumn,
-                            LintConfig lint, SessionStateConfig sessionState) {
+public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooqPackage,
+                            Optional<String> supergraph, Optional<OutputCoordinates> output,
+                            Optional<String> tenantColumn, LintConfig lint,
+                            SessionStateConfig sessionState) {
     public SubjectConfig {
         Objects.requireNonNull(recipe, "recipe");
+        Objects.requireNonNull(jooqPackage, "jooqPackage");
         Objects.requireNonNull(supergraph, "supergraph");
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(tenantColumn, "tenantColumn");
@@ -54,12 +59,18 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> supe
     /** A subject that declared nothing at all. */
     public static SubjectConfig none() {
         return new SubjectConfig(Optional.empty(), Optional.empty(), Optional.empty(),
-            Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
+            Optional.empty(), Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
     }
 
     /** A subject whose only declaration is its recipe. */
     public static SubjectConfig of(SchemaRecipe recipe) {
-        return new SubjectConfig(Optional.ofNullable(recipe), Optional.empty(), Optional.empty(),
-            Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
+        return of(recipe, null);
+    }
+
+    /** A subject declaring where to find its schema files and its generated jOOQ classes. */
+    public static SubjectConfig of(SchemaRecipe recipe, String jooqPackage) {
+        return new SubjectConfig(Optional.ofNullable(recipe), Optional.ofNullable(jooqPackage),
+            Optional.empty(), Optional.empty(), Optional.empty(), LintConfig.empty(),
+            SessionStateConfig.none());
     }
 }

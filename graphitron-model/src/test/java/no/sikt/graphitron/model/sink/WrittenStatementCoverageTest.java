@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -95,7 +96,12 @@ class WrittenStatementCoverageTest {
     private static FactWrites.RelationWriter throughTheSink() {
         return (dsl, rows) -> {
             var graph = rows.get(0).getTable().field("GRAPH_NAME", String.class);
-            var sink = new FactSink(dsl, graph == null ? "probe" : rows.get(0).get(graph));
+            // Both stamps are fed the probe's own values, so the sink writing them back leaves the
+            // round trip intact and the gate still measures what the statement covers.
+            var touched = rows.get(0).getTable().field("TOUCHED_AT", LocalDateTime.class);
+            var sink = new FactSink(dsl,
+                graph == null ? "probe" : rows.get(0).get(graph),
+                touched == null ? LocalDateTime.of(2020, 1, 1, 0, 0) : rows.get(0).get(touched));
             rows.forEach(sink::add);
             sink.flush();
         };
@@ -151,6 +157,11 @@ class WrittenStatementCoverageTest {
         }
         if (type == Boolean.class) {
             return Boolean.TRUE;
+        }
+        if (type == LocalDateTime.class) {
+            // Distinct per column on the same terms as the others, and a fixed base rather than
+            // now(), so a failure reads the same on every run.
+            return LocalDateTime.of(2020, 1, 1, 0, 0).plusSeconds(index);
         }
         return fail(("%s.%s has type %s, which this probe has no value for; add one rather than "
             + "skipping the column, since a skipped column is a column this gate stops covering")

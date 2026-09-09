@@ -5,6 +5,7 @@ import org.jooq.Field;
 import org.jooq.Table;
 import org.jooq.TableRecord;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -12,6 +13,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -39,13 +41,22 @@ public final class FactSink {
 
     private final DSLContext dsl;
     private final String graphName;
+    private final LocalDateTime touchedAt;
     private final Map<Table<?>, List<TableRecord<?>>> buckets = new LinkedHashMap<>();
     private final Map<Table<?>, Set<List<Object>>> claimed = new HashMap<>();
     private final Map<Table<?>, Field<String>> graphFields = new HashMap<>();
+    private final Map<Table<?>, Field<LocalDateTime>> touchedFields = new HashMap<>();
 
-    public FactSink(DSLContext dsl, String graphName) {
+    /**
+     * @param touchedAt when the reading these rows belong to ran, stamped on every relation that
+     *                  carries the column. Taken from the caller rather than here so all of a
+     *                  reading's rows date the same moment, which is what a sweep tells readings
+     *                  apart by
+     */
+    public FactSink(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         this.dsl = dsl;
         this.graphName = graphName;
+        this.touchedAt = Objects.requireNonNull(touchedAt, "touchedAt");
     }
 
     /** The store this sink writes to; capture reads nothing back, but tests do. */
@@ -66,14 +77,18 @@ public final class FactSink {
     }
 
     /**
-     * Buffers one row, stamping the graph dimension on it when its relation carries one. The
-     * stamp lives here rather than at the call sites so every SDL-family writer stays untouched
-     * and correct by construction.
+     * Buffers one row, stamping the graph dimension and the reading's instant on it when its
+     * relation carries them. The stamps live here rather than at the call sites so every writer
+     * stays untouched and correct by construction.
      */
     public void add(TableRecord<?> record) {
         Field<String> graph = graphField(record.getTable());
         if (graph != null) {
             record.set(graph, graphName);
+        }
+        Field<LocalDateTime> touched = touchedField(record.getTable());
+        if (touched != null) {
+            record.set(touched, touchedAt);
         }
         buckets.computeIfAbsent(record.getTable(), t -> new ArrayList<>()).add(record);
     }
@@ -85,6 +100,14 @@ public final class FactSink {
             graphFields.put(table, table.field("GRAPH_NAME", String.class));
         }
         return graphFields.get(table);
+    }
+
+    private Field<LocalDateTime> touchedField(Table<?> table) {
+        // Not computeIfAbsent, on graphField's terms.
+        if (!touchedFields.containsKey(table)) {
+            touchedFields.put(table, table.field("TOUCHED_AT", LocalDateTime.class));
+        }
+        return touchedFields.get(table);
     }
 
     private List<Object> withGraph(Object... key) {

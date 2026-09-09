@@ -14,6 +14,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,6 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class GraphitronStoreTest {
 
+    /** The loader the generated jOOQ classes are on, which for this module's tests is its own. */
+    private static final ClassLoader CODEGEN = GraphitronStoreTest.class.getClassLoader();
+
     @Test
     @DisplayName("a run opens a store, captures its configured schema into it, and closes it")
     void aRunCapturesItsOwnConfiguration(@TempDir Path tmp) {
@@ -33,7 +37,7 @@ class GraphitronStoreTest {
         write(tmp, "actor.graphqls", "type Actor { name: String }\n");
 
         try (var store = GraphitronStore.inMemory()) {
-            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp));
+            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp), CODEGEN);
 
             assertThat(store.dsl()
                     .select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME)
@@ -66,7 +70,7 @@ class GraphitronStoreTest {
         write(tmp, "film.graphqls", "type Film { title: String }\n");
 
         try (var store = GraphitronStore.inMemory()) {
-            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp));
+            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp), CODEGEN);
 
             assertThat(store.dsl().fetchCount(STORE_SOURCE,
                     STORE_SOURCE.SOURCE_NAME.like("%film.graphqls")))
@@ -93,7 +97,7 @@ class GraphitronStoreTest {
         write(tmp, "second.graphqls", "type X { b: Int }\n");
 
         try (var store = GraphitronStore.inMemory()) {
-            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp));
+            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp), CODEGEN);
 
             assertThat(store.dsl()
                     .select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME)
@@ -102,6 +106,45 @@ class GraphitronStoreTest {
                     .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME))
                 .as("one row per declaration, the loser of the merge included")
                 .hasSize(2);
+        }
+    }
+
+    /**
+     * Both gatherers through one call. The catalog half needs a class loader, which is the one
+     * thing configuration cannot carry: the generated jOOQ classes are resolved reflectively and
+     * only the build tool can assemble the classpath they live on.
+     */
+    @Test
+    @DisplayName("one call fills the schema and the catalog")
+    void oneCallFillsBoth(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", "type Film { title: String }\n");
+        var config = SubjectConfig.of(new SchemaRecipe(tmp.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")),
+            "no.sikt.graphitron.rewrite.test.jooq");
+
+        try (var store = GraphitronStore.inMemory()) {
+            GraphitronStore.capture(store, new GraphIdentity("g", tmp), config, CODEGEN);
+
+            assertThat(store.dsl().fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
+                    GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Film")))
+                .as("the schema the recipe named").isEqualTo(1);
+            assertThat(store.dsl().fetchCount(SQL_TABLE, SQL_TABLE.TABLE_NAME.eq("film")))
+                .as("and the database the jOOQ package describes").isEqualTo(1);
+        }
+    }
+
+    /** A configuration naming no jOOQ package captures no catalog facts and never touches the loader. */
+    @Test
+    @DisplayName("a run with no jOOQ package captures no catalog")
+    void noJooqPackageCapturesNoCatalog(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", "type Film { title: String }\n");
+
+        try (var store = GraphitronStore.inMemory()) {
+            GraphitronStore.capture(store, new GraphIdentity("g", tmp), configOver(tmp), null);
+
+            assertThat(store.dsl().fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY))
+                .as("the schema still lands").isPositive();
+            assertThat(store.dsl().fetchCount(SQL_TABLE)).as("and no catalog rows").isZero();
         }
     }
 
