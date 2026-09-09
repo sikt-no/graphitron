@@ -145,7 +145,14 @@ into it is decided by the discriminator above, in that item's own commit, not he
   remedies: a revived item retracts its entries with `roadmap-tool revive`, a shipped one has no
   file. An item with `revived-from:` and no `## Revived` heading names the missing section. The changelog invariant holds on today's tree; the
   word-boundary regex that matches the 438 bullets reading `- R<n> (` also matches the 18 reading
-  `- R<n> ` bare (re-measure at pickup). `Discarded:` entries are out of scope: they name the
+  `- R<n> ` bare, plus two shapes the re-measure at pickup found, `- R<n>, ` and `- R<n>: `, for
+  458 headed bullets in all. Also measured at pickup, and worth the Done reviewer's attention: the
+  invariant holds at every sampled point of history but one, `f150465` (2026-08-03), where R563 had
+  per-slice changelog entries filed while its item file was still on the board. Writing the entry
+  at the Done gate is the documented convention, so the check enforces that convention rather than
+  adding a restriction; but a long multi-slice programme that wants its milestones recorded as they
+  land is a practice the check now refuses instead of tolerating.
+  `Discarded:` entries are out of scope: they name the
   discarded id in prose, and un-discarding is not this item.
 - `.claude/skills/roadmap/SKILL.md`. The state table gains the `Done -> Spec` row, guard "none;
   the file is restored, not transitioned". A `### revive <R<n>>` subcommand section carries the
