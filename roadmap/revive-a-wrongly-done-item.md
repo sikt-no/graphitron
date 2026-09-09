@@ -79,16 +79,12 @@ can head several bullets (R43 heads seven, R68 and R563 six each), so a retracti
 one span would leave the very invariant the tool's own regenerate step then checks failing, with a
 message telling the session to run the command that just ran.
 
-**Front-matter.** A revived item carries two keys the tool writes and never a hand invents:
-`revived-from: <sha>`, the retracted Done commit, and `revived-verdict-session: session_<id>`, the
-session that granted it, read off that commit's trailer. They are the machine-read facts of the
-revive. The `srp` skill reads the session slot directly when it builds the disqualified set for the
-second Done gate, rather than re-deriving it from `git log`, whose current resolution takes the
-first `session_` token in a commit body and, on a Done-gate commit that names the implementer's
-session in prose ahead of its own trailer, returns the implementer (R780 owns that defect; this
-item does not depend on it because the slot sidesteps it). The keys also give the build something
-to check: an item carrying `revived-from:` without a `## Revived` section fails `validate` on every
-build, not only at the moment the command ran.
+**Front-matter.** A revived item carries one key the tool writes and never a hand invents:
+`revived-from: <sha>`, the retracted Done commit. It is the machine-read fact of the revive, and it
+gives the build something to check: an item carrying `revived-from:` without a `## Revived`
+section fails `validate` on every build, not only at the moment the command ran. The SHA is also
+where a reader starts when reconstructing what the retracted round approved, since the Done-gate
+commit message carries the review narrative the item file never did.
 
 **`## Revived` section.** The one new body convention. A restored body without it presents landed
 work as forthcoming, and the next implementer rebuilds it. The section sits directly after
@@ -100,11 +96,13 @@ is the existing multi-phase convention, so the body once again carries only the 
 the facts it rests on. The section is plan, not argument: it does not litigate the Done round,
 whose text stays in the restored `## Reviewer findings` where the next reviewer can read it.
 
-**Reviewer rule on a revived item.** The reviving session is the last committer of the plan, so
-the `Spec -> Ready` guard already excludes it from signing off its own revive. The second Done gate
-is taken by a session that is neither an implementing session (the original landing commits or the
-rework) nor the one named by `revived-verdict-session:`; the rule's reason, fresh context, applies
-with more force to a session that has already rationalised the gap than to one that wrote the code.
+**Reviewer rule on a revived item.** Unchanged. The reviving session is the last committer of the
+plan, so the `Spec -> Ready` guard already excludes it from signing off its own revive. The second
+Done gate applies the ordinary rule, reviewer not equal to implementer, where the implementing
+sessions are those of the original landing commits and of the rework. The session that granted the
+retracted verdict is not disqualified by that rule and this item does not add a rule that would;
+the fresh-context argument for doing so was weighed and judged not worth a third party in the
+guard, sessions being short-lived enough that it would almost never bite.
 
 **Successors already filed.** The workflow has two disposals for a plan whose work moves into
 another item, and a revive uses them rather than a third. A successor the revived plan supersedes
@@ -124,30 +122,28 @@ into it is decided by the discriminator above, in that item's own commit, not he
   can hold. A `*Revive:*` paragraph lands beside `*Discarded:*` carrying the discriminator, the
   edge and why it lands at `Spec`, the archive statement, the changelog invariant, the successor
   disposals, and the reviewer rule for the second gate; the `*Reviewer rule:*` paragraph gets one
-  sentence pointing at it. Under Item file conventions, the front-matter example gains the two
-  optional `revived-*` keys with a comment, a bullet for `## Revived` (position and content) joins
+  sentence pointing at it. Under Item file conventions, the front-matter example gains the
+  optional `revived-from:` key with a comment, a bullet for `## Revived` (position and content) joins
   the body-shape rules, the skeleton shows it as an optional line after `## Goal`, the
   deletion-at-Done bullet gains "and is the archive a revive restores from", and the never-reuse
   bullet gains the same-work sentence.
-- `roadmap-tool` `Main.java`. A `revive <roadmap-dir> <R<n>-or-slug> --retracted <sha>
-  --verdict-session <session_id>` subcommand, dispatched beside `status`. It works on a file
+- `roadmap-tool` `Main.java`. A `revive <roadmap-dir> <R<n>-or-slug> --retracted <sha>`
+  subcommand, dispatched beside `status`. It works on a file
   already restored to disk, so the module stays free of git and subprocesses. Preconditions, each a
   named error on failure: the file resolves through `resolveItemFile`; its `status:` is
   `In Review`, the error otherwise naming the state found and that Done is reachable only from
-  `In Review`; a `## Revived` heading is present with a non-empty body; both options are given and
-  shaped (7 to 40 hex, `session_` prefix). Then it retracts every Done entry the id heads in
+  `In Review`; a `## Revived` heading is present with a non-empty body; the option is given and shaped
+  (7 to 40 hex). Then it retracts every Done entry the id heads in
   `changelog.md` under the span rule and asserts before writing that the id heads no bullet
   afterwards (a file with no entry is a no-op the tool reports, since routine completions never
-  wrote one); writes `status: Spec`, `last-updated:` and the two `revived-*` keys in one
-  `patchFrontMatter` call, with the stamp logic factored out of `applyStatusTransition` so the two
+  wrote one); writes `status: Spec`, `last-updated:` and `revived-from:` in one `patchFrontMatter` call, with the stamp logic factored out of `applyStatusTransition` so the two
   paths cannot drift; and regenerates the README through `runGenerate`, which validates.
 - `roadmap-tool` `Main.validate`. Takes the board as a pair, items plus the set of ids heading a
   `- R<n>` bullet in `changelog.md`, read once beside `readChangelogNextId`, and all four callers
   (`runGenerate`, `runVerify`, `runCreate`, `runRenderAdoc`) pass it, so no entry point can omit
   the check. Two new errors. An on-board id in the changelog set names both places and both
   remedies: a revived item retracts its entries with `roadmap-tool revive`, a shipped one has no
-  file. An item with `revived-from:` and no `## Revived` heading, or with one `revived-*` key and
-  not the other, names the missing piece. The changelog invariant holds on today's tree; the
+  file. An item with `revived-from:` and no `## Revived` heading names the missing section. The changelog invariant holds on today's tree; the
   word-boundary regex that matches the 438 bullets reading `- R<n> (` also matches the 18 reading
   `- R<n> ` bare (re-measure at pickup). `Discarded:` entries are out of scope: they name the
   discarded id in prose, and un-discarding is not this item.
@@ -160,49 +156,44 @@ into it is decided by the discriminator above, in that item's own commit, not he
         -- roadmap ':(exclude)roadmap/README.md' ':(exclude)roadmap/changelog.md')
   path=$(git show --format= --name-only --diff-filter=D "$sha" -- roadmap \
         | grep -vE 'README|changelog')
-  session=$(git log -1 --format=%B "$sha" | grep -oE 'session_[A-Za-z0-9]+' | tail -1)
   git cat-file -e "$sha^:$path"          # stop and surface if this fails
   git restore --source="$sha^" -- "$path"
   # author ## Revived directly under ## Goal; collapse shipped plan sections; dispose of successors
-  mvn -pl roadmap-tool exec:java -q \
-    -Dexec.args="revive roadmap $id --retracted $sha --verdict-session $session"
+  mvn -pl roadmap-tool exec:java -q -Dexec.args="revive roadmap $id --retracted $sha"
   ```
   The sharp edges are stated next to the lines that handle them. The pathspec excludes `README.md`
   and `changelog.md` because both carry the id and a `-G` over them finds the wrong commit. `-1`
   picks the most recent deletion, because a slug can be deleted more than once and the latest body
   is the wanted one: R571 was deleted at `2178df3` and again at `11d5daf`, and the recipe run
-  against R571 resolves `11d5daf`. `tail -1` on the session tokens picks the trailer, which is last
-  in the body, over any session a Done-gate message names in prose. And `$sha^` is the first
+  against R571 resolves `11d5daf`. And `$sha^` is the first
   parent, which carries the file because a pathspec-restricted `git log` without `-m` never
   attributes a deletion to a merge commit; the `cat-file -e` line turns the residual assumption
   into a stop rather than a silent restore of nothing. The section ends by naming what the recipe
   does not do: the revive commit itself and the successor disposals are the session's.
-- `.claude/skills/srp/SKILL.md`. Two edits. The "No matches" branch of the id lookup stops at
+- `.claude/skills/srp/SKILL.md`. One edit. The "No matches" branch of the id lookup stops at
   "the item shipped; tell the user" today; it gains "if the goal is undelivered, the `roadmap`
-  skill's `revive` is the move". The implementation-stage template's disqualified-party list gains
-  the value of `revived-verdict-session:` when the front-matter carries it.
+  skill's `revive` is the move".
 
 ## Tests
 
 - `ReviveTest` in `roadmap-tool`, over a temp roadmap directory. A restored file at `In Review`
   with a `## Revived` section ends at `Spec` with a fresh `last-updated:`, an untouched `created:`,
-  and both `revived-*` keys; its single-line changelog entry is gone; a three-paragraph entry with
+  and `revived-from:` set to the option's value; its single-line changelog entry is gone; a three-paragraph entry with
   indented continuation lines (R916's shape) is gone whole, the neighbours on either side are
   byte-identical, and exactly one blank line separates them; an id heading three bullets (R43's
   shape) has all three gone; an id with no changelog entry revives with the reported no-op;
   `status: Ready` on entry fails naming the state; a body without `## Revived` fails naming the
-  section; a missing or malformed option fails naming it.
+  section; a missing or malformed `--retracted` fails naming it.
 - `validate` coverage beside `NextIdAllocationTest`: an on-board id that also heads a changelog
   bullet fails `verify` with the two-remedy message, for both the `- R<n> (` and the bare
   `- R<n> ` bullet shapes; an id that appears only in prose inside another entry does not; an item
-  with `revived-from:` and no `## Revived` heading fails naming the section; one key without the
-  other fails naming the absent key. Each of the four `validate` callers is exercised through at
+  with `revived-from:` and no `## Revived` heading fails naming the section. Each of the four `validate` callers is exercised through at
   least one of these, so the check cannot be entry-point dependent.
 - `mvn verify -pl roadmap-tool,docs` on the tree: the workflow page renders with the new edge and
   the `check-adoc-xrefs` and README-sync gates pass.
 - Not mechanically enforced: the git half of the recipe. No test in a git-free module can run it,
   and nothing re-runs it after the implementing session does. The implementer runs it against R571
-  and R926 into a scratch checkout and records the resolved SHAs, paths and sessions in the
+  and R926 into a scratch checkout and records the resolved SHAs and paths in the
   implementing commit message; that is a one-time check on the skill text's claims, not coverage,
   and the skill section says so where the recipe is stated.
 
@@ -231,11 +222,16 @@ restored file says. Rejected because no commit ever observes that state, the too
 hold an edge from a state with no file, and R506's statechart driver would have two edges and a
 continuation pair to fold where one edge says the same thing.
 
-**Machine-read facts in the `## Revived` prose.** One section, no new front-matter. Rejected
-because the retracted verdict's session is consumed by the `srp` skill, whose `git log` resolution
-is known to return the implementer on exactly this commit shape (R780), and because a prose-only
-obligation is enforced once, when the command runs, where a front-matter key lets `validate`
-enforce it on every build.
+**The retracted SHA in the `## Revived` prose only.** One section, no new front-matter. Rejected
+because a prose-only obligation is enforced once, when the command runs, and a session that
+hand-edits `status:` or drops the section afterwards restores the failure the section exists to
+prevent; a front-matter key lets `validate` enforce the section on every build, and front-matter is
+the surface the tool already reads and writes.
+
+**Disqualifying the session that granted the retracted verdict from the second Done gate.** Would
+carry that session as a second front-matter key for the `srp` skill to read. Rejected as not worth
+a third party in the reviewer rule: sessions are short-lived enough that it would almost never
+bite, and the ordinary rule already excludes everyone who wrote the code.
 
 **A git-aware `revive` that restores the file itself.** One command instead of a recipe plus a
 command. Rejected because the module has never run a subprocess and has no git dependency; every
