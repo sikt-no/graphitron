@@ -52,7 +52,7 @@ while the individual figures stay provisional. The implementer re-takes the two 
 turns on with the repeated-run recipe in the `store-performance` skill before recording them
 anywhere durable.
 
-`FactCapture.detect` issues seven reads per pass. Six of them, on that population:
+`FactCapture.detect` issues eight reads per pass. Six of them, on that population:
 
 | read | time |
 |---|---|
@@ -63,7 +63,11 @@ anywhere durable.
 | `intent_field_unlowerable_ordering` | 58 ms |
 | `intent_reference_for_application` | 3 ms |
 
-The seventh, `intent_node_id_decode_landing_defect`, did not return in 24 minutes.
+The seventh, `intent_node_id_decode_landing_defect`, did not return in 24 minutes. The eighth
+arrived after these figures were taken, the polymorphic decode verdict joining the same pass, so
+`intent_node_id_polymorphic_decode_defect` is unpriced on this population. Nothing in the
+localisation below turns on it, the separation being four orders of magnitude, and it is one more
+relation the guard under Tests carries a pinned row for.
 
 Bisecting that view's body against the same population localises it to one term:
 
@@ -90,18 +94,20 @@ it is the one hypothesis worth pre-empting because it is the thing a reader noti
 `intent_node_id_decode_endpoint`, whose subtree answers in about a hundred milliseconds here (the
 `judged` CTE reads it directly at 115 ms). On the inner side of three `LEFT JOIN`s it names the two
 reference-target views, `intent_argument_reference_step_target` and
-`intent_input_field_reference_step_target`, each a recursive walk over a registered hop relation,
-and an inline derived table computing `COUNT(*) OVER (PARTITION BY ...)` across the whole of
-`sql_referential_constraint`; it then closes with `MAX(position) OVER (PARTITION BY ...)` over its
-own rows. A naming on the inner side of a join is evaluated once per driving row, which the
-`intent_node_id_decode_column_live` registration's `reason` records as the shape no spelling
-escapes, and a window sees its whole partition whatever the outer predicate says, so none of the
-four terms can be pruned by a reader's join condition. Which of them carries the 41.5 s is not
-known: 377 rows under a window is not seconds by itself, and a recursive walk or a catalog-wide
-window re-evaluated 377 times could be. The plan's first step is that bisection, because the register
-records what happens when a rule is priced with a re-evaluation still inside it: the
-`intent_mutation_payload_key_membership_live` row says a rule with a re-evaluation inside it should
-be rewritten before it is priced, and names the refresh figure that rule would have cost otherwise.
+`intent_input_field_reference_step_target`, each a recursive walk over its own hop relation, of
+which `intent_field_reference_step_hop` is a registered target and
+`intent_argument_reference_step_hop` an unregistered view, and an inline derived table computing
+`COUNT(*) OVER (PARTITION BY ...)` across the whole of `sql_referential_constraint`; it then closes
+with `MAX(position) OVER (PARTITION BY ...)` over its own rows. A naming on the inner side of a
+join is evaluated once per driving row, which the `intent_node_id_decode_column_live`
+registration's `reason` records as the shape no spelling escapes, and a window sees its whole
+partition whatever the outer predicate says, so none of the four terms can be pruned by a reader's
+join condition. Which of them carries the 41.5 s is not known: 377 rows under a window is not
+seconds by itself, and a recursive walk or a catalog-wide window re-evaluated 377 times could be.
+The plan's first step is that bisection, because the register records what happens when a rule is
+priced with a re-evaluation still inside it: the `intent_mutation_payload_key_membership_live` row
+says a rule with a re-evaluation inside it should be rewritten before it is priced, and names the
+refresh figure that rule would have cost otherwise.
 
 **Why this is a regression and not a pre-existing cost.** `intent_node_id_decode_hop` has been
 expensive since well before the verdict landed. What changed is that nothing used to evaluate it at
@@ -111,7 +117,9 @@ source view of a registered target, so the hop relation was paid once per refres
 `intent_node_id_decode_landing_defect` is the first reader to expand it live, it expands it more
 than once, and it carries no registration. Confirmed from the DDL independently of the timings: the
 landing-defect view has zero `FROM`/`JOIN` references anywhere, so `NodeIdLandingDefects.detect`
-is its only reader in the tree, and no Java reader names the hop relation at all.
+is its only reader in the tree, and no Java reader in main names the hop relation.
+`NodeIdDecodeReachTest` reads it in the model test tier, which is a pin the registration outcome
+keeps rather than a cadence a dev round pays.
 
 **Why the read-cost gate did not see it.** `DerivedReadCostTest` already carries a cell for the
 landing-defect view and prices it at 709 ms unregistered against 224 ms registered on its
@@ -212,7 +220,10 @@ names changed when the bisection points at a reference-target view.
   text unchanged. Its view comment becomes the standard `_live` note (the
   `intent_node_id_decode_hop_column_live` comment beside it is the form), and each column comment
   becomes the standard "the X of a row of this rule, materialized into
-  `intent_node_id_decode_hop`.X" form.
+  `intent_node_id_decode_hop`.X" form. That note stays in the `COMMENT ON` rather than moving
+  anywhere less visible, because it is the warning at the point of misuse: the fact model requires
+  a derived view to carry it there, the cost being invisible at the call site, and a reader who
+  names the rule instead of the rows is committing this item's own defect one more time.
 - `CREATE TABLE intent_node_id_decode_hop` with the same twenty-one columns in the same order, so
   `INSERT INTO target SELECT * FROM source` is the view's own rows (`MaterializeRegistryGateTest`
   checks the column lists match). The table inherits the view's long comment plus the standard
@@ -232,13 +243,40 @@ names changed when the bisection points at a reference-target view.
   with the population it was taken on; that the refresh is neutral because the hop-column position
   was already paying one evaluation of this rule; and that a standalone timing of this view is a
   ranking while the `-X` line is the price.
-- A `meta_relation` row and, if none fits, a `meta_grain` row for `intent_node_id_decode_hop_live`.
-  `MetaDeclarationGateTest` refuses a new observed relation with no `meta_relation` row, and the
-  frozen roster in `undeclared-relations.txt` only shrinks, so the new view cannot be added there;
-  the `intent_node_id_decode_landing_defect` row is the exemplar. The declared owner turns the
-  crossing claim above into data, since that test's owner-read rule holds a declared view to the
-  relations its owner may read. The table keeps the canonical name and its roster line still
-  matches; declare it too and remove its line, which is the direction the roster ratchets.
+- No declaration for the `_live` view, and one gate edit that makes that true for every registration
+  rather than for this one. `MetaDeclarationGateTest.theUndeclaredRosterOnlyShrinks` computes
+  `undeclared` as the observed relations minus the declared ones, and all twenty `_live` views in
+  the tree stand on the frozen roster in `undeclared-relations.txt` to satisfy it. The roster only
+  shrinks and `meta_relation_family` is a census over `INFORMATION_SCHEMA.TABLES` with no
+  declaration escape (its `exempted` column places a relation in a family rather than excusing it),
+  so a twenty-first registration has nowhere to put its source view. Subtract the register instead:
+  `undeclared` becomes observed minus declared minus `SELECT source_view_name FROM meta_materialize`,
+  and the twenty `_live` lines leave the roster in the same commit, since the gate compares by
+  equality. Net roster diff twenty lines out and none in, which is the only direction its own javadoc
+  allows.
+
+  This is the register stating a fact the roster was hand-listing, not a new exemption. The fact
+  model's ownership rule already reads a materialized target *as* its rule, expanding through the
+  register "so that a registration cannot hide a crossing underneath it", and
+  `FactCaptureAgreementTest` already calls a materialization "two relations under one rule". So the
+  relation of a registered pair is the target, which carries the canonical name every reader spells
+  and the rule's own comment, and the `_live` view is the machinery that fills it. Declaring the
+  machinery would put a second `grain_text` and `example` on rows that are the target's rows by
+  construction, which the two-way `EXCEPT` proof is what establishes, and two spellings of one
+  resolution agree exactly until one of them changes. It would also evict the `_live` note from the
+  one surface a misuser meets, the echo gate joining `grain_text` and `example` and nothing else.
+
+  The ratchet survives and tightens. The exemption is derived from the register rather than authored,
+  so nobody can pad it, and there is no way to dodge a declaration through it: a registration needs a
+  target, and a target under a name the roster does not already carry is an observed relation on no
+  frozen roster. Registration twenty-two onward then owes no declaration work at all, which is what
+  makes this an edit to the gate rather than a convention every future author restates.
+
+  The canonical table keeps its roster line, which still matches once it is a table, and stays
+  undeclared. Declaring it is a separate question with a real constraint behind it: a declared
+  relation's visible comment is capped at 601 characters by the two `CHECK`s the echo gate joins,
+  and this rule's comment is 3436. Where a multi-paragraph rule argument lives once its relation is
+  declared is owed by whichever item drains the roster, not by this one.
 - No index on the new table in this item. The verdict joins the hop on its five branch columns plus
   `position = last_position`, and the primary key's index serves that as a prefix. The
   `intent_node_id_decode_column_live` reason records an index bought for one reader losing on
@@ -261,7 +299,16 @@ than a scoped one:
   spell `intent_node_id_decode_hop` re-spell as `intent_node_id_decode_hop_live`, on the precedent
   the carrier registration set in that set's comments; any new pair the twelve-unit fixture reports
   is answered as that set's javadoc demands, measured and either declined or pinned with its figures.
-- `FactSchemaGateTest`: comment-echo and column-comment gates over the new `_live` view and the table.
+- `MetaDeclarationGateTest`: `theUndeclaredRosterOnlyShrinks` gains the register subtraction and the
+  roster loses its twenty `_live` lines, per the declaration bullet above. The seeded detection case
+  beside it gains an arm holding the subtraction in both directions, that a registered source view
+  is exempt and that a target under an unrostered name is still an offender, so the exemption cannot
+  silently widen. No other case in that class moves: nothing new is declared, so the echo, grain,
+  corpus and owner-read cases keep the population they have.
+- `FactSchemaGateTest`: the column-comment gate, every table and every column carrying a
+  `COMMENT ON`, over the new `_live` view and the table. The comment-echo gate is
+  `MetaDeclarationGateTest`'s and binds declared relations only, which is why twenty registrations
+  have never met it and why this one does not either.
 
 `Tables.INTENT_NODE_ID_DECODE_HOP` is regenerated from the DDL as a table; no Java reader in main
 names it, so nothing recompiles differently.
@@ -327,6 +374,14 @@ repointed edits the roster where its component sits; the gate reads the roster. 
 detection pass, not every consumer read: the diagnostic surface the language server reads has the
 scan-count ceilings in `graphitron-lsp`.
 
+One thing the register subtraction above does not fix, named here so it is not mistaken for
+something this item closed. `MetaDeclarationGateTest`'s owner-read case filters
+`meta_relation_family.relation_type` to `VIEW`, so a declared relation that is a registered target
+is a table and its body is never walked, while the `_live` view holding that body is exempt. The
+ownership rule the fact model states wants a declared relation resolved through the register before
+it is walked, which is a widening of that gate rather than a roster question, and it is R941. This
+item takes the exemption as data and leaves the gate's reach where it is.
+
 A wall-clock gate is explicitly *not* in scope. Nothing in this repository captures a consumer schema
 of the size that exposes this, and a fixture that did would be a build wall-clock gate, which the
 build-wall-clock item owns.
@@ -338,6 +393,19 @@ plan's default outcome, and taking it before the bisection was the draft's shape
 order rather than as a lever: the register's own rows say a rule priced with a re-evaluation inside
 it is priced wrong, and the DDL rename, the reason prose, the roster move and four gate edits would
 all be built on an assumption one afternoon of slices settles.
+
+**Declaring the new `_live` view instead of subtracting the register.** The other way to answer the
+closed roster, and the one that touches no gate: give the source view a `meta_relation` row, a minted
+grain and `derivation` as its owner, and put the standard `_live` note in `rationale` where the echo
+gate does not reach. Declined on three counts, each from something the tree already states. The
+grain sentence and example would describe rows that are the target's rows by construction, which is
+two spellings of one resolution. The `_live` note would leave the `COMMENT ON`, which is the surface
+the fact model requires the warning to sit on because the cost is invisible at the call site, and
+losing it in this item of all items is the defect being re-committed. And it would declare the
+machinery while leaving the canonical name every reader spells undeclared, which inverts the
+ownership rule's own direction. It also buys the owner-read gate one pair's worth of reach, for the
+reason under the guard below, which is a general fix filed separately rather than a side effect worth
+paying for here, and it is R941.
 
 **Rewriting arm 2 so it stops correlating on `stopped`.** Removes the per-row re-expansion and
 nothing else: each arm still expands the hop once, at 22.8 s a time on the exposing population, so
@@ -451,6 +519,35 @@ registration outcome with the decision recorded where the next registration will
 three is an answer; what the plan cannot do is assert a `meta_relation` row and the standard `_live`
 note in the same breath.
 
+*Author response, 2026-09-09.* Answered, but not by any of the three ways out as posed: the finding
+is right that the plan cannot assert a `meta_relation` row and the standard `_live` note together,
+and wrong to assume the row is the half that has to give. A `principles-architect` consult on the
+proposed declaration turned it around against three things the tree already states. The ownership
+rule reads a materialized target *as* its rule, expanding through the register "so that a
+registration cannot hide a crossing underneath it", and `FactCaptureAgreementTest` calls a
+materialization "two relations under one rule", so the relation of a registered pair is the target
+and the `_live` view is machinery. Declaring the machinery would give one grain a second
+`grain_text` and `example` over rows the two-way `EXCEPT` proves identical, and would evict the
+`_live` note from the `COMMENT ON`, which the fact model requires precisely because the cost is
+invisible at the call site, in the item whose whole finding is an invisible read cost.
+
+So the declaration bullet now subtracts `meta_materialize.source_view_name` from the gate's
+`undeclared` domain and deletes the twenty `_live` lines from the frozen roster, a net twenty out
+and none in. Nothing is declared, the `_live` note stays where a misuser meets it, and registration
+twenty-two onward owes no declaration work, which is what makes it a gate edit rather than a
+convention. The second way out was checked and is unavailable in its own terms:
+`meta_relation_family` is a census over `INFORMATION_SCHEMA.TABLES` and its `exempted` column places
+a relation in a family rather than excusing it from declaration. The declaration shape is recorded
+under "Other solutions we've considered" with why it lost, the comment-ceiling constraint behind
+leaving the table undeclared is now stated as owed elsewhere, and the owner-read blind spot the
+consult surfaced is filed as R941 and named in the guard rather than buried.
+
+The scope judgment is the author's and the reviewer should weigh it: this puts a one-query edit to
+`MetaDeclarationGateTest` inside a performance item. It is here because no registration can land
+without it and because the edit replaces a hand-listed exemption with the register that already
+states it, not because the item wanted the territory. The alternative, blocking this item on a
+separate roster item, is a consumer waiting on a dev loop that does not start.
+
 **Finding 2 (question one, a claim about code). The detection pass issues eight reads, not seven.**
 
 R933 landed on trunk after this spec's last commit and added `NodeIdPolymorphicDecodeDefects.detect`
@@ -462,6 +559,11 @@ a number fix. Nothing about the finding changes: the six figures and the localis
 new read is one more relation the guard's pin will carry a row for, which reads as a point in the
 guard's favour.
 
+*Author response, 2026-09-09.* Corrected to eight, with the polymorphic read named as unpriced on
+this population and the localisation's four orders of magnitude stated as why nothing below turns on
+it. It is also one more relation the guard's pin will carry, which the Tests section already gets
+for free from taking its roots off the roster rather than a list.
+
 **Finding 3 (question one, a claim about code). A Java reader does name the hop relation.**
 
 "no Java reader names the hop relation at all" is false as written:
@@ -472,6 +574,10 @@ qualified form is the one to keep. This does not disturb the regression argument
 read cadence in a generator pass, and the test reader is a second pin the registration outcome gets
 for free.
 
+*Author response, 2026-09-09.* Corrected. The sentence now carries the `in main` qualifier and
+names `NodeIdDecodeReachTest` as a model-tier pin the registration outcome keeps, rather than a
+cadence a dev round pays.
+
 **Finding 4 (question one, minor, non-blocking). Only one of the two reference-target views recurses
 over a registered relation.**
 
@@ -480,3 +586,8 @@ over a registered relation.**
 registered target. `intent_argument_reference_step_target` recurses over
 `intent_argument_reference_step_hop`, which is an unregistered view. Step 1 prices both standalone
 either way, so nothing in the plan changes; if anything it raises the prior on `tg` being the term.
+
+
+*Author response, 2026-09-09.* Corrected. The body now says which of the two hop relations is a
+registered target and which is a view, which raises rather than lowers the prior on `tg` that
+step 1 is testing.
