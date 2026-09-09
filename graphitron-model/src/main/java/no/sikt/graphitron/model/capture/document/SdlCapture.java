@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -12,13 +13,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
- * Reads a graph's schema files and writes what each one says.
+ * Reads a graph's schema files, writes what each one says, and records what went wrong
+ * saying it.
  *
  * <p>Handed the configuration rather than a parsed document, so the per-file parses happen here
  * where the rows are keyed by the file they came from. Two documents declaring one name are two
@@ -33,19 +36,32 @@ public final class SdlCapture {
     private SdlCapture() {}
 
     /**
-     * Makes {@code graph}'s SDL rows be what its configured schema files now say.
+     * Makes {@code graph}'s SDL rows be what its configured schema files now say, and its problem
+     * rows be what reading them raised.
      *
-     * <p>The instant is the caller's: the graph row, the source rows and every entry row date the
-     * same reading, which is what the entries' sweep tells readings apart by.
+     * <p>The instant is the caller's: the graph row, the source rows, every entry row and every
+     * problem row date the same reading, which is what the sweeps tell readings apart by.
+     *
+     * <p>A source the parser rejected still gets its registry row. It contributes no entries, so
+     * without one the file would look like one nobody configured rather than one that would not
+     * read.
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                LocalDateTime readAt) {
         writeGraph(dsl, graph, readAt);
-        for (var document : SchemaLoader.parsePerSource(schemaFiles(config, graph.baseDir()))
-                .perSource()) {
+        var parse = SchemaLoader.parsePerSource(schemaFiles(config, graph.baseDir()));
+        for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
             SdlEntries.write(dsl, graph.name(), document.sourceName(), document.registry(), readAt);
         }
+        for (var failure : parse.failures()) {
+            writeSource(dsl, failure.sourceName(), readAt);
+        }
+        // What the merge refused and what the assembly refused are the same question asked of the
+        // same corpus, so they arrive as one list in the order the stages ran.
+        var raised = new ArrayList<>(parse.registryErrors());
+        raised.addAll(SchemaAssembly.of(parse.registry()).errors());
+        SdlSchemaProblems.write(dsl, graph.name(), parse.failures(), List.copyOf(raised), readAt);
     }
 
     /**

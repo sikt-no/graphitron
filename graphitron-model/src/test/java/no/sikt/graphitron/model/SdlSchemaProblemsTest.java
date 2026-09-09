@@ -1,11 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlEntries;
-import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
-import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.model.schema.SchemaError;
-import no.sikt.graphitron.model.schema.SchemaLoader;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,26 +15,25 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
-import static no.sikt.graphitron.model.test.SeededStore.seedSource;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What went wrong when the documents were made into a schema, recorded rather than re-derived.
+ * What went wrong when the documents were read and made into a schema, recorded rather than
+ * re-derived.
  *
- * <p>One relation for the whole attempt. Merging the documents and building a schema from them are
- * not two questions: the merge only ever says whether a name was declared twice, three error classes
- * in all, while the build runs around thirty checks over references, interface contracts, input
- * against output position, directive locations and the schema's own shape. A reader asking why their
- * schema did not build does not care which of the two spoke.
+ * <p>Driven through {@link SdlCapture} rather than through the writer, because the claim is that a
+ * reading records its own verdict. A case that ran the three stages itself would pass over a
+ * capture that recorded none of them.
  *
- * <p>Absence is success, and is meant to be relied on: a graph that made a schema has no rows here.
+ * <p>One relation for all three stages, the stage a column, so each case asserts which stage spoke
+ * as well as what it said. Absence is success and is meant to be relied on: a graph that made a
+ * schema has no rows here.
  */
 class SdlSchemaProblemsTest {
 
@@ -45,10 +42,10 @@ class SdlSchemaProblemsTest {
     @Test
     @DisplayName("a corpus that makes a schema records no problem")
     void aCorpusThatBuildsRecordsNothing(@TempDir Path tmp) {
-        Path file = write(tmp, "ok.graphqls", "type Query { a: String }\n");
+        write(tmp, "ok.graphqls", "type Query { a: String }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, file);
+            read(dsl, tmp);
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
                 .as("it built, so there is nothing to say").isZero();
         });
@@ -61,18 +58,19 @@ class SdlSchemaProblemsTest {
     @Test
     @DisplayName("a redefinition is a problem, and the entries still hold both declarations")
     void aRedefinitionIsRecorded(@TempDir Path tmp) {
-        Path first = write(tmp, "first.graphqls", "type Query { a: String }\ntype X { a: String }\n");
-        Path second = write(tmp, "second.graphqls", "type X { b: Int }\n");
+        write(tmp, "first.graphqls", "type Query { a: String }\ntype X { a: String }\n");
+        write(tmp, "second.graphqls", "type X { b: Int }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, first, second);
+            read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
-                .as("graphql-java's own class and sentence, kept verbatim")
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS,
+                    GRAPHQL_SCHEMA_PROBLEM.MESSAGE).from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                .as("graphql-java's own class and sentence, kept verbatim, and the stage that spoke")
                 .anySatisfy(row -> {
-                    assertThat(row.value1()).isEqualTo("TypeRedefinitionError");
-                    assertThat(row.value2()).contains("tried to redefine existing");
+                    assertThat(row.value1()).isEqualTo("REGISTRY");
+                    assertThat(row.value2()).isEqualTo("TypeRedefinitionError");
+                    assertThat(row.value3()).contains("tried to redefine existing");
                 });
 
             assertThat(dsl.select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME)
@@ -92,28 +90,65 @@ class SdlSchemaProblemsTest {
     @Test
     @DisplayName("a build check is a problem in the same relation as a merge complaint")
     void aBuildCheckIsRecordedTheSameWay(@TempDir Path tmp) {
-        Path file = write(tmp, "dangling.graphqls", "type Query { a: Missing }\n");
+        write(tmp, "dangling.graphqls", "type Query { a: Missing }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, file);
-            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS))
+            read(dsl, tmp);
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS)
+                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
                 .as("nothing was declared twice, so only the build could have caught this")
-                .contains("MissingTypeError");
+                .anySatisfy(row -> {
+                    assertThat(row.value1()).isEqualTo("ASSEMBLY");
+                    assertThat(row.value2()).isEqualTo("MissingTypeError");
+                });
+        });
+    }
+
+    /**
+     * A file the parser rejected. It contributes no entries at all, so a reading that did not record
+     * the refusal would leave the file missing from the store rather than reported, and missing is
+     * what a file nobody configured looks like.
+     */
+    @Test
+    @DisplayName("a file that will not parse is a problem naming it, and the file is still registered")
+    void aFileThatWillNotParseIsRecorded(@TempDir Path tmp) {
+        write(tmp, "ok.graphqls", "type Query { a: String }\n");
+        Path broken = write(tmp, "broken.graphqls", "type Film { title: \n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME)
+                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                .as("the parser's refusal, attributed to the file it refused")
+                .anySatisfy(row -> {
+                    assertThat(row.value1()).isEqualTo("PARSE");
+                    assertThat(row.value2()).endsWith("broken.graphqls");
+                });
+
+            assertThat(dsl.fetchCount(STORE_SOURCE,
+                    STORE_SOURCE.SOURCE_NAME.eq(broken.toString())))
+                .as("and the file is in the registry: read and unreadable, rather than absent")
+                .isEqualTo(1);
+
+            assertThat(dsl.fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
+                    GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Query")))
+                .as("its sibling still landed, a refusal costing only the file that earned it")
+                .isEqualTo(1);
         });
     }
 
     @Test
     @DisplayName("a problem the corpus no longer has is swept")
     void aProblemTheCorpusNoLongerHasIsSwept(@TempDir Path tmp) {
-        Path file = write(tmp, "fixme.graphqls", "type Query { a: Missing }\n");
+        write(tmp, "fixme.graphqls", "type Query { a: Missing }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, file);
+            read(dsl, tmp);
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM)).as("before the fix").isNotZero();
 
             write(tmp, "fixme.graphqls", "type Query { a: String }\n");
-            read(dsl, file);
+            read(dsl, tmp);
 
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
                 .as("the author fixed it, so the store stops claiming a problem that is over")
@@ -130,11 +165,11 @@ class SdlSchemaProblemsTest {
     @Test
     @DisplayName("a problem raised five times is recorded once")
     void duplicateProblemsAreRecordedOnce(@TempDir Path tmp) {
-        Path file = write(tmp, "many.graphqls",
+        write(tmp, "many.graphqls",
             "type Query { one: Gone, two: Gone, three: [Gone!]!, four: Gone, five: Gone }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, file);
+            read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                     .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
@@ -144,22 +179,12 @@ class SdlSchemaProblemsTest {
         });
     }
 
-    /** Ingests each document, then records what making a schema out of them produced. */
-    private static void read(DSLContext dsl, Path... files) {
-        LocalDateTime touchedAt = LocalDateTime.now();
-        seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
-        Arrays.stream(files).forEach(file -> seedSource(dsl, file.toString(), "SCHEMA_FILE"));
-
-        var parse = SchemaLoader.parsePerSource(
-            Arrays.stream(files).map(SchemaSource::file).toList());
-        parse.perSource().forEach(document ->
-            SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
-
-        // One attempt, one list. What the merge refused and what the build refused are the same
-        // question asked of the same corpus.
-        var problems = new ArrayList<SchemaError>(parse.registryErrors());
-        problems.addAll(SchemaAssembly.of(parse.registry()).errors());
-        SdlSchemaProblems.write(dsl, GRAPH, List.copyOf(problems), touchedAt);
+    /** One reading of everything the directory holds, which is what a run does. */
+    private static void read(DSLContext dsl, Path baseDir) {
+        SdlCapture.capture(dsl, new GraphIdentity(GRAPH, baseDir),
+            SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
+                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
+            LocalDateTime.now());
     }
 
     private static Path write(Path directory, String name, String sdl) {

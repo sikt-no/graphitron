@@ -1971,3 +1971,45 @@ fixed, was established at one relation and asserted at the others; the item now 
 opening and carries the honest status in "What changes when this lands". The second was that the
 lever order was stated as a principle before it had been run, which is why "Four attempts, and what
 each of them found missing" exists: each attempt is the order being tested rather than illustrated.
+
+### Round 4 (2026-09-09, In Progress, reading of the new capture family from the session holding R872)
+
+Four findings against the document gatherers as they stood at `7cf4d1ad6`. Three were defects and
+are fixed in this item; the fourth is a constraint on work this item has not reached yet and is
+recorded here so the anchor aggregation is written against it rather than corrected afterwards.
+
+**The verdict was documented in two places that disagreed.** `SdlSchemaProblems`'s own javadoc
+claimed absence of problems and presence of anchors were the same fact, which would make a graph
+that does not build a graph with no anchors. `docs/architecture/explanation/fact-model.adoc` says
+the opposite and says it correctly: the anchors are derived from the entries, so a corpus that does
+not build still has them, which is the ordinary state of a schema while somebody is editing it. The
+javadoc now says what absence does decide, a count, and says explicitly that it decides nothing
+about anchors.
+
+**A file that would not parse was invisible.** `SchemaLoader.parsePerSource` returns rejected
+sources as data and the gatherer iterated only the parses that succeeded, so such a file produced no
+entry rows, no registry row and no problem row. Absent is what a file nobody configured looks like,
+so the store could not tell an unreadable file from an unconfigured one. The gatherer now writes the
+registry row for a rejected source too, and the parse stage joins the other two in the problem
+relation. That relation could not hold a syntax failure as it stood, being keyed at the graph with
+no site, so it gained `stage`, `source_name`, `source_line` and `source_column`, the last three
+nullable because the two document-wide stages point at a declaration where they can and nowhere
+where they cannot. The stage is a column rather than three relations for the reason the relation
+already gave for merging two stages: all three are what happened when we tried to make a schema out
+of these documents.
+
+**The verdict half of the pipeline never ran.** `SdlSchemaProblems.write` had exactly one caller,
+its own test, which assembled the stages itself and therefore passed over a capture that recorded
+none of them. `SdlCapture` now writes the verdict from the same parse it writes the entries from,
+and the test drives `SdlCapture` rather than reassembling the pipeline beside it. The writer stays
+its own class, matching `SdlEntries`: the gatherer orchestrates and the writers write.
+
+**The anchors need ordinals the entries deliberately do not carry.** `graphql_field.ordinal`,
+`graphql_argument.ordinal` and `graphql_poly_member.position` have no entry counterpart, because an
+entry is keyed by the position its node was written at and a position is not an order. They are
+computed in the anchor aggregation, and the ordering has to be deterministic in two dimensions:
+position within a parent, and oldest source first across sources. That second one is not a new
+choice. `SchemaLoader.oldestFirst` already imposes it on the reading, and
+`graphql_type_declaration.merge_ordinal` already records the result, so the aggregation reads the
+order the corpus already has rather than inventing a second one that could disagree with the
+sentence graphql-java writes about a collision.

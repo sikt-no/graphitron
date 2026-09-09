@@ -155,13 +155,19 @@ holding different data change for different reasons.
 
 === The verdict on the corpus is one relation, and the anchors do not wait for it
 
-`graphql_schema_problem` holds what went wrong when the documents were made into a schema, as
-graphql-java stated it. One relation and not one per stage, because merging the documents into a
-registry and building a schema from that registry are not two questions a reader has. The merge only
-ever says whether a name was declared twice, three error classes in all; the build runs around thirty
-checks over references resolving, interface contracts, input against output position, directive
-locations and arguments, uniqueness inside a declaration, and the schema's own shape. Offering that
-split to a reader would cost them something to learn and buy nothing.
+`graphql_schema_problem` holds what went wrong when the documents were read and made into a schema,
+as graphql-java stated it. One relation and not one per stage, because parsing a file, merging the
+files into a registry and building a schema from that registry are not three questions a reader has.
+The parse judges one file at a time; the merge only ever says whether a name was declared twice,
+three error classes in all; the build runs around thirty checks over references resolving, interface
+contracts, input against output position, directive locations and arguments, uniqueness inside a
+declaration, and the schema's own shape. Which one spoke is a column, so a reader who does care can
+ask without three relations to union.
+
+A file the parser rejected is the reason the row carries a site. It contributes no entries at all, so
+this relation is the only place that can say the file was read, and a reading that dropped the
+refusal would leave the file looking like one nobody configured. The later stages point at a
+declaration where they can and nowhere where they cannot, which is why the site is nullable.
 
 Nothing here is re-derived, and that is the point. Computing any of those checks from the declaration
 entries would be a second implementation of a validation the build already runs, and the two would
