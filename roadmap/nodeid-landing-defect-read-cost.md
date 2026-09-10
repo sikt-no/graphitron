@@ -499,6 +499,60 @@ A wall-clock gate is explicitly *not* in scope. Nothing in this repository captu
 of the size that exposes this, and a fixture that did would be a build wall-clock gate, which the
 build-wall-clock item owns.
 
+## What landed, and what is still owed (2026-09-10)
+
+The guard is landed in full and the lever is not started. The two halves are independent: the guard
+names a shape and prices nothing, so it needs no consumer store, while steps 1 to 3 turn on figures
+that can only be taken where the population is. This session is a sandbox one, which the
+Precondition for pickup above already rules out for the measurement, so it took the half it could
+finish rather than the half it could guess at.
+
+**The guard, as specified.** `MaterializeDependencies.viewsEvaluatedBy` is the sibling walk: the
+views a reader of given relations expands, the roots that are views included, stopping at every
+table. It is the same traversal `registrationsReachedByView` runs, split into a `Reach` record
+carrying both readings, so the two answers cannot come to disagree. Each of the eight components
+declares a `READS` set of every relation its statements name, `StoreDetections.reads()` carries the
+roster in the record's family order, and `DetectionReadReachGateTest` pins each component's reach by
+equality over a booted schema with no captured rows. Two shared readers state their own reads where
+they sit and the components that call them fold those in: `NodeIdMessages` for `keyColumnsOf`, and
+`StoreNodeTables` for the whole of its assembly. Three cases: the per-component equality with a
+floor against a vacuous pass, a roster-completeness case reading `StoreDetections`' own record
+components so a detection joining the record cannot land outside the pin, and an acceptance-line
+case holding the stop at tables in both directions, a registered target yielding nothing and its
+`_live` source view yielding the rule. The residue an authored set carries is disclosed in the
+gate's javadoc on `CollectionValuedColumnGateTest`'s precedent.
+
+**What the pin found, which is two corrections to this plan's own domain list.** The reach is 42
+distinct views, 74 with the overlaps between components counted, against the eight verdict relations
+the measurement section counts reads by. Per component: `NodeIdPolymorphicDecodeDefects` 15,
+`NodeIdLandingDefects` 12, `UnlowerableOrderings` 12, `ResolvedKeyProjections` 11,
+`NodeIdDecodeDefects` 9, `ArgmappingProjectionDefects` 8, `ReferenceForParticipantDefects` 4,
+`AuthoredClaimConflicts` 3.
+
+The first correction is the guard catching its own subject on the first run. This plan's list, and
+round 3's component-by-component check of it, both have `ResolvedKeyProjections` reading one
+relation. It reads eleven views: `read` calls `StoreNodeTables.read` unconditionally before its own
+statement, and that helper names `intent_resolved_node_type_id`, a view, whose subtree is most of
+the node-metadata family. A roster taken from this plan's prose would have pinned one relation for
+that component and reported a clean equality over a ten-view blind spot, which is the recurrence the
+gate exists to refuse, arriving before the gate had shipped. The second is smaller and in the same
+direction: `ArgmappingProjectionDefects` and `NodeIdDecodeDefects` reach `graphitron_node_keycolumn`
+through `NodeIdMessages.keyColumnsOf`. It is a table, so it contributes no body and costs nothing,
+but it is a read neither the plan's list nor either component's imports made visible.
+
+**The central pairing, confirmed structurally.** `intent_node_id_decode_hop` is refreshed through
+`intent_node_id_decode_hop_column_live` and appears in `NodeIdLandingDefects`' read-cadence reach
+with nothing between it and the reader. That is the shape this item is a defect report about, and it
+is now on the page as a comment on the pinned row rather than reconstructible from two files. The
+gate takes no timing and makes no wall-clock claim; it says the relation is expanded per read, which
+is a property of the schema, and leaves what that costs to the measurement.
+
+**Still owed, unchanged from the Implementation section above.** The owner arithmetic, step 1's
+bisection of the hop on the exposing population, step 2's choice of lever, and step 3's
+before-and-after figures on the `sis` workspace. Whichever lever step 2 picks, the pin above is what records it
+landing: a registration or a restatement takes `intent_node_id_decode_hop` out of
+`NodeIdLandingDefects`' row, and that edit is the diff a reviewer reads the outcome off.
+
 ## Other solutions we've considered
 
 **Registering `intent_node_id_decode_hop` first and bisecting later.** The registration is the

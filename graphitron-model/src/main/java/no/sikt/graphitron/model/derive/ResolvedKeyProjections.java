@@ -3,8 +3,10 @@ package no.sikt.graphitron.model.derive;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.List;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 
@@ -42,6 +44,15 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
 public final class ResolvedKeyProjections {
 
     private ResolvedKeyProjections() {}
+
+    /**
+     * Every relation this component's read names, its own and the ones {@link StoreNodeTables}
+     * names on its behalf. The helper's reads are this component's reads: {@link #read} calls it
+     * unconditionally, so a pass that reaches here evaluates {@code intent_resolved_node_type_id}
+     * whatever the projection rows say.
+     */
+    public static final Set<Table<?>> READS = StoreNodeTables.readsWith(
+        Set.of(INTENT_RESOLVED_NODE_KEY_PROJECTION));
 
     /**
      * One projected binding, carrying everything its emission needs and nothing a walk holds: the

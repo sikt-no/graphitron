@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
@@ -63,6 +65,14 @@ import static org.jooq.impl.DSL.selectOne;
 public final class UnlowerableOrderings {
 
     private UnlowerableOrderings() {}
+
+    /**
+     * Every relation this component's statements name. {@code participantsOf} takes a graph name
+     * rather than a row, so all three reads are whole-population statements.
+     */
+    public static final Set<Table<?>> READS = Set.of(INTENT_FIELD_NAVIGATED_TYPE,
+        INTENT_FIELD_PARTICIPANT_SCOPE_TABLE, INTENT_FIELD_UNLOWERABLE_ORDERING, INTENT_TYPE_DOMAIN,
+        GRAPHQL_TYPE);
 
     /** Which read shape cannot honour the ordering: the view's own closed pair. */
     public enum Verdict {

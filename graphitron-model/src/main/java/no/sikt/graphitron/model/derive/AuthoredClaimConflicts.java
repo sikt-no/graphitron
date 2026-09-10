@@ -5,12 +5,14 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EXTERNAL_FIELD_ENTRY;
@@ -67,6 +69,17 @@ import static org.jooq.impl.DSL.selectOne;
 public final class AuthoredClaimConflicts {
 
     private AuthoredClaimConflicts() {}
+
+    /**
+     * Every relation this component's statements name, the driving reads and the per-coordinate
+     * ones alike: {@code claimsAt} reads {@code intent_authored_field_claim} once per violated
+     * field coordinate, which is a read of that view's body per row with no SQL text to notice it
+     * in.
+     */
+    public static final Set<Table<?>> READS = Set.of(INTENT_AUTHORED_CLAIM_CONFLICT,
+        INTENT_AUTHORED_FIELD_CLAIM, INTENT_AUTHORED_TYPE_CLAIM, INTENT_TYPE_DOMAIN,
+        GRAPHITRON_EXTERNAL_FIELD_ENTRY, GRAPHITRON_FIELD_NODE_ID_ENTRY, GRAPHITRON_MUTATION_ENTRY,
+        GRAPHITRON_ROUTINE_ENTRY, GRAPHITRON_SERVICE_ENTRY);
 
     /**
      * The detection pass's typed product: the type-grain violations, and the field-grain

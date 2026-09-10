@@ -1,9 +1,13 @@
 package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
 
+import static java.util.stream.Collectors.toUnmodifiableSet;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 
 /**
@@ -20,6 +24,22 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 final class NodeIdMessages {
 
     private NodeIdMessages() {}
+
+    /**
+     * The relations this helper's one statement names, {@link #keyColumnsOf}'s; the rest of the
+     * class mints text and reads nothing. Folded into the {@code READS} of the components that
+     * call that method, so a shared reader states its reads where it sits rather than at each
+     * caller and repointing it edits one set.
+     */
+    static final Set<Table<?>> READS = Set.of(GRAPHITRON_NODE_KEYCOLUMN);
+
+    /**
+     * {@code own} folded together with what this helper reads on the caller's behalf: the whole of
+     * the {@code READS} a component calling {@link #keyColumnsOf} declares.
+     */
+    static Set<Table<?>> readsWith(Set<Table<?>> own) {
+        return Stream.concat(own.stream(), READS.stream()).collect(toUnmodifiableSet());
+    }
 
     /** {@code @nodeId(typeName: "X")} where the author named a type, {@code @nodeId} where not. */
     static String nodeIdSpelling(String nodeTypeRef) {

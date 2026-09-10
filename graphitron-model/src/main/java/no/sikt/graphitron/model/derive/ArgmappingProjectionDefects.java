@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -76,6 +77,14 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
 public final class ArgmappingProjectionDefects {
 
     private ArgmappingProjectionDefects() {}
+
+    /**
+     * Every relation this component's statements name, its own two whole-population reads and the
+     * one {@link NodeIdMessages#keyColumnsOf} names on its behalf.
+     */
+    public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
+        Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
+            GRAPHITRON_ARGMAPPING_ENTRY));
 
     /**
      * The {@code site} values whose emitters read a resolved key projection: a routine IN parameter and

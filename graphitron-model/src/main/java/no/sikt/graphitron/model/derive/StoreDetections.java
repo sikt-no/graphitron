@@ -1,9 +1,14 @@
 package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+import org.jooq.Table;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Everything the store-backed detection pass found, one field per rule family. The product
@@ -65,6 +70,33 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
                               ResolvedKeyProjections.Projections keyProjections) {
+
+    /**
+     * What each component of the pass reads, keyed by the component's own name, in the family
+     * order the record declares.
+     *
+     * <p>The roster the detection pass's read-cadence reach is computed off. A component's entry is
+     * its own {@code READS} set rather than a list restated here, so a component swapped, added or
+     * repointed edits its reads where the component sits and this roster follows; what a gate over
+     * it cannot see is a component that names a relation without putting it in its set, which is
+     * the residue the gate discloses rather than one this roster closes.
+     *
+     * <p>Keyed by name rather than by the record component, because the name is what a gate's
+     * failure has to print, and because one entry, {@link ResolvedKeyProjections}, reads through
+     * {@code read} rather than a {@code detect} and so has no uniform method to key on.
+     */
+    public static Map<String, Set<Table<?>>> reads() {
+        var roster = new LinkedHashMap<String, Set<Table<?>>>();
+        roster.put("AuthoredClaimConflicts", AuthoredClaimConflicts.READS);
+        roster.put("ArgmappingProjectionDefects", ArgmappingProjectionDefects.READS);
+        roster.put("NodeIdDecodeDefects", NodeIdDecodeDefects.READS);
+        roster.put("NodeIdPolymorphicDecodeDefects", NodeIdPolymorphicDecodeDefects.READS);
+        roster.put("NodeIdLandingDefects", NodeIdLandingDefects.READS);
+        roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
+        roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
+        roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
+        return Collections.unmodifiableMap(roster);
+    }
 
     /** The empty detection, for callers running capture without the detection pass. */
     public static StoreDetections empty() {

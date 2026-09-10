@@ -4,8 +4,10 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
@@ -68,6 +70,17 @@ import static org.jooq.impl.DSL.selectOne;
 public final class ReferenceForParticipantDefects {
 
     private ReferenceForParticipantDefects() {}
+
+    /**
+     * Every relation this component's statements name. {@code intent_reference_for_application} is
+     * the driving read; {@code consumersOf} then runs once per application row and
+     * {@code participantsOf} once per consumer of one, so
+     * {@code intent_field_participant_scope_table}'s body is expanded per row with no SQL text to
+     * notice it in.
+     */
+    public static final Set<Table<?>> READS = Set.of(INTENT_FIELD_PARTICIPANT_SCOPE_TABLE,
+        INTENT_INPUT_OCCURRENCE_PATH, INTENT_REFERENCE_FOR_APPLICATION, INTENT_TYPE_DOMAIN,
+        GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY, GRAPHITRON_REFERENCE_FOR_ENTRY);
 
     /**
      * The detection pass's typed product: one entry per application whose participant spelling

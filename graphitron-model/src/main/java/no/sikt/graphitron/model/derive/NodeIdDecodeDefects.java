@@ -5,9 +5,11 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -55,6 +57,10 @@ import static org.jooq.impl.DSL.selectOne;
 public final class NodeIdDecodeDefects {
 
     private NodeIdDecodeDefects() {}
+
+    /** Every relation this component's statements name. */
+    public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
+        Set.of(INTENT_NODE_ID_DECODE_DEFECT, INTENT_TYPE_DOMAIN));
 
     /** Which precondition stopped the decode, in the view's own closed vocabulary. */
     private enum Verdict {

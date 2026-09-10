@@ -4,8 +4,8 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,11 +35,15 @@ import static org.jooq.impl.DSL.table;
  * order, so two runs over one store write byte-identical rows and the relation is deterministic
  * run to run.
  *
- * <p>The walk answers a second question the rows do not carry, which
- * {@link #registrationsReachedByView} exposes: not the order refreshes must run in, but which
- * registrations are in a given view's subtree at all. That is the reach a cost claim ranges over,
- * a registration being able to change only what its own readers evaluate, and it is the same walk
- * rather than a second one so the two answers cannot come to disagree about what reads what.
+ * <p>The walk answers two further questions the rows do not carry, both off the same traversal so
+ * that no two of the three answers can come to disagree about what reads what.
+ * {@link #registrationsReachedByView} asks which registrations are in a given view's subtree at
+ * all: the reach a cost claim about a <em>registration</em> ranges over, a registration being able
+ * to change only what its own readers evaluate. {@link #viewsEvaluatedBy} asks the complement,
+ * which view bodies a reader of given relations expands on every read: the reach a cost claim
+ * about a <em>reader</em> ranges over. The first stops at a registered target because what fills
+ * that table costs its readers nothing; the second stops at every table for the same reason stated
+ * the other way round.
  *
  * <p>The parse, and the normalization rules it leans on, belong to {@link ViewReferences}, which
  * this walk reads through rather than re-deriving. What an edge needs is the set of relations a
@@ -151,20 +155,80 @@ public final class MaterializeDependencies {
     }
 
     /**
+     * The views a reader of {@code relations} evaluates: every view body the engine expands during
+     * one read, the roots that are themselves views included, with the walk stopping at every table.
+     *
+     * <p>The reach a cost claim about a <em>reader</em> ranges over, where
+     * {@link #registrationsReachedByView} gives the reach a cost claim about a <em>registration</em>
+     * ranges over. H2 inlines a view wherever it is named and eliminates no common subexpression, so
+     * a view in this set is a rule the reader re-evaluates on every read, however many namings and
+     * whatever position each naming sits in; a relation absent from it is one the reader meets as
+     * stored rows. That is why the stop is stated at tables and not at the register: a registered
+     * target is a table, a base relation is a table, and a relation some future owner decides to
+     * store is a table too, so the set keeps its meaning under a schedule this walk knows nothing
+     * about.
+     *
+     * <p>Roots that are not views pass through contributing nothing, which is what lets a caller
+     * hand this the whole set of relations its statements name rather than curating which of them
+     * are derived. The kind filter is load-bearing rather than a convenience:
+     * {@link ViewReferences#readBy} throws where the catalog holds no stored definition for a name,
+     * so a table handed to the walk unfiltered would fail rather than yield nothing.
+     *
+     * @param relations relation names in any case; unknown names are ignored on the same footing as
+     *        tables, the catalog being the authority on what is a view
+     * @return the union over the roots, lowercased, in name order
+     */
+    public static Set<String> viewsEvaluatedBy(DSLContext dsl, Collection<String> relations) {
+        Map<String, String> kinds = relationKinds(dsl);
+        Map<String, String> registrationOfTarget = new HashMap<>();
+        Materializations.registrations(dsl)
+            .forEach(r -> registrationOfTarget.put(r.targetTableName(), r.sourceViewName()));
+        Map<String, Set<String>> reads = new HashMap<>();
+        Set<String> evaluated = new TreeSet<>();
+        for (String relation : relations) {
+            String name = relation.toLowerCase(Locale.ROOT);
+            if ("VIEW".equals(kinds.get(name))) {
+                evaluated.addAll(reachFrom(dsl, name, kinds, registrationOfTarget, reads).views());
+            }
+        }
+        return evaluated;
+    }
+
+    /**
+     * What one walk found: the registrations it met, and the views it expanded getting there.
+     *
+     * <p>Two answers off one traversal rather than two traversals, because they are two readings of
+     * the same frontier and could otherwise come to disagree about what reads what. A caller asking
+     * which registrations are in a subtree reads {@link #registrations}; a caller asking what a
+     * reader evaluates on every read reads {@link #views}, whose complement is the walk's stopping
+     * rule: a table, registered target or base relation alike.
+     */
+    private record Reach(Map<String, String> registrations, Set<String> views) {}
+
+    /**
      * The registrations whose target a walk from {@code start} meets, each mapped to the view in the
      * walk that read it, which is what lets a caller say where a reach came from. Reads of
      * unregistered views recurse; reads of registered targets and of base tables end that branch.
+     */
+    private static Map<String, String> registrationsReachedFrom(
+            DSLContext dsl, String start, Map<String, String> kinds,
+            Map<String, String> registrationOfTarget, Map<String, Set<String>> reads) {
+        return reachFrom(dsl, start, kinds, registrationOfTarget, reads).registrations();
+    }
+
+    /**
+     * The walk itself, from one start, yielding both readings.
      *
      * <p>{@code reads} memoizes {@link ViewReferences#relationsReadBy} across calls. A view's
      * stored definition is
      * a function of the catalog alone, so one parse per view serves every walk that reaches it, and
      * a caller walking from many starts pays one parse per view rather than one per visit.
      */
-    private static Map<String, String> registrationsReachedFrom(
+    private static Reach reachFrom(
             DSLContext dsl, String start, Map<String, String> kinds,
             Map<String, String> registrationOfTarget, Map<String, Set<String>> reads) {
         Map<String, String> reached = new TreeMap<>();
-        var walked = new HashSet<String>();
+        var walked = new TreeSet<String>();
         var frontier = new ArrayDeque<String>();
         frontier.add(start.toLowerCase(Locale.ROOT));
         while (!frontier.isEmpty()) {
@@ -181,7 +245,7 @@ public final class MaterializeDependencies {
                 }
             }
         }
-        return reached;
+        return new Reach(reached, walked);
     }
 
     /** Every relation in the store's schema, lowercased, mapped to the engine's kind for it. */

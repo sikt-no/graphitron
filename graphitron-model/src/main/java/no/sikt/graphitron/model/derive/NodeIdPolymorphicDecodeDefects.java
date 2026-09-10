@@ -5,11 +5,15 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Table;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
+import static no.sikt.graphitron.model.Tables.INTENT_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
 import static org.jooq.impl.DSL.exists;
@@ -46,6 +50,13 @@ import static org.jooq.impl.DSL.selectOne;
 public final class NodeIdPolymorphicDecodeDefects {
 
     private NodeIdPolymorphicDecodeDefects() {}
+
+    /**
+     * Every relation this component's statements name. {@code memberNames} reads the two membership
+     * views once per container, which is a read of each body per row.
+     */
+    public static final Set<Table<?>> READS = Set.of(INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT,
+        INTENT_TYPE_DOMAIN, INTENT_NODE_CONTAINER_MEMBER, INTENT_POLY_MEMBER);
 
     /** Which precondition stopped the polymorphic decode, in the view's own closed vocabulary. */
     private enum Verdict {
@@ -161,8 +172,8 @@ public final class NodeIdPolymorphicDecodeDefects {
      * set the resolution axis draws its candidates from.
      */
     private static List<String> memberNames(DSLContext dsl, String graphName, String containerName) {
-        var m = no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
-        var p = no.sikt.graphitron.model.Tables.INTENT_POLY_MEMBER;
+        var m = INTENT_NODE_CONTAINER_MEMBER;
+        var p = INTENT_POLY_MEMBER;
         return dsl.select(m.MEMBER_TYPE_NAME)
             .from(m)
             .join(p).on(p.GRAPH_NAME.eq(m.GRAPH_NAME), p.CONTAINER_NAME.eq(m.CONTAINER_NAME),
