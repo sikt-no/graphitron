@@ -83,7 +83,8 @@ explicitly documents multitable support, which reasonably reads as ordering bein
 Whichever way this item resolves, one of those pages needs the statement.
 
 The same issue's follow-up comment reports a second, distinct coordinate, owned by
-`roadmap/split-query-child-list-drops-default-order.md` (R663). The reporter reads the two as one
+R663 (`split-query-child-list-drops-default-order`, shipped; entry in `roadmap/changelog.md`).
+The reporter reads the two as one
 bug. They are not the same defect, but they share a consumer and a schema, so fixing either alone
 leaves that schema unordered at the other end.
 
@@ -113,7 +114,8 @@ Sibling of R363 (per-participant `@field` filter lowering on the same fields); s
 (`QueryTableInterfaceField`) already carries `OrderBySpec` and is unaffected; only the two multitable
 polymorphic variants lack it.
 
-* `roadmap/split-query-child-list-drops-default-order.md` (R663): the other coordinate in the same
+* R663 (`split-query-child-list-drops-default-order`, shipped; entry in
+  `roadmap/changelog.md`): the other coordinate in the same
   field report. Worth reading beside this one for the validator asymmetry, which is sharper than
   either item alone shows. On R663's coordinate the ordering slot is populated and
   `validateListRequiresOrdering` *compels* the `@defaultOrder` that emit then discards. Here there

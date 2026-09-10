@@ -91,8 +91,9 @@ this item is three tracks rather than one.
   exemption. Removing the exemption closed the site, and it was the only one of the five that ever
   produced `None`.
 * `@splitQuery` child list: **closed at the command tier** while this item sat in Backlog.
-  `roadmap/split-query-child-list-drops-default-order.md` landed its delivery on 2026-08-31, and
-  `LauncherCommands.batchedResultOf` now projects the coordinate's ordering where it passed `null`.
+  R663 (`split-query-child-list-drops-default-order`, shipped; entry in `roadmap/changelog.md`)
+  landed its delivery on 2026-08-31, and `LauncherCommands.batchedResultOf` now projects the
+  coordinate's ordering where it passed `null`.
 * `@lookupKey` child: **closed by the same delivery**. `LauncherCommands.batchedLookupRow` carries
   the ordering too; the split was agreed on that item and the rest of
   `roadmap/lookup-unrealized-co-members.md` (the inline `LookupMultiset` arm, pagination at lookup
@@ -562,12 +563,12 @@ derived independently, which in today's command tier is the multiset alone.
   by this item's delivery: the sixth census site turned out to be real, and that item is the lowering
   (or the author-facing refusal) whose landing empties phase 2's production throw. This item does not
   wait on it and never did; the throw is what keeps the silence from returning meanwhile.
-* The four per-site items (`roadmap/split-query-child-list-drops-default-order.md`,
-  `roadmap/lookup-unrealized-co-members.md`, `roadmap/routine-write-key-capture-unordered.md`,
+* The four per-site items (R663, shipped; `roadmap/lookup-unrealized-co-members.md`,
+  `roadmap/routine-write-key-capture-unordered.md`,
   `roadmap/multitable-interface-query-orderby-lowering.md`) fix the sites. Class C is what keeps them
   fixed; class A and class B are what find the next one.
-* `roadmap/split-query-child-list-drops-default-order.md` is in review as of 2026-09-01 with its
-  ordering projections landed on trunk, which is what closed two of the census's five sites and what
+* R663 passed its Done gate on 2026-09-10 with its ordering projections landed on trunk, which is
+  what closed two of the census's five sites and what
   phase 2 has to keep closed. Phase 2 does not wait for that item's Done gate: it reads the tree, and
   the tree carries the projections. If that review sends the item back and the projections change
   shape, phase 2's fold is where the change shows up.
@@ -591,7 +592,7 @@ Specced 2026-09-01. Four things the spec pass changed rather than elaborated, ea
 attention because each is a departure from the body it was written against:
 
 * **Two of the five census sites closed while the item sat in Backlog**, both by
-  `roadmap/split-query-child-list-drops-default-order.md`'s delivery. The launcher family therefore
+  R663's delivery (shipped; entry in `roadmap/changelog.md`). The launcher family therefore
   has no live class-C site anyone has found, which is why phase 2 states that half as a ratchet and
   puts its case on the multiset half, where the sixth candidate site sits and where the two ends are
   derived independently.

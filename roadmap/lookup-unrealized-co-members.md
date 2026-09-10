@@ -27,7 +27,8 @@ lookup-triplet dissolution's per-kind realization audit, which made the drops le
 rows with no realizing seam.
 
 One combination has left this census.
-`roadmap/split-query-child-list-drops-default-order.md` (R663) takes the *batched* child lookup's
+R663 (`split-query-child-list-drops-default-order`, shipped; entry in `roadmap/changelog.md`) took
+the *batched* child lookup's
 ordering slot (`LauncherCommands.batchedLookupRow`), because that row renders through the same
 `BatchedRowsFragments.body` its plain sibling does, so the ordering is one call site into a
 renderer that item is already fixing. Everything else above stays here: the inline
