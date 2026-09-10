@@ -550,8 +550,9 @@ hop still costs 3618 ms and the verdict still did not return in five minutes. Th
 relation the cost multiplies through and one table there stops it for both walks and for every
 reader above them.
 
-**Step 3, on the patched model.** Priced by snapshotting the hop's rows into a table keyed as the
-target ships and re-running each configuration on the same population, three sweeps each.
+**Step 2's lever, ranked by snapshot.** Snapshotting the hop's rows into a table keyed as the target
+ships and re-running each configuration on the same population, three sweeps each. Read this table
+as a ranking; the prices are in step 3 below and they correct two of these rows.
 
 | configuration | avg ms | sd |
 |---|---|---|
@@ -562,17 +563,44 @@ target ships and re-running each configuration on the same population, three swe
 | the verdict read as shipped | did not return in 120 s | |
 | the verdict read with only the argument-site walk materialized | did not return in 5 min | |
 
-One evaluation of the rule into a table measured 4.2 s, which is the refresh this registration adds,
-and the hop-column registration was already paying one evaluation of it per refresh, 5.2 s of that
-48.6 s cold pass, so the pass is close to neutral rather than dearer by the whole of it. Added
-refresh plus read is about 4.7 s on that population, which is the low single-digit seconds the
-lever had to reach.
+**Step 3, the price, on the patched model and not on a simulation of it.** Two captures of the `sis`
+workspace with the patched tree installed, cold and warm, which is what the plan asked for and what
+a snapshot control cannot answer. Both completed; the same capture on the unpatched model never
+returned.
 
-The arithmetic closes, which is the check that says the plan is understood: 312 driving rows times
-4.7 s is about 24 minutes, against the dev session that ran 31 without opening its port.
+| figure | unpatched | patched cold | patched warm |
+|---|---|---|---|
+| the refresh pass, `done in` | 48.6 s over 20 | 57.6 s over 21 | 53.4 s over 21 |
+| this registration's own refresh | n/a | 12.1 s | 5.8 s |
+| `intent_node_id_decode_hop_column`'s refresh | 5.2 s | 151 ms | 84 ms |
+| the verdict read | did not return in 120 s | 1116 ms, sd 516 over 3 sweeps | |
+| the capture as a whole | never returned | 3:33 min | 4:27 min |
 
-**The population check, and one honest negative.** The two-way `EXCEPT` between the source view and
-its snapshot is empty in both directions, so the registration changes cost and not rows. The
+Two of the snapshot's figures were wrong and the correction is the same mechanism both times. The
+verdict read is 1116 ms rather than 485 ms: a settled store flatters it. And one evaluation of the
+rule inside the capture transaction is 12.1 s cold rather than 4.2 s, because the rule reads
+relations the refresh has only just written and plans without their statistics, which is precisely
+the sensitivity this change moves onto it in `RefreshPlanStatisticsTest`. The register row carries
+both corrections.
+
+So the refresh is not neutral, which an earlier draft of this section claimed. The hop-column
+registration does collapse as predicted, 5.2 s to 84 ms warm, but the new registration costs more
+than it saves: the family nets about seven seconds dearer cold and about one second dearer warm, and
+the pass goes 48.6 s to 57.6 s cold and 53.4 s warm.
+
+**Against the goal, honestly.** The defect is fixed in the sense that matters most: a capture that
+never returned now returns, and the verdict read is about a second where it was unbounded. The
+arithmetic of the defect closes, 312 driving rows times 4.7 s being about 24 minutes against the dev
+session that ran 31 without opening its port. But this item's goal is a round that answers *in
+seconds*, and the round does not: the refresh pass alone is 53 s warm. The single largest term in it
+is `intent_input_field_filter_role` at 22 to 24 s, which is untouched by this item and was already
+the dearest registration in the register before it. Whether that leaves this item Done with a
+follow-up filed for the remaining pass cost, or short of its own goal, is the Done gate's call
+rather than the implementer's, and the figures above are what it should decide on.
+
+**The population check, and one honest negative.** The two-way `EXCEPT` between
+`intent_node_id_decode_hop_live` and `intent_node_id_decode_hop` is empty in both directions on the
+real captured store, so the registration changes cost and not rows. The
 verdict returns **zero rows** on this population, and that is the result rather than the cost: the
 shipped read still fails to return in 120 s computing that emptiness, over 312 judged rows. The
 key the target declares was checked before it shipped: 377 rows, 377 distinct over
