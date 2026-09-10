@@ -571,19 +571,9 @@ public class GraphQLRewriteGenerator {
         return new GraphIdentity(ctx.graphName(), ctx.basedir());
     }
 
-    /**
-     * The configuration capture transcribes about this run's graph. Assembled here rather than
-     * carried on the coordinate: a caller with no configuration to declare has none to synthesise.
-     */
+    /** The configuration capture transcribes about this run's graph, read off the context. */
     private SubjectConfig subjectConfig() {
-        return new SubjectConfig(
-            Optional.ofNullable(ctx.schemaRecipe()),
-            Optional.ofNullable(ctx.jooqPackage()),
-            Optional.ofNullable(ctx.supergraph()),
-            ctx.declaredOutputCoordinates(),
-            Optional.ofNullable(ctx.tenantColumn()),
-            ctx.lintConfig(),
-            ctx.sessionStateConfig());
+        return SubjectConfig.of(ctx);
     }
 
     /**

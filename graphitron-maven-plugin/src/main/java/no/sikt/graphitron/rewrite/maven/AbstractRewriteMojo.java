@@ -4,7 +4,10 @@ import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.ClasspathEntry.Origin;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.CapturePort;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.config.DependencyVersions;
@@ -1221,6 +1224,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             // goal that grows a second pass shares this store with it instead of opening another.
             try (CapturePort capture = CapturePort.holding(ctx.storeDirectory())) {
                 call.invoke(new GraphQLRewriteGenerator(ctx, capture));
+                captureModel(ctx, capture);
             } catch (SchemaProblem e) {
                 var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's
@@ -1244,6 +1248,31 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             }
         });
         return holder[0];
+    }
+
+    /**
+     * Writes the families the gatherers fill from the run's own configuration, into the store the
+     * pass just used.
+     *
+     * <p>After the pass rather than before it, and only while both capture paths run: the walk
+     * behind {@link GraphQLRewriteGenerator} clears this graph's rows from every relation carrying
+     * a graph column, and every capture relation carrying none, both chosen by shape rather than by
+     * a list. So it owns relations it knows nothing about, and anything written before it is
+     * written for nothing.
+     *
+     * <p>Which is also why this is a call beside that walk and not a step inside it. The two share
+     * the store and nothing else, so retiring the walk is deleting its call rather than unpicking
+     * this one out of it.
+     */
+    void captureModel(RunContext ctx, CapturePort capture) {
+        capture.captureModel(new GraphIdentity(ctx.graphName(), ctx.basedir()),
+            SubjectConfig.of(ctx),
+            ctx.classpathRoots().stream().map(ClasspathEntry::path).toList(),
+            // Off the declared parameter rather than the context's, which carries the sentinel a
+            // goal tolerating no packages substitutes. A catalog loaded from that name finds no
+            // class and warns, and a goal already saying it captures no database facts should not
+            // also complain that it could not find them.
+            jooqPackage == null ? null : new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
     }
 
     /**

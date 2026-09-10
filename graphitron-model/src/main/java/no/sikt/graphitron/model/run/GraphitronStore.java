@@ -1,9 +1,6 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
-import no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
-import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 import java.nio.file.Path;
@@ -54,32 +51,17 @@ public final class GraphitronStore {
     }
 
     /**
-     * Fills {@code store} with what {@code graph}'s configured inputs say, in one transaction.
+     * Fills {@code store} with what {@code graph}'s inputs say, in one transaction, for a caller
+     * whose whole business with the store is this.
      *
-     * <p>Each gatherer finds its own inputs from {@code config}, except the two that read compiled
-     * code, which configuration cannot carry: a classpath is assembled by the build tool rather
-     * than declared by an author.
-     *
-     * <p>They want different things of it, so they are told separately. The census reads bytes:
-     * {@code classpath} is directories and jars, parsed as classfiles, and nothing is loaded. The
-     * catalog cannot be read that way, jOOQ building its tables and keys in static initialisers
-     * rather than declaring them in the bytes, so it arrives already built and carries the loader
-     * it was built through. No classpath is no census; no catalog is no catalog facts.
-     *
-     * <p>The census leaves out the jOOQ package, which is the caller's policy and not a rule the
-     * census holds: those classes are generated, and a consumer names what a directive resolves
-     * against rather than naming them.
-     *
-     * <p>One transaction, so a run that fails partway leaves the store as it found it.
+     * <p>What each gatherer reads, and why the two compiled-code inputs are separate, is
+     * {@link ModelCapture}'s. This adds the transaction and the instant: a run that fails partway
+     * leaves the store as it found it, and every relation dates the same reading.
      */
     public static void capture(GraphitronModelStore store, GraphIdentity graph,
                                SubjectConfig config, List<Path> classpath, JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        store.dsl().transaction(tx -> {
-            SdlCapture.capture(tx.dsl(), graph, config, readAt);
-            JooqFactCapture.capture(tx.dsl(), jooq, readAt);
-            ClasspathFactCapture.capture(tx.dsl(), classpath,
-                config.jooqPackage().orElse(null), readAt);
-        });
+        store.dsl().transaction(tx ->
+            ModelCapture.capture(tx.dsl(), graph, config, classpath, jooq, readAt));
     }
 }

@@ -1113,6 +1113,10 @@ public class DevMojo extends AbstractRewriteMojo {
             // editor-facing catalog and diagnostics, from a single read of the schema and a single
             // capture of the graph's partition.
             var pass = generatorFor(ctx).runPass();
+            // Every round, and after the pass, for the reason captureModel carries: the pass
+            // clears relations it knows nothing about. A round that failed validation gets one
+            // too, the schema it read being no less read for having been refused.
+            captureModel(ctx, captureFor(ctx));
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
             if (!errors.isEmpty()) {

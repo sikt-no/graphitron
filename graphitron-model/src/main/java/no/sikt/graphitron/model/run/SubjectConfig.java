@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.run;
 
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -54,6 +55,22 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
         Objects.requireNonNull(tenantColumn, "tenantColumn");
         Objects.requireNonNull(lint, "lint");
         Objects.requireNonNull(sessionState, "sessionState");
+    }
+
+    /**
+     * What {@code ctx} declares about its subject, which is every component of this record read off
+     * one context. Here rather than at a caller because the components are optional one at a time:
+     * a caller assembling them itself is a caller that can quietly stop transcribing one.
+     */
+    public static SubjectConfig of(RunContext ctx) {
+        return new SubjectConfig(
+            Optional.ofNullable(ctx.schemaRecipe()),
+            Optional.ofNullable(ctx.jooqPackage()),
+            Optional.ofNullable(ctx.supergraph()),
+            ctx.declaredOutputCoordinates(),
+            Optional.ofNullable(ctx.tenantColumn()),
+            ctx.lintConfig(),
+            ctx.sessionStateConfig());
     }
 
     /** A subject that declared nothing at all. */

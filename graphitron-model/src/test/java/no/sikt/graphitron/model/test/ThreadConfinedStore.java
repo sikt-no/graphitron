@@ -105,8 +105,19 @@ final class ThreadConfinedStore {
      * is the handle shape this paragraph describes: the funnel hands a body a context over a store
      * nothing captured into, which has no source rows and no files behind them to have a
      * modification time. One boot for the class, on {@code EntryFamilyCoverageTest}'s terms.
+     *
+     * <p>Raised to 79 on 2026-09-10, by two. One is {@code ModelCapturePortTest}, the lent-handle
+     * shape exactly: its subject is a store two captures share, so its body has to hold the store
+     * rather than a context over one, and its two claims are folded into a single sequence for that
+     * reason rather than split across a store each.
+     *
+     * <p>The other is what the number was already short by, and the reason is worth knowing before
+     * the next recount. This check runs inside funnelled cases, so what a run reports is however
+     * many off-funnel boots happened before its last funnelled one, which is an ordering rather
+     * than a total: 78 passed this module scoped and failed it in the reactor. Count the boots, do
+     * not read a peak off one run.
      */
-    private static final int BOOT_BUDGET = 77;
+    private static final int BOOT_BUDGET = 79;
 
     private final GraphitronModelStore store;
 
