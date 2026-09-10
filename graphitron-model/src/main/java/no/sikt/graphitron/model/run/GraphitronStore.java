@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -8,6 +9,7 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 /**
  * Opening a store and filling it, for a caller that owns both.
@@ -54,22 +56,30 @@ public final class GraphitronStore {
     /**
      * Fills {@code store} with what {@code graph}'s configured inputs say, in one transaction.
      *
-     * <p>Each gatherer finds its own inputs from {@code config}. The one thing configuration cannot
-     * carry is {@code codegen}: the consumer's generated jOOQ classes are resolved reflectively, and
-     * only the build tool can assemble the classpath they live on. A configuration naming no jOOQ
-     * package captures no catalog facts and never touches the loader.
+     * <p>Each gatherer finds its own inputs from {@code config}, except the two that read compiled
+     * code, which configuration cannot carry: a classpath is assembled by the build tool rather
+     * than declared by an author.
+     *
+     * <p>They want different things of it, so they are told separately. The census reads bytes:
+     * {@code classpath} is directories and jars, parsed as classfiles, and nothing is loaded. The
+     * catalog cannot be read that way, jOOQ building its tables and keys in static initialisers
+     * rather than declaring them in the bytes, so it arrives already built and carries the loader
+     * it was built through. No classpath is no census; no catalog is no catalog facts.
+     *
+     * <p>The census leaves out the jOOQ package, which is the caller's policy and not a rule the
+     * census holds: those classes are generated, and a consumer names what a directive resolves
+     * against rather than naming them.
      *
      * <p>One transaction, so a run that fails partway leaves the store as it found it.
      */
     public static void capture(GraphitronModelStore store, GraphIdentity graph,
-                               SubjectConfig config, ClassLoader codegen) {
+                               SubjectConfig config, List<Path> classpath, JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        var jooq = config.jooqPackage()
-            .map(jooqPackage -> new JooqCatalog(jooqPackage, codegen))
-            .orElse(null);
         store.dsl().transaction(tx -> {
             SdlCapture.capture(tx.dsl(), graph, config, readAt);
             JooqFactCapture.capture(tx.dsl(), jooq, readAt);
+            ClasspathFactCapture.capture(tx.dsl(), classpath,
+                config.jooqPackage().orElse(null), readAt);
         });
     }
 }

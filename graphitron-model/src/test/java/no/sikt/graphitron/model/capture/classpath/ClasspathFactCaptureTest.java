@@ -60,7 +60,8 @@ class ClasspathFactCaptureTest {
                 .as("and its parameters, in order, by their erased binary names")
                 .containsExactly("no.sikt.graphitron.model.boot.GraphitronModelStore",
                     "no.sikt.graphitron.model.run.GraphIdentity",
-                    "no.sikt.graphitron.model.run.SubjectConfig", "java.lang.ClassLoader");
+                    "no.sikt.graphitron.model.run.SubjectConfig", "java.util.List",
+                    "no.sikt.graphitron.model.jooq.JooqCatalog");
         });
     }
 
