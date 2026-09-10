@@ -116,19 +116,29 @@ report name the incumbent and the incursion rather than listing two declarations
 
 === The AST entries reference nothing, and their file is named twice
 
-One relation per SDL node kind, from `graphql_ast_type_declaration_entry` through
-`graphql_ast_applied_argument_entry`. The shared `ast` segment is the one place a family is
+One relation per SDL node kind and site, from `graphql_ast_type_declaration_entry` through
+`graphql_ast_applied_argument_entry`. Kind is not always enough to name one: an input value has one
+shape at all three sites it can be written and a directive application one shape at all five, and
+each site takes a relation of its own so that a row can name its parent by key. The shared `ast`
+segment is the one place a family is
 subdivided by name, because the `graphql_` family now spans two levels: the anchors are schema elements keyed
 by coordinate, in the specification's vocabulary, and these are parser nodes keyed by position, in
 graphql-java's.
 
-Four things about them are not what a reader would expect.
+Five things about them are not what a reader would expect.
 
-*The relations reference each other not at all.* A node names the node it was written inside by that
-node's position, in plain columns nothing defends. Following that reference means picking the relation
-that holds the parent's kind, which is a resolution, and this family resolves nothing. The aggregate
-over all twelve is an anchor derived from these rows; an entry with a foreign key into it would make
-the entries conditional on something built out of them.
+*A node's parent is a key where the parent is one relation, and a bare position where it is not.* A
+node names the node it was written inside by that node's position. Both rows come out of one parse of
+one file and one method writes both, so nothing a document can say breaks the reference, and thirteen
+of them are foreign keys. Two are not: an input value can be a field's argument, an input object's
+field or a directive definition's argument, and a directive application can sit at any of five sites,
+so the parent is a union of relations and a key names one table. A position is unique in a file
+whichever relation holds the parent, so those two references are sound and only unspellable, which
+makes them detections over the union rather than constraints. The keys are why the writers run
+outermost first and the sweep runs their list backwards.
+
+*Nothing here references an anchor.* The anchors are derived from these rows, so an entry holding a
+foreign key into one would make the entries conditional on something built out of them.
 
 *No node carries an ordinal.* Within a parent, ordering the nodes of a kind by the position they were
 written at is total, two nodes being unable to share a position, and it is the order the author wrote
