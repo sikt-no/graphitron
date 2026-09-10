@@ -458,8 +458,9 @@ final class FactWrites {
                          t.DESCRIPTION,
                          t.SOURCE_NAME,
                          t.SOURCE_LINE,
-                         t.SOURCE_COLUMN)
-                .values(markers(16)));
+                         t.SOURCE_COLUMN,
+                         t.TOUCHED_AT)
+                .values(markers(17)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -476,7 +477,8 @@ final class FactWrites {
                                row.get(t.DESCRIPTION),
                                row.get(t.SOURCE_NAME),
                                row.get(t.SOURCE_LINE),
-                               row.get(t.SOURCE_COLUMN));
+                               row.get(t.SOURCE_COLUMN),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }
@@ -498,8 +500,9 @@ final class FactWrites {
                          t.DESCRIPTION,
                          t.SOURCE_NAME,
                          t.SOURCE_LINE,
-                         t.SOURCE_COLUMN)
-                .values(markers(15)));
+                         t.SOURCE_COLUMN,
+                         t.TOUCHED_AT)
+                .values(markers(16)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -515,7 +518,8 @@ final class FactWrites {
                                row.get(t.DESCRIPTION),
                                row.get(t.SOURCE_NAME),
                                row.get(t.SOURCE_LINE),
-                               row.get(t.SOURCE_COLUMN));
+                               row.get(t.SOURCE_COLUMN),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }

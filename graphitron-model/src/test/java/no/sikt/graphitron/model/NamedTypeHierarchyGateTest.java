@@ -6,7 +6,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.test.SeededStore.SEEDED_READING;
 import static no.sikt.graphitron.model.test.SeededStore.seedDeclaredType;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -101,18 +102,17 @@ class NamedTypeHierarchyGateTest {
     void aMemberMayNameAContainerNothingDeclares() {
         withSeededStore(GRAPH, dsl -> {
             seedDeclaredType(dsl, GRAPH, "Cash", "OBJECT");
-            assertThatCode(() -> dsl.insertInto(GRAPHQL_POLY_MEMBER)
-                    .set(GRAPHQL_POLY_MEMBER.GRAPH_NAME, GRAPH)
-                    .set(GRAPHQL_POLY_MEMBER.CONTAINER_KIND, "INTERFACE")
-                    .set(GRAPHQL_POLY_MEMBER.CONTAINER_NAME, "Node")
-                    .set(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, "Cash")
-                    .set(GRAPHQL_POLY_MEMBER.POSITION, 1)
-                    .set(GRAPHQL_POLY_MEMBER.DECLARED_ON, "Cash")
-                    .set(GRAPHQL_POLY_MEMBER.DECLARATION_LINE, 1)
-                    .set(GRAPHQL_POLY_MEMBER.DECLARATION_COLUMN, 1)
-                    .set(GRAPHQL_POLY_MEMBER.SOURCE_NAME, "seed.graphqls")
-                    .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 1)
-                    .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 1)
+            assertThatCode(() -> dsl.insertInto(GRAPHQL_IMPLEMENTS_INTERFACE)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.GRAPH_NAME, GRAPH)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.TYPE_NAME, "Cash")
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.INTERFACE_NAME, "Node")
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.POSITION, 1)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.DECLARATION_LINE, 1)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.DECLARATION_COLUMN, 1)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_NAME, "seed.graphqls")
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_LINE, 1)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_COLUMN, 1)
+                    .set(GRAPHQL_IMPLEMENTS_INTERFACE.TOUCHED_AT, SEEDED_READING)
                     .execute())
                 .as("capture runs before assembly and records its refusal rather than throwing, so "
                     + "the transcription of a schema that does not build has to be writable; this "

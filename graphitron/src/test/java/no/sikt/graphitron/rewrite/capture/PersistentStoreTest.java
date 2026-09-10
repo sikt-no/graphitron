@@ -252,11 +252,15 @@ class PersistentStoreTest {
                 // The coordinate anchor and the supertype row above it, which is the shallowest
                 // pair this store admits: the probe's subject is that the holder's write survives,
                 // so it writes the least that a coordinate needs and nothing else.
-                store.dsl().execute("INSERT INTO graphql_element (graph_name, coordinate, element_kind) "
-                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'NAMED_TYPE')");
+                // Both rows carry the instant of the reading that wrote them, which every anchor a
+                // mark and sweep governs requires; a row with none would be a row no reading claims.
+                store.dsl().execute("INSERT INTO graphql_element "
+                    + "(graph_name, coordinate, element_kind, touched_at) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'NAMED_TYPE', CURRENT_TIMESTAMP)");
                 store.dsl().execute("INSERT INTO graphql_type_element "
-                    + "(graph_name, type_name, coordinate) "
-                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'HolderWritten')");
+                    + "(graph_name, type_name, coordinate, touched_at) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'HolderWritten', "
+                    + "CURRENT_TIMESTAMP)");
                 System.out.println("HELD");
                 System.out.flush();
                 int ignored = System.in.read();

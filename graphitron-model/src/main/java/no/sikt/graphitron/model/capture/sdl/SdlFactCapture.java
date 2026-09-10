@@ -57,7 +57,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
@@ -565,9 +566,9 @@ public final class SdlFactCapture {
         for (Object element : interfaces) {
             TypeName type = (TypeName) element;
             String name = type.getName();
-            // Keyed container-first, which is the relation's key and the reverse of how this arm
-            // spells it: one interface named twice by one type is the duplicate to catch.
-            if (!sink.claim(GRAPHQL_POLY_MEMBER, name, site.typeName())) {
+            // Keyed type-first, which is the relation's own key now that the two arms are two
+            // relations: one interface named twice by one type is the duplicate to catch.
+            if (!sink.claim(GRAPHQL_IMPLEMENTS_INTERFACE, site.typeName(), name)) {
                 quarantine("IMPLEMENTS", site.typeName() + " implements " + name, type);
                 continue;
             }
@@ -580,7 +581,7 @@ public final class SdlFactCapture {
         for (Object element : members) {
             TypeName type = (TypeName) element;
             String name = type.getName();
-            if (!sink.claim(GRAPHQL_POLY_MEMBER, site.typeName(), name)) {
+            if (!sink.claim(GRAPHQL_UNION_MEMBER, site.typeName(), name)) {
                 quarantine("UNION_MEMBER", site.typeName() + " = " + name, type);
                 continue;
             }
@@ -623,18 +624,32 @@ public final class SdlFactCapture {
                 settled.put(members.get(i), i + 1);
             }
         }
+        // Two relations now, and the arm decides which: a union declares who it admits and a type
+        // declares which interfaces it answers to, so the declaring end differs and with it the key.
+        // graphql_poly_member is the view over both, for readers that take either.
         for (PolyMemberSite member : polyMembers) {
-            var record = sink.dsl().newRecord(GRAPHQL_POLY_MEMBER);
-            record.setContainerKind(member.containerKind());
-            record.setContainerName(member.containerName());
-            record.setMemberTypeName(member.memberTypeName());
-            record.setPosition(member.position() != null ? member.position() : settled.get(member));
-            record.setDeclaredOn(member.declaredOn());
-            record.setDeclarationLine(member.declaration().getLine());
-            record.setDeclarationColumn(member.declaration().getColumn());
-            record.setSourceName(member.declaration().getSourceName());
-            setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
-            sink.add(record);
+            int position = member.position() != null ? member.position() : settled.get(member);
+            if ("UNION".equals(member.containerKind())) {
+                var record = sink.dsl().newRecord(GRAPHQL_UNION_MEMBER);
+                record.setUnionName(member.containerName());
+                record.setMemberTypeName(member.memberTypeName());
+                record.setPosition(position);
+                record.setDeclarationLine(member.declaration().getLine());
+                record.setDeclarationColumn(member.declaration().getColumn());
+                record.setSourceName(member.declaration().getSourceName());
+                setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
+                sink.add(record);
+            } else {
+                var record = sink.dsl().newRecord(GRAPHQL_IMPLEMENTS_INTERFACE);
+                record.setTypeName(member.memberTypeName());
+                record.setInterfaceName(member.containerName());
+                record.setPosition(position);
+                record.setDeclarationLine(member.declaration().getLine());
+                record.setDeclarationColumn(member.declaration().getColumn());
+                record.setSourceName(member.declaration().getSourceName());
+                setOwnPosition(member.own(), record::setSourceLine, record::setSourceColumn);
+                sink.add(record);
+            }
         }
     }
 

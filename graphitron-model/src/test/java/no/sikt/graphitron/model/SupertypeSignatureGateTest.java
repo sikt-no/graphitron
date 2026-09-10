@@ -43,11 +43,12 @@ import static org.jooq.impl.DSL.table;
  *
  * <h2>What counts as a set, and why the rule is not a list</h2>
  *
- * <p>Grouping on the payload alone would report two large sets that are not sets at all. Every
- * captured row carries where it was read from, so {@link #PROVENANCE} is shared by everything that
- * shares nothing, and the element relations carry no payload whatever. Both fall out on a rule
- * rather than by exemption: a set's payload must be non-empty and must hold at least one column
- * that is not provenance. Sharing only where you came from is not sharing a fact.
+ * <p>Grouping on every non-key column would report two large sets that are not sets at all. Every
+ * captured row carries where it was read from and when the reading ran, so {@link #PROVENANCE} is
+ * shared by everything that shares nothing, and the element relations carry no fact whatever. Both
+ * fall out on a rule rather than by exemption: provenance is not part of a payload, and a set's
+ * payload must be non-empty. Sharing only where you came from, or only that you were read, is not
+ * sharing a fact.
  *
  * <p>Membership alone does not confirm a reconstruction either, which is the trap a coarser scan
  * falls into: sets overlap, so a view unioning several relations for a column they happen to share
@@ -67,9 +68,13 @@ import static org.jooq.impl.DSL.table;
 class SupertypeSignatureGateTest {
 
     /**
-     * Columns that say where a row came from and when, which everything that shares nothing shares.
-     * {@code TOUCHED_AT} is one of them: a swept relation carries the instant of the reading that
-     * wrote it, so two relations agreeing on that column agree about a reading rather than a fact.
+     * Where a captured row was read from and when the reading ran. Shared by every capture relation,
+     * so it is not a fact about any of them.
+     *
+     * <p>{@code TOUCHED_AT} sits here for the reason the three positions do. It records the reading
+     * rather than the row, every relation a mark and sweep governs carries it for that one purpose,
+     * and two relations agreeing that they were both read are not two relations sharing a payload.
+     * Counting it would report a set every time a family gained a sweep.
      */
     private static final Set<String> PROVENANCE =
         Set.of("SOURCE_NAME", "SOURCE_LINE", "SOURCE_COLUMN", "TOUCHED_AT");
@@ -99,17 +104,55 @@ class SupertypeSignatureGateTest {
      * it in common at: the coordinate and the kind. Lifting the type expression up there would put
      * eight nullable columns on a supertype whose type rows can never fill them.
      *
-     * <p>Two of these sets are chosen, and the payload is identical because the node is: an input
-     * value has one shape at all three sites it can be written and a directive application one
-     * shape at all five. What differs is the parent, which is a different relation at each site, so
-     * one relation per site is what lets a row name its parent by key where a relation per node
-     * kind could only carry a position. The union these sets ask a reader for is the anchors' work
-     * and happens once into a relation rather than in every reader, which is the cost this gate is
-     * really about.
+     * <p>One of these sets is chosen, and the payload is identical because the node is: a directive
+     * application has one shape at all five sites it can be written. What differs is the parent,
+     * which is a different relation at each site, so one relation per site is what lets a row name
+     * its parent by key where a relation per node kind could only carry a position. The union the
+     * set asks a reader for is the anchors' work and happens once into a relation rather than in
+     * every reader, which is the cost this gate is really about.
+     *
+     * <p>One row is a set whose supertype is written, and it is the only one: a union declares who
+     * it admits and a type declares which interfaces it answers to, two facts with two declaring
+     * ends and two keys, sharing the payload a reader wants when it does not care which it has.
+     * {@code graphql_poly_member} is that union, done once as a view rather than in each of the two
+     * readers that take either, which is the shape this gate says a reconstruction should become. It
+     * appears on the reconstruction roster below for the same reason, and that row is a record of
+     * the cure rather than of the defect.
+     *
+     * <p>Three rows are one fact written twice while a successor is being stood up beside its
+     * incumbent, and each goes when the incumbent does rather than when somebody writes a supertype.
+     * {@code graphql_schema_error} and {@code graphql_schema_problem} are the verdict on a corpus,
+     * the second recording per stage what the first recorded per relation. {@code jvm_class} and
+     * {@code jvm_classfile}, with their supertype twins, are the class census read two ways. Naming
+     * them here is not an exemption: a supertype over either pair would be the wrong answer, because
+     * the pair is not two kinds of one thing but one thing counted twice, and the fix is the
+     * subtraction that is already planned.
+     *
+     * <p>One row left the roster in the same change and for the same reason read backwards.
+     * {@code graphitron_error_entry} and {@code graphql_type_directive} shared a payload only while
+     * provenance was counted in it; what they actually share is the declaration site, which both
+     * declare as a foreign key into {@code graphql_type_declaration}. Their supertype was written
+     * all along and the columns beside it were hiding that.
+     *
+     * <p>Worth recording how the three became visible, because it says something about the rule above
+     * rather than about them. Each pair was invisible while one side carried a mark-and-sweep stamp
+     * the other did not, the stamp differing their payloads and so keeping them apart. Excluding
+     * provenance from the payload is what let the gate see that the two say the same thing, which is
+     * the gate working rather than the gate being widened.
+     *
+     * <p>The input-value three were such a set until each began spelling its own coordinate. They
+     * are the same node to the parser still, but a coordinate is spelled from the row's ancestors
+     * and the three sites have different ones: an input field names the declaration it sits in, a
+     * field argument names both the field and the declaration, and a directive argument names
+     * neither of those and is not an element the corpus keys by coordinate at all. The signatures
+     * differ because the thing each row can say about itself differs, which is the split doing its
+     * job rather than drifting.
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
-        Set.of("graphql_ast_directive_argument_entry", "graphql_ast_field_argument_entry",
-               "graphql_ast_input_field_entry"),
+        Set.of("graphql_implements_interface", "graphql_union_member"),
+        Set.of("graphql_schema_error", "graphql_schema_problem"),
+        Set.of("jvm_class", "jvm_classfile"),
+        Set.of("jvm_class_supertype", "jvm_classfile_supertype"),
         Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
                "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
                "graphql_ast_type_directive_entry"),
@@ -122,9 +165,14 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_condition_context_arg_entry", "graphitron_field_condition_context_arg_entry",
                "graphitron_service_context_arg_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_field_condition_entry"),
-        Set.of("graphitron_external_field_entry", "graphitron_service_entry"),
+        // Three, and the third arrived by being stamped: an @enum application records a class, a
+        // method and an argMapping, which is what a service and an external field record too. The
+        // position-keyed relation is the same fact under a different key, which is what this gate
+        // reports, and what it would take to collapse them is a supertype at the coordinate none of
+        // the three has.
+        Set.of("graphitron_ast_enum_entry", "graphitron_external_field_entry",
+               "graphitron_service_entry"),
         Set.of("graphitron_default_order_field_entry", "graphitron_order_field_entry"),
-        Set.of("graphitron_error_entry", "graphql_type_directive"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry", "graphitron_reference_for_entry"),
@@ -151,6 +199,12 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
+        "graphql_poly_member|graphql_implements_interface,graphql_union_member",
+        // The union the poly split leaves behind, spelled once here rather than at each reader.
+        // Over the two base relations and not over graphql_poly_member, which says the same thing:
+        // that view is for readers outside this store, and going through it would put a second view
+        // body in every detection component that asks this question.
+        "intent_poly_member|graphql_implements_interface,graphql_union_member",
         "intent_argument_filter_role|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_condition_context_parameter|graphitron_argument_condition_context_arg_entry,graphitron_field_condition_context_arg_entry",
         "intent_condition_method_route|graphitron_argument_reference_step_entry,graphitron_field_reference_step_entry",
@@ -293,7 +347,7 @@ class SupertypeSignatureGateTest {
         var byPayload = new TreeMap<String, Set<String>>();
         for (String relation : captureTables(dsl)) {
             List<String> payload = payloadOf(dsl, relation);
-            if (payload.isEmpty() || PROVENANCE.containsAll(payload)) {
+            if (payload.isEmpty()) {
                 continue;
             }
             byPayload.computeIfAbsent(String.join(",", payload), key -> new TreeSet<>()).add(relation);
@@ -366,7 +420,18 @@ class SupertypeSignatureGateTest {
             .toList();
     }
 
-    /** A relation's columns outside its own primary key, sorted so the grouping key is stable. */
+    /**
+     * A relation's facts: its columns outside its own primary key and outside {@link #PROVENANCE},
+     * sorted so the grouping key is stable.
+     *
+     * <p>Provenance is subtracted here rather than tested for afterwards, and the difference is not
+     * cosmetic. A set whose whole payload is a foreign key into one relation is a set whose
+     * supertype is already written, which is how the four key-to-coordinate maps resolve against
+     * {@code graphql_element}. Leaving a column every swept relation carries in the payload hides
+     * that recognition behind it, so a family would appear to owe a supertype on the day it gained
+     * a mark and sweep. Where a row came from and when it was read are bookkeeping in the same
+     * sense, and neither is a fact the relation states.
+     */
     private static List<String> payloadOf(DSLContext dsl, String relation) {
         Set<String> key = new TreeSet<>(dsl.select(field(name("k", "COLUMN_NAME"), String.class))
             .from(table(name("INFORMATION_SCHEMA", "TABLE_CONSTRAINTS")).as("c"))
@@ -383,6 +448,7 @@ class SupertypeSignatureGateTest {
             .and(field(name("TABLE_NAME"), String.class).equalIgnoreCase(relation))
             .fetch(0, String.class).stream()
             .filter(column -> !key.contains(column))
+            .filter(column -> !PROVENANCE.contains(column))
             .sorted()
             .toList();
     }

@@ -2083,3 +2083,37 @@ its half is removed.
 Not yet done. The field site is eighteen directive names and most of the complexity, and it should
 wait until the co-keyed shape has been read back by something other than a test. The coordinate-keyed
 family is still what the pipeline reads.
+
+## The anchors, derived from the entries (2026-09-10)
+
+`SdlAnchor` derives sixteen anchor relations from the entry rows of the same reading, one
+`INSERT … SELECT` per anchor. Nothing is read into Java and written back, and nothing is decided:
+the statement is the derivation. It runs from `SdlCapture` once every document has been read,
+because a coordinate is declared by the corpus and no per-file pass can say one went away.
+
+The merge order is stated once. `graphql_type_declaration` ranks base-before-extension, then oldest
+file, then name, then position, which is `SchemaLoader.oldestFirst` written as an `ORDER BY`, and it
+is the only place `store_source.mtime` is joined. Everything downstream orders by the
+`merge_ordinal` it wrote, which is what the ordinals in `graphql_field` and `graphql_argument` are
+counted over. That answers the fourth finding recorded above: the ordinals the entries refuse to
+carry are computed here, deterministically, from an order the corpus already has.
+
+A collision resolves by taking rank one rather than by refusing. An anchor holds no duplicates and
+refuses nothing, because the schema whose anchors an author still needs mid-edit is exactly the one
+a refusal would empty.
+
+The entries gained `type_name`, `field_name` where a coordinate needs it, and a generated
+`coordinate` column. That is transcription rather than duplication: both names are written in the
+document, one at the node's position and one at its parent's, so the coordinate is as much a fact of
+that file as the type expression is. It is the natural key and it cannot be the key, an entry
+relation being a bag: two documents writing `Film.title` are two rows, which is the whole reason the
+family exists.
+
+`graphql_poly_member` is two relations now, `graphql_union_member` and
+`graphql_implements_interface`, with the old name surviving as a view. The two arms disagree about
+which end declares the membership, which is what made one relation carry a discriminator and a
+`declared_on` column to say which end the key meant.
+
+One commit rather than the two this was planned as. The anchors write the split relations, the DDL
+interleaves them in one region, and three test fixtures straddle both, so the first of two commits
+would have been verified by argument where the pair together is verified by the reactor.

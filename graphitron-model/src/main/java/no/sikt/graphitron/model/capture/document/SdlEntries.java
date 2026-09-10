@@ -14,6 +14,7 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.ListType;
+import graphql.language.NamedNode;
 import graphql.language.Node;
 import graphql.language.NonNullType;
 import graphql.language.ObjectTypeDefinition;
@@ -26,6 +27,7 @@ import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
+import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -250,6 +252,7 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
@@ -261,14 +264,15 @@ public final class SdlEntries {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DESCRIPTION)
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
             .set(t.NAME, excluded(t.NAME))
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
@@ -291,19 +295,22 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nested.typeName(), t.TYPE_NAME),
+            nested -> val(nameOf(nested.parent()), t.FIELD_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
-            nested -> val(printAstCompact(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
+                t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
                 t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
@@ -311,6 +318,8 @@ public final class SdlEntries {
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+            .set(t.FIELD_NAME, excluded(t.FIELD_NAME))
             .set(t.NAME, excluded(t.NAME))
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
@@ -321,6 +330,7 @@ public final class SdlEntries {
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
     }
+
     private static void inputFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
         var t = GRAPHQL_AST_INPUT_FIELD_ENTRY;
@@ -333,26 +343,29 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
-            nested -> val(printAstCompact(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL,
+                t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
             .set(t.NAME, excluded(t.NAME))
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
@@ -363,6 +376,7 @@ public final class SdlEntries {
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
     }
+
     /** What a directive definition declares, where appliedArguments below is what an application passes. */
     private static void directiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
@@ -382,7 +396,7 @@ public final class SdlEntries {
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
-            nested -> val(printAstCompact(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
@@ -419,19 +433,21 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.DESCRIPTION)
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
             .set(t.NAME, excluded(t.NAME))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
@@ -449,18 +465,20 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.INTERFACE_NAME)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.INTERFACE_NAME)
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
             .set(t.INTERFACE_NAME, excluded(t.INTERFACE_NAME))
             .execute();
     }
@@ -477,18 +495,20 @@ public final class SdlEntries {
             nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
+            nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.MEMBER_NAME)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.MEMBER_NAME)
+                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
             .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
             .set(t.MEMBER_NAME, excluded(t.MEMBER_NAME))
             .execute();
     }
@@ -812,10 +832,24 @@ public final class SdlEntries {
         return nested;
     }
 
+    /**
+     * An argument, the field it was written inside, and the name of the declaration that field was
+     * written inside.
+     *
+     * <p>The one three-level shape in the family, and the coordinate is why: a field argument is
+     * spelled from both ancestors, and a generated column reads no row but its own. The other four
+     * element kinds need one ancestor and travel as an ordinary {@link Nested}.
+     */
+    private record NestedArgument(Node<?> parent, InputValueDefinition node, String typeName) {}
+
     /** The three parents an input value may have, which are the same node kind to the parser. */
-    private static List<Nested<InputValueDefinition>> argumentsOfFields(TypeDefinitionRegistry document) {
-        List<Nested<InputValueDefinition>> nested = new ArrayList<>();
-        fields(document).forEach(field -> nest(nested, field.node(), field.node().getInputValueDefinitions()));
+    private static List<NestedArgument> argumentsOfFields(TypeDefinitionRegistry document) {
+        List<NestedArgument> nested = new ArrayList<>();
+        for (Nested<FieldDefinition> field : fields(document)) {
+            String declaration = nameOf(field.parent());
+            field.node().getInputValueDefinitions()
+                .forEach(argument -> nested.add(new NestedArgument(field.node(), argument, declaration)));
+        }
         return nested;
     }
 
@@ -837,7 +871,8 @@ public final class SdlEntries {
      */
     private static List<Nested<InputValueDefinition>> inputValues(TypeDefinitionRegistry document) {
         List<Nested<InputValueDefinition>> nested = new ArrayList<>();
-        nested.addAll(argumentsOfFields(document));
+        argumentsOfFields(document)
+            .forEach(argument -> nested.add(new Nested<>(argument.parent(), argument.node())));
         nested.addAll(fieldsOfInputObjects(document));
         nested.addAll(argumentsOfDirectiveDefinitions(document));
         return nested;
@@ -973,6 +1008,28 @@ public final class SdlEntries {
 
     private static Field<Integer> parentColumn(Node<?> parent) {
         return val(parent.getSourceLocation().getColumn(), Integer.class);
+    }
+
+    /**
+     * A value exactly as written, or null where none was written.
+     *
+     * <p>Not {@code printAstCompact} directly: it renders a missing node as the empty string, and
+     * the column this feeds says NULL where none was. An empty default and an absent one are
+     * different things to say about a declaration, and only one of them an author can write.
+     */
+    private static String written(Value<?> value) {
+        return value == null ? null : printAstCompact(value);
+    }
+
+    /**
+     * A node's own name, held on the children whose coordinate is spelled from it. The position
+     * beside it is still the key; this is the spelling, not a second one. For the parents that
+     * have a name, Every parent a coordinate is spelled from
+     * is a declaration or a field definition, both of which graphql-java hands back as a
+     * {@link NamedNode}; anything else would be a parent no coordinate names.
+     */
+    private static String nameOf(Node<?> node) {
+        return node instanceof NamedNode<?> named ? named.getName() : null;
     }
 
     /**

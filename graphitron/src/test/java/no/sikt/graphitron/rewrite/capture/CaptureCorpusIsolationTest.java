@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -201,9 +202,19 @@ class CaptureCorpusIsolationTest {
     /**
      * A relation's rows as sorted rendered tuples, so the comparison is order-independent and a
      * failure names the rows rather than a count.
+     *
+     * <p>{@code touched_at} is left out, and it is provenance rather than an exemption. It records
+     * when the reading ran, so two arms that ran at two instants disagree on it whatever either
+     * corpus contains, and this gate asks whether a crawler's rows vary with the other corpus's
+     * contents. {@code SupertypeSignatureGateTest} subtracts the same column from a payload for the
+     * same reason, so the two gates now agree on what is a fact about a row and what is bookkeeping
+     * about the reading that produced it.
      */
     private static List<String> contentsOf(DSLContext dsl, Table<?> relation) {
-        return dsl.select(relation.fields()).from(relation).fetch().stream()
+        var compared = Arrays.stream(relation.fields())
+            .filter(field -> !"TOUCHED_AT".equalsIgnoreCase(field.getName()))
+            .toList();
+        return dsl.select(compared).from(relation).fetch().stream()
             .map(record -> record.intoList().toString())
             .sorted()
             .toList();

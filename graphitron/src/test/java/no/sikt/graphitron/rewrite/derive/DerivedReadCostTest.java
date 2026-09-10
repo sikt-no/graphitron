@@ -150,8 +150,13 @@ class DerivedReadCostTest {
      * membership, nodehood and a captured ancestry and reach no registration, and
      * {@code intent_node_id_polymorphic_decode_defect}, which drives off the decode-slot relation and
      * so reaches the instruction registration through it.
+     *
+     * <p>Raised to 125 by the poly split: {@code graphql_poly_member} is a view over
+     * {@code graphql_union_member} and {@code graphql_implements_interface} now, so a relation that
+     * was a table is a reader. It reaches no registration, both arms being captured relations, so
+     * it costs this domain a row and no cells.
      */
-    private static final int READERS_IN_SCHEMA = 124;
+    private static final int READERS_IN_SCHEMA = 125;
 
     /**
      * Views whose derivation reaches at least one registration's target.

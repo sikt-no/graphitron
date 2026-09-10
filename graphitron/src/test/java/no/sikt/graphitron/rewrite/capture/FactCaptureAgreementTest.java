@@ -395,6 +395,10 @@ class FactCaptureAgreementTest {
             "graphql_argument_element", "graphql_enum_value_element",
             "graphql_type", "graphql_type_declaration", "graphql_field", "graphql_argument",
             "graphql_enum_value", "graphql_poly_member",
+            // The two arms the poly view unions, which the walk writes directly now. Their
+            // agreement is the view's: what GraphitronSchema states is one population, and
+            // reading it through graphql_poly_member is reading both.
+            "graphql_implements_interface", "graphql_union_member",
             "graphql_root_operation", "graphql_duplicate_declaration", "graphql_directive",
             "graphql_directive_location", "graphql_directive_argument", "graphql_schema_directive",
             "graphql_schema_directive_arg", "graphql_type_directive", "graphql_type_directive_arg",

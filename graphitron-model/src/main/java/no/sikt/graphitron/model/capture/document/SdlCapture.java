@@ -31,8 +31,10 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * a source is a fact about the build, recorded as one in {@code store_graph_schema_input}, and a
  * consumer wanting the decorated schema joins the two.
  *
- * <p>Two writers per document, in this order: the AST entries transcribe every node, and the
- * graphitron entries decode the directive applications among them onto the rows the first wrote.
+ * <p>Two writers per document and one over the corpus, in that order. The AST entries transcribe
+ * every node, the graphitron entries decode the directive applications among them onto the rows the
+ * first wrote, and the anchors are derived once every document has been read: what a coordinate is
+ * cannot be settled by any one file, only by all of them.
  */
 public final class SdlCapture {
 
@@ -62,6 +64,9 @@ public final class SdlCapture {
         for (var failure : parse.failures()) {
             writeSource(dsl, failure.sourceName(), readAt);
         }
+        // After every document, because an anchor is what the corpus says: a coordinate one file
+        // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
+        SdlAnchor.write(dsl, graph.name(), readAt);
         // What the merge refused and what the assembly refused are the same question asked of the
         // same corpus, so they arrive as one list in the order the stages ran.
         var raised = new ArrayList<>(parse.registryErrors());

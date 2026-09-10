@@ -69,7 +69,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH;
 import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
@@ -376,6 +377,16 @@ public final class SeededStore {
 
     // ===== Anchors =====
 
+    /**
+     * The reading a planted row belongs to.
+     *
+     * <p>Every anchor a mark and sweep governs carries the instant of the reading that derived it,
+     * so a fixture planting one has to say which reading that was. A constant rather than the clock:
+     * a fixture's rows are all one reading's, and a test that captures over them wants its own
+     * instant to differ from this one rather than to race it.
+     */
+    public static final LocalDateTime SEEDED_READING = LocalDateTime.of(2000, 1, 1, 0, 0);
+
     /** The graph row every graph-keyed family hangs off. */
     public static void seedGraph(DSLContext dsl, String graphName) {
         dsl.insertInto(STORE_GRAPH)
@@ -429,6 +440,7 @@ public final class SeededStore {
             .set(GRAPHQL_ELEMENT.GRAPH_NAME, graphName)
             .set(GRAPHQL_ELEMENT.COORDINATE, coordinate)
             .set(GRAPHQL_ELEMENT.ELEMENT_KIND, elementKind)
+            .set(GRAPHQL_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
         return coordinate;
@@ -452,11 +464,13 @@ public final class SeededStore {
             .set(GRAPHQL_TYPE_ELEMENT.TYPE_NAME, typeName)
             .set(GRAPHQL_TYPE_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofType(typeName), "NAMED_TYPE"))
+            .set(GRAPHQL_TYPE_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         dsl.insertInto(GRAPHQL_TYPE)
             .set(GRAPHQL_TYPE.GRAPH_NAME, graphName)
             .set(GRAPHQL_TYPE.TYPE_NAME, typeName)
             .set(GRAPHQL_TYPE.KIND, kind)
+            .set(GRAPHQL_TYPE.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -481,6 +495,7 @@ public final class SeededStore {
             .set(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL, 0)
             .set(GRAPHQL_TYPE_DECLARATION.IS_EXTENSION, false)
             .set(GRAPHQL_TYPE_DECLARATION.KIND, kind)
+            .set(GRAPHQL_TYPE_DECLARATION.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -511,6 +526,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD_ELEMENT.FIELD_NAME, fieldName)
             .set(GRAPHQL_FIELD_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofField(typeName, fieldName), "FIELD"))
+            .set(GRAPHQL_FIELD_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         dsl.insertInto(GRAPHQL_FIELD)
             .set(GRAPHQL_FIELD.GRAPH_NAME, graphName)
@@ -526,6 +542,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
             .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_FIELD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -553,6 +570,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD_ELEMENT.FIELD_NAME, fieldName)
             .set(GRAPHQL_FIELD_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofField(typeName, fieldName), "INPUT_FIELD"))
+            .set(GRAPHQL_FIELD_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         var element = Boolean.TRUE.equals(itemNonNull) ? namedType + "!" : namedType;
         var listed = isList ? "[" + element + "]" : element;
@@ -571,6 +589,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD.SOURCE_LINE, 2)
             .set(GRAPHQL_FIELD.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_FIELD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -601,6 +620,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME, argumentName)
             .set(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "FIELD_ARGUMENT"))
+            .set(GRAPHQL_ARGUMENT_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
@@ -615,6 +635,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_ARGUMENT.SOURCE_LINE, sourceLine)
             .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_ARGUMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -632,6 +653,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME, argumentName)
             .set(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, anchorCoordinate(dsl, graphName,
                 SchemaCoordinateSyntax.ofArgument(typeName, fieldName, argumentName), "FIELD_ARGUMENT"))
+            .set(GRAPHQL_ARGUMENT_ELEMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
         dsl.insertInto(GRAPHQL_ARGUMENT)
             .set(GRAPHQL_ARGUMENT.GRAPH_NAME, graphName)
@@ -647,6 +669,7 @@ public final class SeededStore {
             .set(GRAPHQL_ARGUMENT.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_ARGUMENT.SOURCE_LINE, 2)
             .set(GRAPHQL_ARGUMENT.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_ARGUMENT.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -692,6 +715,7 @@ public final class SeededStore {
             .set(GRAPHQL_DIRECTIVE.GRAPH_NAME, graphName)
             .set(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
             .set(GRAPHQL_DIRECTIVE.REPEATABLE, false)
+            .set(GRAPHQL_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
     }
@@ -795,6 +819,7 @@ public final class SeededStore {
             .set(GRAPHQL_ROOT_OPERATION.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_ROOT_OPERATION.SOURCE_LINE, 1)
             .set(GRAPHQL_ROOT_OPERATION.SOURCE_COLUMN, 1)
+            .set(GRAPHQL_ROOT_OPERATION.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2071,22 +2096,20 @@ public final class SeededStore {
         // Numbered from one in the order the case states its implementors, which is what capture's
         // own pass produces for a schema whose implementors are written in that order. A fixture
         // has no second file to interleave, so seeding order is source order.
-        int position = 1 + dsl.fetchCount(GRAPHQL_POLY_MEMBER,
-            GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(graphName)
-                .and(GRAPHQL_POLY_MEMBER.CONTAINER_NAME.eq(interfaceName))
-                .and(GRAPHQL_POLY_MEMBER.CONTAINER_KIND.eq("INTERFACE")));
-        dsl.insertInto(GRAPHQL_POLY_MEMBER)
-            .set(GRAPHQL_POLY_MEMBER.GRAPH_NAME, graphName)
-            .set(GRAPHQL_POLY_MEMBER.CONTAINER_KIND, "INTERFACE")
-            .set(GRAPHQL_POLY_MEMBER.CONTAINER_NAME, interfaceName)
-            .set(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, typeName)
-            .set(GRAPHQL_POLY_MEMBER.POSITION, position)
-            .set(GRAPHQL_POLY_MEMBER.DECLARED_ON, typeName)
-            .set(GRAPHQL_POLY_MEMBER.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHQL_POLY_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 2)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 3)
+        int position = 1 + dsl.fetchCount(GRAPHQL_IMPLEMENTS_INTERFACE,
+            GRAPHQL_IMPLEMENTS_INTERFACE.GRAPH_NAME.eq(graphName)
+                .and(GRAPHQL_IMPLEMENTS_INTERFACE.INTERFACE_NAME.eq(interfaceName)));
+        dsl.insertInto(GRAPHQL_IMPLEMENTS_INTERFACE)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.GRAPH_NAME, graphName)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.TYPE_NAME, typeName)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.INTERFACE_NAME, interfaceName)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.POSITION, position)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_LINE, 2)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_IMPLEMENTS_INTERFACE.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2099,18 +2122,17 @@ public final class SeededStore {
     public static void seedUnionMember(DSLContext dsl, String graphName, String unionName,
                                        String memberTypeName, int ordinal) {
         seedDeclaredType(dsl, graphName, unionName, "UNION");
-        dsl.insertInto(GRAPHQL_POLY_MEMBER)
-            .set(GRAPHQL_POLY_MEMBER.GRAPH_NAME, graphName)
-            .set(GRAPHQL_POLY_MEMBER.CONTAINER_KIND, "UNION")
-            .set(GRAPHQL_POLY_MEMBER.CONTAINER_NAME, unionName)
-            .set(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, memberTypeName)
-            .set(GRAPHQL_POLY_MEMBER.POSITION, ordinal)
-            .set(GRAPHQL_POLY_MEMBER.DECLARED_ON, unionName)
-            .set(GRAPHQL_POLY_MEMBER.DECLARATION_LINE, SEED_LINE)
-            .set(GRAPHQL_POLY_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_NAME, SEED_SOURCE)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_LINE, 2)
-            .set(GRAPHQL_POLY_MEMBER.SOURCE_COLUMN, 3)
+        dsl.insertInto(GRAPHQL_UNION_MEMBER)
+            .set(GRAPHQL_UNION_MEMBER.GRAPH_NAME, graphName)
+            .set(GRAPHQL_UNION_MEMBER.UNION_NAME, unionName)
+            .set(GRAPHQL_UNION_MEMBER.MEMBER_TYPE_NAME, memberTypeName)
+            .set(GRAPHQL_UNION_MEMBER.POSITION, ordinal)
+            .set(GRAPHQL_UNION_MEMBER.DECLARATION_LINE, SEED_LINE)
+            .set(GRAPHQL_UNION_MEMBER.DECLARATION_COLUMN, SEED_COLUMN)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_NAME, SEED_SOURCE)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_LINE, 2)
+            .set(GRAPHQL_UNION_MEMBER.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_UNION_MEMBER.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

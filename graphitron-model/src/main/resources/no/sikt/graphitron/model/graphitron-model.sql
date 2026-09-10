@@ -276,6 +276,7 @@ CREATE TABLE graphql_element (
   graph_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
   element_kind VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT'))
@@ -284,11 +285,13 @@ COMMENT ON TABLE graphql_element IS 'A schema element exists in this graph: the 
 COMMENT ON COLUMN graphql_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_element.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one, for an input field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
 COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds appear here; the two directive kinds are schema elements this store holds no anchor for yet, which is scope and not a reading of the grammar. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
+COMMENT ON COLUMN graphql_element.touched_at IS 'when the reading that derived this row ran. The derivation finishes by deleting this graph''s rows carrying a different instant, which are the coordinates the corpus stopped declaring. Swept per graph rather than per file because a coordinate is declared by the corpus and no one file''s reading can say it went away. NOT NULL, which is what makes the sweep total: a row with no instant would be a row no reading claims and no sweep reaches, so the column that decides what survives cannot be the one column a writer may forget';
 
 CREATE TABLE graphql_type_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
@@ -297,12 +300,14 @@ COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the 
 COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_element.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
 COMMENT ON COLUMN graphql_type_element.coordinate IS 'this row as graphql_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
+COMMENT ON COLUMN graphql_type_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_field_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
@@ -313,6 +318,7 @@ COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s parti
 COMMENT ON COLUMN graphql_field_element.type_name IS 'the owning type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_field_element.field_name IS 'the field name within the owning type';
 COMMENT ON COLUMN graphql_field_element.coordinate IS 'this row as graphql_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_field_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_argument_element (
   graph_name    VARCHAR NOT NULL,
@@ -320,6 +326,7 @@ CREATE TABLE graphql_argument_element (
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
   coordinate    VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name, field_name)
@@ -332,12 +339,14 @@ COMMENT ON COLUMN graphql_argument_element.type_name IS 'owning type of the fiel
 COMMENT ON COLUMN graphql_argument_element.field_name IS 'the field the argument sits on, anchored by graphql_field_element';
 COMMENT ON COLUMN graphql_argument_element.argument_name IS 'the argument name within the owning field';
 COMMENT ON COLUMN graphql_argument_element.coordinate IS 'this row as graphql_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_argument_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_enum_value_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   value_name VARCHAR NOT NULL,
   coordinate VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
@@ -347,6 +356,7 @@ COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s 
 COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
 COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_enum_value_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE VIEW graphql_element_field
   (graph_name, coordinate, type_name, field_name, argument_name) AS
@@ -367,6 +377,7 @@ CREATE TABLE graphql_type (
   type_name     VARCHAR NOT NULL,
   kind          VARCHAR NOT NULL,
   description   VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   -- Free, the primary key already implying it, and what lets a relation carrying a fact that is
@@ -379,6 +390,7 @@ COMMENT ON COLUMN graphql_type.graph_name IS 'the owning graph''s partition, anc
 COMMENT ON COLUMN graphql_type.type_name IS 'the type these attributes describe, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_type.kind IS 'the first declaration site''s form in merge order (the base definition''s, on a well-formed schema)';
 COMMENT ON COLUMN graphql_type.description IS 'SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition''s when one exists';
+COMMENT ON COLUMN graphql_type.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_type_declaration (
   graph_name    VARCHAR NOT NULL,
@@ -389,6 +401,7 @@ CREATE TABLE graphql_type_declaration (
   merge_ordinal INT     NOT NULL,
   is_extension  BOOLEAN NOT NULL,
   kind          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
@@ -402,6 +415,7 @@ COMMENT ON COLUMN graphql_type_declaration.source_column IS 'in the key because 
 COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal';
 COMMENT ON COLUMN graphql_type_declaration.is_extension IS 'FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint';
 COMMENT ON COLUMN graphql_type_declaration.kind IS 'the declaration form written at this site; a mismatch against the type row''s kind is a detection';
+COMMENT ON COLUMN graphql_type_declaration.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_schema_problem (
   graph_name    VARCHAR NOT NULL,
@@ -443,6 +457,7 @@ CREATE TABLE graphql_ast_type_declaration_entry (
   is_extension   BOOLEAN NOT NULL,
   name           VARCHAR NOT NULL,
   description    VARCHAR,
+  coordinate     VARCHAR GENERATED ALWAYS AS (name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
@@ -460,6 +475,7 @@ COMMENT ON COLUMN graphql_ast_type_declaration_entry.kind IS 'which of the six d
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.is_extension IS 'whether this position extends a type rather than defining it. TRUE and FALSE are both ordinary states of a well-formed corpus, and a name carrying only extensions is an author error some detection reports, never a refusal here';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.description IS 'the description written here, or NULL where none was. Always NULL on an extension, the grammar giving extensions nowhere to put one; stated in a comment rather than a CHECK, because a gatherer that refuses a row is a gatherer that stops gathering';
+COMMENT ON COLUMN graphql_ast_type_declaration_entry.coordinate IS 'the schema coordinate this row names, which for a named type is the name itself. Generated rather than written so the specification''s grammar is stated once per element kind, on the relation holding that kind, and cannot drift from the columns it reads';
 
 CREATE TABLE graphql_ast_directive_definition_entry (
   graph_name     VARCHAR NOT NULL,
@@ -520,6 +536,7 @@ CREATE TABLE graphql_ast_field_definition_entry (
   touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
+  type_name      VARCHAR NOT NULL,
   name           VARCHAR NOT NULL,
   type_sdl       VARCHAR NOT NULL,
   named_type     VARCHAR NOT NULL,
@@ -527,6 +544,7 @@ CREATE TABLE graphql_ast_field_definition_entry (
   is_list        BOOLEAN NOT NULL,
   item_non_null  BOOLEAN,
   description    VARCHAR,
+  coordinate     VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
@@ -551,6 +569,8 @@ COMMENT ON COLUMN graphql_ast_field_definition_entry.non_null IS 'whether the ou
 COMMENT ON COLUMN graphql_ast_field_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.coordinate IS 'the schema coordinate this row names, Type.field as the specification spells it. Generated from the two names beside it, so neither a reader nor the derivation that fills graphql_element has to join to spell one';
 
 CREATE TABLE graphql_ast_enum_value_definition_entry (
   graph_name     VARCHAR NOT NULL,
@@ -561,8 +581,10 @@ CREATE TABLE graphql_ast_enum_value_definition_entry (
   touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
+  type_name      VARCHAR NOT NULL,
   name           VARCHAR NOT NULL,
   description    VARCHAR,
+  coordinate     VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
@@ -581,6 +603,8 @@ COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_line IS 'source
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
+COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.coordinate IS 'the schema coordinate this row names. The specification spells an enum value the way it spells a field, Type.value, and offers no second form, so this is the same expression under a different element kind';
 
 CREATE TABLE graphql_ast_implements_entry (
   graph_name      VARCHAR NOT NULL,
@@ -591,6 +615,7 @@ CREATE TABLE graphql_ast_implements_entry (
   touched_at      TIMESTAMP NOT NULL,
   parent_line     INT     NOT NULL,
   parent_column   INT     NOT NULL,
+  type_name       VARCHAR NOT NULL,
   interface_name  VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
@@ -609,6 +634,7 @@ COMMENT ON COLUMN graphql_ast_implements_entry.touched_at IS 'when the reading t
 COMMENT ON COLUMN graphql_ast_implements_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_implements_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_implements_entry.interface_name IS 'the interface name written here. Nothing says a type of this name was declared anywhere: an implements clause naming an absent interface is exactly the state this row exists to hold';
+COMMENT ON COLUMN graphql_ast_implements_entry.type_name IS 'the name the declaration this node was written inside gives itself, held here as well as on that row so the anchor keyed by it needs no join to spell. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file';
 
 CREATE TABLE graphql_ast_union_member_entry (
   graph_name     VARCHAR NOT NULL,
@@ -619,6 +645,7 @@ CREATE TABLE graphql_ast_union_member_entry (
   touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
+  type_name      VARCHAR NOT NULL,
   member_name    VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
@@ -637,6 +664,7 @@ COMMENT ON COLUMN graphql_ast_union_member_entry.touched_at IS 'when the reading
 COMMENT ON COLUMN graphql_ast_union_member_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_union_member_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_union_member_entry.member_name IS 'the member type name written here. Nothing says a type of this name was declared anywhere, on graphql_ast_implements_entry.interface_name''s terms';
+COMMENT ON COLUMN graphql_ast_union_member_entry.type_name IS 'the name the declaration this node was written inside gives itself, held here as well as on that row so the anchor keyed by it needs no join to spell. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file';
 
 CREATE TABLE graphql_ast_directive_location_entry (
   graph_name     VARCHAR NOT NULL,
@@ -705,6 +733,8 @@ CREATE TABLE graphql_ast_field_argument_entry (
   touched_at         TIMESTAMP NOT NULL,
   parent_line        INT     NOT NULL,
   parent_column      INT     NOT NULL,
+  type_name          VARCHAR NOT NULL,
+  field_name         VARCHAR NOT NULL,
   name               VARCHAR NOT NULL,
   type_sdl           VARCHAR NOT NULL,
   named_type         VARCHAR NOT NULL,
@@ -713,6 +743,8 @@ CREATE TABLE graphql_ast_field_argument_entry (
   item_non_null      BOOLEAN,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
+  coordinate         VARCHAR GENERATED ALWAYS AS
+                       (type_name || '.' || field_name || '(' || name || ':)'),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
@@ -738,6 +770,9 @@ COMMENT ON COLUMN graphql_ast_field_argument_entry.is_list IS 'whether the expre
 COMMENT ON COLUMN graphql_ast_field_argument_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.type_name IS 'the name of the declaration the field was written inside, two hops up rather than one. Held here for the reason type_name is held one hop down on the relations that need only one: the coordinate names both ancestors, and a generated column reads no row but its own';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.field_name IS 'the name of the field this argument was written inside, which is the parent this row''s position keys into. The pair with type_name is what the coordinate spells';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.coordinate IS 'the schema coordinate this row names, Type.field(argument:) with the trailing colon the specification writes. The deepest of the five forms, and why this relation denormalises two ancestors where the others denormalise one';
 
 CREATE TABLE graphql_ast_input_field_entry (
   graph_name         VARCHAR NOT NULL,
@@ -748,6 +783,7 @@ CREATE TABLE graphql_ast_input_field_entry (
   touched_at         TIMESTAMP NOT NULL,
   parent_line        INT     NOT NULL,
   parent_column      INT     NOT NULL,
+  type_name          VARCHAR NOT NULL,
   name               VARCHAR NOT NULL,
   type_sdl           VARCHAR NOT NULL,
   named_type         VARCHAR NOT NULL,
@@ -756,6 +792,7 @@ CREATE TABLE graphql_ast_input_field_entry (
   item_non_null      BOOLEAN,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
+  coordinate         VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
@@ -781,6 +818,8 @@ COMMENT ON COLUMN graphql_ast_input_field_entry.is_list IS 'whether the expressi
 COMMENT ON COLUMN graphql_ast_input_field_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
 COMMENT ON COLUMN graphql_ast_input_field_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_input_field_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
+COMMENT ON COLUMN graphql_ast_input_field_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
+COMMENT ON COLUMN graphql_ast_input_field_entry.coordinate IS 'the schema coordinate this row names. An input field is spelled the way a field is, the parent''s kind being what tells the two readings apart, so the expression here is the field relation''s expression and the element kind is what differs';
 
 CREATE TABLE graphql_ast_directive_argument_entry (
   graph_name         VARCHAR NOT NULL,
@@ -1008,6 +1047,7 @@ CREATE TABLE graphql_field (
   source_name       VARCHAR NOT NULL,
   source_line       INT,
   source_column     INT,
+  touched_at        TIMESTAMP NOT NULL,
   field_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(field_name)),
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
@@ -1034,6 +1074,7 @@ COMMENT ON COLUMN graphql_field.source_name IS 'every field row comes from an SD
 COMMENT ON COLUMN graphql_field.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_field.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_field.field_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper where @field(name:) was omitted and the field name stands in as a column spelling. Generated, so nothing writes it and nothing can. A GraphQL field name is folded here for that crossing alone; nothing compares one to another case-insensitively';
+COMMENT ON COLUMN graphql_field.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_argument (
   graph_name        VARCHAR NOT NULL,
@@ -1051,6 +1092,7 @@ CREATE TABLE graphql_argument (
   source_name       VARCHAR,
   source_line       INT,
   source_column     INT,
+  touched_at        TIMESTAMP NOT NULL,
   argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
@@ -1074,6 +1116,7 @@ COMMENT ON COLUMN graphql_argument.source_name IS 'the SDL file the row was capt
 COMMENT ON COLUMN graphql_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_argument.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_argument.argument_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper where @field(name:) was omitted and the argument name stands in as a column spelling. Generated, so nothing writes it and nothing can. The argument-site counterpart of graphql_field.field_name_upper, folded for the same one crossing and for no other: nothing compares one argument name to another case-insensitively';
+COMMENT ON COLUMN graphql_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_enum_value (
   graph_name          VARCHAR NOT NULL,
@@ -1086,6 +1129,7 @@ CREATE TABLE graphql_enum_value (
   source_name         VARCHAR NOT NULL,
   source_line         INT,
   source_column       INT,
+  touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name)
     REFERENCES graphql_enum_value_element (graph_name, type_name, value_name),
@@ -1103,51 +1147,71 @@ COMMENT ON COLUMN graphql_enum_value.description IS 'SDL description string, whe
 COMMENT ON COLUMN graphql_enum_value.source_name IS 'NOT NULL for the same reason as on graphql_field: half of the site FK';
 COMMENT ON COLUMN graphql_enum_value.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_value.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_value.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphql_poly_member (
+CREATE TABLE graphql_union_member (
   graph_name          VARCHAR NOT NULL,
-  container_kind      VARCHAR NOT NULL,
-  container_name      VARCHAR NOT NULL,
+  union_name          VARCHAR NOT NULL,
   member_type_name    VARCHAR NOT NULL,
   position            INT     NOT NULL,
-  declared_on         VARCHAR NOT NULL,
   declaration_line    INT     NOT NULL,
   declaration_column  INT     NOT NULL,
   source_name         VARCHAR NOT NULL,
   source_line         INT,
   source_column       INT,
-  PRIMARY KEY (graph_name, container_name, member_type_name),
-  FOREIGN KEY (graph_name, declared_on) REFERENCES graphql_type_element (graph_name, type_name),
-  FOREIGN KEY (graph_name, declared_on, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column),
-  -- No reference from the container to graphql_type, deliberately, and the reason is when capture
-  -- runs rather than what the container name means. Implementing an interface nobody declared is
-  -- refused, but it is refused at assembly, and capture reads the parsed registry before that:
-  -- SchemaAssembly returns its refusal as a value, capture is handed it, and the refusal lands in
-  -- graphql_schema_error beside the transcription that provoked it. Measured on such a document,
-  -- the store holds this row naming Node and one ASSEMBLY row reading "The interface type 'Node'
-  -- is not present when resolving type 'Inventory'". A reference from container_kind would make
-  -- that capture throw instead, so the schema whose error this store exists to report would be the
-  -- one it cannot record. A member whose kind disagrees with what graphql_type calls the container
-  -- is therefore a detection over the two relations and not a refusal here.
-  CHECK (container_kind IN ('UNION', 'INTERFACE')),
-  CHECK (declared_on = CASE WHEN container_kind = 'UNION' THEN container_name
-                            ELSE member_type_name END)
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, union_name, member_type_name),
+  FOREIGN KEY (graph_name, union_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, union_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-CREATE INDEX graphql_poly_member_container_ix
-  ON graphql_poly_member (graph_name, container_name);
-COMMENT ON TABLE graphql_poly_member IS 'What a polymorphic container holds: one row per member of a union and per implementor of an interface. One relation and not two, because the two sites carry the same columns and differ only in which end of the edge the document spells the membership on, which is a discriminator value rather than data; a union names its members and an implementing type names its interface, and a reader asking what a container holds should not have to know which. That the SDL spells them at opposite ends is what declared_on carries, and it is the only column the collapse needed: the declaration coordinate points into the union''s own declaration on one arm and into the implementing type''s on the other, so the site reference stays engine-checked rather than becoming a foreign key no discriminator can serve. Captured rather than derived, and captured from the document rather than from an assembled schema: this family transcribes what any SDL reader could produce, so a schema that fails to validate must still answer here, which is exactly when an editor asking who implements this interface most needs one. Position is source order on both arms and is written here rather than ranked by a reader, which is the whole point of the column: a union declares its members in one place and capture numbers them as it walks, while an interface''s implementors are declared apart from it and apart from each other, so their order is settled in one pass after every site has been read. What that replaced was a window function in a view body, re-evaluated over every partition at every correlated probe; an ordering a reader recomputes per probe is a fact capture declined to write.';
-COMMENT ON COLUMN graphql_poly_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_poly_member.container_kind IS 'which polymorphic form the container is, a closed two-value domain: UNION, INTERFACE. The discriminator, and also which end of the edge the document spelled: a UNION row was written from the container''s declaration, an INTERFACE row from the member''s';
-COMMENT ON COLUMN graphql_poly_member.container_name IS 'the union or interface holding the member. Author-spelled and unanchored on the INTERFACE arm, where the implementing type names it and may name one no document declares; on the UNION arm it is the declaring type and declared_on carries its anchor';
-COMMENT ON COLUMN graphql_poly_member.member_type_name IS 'the member type or implementor. Author-spelled and unanchored on the UNION arm, where the union names it and may name one no document declares; on the INTERFACE arm it is the declaring type and declared_on carries its anchor';
-COMMENT ON COLUMN graphql_poly_member.position IS 'source order within the container. The two arms do not share a base and this is inherited rather than intended: a union''s members are numbered from 0 by the walk that reads them, an interface''s implementors from 1 by the pass that orders them. Nothing reads the absolute value today, every consumer reading the order alone, which is why the disagreement survived a window function without being noticed; rebasing is a separate change because the mapping-constant fingerprint digests a list in this order';
-COMMENT ON COLUMN graphql_poly_member.declared_on IS 'the type that declared this membership: the container on a UNION row, the member on an INTERFACE row. The anchored end, and the only one: both foreign keys hang off this column, because which end a document anchors is what the two arms disagree about and a key cannot be conditional. The other end is a name an author wrote and may resolve to nothing, which is the rule both collapsed relations already applied and which the collapse would have lost had it keyed the container. Redundant against the discriminator and the two names, and stored anyway so the keys have a column to name; the check constraint beside it is what keeps the redundancy honest';
-COMMENT ON COLUMN graphql_poly_member.declaration_line IS 'the contributing site, as on graphql_field';
-COMMENT ON COLUMN graphql_poly_member.declaration_column IS 'column of the contributing declaration site, the site key''s fourth part';
-COMMENT ON COLUMN graphql_poly_member.source_name IS 'position of the member or interface token itself; NOT NULL as on graphql_field';
-COMMENT ON COLUMN graphql_poly_member.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphql_poly_member.source_column IS 'source column, 1-based per the graphql-java convention';
+
+CREATE TABLE graphql_implements_interface (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  interface_name      VARCHAR NOT NULL,
+  position            INT     NOT NULL,
+  declaration_line    INT     NOT NULL,
+  declaration_column  INT     NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT,
+  source_column       INT,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, interface_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+);
+
+COMMENT ON TABLE graphql_union_member IS 'A union names a member: one row per member the union declares, in the order it wrote them. Separate from graphql_implements_interface because the two are not one fact wearing two hats; a union declares who it admits and a type declares which interfaces it answers to, so the declaring end differs and with it the key, the position base and every foreign key. graphql_poly_member unions the two for the readers that genuinely take either.';
+COMMENT ON COLUMN graphql_union_member.union_name IS 'the union declaring the membership, which is also the declaration this row hangs off';
+COMMENT ON COLUMN graphql_union_member.member_type_name IS 'the type the union admits, author-spelled and unanchored: a union may name a type no document declares, which assembly refuses and this relation records';
+COMMENT ON COLUMN graphql_union_member.position IS 'source order within the union, numbered from zero. Inherited rather than intended, and it disagrees with graphql_implements_interface.position on the base; a mapping-constant fingerprint digests a list in this order, so rebasing is a change of its own.';
+COMMENT ON COLUMN graphql_union_member.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_union_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_union_member.declaration_line IS 'line of the declaration site that contributed this membership, as on graphql_field';
+COMMENT ON COLUMN graphql_union_member.declaration_column IS 'column of the same, the site key''s fourth part';
+COMMENT ON COLUMN graphql_union_member.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
+COMMENT ON COLUMN graphql_union_member.source_line IS 'source line of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_member.source_column IS 'source column of that token, 1-based per the graphql-java convention';
+COMMENT ON TABLE graphql_implements_interface IS 'A type answers to an interface: one row per interface the type declares it implements. The declaring end is the type, which is why this keys on the type and graphql_union_member keys on the union; the interface may be one no document declares, which assembly refuses and this relation records rather than refusing itself.';
+COMMENT ON COLUMN graphql_implements_interface.type_name IS 'the implementing type, which is the declaration this row hangs off';
+COMMENT ON COLUMN graphql_implements_interface.interface_name IS 'the interface named in the implements clause, author-spelled and unanchored';
+COMMENT ON COLUMN graphql_implements_interface.position IS 'source order of this implementor among the interface''s implementors, numbered from one, which is what the merged relation counted and what a reader ordering them still expects. Not the interface''s position within this type''s implements clause: the split moved the key and left the numbering alone, renumbering being visible to a mapping-constant fingerprint. See graphql_union_member.position for why the two bases differ.';
+COMMENT ON COLUMN graphql_implements_interface.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_implements_interface.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_implements_interface.declaration_line IS 'line of the declaration site that contributed this membership, as on graphql_field';
+COMMENT ON COLUMN graphql_implements_interface.declaration_column IS 'column of the same, the site key''s fourth part';
+COMMENT ON COLUMN graphql_implements_interface.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
+COMMENT ON COLUMN graphql_implements_interface.source_line IS 'source line of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_implements_interface.source_column IS 'source column of that token, 1-based per the graphql-java convention';
+-- The container end of each arm, which is what a reader arriving with a container name probes by
+-- and what the graphql_poly_member view unions. One index apiece rather than one shared, the two
+-- containers being different columns of different relations.
+CREATE INDEX graphql_union_member_union_ix
+  ON graphql_union_member (graph_name, union_name);
+CREATE INDEX graphql_implements_interface_interface_ix
+  ON graphql_implements_interface (graph_name, interface_name);
 
 CREATE TABLE graphql_root_operation (
   graph_name    VARCHAR NOT NULL,
@@ -1156,6 +1220,7 @@ CREATE TABLE graphql_root_operation (
   source_name   VARCHAR,
   source_line   INT,
   source_column INT,
+  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, operation),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
@@ -1167,6 +1232,7 @@ COMMENT ON COLUMN graphql_root_operation.type_name IS 'the object type serving i
 COMMENT ON COLUMN graphql_root_operation.source_name IS 'position of the binding inside the schema { } block; all three NULL exactly when the binding is the name-convention default no SDL line spells';
 COMMENT ON COLUMN graphql_root_operation.source_line IS 'line of the binding; NULL with the siblings when the binding is the name-convention default';
 COMMENT ON COLUMN graphql_root_operation.source_column IS 'column of the binding; NULL with the siblings when the binding is the name-convention default';
+COMMENT ON COLUMN graphql_root_operation.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_duplicate_declaration (
   graph_name    VARCHAR NOT NULL,
@@ -1207,6 +1273,7 @@ CREATE TABLE graphql_directive (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
@@ -1218,11 +1285,13 @@ COMMENT ON COLUMN graphql_directive.description IS 'SDL description string, when
 COMMENT ON COLUMN graphql_directive.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphql_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_directive_location (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   location       VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, location),
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name)
 );
@@ -1230,6 +1299,7 @@ COMMENT ON TABLE graphql_directive_location IS 'A directive definition names a p
 COMMENT ON COLUMN graphql_directive_location.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive_location.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_directive_location.location IS 'introspection location name, e.g. FIELD_DEFINITION, INPUT_FIELD_DEFINITION';
+COMMENT ON COLUMN graphql_directive_location.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_directive_argument (
   graph_name        VARCHAR NOT NULL,
@@ -1246,6 +1316,7 @@ CREATE TABLE graphql_directive_argument (
   source_name       VARCHAR,
   source_line       INT,
   source_column     INT,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, argument_name),
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name),
   CHECK (is_list OR item_non_null IS NULL)
@@ -1265,6 +1336,7 @@ COMMENT ON COLUMN graphql_directive_argument.description IS 'SDL description str
 COMMENT ON COLUMN graphql_directive_argument.source_name IS 'position of the formal argument in the definition';
 COMMENT ON COLUMN graphql_directive_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 -- ==== Directive applications ======================================================
 -- One row per application the author wrote, one child row per argument the author passed.
@@ -1486,6 +1558,30 @@ COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_name IS 'the applie
 COMMENT ON COLUMN graphql_enum_value_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_enum_value_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
+
+CREATE VIEW graphql_poly_member (graph_name, container_kind, container_name, member_type_name,
+    position, declared_on, declaration_line, declaration_column, source_name, source_line,
+    source_column, touched_at) AS
+  SELECT graph_name, 'UNION', union_name, member_type_name, position, union_name,
+         declaration_line, declaration_column, source_name, source_line, source_column, touched_at
+  FROM graphql_union_member
+  UNION ALL
+  SELECT graph_name, 'INTERFACE', interface_name, type_name, position, type_name,
+         declaration_line, declaration_column, source_name, source_line, source_column, touched_at
+  FROM graphql_implements_interface;
+COMMENT ON VIEW graphql_poly_member IS 'Union membership and interface implementation as one relation, for the readers that take either. Two relations hold the facts, because a union declares who it admits and a type declares which interfaces it answers to: the declaring end differs, and with it the key and every foreign key. What the two share is the shape a reader wants when it does not care which it has, a container and a member, and that is this view. declared_on is the declaring end, which the arms supply as the column that already is it rather than as a CHECK policing a copy: the union on one arm, the implementing type on the other.';
+COMMENT ON COLUMN graphql_poly_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_poly_member.container_kind IS 'which arm this row came from, UNION or INTERFACE, which is also which base relation holds it; a literal in each arm of the union rather than a stored column';
+COMMENT ON COLUMN graphql_poly_member.container_name IS 'the union or the interface holding the member, whichever arm this row is';
+COMMENT ON COLUMN graphql_poly_member.member_type_name IS 'the member type on the union arm, the implementing type on the interface arm';
+COMMENT ON COLUMN graphql_poly_member.position IS 'source order within the container, as the arm that holds it recorded it';
+COMMENT ON COLUMN graphql_poly_member.declared_on IS 'the type that declared this membership: the container on a UNION row, the member on an INTERFACE row. The anchored end, and what the two arms disagree about, which is why they are two relations';
+COMMENT ON COLUMN graphql_poly_member.declaration_line IS 'line of the declaration site that contributed this membership, as on graphql_field';
+COMMENT ON COLUMN graphql_poly_member.declaration_column IS 'column of the same, the site key''s fourth part';
+COMMENT ON COLUMN graphql_poly_member.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
+COMMENT ON COLUMN graphql_poly_member.source_line IS 'source line of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_poly_member.source_column IS 'source column of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_poly_member.touched_at IS 'when the reading that derived the underlying row ran, carried through from the arm that holds it';
 
 CREATE VIEW graphql_directive_site AS
 SELECT graph_name, 'SCHEMA' AS site_kind, CAST(NULL AS VARCHAR) AS type_name,
@@ -4832,9 +4928,9 @@ SELECT b.graph_name, b.type_name, b.table_source_name, b.table_schema, b.table_n
   JOIN sql_node_metadata m
     ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
    AND m.table_name = b.table_name
- WHERE EXISTS (SELECT 1 FROM graphql_poly_member i
-                WHERE i.graph_name = b.graph_name AND i.member_type_name = b.type_name
-                  AND i.container_name = 'Node' AND i.container_kind = 'INTERFACE')
+ WHERE EXISTS (SELECT 1 FROM graphql_implements_interface i
+                WHERE i.graph_name = b.graph_name AND i.type_name = b.type_name
+                  AND i.interface_name = 'Node')
    AND NOT EXISTS (SELECT 1 FROM intent_node_metadata_defect d
                     WHERE d.source_name = m.source_name
                       AND d.table_schema = m.table_schema
@@ -5773,9 +5869,12 @@ COMMENT ON COLUMN intent_resolved_type_binding_live.candidates IS 'the candidate
 
 CREATE VIEW intent_poly_member
   (graph_name, container_name, container_kind, member_type_name, position) AS
-SELECT graph_name, container_name, container_kind, member_type_name, position
-  FROM graphql_poly_member;
-COMMENT ON VIEW intent_poly_member IS 'What a polymorphic container holds, read at the grain a derivation asks it: a scan of graphql_poly_member under the intent_ family''s names. The two populations this used to union are one captured relation now, so nothing is reconstructed here and the relation survives as the name three derivations already spell rather than as a rule. What it once carried and no longer needs to: the interface arm''s position was ranked by a window function over the whole partition, which a correlated probe cannot prune, so every reader paid to re-rank every implementor of every interface on every driving row. Capture writes that order now, and the note the old body owed its readers moves to the column that holds it. One reading of these rows is still a choice rather than a fact, and it is the mapping-constant fingerprint''s: its digest is over a handler list in this order, source order, where the legacy walk''s own order for the interface arm is graphql-java''s registration order, which is neither source order nor documented. Source order is the defensible one and the disagreement is the walk''s to lose, but nothing has adjudicated it and a reader minting a suffix from these rows should know it is choosing.';
+SELECT graph_name, union_name, 'UNION', member_type_name, position
+  FROM graphql_union_member
+ UNION ALL
+SELECT graph_name, interface_name, 'INTERFACE', type_name, position
+  FROM graphql_implements_interface;
+COMMENT ON VIEW intent_poly_member IS 'What a polymorphic container holds, read at the grain a derivation asks it: the two captured relations unioned under the intent_ family''s names. Over the base relations rather than over graphql_poly_member, which says the same thing: that view is for readers outside this store, and reading it here would put a second view body in every detection component that asks this question. The two populations are two captured relations, so this body is the union of them under one name, which is the name three derivations already spell. What it once carried and no longer needs to: the interface arm''s position was ranked by a window function over the whole partition, which a correlated probe cannot prune, so every reader paid to re-rank every implementor of every interface on every driving row. Capture writes that order now, and the note the old body owed its readers moves to the column that holds it. One reading of these rows is still a choice rather than a fact, and it is the mapping-constant fingerprint''s: its digest is over a handler list in this order, source order, where the legacy walk''s own order for the interface arm is graphql-java''s registration order, which is neither source order nor documented. Source order is the defensible one and the disagreement is the walk''s to lose, but nothing has adjudicated it and a reader minting a suffix from these rows should know it is choosing.';
 COMMENT ON COLUMN intent_poly_member.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_poly_member.container_name IS 'the polymorphic type holding the member: the union on one arm, the interface on the other';
 COMMENT ON COLUMN intent_poly_member.container_kind IS 'which population answered, a closed two-value domain: UNION for a member listed on a union declaration, INTERFACE for a type whose implements clause names the container. Provenance, and the axis a reader filters on when it means one of them';
