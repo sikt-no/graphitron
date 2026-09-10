@@ -117,12 +117,12 @@ final class ThreadConfinedStore {
      * than a total: 78 passed this module scoped and failed it in the reactor. Count the boots, do
      * not read a peak off one run.
      *
-     * <p>Raised to 80 on 2026-09-10 when the anchor derivation met the work that landed beside it.
-     * One boot, which is what says it is not the thing this guard is for: a path that boots per
-     * case moves the total by however many cases it has, and a move of one is a class that opened
-     * one store.
+     * <p>Raised to 80 on 2026-09-10 when the anchor derivation met the work that landed beside it,
+     * and to 81 when the verdict migration did. One boot each time, which is what says neither is
+     * the thing this guard is for: a path that boots per case moves the total by however many cases
+     * it has, and a move of one is a class that opened one store.
      */
-    private static final int BOOT_BUDGET = 80;
+    private static final int BOOT_BUDGET = 81;
 
     private final GraphitronModelStore store;
 

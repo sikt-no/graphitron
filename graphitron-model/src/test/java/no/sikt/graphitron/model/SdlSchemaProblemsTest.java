@@ -20,6 +20,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -175,6 +176,10 @@ class SdlSchemaProblemsTest {
         write(clean, "ok.graphqls", "type Query { a: String }\n");
 
         withSeededStore(GRAPH, dsl -> {
+            // The sibling's anchor row, which SdlCapture no longer mints: the graph is the
+            // registry row every relation it writes hangs a key on, so ModelCapture writes it and
+            // a case reading a second graph states it the way withSeededStore states the first.
+            seedGraph(dsl, "sibling");
             read(dsl, GRAPH, broken);
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
                     GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(GRAPH)))
