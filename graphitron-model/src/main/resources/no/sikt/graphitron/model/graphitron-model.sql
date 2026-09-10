@@ -1877,6 +1877,464 @@ COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.source_column IS
 COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.position IS '0-based position in the handler list as written. One index space across the three handler relations, an element taking its index whichever kind it is';
 COMMENT ON COLUMN graphitron_ast_error_validation_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the directive row it hangs on';
 
+-- The field site's decode. Every relation below is keyed by the position of the @ token, which is
+-- graphql_ast_field_directive_entry's key, so a row is the decode of exactly one application there
+-- and carries no type name, no field name and no file: all three are one join away. Four of the
+-- site's sixteen directive names get no relation at all. @splitQuery and @tenantFanOut declare no
+-- argument, and @multitableReference is rejected before anything reads its one argument, so a row
+-- under any of the three would carry its key and nothing else, which is what the applied-directive
+-- row already says. @reference's only argument is its path, so the steps get the relation and the
+-- application does not.
+--
+-- A list argument becomes a child relation, and a child hangs off the decode of the application it
+-- was written inside, so deleting that decode takes its elements. @reference's steps are the one
+-- exception and for the one reason: its application has no decode to hang from, so they reference
+-- the AST row directly, which is the shape @error's handlers already take at the type site.
+CREATE TABLE graphitron_ast_field_binding_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name_ref      VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_binding_entry IS 'What a @field application on an output field says: the name that field is bound to, as written. For example title: String @field(name: "title") gives one row reading title.';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_binding_entry.name_ref IS 'the name argument exactly as written. Nullable although the definition marks it required, because a document that omits it still applied the directive and the row is what says so. What the name refers to, a column or a Java member, is settled by what backs the field and is not this relation''s business';
+
+CREATE TABLE graphitron_ast_field_condition_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  override      BOOLEAN,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_condition_entry IS 'What a @condition application on an output field says: the external method constraining the field''s query, as written. For example summary: String @condition(condition: {className: "no.example.Conditions", method: "visibleFilm"}) gives one row.';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.class_name IS 'the className field of the reference, as written';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.method IS 'the method field of the same, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.argmapping IS 'the argMapping field of the same, kept as the one string the author typed. What its segments name is a question for the argument-mapping derivation, which is where the grammar that cuts it lives';
+COMMENT ON COLUMN graphitron_ast_field_condition_entry.override IS 'the override argument as written, or NULL where the author wrote none. The definition''s own default is not supplied here: what an omitted argument falls back to stands in graphql_directive_argument.default_value_sdl, and filling it in would lose the difference between a default taken and a value written';
+
+CREATE TABLE graphitron_ast_field_condition_context_arg_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_field_condition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_condition_context_arg_entry IS 'One contextArguments element of a @condition application on an output field, at its position in the list, as written. For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.source_line IS 'source line of the at sign of the @condition this element was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.source_column IS 'source column of the same. The four columns key the application''s own row in the relation beside this one, which is what this element hangs off';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.position IS '0-based position in the list as written. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.name IS 'the element as written. NOT NULL because an element the author wrote as anything but a string contributes no row at all, so a name is the whole of what a row here says; the element it skipped stands verbatim in graphql_ast_applied_argument_entry. Whether the runtime context carries a value under this name is nothing any reading of a document can say';
+
+CREATE TABLE graphitron_ast_field_reference_step_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  table_ref     VARCHAR,
+  table_ref_namespace_part VARCHAR,
+  table_ref_name_part      VARCHAR,
+  key_ref       VARCHAR,
+  key_ref_namespace_part   VARCHAR,
+  key_ref_name_part        VARCHAR,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_reference_step_entry IS 'One path element of a @reference application on an output field, at its position in the list, as written. For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.source_line IS 'source line of the at sign of the @reference this element was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.source_column IS 'source column of the same. The four columns are the application''s own key, so this element hangs off exactly one row of graphql_ast_field_directive_entry, and the ordinal the anchors give a repeated @reference is not a column here: the position the application was written at is what tells two of them apart';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.position IS '0-based position in the path as written. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.table_ref IS 'the table field of the element as written, or NULL where none was; a path element may state only a key, or only a condition';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.table_ref_name_part IS 'the table half of the same';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.key_ref_namespace_part IS 'the schema half of the written key name, which scopes the lookup to constraints held in that schema; split by the same grammar as the table name and NULL where none was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.key_ref_name_part IS 'the constraint half of the same';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.class_name IS 'the className of the element''s condition reference, as written, or NULL where the element states no condition';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.method IS 'the method of the same, as written';
+COMMENT ON COLUMN graphitron_ast_field_reference_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
+
+CREATE TABLE graphitron_ast_field_reference_for_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  participant_type_ref VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_reference_for_entry IS 'What a @referenceFor application on an output field says: the participant type whose join path this application replaces, as written. For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.participant_type_ref IS 'the type argument exactly as written, naming the participant this path applies to. Nullable although the definition marks it required, because a document that omits it still applied the directive. Two applications naming one participant are two rows here and the conflict is a detection over them, this relation refusing nothing';
+
+CREATE TABLE graphitron_ast_field_reference_for_step_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  table_ref     VARCHAR,
+  table_ref_namespace_part VARCHAR,
+  table_ref_name_part      VARCHAR,
+  key_ref       VARCHAR,
+  key_ref_namespace_part   VARCHAR,
+  key_ref_name_part        VARCHAR,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_field_reference_for_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_reference_for_step_entry IS 'One path element of a @referenceFor application on an output field, at its position in the list, as written. For example @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.source_line IS 'source line of the at sign of the @referenceFor this element was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.source_column IS 'source column of the same. The four columns key the application''s own row in the relation beside this one, which is what this element hangs off: unlike a @reference step it has a parent row to reference, the directive carrying a participant name as well as a path';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.position IS '0-based position in the path as written. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.table_ref IS 'the table field of the element as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.table_ref_name_part IS 'the table half of the same';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.key_ref_namespace_part IS 'the schema half of the written key name; split by the same grammar and NULL where none was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.key_ref_name_part IS 'the constraint half of the same';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.class_name IS 'the className of the element''s condition reference, as written, or NULL where the element states no condition. The manual admits a condition step on an output coordinate only, which is a rule about where the application sits and so a detection rather than a column';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.method IS 'the method of the same, as written';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed';
+
+CREATE TABLE graphitron_ast_service_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_service_entry IS 'What a @service application says: the external method resolving the field, as written. For example importFilms: [Film!] @service(service: {className: "no.example.FilmService", method: "importFilms"}) gives one row.';
+COMMENT ON COLUMN graphitron_ast_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_service_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_service_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_service_entry.class_name IS 'the className field of the reference, as written';
+COMMENT ON COLUMN graphitron_ast_service_entry.method IS 'the method field of the same, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_service_entry.argmapping IS 'the argMapping field of the same, kept as the one string the author typed. This is the one site whose mapping admits a runtime sigil on the right-hand side, and that is a fact about how the string is later cut rather than about the string: the whole of it stands here as typed, and the lexing that tells a sigil from a path belongs where the segments are read';
+
+CREATE TABLE graphitron_ast_service_context_arg_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name          VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_service_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_service_context_arg_entry IS 'One contextArguments element of a @service application, at its position in the list, as written. For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.source_line IS 'source line of the at sign of the @service this element was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.source_column IS 'source column of the same. The four columns key the application''s own row in the relation beside this one, which is what this element hangs off';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.position IS '0-based position in the list as written. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
+COMMENT ON COLUMN graphitron_ast_service_context_arg_entry.name IS 'the element as written. NOT NULL because an element the author wrote as anything but a string contributes no row at all, so a name is the whole of what a row here says; the element it skipped stands verbatim in graphql_ast_applied_argument_entry. Whether the runtime context carries a value under this name is nothing any reading of a document can say';
+
+CREATE TABLE graphitron_ast_external_field_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_external_field_entry IS 'What an @externalField application says: the external method producing the field''s value, as written. For example awardCount: Int @externalField(reference: {className: "no.example.FilmFields", method: "awardCount"}) gives one row.';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.class_name IS 'the className field of the reference, as written';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.method IS 'the method field of the same, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_external_field_entry.argmapping IS 'the argMapping field of the same, kept as the one string the author typed';
+
+CREATE TABLE graphitron_ast_source_row_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  class_name    VARCHAR,
+  method        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_source_row_entry IS 'What a @sourceRow application says: the static method producing the field''s batch key from a class-backed parent, as written. For example agency: Agency @sourceRow(className: "no.example.ActorRows", method: "agencyKey") gives one row.';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.class_name IS 'the className argument as written. Two flat arguments rather than one object literal, which is the directive''s own shape: this site names a class and a method directly where the others nest them inside an ExternalCodeReference';
+COMMENT ON COLUMN graphitron_ast_source_row_entry.method IS 'the method argument as written';
+
+CREATE TABLE graphitron_ast_connection_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  default_first_value INT,
+  connection_name     VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_connection_entry IS 'What an @asConnection application says: the page size the field defaults to and the Connection type name it overrides, as written. For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row reading 25.';
+COMMENT ON COLUMN graphitron_ast_connection_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_connection_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_connection_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_connection_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_connection_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_connection_entry.default_first_value IS 'the defaultFirstValue argument as written, or NULL where the author wrote none. The definition''s own default of 100 is not supplied here: it stands in graphql_directive_argument.default_value_sdl, and filling it in would lose the difference between a default taken and a value written. A bare @asConnection is therefore a row of two nulls, which is what says the directive was applied with nothing said';
+COMMENT ON COLUMN graphitron_ast_connection_entry.connection_name IS 'the connectionName argument as written, or NULL where the author wrote none. The argument is deprecated and the deprecation is the directive definition''s to state; a transcription records the value and says nothing about whether it should have been written';
+
+CREATE TABLE graphitron_ast_field_node_id_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  node_type_ref VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_field_node_id_entry IS 'What a @nodeId application on an output field says: the node type the identifier belongs to, as written. For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_field_node_id_entry.node_type_ref IS 'the typeName argument as written, or NULL on a bare @nodeId. Nothing here supplies what an omitted name deduces to, the containing type on a plain field and the table''s node type on a referenced one: both are resolutions over other relations, and a row of NULL is what says the author left the deduction to the build';
+
+CREATE TABLE graphitron_ast_mutation_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  operation     VARCHAR,
+  multi_row     BOOLEAN,
+  table_ref     VARCHAR,
+  table_ref_namespace_part VARCHAR,
+  table_ref_name_part      VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_mutation_entry IS 'What a @mutation application says: which write the field performs, over how many rows, against which table, as written. For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.operation IS 'the typeName argument as the author spelled it, an enum token being kept as its own text and never checked against the vocabulary the definition declares. Nothing upstream has validated it, so a CHECK here would turn a typo into a constraint violation; membership is a detection';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.multi_row IS 'the multiRow argument as written, or NULL where the author wrote none; the definition''s own default of false stands in graphql_directive_argument.default_value_sdl rather than being filled in here';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref IS 'the table argument as written, or NULL where none was; what an omitted table resolves to is a resolution and not this relation''s business';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_name_part IS 'the table half of the same';
+
+CREATE TABLE graphitron_ast_pivot_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  on_column     VARCHAR,
+  value_column  VARCHAR,
+  vocabulary_ref VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_pivot_entry IS 'What a @pivot application says: the column whose values become fields, the column holding each value, and the enum naming the vocabulary, as written. For example ratingBreakdown: RatingBreakdown @pivot(on: "rating_code", value: "score", vocabulary: "Rating") gives one row.';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.on_column IS 'the on argument as written, naming the column whose distinct values name the generated fields. Nullable although the definition marks it required, because a document that omits it still applied the directive';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.value_column IS 'the value argument as written, naming the column each generated field reads';
+COMMENT ON COLUMN graphitron_ast_pivot_entry.vocabulary_ref IS 'the vocabulary argument as written, naming the GraphQL enum whose values fix the vocabulary, or NULL where none was';
+
+CREATE TABLE graphitron_ast_default_order_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  index_ref     VARCHAR,
+  primary_key   BOOLEAN,
+  direction     VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_default_order_entry IS 'What a @defaultOrder application says: which of the three sorting surfaces the field defaults to, and in which direction, as written. For example films: [Film!] @defaultOrder(fields: [{name: "title"}]) gives one row whose three columns are all NULL, the sort being the child rows.';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.index_ref IS 'the index argument as written, naming a database index, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.primary_key IS 'the primaryKey argument as written, or NULL where none was. The directive admits exactly one of index, fields and primaryKey, and no constraint here states that: an application stating two is a document this relation transcribes and a detection reports';
+COMMENT ON COLUMN graphitron_ast_default_order_entry.direction IS 'the direction argument as the author spelled it, the token kept as its own text and never checked against the vocabulary the definition declares. It is the directive-level fallback each child row''s own direction overrides';
+
+CREATE TABLE graphitron_ast_default_order_field_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name_ref      VARCHAR,
+  collate       VARCHAR,
+  direction     VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_default_order_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_default_order_field_entry IS 'One fields element of a @defaultOrder application, at its position in the list, as written. For example fields: [{name: "title", collate: "xdanish_ai", direction: DESC}] gives one row at position 0.';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_line IS 'source line of the at sign of the @defaultOrder this element was written inside, 1-based';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_column IS 'source column of the same. The four columns key the application''s own row in the relation beside this one, which is what this element hangs off';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.position IS '0-based position in the list as written, which is the sort order the author wrote. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.name_ref IS 'the name field of the element as written, naming a column of the jOOQ table';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.collate IS 'the collate field of the same, as written, or NULL where none was; a collation name is database-specific and resolves against nothing here';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.direction IS 'the direction field of the same, as the author spelled it, or NULL where none was. A NULL is what says the element takes the directive-level direction, so nothing is filled in for it here';
+
+CREATE TABLE graphitron_ast_routine_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  routine_ref   VARCHAR,
+  routine_ref_namespace_part VARCHAR,
+  routine_ref_name_part      VARCHAR,
+  argmapping    VARCHAR,
+  column_mapping VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_routine_entry IS 'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written. For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.';
+COMMENT ON COLUMN graphitron_ast_routine_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_routine_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_routine_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_routine_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry, and the ordinal the anchors give a repeated @routine is not a column here: the position the application was written at is what tells two of them apart';
+COMMENT ON COLUMN graphitron_ast_routine_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref IS 'the name argument exactly as written, optionally schema-qualified. Nullable although the definition marks it required, because a document that omits it still applied the directive';
+COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_name_part IS 'the routine half of the same';
+COMMENT ON COLUMN graphitron_ast_routine_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
+COMMENT ON COLUMN graphitron_ast_routine_entry.column_mapping IS 'the columnMapping argument, kept the same way. It shares argMapping''s grammar and not its subject, binding a routine parameter to a column of the previous chain node rather than to an input path, which is why the two are columns beside each other rather than one';
+
 CREATE TABLE graphitron_table_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -12286,6 +12744,74 @@ INSERT INTO meta_relation VALUES
    'A VALIDATION handler of an @error application, at its position in the list.',
    'For example {handler: VALIDATION} at position 1 of a two-handler list.',
    'One relation per handler kind, because the kind decides which fields mean anything, and this kind takes none: the directive rejects className, sqlState, code, matches and description on it, the pre-execution step matching nothing and emitting one error per constraint violation with that violation''s own message. So the row is its position and nothing else, and unlike @error itself that is a fact worth a row: which positions of the list ask for the validation channel is not something the applied-directive row says. A field an author wrote here anyway stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
+  ('graphitron_ast_field_binding_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @field application on an output field says: the name that field is bound to, as written.',
+   'For example title: String @field(name: "title") gives one row reading title.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. One of the three relations this directive draws, one per site its definition admits, because which kind of node an application sits on is settled while walking the document and a key names one table: this one hangs off graphql_ast_field_directive_entry and its siblings off the input-value and enum-value relations, so a reader wanting output fields reads one relation and joins nothing to exclude the rest. Two documents binding one field are two rows and neither is refused, a collision being a query over these rows resolved oldest source first. What the written name refers to, a column or a Java member, follows from what backs the field and is settled where the catalog and the classpath are read.'),
+  ('graphitron_ast_field_condition_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @condition application on an output field says: the external method constraining the field''s query, as written.',
+   'For example summary: String @condition(condition: {className: "no.example.Conditions", method: "visibleFilm"}) gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed. The override flag is nullable and the definition''s own default is not filled in: what an omitted argument falls back to already stands in graphql_directive_argument.default_value_sdl, and supplying it here would lose the difference between a default taken and a value written, which is exactly the difference a reader reporting on an author''s intent needs. Whether the named class declares that method is a question for the classpath census, which is a different relation and a different reading.'),
+  ('graphitron_ast_field_condition_context_arg_entry', 'sdl-application-value', 'graphitron',
+   'One contextArguments element of a @condition application on an output field, at its position in the list, as written.',
+   'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
+   'A list argument becomes rows rather than a column, because a reader asking which context values one application names should not be parsing a rendered literal. Keyed by the application''s position and the element''s index inside it, which is the whole of what identifies one element: the list is ordered and the order is the author''s. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count, and the element itself is not lost, standing verbatim in graphql_ast_applied_argument_entry with the rest of the literal. Whether the runtime context carries a value under a name here is not something any reading of a document can say.'),
+  ('graphitron_ast_field_reference_step_entry', 'sdl-application-value', 'graphitron',
+   'One path element of a @reference application on an output field, at its position in the list, as written.',
+   'For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.',
+   'The application gets no relation of its own and the elements get this one, because the directive''s only argument is the path: a row carrying the application''s key and nothing else would say what the applied-directive row already says. So these rows hang off graphql_ast_field_directive_entry directly, which is the shape @error''s handlers took for the same reason. Each element''s three fields become columns, the two qualifiable names split by the grammar that cuts them and the condition''s reference lifted the way every other site lifts one. No ordinal: a repeated @reference is repeated positions in the file, and numbering the applications is the anchors'' work, over rows that carry the position the numbering has to sort by.'),
+  ('graphitron_ast_field_reference_for_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @referenceFor application on an output field says: the participant type whose join path this application replaces, as written.',
+   'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.',
+   'A decode of one directive application, keyed by the application''s own position. Unlike @reference this directive names something besides its path, so the application has a row and the path elements hang off it rather than off the AST relation, which is what lets a participant name be read without touching the steps. Repeated applications are independent, one per participant, where repeated @reference applications concatenate: that difference is a fact about what the two directives mean and shows up here only as a relation the steps reference. Declaring one participant twice is a build error and no key here states it, two documents naming one participant being two rows this relation transcribes and a detection reports.'),
+  ('graphitron_ast_field_reference_for_step_entry', 'sdl-application-value', 'graphitron',
+   'One path element of a @referenceFor application on an output field, at its position in the list, as written.',
+   'For example @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.',
+   'The same element grammar as a @reference step and a different parent, which is the whole difference between the two relations: this one hangs off the application''s own row because that application carries a participant name, where a @reference step hangs off the AST relation because its application carries nothing. Merging the two would need a discriminator saying which directive an element came from, and the directive name is already a column of the row the key reaches. The manual admits a condition step here on an output coordinate only; that is a rule about where the application sits, so it is a detection over these rows and the position they hang from rather than a constraint this relation could state.'),
+  ('graphitron_ast_service_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @service application says: the external method resolving the field, as written.',
+   'For example importFilms: [Film!] @service(service: {className: "no.example.FilmService", method: "importFilms"}) gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns for the reason every site that carries one lifts them, an object literal not being a value a reader can query. This is the one site whose argument mapping admits a runtime sigil on the right-hand side, and that is a fact about how the string is later cut rather than about the string: the whole of it stands here as the author typed it, and the lexing that tells a sigil from an input path belongs where the segments are read, which is one derivation for every site that carries a mapping.'),
+  ('graphitron_ast_service_context_arg_entry', 'sdl-application-value', 'graphitron',
+   'One contextArguments element of a @service application, at its position in the list, as written.',
+   'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
+   'A list argument becomes rows rather than a column, on the terms its @condition twin states. Two relations rather than one shared by both directives, because an element hangs off the application it was written inside and the two applications live in different relations of the decode; a merged relation would carry a discriminator naming the directive, which is already a column of the row its key reaches. Keyed by the application''s position and the element''s index inside it, the list being ordered and the order the author''s.'),
+  ('graphitron_ast_external_field_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @externalField application says: the external method producing the field''s value, as written.',
+   'For example awardCount: Int @externalField(reference: {className: "no.example.FilmFields", method: "awardCount"}) gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The same three columns as the @service decode beside it and a relation of its own all the same: the two directives name a method the same way and mean different things by it, one resolving the field and one producing a value for a field the query already reached, and a shared relation would need a discriminator naming the directive that its key already reaches. Whether the named class declares that method is a question for the classpath census.'),
+  ('graphitron_ast_source_row_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @sourceRow application says: the static method producing the field''s batch key from a class-backed parent, as written.',
+   'For example agency: Agency @sourceRow(className: "no.example.ActorRows", method: "agencyKey") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position. Two flat columns and no argument mapping, which is the directive''s own shape: this site names a class and a method directly where the others nest them inside an ExternalCodeReference, so a decode faithful to what the author wrote has two columns and not three. A relation rather than rows of something shared, because the decode of an application belongs beside the application: what the returned key must equal is derived from the site the directive sits on, and that derivation reads this relation together with the reference and routine decodes rather than instead of them.'),
+  ('graphitron_ast_connection_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @asConnection application says: the page size the field defaults to and the Connection type name it overrides, as written.',
+   'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row reading 25.',
+   'A decode of one directive application, keyed by the application''s own position. Both columns are nullable and the definition''s own defaults are not filled in, so a bare @asConnection is a row of two nulls: that row is what says the directive was applied with nothing said, which is a different fact from an application naming the default page size explicitly, and the fallback itself already stands in graphql_directive_argument.default_value_sdl. The connection name argument is deprecated and the deprecation is the directive definition''s to state; a transcription records what was written and says nothing about whether it should have been.'),
+  ('graphitron_ast_field_node_id_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @nodeId application on an output field says: the node type the identifier belongs to, as written.',
+   'For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.',
+   'A decode of one directive application, keyed by the application''s own position. One of the two relations this directive draws, one per site the entry family separates, the other hanging off the input-value relation: an output field carrying @nodeId encodes an identifier where an argument or input field carrying one decodes it, so the two sites are read by different consumers and a merged relation would be discriminated by the row its key already reaches. The type name is nullable and nothing here supplies what an omitted one deduces to, the containing type on a plain field and the table''s node type on a referenced one being resolutions over other relations; a NULL is what says the author left the deduction to the build.'),
+  ('graphitron_ast_mutation_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @mutation application says: which write the field performs, over how many rows, against which table, as written.',
+   'For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The operation is kept as the token the author typed and never checked against the vocabulary the definition declares: nothing upstream has validated it, so a CHECK would turn a typo into a constraint violation, and membership is a detection over this column. The table name is split by the grammar that cuts it and nothing more; what an omitted table resolves to is a resolution over the field''s own chain and belongs where that chain is walked.'),
+  ('graphitron_ast_pivot_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @pivot application says: the column whose values become fields, the column holding each value, and the enum naming the vocabulary, as written.',
+   'For example ratingBreakdown: RatingBreakdown @pivot(on: "rating_code", value: "score", vocabulary: "Rating") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position. Three flat columns because the directive carries three flat arguments, two naming columns of the pivoted table and one naming a GraphQL enum whose values fix the vocabulary. All three are nullable although the definition marks two required, on the rule the whole family takes: a document that omits a required argument still applied the directive, the omission is a schema problem the toolchain reports, and refusing the row would lose the transcription of what the author did write. Whether either column exists, and whether the named enum is one, are questions for the catalog and the anchors.'),
+  ('graphitron_ast_default_order_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @defaultOrder application says: which of the three sorting surfaces the field defaults to, and in which direction, as written.',
+   'For example films: [Film!] @defaultOrder(fields: [{name: "title"}]) gives one row whose three columns are all NULL, the sort being the child rows.',
+   'A decode of one directive application, keyed by the application''s own position. The directive admits exactly one of an index, a field list and the primary key, and no constraint here states that: an application naming two is a document this relation transcribes and a detection reports, which is the rule every decode in this family takes about the arguments it was handed. The field list is the child relation rather than a rendered literal, so an application that took the third surface is a row here whose payload columns are all null and whose sort is the rows beside it. The directive-level direction stays a column here because it is the fallback each element''s own direction overrides.'),
+  ('graphitron_ast_default_order_field_entry', 'sdl-application-value', 'graphitron',
+   'One fields element of a @defaultOrder application, at its position in the list, as written.',
+   'For example fields: [{name: "title", collate: "xdanish_ai", direction: DESC}] gives one row at position 0.',
+   'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. Each element''s three fields become columns, the direction nullable because a NULL is what says the element takes the directive-level direction and filling one in would lose which of the two the author wrote. The collation is a database-specific name and resolves against nothing here.'),
+  ('graphitron_ast_routine_entry', 'sdl-declaration-site', 'graphitron',
+   'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
+   'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
   ('graphitron_field_chain_application', 'field-chain-application', 'graphitron',
    'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0.',
    'For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.',

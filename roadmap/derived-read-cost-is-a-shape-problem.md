@@ -2150,3 +2150,60 @@ fill holds a foreign key into the graph's anchor row, and two of them now need i
 whoever runs them. Ordering the gatherers by which one happens to mint it would have been a rule
 held by a comment. Both direct callers of `SdlCapture` already seed the anchor, so the lift cost
 nothing.
+
+## The field site's decode (2026-09-10)
+
+Seventeen relations hold what a graphitron directive written on an output field meant, each keyed by
+the position of the `@` token, which is `graphql_ast_field_directive_entry`'s key. Same shape as the
+type site a day earlier: a row is the decode of exactly one applied-directive row, carries no type
+name, no field name and no file, and resolves nothing.
+
+**The site roster is sixteen names, not the switch's eighteen.** `GraphitronFactCapture` routes an
+input object's field through `captureFieldDirective`, so `@asFacet` and `@lookupKey` are cases of
+that switch although their definitions name no `FIELD_DEFINITION` location. An input object's field
+is an input value to the parser, so an entry for one references
+`graphql_ast_input_value_directive_entry` and belongs to that site's writer. The foreign key decides
+this, not a preference: an entry references the AST row it decodes, and those rows are in different
+relations. The same split sends `@field`, `@condition`, `@reference`, `@referenceFor` and `@nodeId`
+to two writers each, which is the split the anchors already have between
+`graphitron_field_condition_entry` and `graphitron_argument_condition_entry`.
+
+**Four of the sixteen get no relation**, on the rule `@error` set. `@splitQuery` and `@tenantFanOut`
+declare no argument; `@multitableReference` is rejected before anything reads its one argument; and
+`@reference` carries only its path, so its steps get a relation and the application does not. A row
+for any of the four would carry its key and nothing else, which is what the applied-directive row
+already says.
+
+**A list argument's children hang off the decode of the application they were written inside**, so
+deleting a decode takes its elements. `@reference`'s steps are the one exception and for the one
+reason: its application has no decode to hang from, so they reference the AST row directly, which is
+the shape `@error`'s handlers already take.
+
+Nothing here writes `graphitron_argmapping_entry`, `graphitron_method_reference_entry`,
+`graphitron_spelled_reference_entry` or `graphitron_undecoded_argument_entry`, all four of which the
+incumbent writes from inside these same branches. An `argMapping` is kept as the one string the
+author typed, on the terms `graphitron_ast_enum_entry.argmapping` already states; the class and
+method are columns of the decode; the spelling split is already on the row; and there is no
+quarantine relation, the whole application standing verbatim in
+`graphql_ast_applied_argument_entry`. The four stay on the incumbent's path until the anchors
+dissolve it.
+
+No ordinal is assigned. `@reference`, `@referenceFor` and `@routine` repeat, and two applications on
+one field are two positions in the file; numbering them is the anchors' work, over rows that already
+carry the position the numbering has to sort by.
+
+`GraphitronEntries` becomes the facade and the shared vocabulary for reading an application, with
+`GraphitronTypeEntries` and `GraphitronFieldEntries` under it, one writer per site. The type site's
+`handlers` reader generalised to `elementsOf`, which the path-carrying directives use too.
+
+`SupertypeSignatureGateTest` gained eleven sets and they read as one thing. A position-keyed entry
+and the coordinate-keyed relation it will be derived into carry the same payload by construction:
+that is what makes the derivation a `SELECT` with nothing decided in it, and it is exactly what that
+gate reports. So the block is the ledger of what the anchor commit has to delete, spelled out rather
+than exempted by a rule over the name. One set outlives the migration and says so: `@enum`,
+`@service` and `@externalField` all record a class, a method and an `argMapping`, and collapsing
+those needs a supertype at a coordinate none of them has.
+
+`EntryNamingGuardTest` scanned only `GraphitronFactCapture` and would not have seen the new writers
+at all, so a decode relation named without the suffix was unguarded the moment the replacement
+started. It now scans the facade and both site writers as whole files, with no seam to find.

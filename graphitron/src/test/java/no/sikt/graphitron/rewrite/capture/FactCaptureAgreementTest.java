@@ -486,6 +486,20 @@ class FactCaptureAgreementTest {
             "graphitron_ast_error_generic_handler_entry",
             "graphitron_ast_error_database_handler_entry",
             "graphitron_ast_error_validation_handler_entry",
+            // The decode of a field-site application, on the same terms: keyed by the position of
+            // the @ token, so an application repeated on one field is repeated rows here where
+            // GraphitronSchema holds one binding per field under an ordinal it assigned.
+            "graphitron_ast_field_binding_entry", "graphitron_ast_field_condition_entry",
+            "graphitron_ast_field_condition_context_arg_entry",
+            "graphitron_ast_field_reference_step_entry",
+            "graphitron_ast_field_reference_for_entry",
+            "graphitron_ast_field_reference_for_step_entry",
+            "graphitron_ast_service_entry", "graphitron_ast_service_context_arg_entry",
+            "graphitron_ast_external_field_entry", "graphitron_ast_source_row_entry",
+            "graphitron_ast_connection_entry", "graphitron_ast_field_node_id_entry",
+            "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
+            "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
+            "graphitron_ast_routine_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it,
             // at whichever of the three reading stages said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did

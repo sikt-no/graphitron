@@ -162,22 +162,54 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_reference_for_step_entry", "graphitron_argument_reference_step_entry",
                "graphitron_field_reference_step_entry", "graphitron_reference_for_step_entry"),
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
-        Set.of("graphitron_argument_condition_context_arg_entry", "graphitron_field_condition_context_arg_entry",
-               "graphitron_service_context_arg_entry"),
-        Set.of("graphitron_argument_condition_entry", "graphitron_field_condition_entry"),
-        // Three, and the third arrived by being stamped: an @enum application records a class, a
-        // method and an argMapping, which is what a service and an external field record too. The
-        // position-keyed relation is the same fact under a different key, which is what this gate
-        // reports, and what it would take to collapse them is a supertype at the coordinate none of
-        // the three has.
-        Set.of("graphitron_ast_enum_entry", "graphitron_external_field_entry",
-               "graphitron_service_entry"),
-        Set.of("graphitron_default_order_field_entry", "graphitron_order_field_entry"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
-        Set.of("graphitron_argument_node_id_entry", "graphitron_field_node_id_entry"),
-        Set.of("graphitron_argument_reference_for_entry", "graphitron_reference_for_entry"),
         Set.of("graphitron_element", "graphql_element"),
-        Set.of("graphitron_argument", "graphitron_field"));
+        Set.of("graphitron_argument", "graphitron_field"),
+
+        // The rest of this roster is the decode migration, and it reads as one thing rather than
+        // as eleven. A position-keyed entry relation and the coordinate-keyed relation it will be
+        // derived into carry the same payload by construction: that is what makes the derivation a
+        // SELECT with nothing decided in it, and it is exactly what this gate reports. So each set
+        // below pairs an as-written relation with the resolved one beside it, or gathers several
+        // that already shared a payload before either arrived, and none of them is a supertype the
+        // schema owes: the day the anchors are derived from the entries the old writer goes, the
+        // resolved member of each pair goes with it, and the row comes off this roster. Until then
+        // the roster is the ledger of what that commit has to delete, which is why the pairs are
+        // spelled out here rather than exempted by a rule over the name.
+        Set.of("graphitron_argument_condition_context_arg_entry",
+               "graphitron_ast_field_condition_context_arg_entry",
+               "graphitron_ast_service_context_arg_entry",
+               "graphitron_field_condition_context_arg_entry",
+               "graphitron_service_context_arg_entry"),
+        Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
+               "graphitron_field_condition_entry"),
+        // Five, and they arrived by being stamped: an @enum application records a class, a method
+        // and an argMapping, which is what a service and an external field record too, at either
+        // stratum. What it would take to collapse them is a supertype at a coordinate none of them
+        // has, so the entry half of this set outlives the migration and this row does not.
+        Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
+               "graphitron_ast_service_entry", "graphitron_external_field_entry",
+               "graphitron_service_entry"),
+        Set.of("graphitron_ast_default_order_field_entry", "graphitron_default_order_field_entry",
+               "graphitron_order_field_entry"),
+        Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
+               "graphitron_field_node_id_entry"),
+        Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_field_reference_for_entry",
+               "graphitron_reference_for_entry"),
+        // The two path-carrying directives spell an element identically, so their step relations
+        // share a payload at the entry stratum exactly as their anchors already do on the row
+        // above this roster's decode block. The anchor pair is told apart from this one only by
+        // the folded columns the anchors carry for meeting a catalog name.
+        Set.of("graphitron_ast_field_reference_for_step_entry",
+               "graphitron_ast_field_reference_step_entry"),
+        Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
+        Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
+        // The field-site binding entry pairs with the enum-value anchor rather than with the field
+        // anchor, which carries a folded twin of its one column and so shares no payload with
+        // anything. A pair the migration dissolves all the same, the enum-value site's own entry
+        // being what replaces the member that stays.
+        Set.of("graphitron_ast_field_binding_entry", "graphitron_enum_value_binding_entry"),
+        Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as

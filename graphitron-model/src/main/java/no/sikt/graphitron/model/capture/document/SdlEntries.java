@@ -914,7 +914,7 @@ public final class SdlEntries {
         return nested;
     }
 
-    private static List<Nested<Directive>> directivesOnFields(TypeDefinitionRegistry document) {
+    static List<Nested<Directive>> directivesOnFields(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         fields(document).forEach(field -> nest(nested, field.node(), field.node().getDirectives()));
         return nested;

@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,17 +27,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>So the check is over the decode's own source. Every relation the decode names is a relation
  * whose rows are a function of one document, that being what the decode does, so every one of them
- * has to carry the suffix. The scan is one region of one file rather than a walk, and deliberately:
- * a guard that ranged wider would fire on a stage legitimately reading an entry, which is a read and
+ * has to carry the suffix. The scan is a named set of files rather than a walk, and deliberately: a
+ * guard that ranged wider would fire on a stage legitimately reading an entry, which is a read and
  * not a write and which source text cannot tell apart.
  *
- * <p>The region is everything below the first of the five decode methods, which is the file's own
- * seam: the gatherer's stages sit above it and the decode and its helpers below. That is an
+ * <p>Two subjects, because the decode is being replaced and both halves are live. The incumbent is
+ * one region of one file, and the region is everything below the first of its five decode methods,
+ * which is that file's own seam: the gatherer's stages sit above it and the decode and its helpers
+ * below. That is an
  * assumption about layout, and the guard is written so that breaking it fails loudly rather than
  * quietly. A stage moved below the seam names its anchors inside the region and fires this with
  * their names, which is a true report of a file that no longer has the seam its javadoc claims; the
  * fix there is the layout, not the suffix. Wording the failure for both readings is what keeps that
- * from being read as a naming defect.
+ * from being read as a naming defect. Its replacement needs none of that: a writer there holds one
+ * site's relations and nothing else, so the file is the region and a hit is a naming defect.
  *
  * <p>What it does not catch is the other direction, a suffixed relation some stage writes. That
  * needs to tell a read from a write in source text, which this cannot, and it is the direction the
@@ -58,10 +62,27 @@ class EntryNamingGuardTest {
     /** Every {@code graphitron_} relation constant, as the generated model spells one. */
     private static final Pattern RELATION = Pattern.compile("\\bGRAPHITRON_[A-Z0-9_]+\\b");
 
+    /**
+     * The decode that replaces the incumbent: the facade and one writer per site. Each writer holds
+     * one site's relations and nothing else, so the whole file is the region and there is no seam
+     * to find, which is what the split buys and why these are checked apart from the file above
+     * rather than by widening its region. The facade names one relation and writes none, using its
+     * columns to name the same three on every relation a sweep is handed; it is in the set because
+     * a name is what this guard reads and the facade spells one.
+     */
+    private static final List<Path> SITE_WRITERS = List.of(
+        decodeWriter("GraphitronEntries.java"), decodeWriter("GraphitronTypeEntries.java"),
+        decodeWriter("GraphitronFieldEntries.java"));
+
+    private static Path decodeWriter(String file) {
+        return Path.of("graphitron-model", "src", "main", "java", "no", "sikt", "graphitron",
+            "model", "capture", "document", file);
+    }
+
     @Test
     @DisplayName("every relation the decode writes is named an entry")
     void theDecodeNamesOnlySuffixedRelations() {
-        String source = Files.exists(path()) ? read(path()) : null;
+        String source = Files.exists(path(DECODE)) ? read(path(DECODE)) : null;
         assertThat(source)
             .as("the guard reads one file by path, so a move renames the guard's subject out from "
                 + "under it rather than failing; repoint %s", DECODE)
@@ -73,27 +94,54 @@ class EntryNamingGuardTest {
                 + "stages end and the decode begins", REGION_OPENS)
             .isNotNegative();
 
-        var unsuffixed = new ArrayList<String>();
-        var seen = new LinkedHashSet<String>();
-        Matcher matcher = RELATION.matcher(withoutComments(source.substring(opens)));
-        while (matcher.find()) {
-            String relation = matcher.group();
-            if (seen.add(relation) && !relation.endsWith("_ENTRY")) {
-                unsuffixed.add(relation);
-            }
-        }
-
-        assertThat(seen)
-            .as("a region naming no relation would pass this vacuously, which is what a refactor "
-                + "that moved the decode elsewhere would look like from here")
-            .isNotEmpty();
-        assertThat(unsuffixed)
+        assertThat(unsuffixedIn(source.substring(opens)))
             .as("either the decode names a relation whose name does not say it is an entry, in "
                 + "which case rename it with the _entry suffix or move the write to a gatherer "
                 + "stage if its rows are not a function of one document; or a stage has moved "
                 + "below %s and its anchors are being read as the decode's, in which case put the "
                 + "file's seam back", REGION_OPENS)
             .isEmpty();
+    }
+
+    /**
+     * The same rule over the writers that replace it, one per site. Stated as its own case because
+     * the failure it reports is different: there is no seam to have broken, so a hit here is a
+     * naming defect and nothing else.
+     */
+    @Test
+    @DisplayName("every relation a site writer names is named an entry")
+    void theSiteWritersNameOnlySuffixedRelations() {
+        for (Path writer : SITE_WRITERS) {
+            String source = Files.exists(path(writer)) ? read(path(writer)) : null;
+            assertThat(source)
+                .as("the guard reads each writer by path, so a move renames its subject out from "
+                    + "under it rather than failing; repoint %s", writer)
+                .isNotNull();
+            assertThat(unsuffixedIn(source))
+                .as("%s names a relation whose name does not say it is an entry; rename it with "
+                    + "the _entry suffix, or move the write to a stage if its rows are not a "
+                    + "function of one document", writer)
+                .isEmpty();
+        }
+    }
+
+    /**
+     * The relation names in {@code region} that carry no suffix, having first established that the
+     * region names any at all: a region naming none would pass the caller vacuously, which is what
+     * a refactor that moved the decode elsewhere would look like from here.
+     */
+    private static List<String> unsuffixedIn(String region) {
+        var unsuffixed = new ArrayList<String>();
+        var seen = new LinkedHashSet<String>();
+        Matcher matcher = RELATION.matcher(withoutComments(region));
+        while (matcher.find()) {
+            String relation = matcher.group();
+            if (seen.add(relation) && !relation.endsWith("_ENTRY")) {
+                unsuffixed.add(relation);
+            }
+        }
+        assertThat(seen).as("a region naming no relation says nothing about naming").isNotEmpty();
+        return unsuffixed;
     }
 
     /**
@@ -106,8 +154,8 @@ class EntryNamingGuardTest {
         return source.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("//[^\n]*", " ");
     }
 
-    private static Path path() {
-        return GuardScope.locateRepoRoot().resolve(DECODE);
+    private static Path path(Path file) {
+        return GuardScope.locateRepoRoot().resolve(file);
     }
 
     private static String read(Path file) {

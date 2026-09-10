@@ -1,17 +1,17 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.ArrayValue;
+import graphql.language.BooleanValue;
 import graphql.language.Directive;
 import graphql.language.EnumValue;
+import graphql.language.IntValue;
 import graphql.language.ObjectField;
 import graphql.language.ObjectValue;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
-import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
-import org.jooq.Rows;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
@@ -19,22 +19,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static graphql.language.AstPrinter.printAstCompact;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_RECORD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.val;
 
 /**
  * Writes what a graphitron directive application meant, beside the row saying it was applied.
  *
- * <p>Keyed by the application's own position, which is {@code graphql_ast_type_directive_entry}'s
- * key, so a row here is the decode of exactly one row there. Which declaration the directive was
- * written on, and in which file, is one join away rather than a column.
+ * <p>Keyed by the application's own position, which is the key of whichever
+ * {@code graphql_ast_*_directive_entry} relation holds the site it was written at, so a row in this
+ * family is the decode of exactly one row there. Which declaration the directive was written on,
+ * and in which file, is one join away rather than a column.
+ *
+ * <p>One writer per site, because which kind of node an application sits on is settled while
+ * walking the document and a key names one table. A directive the definition admits at more than
+ * one site therefore decodes into more than one relation, and the relations are told apart by the
+ * one they hang from rather than by a discriminator: {@code @condition} on an output field and on
+ * an argument are different populations with different consumers, and the site is already the key.
  *
  * <p>Nothing here resolves, and nothing is quarantined. A written name is cut where its grammar
  * cuts it and kept as typed otherwise; a value of some other shape decodes to null, every argument
@@ -42,56 +41,42 @@ import static org.jooq.impl.DSL.val;
  * Whether the table exists, whether the class is on the classpath and which of two documents the
  * corpus honours are questions for the anchors.
  *
- * <p>The type-site directives are {@code @table}, {@code @scalarType}, {@code @enum},
- * {@code @record} and {@code @error}, and two of those five surprise. {@code @error} has no
- * relation, its only argument being the handler list, so a row carrying its key and nothing else
- * would say what the applied-directive row already says. Its handlers have one relation per kind,
- * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
- * identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at all.
+ * <p>This class is the site writers' shared vocabulary for reading an application: the arguments
+ * an author wrote, in the shapes graphql-java hands them back. Nothing in it knows a relation.
  */
 public final class GraphitronEntries {
 
     private GraphitronEntries() {}
 
     /**
-     * Makes {@code source}'s decoded rows under {@code graph} be what {@code document}'s type-site
+     * Makes {@code source}'s decoded rows under {@code graph} be what {@code document}'s
      * applications now say.
      *
      * <p>Runs after the AST entries of the same reading, the rows here hanging off theirs by key.
      */
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
-        var applications = SdlEntries.directivesOnTypes(document);
-        tables(dsl, graph, touchedAt, applied(applications, "table"));
-        scalarTypes(dsl, graph, touchedAt, applied(applications, "scalarType"));
-        enums(dsl, graph, touchedAt, applied(applications, "enum"));
-        records(dsl, graph, touchedAt, applied(applications, "record"));
-        var handlers = handlers(applied(applications, "error"));
-        genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC"));
-        databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
-        validationHandlers(dsl, graph, touchedAt, ofKind(handlers, "VALIDATION"));
-        sweep(dsl, graph, source, touchedAt);
+        GraphitronTypeEntries.write(dsl, graph, source,
+            SdlEntries.directivesOnTypes(document), touchedAt);
+        GraphitronFieldEntries.write(dsl, graph, source,
+            SdlEntries.directivesOnFields(document), touchedAt);
     }
 
     /**
-     * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
-     * prefix: a relation added above and not here would keep its stale rows silently.
+     * Deletes {@code graph}'s rows of {@code source} that this reading did not touch, across the
+     * relations one site writer owns.
      *
-     * <p>In no particular order, these relations referencing one another not at all. An application
-     * the author moved or deleted is swept by the cascade from the directive row it hung on; what
-     * is left for this sweep is the application whose position another directive now occupies.
+     * <p>Listed by the caller rather than found by prefix: a relation a writer gained and did not
+     * list would keep its stale rows silently. An application the author moved or deleted is swept
+     * by the cascade from the directive row it hung on; what is left for this sweep is the
+     * application whose position another directive now occupies.
      */
-    private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
-        GRAPHITRON_AST_RECORD_ENTRY, GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
-        GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
-        GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY);
-
-    private static void sweep(DSLContext dsl, String graph, String source, LocalDateTime touchedAt) {
+    static void sweep(DSLContext dsl, String graph, String source, LocalDateTime touchedAt,
+                      List<Table<?>> tables) {
         // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's three name them on all seven.
+        // relation's three name them on all of them.
         var named = GRAPHITRON_AST_TABLE_ENTRY;
-        for (Table<?> table : TABLES_TO_SWEEP) {
+        for (Table<?> table : tables) {
             dsl.deleteFrom(table)
                 .where(table.field(named.GRAPH_NAME).eq(graph))
                 .and(table.field(named.SOURCE_NAME).eq(source))
@@ -100,225 +85,69 @@ public final class GraphitronEntries {
         }
     }
 
-    private static void tables(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                               List<Directive> applications) {
-        var t = GRAPHITRON_AST_TABLE_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "name"), t.TABLE_REF),
-            application -> val(QualifiedNameGrammar.namespacePart(string(application, "name")),
-                t.TABLE_REF_NAMESPACE_PART),
-            application -> val(QualifiedNameGrammar.namePart(string(application, "name")),
-                t.TABLE_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .execute();
+    // ------------------------------------------------------------------- reading an application
+
+    /** The applications of one directive name, whatever the site the caller collected them at. */
+    static List<Directive> applied(List<SdlEntries.Nested<Directive>> applications, String name) {
+        return applications.stream().map(SdlEntries.Nested::node)
+            .filter(application -> application.getName().equals(name)).toList();
     }
 
-    private static void scalarTypes(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                    List<Directive> applications) {
-        var t = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "scalar"), t.SCALAR_REF),
-            application -> val(classPart(string(application, "scalar")), t.SCALAR_REF_CLASS_PART),
-            application -> val(fieldPart(string(application, "scalar")), t.SCALAR_REF_FIELD_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.SCALAR_REF, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
-            .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
-            .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART))
-            .execute();
-    }
-
-    private static void enums(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                              List<Directive> applications) {
-        var t = GRAPHITRON_AST_ENUM_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(inside(application, "enumReference", "className"), t.CLASS_NAME),
-            application -> val(inside(application, "enumReference", "method"), t.METHOD),
-            application -> val(inside(application, "enumReference", "argMapping"), t.ARGMAPPING)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .execute();
-    }
-
-    private static void records(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                List<Directive> applications) {
-        var t = GRAPHITRON_AST_RECORD_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> SdlEntries.sourceName(application),
-            application -> SdlEntries.sourceLine(application),
-            application -> SdlEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(inside(application, "record", "className"), t.CLASS_NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.CLASS_NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .execute();
-    }
-
-    /** One handler of one application, at the index it was written at inside the list. */
-    private record Handler(Directive application, int position, ObjectValue value) {}
-
-    private static void genericHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                        List<Handler> handlers) {
-        var t = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
-        var rows = handlers.stream().collect(Rows.toRowList(
-            handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
-            handler -> val(touchedAt, t.TOUCHED_AT),
-            handler -> val(stringOf(inside(handler.value(), "className")), t.CLASS_NAME),
-            handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
-            handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CLASS_NAME, t.MATCHES, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.MATCHES, excluded(t.MATCHES))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
-    }
-
-    private static void databaseHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                         List<Handler> handlers) {
-        var t = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
-        var rows = handlers.stream().collect(Rows.toRowList(
-            handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
-            handler -> val(touchedAt, t.TOUCHED_AT),
-            handler -> val(stringOf(inside(handler.value(), "code")), t.CODE),
-            handler -> val(stringOf(inside(handler.value(), "sqlState")), t.SQL_STATE),
-            handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
-            handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CODE, t.SQL_STATE, t.MATCHES, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CODE, excluded(t.CODE))
-            .set(t.SQL_STATE, excluded(t.SQL_STATE))
-            .set(t.MATCHES, excluded(t.MATCHES))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
-    }
-
-    /** The position is the whole row: the directive gives this kind no field it may carry. */
-    private static void validationHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           List<Handler> handlers) {
-        var t = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
-        var rows = handlers.stream().collect(Rows.toRowList(
-            handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
-            handler -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
+    /** One object literal of one application's list argument, at the index it was written at. */
+    record Element(Directive application, int position, ObjectValue value) {}
 
     /**
-     * The handlers of one kind. A handler whose token is none of the three the directive declares
-     * lands in no relation, its list position spoken for and its text standing in the verbatim
-     * argument row.
+     * Every object literal in {@code argumentName} across {@code applications}, each with the index
+     * it was written at. An element that is not an object literal takes its index and contributes
+     * no row, so the indices of the ones after it are the ones the author would count.
      */
-    private static List<Handler> ofKind(List<Handler> handlers, String kind) {
-        return handlers.stream()
-            .filter(handler -> kind.equals(tokenOf(inside(handler.value(), "handler")))).toList();
-    }
-
-    /**
-     * Every handler of every application, each with the index it was written at. An element that is
-     * not an object literal takes its index and contributes no row, so the indices of the ones after
-     * it are the ones the author would count.
-     */
-    private static List<Handler> handlers(List<Directive> applications) {
-        var handlers = new ArrayList<Handler>();
+    static List<Element> elementsOf(List<Directive> applications, String argumentName) {
+        var elements = new ArrayList<Element>();
         for (Directive application : applications) {
             int position = 0;
-            for (Object written : elements(application, "handlers")) {
+            for (Object written : list(application, argumentName)) {
                 if (written instanceof ObjectValue object) {
-                    handlers.add(new Handler(application, position, object));
+                    elements.add(new Element(application, position, object));
                 }
                 position++;
             }
         }
-        return handlers;
+        return elements;
+    }
+
+    /** One string of one application's list argument, at the index it was written at. */
+    record Written(Directive application, int position, String value) {}
+
+    /**
+     * Every string in {@code argumentName} across {@code applications}, numbered the way
+     * {@link #elementsOf} numbers object literals: an element of some other shape takes its index
+     * and contributes no row.
+     */
+    static List<Written> writtenIn(List<Directive> applications, String argumentName) {
+        var written = new ArrayList<Written>();
+        for (Directive application : applications) {
+            int position = 0;
+            for (Object element : list(application, argumentName)) {
+                if (element instanceof StringValue string) {
+                    written.add(new Written(application, position, string.getValue()));
+                }
+                position++;
+            }
+        }
+        return written;
+    }
+
+    /**
+     * The elements whose {@code handler} field names one kind. An element whose token is none of
+     * the kinds the directive declares lands in no relation, its list position spoken for and its
+     * text standing in the verbatim argument row.
+     */
+    static List<Element> ofKind(List<Element> elements, String kind) {
+        return elements.stream()
+            .filter(element -> kind.equals(tokenOf(inside(element.value(), "handler")))).toList();
     }
 
     // ------------------------------------------------------------------- reading an argument
-
-    private static List<Directive> applied(List<SdlEntries.Nested<Directive>> applications,
-                                           String name) {
-        return applications.stream().map(SdlEntries.Nested::node)
-            .filter(application -> application.getName().equals(name)).toList();
-    }
 
     /** The argument's value, or null where the author wrote no such argument. */
     private static Value<?> argument(Directive application, String name) {
@@ -326,17 +155,32 @@ public final class GraphitronEntries {
         return written == null ? null : written.getValue();
     }
 
-    private static String string(Directive application, String name) {
+    static String string(Directive application, String name) {
         return stringOf(argument(application, name));
     }
 
+    /** A written enum token of an argument, or null where the author wrote none. */
+    static String token(Directive application, String name) {
+        return tokenOf(argument(application, name));
+    }
+
+    /** A written boolean, or null where the argument is absent or of any other shape. */
+    static Boolean bool(Directive application, String name) {
+        return argument(application, name) instanceof BooleanValue flag ? flag.isValue() : null;
+    }
+
+    /** A written integer, or null where the argument is absent or of any other shape. */
+    static Integer integer(Directive application, String name) {
+        return argument(application, name) instanceof IntValue number ? number.getValue().intValue() : null;
+    }
+
     /** A field of the object literal an argument holds, or null where either is absent. */
-    private static String inside(Directive application, String argumentName, String fieldName) {
+    static String inside(Directive application, String argumentName, String fieldName) {
         return argument(application, argumentName) instanceof ObjectValue object
             ? stringOf(inside(object, fieldName)) : null;
     }
 
-    private static Value<?> inside(ObjectValue object, String fieldName) {
+    static Value<?> inside(ObjectValue object, String fieldName) {
         for (ObjectField written : object.getObjectFields()) {
             if (written.getName().equals(fieldName)) {
                 return written.getValue();
@@ -345,21 +189,27 @@ public final class GraphitronEntries {
         return null;
     }
 
+    /** A field of an object literal nested inside another, or null where any level is absent. */
+    static String inside(ObjectValue object, String fieldName, String nestedName) {
+        return inside(object, fieldName) instanceof ObjectValue nested
+            ? stringOf(inside(nested, nestedName)) : null;
+    }
+
     /**
      * The elements of an argument written as a list, or none where it was written as anything else.
      * Wildcarded because graphql-java hands them back raw and nothing here needs the element type.
      */
-    private static List<?> elements(Directive application, String name) {
+    private static List<?> list(Directive application, String name) {
         return argument(application, name) instanceof ArrayValue array ? array.getValues() : List.of();
     }
 
     /** A written string, or null where the value is any other shape. */
-    private static String stringOf(Value<?> value) {
+    static String stringOf(Value<?> value) {
         return value instanceof StringValue written ? written.getValue() : null;
     }
 
     /** A written enum token or string, either being how an author spells one of a fixed set. */
-    private static String tokenOf(Value<?> value) {
+    static String tokenOf(Value<?> value) {
         return switch (value) {
             case null -> null;
             case EnumValue token -> token.getName();
@@ -368,12 +218,12 @@ public final class GraphitronEntries {
         };
     }
 
-    private static String classPart(String written) {
+    static String classPart(String written) {
         return ConstantReferenceGrammar.split(written)
             instanceof ConstantReferenceGrammar.Reference.Parsed parsed ? parsed.classFqn() : null;
     }
 
-    private static String fieldPart(String written) {
+    static String fieldPart(String written) {
         return ConstantReferenceGrammar.split(written)
             instanceof ConstantReferenceGrammar.Reference.Parsed parsed ? parsed.fieldName() : null;
     }
