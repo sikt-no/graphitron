@@ -72,7 +72,7 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 20;
+    private static final int REGISTRATIONS = 21;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -88,9 +88,18 @@ class MaterializeRegistryGateTest {
      * this pair makes concretely: the payload column refresh statement fell about thirtyfold on the
      * schema those two registrations were measured against.
      *
+     * <p>Fifteen since {@code intent_node_id_decode_hop} was registered, and by that same
+     * mechanism a third time: it already sat directly under {@code intent_node_id_decode_hop_column}
+     * as an unregistered intermediate the reachability walk saw straight through, so registering it
+     * turns that link into a stage the refresh has to wait for and pushes the chain below it down
+     * one. The chain from there is unchanged. Depth bought the same kind of fall in cost as the pair
+     * above: the rule it stages was being expanded once per driving row by the {@code @nodeId}
+     * landing verdict, whose own read went from not returning to milliseconds, and the register row
+     * carries those figures.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 14;
+    private static final int REFRESH_STAGES = 15;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -224,9 +233,20 @@ class MaterializeRegistryGateTest {
      *   being re-derived per driving row, not to make any one naming seek, so there is no coordinate
      *   an index would serve. A reader keyed by one mutation coordinate would change that, and none
      *   of the readers this family has today is one.</li>
+     *   <li>{@code intent_node_id_decode_hop}: the one target here whose row is about a key rather
+     *   than about a measurement. Its grain has no meaningfully nullable column in it, so unlike the
+     *   rows above it does declare a primary key, and this scan counts only indexes the DDL declares
+     *   so the key's own index does not answer for it. That index is what a declared one would
+     *   duplicate: the landing verdict joins this target on the five branch columns and then on
+     *   {@code position = last_position}, and the key {@code (graph_name, use_site,
+     *   origin_source_name, origin_schema, origin_table, position)} is a prefix of that. So an index
+     *   here would be a second index over the same leading columns, bought for no reader. The
+     *   precedent for not buying it on a guess is the decode column's row above, where an index
+     *   bought for two readers lost on measurement once the key widened.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
+        "intent_node_id_decode_hop",
         "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_argument_column_match",

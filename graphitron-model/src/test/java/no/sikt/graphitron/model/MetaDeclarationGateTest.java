@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.META_GATHERER_CORPUS;
 import static no.sikt.graphitron.model.Tables.META_GATHERER_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.META_GRAIN;
+import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +43,17 @@ import static org.jooq.impl.DSL.table;
  * {@code undeclared-relations.txt}, which only shrinks: declaring a relation removes its line, and
  * a new relation is on no frozen roster, so it cannot arrive undeclared. The prose gates bind per
  * declared row, so they tighten as the roster drains rather than waiting for it to empty.
+ *
+ * <p>A registration's source view is exempt, and derived from {@code meta_materialize} rather than
+ * hand-listed. The fact model reads a materialized target <em>as</em> its rule, so the relation of a
+ * registered pair is the target: it carries the canonical name every reader spells and the rule's own
+ * comment, while the {@code _live} view is the machinery that fills it. Declaring the machinery would
+ * put a second grain sentence and example on rows that are the target's rows by construction, and
+ * would evict the {@code _live} warning from the one surface a misuser meets, its {@code COMMENT ON}.
+ * Deriving the exemption from the register rather than authoring it is what keeps the ratchet: nobody
+ * can pad it, and there is no way to dodge a declaration through it, because a registration needs a
+ * target and a target under a name the roster does not already carry is an observed relation on no
+ * frozen roster.
  */
 class MetaDeclarationGateTest {
 
@@ -53,20 +65,65 @@ class MetaDeclarationGateTest {
                 .from(META_RELATION_FAMILY).fetch(0, String.class));
             var declared = new HashSet<>(dsl.select(META_RELATION.RELATION_NAME)
                 .from(META_RELATION).fetch(0, String.class));
+            var registered = new HashSet<>(dsl.select(META_MATERIALIZE.SOURCE_VIEW_NAME)
+                .from(META_MATERIALIZE).fetch(0, String.class));
 
             assertThat(declared)
                 .as("declarations naming relations the schema does not declare")
                 .isSubsetOf(observed);
 
-            var undeclared = observed.stream()
-                .filter(relation -> !declared.contains(relation))
-                .collect(Collectors.toSet());
+            var undeclared = undeclared(observed, declared, registered);
             assertThat(undeclared)
-                .as("the observed relations with no meta_relation row, against the frozen roster;"
-                    + " a missing entry is a new relation that must be declared rather than added"
-                    + " to the roster, an extra entry is a declared or retired relation whose line"
-                    + " must be removed")
+                .as("the observed relations with no meta_relation row and no meta_materialize row"
+                    + " naming them as a rule's source view, against the frozen roster; a missing"
+                    + " entry is a new relation that must be declared rather than added to the"
+                    + " roster, an extra entry is a declared, registered or retired relation whose"
+                    + " line must be removed")
                 .containsExactlyInAnyOrderElementsOf(frozenRoster());
+        });
+    }
+
+    /**
+     * The register subtraction, held in both directions so the exemption cannot silently widen.
+     * A registration exempts exactly one relation, the source view stating the rule, and exempts
+     * nothing else: the target carries the canonical name, so it stands on the roster like any
+     * other undeclared relation and a target under an unrostered name is an offender. Stated over
+     * the shipped register rather than a seeded one, because what could go wrong is the
+     * subtraction matching on the wrong column, and that is a mistake only real rows show.
+     */
+    @Test
+    @DisplayName("a registration exempts its source view and not its target")
+    void theRegisterExemptsOnlyTheRuleItStates() {
+        withStore(dsl -> {
+            var observed = new HashSet<>(dsl.select(META_RELATION_FAMILY.RELATION_NAME)
+                .from(META_RELATION_FAMILY).fetch(0, String.class));
+            var declared = new HashSet<>(dsl.select(META_RELATION.RELATION_NAME)
+                .from(META_RELATION).fetch(0, String.class));
+            var register = dsl.select(META_MATERIALIZE.SOURCE_VIEW_NAME,
+                    META_MATERIALIZE.TARGET_TABLE_NAME)
+                .from(META_MATERIALIZE).fetch();
+            var sources = new HashSet<>(register.getValues(META_MATERIALIZE.SOURCE_VIEW_NAME));
+            var targets = register.getValues(META_MATERIALIZE.TARGET_TABLE_NAME);
+
+            var undeclared = undeclared(observed, declared, sources);
+
+            assertThat(sources)
+                .as("every registered source view is an observed relation, so the subtraction"
+                    + " names something rather than silently matching nothing")
+                .isNotEmpty()
+                .allSatisfy(source -> assertThat(observed).contains(source));
+            assertThat(undeclared)
+                .as("a registered source view is exempt: the register states that exemption, and"
+                    + " no _live view stands on the frozen roster")
+                .doesNotContainAnyElementsOf(sources);
+            assertThat(targets)
+                .as("a registered target is not exempt. It carries the canonical name every"
+                    + " reader spells, so it is declared or it stands on the roster; one that is"
+                    + " neither is an offender the roster case fails on")
+                .allSatisfy(target -> assertThat(declared.contains(target)
+                    || undeclared.contains(target))
+                    .as("target %s is declared or undeclared, never exempt", target)
+                    .isTrue());
         });
     }
 
@@ -319,6 +376,19 @@ class MetaDeclarationGateTest {
         try (var store = FactStores.inMemory()) {
             body.accept(store.dsl());
         }
+    }
+
+    /**
+     * The observed relations no {@code meta_relation} row declares and no registration states as
+     * its rule. One expression, so the roster case and the subtraction case cannot come to
+     * disagree about what the exemption is.
+     */
+    private static Set<String> undeclared(Set<String> observed, Set<String> declared,
+                                          Set<String> registeredSourceViews) {
+        return observed.stream()
+            .filter(relation -> !declared.contains(relation))
+            .filter(relation -> !registeredSourceViews.contains(relation))
+            .collect(Collectors.toSet());
     }
 
     /** The frozen roster: one relation name per line, shrink-only, frozen 2026-08-30. */

@@ -124,21 +124,20 @@ class DetectionReadReachGateTest {
             "intent_record_slot_assignable",
             "intent_resolved_node_key_shape"));
 
+        // Twelve relations until intent_node_id_decode_hop was registered, and six of them were
+        // reached only through it: the two argument-site reference-target relations, the
+        // input-field one, intent_condition_method_route and intent_name_matched_key_pair. The
+        // walk stops at the target table now, so this reader evaluates none of their bodies. That
+        // is the lever this gate was written for landing, and the delta is the diff a reviewer
+        // reads the outcome off.
+        //
+        // intent_node_id_decode_endpoint stays, read live by the verdict's own judged CTE rather
+        // than through the hop, and it is known rather than unpriced: 14 ms on the population that
+        // exposed the defect, whose whole subtree answers in single-digit milliseconds.
         REACH.put("NodeIdLandingDefects", Set.of(
-            "intent_argument_reference_step_hop",
-            "intent_argument_reference_step_target",
-            "intent_condition_method_route",
             "intent_field_navigated_type",
             "intent_field_participant_scope_table",
-            "intent_input_field_reference_step_target",
-            "intent_name_matched_key_pair",
             "intent_node_id_decode_endpoint",
-            // The relation this gate was written for. Also refreshed through
-            // intent_node_id_decode_hop_column_live, so it is paid once per capture and then
-            // expanded again here with nothing between it and the reader; the landing-defect view
-            // names it once textually and evaluates it per driving row through a correlated
-            // NOT EXISTS. A registration or a restatement of this rule takes it out of this set.
-            "intent_node_id_decode_hop",
             "intent_node_id_decode_landing_defect",
             "intent_poly_member",
             "intent_reference_for_application"));

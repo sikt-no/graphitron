@@ -108,8 +108,8 @@ class RefreshPlanStatisticsTest {
      * without them, {@code source_view}, pinned by equality so the set cannot grow or shrink
      * unremarked.
      *
-     * <p>One mechanism, seen plainly on {@code intent_node_id_decode_hop_column_live}. With
-     * statistics its read of {@code intent_field_reference_step_hop}, a registered target, seeks
+     * <p>One mechanism, seen plainly on {@code intent_node_id_decode_hop_live}. With statistics its
+     * read of {@code intent_field_reference_step_hop}, a registered target, seeks
      * {@code IX_FIELD_REFERENCE_STEP_HOP_STEP} on seven columns; without them it seeks
      * {@code CONSTRAINT_INDEX_98} on {@code GRAPH_NAME} alone, which is a scan of the whole graph's
      * partition per driving row. H2's no-statistics default assumes every column has half as many
@@ -117,6 +117,14 @@ class RefreshPlanStatisticsTest {
      * selectivity, so the one-column seek prices as though it were nearly exact. That is the case
      * {@code Materializations.analyse}'s own javadoc describes, arriving where that call cannot
      * reach: an index without statistics, costing most of the gain the index exists for.
+     *
+     * <p>{@code intent_node_id_decode_hop_column_live} carried that mechanism until the hop itself
+     * was registered, and the swap is one statement inheriting it from another rather than anything
+     * changing about the mechanism. That rule reached the reference-step-hop target by expanding the
+     * hop view; the hop is a table now, so its read stops there and plans the same either way, while
+     * the hop's own rule is the statement that reads the reference walk and needs its statistics.
+     * The decode-hop-column figures in the paragraph below were taken on that older shape and are
+     * kept as what the mechanism did there, not as a claim about the rule today.
      *
      * <p>Rows visited, cold against targets-analysed, on this fixture and as documentation rather
      * than as an assertion: the decode hop column 11213 against 1387, the input-field filter role
@@ -149,7 +157,7 @@ class RefreshPlanStatisticsTest {
         "intent_input_field_filter_role_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
-        "intent_node_id_decode_hop_column_live",
+        "intent_node_id_decode_hop_live",
         "intent_node_id_instruction_live");
 
     @TempDir

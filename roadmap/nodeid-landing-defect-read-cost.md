@@ -499,7 +499,93 @@ A wall-clock gate is explicitly *not* in scope. Nothing in this repository captu
 of the size that exposes this, and a fixture that did would be a build wall-clock gate, which the
 build-wall-clock item owns.
 
-## What landed, and what is still owed (2026-09-10)
+## What landed: the lever (2026-09-10)
+
+The measurement ran on the `sis` workspace and the lever is the registration of
+`intent_node_id_decode_hop`, which is the plan's stated default for slices that do not separate,
+reached here as a conclusion rather than as a shrug. Everything below was taken on a store captured
+from the `sis` workspace by this session's own patched tree, so its DDL hash is this tree's. The
+figures under "What the measurement says" above were taken on a store copy two days older than the
+DDL they were read against, and this section contradicts several of them, which is the whole reason
+the plan asked the implementer to re-take the two it turns on.
+
+**The defect, reproduced first.** A cold `graphitron:capture` on `sis-graphql-spec` committed its
+facts, refreshed twenty registrations in 48.6 s, then issued
+`NodeIdLandingDefects.detect`'s statement and never returned. That statement is the last
+`Executing query` line in the run's log, which is what named it without a thread dump.
+
+**The owner arithmetic, computed as owed.** The hop's transitive read closure, resolved through the
+register, reaches declared owners `catalog` and `graphitron` and no later gatherer.
+`meta_gatherer_dependency` puts `graphitron` after `sdl` and `catalog`, so `graphitron` is the
+latest and the hop's owner is `graphitron`. Its placement is already right, which is what makes the
+registration a reasoned rung rather than the last lever reachable. `derivation` is not in the
+closure at all, so nothing here is R876's placement defect.
+
+**Step 1, and it does not separate.** Population: 400 endpoint rows, 103 of them `AUTHORED_PATH`,
+209 `DISCOVERED_KEY`, 88 `SAME_TABLE`; 312 judged rows; 377 hop rows. Three sweeps per slice,
+`OPTIMIZE_REUSE_RESULTS` off, standard deviations in the table so the spread is visible.
+
+| slice | avg ms | sd |
+|---|---|---|
+| the hop whole, the baseline | 5026 | 916 |
+| without the closing `MAX(position) OVER` | 4243 | 839 |
+| without `intent_argument_reference_step_target` | 3446 | 428 |
+| without the derived table counting keys per table pair | 3256 | 707 |
+| without `intent_input_field_reference_step_target` | 1879 | 360 |
+| `intent_input_field_reference_step_target` alone | 25 | 24 |
+| `intent_node_id_decode_endpoint` alone | 14 | 16 |
+| `intent_argument_reference_step_target` alone | 12 | 13 |
+| the derived table alone | 6 | 4 |
+
+No single removal approaches the floor. The one round of finer slices the tie rule allows says why:
+the derived table over the endpoint relation with every join removed answers in 4 ms, and dropping
+both reference-target walks together leaves 1063 ms against the baseline's 7058 in that session. So
+two relations costing 12 ms and 25 ms standalone account for about six seconds of the rule between
+them, and neither does alone. That is per-driving-row re-evaluation on the inner side of two
+`LEFT JOIN`s, stated as arithmetic rather than inferred from a plan's shape.
+
+**Step 2, and why not one level down.** A registration of either walk leaves the other expanding per
+row, which is the measurement rather than a prediction: with the argument-site walk materialized the
+hop still costs 3618 ms and the verdict still did not return in five minutes. The hop is the
+relation the cost multiplies through and one table there stops it for both walks and for every
+reader above them.
+
+**Step 3, on the patched model.** Priced by snapshotting the hop's rows into a table keyed as the
+target ships and re-running each configuration on the same population, three sweeps each.
+
+| configuration | avg ms | sd |
+|---|---|---|
+| the hop as shipped, a view | 4702 | 116 |
+| the hop with the argument-site walk materialized | 3618 | 41 |
+| the hop materialized, read as a table | 1 | 0 |
+| the verdict read over a materialized hop | 485 | 21 |
+| the verdict read as shipped | did not return in 120 s | |
+| the verdict read with only the argument-site walk materialized | did not return in 5 min | |
+
+One evaluation of the rule into a table measured 4.2 s, which is the refresh this registration adds,
+and the hop-column registration was already paying one evaluation of it per refresh, 5.2 s of that
+48.6 s cold pass, so the pass is close to neutral rather than dearer by the whole of it. Added
+refresh plus read is about 4.7 s on that population, which is the low single-digit seconds the
+lever had to reach.
+
+The arithmetic closes, which is the check that says the plan is understood: 312 driving rows times
+4.7 s is about 24 minutes, against the dev session that ran 31 without opening its port.
+
+**The population check, and one honest negative.** The two-way `EXCEPT` between the source view and
+its snapshot is empty in both directions, so the registration changes cost and not rows. The
+verdict returns **zero rows** on this population, and that is the result rather than the cost: the
+shipped read still fails to return in 120 s computing that emptiness, over 312 judged rows. The
+key the target declares was checked before it shipped: 377 rows, 377 distinct over
+`(graph_name, use_site, origin_source_name, origin_schema, origin_table, position)`, and zero nulls
+in all six.
+
+**One caution recorded where the next reader meets it.** An older store of the same consumer, two
+days stale, ranked the argument-site walk as the dominant term at 28 s of 34.7 s. On the current
+population it is the smaller of the two walks. The shape generalised and that ranking did not, which
+is the hazard the `store-performance` skill names, met in the course of this item rather than in the
+abstract. The register row carries it.
+
+## What landed earlier: the guard (2026-09-10)
 
 The guard is landed in full and the lever is not started. The two halves are independent: the guard
 names a shape and prices nothing, so it needs no consumer store, while steps 1 to 3 turn on figures

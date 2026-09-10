@@ -281,8 +281,16 @@ class DerivedReadCostTest {
      * whatever it goes on to join. Which is the arithmetic worth reading off this move: the cells a
      * new view adds are a function of where it sits relative to the registrations, not of how much
      * work it does.
+     *
+     * <p>Down to 144 when {@code intent_node_id_decode_hop} was registered, and a fall rather than a
+     * rise for the same reason the paragraph above gives: a registration shortens every walk that
+     * met the relation as a view. The hop's own rule keeps its cells under the {@code _live} name, so
+     * the loss is not there; it is in the readers above it, which used to descend through the hop
+     * into the reference-target families and now stop at the target table. The
+     * {@code @nodeId} landing verdict is the clearest of them, dropping the five rungs it reached
+     * only through the hop and picking up one on the new registration.
      */
-    private static final int CELLS = 149;
+    private static final int CELLS = 144;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -633,18 +641,24 @@ class DerivedReadCostTest {
         // stops at.
         "intent_field_reference_step_hop|intent_input_field_carrier_role_live",
         // The same floor reached through the input-field reference walk, which the decode's hop
-        // child took up when the input-field path stopped being unwalkable.
-        "intent_field_reference_step_hop|intent_node_id_decode_hop",
-        "intent_field_reference_step_hop|intent_node_id_decode_hop_column_live",
-        // The same floor a third time, reached because the @nodeId landing verdicts read the hop
-        // relation above. Six scans dearer registered, 4472 against 4466, and three times faster,
-        // 224 milliseconds against 709. What this row records is a reader inheriting its parent's
-        // charge rather than a new mechanism: the verdicts name intent_node_id_decode_hop once, to
-        // find the terminal hop, and that relation's own cell is pinned here for this same
-        // registration. Six scans against a saving of nearly half a second is also the clearest
-        // reading in the set of why the counter is not the clock, the two figures pointing opposite
-        // ways with nothing ambiguous about which one a consumer feels.
-        "intent_field_reference_step_hop|intent_node_id_decode_landing_defect",
+        // child took up when the input-field path stopped being unwalkable. Named for the rule
+        // rather than the relation since the hop was registered, on the carrier's precedent above.
+        "intent_field_reference_step_hop|intent_node_id_decode_hop_live",
+        // The hop-column rule stood beside the row above and has stopped being non-monotonic,
+        // which is the got-cheaper kind of departure rather than the stopped-reaching kind: it
+        // still reaches this rung, but it reads the hop as a table now instead of expanding the
+        // hop view, so the rows it visits on the registered side no longer exceed the
+        // unregistered side's. The registration underneath it is what moved it, and that is the
+        // direction this set exists to notice.
+        // A third reader of this floor stood here, intent_node_id_decode_landing_defect, and it has
+        // gone the stopped-reaching way rather than the got-cheaper way: it reached this rung only
+        // through intent_node_id_decode_hop, and that relation is a table now, so the walk stops
+        // there and the cell does not exist to be non-monotonic in. Its figures were six scans
+        // dearer registered, 4472 against 4466, and three times faster, 224 milliseconds against
+        // 709, which was the clearest reading in this set of why the counter is not the clock. The
+        // reason it left is the same reading at consumer scale: naming that relation once textually
+        // was evaluating it once per driving row, which the registration's own row in
+        // meta_materialize prices.
         // The same floor again, reached because the write-payload family reads the input-field
         // one: twelve scans out of fifty-nine thousand on the refusal, thirty-six out of two
         // hundred thousand on the two above it; measured above. The refusal stood beside the
