@@ -370,3 +370,102 @@ and the remedy is a view with set semantics rather than a flag that changes what
 
 Coverage for this issue was found missing by
 `roadmap/audits/2026-08-19-github-issue-roadmap-linkage.md`.
+
+## Reviewer findings
+
+### Round 1, Spec → Ready, session_01CRSGZMS3zykRiGCUW7p1f9, 2026-09-10
+
+Revisions requested. The goal reads clearly and I could restate it without the plan in hand: a
+list field whose `@reference` path passes *through* an intermediate table that can hold more than
+one row per (entering key, leaving key) pair gets a build warning at that field's SDL coordinate,
+suggesting the DISTINCT-view plus synthetic-FK remedy, with no change to emitted SQL and pure join
+tables like `film_actor` staying quiet. The rule itself is the strongest part of the document: the
+subset direction is argued correctly, the composite-constraint counterexample is right, and the
+measurement's admission that the corpus cannot separate the two candidate predicates is the kind of
+negative result specs usually bury. Two findings are against question 2 and block; two more are
+against question 1's checkable claims and are substantial enough that I would not want an
+implementer to start without them settled.
+
+**1 (question 2, blocking). The argument-site substrate already exists, so the scope boundary rests
+on a false premise.** "Where it lives" says the derived hop and target views are field-site only and
+that covering filter paths means authoring their siblings first. Both siblings ship today:
+`intent_argument_reference_step_hop` and `intent_argument_reference_step_target` are declared in
+`graphitron-model/src/main/resources/no/sikt/graphitron/model/graphitron-model.sql` and registered
+`Arm.DERIVED` in `FactCaptureAgreementTest`, and the argument-site target view carries the identical
+column list plus `argument_name`, `constraint_name`, `fk_on_from` and `position` included, so the
+pair-coverage reduction reads it verbatim. `intent_input_field_reference_step_target` is a third
+such view. Only `@referenceFor` genuinely lacks them: `intent_reference_for_application` is the sole
+`intent_reference_for_*` relation. This is blocking rather than a factual nit because the spec turns
+the premise into two decisions, the item's scope and a sentence the user documentation is told to
+carry ("filter paths and `@referenceFor` are outside it today"), and the second would publish the
+false reason as author-facing guidance. What would satisfy it: either bring argument-site and
+input-field-site paths into scope, since the reduction is the same one, or exclude them on a reason
+that holds, the semantic difference between a filter path and a projection path if there is one, and
+say which of the two you chose. One honest caveat so you are not rediscovering it: the argument-site
+view's own comment discloses an unexercised limit, that a path departing from a multi-table
+polymorphic container conflates its `targets`/`candidates` counts across branches. That limit is on
+the arity columns, which this rule does not read, so it does not block the extension.
+
+**2 (question 2, blocking). "Where it lives" names the wrong module for the precedent, and the item
+straddles a module boundary the spec does not acknowledge.** The spec calls
+`graphitron/src/main/java/no/sikt/graphitron/rewrite/derive/` a build-time package whose members
+query `intent_` relations during codegen, and puts `AuthoredClaimConflicts` in it. That package holds
+two files, `ClaimDomain` and `DemandResidue`; neither queries the store, and `ClaimDomain`'s own
+javadoc says it retires with the shadow that reads it. The thirty-member derive package the spec is
+describing, `AuthoredClaimConflicts` included, is
+`graphitron-model/src/main/java/no/sikt/graphitron/model/derive/`. This is not a path typo I could
+fix in passing, because the correct path decides a placement the spec then has to state per piece:
+`LintRule`, `LintFix` and `BuildWarning` are in `graphitron-model`, while
+`LintRuleRegistryCoverageTest` and `GraphQLRewriteGenerator.withLintFindings` are in `graphitron`.
+What would satisfy it: name the module for each of the five artefacts (the new view, the decoding
+member, the new `Source` arm, the coverage-test extension, the fold-in).
+
+**3 (question 1). The discriminating fixture, completed the obvious way, does not discriminate.**
+`film_actor_note` is exactly as described in `graphitron-sakila-db/src/main/resources/init.sql`:
+`PRIMARY KEY (actor_id, film_id, lang_code)` with `FOREIGN KEY (actor_id, film_id)` into
+`film_actor`. But that foreign key is the entering hop, and it binds *both* `actor_id` and
+`film_id`, so the table is entered on `(a, b)` of a `(a, b, c)` key, not on `(a)` as the stated
+minimal shape has it. The spec says what it lacks is "an outgoing foreign key to leave by" without
+saying which column that key may sit on, and the reading the corpus invites, `lang_code` into
+`language`, makes `bound(T)` the whole primary key, so the rule clears the hop and the fixture goes
+quiet. The leaving key has to be on a column outside the primary key. Since the spec elevates the
+discriminating pair to an acceptance criterion, and correctly so, the recipe owes that constraint
+explicitly.
+
+**4 (question 1). The ordering hazard is real and its code names describe a structure that no longer
+exists.** I confirmed the hazard: `withLintFindings` is called at `GraphQLRewriteGenerator.java:684`
+and `captureAndRead` at `:697`, so lint assembly does precede the capture and a store read from
+`withLintFindings` would see the previous run's rows. The section's frame around that is stale.
+`captureFactsAndDetect` appears nowhere in the tree. There are no longer "two paths that matter,
+`runPipeline` and `validate()`": the class javadoc's "One body, five projections" says
+`runPipeline` is the single body, and `validate()`, `capture()` and `buildOutput()` are projections
+through it, so `buildOutput()` cannot order them the other way and the remedy is one call site
+rather than "both paths". Rewriting the section is yours because its argument, not just its
+identifiers, is built on the two-path shape.
+
+**5 (question 2). The gates a new `intent_` view owes, and R876's live claim on this substrate.**
+Three gates fire on a new derived relation and the spec names none: `FactCaptureAgreementTest`'s
+exhaustive registration map, `MaterializeRegistryGateTest`, and `DerivedReadCostTest`. More
+consequentially, the Cost section reasons about the 70-second materialisation without naming
+`roadmap/derived-read-cost-is-a-shape-problem.md` (R876), which is In Progress at priority 1, holds
+that an expensive derived read is a modelling defect rather than something to buy off with a
+registration, and is dissolving `meta_materialize` entirely. Its slice-1 commit is also the most
+recent toucher of this file. The spec's own instinct, express the predicate over the target view
+rather than re-walking and check the view family's indexes, is R876's position arrived at
+independently, so this is mostly a matter of citing the frame instead of re-deriving it; but a new
+view authored during that arc needs to say which discipline it lands under.
+
+Non-blocking, and stated only so they do not survive into implementation:
+
+* `isPrimary()` is declared on `org.jooq.UniqueKey`, not on `org.jooq.Key`, which in 3.20.11
+  declares `getTable`, `getFields`, `getFieldsArray`, `constraint`, `enforced` and `nullable`. The
+  substantive claim holds: I re-checked both interfaces and the jar, and there is no period concept
+  anywhere in that hierarchy and no `WITHOUT OVERLAPS` string.
+* `film_actor_note` is not "the corpus's only three-column key". `init.sql` declares at least two
+  others, a `(pk_a, pk_b, pk_c)` key and an `(s, k1, k2)` key, plus a four-column one. The property
+  the fixture choice actually rests on, that it is a payload-carrying table with a composite key
+  already reached by a two-column foreign key, is unaffected.
+* `roadmap/three-strata-capture-derive-query.md` (R712) is a dangling path. The item shipped and its
+  file was deleted at Done; `roadmap/changelog.md` carries the entry.
+* I did not re-run the corpus measurement. The counts are not what any finding above turns on, but
+  note that finding 1 changes the measurement's population if argument-site paths come into scope.
