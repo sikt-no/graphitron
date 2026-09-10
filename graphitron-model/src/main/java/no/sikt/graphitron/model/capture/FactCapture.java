@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
-import no.sikt.graphitron.model.capture.verdict.SdlVerdictCapture;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ArgmappingProjectionDefects;
@@ -130,8 +129,8 @@ public final class FactCapture {
 
     /**
      * {@link #run} for a caller that handed over a registry it built itself: no stage of the
-     * schema loader ran on the way here, so no stage refused anything, and the verdict relations
-     * record the same emptiness a document read clean would leave.
+     * schema loader ran on the way here, so no source was refused, and the walk records a source
+     * membership for every input it was handed.
      */
     public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
                            TypeDefinitionRegistry registry, SdlVerdicts verdicts,
@@ -145,8 +144,8 @@ public final class FactCapture {
      * {@link #run(Path, GraphIdentity, SubjectConfig, TypeDefinitionRegistry, SdlVerdicts, Map,
      * JooqCatalog, List)} for a caller that has already assembled {@code registry} and would
      * otherwise pay for a second assembly. The two arguments have to describe one read: the
-     * gatherer's assembly stage is where the {@code ASSEMBLY} verdicts come from, so handing over an
-     * assembly of a different registry would record a verdict on a document the store does not hold.
+     * rooted traversal runs over the schema this assembly produced, so handing over an assembly of
+     * a different registry would classify a document the store does not hold.
      */
     public static void run(Path storeDirectory, GraphIdentity graph, SubjectConfig config,
                            TypeDefinitionRegistry registry, SchemaAssembly assembly,
@@ -304,10 +303,10 @@ public final class FactCapture {
     /**
      * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
      * SdlVerdicts, Map, JooqCatalog, List)} for a caller holding the assembly of {@code registry}
-     * already. The gatherer's own stages run in order here: the per-source declarations, the two
-     * document-wide verdicts, the assembly verdict, and last the rooted traversal over what
-     * assembled. Handing over an assembly of some other registry would record a verdict on a
-     * document this store does not hold.
+     * already. The gatherer's own stages run in order here: the per-source declarations, the
+     * decode of the graphitron directives among them, and last the rooted traversal over what
+     * assembled. Handing over an assembly of some other registry would classify a document this
+     * store does not hold.
      */
     public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
                                SubjectConfig config, TypeDefinitionRegistry registry,
@@ -379,8 +378,6 @@ public final class FactCapture {
             sink.flush();
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
-            sink.flush();
-            SdlVerdictCapture.capture(sink, verdicts, assembly);
             sink.flush();
             var synthesizedEdges = GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();

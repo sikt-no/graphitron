@@ -5,9 +5,12 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.classpath.CompletionData;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
@@ -19,6 +22,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,10 +34,10 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * A booted fact store with one or more SDL fixtures captured into it: the capture-level population,
  * for the tests whose subject is what a real capture writes.
  *
- * <p><b>Which harness is this.</b> Rows arrive here only through {@link FactCapture}, so a fixture
- * cannot encode a state capture never produces. That is the property to want when the subject is
- * capture itself, the crawlers and the writers, or agreement between a store-native relation and a
- * reader above. When the subject is instead what a relation <em>returns given rows</em>, a view's
+ * <p><b>Which harness is this.</b> Rows arrive here only through the capture writers, {@link
+ * FactCapture} and, on the refused arm, the verdict writer beside it, so a fixture cannot encode a
+ * state capture never produces. That is the property to want when the subject is capture itself,
+ * the crawlers and the writers, or agreement between a store-native relation and a reader above. When the subject is instead what a relation <em>returns given rows</em>, a view's
  * joins or a check constraint's boundary, {@link SeededStore} beside this one states the inputs as
  * rows with no pipeline in the way. Seeding skips the step capture exists to perform, so a fixture
  * here that hand-inserts rows owes a reason at the call site.
@@ -195,7 +200,8 @@ public final class CapturedStore implements AutoCloseable {
      * its only source. Both capture a verdict rather than a registry alone, which is what a case
      * about a store whose last read failed has to have in it: the refusal row is what makes the read
      * not-clean, and any surviving source's coordinates are what a reader goes on answering from
-     * while it is.
+     * while it is. The verdict is a {@code graphql_schema_problem} row, which is where all three
+     * reading stages record one.
      */
     public static CapturedStore ofRefusedSchema(Path directory, String sdl, String refusedSdl,
                                                 JooqCatalog jooq) {
@@ -211,6 +217,10 @@ public final class CapturedStore implements AutoCloseable {
      *
      * <p>Fails when nothing objected, so an arm whose refused source quietly started parsing cannot
      * go on passing as a fixture for a refusal.
+     *
+     * <p>Two writers, because the walk and the verdict relation are on either side of the
+     * migration. The walk transcribes whatever parsed and {@link #writeSchemaProblems} records what
+     * the three stages refused; that primitive carries why the two are separate and why this order.
      */
     private static CapturedStore captureRefused(Path directory, List<Path> files, JooqCatalog jooq) {
         var parse = SchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
@@ -219,9 +229,11 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = FactStores.inMemory();
+        var assembly = SchemaAssembly.of(parse.registry());
         FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
-            parse.registry(), new SdlVerdicts(parse.failures(), parse.registryErrors()),
+            parse.registry(), assembly, new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
+        writeSchemaProblems(store.dsl(), GRAPH, parse, assembly);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry());
     }
 
@@ -321,6 +333,26 @@ public final class CapturedStore implements AutoCloseable {
     // ---------------------------------------------------------------------------------------
     // The primitives, for a test that drives FactCapture itself.
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * Writes what the three reading stages refused, for a test that drove the walk itself and wants
+     * the verdict beside what the walk transcribed.
+     *
+     * <p>A primitive rather than a step inside the walk, because the two are on either side of the
+     * migration: the walk writes the transcription families and {@link SdlSchemaProblems} writes the
+     * one relation all three stages record in. Reached directly rather than through {@code
+     * SdlCapture}, whose anchor derivation sweeps every anchor row carrying an instant other than
+     * its own and would therefore delete what the walk had just written, and called after the walk,
+     * the verdict row referencing a graph whose anchor row is the walk's to write.
+     */
+    public static void writeSchemaProblems(DSLContext dsl, String graphName,
+                                           SchemaLoader.PerSourceParse parse,
+                                           SchemaAssembly assembly) {
+        var raised = new ArrayList<SchemaError>(parse.registryErrors());
+        raised.addAll(assembly.errors());
+        SdlSchemaProblems.write(dsl, graphName, parse.failures(), List.copyOf(raised),
+            LocalDateTime.now());
+    }
 
     /** The graph identity a fixture captured under, shared so readers can scope by it. */
     public static GraphIdentity graph(Path directory) {

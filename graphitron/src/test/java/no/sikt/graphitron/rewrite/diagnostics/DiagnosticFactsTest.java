@@ -35,6 +35,7 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.test.CapturedStore;
 import static no.sikt.graphitron.model.test.FactWriters.buildWarningFacts;
 import static no.sikt.graphitron.model.test.FactWriters.compileFacts;
 import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
@@ -337,8 +338,8 @@ class DiagnosticFactsTest {
     }
 
     @Test
-    @DisplayName("the SDL-toolchain arms project their verdicts, and the parser arm's variant is a pinned spelling")
-    void sdlToolchainArmsProjectTheirVerdicts() throws java.io.IOException {
+    @DisplayName("the SDL-toolchain arm projects every stage's verdict, and the parser stage's variant is a pinned spelling")
+    void sdlToolchainArmProjectsItsVerdicts() throws java.io.IOException {
         // One refusal per stage, and no cascade: the root operation stays in the file that parses,
         // so assembly's only complaint is the dangling reference rather than a missing query root
         // caused by the refused file.
@@ -359,6 +360,7 @@ class DiagnosticFactsTest {
                 read.registry(), assembly, verdicts,
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
+            CapturedStore.writeSchemaProblems(dsl, GRAPH, read, assembly);
 
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
@@ -370,26 +372,32 @@ class DiagnosticFactsTest {
                 .filter(row -> "MissingTypeError".equals(row.getVariant()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
-                    "the schema-error arm should render graphql-java's error class onto variant"));
+                    "the arm should render graphql-java's error class onto variant"));
             assertThat(assemblyRow.getSeverity()).isEqualTo("error");
             assertThat(assemblyRow.getActionable()).isTrue();
             assertThat(assemblyRow.getKind()).as("the Rejection three-way fork does not apply").isNull();
             assertThat(assemblyRow.getLintRule()).isNull();
 
-            // The parser stage has exactly one way to refuse, so the view states its variant as a
-            // literal. Nothing in SQL can resolve a Java class name, so the spelling is pinned here
-            // or it rots silently the first time the exception is renamed or replaced.
-            String parserVariant = graphql.parser.InvalidSyntaxException.class.getSimpleName();
+            // The view reads the parse stage's variant off the same error_class column as the
+            // other two stages. It used to spell InvalidSyntaxException as a literal, on the claim
+            // that the stage has one way to refuse; it has several, that name being a base class
+            // whose subclasses the parser throws, and this fixture provokes one of them. So what
+            // is pinned is that the projection is graphql-java's own class name for this refusal,
+            // read off the exception rather than restated, plus the family it belongs to.
+            var parseFailure = read.failures().getFirst();
+            assertThat(parseFailure.cause())
+                .isInstanceOf(graphql.parser.InvalidSyntaxException.class);
+            String parserVariant = parseFailure.cause().getClass().getSimpleName();
             var parserRow = rows.stream()
                 .filter(row -> parserVariant.equals(row.getVariant()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
-                    "the parser arm's variant should be the literal " + parserVariant));
+                    "the parse stage's variant should be " + parserVariant));
             assertThat(parserRow.getSeverity()).isEqualTo("error");
             assertThat(parserRow.getActionable()).isTrue();
             assertThat(parserRow.getFile())
-                .as("the parser arm projects its stored source name, one spelling with every "
-                    + "other arm")
+                .as("the parse stage's row projects its stored source name, one spelling with "
+                    + "every other arm")
                 .isEqualTo(broken.toString());
             assertThat(parserRow.getSourceLine()).isEqualTo(2);
             assertThat(parserRow.getMessage())
@@ -402,11 +410,11 @@ class DiagnosticFactsTest {
     /**
      * The file axis is a path wherever it is stored and wherever the view projects one, so nothing
      * in this stratum computes a spelling and the two wires that name a document by URI render one
-     * at their own boundary. Stated over rows in seven of the eight arms, which takes three
+     * at their own boundary. Stated over rows in six of the seven arms, which takes three
      * fixtures rather than one build: the three loaders share a store, while the pilot arm and the
-     * SDL toolchain's arms each need their own capture (a capture clears the graph's partition on
+     * SDL toolchain's arm each need their own capture (a capture clears the graph's partition on
      * the way in), and no one build both refuses a source at the parser and reaches javac with it.
-     * The eighth, the unlowerable-ordering arm, projects a captured directive's own source name
+     * The seventh, the unlowerable-ordering arm, projects a captured directive's own source name
      * like the pilot beside it and is stated at its own tier
      * ({@code UnlowerableOrderingRejectionPipelineTest}), whose fixture needs a catalog this one
      * has no arm for.
@@ -447,11 +455,13 @@ class DiagnosticFactsTest {
         Files.writeString(dangling, "type Query { gone: Nope }\n");
         var sources = List.of(SchemaSource.file(broken), SchemaSource.file(dangling));
         var read = SchemaLoader.parsePerSource(sources);
+        var assembly = SchemaAssembly.of(read.registry());
         withStore(dsl -> {
             FactCapture.capture(dsl, false, graph(), SubjectConfig.none(),
-                read.registry(), SchemaAssembly.of(read.registry()), SdlVerdicts.of(read),
+                read.registry(), assembly, SdlVerdicts.of(read),
                 SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
                 null, List.of());
+            CapturedStore.writeSchemaProblems(dsl, GRAPH, read, assembly);
             assertEveryFileIsAPath(dsl, 2);
         });
     }

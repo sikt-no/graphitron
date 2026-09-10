@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * "The interface type 'Node' is not present when resolving type 'Inventory'" and no such schema
  * builds. But capture reads the parsed registry before assembly and is handed the refusal as a
  * value rather than an exception, so the store's record of a schema that did not build is this row
- * and the {@code graphql_schema_error} row beside it. Measured on exactly that document, capture
+ * and the {@code graphql_schema_problem} row beside it. Measured on exactly that document, capture
  * completes and both rows are there. A reference from {@code container_kind} would make that
  * capture throw an integrity violation instead, so the store would refuse to record the one schema
  * whose error it exists to explain. What the reference would have caught is a detection over the
@@ -116,7 +116,7 @@ class NamedTypeHierarchyGateTest {
                     .execute())
                 .as("capture runs before assembly and records its refusal rather than throwing, so "
                     + "the transcription of a schema that does not build has to be writable; this "
-                    + "row and the graphql_schema_error row beside it are that record")
+                    + "row and the graphql_schema_problem row beside it are that record")
                 .doesNotThrowAnyException();
         });
     }

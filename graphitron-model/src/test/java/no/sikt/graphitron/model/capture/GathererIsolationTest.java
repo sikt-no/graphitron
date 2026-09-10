@@ -59,9 +59,9 @@ class GathererIsolationTest {
         // And this one writes the jvm_classfile_ census from the classfiles themselves.
         roll.put("capture/classpath", "ClasspathFactCapture");
         roll.put("capture/sdl", "SdlFactCapture");
-        // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document.
+        // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document, and
+        // the verdict beside them, the three reading stages having one relation between them.
         roll.put("capture/document", "SdlCapture");
-        roll.put("capture/verdict", "SdlVerdictCapture");
         roll.put("capture/graphitron", "GraphitronFactCapture");
         roll.put("capture/macro", "MacroCapture");
         roll.put("capture/java", "JavaSourceFacts");

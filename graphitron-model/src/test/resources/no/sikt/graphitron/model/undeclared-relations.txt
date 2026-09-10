@@ -80,8 +80,6 @@ graphql_poly_member
 graphql_root_operation
 graphql_schema_directive
 graphql_schema_directive_arg
-graphql_schema_error
-graphql_syntax_error
 graphql_type
 graphql_type_declaration
 graphql_type_directive

@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -125,7 +125,7 @@ class CapturedStoreTest {
     @DisplayName("the one-source refused arm records the verdict with no surviving source beside it")
     void theRefusedArmAlsoCoversAGraphThatLostItsOnlySource(@TempDir Path tmp) {
         try (var store = CapturedStore.ofRefusedSchema(tmp, "type Foo { x: }\n")) {
-            assertThat(store.dsl().fetchCount(GRAPHQL_SYNTAX_ERROR))
+            assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_PROBLEM))
                 .as("the refusal is what this graph has instead of a transcription")
                 .isPositive();
             assertThat(store.dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Foo")))
@@ -142,7 +142,7 @@ class CapturedStoreTest {
             assertThat(store.dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Film")))
                 .as("the source that parsed is in the store, which is what a reader answers from")
                 .isOne();
-            assertThat(store.dsl().fetchCount(GRAPHQL_SYNTAX_ERROR))
+            assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_PROBLEM))
                 .as("and the refusal is recorded, which is what makes the read not-clean")
                 .isPositive();
         }

@@ -4,8 +4,7 @@ import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.Optional;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -19,17 +18,18 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * <p>Both are rows. Availability is the presence of the graph's {@code store_graph} anchor, the row
  * every graph-keyed foreign key lands on, so its presence is the store holding this graph and its
- * absence is nothing having captured it. Freshness is the emptiness of the two SDL verdict
- * relations over the graph's partition: {@code graphql_syntax_error} and
- * {@code graphql_schema_error} are written on every pass, on either outcome, so no rows means the
- * document was read clean and rows mean the newest read refused something while the transcription
- * families still hold what the parseable sources yielded. That is what {@code Previous} has always
- * meant, and it is what the families do per source anyway.
+ * absence is nothing having captured it. Freshness is the emptiness of
+ * {@code graphql_schema_problem} over the graph's partition: it is written on every pass, on either
+ * outcome, so no rows means the document was read clean and rows mean the newest read refused
+ * something while the transcription families still hold what the parseable sources yielded. That is
+ * what {@code Previous} has always meant, and it is what the families do per source anyway.
  *
- * <p>One statement carrying three {@code EXISTS} predicates, two of them or-ed into the freshness
- * axis. Nothing here needs a count: the axes turn on whether a partition is empty, and a reader that
- * counted refusals would be paying for a number the {@code diagnostics} tools already answer
- * properly.
+ * <p>One statement carrying two {@code EXISTS} predicates, one per axis. The freshness axis was an
+ * or over two relations while the parser's refusals and the document-wide stages' were kept apart;
+ * one relation records all three stages now, with the stage a column, and which stage refused is no
+ * business of this record's. Nothing here needs a count either: the axes turn on whether a partition
+ * is empty, and a reader that counted refusals would be paying for a number the {@code diagnostics}
+ * tools already answer properly.
  *
  * <p>Two readings of the axes are worth stating because a caller could expect otherwise. A graph
  * whose anchor a diagnostics loader minted before any schema capture reads as available, which is
@@ -65,11 +65,8 @@ record SchemaLifecycle(boolean captured, boolean refused) {
                     .from(STORE_GRAPH)
                     .where(STORE_GRAPH.GRAPH_NAME.eq(store.graphName())))),
                 field(exists(selectOne()
-                    .from(GRAPHQL_SYNTAX_ERROR)
-                    .where(GRAPHQL_SYNTAX_ERROR.GRAPH_NAME.eq(store.graphName())))
-                    .or(exists(selectOne()
-                        .from(GRAPHQL_SCHEMA_ERROR)
-                        .where(GRAPHQL_SCHEMA_ERROR.GRAPH_NAME.eq(store.graphName()))))))
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(store.graphName())))))
             .fetchSingle();
         return new SchemaLifecycle(row.value1(), row.value2());
     }

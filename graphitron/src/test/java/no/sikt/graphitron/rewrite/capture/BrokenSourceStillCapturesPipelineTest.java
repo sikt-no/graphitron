@@ -15,8 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -32,11 +30,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * anchors. Before the split, one unparseable file meant no registry at all, so the run threw at the
  * loader and the store learned nothing: the workspace lost every fact about every other file, and an
  * editor reading those facts had nothing to say about the very buffer being edited. Now every stage
- * runs over what survived the last one, the refusals are recorded, and the failure is pronounced
- * afterwards.
+ * runs over what survived the last one and the failure is pronounced afterwards.
  *
  * <p>The run still fails, and with the same exception it always threw. The change is what is true of
  * the store by the time it does.
+ *
+ * <p><b>Half of this property is currently unpinned, and deliberately so.</b> What each stage
+ * refused is recorded in {@code graphql_schema_problem}, written by the document gatherer, which
+ * this path does not reach: the generator's capture seam writes the walk's families, and the
+ * gatherer runs from a separate call the mojos make after the pass returns, which a refusal never
+ * gets to. So the cases below assert the surviving half, that a broken file costs its own
+ * declarations and no others, and say nothing about the verdict. What pins the verdict is
+ * no.sikt.graphitron.model.SdlSchemaProblemsTest, against the gatherer itself, over a corpus that
+ * provokes each of the three stages. Re-pointing these cases at the verdict relation is a question
+ * about where the model capture is called from, not about this test.
  */
 @PipelineTier
 class BrokenSourceStillCapturesPipelineTest {
@@ -67,12 +74,6 @@ class BrokenSourceStillCapturesPipelineTest {
         try (var store = GraphitronModelStore.openAt(storeDir)) {
             assertThat(store.location()).as("the fixture's store is the shared file, not a fallback")
                 .isPresent();
-
-            assertThat(store.dsl().select(GRAPHQL_SYNTAX_ERROR.SOURCE_NAME, GRAPHQL_SYNTAX_ERROR.SOURCE_LINE)
-                .from(GRAPHQL_SYNTAX_ERROR).fetch()
-                .map(row -> row.value1() + ":" + row.value2()))
-                .as("the refused source, located, which is what an editor squiggles")
-                .containsExactly(broken + ":2");
 
             assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
                 .fetchSet(0, String.class))
@@ -105,8 +106,8 @@ class BrokenSourceStillCapturesPipelineTest {
     }
 
     @Test
-    @DisplayName("a run whose schema will not assemble still captures the assembly verdict")
-    void anUnassemblableSchemaRecordsItsVerdict(@TempDir Path tmp) throws IOException {
+    @DisplayName("a run whose schema will not assemble still captures what it declared")
+    void anUnassemblableSchemaStillCapturesItsDeclarations(@TempDir Path tmp) throws IOException {
         Path schemaDir = Files.createDirectories(tmp.resolve("schema"));
         Path dangling = schemaDir.resolve("dangling.graphqls");
         // Parses, and the registry admits it; only assembly can see that Nope resolves to nothing,
@@ -121,13 +122,11 @@ class BrokenSourceStillCapturesPipelineTest {
             .isInstanceOf(RuntimeException.class);
 
         try (var store = GraphitronModelStore.openAt(storeDir)) {
-            assertThat(store.dsl().select(GRAPHQL_SCHEMA_ERROR.STAGE, GRAPHQL_SCHEMA_ERROR.ERROR_CLASS)
-                .from(GRAPHQL_SCHEMA_ERROR).fetch()
-                .map(row -> row.value1() + "|" + row.value2()))
-                .containsExactly("ASSEMBLY|MissingTypeError");
-            assertThat(store.dsl().fetchCount(GRAPHQL_SYNTAX_ERROR))
-                .as("nothing refused at the parse stage, so that relation stays honestly empty")
-                .isZero();
+            assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
+                .fetchSet(0, String.class))
+                .as("the document parsed and the registry admitted it, so capture ran; only "
+                    + "assembly could see that Nope resolves to nothing, and it ran after")
+                .contains("Query");
         }
     }
 

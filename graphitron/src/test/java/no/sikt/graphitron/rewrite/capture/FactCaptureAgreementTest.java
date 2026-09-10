@@ -86,8 +86,6 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SYNTAX_ERROR;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_ERROR;
 import static no.sikt.graphitron.model.Tables.LINT_FINDING;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
@@ -488,9 +486,13 @@ class FactCaptureAgreementTest {
             "graphitron_ast_error_generic_handler_entry",
             "graphitron_ast_error_database_handler_entry",
             "graphitron_ast_error_validation_handler_entry",
-            // What went wrong making a schema out of the documents, as graphql-java stated it.
-            // GraphitronSchema is only ever built from a corpus that made a schema, so it has
-            // nothing to say about one that did not.
+            // What went wrong making a schema out of the documents, as graphql-java stated it,
+            // at whichever of the three reading stages said so. GraphitronSchema is only ever
+            // built from a corpus that made a schema, so it has nothing to say about one that did
+            // not. The family's only verdict relation, and unshadowed for that reason rather than
+            // by exemption: the walk's own two verdict relations are retired, so there is no
+            // oracle arm left here to agree with. SdlSchemaProblemsTest pins it, over a corpus
+            // that provokes each stage in turn.
             "graphql_schema_problem")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
@@ -707,8 +709,6 @@ class FactCaptureAgreementTest {
         registrations.put("lint_finding_fix", Arm.ORACLE);
         registrations.put("lint_finding_fix_edit", Arm.ORACLE);
         registrations.put("build_warning_no_rule", Arm.ORACLE);
-        registrations.put("graphql_syntax_error", Arm.ORACLE);
-        registrations.put("graphql_schema_error", Arm.ORACLE);
         return Map.copyOf(registrations);
     }
 
@@ -2532,154 +2532,6 @@ class FactCaptureAgreementTest {
                 .as("the sibling graph's loaded diagnostics partitions, after another graph's capture")
                 .isEqualTo(siblingBefore);
         }
-    }
-
-    /**
-     * The SDL-toolchain arms' write-read content anchor. One fixture provokes all three reading
-     * stages at once, and the rows are reduced against what the stages themselves reported rather
-     * than against hand-written literals, so the anchor pins the transcription without restating
-     * graphql-java's verdicts (the one thing the arm leaves genuinely unpinned).
-     *
-     * <p>The fixture is also the pipeline property in miniature: three sources, one of which will
-     * not parse and one of which redefines a type the first declared, and the run still reaches
-     * assembly and still has facts about every source that survived.
-     */
-    @Test
-    @DisplayName("a capture writes every reading stage's verdict, and the survivors' facts with them")
-    void sdlVerdictsAreWrittenAsTheStagesReportedThem(@TempDir Path tmp) throws java.io.IOException {
-        Path good = tmp.resolve("good.graphqls");
-        java.nio.file.Files.writeString(good, "type Query { ping: String, gone: Nope }\ntype Dup { a: String }\n");
-        Path broken = tmp.resolve("broken.graphqls");
-        java.nio.file.Files.writeString(broken, "type Ignored { id: ID! }\nstrayTokenHere\n");
-        Path redefining = tmp.resolve("redefining.graphqls");
-        java.nio.file.Files.writeString(redefining, "type Dup { b: String }\n");
-
-        var sources = List.of(SchemaSource.file(good), SchemaSource.file(broken),
-            SchemaSource.file(redefining));
-        var read = SchemaLoader.parsePerSource(sources);
-        var assembly = no.sikt.graphitron.model.schema.SchemaAssembly.of(read.registry());
-        var verdicts = no.sikt.graphitron.model.schema.SdlVerdicts.of(read);
-
-        // All three stages refused something, so no arm of the anchor below is vacuous.
-        assertThat(read.failures()).hasSize(1);
-        assertThat(verdicts.schemaErrors()).extracting(e -> e.stage().name()).contains("REGISTRY");
-        assertThat(assembly.errors()).isNotEmpty();
-
-        var graph = new GraphIdentity("own", tmp);
-        try (var store = GraphitronModelStore.open()) {
-            FactCapture.capture(store.dsl(), false, graph, SubjectConfig.none(),
-                read.registry(), assembly, verdicts,
-                SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-                null, List.of());
-
-            var syntaxRows = store.dsl().selectFrom(GRAPHQL_SYNTAX_ERROR)
-                .where(GRAPHQL_SYNTAX_ERROR.GRAPH_NAME.eq("own")).fetch();
-            assertThat(syntaxRows).hasSize(1);
-            var syntaxRow = syntaxRows.getFirst();
-            var failure = read.failures().getFirst();
-            assertThat(syntaxRow.getSourceName()).isEqualTo(failure.sourceName());
-            assertThat(syntaxRow.getMessage()).isEqualTo(failure.verbatimMessage());
-            assertThat(syntaxRow.getSourceLine()).isEqualTo(failure.location().getLine());
-            assertThat(syntaxRow.getSourceColumn()).isEqualTo(failure.location().getColumn());
-
-            assertThat(store.dsl().selectFrom(GRAPHQL_SCHEMA_ERROR)
-                .where(GRAPHQL_SCHEMA_ERROR.GRAPH_NAME.eq("own"))
-                .orderBy(GRAPHQL_SCHEMA_ERROR.ORDINAL).fetch()
-                .map(row -> row.getOrdinal() + "|" + row.getStage() + "|" + row.getErrorClass()
-                    + "|" + row.getMessage()))
-                .containsExactlyElementsOf(renderExpectedSchemaErrors(verdicts, assembly));
-
-            // The stages refusing did not cost the surviving sources their facts, and the source
-            // that did not parse contributed none: the property the whole arrangement rests on.
-            assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
-                .where(GRAPHQL_TYPE.GRAPH_NAME.eq("own")).fetchSet(0, String.class))
-                .contains("Query", "Dup")
-                .doesNotContain("Ignored");
-        }
-    }
-
-    /**
-     * The schema-error rows the verdicts and the assembly entail, in the same rendering the
-     * assertion reads. Both stages in the order they ran, which is the order the ordinal keys.
-     */
-    private static List<String> renderExpectedSchemaErrors(
-            no.sikt.graphitron.model.schema.SdlVerdicts verdicts,
-            no.sikt.graphitron.model.schema.SchemaAssembly assembly) {
-        var expected = new ArrayList<String>();
-        var errors = new ArrayList<>(verdicts.schemaErrors());
-        errors.addAll(assembly.errors());
-        int ordinal = 0;
-        for (var error : errors) {
-            expected.add(ordinal++ + "|" + error.stage().name() + "|" + error.errorClass()
-                + "|" + error.message());
-        }
-        return expected;
-    }
-
-    /**
-     * The SDL-toolchain arms' lifecycle anchor. Unlike the loaded diagnostics arms, whose rows a
-     * separate writer seeds, these are written by capture itself, so the anchor is a capture that
-     * refused things followed by one that refused nothing: the first proves the rows are written at
-     * all, the second that a clean read empties exactly the reading graph's own partition. That
-     * second capture is also what makes emptiness readable as "this document was read clean"
-     * instead of "nobody has looked".
-     */
-    @Test
-    @DisplayName("a clean capture empties its own graph's SDL verdict partitions and no other's")
-    void oracleLifecycleClearsTheOwnedSdlVerdictPartitionsOnly(@TempDir Path tmp) throws java.io.IOException {
-        Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
-        Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
-        try (var store = GraphitronModelStore.open()) {
-            var own = new GraphIdentity("own", ownDir);
-            var sibling = new GraphIdentity("sibling", siblingDir);
-            captureRefusing(store, own, ownDir);
-            captureRefusing(store, sibling, siblingDir);
-            assertThat(sdlVerdictPartition(store, "own")).isNotEmpty();
-            var siblingBefore = sdlVerdictPartition(store, "sibling");
-            assertThat(siblingBefore).isNotEmpty();
-
-            FactCapture.capture(store.dsl(), true, own, SubjectConfig.none(),
-                CapturedStore.registryOf(ownDir, "type Query { ping: String }"),
-                CapturedStore.attributionOf(ownDir),
-                null, List.of());
-            assertThat(sdlVerdictPartition(store, "own"))
-                .as("the captured graph's SDL verdict partitions, after a clean warm capture")
-                .isEmpty();
-            assertThat(sdlVerdictPartition(store, "sibling"))
-                .as("the sibling graph's SDL verdict partitions, after another graph's capture")
-                .isEqualTo(siblingBefore);
-        }
-    }
-
-    /** A capture of a source set whose parse and assembly both refuse something. */
-    private static void captureRefusing(GraphitronModelStore store, GraphIdentity graph,
-                                        Path directory) throws java.io.IOException {
-        Path missingType = directory.resolve("missing.graphqls");
-        java.nio.file.Files.writeString(missingType, "type Query { gone: Nope }\n");
-        Path broken = directory.resolve("broken.graphqls");
-        java.nio.file.Files.writeString(broken, "strayTokenHere\n");
-        var sources = List.of(SchemaSource.file(missingType), SchemaSource.file(broken));
-        var read = SchemaLoader.parsePerSource(sources);
-        var verdicts = no.sikt.graphitron.model.schema.SdlVerdicts.of(read);
-        FactCapture.capture(store.dsl(), false, graph, SubjectConfig.none(),
-            read.registry(), verdicts,
-            SchemaInputAttribution.build(sources.stream().map(f -> SchemaInput.file(f.path())).toList()),
-            null, List.of());
-    }
-
-    /** The graph's SDL verdict rows across both relations, rendered stably. */
-    private static List<String> sdlVerdictPartition(GraphitronModelStore store, String graphName) {
-        var rows = new ArrayList<String>();
-        store.dsl().selectFrom(GRAPHQL_SYNTAX_ERROR)
-            .where(GRAPHQL_SYNTAX_ERROR.GRAPH_NAME.eq(graphName))
-            .orderBy(GRAPHQL_SYNTAX_ERROR.SOURCE_NAME)
-            .forEach(row -> rows.add("syntax|" + row.getSourceName() + "|" + row.getMessage()));
-        store.dsl().selectFrom(GRAPHQL_SCHEMA_ERROR)
-            .where(GRAPHQL_SCHEMA_ERROR.GRAPH_NAME.eq(graphName))
-            .orderBy(GRAPHQL_SCHEMA_ERROR.ORDINAL)
-            .forEach(row -> rows.add("schema|" + row.getOrdinal() + "|" + row.getStage()
-                + "|" + row.getErrorClass()));
-        return rows;
     }
 
     /** The graph's loaded diagnostics rows across all four relations, rendered stably. */

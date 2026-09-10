@@ -292,10 +292,12 @@ class GraphitronMcpServerTest {
     }
 
     /**
-     * The other arm of the freshness derivation: a document-wide verdict rather than a refused source.
-     * Both sources parse here and the registry declines the second declaration of one type, so the
-     * axis is only {@code Previous} if it reads {@code graphql_schema_error} beside the syntax
-     * relation. One relation would have answered every case above and none of this one.
+     * The other stage of the freshness derivation: a document-wide verdict rather than a refused
+     * source. Both sources parse here and the registry declines the second declaration of one type,
+     * so the axis is only {@code Previous} if the relation it reads records the registry's stage as
+     * well as the parser's. One relation records all three, which is what lets the axis be a single
+     * predicate; a relation holding only parse refusals would answer every case above and none of
+     * this one.
      */
     @Test
     void statusToolReadsADocumentWideVerdictAsPreviousToo(@TempDir Path tmp) {

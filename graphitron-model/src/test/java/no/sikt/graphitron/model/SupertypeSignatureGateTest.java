@@ -119,14 +119,15 @@ class SupertypeSignatureGateTest {
      * appears on the reconstruction roster below for the same reason, and that row is a record of
      * the cure rather than of the defect.
      *
-     * <p>Three rows are one fact written twice while a successor is being stood up beside its
+     * <p>Two rows are one fact written twice while a successor is being stood up beside its
      * incumbent, and each goes when the incumbent does rather than when somebody writes a supertype.
-     * {@code graphql_schema_error} and {@code graphql_schema_problem} are the verdict on a corpus,
-     * the second recording per stage what the first recorded per relation. {@code jvm_class} and
-     * {@code jvm_classfile}, with their supertype twins, are the class census read two ways. Naming
-     * them here is not an exemption: a supertype over either pair would be the wrong answer, because
-     * the pair is not two kinds of one thing but one thing counted twice, and the fix is the
-     * subtraction that is already planned.
+     * {@code jvm_class} and {@code jvm_classfile}, with their supertype twins, are the class census
+     * read two ways. Naming them here is not an exemption: a supertype over the pair would be the
+     * wrong answer, because it is not two kinds of one thing but one thing counted twice, and the
+     * fix is the subtraction that is already planned. It was three rows until the verdict pair went,
+     * and that one is the worked example of the sentence above: {@code graphql_schema_error}
+     * recorded per relation what {@code graphql_schema_problem} records per stage, and when the
+     * incumbent was retired the row left this roster rather than earning a supertype.
      *
      * <p>One row left the roster in the same change and for the same reason read backwards.
      * {@code graphitron_error_entry} and {@code graphql_type_directive} shared a payload only while
@@ -134,7 +135,7 @@ class SupertypeSignatureGateTest {
      * declare as a foreign key into {@code graphql_type_declaration}. Their supertype was written
      * all along and the columns beside it were hiding that.
      *
-     * <p>Worth recording how the three became visible, because it says something about the rule above
+     * <p>Worth recording how they became visible, because it says something about the rule above
      * rather than about them. Each pair was invisible while one side carried a mark-and-sweep stamp
      * the other did not, the stamp differing their payloads and so keeping them apart. Excluding
      * provenance from the payload is what let the gate see that the two say the same thing, which is
@@ -150,7 +151,6 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
-        Set.of("graphql_schema_error", "graphql_schema_problem"),
         Set.of("jvm_class", "jvm_classfile"),
         Set.of("jvm_class_supertype", "jvm_classfile_supertype"),
         Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",

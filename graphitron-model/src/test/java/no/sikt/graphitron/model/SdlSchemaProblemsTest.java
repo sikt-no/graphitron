@@ -118,12 +118,16 @@ class SdlSchemaProblemsTest {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
-                .as("the parser's refusal, attributed to the file it refused")
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME,
+                    GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                .as("the parser's refusal, attributed to the file it refused, under graphql-java's "
+                    + "own class for it. An unterminated declaration is the base class itself; a "
+                    + "document that parses and then does not stop is a subclass, which is why the "
+                    + "diagnostic view reads this column rather than spelling one name as a literal")
                 .anySatisfy(row -> {
                     assertThat(row.value1()).isEqualTo("PARSE");
                     assertThat(row.value2()).endsWith("broken.graphqls");
+                    assertThat(row.value3()).isEqualTo("InvalidSyntaxException");
                 });
 
             assertThat(dsl.fetchCount(STORE_SOURCE,
@@ -157,6 +161,38 @@ class SdlSchemaProblemsTest {
     }
 
     /**
+     * The sweep is per graph, so one graph being read says nothing about another's problems. Worth
+     * a case of its own because the sweep deletes by instant rather than by key: a delete that
+     * forgot its graph predicate would empty every sibling partition and no per-graph assertion
+     * above would see it.
+     */
+    @Test
+    @DisplayName("reading one graph leaves another graph's problems alone")
+    void theSweepDoesNotReachAnotherGraph(@TempDir Path tmp) throws IOException {
+        Path broken = Files.createDirectories(tmp.resolve("broken"));
+        Path clean = Files.createDirectories(tmp.resolve("clean"));
+        write(broken, "dangling.graphqls", "type Query { a: Missing }\n");
+        write(clean, "ok.graphqls", "type Query { a: String }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, GRAPH, broken);
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(GRAPH)))
+                .as("the graph with the dangling reference").isNotZero();
+
+            read(dsl, "sibling", clean);
+
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(GRAPH)))
+                .as("a clean reading of another graph is not a fix for this one")
+                .isNotZero();
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq("sibling")))
+                .as("and the graph that read clean has none of its own").isZero();
+        });
+    }
+
+    /**
      * The same problem said twice is one problem. One missing type reached for from five fields
      * raises five errors whose sentences are byte-identical, the message naming the absent type and
      * the type that reached for it but never the field, so four of the five are a reader's tax and
@@ -181,7 +217,12 @@ class SdlSchemaProblemsTest {
 
     /** One reading of everything the directory holds, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir) {
-        SdlCapture.capture(dsl, new GraphIdentity(GRAPH, baseDir),
+        read(dsl, GRAPH, baseDir);
+    }
+
+    /** {@link #read(DSLContext, Path)} under a graph the case names, for the two-graph case. */
+    private static void read(DSLContext dsl, String graph, Path baseDir) {
+        SdlCapture.capture(dsl, new GraphIdentity(graph, baseDir),
             SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
             LocalDateTime.now());
