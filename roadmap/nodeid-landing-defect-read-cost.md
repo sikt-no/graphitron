@@ -7,7 +7,7 @@ priority: 1
 theme: nodeid
 depends-on: []
 created: 2026-09-09
-last-updated: 2026-09-09
+last-updated: 2026-09-10
 ---
 
 # A graphitron:dev round on a consumer schema answers in seconds again: the @nodeId landing verdict expands an unregistered expensive view per driving row
@@ -139,6 +139,18 @@ reader stood. The landing-defect verdict is where the reader stood. The hop is o
 own body has not been bisected, so registering it now would price a rule with a possible re-evaluation
 still inside it and then blindfold the planner to whatever that was.
 
+**This ships before R876 lands, and that item picks between levers rather than withholding one.**
+The dev loop does not start at consumer scale and a consumer's validation gate cannot run, so
+nothing here waits on the collapse and nothing here is blocked on it. What R876 changes is the cost
+of choosing wrong, and for every outcome in this plan that cost is small enough to state up front. A
+rewrite has no rework: restating a rule so the planner can prune it is what the collapse wants
+anyway. A registration has three lines of it. The DDL it writes is a keyed table holding the rule's
+rows, which is what that item's end state has the graphitron gatherer store under its own name in
+any case; what the collapse takes back is the `_live` spelling, the `meta_materialize` row and a
+gate subtraction that empties itself. So R876 breaks a tie between levers within measurement of each
+other, and decides nothing else here. Where the two disagree, the lever that gets the loop started
+wins and the finding is reported to that item.
+
 **Precondition for pickup.** Steps 1 and 3 run against the `sis` store copy and the `sis`
 workspace, neither of which is in this repository, so the session that takes this item to
 In Progress is a local one on the machine that holds that consumer clone. A sandbox session cannot
@@ -154,6 +166,14 @@ skill's step 3. The slices, each a standalone statement:
 - `walked` with each `LEFT JOIN` removed in turn: without `tg`, without `itg`, without `d`.
 - `intent_argument_reference_step_target` and `intent_input_field_reference_step_target` alone, and
   the `d` derived table alone.
+- `intent_argument_scope_table` alone, and its row count against `intent_field_scope_table`'s. The
+  `tg` walk's recursive base case joins it and `intent_node_id_decode_endpoint` joins it again, so
+  the hop's subtree meets it twice. It is a registered target today, so the slice prices a table read
+  rather than a rule and will be cheap; the row count is why the slice is here. R876's diagnosis
+  records this relation as `intent_field_scope_table` crossed with the field's arguments and nothing
+  else, no argument predicate in the rule and all nine read sites already holding the field, which is
+  a fan-out over the seed of the `tg` recursion. Whether it widens that seed on this population is
+  measurable in one count and has never been measured.
 - The hop whole, as the baseline the slices are read against.
 
 Read the result as the skill's step 5 does: the term whose removal takes the baseline to the
@@ -166,7 +186,19 @@ separate:
   reference-target walks). The lever is a registration of that relation, not of the hop: it is
   deeper, it is named from other view bodies as well, and a table there stops the per-row
   re-evaluation for every reader above it including the hop. Whether both reference-target views
-  need it or one does is what the slices say.
+  need it or one does is what the slices say. One check before that registration is written, and it
+  applies to `tg` only. The `tg` walk's base case joins `intent_argument_scope_table`, which is one
+  of R876's three measured wrong-grain defects and is unrepointed today, its nine read sites still
+  standing. If that item's claim holds, that the argument cannot enter the answer and every reader
+  holds the field already, then joining `intent_field_scope_table` on the field alone is the same
+  answer. Price the walk both ways: it is one more slice and it can only inform the choice. If the
+  substitution carries the win and repointing this one join is the whole diff, take it here, because
+  a rewrite is the outcome with no rework at all when the collapse lands, and report the reading to
+  R876 rather than waiting on it. If it is a wash, or if repointing reaches the relation's other
+  eight read sites and becomes that item's diff rather than this one's, register the walk now and
+  leave the fan-out where it is. A registration of `tg` above an unrepointed fan-out is rung 4 above
+  an open rung-1 finding, which is worth writing into the `reason` and is not worth a stalled dev
+  loop.
 - *The `d` derived table carries it.* It computes how many foreign keys connect each (table,
   referenced table) pair across the whole catalog, per hop row. That is a catalog-family fact with
   no relation stating it, which is the shape the shape-problem item calls a supertype the readers
@@ -178,9 +210,24 @@ separate:
   standing out.* The window exists to carry `last_position`, a marker the hop's key-column child asked
   for so it would not name the hop a second time; if the window is the term, state the marker as its
   own relation keyed on the branch (`MAX(position)` grouped over the hop's key rather than windowed
-  over its rows) and have the two readers join it, leaving the hop prunable. If nothing separates, the
-  lever is the registration of `intent_node_id_decode_hop` as originally proposed: the rule is
-  correct as a view and too expensive to evaluate per naming, and both of its readers gain.
+  over its rows) and have the two readers join it, leaving the hop prunable.
+
+**A tie is not the registration's cue.** An earlier draft made the registration of
+`intent_node_id_decode_hop` the default when the slices do not separate. That is the one case R876
+measured against, on the workload's worst reader: `intent_condition_table_parameter` cost 25.53 s of
+an 88.2 s workload, restating the rule took it to 2.73 s, and registering the relation underneath
+instead took it to 0.02 s while burying the reason the rule was dear. That item's inference to refuse
+says the rest: readers getting dearer without a registration shows the rule underneath is expensive,
+not that the registration earns its keep. Slices that tie say the shape is not understood yet, which
+is the worst moment to put a table with statistics of its own between the planner and the rule.
+
+So a tie buys one round of finer slices and the owner arithmetic below, and one round is the whole
+of it. This is a dev loop that does not start, not a search that can run until it is satisfying. If
+that round still names no term, the registration of `intent_node_id_decode_hop` is the outcome, on
+the argument the draft carried: the rule is correct as a view and too expensive to evaluate per
+naming, and both of its readers gain. What changes is that it is taken as a conclusion with the
+tied slices recorded in its `reason`, so the next reader inherits the search instead of repeating
+it, rather than as the shrug an inconclusive measurement falls back on.
 
 Whichever outcome, the reader's arm 2 stays as written. Once the relation it names per row is a table
 or a prunable view, a correlated `NOT EXISTS` over hundreds of driving rows is a seek per row, which
@@ -194,6 +241,25 @@ before `Materializations.refresh`, so a stage cannot see the rows it would need.
 `intent_node_id_decode_column_live` registration records the same seam for the same family. That the
 hop crosses families is true and is what the `meta_relation` row below states as data; it is not what
 blocks a stage.
+
+The seam is this store's today rather than a property of the rule, and the next reader of this
+relation needs that said. R876's target architecture makes every registered target the graphitron
+gatherer's own relation and collapses `intent_` into that gatherer, with per-gatherer transaction
+control as the named prerequisite; under it a stage and the relations it would read sit under one
+owner and the ordering that blocks this stage is that owner's to choose. Rung 1 is closed here and
+not closed forever.
+
+**The owner question, computed once and recorded either way.** R876's rule is that a relation's owner
+is the latest, in gatherer dependency order, of the owners of what it reads, and its worked case is
+that the largest single read cost in the store was a placement defect rather than a lever defect:
+`intent_jvm_ancestor` reads only `jvm_` facts, was placed with the gatherer that runs last, and so
+had a registration as the only lever anyone could reach for. This plan asks which lever and never
+which owner, so compute it for the hop before step 2 picks anything. It reads
+`intent_node_id_decode_endpoint`, the two reference-target walks and `sql_referential_constraint`,
+so the expected answer is `graphitron` and the placement is right, at which point a registration is a
+reasoned rung 4 rather than the last lever reached for. An owner that runs earlier makes the move the
+lever and the register beside the point. One line of arithmetic either way, recorded in the same
+place the figures go; the item that owns the rule took the default twice while arguing against it.
 
 **Step 3: measure the round before committing.** Two figures decide whether the chosen lever stands,
 both taken on the `sis` workspace with the patched model rather than on a fixture:
@@ -269,8 +335,17 @@ names changed when the bisection points at a reference-target view.
   The ratchet survives and tightens. The exemption is derived from the register rather than authored,
   so nobody can pad it, and there is no way to dodge a declaration through it: a registration needs a
   target, and a target under a name the roster does not already carry is an observed relation on no
-  frozen roster. Registration twenty-two onward then owes no declaration work at all, which is what
-  makes this an edit to the gate rather than a convention every future author restates.
+  frozen roster. A registration landing while there is a register then owes no declaration work at
+  all, which is what makes this an edit to the gate rather than a convention every future author
+  restates.
+
+  And it provisions for no future the register does not have. R876's end state holds
+  `meta_materialize` at zero rows and the `_live` views gone as a convention, a rule its owner
+  decides to store being stored under its own name. At that point the subtraction subtracts an empty
+  set and the twenty roster lines this commit deletes are lines nothing wants back, so the edit
+  retires itself rather than having to be found and undone. The exemption is register-shaped for
+  exactly as long as there is a register, which is the property the guard below has for the same
+  reason and states in the same words.
 
   The canonical table keeps its roster line, which still matches once it is a table, and stays
   undeclared. Declaring it is a separate question with a real constraint behind it: a declared
@@ -466,10 +541,27 @@ for the same reason. A separate item if wanted; not this one's lever.
 
 **Folding this into R876, which owns the expensive-derived-read narrative.** A real candidate, since
 this is exactly its subject and it is In Progress at priority 1. Rejected on that item's own terms:
-it files the threads it opens as separate items rather than carrying them, and it explicitly
-disclaims consumer-scale wall-clock work as belonging elsewhere. This plan takes its lever order as
-given; the `d` outcome above is that item's supertype finding arriving at one more relation, and is
-reported to it if taken.
+it files the threads it opens as separate items rather than carrying them, and it has a section of
+them. Its wall-clock disclaimer is narrower than an earlier draft of this paragraph claimed and does
+not separate the two items: what that item declines to build is a consumer-scale *fixture*, because
+a fixture that size would be a wall-clock gate the build-guardrail item owns, and this item builds
+neither. The filing practice is the whole of the reason. This plan takes its lever order as given;
+the `d` outcome above is that item's supertype finding arriving at one more relation and the
+scope-table slice in step 1 is one of its three measured defects arriving in this subtree, either of
+which is reported to it if taken.
+
+**Blocking this item on R876, the way R899 is blocked.** That item was reopened from Ready to Spec
+against R876 because it prices one `meta_materialize` row at a time and the collapse takes the
+register away as the unit of account. The registration outcome here adds a row, so the parallel is
+real and anyone who knows that reopening will ask. Declined, on what the two items count. R899's
+unit of account *is* the register, one row priced per item, so the collapse removes its subject
+while leaving its instrument; this item's unit is one read on one consumer schema, two of its three
+outcomes add no row at all, and what the third writes is a keyed table holding the rule's rows,
+which is what the collapse would have the graphitron gatherer store under its own name in any case.
+What the collapse would take back is the `_live` spelling, the register row and a gate subtraction
+that empties itself, and the owner arithmetic above is there so that row is a reasoned rung 4 rather
+than a default. Against three lines of that, blocking is a consumer waiting on a dev loop that does
+not start.
 
 ## Provenance
 
@@ -806,3 +898,58 @@ One trap for the implementer of the sibling walk, since the plan says the table-
 curating". `ViewReferences.readBy` throws where the catalog holds no definition for the name, so a
 walk handed `intent_type_domain` fails rather than yielding nothing; the kind filter
 `registrationsReachedByView` already applies is what makes the roots pass through harmlessly.
+
+### Round 4 (2026-09-10, In Progress, reading against R876 from session 538cc22f-8644-4df8-9a12-e7dfe4734813)
+
+Not a gate. The item was read against R876, which owns the expensive-derived-read narrative and is
+In Progress beside it, to find where this plan and that item's thesis disagree. No verdict; six
+revisions, all folded into the body above rather than left as findings, plus one correction.
+
+**Nothing here blocks, defers or slows this item, and the body now says so before it says anything
+else.** The urgency is the point: the loop does not start at consumer scale and the consumer cannot
+run its own gate. So the revisions are framed as picking between levers that were already in the
+plan, never as waiting for the collapse, and every branch still lands something. The standing
+constraint is stated at the top of Implementation with the rework priced: a rewrite outcome has
+none, a registration outcome has three lines, because the keyed table it writes is what the collapse
+would have the graphitron gatherer store under its own name anyway.
+
+The localisation is untouched. What the reading found is that the plan takes R876's lever order as a
+rule and then, in four places, does not take its findings as evidence.
+
+1. **The prime suspect contains one of that item's own diagnosed defects.** `tg` is
+   `intent_argument_reference_step_target`, whose recursive base case joins
+   `intent_argument_scope_table`, and that relation is one of R876's three measured wrong-grain
+   cases: `intent_field_scope_table` crossed with the field's arguments and nothing else, nine read
+   sites all holding the field, unrepointed today. Checked against the shipped DDL rather than taken:
+   the nine sites still stand and the hop's subtree meets the relation twice, once through `tg` and
+   once through `intent_node_id_decode_endpoint`. Step 1 gains a slice and the `tg` outcome gains a
+   substitution to price beside the registration. Whichever is cheaper to land is taken here; the
+   walk gets registered if repointing the fan-out turns out to be that item's diff rather than this
+   one's.
+2. **The tie-breaker was the case that item measured against.** Registering the hop when the slices
+   do not separate is rung 4 taken at the moment the shape is least understood, which is what the
+   `intent_condition_table_parameter` side-by-side and the inference to refuse are both about. A tie
+   now buys one round of finer slices and the owner arithmetic, and then the registration is taken
+   anyway, as a conclusion carrying the tied slices in its `reason` rather than as a shrug. One
+   round, not a search.
+3. **The owner was never computed.** R876's rule makes ownership a function of the schema and its
+   worked case is a read cost that turned out to be a placement defect. Added as a step before the
+   lever is chosen, with the expected answer (`graphitron`, so the placement is right) stated so that
+   confirming it is cheap and disconfirming it is loud.
+4. **Rung 1's refusal reads as permanent and is not.** The seam it rests on, a producer stage running
+   before the refresh that fills a registered target it needs, is exactly what that item's collapse
+   removes. Now says so.
+5. **The declaration bullet provisioned for a mechanism with no future.** "Registration twenty-two
+   onward" against an end state holding the register at zero rows. The edit itself survives the
+   collapse cleanly, subtracting an empty set over roster lines nothing wants back, which is now the
+   sentence it carries, on the model of the guard, which already reasoned this way.
+6. **The item owes a reason it is not R899.** That item was reopened Ready to Spec against R876 for
+   pricing one register row at a time. This one adds a row too, and the distinction, that the unit of
+   account here is a read rather than the register, is now argued under "Other solutions" instead of
+   left for a reader to notice.
+
+One correction. The plan said R876 "explicitly disclaims consumer-scale wall-clock work as belonging
+elsewhere". Its actual disclaimer is that it does not build a consumer-scale fixture, because a
+fixture that size would be a wall-clock gate the build-guardrail item owns. This item builds neither,
+so that sentence never separated the two; the filing practice does, and the paragraph now says only
+that.

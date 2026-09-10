@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R939` | A graphitron:dev round on a consumer schema answers in seconds again: the @nodeId landing verdict expands an unregistered expensive view per driving row | In Progress | 2026-09-09 | [plan](nodeid-landing-defect-read-cost.md) |
+| `R939` | A graphitron:dev round on a consumer schema answers in seconds again: the @nodeId landing verdict expands an unregistered expensive view per driving row | In Progress | 2026-09-10 <sub>created 2026-09-09</sub> | [plan](nodeid-landing-defect-read-cost.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-08 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
