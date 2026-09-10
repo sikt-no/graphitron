@@ -561,6 +561,7 @@ CREATE TABLE graphql_ast_field_definition_entry (
   non_null       BOOLEAN NOT NULL,
   is_list        BOOLEAN NOT NULL,
   item_non_null  BOOLEAN,
+  list_depth     INT     NOT NULL,
   description    VARCHAR,
   coordinate     VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
@@ -569,7 +570,8 @@ CREATE TABLE graphql_ast_field_definition_entry (
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  CHECK (is_list = (list_depth > 0))
 );
 COMMENT ON TABLE graphql_ast_field_definition_entry IS 'A FieldDefinition as one document wrote it: this position in this file declares a field of this name on the declaration it was written inside. For example the title: String inside type Film { title: String } is one row, naming the position that type declaration was written at.';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -585,7 +587,8 @@ COMMENT ON COLUMN graphql_ast_field_definition_entry.type_sdl IS 'the type expre
 COMMENT ON COLUMN graphql_ast_field_definition_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null';
-COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.coordinate IS 'the schema coordinate this row names, Type.field as the specification spells it. Generated from the two names beside it, so neither a reader nor the derivation that fills graphql_element has to join to spell one';
@@ -759,6 +762,7 @@ CREATE TABLE graphql_ast_field_argument_entry (
   non_null           BOOLEAN NOT NULL,
   is_list            BOOLEAN NOT NULL,
   item_non_null      BOOLEAN,
+  list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
   coordinate         VARCHAR GENERATED ALWAYS AS
@@ -769,7 +773,8 @@ CREATE TABLE graphql_ast_field_argument_entry (
     REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  CHECK (is_list = (list_depth > 0))
 );
 COMMENT ON TABLE graphql_ast_field_argument_entry IS 'An argument of a field, as one document wrote it: this position in this file declares an argument of this name on the field it was written inside. For example the lang: Lang = NB inside title(lang: Lang = NB): String.';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -785,7 +790,8 @@ COMMENT ON COLUMN graphql_ast_field_argument_entry.type_sdl IS 'the type express
 COMMENT ON COLUMN graphql_ast_field_argument_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null';
-COMMENT ON COLUMN graphql_ast_field_argument_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.type_name IS 'the name of the declaration the field was written inside, two hops up rather than one. Held here for the reason type_name is held one hop down on the relations that need only one: the coordinate names both ancestors, and a generated column reads no row but its own';
@@ -808,6 +814,7 @@ CREATE TABLE graphql_ast_input_field_entry (
   non_null           BOOLEAN NOT NULL,
   is_list            BOOLEAN NOT NULL,
   item_non_null      BOOLEAN,
+  list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
   coordinate         VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
@@ -817,7 +824,8 @@ CREATE TABLE graphql_ast_input_field_entry (
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  CHECK (is_list = (list_depth > 0))
 );
 COMMENT ON TABLE graphql_ast_input_field_entry IS 'A field of an input object, as one document wrote it: this position in this file declares an input field of this name on the declaration it was written inside. For example the q: String inside input Filter { q: String }.';
 COMMENT ON COLUMN graphql_ast_input_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -833,7 +841,8 @@ COMMENT ON COLUMN graphql_ast_input_field_entry.type_sdl IS 'the type expression
 COMMENT ON COLUMN graphql_ast_input_field_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_input_field_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
 COMMENT ON COLUMN graphql_ast_input_field_entry.is_list IS 'whether the expression is a list at its outermost non-null';
-COMMENT ON COLUMN graphql_ast_input_field_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_input_field_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
+COMMENT ON COLUMN graphql_ast_input_field_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_input_field_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_input_field_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_input_field_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
@@ -854,6 +863,7 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   non_null           BOOLEAN NOT NULL,
   is_list            BOOLEAN NOT NULL,
   item_non_null      BOOLEAN,
+  list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
@@ -862,7 +872,8 @@ CREATE TABLE graphql_ast_directive_argument_entry (
     REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name),
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  CHECK (is_list = (list_depth > 0))
 );
 COMMENT ON TABLE graphql_ast_directive_argument_entry IS 'An argument a directive definition declares, as one document wrote it: this position in this file declares an argument of this name on the definition it was written inside. For example the fields: String! inside directive @key(fields: String!) on OBJECT.';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -878,7 +889,8 @@ COMMENT ON COLUMN graphql_ast_directive_argument_entry.type_sdl IS 'the type exp
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null';
-COMMENT ON COLUMN graphql_ast_directive_argument_entry.item_non_null IS 'whether a list''s items are non-null, NULL when the expression is not a list. A doubly nested list is not distinguished here and type_sdl is what keeps it';
+COMMENT ON COLUMN graphql_ast_directive_argument_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
+COMMENT ON COLUMN graphql_ast_directive_argument_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 

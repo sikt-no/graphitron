@@ -64,6 +64,7 @@ import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
@@ -369,8 +370,9 @@ class SdlEntriesTest {
     }
 
     /**
-     * A written type expression, kept whole and unwrapped beside itself. The four columns are the
-     * node read down its own spine, and the expression they cannot express is what the fifth is for.
+     * A written type expression, kept whole and unwrapped beside itself. The columns are the node
+     * read down its own spine, and {@code list_depth} is what makes them total: a reader can tell
+     * every one of these apart without going back to {@code type_sdl}.
      */
     @Test
     @DisplayName("a type expression is kept as written and unwrapped beside itself")
@@ -389,19 +391,50 @@ class SdlEntriesTest {
             read(dsl, file);
             var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 
-            assertThat(dsl.select(t.NAME, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL)
+            assertThat(dsl.select(t.NAME, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST,
+                        t.ITEM_NON_NULL, t.LIST_DEPTH)
                     .from(t).where(t.SOURCE_NAME.eq(file.toString())).fetch())
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(),
-                            r -> r.value4(), r -> r.value5(), r -> r.value6())
+                            r -> r.value4(), r -> r.value5(), r -> r.value6(), r -> r.value7())
                 .containsExactlyInAnyOrder(
-                    tuple("plain", "String", "String", false, false, null),
-                    tuple("required", "String!", "String", true, false, null),
-                    tuple("list", "[String]", "String", false, true, false),
-                    // The doubly nested list is where the four columns stop and type_sdl carries on:
-                    // they say a non-null list of something nullable, which is true of the outer list
-                    // and says nothing about the inner one.
-                    tuple("deep", "[[String]]!", "String", true, true, false),
-                    tuple("both", "[String!]!", "String", true, true, true));
+                    tuple("plain", "String", "String", false, false, null, 0),
+                    tuple("required", "String!", "String", true, false, null, 0),
+                    tuple("list", "[String]", "String", false, true, false, 1),
+                    // The doubly nested list is the case the other columns cannot state: they say a
+                    // non-null list of something nullable, which is true of the outer list and
+                    // silent about the inner one. The depth is what separates it from the row
+                    // above, whose every other column it matches but non_null.
+                    tuple("deep", "[[String]]!", "String", true, true, false, 2),
+                    tuple("both", "[String!]!", "String", true, true, true, 1));
+        });
+    }
+
+    /**
+     * The depth and the list flag say one thing between them, and the constraint is what keeps them
+     * saying it. Written as an update over a row the writer produced rather than as a hand-made
+     * insert, because the invariant this guards is a future writer setting one and forgetting the
+     * other, not a shape the parser can hand over.
+     */
+    @Test
+    @DisplayName("a list flag that disagrees with the depth beside it is refused")
+    void theListFlagAndTheDepthCannotDisagree(@TempDir Path tmp) {
+        Path file = write(tmp, "shapes.graphqls", "type Shapes { list: [String] }\n");
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+
+            assertThatThrownBy(() -> dsl.update(t).set(t.LIST_DEPTH, 0)
+                    .where(t.NAME.eq("list")).execute())
+                .as("a list at depth zero is not a type expression any document can write")
+                .isInstanceOf(org.jooq.exception.DataAccessException.class);
+
+            // The item flag is cleared in the same statement, or the older constraint beside this
+            // one would refuse the row first and the case would pass without exercising the new.
+            assertThatThrownBy(() -> dsl.update(t).set(t.IS_LIST, false)
+                    .setNull(t.ITEM_NON_NULL).where(t.NAME.eq("list")).execute())
+                .as("and neither is a depth of one that is not a list")
+                .isInstanceOf(org.jooq.exception.DataAccessException.class);
         });
     }
 

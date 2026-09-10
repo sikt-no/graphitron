@@ -259,13 +259,15 @@ public final class SdlEntries {
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                 t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DESCRIPTION)
+                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
@@ -279,6 +281,7 @@ public final class SdlEntries {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
     }
@@ -303,6 +306,7 @@ public final class SdlEntries {
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
@@ -311,7 +315,8 @@ public final class SdlEntries {
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                 t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
                 t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
+                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
@@ -326,6 +331,7 @@ public final class SdlEntries {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
@@ -350,6 +356,7 @@ public final class SdlEntries {
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
@@ -357,7 +364,8 @@ public final class SdlEntries {
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                 t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL,
+                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                t.DEFAULT_VALUE_SDL,
                 t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
@@ -372,6 +380,7 @@ public final class SdlEntries {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
@@ -396,6 +405,7 @@ public final class SdlEntries {
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
+            nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
@@ -403,7 +413,8 @@ public final class SdlEntries {
         }
         dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                 t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL, t.DESCRIPTION)
+                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                t.DESCRIPTION)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
@@ -416,6 +427,7 @@ public final class SdlEntries {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
@@ -1083,6 +1095,16 @@ public final class SdlEntries {
 
     private static Boolean itemNonNull(Type<?> type) {
         return unwrapped(type) instanceof ListType list ? list.getType() instanceof NonNullType : null;
+    }
+
+    /**
+     * How many list wrappers the expression has, which is what tells {@code [Film]} from
+     * {@code [[Film]]}. The three above cannot: they read one level and a nested list reads as a
+     * list of something nullable, true of the outer list and silent about the inner one. Without
+     * this a reader wanting the difference has to parse {@code type_sdl}, in SQL.
+     */
+    private static int listDepth(Type<?> type) {
+        return unwrapped(type) instanceof ListType list ? 1 + listDepth(list.getType()) : 0;
     }
 
     /** The expression with its outermost non-null removed, which is where a list shows itself. */
