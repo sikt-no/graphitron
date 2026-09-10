@@ -1,12 +1,12 @@
 ---
 id: R893
 title: "A decoding @nodeId instruction with no installed decode fails the build"
-status: Spec
+status: Ready
 bucket: validation
 theme: nodeid
 depends-on: []
 created: 2026-08-31
-last-updated: 2026-09-09
+last-updated: 2026-09-10
 ---
 
 # A decoding @nodeId instruction with no installed decode fails the build
@@ -528,3 +528,63 @@ non-blocking notes are fixed in this revision.
   section's third paragraph, so nothing is lost; the heading is the only miss.
 * "the rule would live as a fifth component on `StoreDetections`" is a stale count (the record now
   carries eight components), but it describes the discarded Backlog approach, so nothing turns on it.
+
+### Round 2 (2026-09-10, Spec -> Ready, reviewer session 017ccpBvcWZh8FjuNmpLfNo2)
+
+Verdict: sign off. Both gate questions pass, and all three round-one findings are answered by the
+revision rather than argued away.
+
+*Question one.* The goal reads without reconstruction. Today a `@nodeId` on a filter argument or a
+filter input field whose decode the generator cannot install compiles clean and fails per request,
+as a cast that throws or as a base64 string compared against an integer key column; after this
+lands, `validate()` refuses it naming the coordinate and the node type. The revision's own answer to
+round one's third finding is the honest one and is what makes the goal judgeable: on today's tree
+the day-one failure list is empty, so nothing changes for an existing consumer schema and the item
+is a ratchet against a class whose defining property is that nobody knows when it acquires a member.
+That is a smaller claim than the plan once made and it is the one the probes support. The single
+open candidate (probe B's two-foreign-key filter) is named here rather than left for slice 2 to
+discover, which is what the section is for.
+
+*Question two.* The shape extends what is in the tree rather than standing something beside it: a
+sealed `Disposition` in the mould of the sealed verdict `NodeIdLeafResolver.Resolved` already is,
+minted at the two callers that already hold coordinate and verdict together, folded in at the point
+where `StoreDetections.violations()` already meets the walk's error stream, keyed on relational
+components rather than on a composed string. Making the obligation total is the right answer to the
+finding that produced it: it converts "which rails install a decode" from a sentence this document
+has to keep true into a compiler-and-meta-test question, and it collapses the third operand round
+one found homeless into a `Refused` arm on the same mint, so the two cannot disagree about a
+coordinate. The slicing is right too: the mint is the part whose size is unknown, and the plan says
+so and names the one known instance (rail two's root argument name, NULL on an `INPUT_FIELD` binding
+in `graphitron_argmapping_match`, recoverable from the occurrence path) instead of discovering it
+mid-implementation. I would hand this to an implementer as written.
+
+*What I verified against the tree*, since a spec's claims about code are checkable and this one makes
+many. Every symbol, relation and quotation named exists as named, by FQN-aware grep: the four
+`CallSiteExtraction` decode arms with `RecordKeyDecode` a leaf inside `JooqRecord` rather than an arm;
+`NodeIdLeafResolver.Resolved`'s four install arms and `Rejected(Rejection)`, and its two callers;
+`ProjectedKeyReads`' self-description, `installRailOwns`, `leafOf`, and its two draining renderers;
+`ResolvedKeyProjections`' stated coarsening off `(site, use_site, position)` and the projection record
+that carries none of the three; `ArgmappingProjectionDefects.EMITTING_SITES` as the three-site set;
+`StoreDetections`' eight components including `keyProjections()`; the fold point in
+`GraphQLRewriteGenerator` with `EmitPlan.produce` gated on an empty error list and `Projection.VALIDATE`
+emitting nothing; `intent_node_id_instruction` as a materialized table whose `INPUT_FIELD` grain is the
+use site; `intent_node_id_decode_defect`'s `site = 'ARGUMENT'` / `carrier = 'NAMED_PARAMETER'` scope and
+its two verdicts; `NodeIdDecodeDefects.inDomain`'s `intent_type_domain` join; the decode relation's
+absence-is-never-a-message assertion and the encode relation's "Presence is not an emitter" wording that
+the Docs section asks it to converge on; the slot relation's dotted-`argMapping` limit, verbatim as the
+plan reads it; `graphitron_argmapping_match`'s `bound_*` columns and its `CASE` leaving
+`bound_argument_name` NULL off the `ARGUMENT` kind; the occurrence-path pair and their column names;
+`Rejection.deferred` / `Rejection.structural`; the mint-pin exemplar in `PackageImportDirectionTest`; the
+two probe harnesses; and both manual quotations, which are exact.
+
+**Non-blocking.**
+
+* `EMITTING_SITES` and its `Site` enum are `private` to `ArgmappingProjectionDefects` in
+  `graphitron-model`. Slice 1 wants the ledger to narrow on that same declaration and to
+  `{@link}` it, so the implementer will have to widen it. A one-line visibility change with no
+  design content, noted only so it is not read as a surprise.
+* Slice 1's mint pin catches an install carrier constructed outside the vocabulary, which is the
+  `Installed` arm. A `Refused` or `NotReached` site that forgets to mint is caught by the corpus
+  ratchet rather than by the compiler, and its failure mode is a build that fails when it should
+  pass, which is loud. That asymmetry looks right and needs no change; it is worth knowing when
+  slice 2's enumeration runs.
