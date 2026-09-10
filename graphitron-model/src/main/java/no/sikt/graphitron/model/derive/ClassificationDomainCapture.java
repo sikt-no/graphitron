@@ -15,19 +15,20 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLTypeVisitorStub;
 import graphql.schema.GraphQLUnionType;
 import graphql.schema.SchemaTraverser;
-import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static org.jooq.impl.DSL.select;
@@ -78,9 +79,9 @@ import static org.jooq.impl.DSL.val;
  * <h3>The expansion's own shapes</h3>
  * The assembled schema is the one capture reads, before the pipeline's synthesis rewrites, so it
  * does not carry the {@code @asConnection} expansion's minted types even though the store does. The
- * expansion states its own edges ({@link MacroCapture#expand} hands them back) and the traversal
- * follows them by name, resolving any name the schema does know back into a traversal seed, so a
- * minted Connection reached from a domain member is a member exactly as an authored type would be.
+ * edges are read off {@code graphitron_minted_field}, and the traversal follows them by name,
+ * resolving any name the schema does know back into a traversal seed, so a minted Connection
+ * reached from a domain member is a member exactly as an authored type would be.
  *
  * <h3>Availability</h3>
  * A run whose registry did not assemble has no schema to traverse and writes no rows, which is why
@@ -109,19 +110,15 @@ public final class ClassificationDomainCapture {
      * Clears {@code graphName}'s domain partition and rewrites it from the traversal. Runs inside
      * the capture transaction after the flush, so the rows are current exactly when the census they
      * are total over is.
-     *
-     * @param synthesizedEdges the capture-side expansion's own edges, source type name to the type
-     *                         names its synthesized members reference
      */
-    public static void derive(DSLContext dsl, String graphName, GraphQLSchema schema,
-                       Map<String, Set<String>> synthesizedEdges) {
+    public static void derive(DSLContext dsl, String graphName, GraphQLSchema schema) {
         dsl.deleteFrom(INTENT_TYPE_DOMAIN)
             .where(INTENT_TYPE_DOMAIN.GRAPH_NAME.eq(graphName))
             .execute();
         if (schema == null) {
             return;
         }
-        Set<String> reached = reach(schema, synthesizedEdges);
+        Set<String> reached = reach(schema, mintedEdges(dsl, graphName));
         if (reached.isEmpty()) {
             return;
         }
@@ -137,13 +134,38 @@ public final class ClassificationDomainCapture {
     }
 
     /**
+     * The expansion's own name edges, read off the rows it wrote rather than handed over beside
+     * them. A minted field is its owning type reaching its named type, which is every edge the
+     * expansion adds: the carrier reaches its Connection through the field the rewrite replaced,
+     * the Connection reaches its Edge, its element, {@code PageInfo} and {@code Int} through its
+     * four fields, and so on down. Fields only, not the minted arguments: the pagination arguments
+     * name {@code Int} and {@code String}, which the Connection's own {@code totalCount} and the
+     * Edge's {@code cursor} already reach, so including them would widen nothing and would state a
+     * population the expansion never stated.
+     *
+     * <p>Precedence is not read. A mint that stood down for an author's declaration still carries
+     * its edge, because the carrier's field is rewritten to the minted name either way and whose
+     * declaration sits behind that name is not this map's question.
+     */
+    private static Map<String, Set<String>> mintedEdges(DSLContext dsl, String graphName) {
+        var edges = new LinkedHashMap<String, Set<String>>();
+        dsl.select(GRAPHITRON_MINTED_FIELD.TYPE_NAME, GRAPHITRON_MINTED_FIELD.NAMED_TYPE)
+            .from(GRAPHITRON_MINTED_FIELD)
+            .where(GRAPHITRON_MINTED_FIELD.GRAPH_NAME.eq(graphName))
+            .forEach(row -> edges
+                .computeIfAbsent(row.value1(), name -> new LinkedHashSet<>())
+                .add(row.value2()));
+        return edges;
+    }
+
+    /**
      * The names the traversal reaches, of every kind. Runs to a fixpoint over two alternating
      * moves: the schema traversal from a seed set, and the expansion's name edges over what it
      * reached. A name the expansion adds that the schema does know re-enters as a seed, so an
      * author-declared type the expansion happens to name is descended into rather than recorded
      * bare.
      */
-    private static Set<String> reach(GraphQLSchema schema, Map<String, Set<String>> synthesizedEdges) {
+    private static Set<String> reach(GraphQLSchema schema, Map<String, Set<String>> edges) {
         var reached = new LinkedHashSet<String>();
         var expanded = new HashSet<GraphQLSchemaElement>();
         var seeded = new HashSet<String>();
@@ -155,7 +177,7 @@ public final class ClassificationDomainCapture {
         Collection<GraphQLSchemaElement> frontier = seeds(schema);
         while (!frontier.isEmpty()) {
             traverser.depthFirst(new GraphQLTypeVisitorStub(), frontier);
-            frontier = expansionFrontier(schema, synthesizedEdges, reached, seeded);
+            frontier = expansionFrontier(schema, edges, reached, seeded);
         }
         return reached;
     }
@@ -166,14 +188,14 @@ public final class ClassificationDomainCapture {
      * the next traversal's seeds.
      */
     private static Collection<GraphQLSchemaElement> expansionFrontier(
-            GraphQLSchema schema, Map<String, Set<String>> synthesizedEdges,
+            GraphQLSchema schema, Map<String, Set<String>> edges,
             Set<String> reached, Set<String> seeded) {
         var next = new ArrayList<GraphQLSchemaElement>();
         var pending = new ArrayList<>(reached);
         while (!pending.isEmpty()) {
             var round = new ArrayList<String>();
             for (String name : pending) {
-                for (String target : synthesizedEdges.getOrDefault(name, Set.of())) {
+                for (String target : edges.getOrDefault(name, Set.of())) {
                     GraphQLType known = schema.getType(target);
                     if (known instanceof GraphQLSchemaElement element && seeded.add(target)) {
                         next.add(element);

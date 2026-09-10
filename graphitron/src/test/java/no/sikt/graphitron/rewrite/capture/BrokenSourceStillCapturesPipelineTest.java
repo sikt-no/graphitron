@@ -35,15 +35,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The run still fails, and with the same exception it always threw. The change is what is true of
  * the store by the time it does.
  *
- * <p><b>Half of this property is currently unpinned, and deliberately so.</b> What each stage
- * refused is recorded in {@code graphql_schema_problem}, written by the document gatherer, which
- * this path does not reach: the generator's capture seam writes the walk's families, and the
- * gatherer runs from a separate call the mojos make after the pass returns, which a refusal never
- * gets to. So the cases below assert the surviving half, that a broken file costs its own
- * declarations and no others, and say nothing about the verdict. What pins the verdict is
+ * <p><b>Half of this property is unpinned here, and deliberately so.</b> What each stage refused
+ * is recorded in {@code graphql_schema_problem}, written by the document gatherer, which a real
+ * build now reaches on this path: both mojos capture the model before the pass. These cases drive
+ * the generator directly rather than through a mojo, so they run the walk and nothing else, which
+ * is why they assert the surviving half, that a broken file costs its own declarations and no
+ * others, and say nothing about the verdict. What pins the verdict is
  * no.sikt.graphitron.model.SdlSchemaProblemsTest, against the gatherer itself, over a corpus that
- * provokes each of the three stages. Re-pointing these cases at the verdict relation is a question
- * about where the model capture is called from, not about this test.
+ * provokes each of the three stages.
  */
 @PipelineTier
 class BrokenSourceStillCapturesPipelineTest {

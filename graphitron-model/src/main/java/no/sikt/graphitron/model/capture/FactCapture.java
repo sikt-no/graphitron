@@ -379,7 +379,7 @@ public final class FactCapture {
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
-            var synthesizedEdges = GraphitronFactCapture.capture(sink, txDsl, graph.name());
+            GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when
@@ -388,8 +388,7 @@ public final class FactCapture {
             // dependency order cannot see a hand-written derivation's reads, those being jOOQ
             // code rather than stored view definitions.
             ClassificationDomainCapture.derive(txDsl, graph.name(),
-                assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null,
-                synthesizedEdges);
+                assembly instanceof SchemaAssembly.Assembled a ? a.schema() : null);
             InputOccurrencePaths.derive(txDsl, graph.name());
             ArgMappingCandidates.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());

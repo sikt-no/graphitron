@@ -7,7 +7,6 @@ import org.jooq.DSLContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -99,20 +98,22 @@ public final class MacroCapture {
     }
 
     /**
-     * Runs every expansion this store's decode calls for, returning the edges the expansion adds to
-     * the schema the store describes.
+     * Runs every expansion this store's decode calls for.
+     *
+     * <p>Writes rows and returns nothing. What the expansion adds to the schema the store
+     * describes used to be handed back as a map of name edges beside them, which was the same
+     * fact said twice: an edge is a minted field's owning type reaching its named type, so every
+     * edge the map carried is a row this method writes. The reader derives it there instead.
      */
-    public static Map<String, Set<String>> expand(FactSink sink, DSLContext dsl, String graphName) {
+    public static void expand(FactSink sink, DSLContext dsl, String graphName) {
         var expansion = new MacroCapture(sink);
-        List<Carrier> carriers = expansion.carriers(dsl, graphName);
-        for (Carrier carrier : carriers) {
+        for (Carrier carrier : expansion.carriers(dsl, graphName)) {
             expansion.rewriteCarrier(carrier);
             expansion.mintPaginationArguments(carrier);
             expansion.mintConnection(carrier);
             expansion.mintEdge(carrier);
             expansion.mintPageInfo(carrier);
         }
-        return synthesizedEdges(carriers);
     }
 
     /**
@@ -366,36 +367,5 @@ public final class MacroCapture {
 
     private static String namedTypeOf(String typeSdl) {
         return typeSdl.replace("[", "").replace("]", "").replace("!", "");
-    }
-
-    /**
-     * The edges this expansion adds to the schema the store describes, source type name to the type
-     * names its minted members reference. The rooted traversal follows them because the schema it
-     * walks is the one capture read, before the pipeline's own rewrite mints these shapes: without
-     * them a minted Connection would be a census member no traversal reaches.
-     *
-     * <p>Stated from the carriers rather than from what the mint landed, so a name the author had
-     * already declared still carries its edge: the carrier's field type is rewritten to the
-     * connection name either way, and whether the type behind that name is the author's or this
-     * expansion's is not this map's question.
-     */
-    private static Map<String, Set<String>> synthesizedEdges(List<Carrier> carriers) {
-        var edges = new LinkedHashMap<String, Set<String>>();
-        for (Carrier carrier : carriers) {
-            edge(edges, carrier.parentTypeName(), carrier.connectionName());
-            edge(edges, carrier.connectionName(), carrier.edgeName());
-            edge(edges, carrier.connectionName(), PAGE_INFO);
-            edge(edges, carrier.connectionName(), carrier.elementTypeName());
-            edge(edges, carrier.connectionName(), "Int");
-            edge(edges, carrier.edgeName(), carrier.elementTypeName());
-            edge(edges, carrier.edgeName(), "String");
-            edge(edges, PAGE_INFO, "Boolean");
-            edge(edges, PAGE_INFO, "String");
-        }
-        return edges;
-    }
-
-    private static void edge(Map<String, Set<String>> edges, String from, String to) {
-        edges.computeIfAbsent(from, key -> new LinkedHashSet<>()).add(to);
     }
 }

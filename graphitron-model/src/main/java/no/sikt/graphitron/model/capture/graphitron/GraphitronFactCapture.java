@@ -35,8 +35,6 @@ import org.jooq.Table;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
@@ -174,14 +172,14 @@ public final class GraphitronFactCapture {
      * {@code graphitron_connection_entry} rows the walk produced, and the navigation rule is stated
      * over the population expansion completes.
      */
-    public static Map<String, Set<String>> capture(FactSink sink, DSLContext dsl, String graphName) {
+    public static void capture(FactSink sink, DSLContext dsl, String graphName) {
         // First of the gatherer's own stages: it reads the transcription alone, and the written
         // order of a field's applications is what everything below that walks a chain wants.
         FieldChainApplications.derive(dsl, graphName);
         TableTypes.derive(dsl, graphName);
         Nodes.derive(dsl, graphName);
         NodeKeyColumns.derive(dsl, graphName);
-        var edges = MacroCapture.expand(sink, dsl, graphName);
+        MacroCapture.expand(sink, dsl, graphName);
         sink.flush();
         // The anchors before every stage that keys at a coordinate, because the expansion above is
         // the second arm of their population and everything below reads them rather than the union.
@@ -190,7 +188,6 @@ public final class GraphitronFactCapture {
         // Last, because its target rule reads the navigation the line above writes and its
         // departure reads the bindings three lines up.
         FieldEndpoints.derive(dsl, graphName);
-        return edges;
     }
 
 
