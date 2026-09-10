@@ -96,6 +96,7 @@ CREATE TABLE store_graph_schema_input (
   entry_value      VARCHAR NOT NULL,
   tag              VARCHAR,
   description_note VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (kind IN ('pattern', 'file', 'named'))
@@ -107,11 +108,13 @@ COMMENT ON COLUMN store_graph_schema_input.kind IS 'a closed taxonomy of what en
 COMMENT ON COLUMN store_graph_schema_input.entry_value IS 'the entry as configured: an include pattern in the recipe''s one glob dialect (SchemaRecipe owns the expansion) when kind is pattern, and the source''s canonical rendering when it is file or named';
 COMMENT ON COLUMN store_graph_schema_input.tag IS 'the entry''s tag, when configured; not optional fidelity, since the tag applier runs above the capture cut and a replay without it would mint different rows than the graph''s own build';
 COMMENT ON COLUMN store_graph_schema_input.description_note IS 'the entry''s description note, when configured; kept for the same replay-fidelity reason as tag';
+COMMENT ON COLUMN store_graph_schema_input.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. A recipe that lost an entry is the case to read it against: the surviving entries upsert over the leading ordinals and the trailing ones are what the sweep collects';
 
 CREATE TABLE store_graph_schema_extension (
   graph_name VARCHAR NOT NULL,
   ordinal    INT     NOT NULL,
   extension  VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
@@ -119,16 +122,19 @@ COMMENT ON TABLE store_graph_schema_extension IS 'The recipe''s effective schema
 COMMENT ON COLUMN store_graph_schema_extension.graph_name IS 'the owning graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_schema_extension.ordinal IS 'stable position in the resolved set, for faithful replay';
 COMMENT ON COLUMN store_graph_schema_extension.extension IS 'an accepted schema-file extension including the leading dot, as configured';
+COMMENT ON COLUMN store_graph_schema_extension.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_supergraph (
   graph_name       VARCHAR NOT NULL,
   supergraph_name  VARCHAR NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 COMMENT ON TABLE store_graph_supergraph IS 'Which supergraph a graph declared itself a subgraph of: the graph''s own declaration of its <supergraph> parameter, minted and cleared by the graph''s own run like every other graph-keyed row. What it asserts is grouping, not federation. Declaring membership does not make a graph federated and is not policed against the SDL''s opt-in, which graphitron_link_entry already records as a predicate over the @link url; the grouping is deliberately usable before any federation SDL lands, since a subgraph under development may declare its home before its first @key is written. Only graphs with a declared supergraph are registered, so the row''s presence is the fact and a standalone graph has no row; a nullable column on the anchor would be the field every construction site may leave null, which this store spells structurally instead. Three absences collapse deliberately, because every reader''s safe answer is the same "not a peer": a graph whose author declared nothing, a programmatic run that was never asked, and a graph whose anchor a diagnostics preamble minted before capture ran. Deliberately not a supergraph entity relation of its own beside store_graph: no single run would mint or may clear such a row, and StoreRefresh derives the ownership-scoped clear set from the presence of a graph_name column, so the supergraph exists here as a value graphs declare and never as an entity anything owns. Single-valued by the (graph_name) key; if federation practice''s multi-supergraph publication ever has to be admitted, the widening is the key growing to (graph_name, supergraph_name), which costs a store-stamp roll rather than a data migration. This relation and store_graph are the whole of the cross-graph consumer read surface''s enumeration axis; nothing else configuration-shaped joins it, and what a surface reads about a peer stays SDL-derived.';
 COMMENT ON COLUMN store_graph_supergraph.graph_name IS 'the declaring graph''s partition, anchored by store_graph; also the key, which is where the single-valued claim is enforced structurally';
 COMMENT ON COLUMN store_graph_supergraph.supergraph_name IS 'the declared supergraph''s name, as the <supergraph> parameter spelled it, with an empty element collapsed to absent by the decode rather than stored blank. Paired with graph_name it is the store''s rendering of the addressing federation already uses, which is why <graphName>''s own documentation speaks of the subgraph''s published name. A graph''s peers are the graphs this relation joins to over this column, a self-join between non-null values, so two standalone graphs never group by accident and two supergraphs in one workspace store coexist mutually invisible';
+COMMENT ON COLUMN store_graph_supergraph.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. A graph that stopped declaring a supergraph writes no row, so the sweep is the whole of how it stops being a peer';
 
 -- The rest of the configuration family. Every parameter the build supplied is transcribed, because a
 -- run that has exited cannot be asked again and the reader served is the one with no build to run at
@@ -152,6 +158,7 @@ CREATE TABLE store_graph_output (
   output_package   VARCHAR NOT NULL,
   jooq_package     VARCHAR NOT NULL,
   output_directory VARCHAR NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
@@ -160,31 +167,37 @@ COMMENT ON COLUMN store_graph_output.graph_name IS 'the owning graph''s partitio
 COMMENT ON COLUMN store_graph_output.output_package IS 'the root Java package generation wrote under, from <outputPackage>';
 COMMENT ON COLUMN store_graph_output.jooq_package IS 'the root Java package of the consumer''s jOOQ-generated catalog, from <jooqPackage>; what every @table and @field was resolved against';
 COMMENT ON COLUMN store_graph_output.output_directory IS 'the directory generation wrote sources into, absolute and normalized, from <outputDirectory> resolved against the base directory';
+COMMENT ON COLUMN store_graph_output.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. A validate-only run writes no row here, so a module that generated once and now only validates loses its coordinates rather than keeping the last generating run''s';
 
 CREATE TABLE store_graph_tenant_column (
   graph_name  VARCHAR NOT NULL,
   column_name VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 COMMENT ON TABLE store_graph_tenant_column IS 'The database-per-tenant column declaration, from <tenantColumn>. Single-valued, optional and run-owned, so its own graph-keyed relation whose row presence is the fact; a single-tenant build has no row. Deliberately not a column beside store_graph''s base_dir and last_captured, even though it is single-valued and run-owned too: it is generation payload rather than a fact about how the partition groups or where it lives, and beside the anchor it would be the first brick of the key-value bag.';
 COMMENT ON COLUMN store_graph_tenant_column.graph_name IS 'the declaring graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_tenant_column.column_name IS 'the column name as configured; matched against catalog columns the way column lookups match, Java name first then SQL name, both case-insensitively';
+COMMENT ON COLUMN store_graph_tenant_column.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_lint_disabled_rule (
   graph_name VARCHAR NOT NULL,
   rule_id    VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, rule_id),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 COMMENT ON TABLE store_graph_lint_disabled_rule IS 'The <lint><disabledRules> half, one row per silenced rule id. Decomposed rather than rendered: a rendered block would be a string a later reader has to re-parse, which is the shape the recipe''s source names exist to remove, and permitting a rendered form per parameter would reintroduce the untyped default door. The two <lint> halves are a genuine conjunction (LintConfig is a plain record of both) but they are not the same shape, which is why they are two relations rather than one discriminated one: this half is a Set and takes no ordinal, its sibling is a List and takes one, and forcing them together would need a nullable ordinal.';
 COMMENT ON COLUMN store_graph_lint_disabled_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_lint_disabled_rule.rule_id IS 'the disabled rule''s id as configured; the value is the key, there being no position to record. An ordinal here would record the JVM''s iteration order over a Set and call it a position';
+COMMENT ON COLUMN store_graph_lint_disabled_rule.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Keyed by the rule id, so a rule the author re-enabled leaves a row this reading did not touch rather than a row it overwrote';
 
 CREATE TABLE store_graph_lint_excluded_type (
   graph_name   VARCHAR NOT NULL,
   ordinal      INT     NOT NULL,
   type_pattern VARCHAR NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
@@ -192,26 +205,31 @@ COMMENT ON TABLE store_graph_lint_excluded_type IS 'The <lint><excludedTypes> ha
 COMMENT ON COLUMN store_graph_lint_excluded_type.graph_name IS 'the owning graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the configured list, document order';
 COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
+COMMENT ON COLUMN store_graph_lint_excluded_type.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_session_mount (
   graph_name   VARCHAR NOT NULL,
   mount_method VARCHAR NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
 COMMENT ON TABLE store_graph_session_mount IS 'The <sessionState> <mount> reference: the consumer''s static Java method that mounts identity on each acquired connection, as authored. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. The primary key on graph_name alone makes "at most one mount per graph" structural. Only the authored string lands here; the reflected signature is a build-time model fact, never stored back into this provenance family.';
 COMMENT ON COLUMN store_graph_session_mount.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
 COMMENT ON COLUMN store_graph_session_mount.mount_method IS 'the mounting method as authored, fqcn#method, from <mount>';
+COMMENT ON COLUMN store_graph_session_mount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_session_unmount (
   graph_name     VARCHAR NOT NULL,
   unmount_method VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph_session_mount (graph_name)
 );
 COMMENT ON TABLE store_graph_session_unmount IS 'The optional <unmount> reference beside the mount. Row presence is the fact: no row means the supported mount-only configuration (the next request''s mount overwrites wholesale), which the reconciler admits without ceremony, and the foreign key to store_graph_session_mount is the "unmount without mount is a defect" rule made structural.';
 COMMENT ON COLUMN store_graph_session_unmount.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_mount';
 COMMENT ON COLUMN store_graph_session_unmount.unmount_method IS 'the unmounting method as authored, fqcn#method, from <unmount>';
+COMMENT ON COLUMN store_graph_session_unmount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Swept before the mount beside it, which is the foreign key deciding the order rather than a rule this family states twice';
 
 CREATE TABLE store_source (
   source_name VARCHAR NOT NULL,

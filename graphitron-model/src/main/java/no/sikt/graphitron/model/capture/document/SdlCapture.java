@@ -16,7 +16,6 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
@@ -44,8 +43,12 @@ public final class SdlCapture {
      * Makes {@code graph}'s SDL rows be what its configured schema files now say, and its problem
      * rows be what reading them raised.
      *
-     * <p>The instant is the caller's: the graph row, the source rows, every entry row and every
-     * problem row date the same reading, which is what the sweeps tell readings apart by.
+     * <p>The instant is the caller's: the source rows, every entry row and every problem row date
+     * the same reading, which is what the sweeps tell readings apart by.
+     *
+     * <p>The graph's own anchor row is the caller's too. Every row written here holds a foreign key
+     * into it and so does every configuration row, and a registry row two gatherers need is not one
+     * gatherer's to mint.
      *
      * <p>A source the parser rejected still gets its registry row. It contributes no entries, so
      * without one the file would look like one nobody configured rather than one that would not
@@ -53,7 +56,6 @@ public final class SdlCapture {
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                LocalDateTime readAt) {
-        writeGraph(dsl, graph, readAt);
         var parse = SchemaLoader.parsePerSource(schemaFiles(config, graph.baseDir()));
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
@@ -93,16 +95,6 @@ public final class SdlCapture {
                 .map(SchemaSource.File.class::cast)
                 .toList())
             .orElseGet(List::of);
-    }
-
-    private static void writeGraph(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
-        var t = STORE_GRAPH;
-        dsl.insertInto(t, t.GRAPH_NAME, t.BASE_DIR, t.LAST_CAPTURED)
-            .values(graph.name(), graph.baseDir().toString(), readAt)
-            .onDuplicateKeyUpdate()
-            .set(t.BASE_DIR, graph.baseDir().toString())
-            .set(t.LAST_CAPTURED, readAt)
-            .execute();
     }
 
     /**

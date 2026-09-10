@@ -3,8 +3,11 @@ package no.sikt.graphitron.model.run;
 import no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
+import no.sikt.graphitron.model.capture.store.StoreEntries;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
+
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -19,6 +22,11 @@ import java.util.List;
  * directories and jars parsed as classfiles with nothing loaded. The catalog cannot be read that
  * way, jOOQ building its tables and keys in static initialisers rather than declaring them in the
  * bytes, so it arrives already built and carries the loader it was built through.
+ *
+ * <p>One of them reads no input at all. The configuration is not a source to be gathered from, it
+ * is the run's own declaration about itself, and it is transcribed for the reader who cannot ask
+ * the run: a sibling module, a maintenance surface, a later session looking at a graph whose build
+ * has exited.
  *
  * <p>Absence is per input: no classpath is no census, no catalog is no catalog facts, and neither
  * touches the schema.
@@ -38,8 +46,24 @@ public final class ModelCapture {
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                List<Path> classpath, JooqCatalog jooq, LocalDateTime readAt) {
+        writeGraph(dsl, graph, readAt);
         SdlCapture.capture(dsl, graph, config, readAt);
+        StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, jooq, readAt);
         ClasspathFactCapture.capture(dsl, classpath, config.jooqPackage().orElse(null), readAt);
+    }
+
+    /**
+     * The row every other relation this run writes hangs a foreign key on: which graph, where it
+     * was read from, and when it was last read.
+     */
+    private static void writeGraph(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
+        var t = STORE_GRAPH;
+        dsl.insertInto(t, t.GRAPH_NAME, t.BASE_DIR, t.LAST_CAPTURED)
+            .values(graph.name(), graph.baseDir().toString(), readAt)
+            .onDuplicateKeyUpdate()
+            .set(t.BASE_DIR, graph.baseDir().toString())
+            .set(t.LAST_CAPTURED, readAt)
+            .execute();
     }
 }

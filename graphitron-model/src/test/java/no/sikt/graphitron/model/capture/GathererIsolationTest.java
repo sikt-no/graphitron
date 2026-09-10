@@ -50,6 +50,9 @@ class GathererIsolationTest {
         var roll = new LinkedHashMap<String, String>();
         roll.put("capture", "FactCapture");
         roll.put("capture/config", "ConfigurationFactCapture");
+        // Two gatherers transcribe the configuration: this one writes the store_graph_ rows from
+        // the run's own SubjectConfig, marking and sweeping them per graph.
+        roll.put("capture/store", "StoreEntries");
         roll.put("capture/catalog", "CatalogFactCapture");
         // And two read the classpath: this one writes the sql_ family from the jOOQ catalog.
         roll.put("capture/jooq", "JooqFactCapture");

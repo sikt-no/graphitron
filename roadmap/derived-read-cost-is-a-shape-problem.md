@@ -2117,3 +2117,36 @@ which end declares the membership, which is what made one relation carry a discr
 One commit rather than the two this was planned as. The anchors write the split relations, the DDL
 interleaves them in one region, and three test fixtures straddle both, so the first of two commits
 would have been verified by argument where the pair together is verified by the reactor.
+
+## The configuration corpus (2026-09-10)
+
+Harvested from session-b. `StoreEntries` transcribes `SubjectConfig` into the nine
+`store_graph_*` relations, eight methods over nine relations, one per parameter or per group that
+arrives together. It decides nothing: no defaulting, no resolution, no comparison, and a parameter
+the run was not asked for writes no row, absence being a missing row rather than a configured
+blank.
+
+Until now the production path wrote none of them. `ConfigurationFactCapture` sits on the walk that
+only the old tests reach, so every real run left the recipe, the output coordinates, the supergraph
+declaration, the tenant column, the lint suppression and the session hooks empty. The recipe rows
+are what a currency check re-expands without building the module, and what the freshness replay
+decodes a sibling graph's recipe out of, so the gap reached past tidiness.
+
+The nine gain the stamp rather than being cleared per graph and rewritten. Uniformity is most of
+it, the sweep predicate being one sentence everywhere the new capture writes, and there is a second
+reason: a delete-then-insert leaves the graph with no configuration for the width of the operation,
+which is a state the store should not be able to represent.
+
+Two things the harvest settled that the author left open.
+
+The kind taxonomy is spelled twice while the incumbent stands, once by this writer and once by
+`StoredRecipe.decode`, in packages that cannot name each other's constants. What holds them
+together is a round-trip case: write with one, decode with the other, assert the bindings come
+back. The relation's CHECK catches only a value neither admits. The end state is the decode moving
+beside the encode when the incumbent goes.
+
+`writeGraph` moved out of `SdlCapture` and into `ModelCapture`, first. Every relation the gatherers
+fill holds a foreign key into the graph's anchor row, and two of them now need it, so it belongs to
+whoever runs them. Ordering the gatherers by which one happens to mint it would have been a rule
+held by a comment. Both direct callers of `SdlCapture` already seed the anchor, so the lift cost
+nothing.
