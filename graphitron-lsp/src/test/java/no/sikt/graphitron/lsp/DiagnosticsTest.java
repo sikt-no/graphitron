@@ -71,6 +71,8 @@ class DiagnosticsTest {
     static Path backingRoot;
     @TempDir
     static Path nodesRoot;
+    @TempDir
+    static Path containersRoot;
 
     /** The generated catalog and nothing else, over a graph that binds {@code Foo} to {@code film}. */
     private static StoreFixture catalogOnly;
@@ -82,6 +84,12 @@ class DiagnosticsTest {
     private static StoreFixture withBackingClasses;
     /** A graph whose SDL declares a {@code @node} type, and one that declares none. */
     private static StoreFixture withNodes;
+    /**
+     * A graph declaring a polymorphic container whose members are node types, and one whose members
+     * are neither: what {@code @nodeId(typeName:)} may name is those two populations, so a fixture
+     * that only declares {@code @node} types cannot tell the container arm's two answers apart.
+     */
+    private static StoreFixture containers;
 
     @BeforeAll
     static void capture() {
@@ -94,6 +102,18 @@ class DiagnosticsTest {
             type Query { x: Int }
             type Film @node(typeId: "Film") { id: ID }
             """);
+        // Captured with the fixture catalog: the membership relation reads a member's resolved table
+        // binding rather than its directive, so a container is a legal typeName: value only where the
+        // catalog holds the table its member is a node over.
+        containers = StoreFixture.ofCatalog(containersRoot, """
+            type Query { x: Int }
+            type Customer @table(name: "customer") @node(keyColumns: ["customer_id"]) { id: ID }
+            type Staff @table(name: "staff") @node(keyColumns: ["staff_id"]) { id: ID }
+            union AddressOccupant = Customer | Staff
+            type Plain { name: String }
+            type Other { name: String }
+            union Anything = Plain | Other
+            """);
     }
 
     @AfterAll
@@ -103,6 +123,7 @@ class DiagnosticsTest {
         withClasses.close();
         withBackingClasses.close();
         withNodes.close();
+        containers.close();
     }
 
     /**
@@ -1226,6 +1247,45 @@ class DiagnosticsTest {
         var diags = compute(file, withNodes);
 
         assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void nodeIdTypeName_polymorphicContainer_producesNoError() {
+        // The keyset the diagnostic reads is the node declarations plus the containers with at least
+        // one table-bound node-type member, so the value a @service slot may write to take the id of
+        // any implementation carries no squiggle. Without this the editor would refuse every
+        // polymorphic slot in a consumer's schema while the build accepted it. The sibling case
+        // below is this one's control: the same fixture draws the diagnostic for a container with no
+        // node members, so the silence here is the keyset admitting the container rather than a
+        // store that answered nothing.
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "AddressOccupant")): Int
+            }
+            """);
+
+        var diags = compute(file, containers);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void nodeIdTypeName_containerWithNoNodeMembers_stillFlagsTheReference() {
+        // The other half of the same widening: a container is a legal value because of what its
+        // members are, so one whose members are node types over nothing is refused exactly as an
+        // undeclared type is. The two flags on the membership relation decide it, and this case is
+        // what keeps the arm from admitting every interface and union in the document.
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Anything")): Int
+            }
+            """);
+
+        var diags = compute(file, containers);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Anything").contains("@node");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
     }
 
     @Test

@@ -536,7 +536,8 @@ Six additions, each at the rung the existing relations reserve for it:
   argument or filter input on a generated fetch field, and a `@service` argument no parameter is fed
   from, all three read as the slot relation's absence rather than re-derived, which is the same
   absence `intent_node_id_decode`'s own arm fork already reads and is what lets the instruction arm
-  above carry no site predicate. The first two verdicts
+  above carry no site predicate. One cause of that absence is excluded, the census's rather than the
+  author's; the limits below state it. The first two verdicts
   are counts and complements over one relation rather than three joins of their own, which is what
   making the member relation total buys. Two grains in one relation, with
   `member_type_name` NULL on the three container-grain verdicts and set on the two member ones,
@@ -573,7 +574,21 @@ value, which is `intent_class_member_slot`'s territory and the walk the slot rel
 declines to perform. Stating the edge is the point; a verdict that compared a container's type
 against a member's key would refuse a bean the author was right to declare.
 
-The walk's refusals and the store's verdicts are the same facts under two names, within the one limit
+A second limit sits on the coordinate verdict rather than on the rule, it falls in one direction, and
+it is why `CONTAINER_NOT_AT_A_SLOT` is not simply the slot relation's absence.
+That absence has two causes and only one of them is the author's: the value binds a table predicate
+or encodes, which is what the verdict is about, or the coordinate's producer class is one the
+classpath census never reached, which is the capture's silence.
+`intent_field_producer_method`'s comment already separates the two, no `jvm_class` row under the
+graph's sources meaning the census never read the class and a class row with no method row meaning
+the class declares no such method. So the verdict stands aside on the first: a coordinate whose
+producer class no source in the graph declares draws nothing here. This was found in flight rather
+than designed in, three coordinates in the reactor's own captures drawing the verdict for a class the
+capture had not read, and a refusal an author cannot act on is the silence this family exists to
+close rather than a second one to open. The stand-aside is one-directional by construction, so a
+coordinate the census did reach is judged as before.
+
+The walk's refusals and the store's verdicts are the same facts under two names, within the two limits
 just stated; the pipeline tests below assert the walk, the fact-store tests assert the rows, and the existing
 `NodeIdProducerSlotDecodePipelineTest` pattern (assert that the schema *builds* and that the slot's
 transform is the decode, because a silent detection and a red build look alike from above) carries
@@ -595,6 +610,11 @@ argument and then diagnosing it there is the same division the incumbent already
 answering what the value may name and the defect rows answering what happened.
 
 ## Implementation
+
+Shipped at `ad09411`. The file-by-file list below is what landed, and it stays rather than collapsing
+to the note alone because the Done gate reads it against the Design section above. The round-4 rework
+adds no code: it is the LSP diagnostic cases and the read-side refusal's pipeline case named under
+Tests, and it rides in the commit carrying this revision.
 
 Symbol-anchored, no line numbers; re-find by search at pickup.
 
@@ -734,12 +754,15 @@ adjacent and the write side follows both.
   `UpdatableRecord<?>` slot over a candidate whose record is a `TableRecordImpl` is refused naming
   that candidate. The same matrix at a producer parameter, including that the old
   `KEY_ARITY_EXCEEDS_SLOT` no longer fires for an `UpdatableRecord<?>` parameter under a polymorphic
-  `typeName`.
+  `typeName`. One case is not a slot's: a container named at a read-side lookup argument is refused
+  for its coordinate rather than for its kind, which is the wording that has to agree with
+  `CONTAINER_NOT_AT_A_SLOT` and which the store's rows cannot pin.
 * Fact-store tier (`graphitron-model`, `intent` package, beside `NodeIdDecodeDestinationTest` and
   `NodeIdDecodeDefectTest`): seeded anchors for `sql_table_record_supertype`,
   `intent_node_container_member` (a container with a non-node `@table` member, and one with none,
-  both drawing their rows with the flags they draw), the assignability view (a `recordImplements`
-  interface admitted through the census leg, not only the direct-supertype leg),
+  both drawing their rows with the flags they draw), the assignability view (a slot typed above a
+  `recordImplements` interface resolving off the captured closure, which is the one leg that
+  relation has),
   `intent_node_id_candidate_node_type` (the identity row for a node type and one row per member for
   a container, which is what makes the destination one arm), the one instruction row per use site
   with `resolved_type_kind = 'POLY_CONTAINER'` and `basis = 'EXPLICIT_TYPE_NAME'` (and that a
@@ -776,10 +799,17 @@ adjacent and the write side follows both.
   gives it); the producer-parameter twin.
 * Compilation tier: the emitted glue compiles under `<release>17</release>` in
   `graphitron-sakila-example` (the execution fixture covers it).
-* LSP tier: a container at `@nodeId(typeName:)` completes and draws no unknown-node-type diagnostic;
-  a container with no node members still does; and a container at a read-side argument completes but
-  draws the `CONTAINER_NOT_AT_A_SLOT` diagnostic, which is the keyset and the defect rows answering
-  the two halves the Editor section separates.
+* LSP tier, the two halves the Editor section separates. The keyset half is four cases over the same
+  container SDL, two in `NodeTypeCompletionsTest` and two in `DiagnosticsTest`: a container with node
+  members completes and draws no unknown-node-type diagnostic, and one with none is offered by
+  neither, no completion and the diagnostic still firing. The two
+  diagnostic cases share a fixture deliberately, so the refusal is the silence's control: a container
+  admitted by a store that answered nothing would look the same from above as one admitted by the
+  keyset. The coordinate half owes no LSP case of its own. A `CONTAINER_NOT_AT_A_SLOT` verdict reaches
+  the editor as the rejection residue the build writes, and `RejectionSeverityCoverageTest` replays
+  every `Rejection` permit generically, so a per-verdict test here would restate that meta-test; what
+  the editor does owe at that coordinate is the completion, which is one of the two completion cases
+  above.
 
 ## Out of scope
 
@@ -1274,6 +1304,14 @@ test would restate that meta-test; the Tests section should say so rather than p
 does not arrive. Satisfied by: the two `DiagnosticsTest` cases, and the LSP bullet in Tests amended to
 name the residue replay as the third assertion's evidence.
 
+Response: both cases landed in `DiagnosticsTest`, over a container fixture of their own
+(`nodeIdTypeName_polymorphicContainer_producesNoError` and
+`nodeIdTypeName_containerWithNoNodeMembers_stillFlagsTheReference`), sharing one capture so that the
+refusing case is the admitting case's control: silence from a store that answered nothing would
+otherwise read the same as silence from the widened keyset. The LSP bullet in Tests now names the
+four keyset cases and says the coordinate half's evidence is the rejection-residue replay rather than
+a test that does not arrive.
+
 **Finding 2 (question 1, recording): one design substitution is not in the spec body.**
 `CONTAINER_NOT_AT_A_SLOT` stands aside where the coordinate's producer class has no `jvm_class` row
 under the graph's sources, on `intent_field_producer_method`'s reading of that absence as the
@@ -1284,12 +1322,21 @@ plan would find it. It is the right call, and `aProducerClassTheCensusNeverReach
 pins it, so this is a body edit and not a code change: state the stand-aside under the population
 edge, with its reason, beside the incumbent's own "owed an emitter rather than a verdict" edge.
 
+Response: stated, as a second paragraph beside the incumbent's edge under Fact store, carrying the
+two causes of the slot relation's absence, which of them is the author's, that the stand-aside is
+one-directional, and the three false refusals that found it.
+
 The spec-body precondition has two smaller drifts to take in the same revision. The Tests bullet for
 the assignability view still promises a `recordImplements` interface "admitted through the census leg,
 not only the direct-supertype leg", and the census leg is retired; the delivered test
 (`aSlotTypedAboveARecordImplementsInterfaceResolvesOffTheCapturedClosure`) is the right one and the
 sentence should describe it. And the Implementation section carries no "shipped at `ad09411`" note,
 which `roadmap/workflow.adoc` asks of a shipped phase.
+
+Response: both taken. The assignability bullet now describes the delivered test, a slot typed above a
+`recordImplements` interface resolving off the captured closure, which is the one leg that relation
+has; and Implementation opens with the shipped-at note, saying why the file-by-file list stays below
+it.
 
 #### Non-blocking
 
@@ -1298,6 +1345,11 @@ which `roadmap/workflow.adoc` asks of a shipped phase.
   `CONTAINER_NOT_AT_A_SLOT` rows are pinned three ways, so the fact is covered; the wording that is
   supposed to agree with it is not. One pipeline case over a `@nodeId(typeName: "AddressOccupant")`
   lookup argument would close it, and it can ride in the same revision or in a Backlog item.
+
+  Response: it rides here. `PolymorphicNodeIdSlotPipelineTest.aContainerAtAReadSideArgumentIsRefusedForTheCoordinateRatherThanForItsKind`
+  pins that the refusal names the coordinate and the remedy and is not the `is not @table-annotated`
+  message, which is the wording `CONTAINER_NOT_AT_A_SLOT` is supposed to agree with. Named in Tests
+  beside the slot matrix, since it is the one case in that class that is not a slot's.
 * `SLOT_NOT_SUPERTYPE_OF_MEMBER` and the `POLYMORPHIC_RECORD` admission are restricted to
   `site = 'ARGUMENT'`. That is the population edge the spec states, narrowed one step further than
   the prose ("a producer parameter, or a bean that is itself a jOOQ record"): a jOOQ-record bean

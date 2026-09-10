@@ -339,6 +339,30 @@ class PolymorphicNodeIdSlotPipelineTest {
     }
 
     /**
+     * The read side keeps its refusal and says why the coordinate is the wrong one. The store states
+     * the same fact as {@code CONTAINER_NOT_AT_A_SLOT}, whose rows are pinned in the fact-store tier;
+     * what this case pins is the wording that is supposed to agree with them, so the author who wrote
+     * the container one coordinate too far out reads the remedy rather than "is not @table-annotated",
+     * a mistake they did not make.
+     */
+    @Test
+    void aContainerAtAReadSideArgumentIsRefusedForTheCoordinateRatherThanForItsKind() {
+        String sdl = OCCUPANTS + """
+            type Query {
+                customers(occupantId: ID @nodeId(typeName: "AddressOccupant")): [Customer!]!
+            }
+            """;
+        var field = (GraphitronField.UnclassifiedField)
+            TestSchemaHelper.buildSchema(sdl).field("Query", "customers");
+        assertThat(field.rejection().message())
+            .as("the coordinate is named, and so is where the polymorphic spelling belongs")
+            .contains("names a polymorphic container")
+            .contains("occupantId")
+            .contains("@service")
+            .doesNotContain("is not @table-annotated");
+    }
+
+    /**
      * The reorder is answer-preserving: every named type that is neither a container nor a
      * {@code @table} object still meets the single-type path's own refusal, with its own wording. The
      * container arm sits ahead of that test now, so this is what says it did not swallow a shape.
