@@ -177,6 +177,12 @@ class HierarchyKindRegistryTest {
         Map.entry(DeleteRows.class, HierarchyKind.WALKED_FACT),
         Map.entry(UpdateRows.class, HierarchyKind.WALKED_FACT),
         Map.entry(MatchedKey.class, HierarchyKind.WALKED_FACT),
+        // Where a decoding @nodeId instruction sits, in components. Walked on both sides that
+        // mint it: the classification walk names the coordinate it is standing on, and the store's
+        // instruction census is an SDL traversal's own product. A key rather than a verdict, so
+        // not the error channel even though its one reader is a rejection.
+        Map.entry(no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate.class,
+            HierarchyKind.WALKED_FACT),
         // Capability seals over walked leaves.
         Map.entry(HasInputRecordShape.class, HierarchyKind.WALKED_FACT),
         // The DML write payload carried on the mutation leaves: the classify-time realization

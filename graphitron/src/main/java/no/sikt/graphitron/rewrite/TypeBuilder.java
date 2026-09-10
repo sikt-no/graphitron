@@ -1949,8 +1949,14 @@ class TypeBuilder {
      * {@link InputField}s (or the accumulated-failure prose). The single home of the input-field
      * classification loop for the field-derived write-target paths in {@code FieldBuilder}, so
      * every route classifies identical schema defects identically.
+     *
+     * <p>{@code useSite} is the consuming coordinate the input surface hangs under, threaded for
+     * the reason {@link ClassifyContext.UseSite} states: a {@code @nodeId} leaf under it is one
+     * authored instruction and one coordinate per consumer, and only the caller knows which
+     * consumer is asking.
      */
-    InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields, TableRef tableRef) {
+    InputFieldsResolution resolveInputFields(String name, List<GraphQLInputObjectField> fields,
+                                             TableRef tableRef, ClassifyContext.UseSite useSite) {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         var conditionFailures = new ArrayList<InputFieldConditionFailure>();
         var resolvedFields = new ArrayList<InputField>();
@@ -1959,7 +1965,8 @@ class TypeBuilder {
             // already lifts column-miss to InputField.UnboundField; non-column-miss failures
             // (notGenerated, @reference path, NodeId resolution, circular nesting) remain
             // Unresolved and surface here.
-            var resolution = ctx.classifyInputField(f, name, tableRef, ClassifyContext.root(), conditionFailures);
+            var resolution = ctx.classifyInputField(f, name, tableRef,
+                ClassifyContext.under(useSite), conditionFailures);
             switch (resolution) {
                 case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

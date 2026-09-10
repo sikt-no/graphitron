@@ -65,12 +65,16 @@ final class InputFieldResolver {
      * {@link ClassifyContext} as the cascade flag and reaches the {@code @nodeId} decode rail, which
      * is the one classifier branch that resolves a per-participant path.
      *
+     * <p>{@code useSite} is the consuming coordinate this input surface hangs under, threaded so a
+     * {@code @nodeId} leaf under it can name itself at use-site grain rather than at the input
+     * type's own definition grain; see {@link ClassifyContext.UseSite}.
+     *
      * <p>Returns {@link Resolution.Ok} with an empty list when {@code rt} is {@code null} or the
      * schema type is not an input object (no work to do). Returns {@link Resolution.Rejected}
      * when at least one field fails column resolution or any {@code @condition} reflection fails.
      */
     Resolution resolve(String typeName, TableRef rt, boolean enclosingOverride,
-                       ParticipantRef.TableBound participant) {
+                       ParticipantRef.TableBound participant, ClassifyContext.UseSite useSite) {
         if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
@@ -79,7 +83,8 @@ final class InputFieldResolver {
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         for (var f : iot.getFieldDefinitions()) {
             var res = ctx.classifyInputField(f, typeName, rt,
-                ClassifyContext.forParticipant(enclosingOverride, participant), conditionFailures);
+                ClassifyContext.forParticipant(enclosingOverride, participant, useSite),
+                conditionFailures);
             switch (res) {
                 case InputFieldResolution.Resolved r -> classified.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

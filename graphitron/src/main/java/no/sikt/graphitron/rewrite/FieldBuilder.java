@@ -800,7 +800,8 @@ class FieldBuilder {
             warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
-        var refs = classifyArguments(fieldDef, table, returnTypeName, plan, argsBoundElsewhere, classifyErrors);
+        var refs = classifyArguments(parentTypeName, fieldDef, table, returnTypeName, plan,
+            argsBoundElsewhere, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
         return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, rejections);
@@ -1943,9 +1944,10 @@ class FieldBuilder {
      * an argument arm reading the wrapper would answer a different question from the one the table
      * answers.
      */
-    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, String targetTypeName,
+    List<ArgumentRef> classifyArguments(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                        TableRef rt, String targetTypeName,
                                         NodeIdArgPlan plan, List<String> errors) {
-        return classifyArguments(fieldDef, rt, targetTypeName, plan, Set.of(), errors);
+        return classifyArguments(parentTypeName, fieldDef, rt, targetTypeName, plan, Set.of(), errors);
     }
 
     /**
@@ -1953,7 +1955,8 @@ class FieldBuilder {
      *        {@code @routine} chain's IN-parameter bindings), skipped entirely so they neither
      *        yield a ref nor an unbound-argument error.
      */
-    List<ArgumentRef> classifyArguments(GraphQLFieldDefinition fieldDef, TableRef rt, String targetTypeName,
+    List<ArgumentRef> classifyArguments(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                        TableRef rt, String targetTypeName,
                                         NodeIdArgPlan plan, Set<String> argsBoundElsewhere,
                                         List<String> errors) {
         var fieldCondition = ctx.readConditionDirective(fieldDef);
@@ -1963,9 +1966,40 @@ class FieldBuilder {
             if (argsBoundElsewhere.contains(arg.getName())) {
                 continue;
             }
-            refs.add(classifyArgument(fieldDef, arg, rt, targetTypeName, fieldOverride, plan, errors));
+            var ref = classifyArgument(parentTypeName, fieldDef, arg, rt, targetTypeName,
+                fieldOverride, plan, errors);
+            disposeRefusedNodeIdArgument(parentTypeName, fieldDef, arg, ref);
+            refs.add(ref);
         }
         return List.copyOf(refs);
+    }
+
+    /**
+     * A refused argument disposes of any decoding {@code @nodeId} instruction on it: the classifier
+     * declined the argument, so it declined the instruction, and which gate declined first is not
+     * something this has to know.
+     *
+     * <p>Stated once here rather than at each gate inside {@link #classifyArgument}, and the
+     * difference matters. An install is specific and is minted where it is decided; a refusal is
+     * uniform, and chasing it gate by gate is how a new gate lands without a mint and the coverage
+     * rule grows a second message about a decode nobody could have installed on an argument the
+     * build has already refused. The ledger keeps a coordinate's first row, so a gate that does
+     * mint something more specific still wins.
+     */
+    private void disposeRefusedNodeIdArgument(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                              GraphQLArgument arg, ArgumentRef ref) {
+        var rejection = switch (ref) {
+            case ArgumentRef.UnclassifiedArg u -> u.rejection();
+            case ArgumentRef.ScalarArg.UnboundArg u -> Rejection.structural(u.reason());
+            default -> null;
+        };
+        if (rejection == null) {
+            return;
+        }
+        ctx.decodeLedger().recordRefusal(
+            new no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate.Argument(
+                parentTypeName, fieldDef.getName(), arg.getName()),
+            rejection);
     }
 
     /**
@@ -1991,10 +2025,14 @@ class FieldBuilder {
             : new CallSiteExtraction.ThrowOnMismatch(decode);
     }
 
-    private ArgumentRef classifyArgument(GraphQLFieldDefinition fieldDef, GraphQLArgument arg,
+    private ArgumentRef classifyArgument(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                         GraphQLArgument arg,
                                          TableRef rt, String targetTypeName, boolean fieldOverride,
                                          NodeIdArgPlan plan, List<String> errors) {
         String name = arg.getName();
+        // The use site every input surface under this argument hangs from, and the coordinate an
+        // argument-carried @nodeId instruction is itself at.
+        var useSite = ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(), name);
         GraphQLType type = arg.getType();
         boolean nonNull = type instanceof GraphQLNonNull;
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
@@ -2088,7 +2126,8 @@ class FieldBuilder {
                 // them, producing the same TableInputArg the @table bridge does. The table is the
                 // consuming field's fact, not the input's.
                 if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-                    return classifyPlainLookupKeyArg(iot, name, typeName, nonNull, list, rt, argCondition, errors);
+                    return classifyPlainLookupKeyArg(iot, name, typeName, nonNull, list, rt,
+                        argCondition, useSite, errors);
                 }
             }
             // Thread the call site's cascade override flag into the classifier. The
@@ -2099,7 +2138,8 @@ class FieldBuilder {
             // the consumer's walk.
             boolean enclosingOverride = fieldOverride
                 || argCondition.map(c -> c.override()).orElse(false);
-            return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride, plan.participant())) {
+            return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride,
+                    plan.participant(), useSite)) {
                 case InputFieldResolver.Resolution.Ok ok -> new ArgumentRef.InputTypeArg.PlainInputArg(
                     name, typeName, nonNull, list, argCondition, ok.fields());
                 case InputFieldResolver.Resolution.Rejected r -> new ArgumentRef.UnclassifiedArg(
@@ -2129,6 +2169,14 @@ class FieldBuilder {
                 resolved = ctx.nodeIdLeafResolver().resolve(arg, name, rt,
                     plan.participant(), leafOverride(arg));
             }
+            // The resolver's verdict, transcribed at the site that holds the coordinate. Minted
+            // before the composition gates below act on it, so a coordinate this method goes on to
+            // reject for a reason of its own still carries the resolver's own answer: what the
+            // coverage rule asks is whether the generator disposed of the instruction at all.
+            ctx.decodeLedger().recordLeaf(
+                new no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate.Argument(
+                    parentTypeName, fieldDef.getName(), name),
+                resolved);
             // The slot's value is decoded before it leaves the generated glue, on every arm, so an
             // authored @condition parameter bound to the whole slot receives the typed key rather
             // than the wire string. Installed here, where the slot's node type is known, rather than
@@ -2241,17 +2289,24 @@ class FieldBuilder {
             var targetNode = ctx.nodes.forName(targetTypeName);
             if (targetNode.isPresent()) {
                 NodeType node = targetNode.get();
+                // The instruction census admits this directive-less coordinate on the same terms
+                // this arm resolves it (an `id: ID` argument of a node-returning field), so the
+                // disposition is owed here exactly as it is on the directive arm above: what
+                // differs is which rule stated the instruction, and a basis is not a rail.
+                var implicitAt = new no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate
+                    .Argument(parentTypeName, fieldDef.getName(), name);
                 // Resolves ahead of the column lookup below, so a real column of this name is a
                 // rejection rather than a contest either reading wins. Same answer as the output
                 // coordinate, on purpose: shadowing is one question.
                 var shadowed = ctx.catalog.findColumn(rt.tableName(), name);
                 if (shadowed.isPresent()) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        // Blank coordinate: projectFilters already prefixes this rejection with
-                        // `argument '<name>': `, and the enclosing field is named by the
-                        // ValidationError's own coordinate, so a self-prefix here would say it
-                        // twice.
-                        BuildContext.rejectShadowedNodeId("", name, node, shadowed.get().sqlName()));
+                    // Blank coordinate: projectFilters already prefixes this rejection with
+                    // `argument '<name>': `, and the enclosing field is named by the
+                    // ValidationError's own coordinate, so a self-prefix here would say it twice.
+                    var rejection = BuildContext.rejectShadowedNodeId(
+                        "", name, node, shadowed.get().sqlName());
+                    ctx.decodeLedger().recordRefusal(implicitAt, rejection);
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, rejection);
                 }
                 boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                 // Key columns come off the NodeType, which is TypeBuilder's reconciled answer for
@@ -2263,9 +2318,11 @@ class FieldBuilder {
                 // Composite-PK + non-list non-@lookupKey rejects; non-list arity-1 falls through
                 // to the single-column carrier below.
                 if (keyColumns.size() > 1 && !isLookupKey) {
-                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        Rejection.structural("scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
-                        + "@lookupKey; mutation-key and top-level filter paths are not yet supported"));
+                    var unwired = Rejection.structural(
+                        "scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
+                        + "@lookupKey; mutation-key and top-level filter paths are not yet supported");
+                    ctx.decodeLedger().recordRefusal(implicitAt, unwired);
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, unwired);
                 }
                 // List + arity-1 without @lookupKey is not yet wired (would be a top-level
                 // filter use case); falls through to column-name resolution which fails cleanly.
@@ -2273,6 +2330,7 @@ class FieldBuilder {
                     // Fall through to column-name resolution.
                 } else {
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(node.decodeMethod());
+                    ctx.decodeLedger().recordSlot(implicitAt, extraction);
                     return new ArgumentRef.ScalarArg.ColumnBackedArg(
                         name, typeName, nonNull, list, keyColumns, extraction,
                         argCondition, fieldOverride, isLookupKey, List.of(),
@@ -2393,14 +2451,15 @@ class FieldBuilder {
      */
     private ArgumentRef classifyPlainLookupKeyArg(
         GraphQLInputObjectType iot, String name, String typeName, boolean nonNull, boolean list,
-        TableRef rt, Optional<ArgConditionRef> argCondition, List<String> errors
+        TableRef rt, Optional<ArgConditionRef> argCondition, ClassifyContext.UseSite useSite,
+        List<String> errors
     ) {
         if (rt == null) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 Rejection.structural("@lookupKey argument '" + name + "': the consuming field does not "
                 + "resolve to a table, so the lookup input's fields cannot be bound to columns"));
         }
-        var resolution = typeBuilder.resolveInputFields(typeName, iot.getFieldDefinitions(), rt);
+        var resolution = typeBuilder.resolveInputFields(typeName, iot.getFieldDefinitions(), rt, useSite);
         if (resolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                 failed.consequence().prefixedWith("@lookupKey argument '" + name + "': "));
@@ -6217,7 +6276,9 @@ class FieldBuilder {
         // 3. Input fields against the write target, mirroring the validator's input-field
         // rejections (the validator-mirror obligation).
         List<InputField> inputFields;
-        var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, rawInput.schemaType().getFieldDefinitions(), writeTarget);
+        var fieldsResolution = typeBuilder.resolveInputFields(argTypeName,
+            rawInput.schemaType().getFieldDefinitions(), writeTarget,
+            ClassifyContext.UseSite.of(parentTypeName, name, argName));
         if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new DeleteWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location,
                 failed.consequence()));
@@ -6521,7 +6582,9 @@ class FieldBuilder {
         // rejections (the validator-mirror obligation).
         var schemaInput = rawInput.schemaType();
         List<InputField> inputFields;
-        var fieldsResolution = typeBuilder.resolveInputFields(argTypeName, schemaInput.getFieldDefinitions(), writeTarget);
+        var fieldsResolution = typeBuilder.resolveInputFields(argTypeName,
+            schemaInput.getFieldDefinitions(), writeTarget,
+            ClassifyContext.UseSite.of(parentTypeName, name, argName));
         if (fieldsResolution instanceof TypeBuilder.InputFieldsResolution.Failed failed) {
             return new ReturnCapableWriteTarget.Rejected(new UnclassifiedField(parentTypeName, name, location,
                 failed.consequence()));

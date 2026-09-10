@@ -92,7 +92,7 @@ class ServiceCatalogTest {
         // argument's own directives exist to read. The @nodeId slot arm is exercised where a real
         // coordinate carries the directive, at the pipeline tier.
         return catalog.bindServiceMethod(decoded.signature(), claims, argBindings, ctxKeys,
-            batchKeyColumns, slotTypes, null);
+            batchKeyColumns, slotTypes, null, null);
     }
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */

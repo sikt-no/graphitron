@@ -223,136 +223,108 @@ construction.
   A `@nodeId` under a field the walk refused for an unrelated reason is therefore a census member, and
   what keeps the check quiet about it is the `NotReached` disposition rather than the domain join.
 
-## Slice 1: the disposition gets a single mint
+## Shipped
 
-No new build failures, bounded by the compiler, and it is the slice that makes slice 2 a projection
-rather than a research task.
+Both slices landed. What follows is the shape as built, and the places it diverged from the plan.
 
-* Introduce the sealed `Disposition` (`Installed(rail)`, `Refused(Rejection)`, `NotReached`) and route
-  every site that decides one through one vocabulary that records the coordinate components and the
-  use site as it mints. A sealed arm set rather than a boolean plus a nullable rejection, because one
-  arm carries rows and the others carry only their identity, which is the fact model's own rule for
-  the shape.
-* The mint sites are the callers that already hold coordinate and verdict together, so this is
-  transcription rather than a new decision. `NodeIdLeafResolver.Resolved` is the model: its four
-  install arms and its `Rejected` are one sealed verdict already, and `BuildContext.classifyInputField`
-  and `FieldBuilder.classifyArgument` are where the coordinate sits.
-* Pin totality with a meta-test in the mould of
-  `PackageImportDirectionTest.unitRefsAreMintedOnlyByThePlansNamingVocabulary`: a decode carrier
-  constructed outside the vocabulary fails the build. This is what replaces the plan-level rail list,
-  and it is not hypothetical. `NodeIdDecodePolymorphicRecord` was the fourth arm and it landed while
-  this plan sat in Spec; the meta-test is what makes the fifth someone else's compile error rather
-  than this document's staleness.
-* Rail two mints where its install is decided, carrying the use site, and narrows on the same
-  declaration `ArgmappingProjectionDefects` already holds rather than a second spelling of it. A
-  `{@link}` from the ledger to `EMITTING_SITES` puts that linkage under the Javadoc reference gate, so
-  a site joining one set and not the other cannot pass silently.
-* The alternative is a capability over rail one's arms, read off the carriers. Cheaper, and
-  completeness stays review-only, which is the weakness: a carrier missing from the set reads as a
-  dropped instruction downstream. Recommendation: single mint, and fall back to the capability only if
-  the mint sites turn out not to be a small set.
-* Where a site cannot state its coordinate components (a use site it does not hold, say), that is this
-  slice's finding and its threading is this slice's work. Rail two's known instance is the root
-  argument name, which is NULL on an `INPUT_FIELD` binding in `graphitron_argmapping_match` and has to
-  come from the occurrence path. It is the one task here whose size is not yet known, which is why
-  this is a slice of its own rather than a bullet in the check.
+**The vocabulary and the ledger.** `NodeIdDecodeCoordinate` lives in `graphitron-model`'s
+diagnostics package, so both operands of the rule are one type rather than two spellings translated
+at the seam. It is sealed over the two decoding sites and carries components, never a rendered
+use-site string. `NodeIdDecodeDisposition` is the sealed `Installed(Rail)` / `Refused(Rejection)` /
+`NotReached` the plan asked for, and `NodeIdDecodeLedger` is the one write path, held on
+`BuildContext` and surfaced on `GraphitronSchemaBuilder.Bundle`.
 
-## Slice 2: the check
+**The mint sites, as they turned out.** The plan named two and there are five, all of them sites
+that already held coordinate and verdict together: `FieldBuilder.classifyArgument` and
+`BuildContext.classifyInputField` on the directive arm (each transcribing
+`NodeIdLeafResolver.Resolved`), the same two on the *implicit* arm, and `InputBeanResolver` plus
+`ServiceCatalog.bindServiceMethod` for a producer slot. The implicit arm is the one the plan did not
+see, and it is not a rail: `intent_node_id_instruction` states five bases, and `TARGET_ID_NAME` (an
+`id: ID` slot of a node-returning field, no directive at all) is a decoding instruction the census
+holds with nothing written on it. The corpus ratchet found it immediately, as
+`Query.filmActorByNodeId` in the sakila example.
 
-* One pass after classification, beside where `StoreDetections`' violations are folded into the error
-  stream in `GraphQLRewriteGenerator`. That fold point is where both operands are in hand: the census
-  off the open store, the ledger off the run. Anti-join the census against the ledger on coordinate
-  components and use site, and report what has no ledger row. There is no second subtraction and no
-  disposition-by-disposition filtering: a row with any disposition is covered, which is what totality
-  buys.
-* **`Rejection.deferred` is the default arm, not `Rejection.structural`.** The residual class is
-  defined by the generator not having carried something out, which is exactly "recognised but not yet
-  generator-supported". Structural would tell an author to fix a schema that is correct, which is the
-  failure the deferral arm exists to prevent, and it is the fault this plan finds in the naive store
-  rule. Reserve `structural` for a sub-population the check can actually attribute to the author; if it
-  can attribute none, say so rather than reaching for the arm.
-* The message names the coordinate, the node type, and the rail, and states the remedy that exists
-  today. Where the remedy is what the walk's own foreign-key message already says, converge on that
-  wording rather than renegotiating it.
+**The use site had to be threaded, and that was the slice's real work.** `ClassifyContext` gained a
+`UseSite` (the three root components plus the descent), which is what makes an input-field
+coordinate nameable at use grain; `InputFieldResolver.resolve`, `TypeBuilder.resolveInputFields`,
+`InputBeanResolver.enrich` and the bean and record descents inside it all take one.
+`ServiceCatalog.pathCoordinate` recovers the same components for an `argMapping` path through the
+SDL walk `pathLeafDeclaration` already makes, rather than by splitting the written path.
 
-## What lands as a build failure the day this ships
+**Totality is a post-walk sweep, not one mint per abort path.** `NodeIdDecodeNotReached` mints the
+`NotReached` rows off the walk's own structural facts: the field registry holds no entry for the
+coordinate's owning field, or it holds an `UnclassifiedField`. One site rather than one per abort
+path, driven by SDL plus the registry rather than by the census, so it cannot empty the residual it
+exists to keep meaningful. A field that classified is deliberately not swept.
 
-The check converts silent drops into reported ones, so the item owes the list rather than discovering
-it in a consumer's build. **On the evidence available today that list is empty, and the item is
-therefore a ratchet rather than a repair.** That is a smaller claim than this plan once made and it is
-the one the measurements support; it does not shrink the goal, because the failure class this closes
-is defined by nobody knowing when it acquires a member.
+**The check.** `NodeIdDecodeCoverage.violations` folds the projected-key rail's installs into the
+ledger and anti-joins the census against it, at the fold point beside `StoreDetections.violations()`
+in `GraphQLRewriteGenerator`. `Rejection.deferred`, as the plan requires, and no sub-population is
+attributed to the author. `NodeIdDecodeCoverageFacts` is the store operand: the census (materialized
+tables only, so it expands no rule at read cadence) and the rail-two installs, read at
+`intent_resolved_node_key_projection`'s own `(site, use_site, position)` grain and narrowed on
+`ArgmappingProjectionDefects.EMITTING_SITES`, now package-visible for that one reader.
 
-* **The shape this plan used to name as its first member has shipped.** A field-level `@condition`
-  whose `argMapping` descends to a `@nodeId` input field is installed today, by the projected-key rail
-  the operand section names: `ProjectedKeyReads` renders the decode from the `KeyProjection` row, which
-  is the rail `roadmap/changelog.md` records shipping. The manual documents the shape as working ("Either way the parameter receives a
-  decoded column's own value and never the encoded id", `docs/manual/reference/directives/condition.adoc`).
-  So it is not a member, it is the reason the projected-key rail has to be an install operand: a rule
-  reading walk carriers alone would report this working shape and fail a passing build.
-* **The two "no row" coordinates probe A found are both covered**, one by
-  `intent_node_id_decode_defect` and one by `InputBeanResolver.singleValuedMemberDeferral`, and probe
-  B's cross-table filter with no foreign key is refused by the walk. None is a member.
-* **One candidate is open and slice 2's enumeration has to settle it.** Probe B's second shape, a
-  `@nodeId(typeName: "Staff")` filter over `store` where two foreign keys connect the pair, drew a
-  store row and no walk complaint, and the probe measured neither whether a decode is installed there
-  nor whether anything refuses it. If nothing does, it is a live member and the first real instance of
-  issue 536's class; if the walk picks a foreign key and installs, it is clean. Naming it here rather
-  than leaving it to be discovered is the point of this section.
-* `depends-on` stays empty, now for the plain reason: nothing this plan needs is unshipped.
-* Slice 2's first task is to run the ratchet over the whole fixture corpus and enumerate every member
-  it finds, with a decision per member: a deferral naming the pending emitter, or a structural error
-  where the coordinate really is the author's mistake. The expected outcome is an empty residual, and
-  an empty residual is a passing ratchet rather than a disappointing one.
+**The residual on the tree as shipped is empty**, which is the outcome the plan predicted. The
+corpus ratchet passes over every document carrying a node id, and so does the sakila example's full
+generate-compile-execute pipeline. The item is the ratchet it said it was. Probe B's open candidate
+(a `@nodeId(typeName: "Staff")` filter over `store`, two foreign keys between the pair) is not a
+member: the walk refuses an ambiguous route by name, which is a `Refused` disposition.
+
+**Three divergences worth the reviewer's attention.**
+
+* *The mint pin is over arms, not over construction sites.* `NodeIdDecodeArmCoverageTest` computes
+  by reflection over the sealed hierarchy which `CallSiteExtraction` arms reach a handle on the wire
+  format, and compares that with `NodeIdDecodeLedger.DECODE_ARMS`; `installedBy`'s switch is
+  exhaustive, so a fifth arm is a compile error and an arm answered wrongly is a test failure. The
+  plan asked for a lexical scan in the mould of
+  `PackageImportDirectionTest.unitRefsAreMintedOnlyByThePlansNamingVocabulary`. The reason for the
+  change is that the pin's stated purpose is catching the *fifth arm*, which reflection over the
+  seal catches directly, while two of the nine construction sites are emit-time and hold no
+  coordinate to mint with.
+* *The granularity enforcer states the grain with two drops rather than a drop beside a refusal.*
+  The plan's pairing is not constructible: a field whose arguments the walk classifies disposes of
+  every instruction under it, and one whose arguments it does not classify refuses none of them.
+  The test says so in its own javadoc.
+* *One coarsening, in the safe direction, stated on the code.* Where one field reaches one input
+  field through two arguments, the rail-two install operand takes both occurrence paths as
+  installed. `graphitron_argmapping_match` leaves `bound_argument_name` NULL on an `INPUT_FIELD`
+  binding, and narrowing further would mean splitting the written path, which is the second spelling
+  the keying rule refuses. It can lose a report and can never fail a passing build.
 
 ## Tests
 
-* *The gate, pipeline tier.* In the mould of `ArgmappingProjectionRejectionPipelineTest`: an SDL whose
-  decoding instruction has no install fails `validate()` with the new message, and the same shape with
-  the install builds clean. Both halves, or the gate passes because everything fails.
-* *The ratchet, pipeline tier.* The totality claim over the fixture corpus: every decoding instruction
-  in the census has a ledger row. This is what keeps the class from acquiring a silent member as new
-  lowering paths land, and it is the enforcer that replaces this plan's prose list of rails.
-* *The granularity enforcer.* A fixture with two `@nodeId` instructions on one owning field, one
-  refused for an unrelated reason and one dropped, asserting the check reports the dropped one. Without
-  it, the coverage set's grain is a claim with no enforcer, and the ratchet can go green over a corpus
-  while a drop hides behind a neighbour's error.
-* *The rail-two regression, pipeline tier.* A dotted `argMapping` descending to a `@nodeId` input
-  field builds clean and reports nothing. It is installed by rail two and by nothing rail one holds, so
-  it is the fixture that fails the moment the ledger is built over walk carriers alone. Both spellings,
-  the authored column and the inferred one, since they differ in what the author wrote past the node id.
-* *The use-site enforcer.* One `@nodeId` input field consumed by two fields, installed at one and not
-  at the other. The census has two rows and a definition-keyed ledger would cover both from one
-  install, so this is the fixture that fails if the keying axis slips back to the definition. It is the
-  silent-miss direction, which no other test here covers.
-* *The `NotReached` test.* A field that fails to classify for an unrelated reason, carrying a `@nodeId`
-  with no install underneath it, reports the field's own rejection and nothing from this check. Without
-  it the residual grows a second, wrong-cause message on every already-failing build, which is the
-  fault this plan diagnoses in the naive store rule.
-* *The mint pin.* Slice 1's meta-test, which is the only thing standing between the ledger and the
-  emit-side allow-list this design is trying not to be, and the reason the rail list can live in the
-  compiler rather than in this document.
-* *No new model-tier cases.* The rule reads no new relation, so `graphitron-model`'s suite has nothing
-  to state about it. Worth naming, because the Backlog text's shape (a new view) would have wanted a
-  seeded case per verdict and that work is not in this plan.
-* The Probe A and Probe B shapes are the fixtures to reach for. The dotted `@condition` descent belongs
-  in the ratchet's *clean* set, and it is the sharpest case there: it is installed by the projected-key
-  rail and by nothing the walk holds, so it is exactly the fixture that fails if the ledger is built
-  over walk carriers alone.
+Landed as follows.
+
+* `NodeIdDecodeCoveragePipelineTest`, the gate and its clean half. A `@nodeId` argument on a plain
+  column field fails the build naming the coordinate, the node type and both rails; the same
+  instruction on a filter argument builds clean. Beside them: the rail-two regression (a dotted
+  `argMapping` descent to a `@nodeId` input field, both spellings, clean), the use-site enforcer
+  (one input field installed at one consumer and not at another, only the second reported), the
+  granularity enforcer, and the `NotReached` case.
+* `NodeIdDecodeCoverageRatchetTest`, the totality claim over the corpus: every document carrying a
+  node id validates with no coverage report, with a floor on the swept set.
+* `NodeIdDecodeArmCoverageTest`, the mint pin, plus the delegating arm's own case.
+* `DetectionReadReachGateTest` gains the new component's read-cadence row, which is the projection
+  relation's body and nothing else.
+* `HierarchyKindRegistryTest` gains the coordinate's kind label.
+* No new model-tier cases: the rule reads no new relation.
 
 ## Docs
 
-The user-visible change is a build message where a request-time failure used to be, on a rail the
-manual already promises decoded values for. `docs/manual/reference/directives/nodeId.adoc` states that
-promise for the Java rail ("Two ways to get this wrong, and the build names both"); it owes a sentence
-saying the build now also speaks up for a filter slot whose id no decode reaches, and the `@condition`
-page's existing composite-key remedy ("move the `@condition` onto the `@nodeId` input field itself")
-becomes the remedy the new message points at where it applies. No new directive, no new argument, no SDL change.
+Landed. The user-visible change is a build message where a request-time failure used to be, on a rail
+the manual already promises decoded values for, and `docs/manual/reference/directives/nodeId.adoc`
+now says so in the inference section, beside the two shapes that already leave nothing to inherit: a
+coordinate no lowering path reaches fails the build naming the slot, the node type and the consuming
+field, and the message points at the `argMapping` key projection where that is the remedy. No new
+directive, no new argument, no SDL change.
 
-Separately, `intent_node_id_decode`'s comment asserts that "an instruction with no row here was not
-carried out, and absence is therefore never a message". Probe B shows presence over-claims, so the
-comment converges on `intent_node_id_encode`'s wording for its own half rather than acquiring an
-appended note about the surprise.
+`intent_node_id_decode`'s comment has converged on `intent_node_id_encode`'s wording for its own
+half. It keeps its absence clause, which was never in doubt, and gains the presence clause it lacked:
+a row says where the decoded tuple would land, and whether the generator carries the decode out there
+is the walk's fact. Probe B's cross-table filter is named on the comment as the measurement that
+settles the reading, and the comment says outright that the build-path coverage rule is deliberately
+not a reader of that relation.
 
 ## Open forks for the reviewer
 

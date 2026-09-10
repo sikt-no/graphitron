@@ -179,6 +179,16 @@ Two shapes leave nothing to inherit, and both are refused rather than passed alo
 neither returns a table-bound type nor names a table with `@mutation(table:)`, and a table more than
 one node type declares itself over, which is two different key tuples. Write `typeName:` at either.
 
+The build also speaks up where nothing decodes the id at all. A `@nodeId` on a filter argument or a
+filter input field is only carried out where some lowering path installs the decode, and a
+coordinate no path reaches used to compile clean and hand the query the base64 string, failing per
+request as a cast that throws or an opaque string compared against an integer key column. Such a
+coordinate now fails the build, naming the argument or input field, the node type, and the
+consuming field it sits under. Where the remedy is to bind the id onto one key column, that is the
+`argMapping` projection xref:routine.adoc#node-id-key-projection[Projecting a key column out of a
+node id] describes; where it is to move the directive, the message says which slots the generator
+already decodes.
+
 [#polymorphic-record-slot]
 === Decoding an id of any implementation into a record supertype
 

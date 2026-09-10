@@ -264,11 +264,12 @@ final class ServiceDirectiveResolver {
             : null;
 
         var result = svc.bindServiceMethod(signature, claims, argBindings, ctxKeys,
-            keySource == null ? List.<ColumnRef>of() : keySource.keyColumns(), slotTypes, fieldDef);
+            keySource == null ? List.<ColumnRef>of() : keySource.keyColumns(), slotTypes, fieldDef,
+            parentTypeName);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
-        var beanResult = inputBeans.enrich((MethodRef.Service) result.ref(), fieldDef);
+        var beanResult = inputBeans.enrich((MethodRef.Service) result.ref(), fieldDef, parentTypeName);
         if (beanResult instanceof InputBeanResolver.Result.Failed f) {
             return new Resolved.Rejected(f.rejection().prefixedWith("service method could not be resolved — "));
         }

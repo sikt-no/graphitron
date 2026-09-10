@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
 import no.sikt.graphitron.model.diagnostics.ReflectionError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ServiceMethodCallError;
@@ -395,7 +396,8 @@ class ServiceCatalog {
      */
     ServiceReflectionResult bindServiceMethod(ServiceSignature sig, ClaimedParams claims,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> batchKeyColumns,
-            Map<String, GraphQLInputType> slotTypes, GraphQLFieldDefinition fieldDef) {
+            Map<String, GraphQLInputType> slotTypes, GraphQLFieldDefinition fieldDef,
+            String parentTypeName) {
         if (sig.unconstructible() != null) {
             return new ServiceReflectionResult(null, sig.unconstructible());
         }
@@ -432,6 +434,21 @@ class ServiceCatalog {
                     if (ext == null) {
                         ext = argExtraction(p.typeName(),
                             resolvePathLeafType(bound.path(), slotTypes), where);
+                    }
+                    // The slot rail's disposition, transcribed where the slot's own verdict is
+                    // pronounced. A parameter an argMapping pair claims is the projected-key rail's
+                    // to dispose of and draws nothing here, which is the same precedence the
+                    // extraction above already takes.
+                    var at = argBindings.authoredTargets().contains(p.name())
+                        ? null
+                        : pathCoordinate(bound.path(), parentTypeName, fieldDef, slotTypes);
+                    if (at != null && pathLeafDeclaresNodeId(bound.path(), fieldDef, slotTypes)) {
+                        if (ext instanceof ArgExtraction.Rejected rejected) {
+                            ctx.decodeLedger().recordRefusal(at, rejected.rejection());
+                        } else {
+                            ctx.decodeLedger().recordSlot(at,
+                                ((ArgExtraction.Resolved) ext).extraction());
+                        }
                     }
                     if (ext instanceof ArgExtraction.Rejected rej) {
                         return new ServiceReflectionResult(null, rej.rejection());
@@ -1681,6 +1698,43 @@ class ServiceCatalog {
                                           Map<String, GraphQLInputType> slotTypes) {
         var declaration = pathLeafDeclaration(path, fieldDef, slotTypes);
         return declaration != null && declaration.hasAppliedDirective(BuildContext.DIR_NODE_ID);
+    }
+
+    /**
+     * The decode-coverage coordinate a {@link PathExpr} binds at, or {@code null} when the path does
+     * not resolve. The same walk {@link #pathLeafDeclaration} makes, reporting where it went rather
+     * than what it found: a single-segment path names the argument itself, and a longer one names an
+     * input field whose descent is the container type and field name of every step below the head.
+     *
+     * <p>The container types are read off the SDL walk rather than recovered from the written path,
+     * for the reason {@link no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate} states: the
+     * store holds the same descent relationally, and a Java-side spelling composed to match it is a
+     * second spelling of one value.
+     */
+    static NodeIdDecodeCoordinate pathCoordinate(PathExpr path, String parentTypeName,
+                                                 GraphQLFieldDefinition fieldDef,
+                                                 Map<String, GraphQLInputType> slotTypes) {
+        if (path == null || fieldDef == null || parentTypeName == null) return null;
+        var segments = path.segments();
+        if (segments.size() == 1) {
+            return new NodeIdDecodeCoordinate.Argument(parentTypeName, fieldDef.getName(),
+                path.headName());
+        }
+        if (slotTypes == null) return null;
+        var descent = new ArrayList<NodeIdDecodeCoordinate.Step>();
+        GraphQLInputType current = slotTypes.get(path.headName());
+        for (int i = 1; i < segments.size() && current != null; i++) {
+            var iot = asInputObject(current);
+            if (iot == null) return null;
+            var field = iot.getField(segments.get(i).name());
+            if (field == null) return null;
+            descent.add(new NodeIdDecodeCoordinate.Step(iot.getName(), field.getName()));
+            current = field.getType();
+        }
+        return descent.size() == segments.size() - 1
+            ? new NodeIdDecodeCoordinate.InputField(parentTypeName, fieldDef.getName(),
+                path.headName(), descent)
+            : null;
     }
 
     /** One path step's input object, past a non-null and one list wrapper, or {@code null}. */

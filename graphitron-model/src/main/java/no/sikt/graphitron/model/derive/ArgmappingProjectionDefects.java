@@ -92,6 +92,11 @@ public final class ArgmappingProjectionDefects {
      * {@code ProjectedKeyReads}. The two condition sites are one emitter, the
      * conditions class's glue, which is why they were wired together rather than one at a time.
      *
+     * <p>Package-visible rather than private because a second reader narrows on it:
+     * {@link NodeIdDecodeCoverageFacts} counts a resolved projection as an installed decode exactly
+     * where an emitter reads one, and reading that off a list of its own would go quiet the day a
+     * site joins this set. One declaration, two readers.
+     *
      * <p>{@code SERVICE} joins when its emitter lands. The input-field {@code @condition} stays out for
      * a different reason worth stating: its pair rows are keyed by the input type and input field, while
      * the condition row rendering it is keyed by the consuming output field, so the projection relation's
@@ -105,7 +110,7 @@ public final class ArgmappingProjectionDefects {
      * neither subsumes the other, because this one runs before any plan exists and that one cannot
      * see the directive a pair was spelled on.
      */
-    private static final Set<Site> EMITTING_SITES =
+    static final Set<Site> EMITTING_SITES =
         EnumSet.of(Site.ROUTINE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
 
     /**
@@ -116,7 +121,7 @@ public final class ArgmappingProjectionDefects {
      * differ, which is exactly the distinction {@link #EMITTING_SITES} needs and the coarser
      * vocabulary cannot express.
      */
-    private enum Site {
+    enum Site {
         ROUTINE(ArgMappingSigil.Site.ROUTINE),
         SERVICE(ArgMappingSigil.Site.SERVICE),
         FIELD_CONDITION(ArgMappingSigil.Site.CONDITION),

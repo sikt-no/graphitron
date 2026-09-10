@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.NodeIdDecodeCoverageFacts;
 import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
 import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
 import no.sikt.graphitron.model.derive.NodeIdLandingDefects;
@@ -231,7 +232,8 @@ public final class FactCapture {
                     NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),
-                    ResolvedKeyProjections.read(dsl, graphName));
+                    ResolvedKeyProjections.read(dsl, graphName),
+                    NodeIdDecodeCoverageFacts.read(dsl, graphName));
             }
         };
     }

@@ -120,9 +120,14 @@ public class GraphitronSchemaBuilder {
      * <p>{@code usesOneOf} is {@code federationLink}'s sibling schema-level fact, landed once
      * here (from {@link no.sikt.graphitron.model.schema.OneOfDirectiveSdl#usesOneOf}) so
      * downstream steps read the decision instead of re-walking the assembled schema.
+     *
+     * <p>{@code decodeLedger} is what the walk did about each decoding {@code @nodeId} coordinate
+     * it stood on. It surfaces here rather than on the model because its one reader meets it with a
+     * store-side operand after classification, at the capture window's fold point; see
+     * {@link NodeIdDecodeCoverage}.
      */
     public record Bundle(GraphitronSchema model, graphql.schema.GraphQLSchema assembled, boolean federationLink,
-                         boolean usesOneOf) {}
+                         boolean usesOneOf, NodeIdDecodeLedger decodeLedger) {}
 
     /**
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
@@ -200,7 +205,7 @@ public class GraphitronSchemaBuilder {
         fieldBuilder.setTypeBuilder(typeBuilder);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
         return new Bundle(result.model, result.assembled, federationLink,
-            OneOfDirectiveSdl.usesOneOf(result.assembled));
+            OneOfDirectiveSdl.usesOneOf(result.assembled), bctx.decodeLedger());
     }
 
     /**
@@ -360,6 +365,10 @@ public class GraphitronSchemaBuilder {
             ctx.addDiagnostic(new ValidationError("<schema>",
                 rejection.prefixedWith("<sessionState>: "), SourceLocation.EMPTY));
         }
+        // The decode-coverage ledger's totality clause: every decoding @nodeId coordinate the walk
+        // did not classify gets its NotReached row here, so an absent row downstream means one
+        // thing only. Runs after the walk and writes only where a mint site left nothing.
+        NodeIdDecodeNotReached.sweep(ctx.schema, ctx.fieldRegistry, ctx.decodeLedger());
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,

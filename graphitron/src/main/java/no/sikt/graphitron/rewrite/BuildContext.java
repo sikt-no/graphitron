@@ -327,6 +327,14 @@ class BuildContext {
     private final Set<ValidationError> diagnostics = new LinkedHashSet<>();
     private final NodeIdLeafResolver nodeIdLeafResolver;
     /**
+     * What this run did about every decoding {@code @nodeId} coordinate it stood on. Held here
+     * because the two sites that decide one, {@link #classifyInputField} and
+     * {@code FieldBuilder.classifyArgument}, both reach this context, and because the ledger has to
+     * outlive the walk: the coverage rule meets it with the store's census of authored instructions
+     * after classification has finished.
+     */
+    private final NodeIdDecodeLedger decodeLedger = new NodeIdDecodeLedger();
+    /**
      * The catalog-wide tenant-scope classification, computed once at construction from the
      * configured {@code <tenantColumn>} element. {@link TenantScopes.None} for single-tenant
      * builds and for tests that construct a {@code BuildContext} without a catalog. Field
@@ -398,6 +406,15 @@ class BuildContext {
      */
     NodeIdLeafResolver nodeIdLeafResolver() {
         return nodeIdLeafResolver;
+    }
+
+    /**
+     * This run's decode-disposition ledger, the positive half of
+     * {@link NodeIdDecodeCoverage}'s rule. Every classifier site that decides what happens to a
+     * decoding {@code @nodeId} coordinate mints through it.
+     */
+    NodeIdDecodeLedger decodeLedger() {
+        return decodeLedger;
     }
 
     RunContext ctx() {
@@ -2769,6 +2786,18 @@ class BuildContext {
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             ClassifyContext ctx, List<InputFieldConditionFailure> conditionFailures) {
         var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, ctx, conditionFailures);
+        // A refused input field disposes of any decoding @nodeId instruction on it: the classifier
+        // declined the field, so it declined the instruction, and which gate declined first is not
+        // something this has to know. Stated once here rather than at each gate inside, for the
+        // reason FieldBuilder.disposeRefusedNodeIdArgument states for the argument side. The
+        // ledger keeps a coordinate's first row, so the @nodeId arm's own transcription still wins
+        // where it ran.
+        if (resolution instanceof InputFieldResolution.Unresolved unresolved) {
+            var refusedAt = ctx.coordinateOf(parentTypeName, field.getName());
+            if (refusedAt != null) {
+                decodeLedger.recordRefusal(refusedAt, unresolved.rejection());
+            }
+        }
         // Trace-only: input fields are stored embedded in their parent type rather than in a
         // central map, so the registry doesn't own their persistence; this is the canonical
         // emission point.
@@ -2776,6 +2805,30 @@ class BuildContext {
             field.getDefinition() != null ? field.getDefinition().getSourceLocation() : null,
             resolution);
         return resolution;
+    }
+
+    /**
+     * Ledger row for the implicit input-field node id: an {@code id: ID} field with no directive,
+     * consumed against a node-backed table. The instruction census admits it on the same terms the
+     * arm below resolves it, so the disposition is owed here exactly as it is on the directive arm;
+     * only the basis differs, and a basis is not a rail.
+     */
+    private void recordImplicitDisposition(
+            ClassifyContext ctx, String parentTypeName, String name,
+            no.sikt.graphitron.rewrite.model.CallSiteExtraction extraction) {
+        var at = ctx.coordinateOf(parentTypeName, name);
+        if (at != null) {
+            decodeLedger.recordSlot(at, extraction);
+        }
+    }
+
+    /** {@link #recordImplicitDisposition}'s refusal half. */
+    private void recordImplicitRefusal(ClassifyContext ctx, String parentTypeName, String name,
+                                       Rejection rejection) {
+        var at = ctx.coordinateOf(parentTypeName, name);
+        if (at != null) {
+            decodeLedger.recordRefusal(at, rejection);
+        }
     }
 
     private InputFieldResolution classifyInputFieldInternal(
@@ -2815,6 +2868,14 @@ class BuildContext {
             var leafCondition = readConditionDirective(field);
             var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable,
                 ctx.participant(), leafCondition != null && leafCondition.override());
+            // The resolver has just pronounced install-or-refusal and this caller holds the
+            // coordinate it declines to carry, so the ledger row is a transcription rather than a
+            // second decision. A context standing at no use site cannot name a coordinate at the
+            // grain the rule keys on and writes nothing; see ClassifyContext.useSite.
+            var at = ctx.coordinateOf(parentTypeName, name);
+            if (at != null) {
+                decodeLedger.recordLeaf(at, resolved);
+            }
             return inputFieldFromNodeIdResolved(
                 resolved, parentTypeName, field, name, typeName, nonNull, list,
                 resolvedTable, conditionFailures);
@@ -2888,6 +2949,7 @@ class BuildContext {
             var nestCondDirective = readConditionDirective(field);
             boolean nestOverride = nestCondDirective != null && nestCondDirective.override();
             var nestedCtx = ctx.expanding(typeName)
+                .descending(parentTypeName, name)
                 .withOverride(ctx.enclosingOverride() || nestOverride);
             var failures = new ArrayList<InputFieldResolution.Unresolved>();
             var resolvedFields = new ArrayList<InputField>();
@@ -2934,22 +2996,27 @@ class BuildContext {
                 // than a contest either reading wins. Identical answer at all three coordinates.
                 var shadowed = catalog.findColumn(tableName, name);
                 if (shadowed.isPresent()) {
-                    return unresolved(field, name, rejectShadowedNodeId(
+                    var rejection = rejectShadowedNodeId(
                         "input field '" + parentTypeName + "." + name + "'",
-                        name, node, shadowed.get().sqlName()));
+                        name, node, shadowed.get().sqlName());
+                    recordImplicitRefusal(ctx, parentTypeName, name, rejection);
+                    return unresolved(field, name, rejection);
                 }
                 Optional<ArgConditionRef> nodeIdCond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
                 var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.ThrowOnMismatch(node.decodeMethod());
+                recordImplicitDisposition(ctx, parentTypeName, name, extraction);
                 return new InputFieldResolution.Resolved(new InputField.ColumnBackedField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     node.nodeKeyColumns(), nodeIdCond, extraction));
             }
             if (nodesOnTable.size() > 1) {
-                return unresolved(field, name, Rejection.structural(
+                var ambiguous = Rejection.structural(
                     "input field '" + parentTypeName + "." + name + "' names the node id of table '"
                     + tableName + "', but that table backs multiple node types ("
                     + nodesOnTable.stream().map(NodeType::name).sorted().collect(java.util.stream.Collectors.joining(", "))
-                    + "). Add `@nodeId(typeName: T)` to say which one."));
+                    + "). Add `@nodeId(typeName: T)` to say which one.");
+                recordImplicitRefusal(ctx, parentTypeName, name, ambiguous);
+                return unresolved(field, name, ambiguous);
             }
             // No node backs the table: an `id` field here is an ordinary column, per the rule that
             // `ID` without `@nodeId` is a plain scalar. Falls through to the column lookup.

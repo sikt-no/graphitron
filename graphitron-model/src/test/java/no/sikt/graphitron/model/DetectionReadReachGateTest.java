@@ -164,6 +164,25 @@ class DetectionReadReachGateTest {
             "intent_name_matched_key_pair",
             "intent_poly_member"));
 
+        // The decode-coverage rule's store operand. Its census side costs nothing here: every
+        // relation it reads there is a materialized table (the instruction census, the
+        // classification domain, and the occurrence-path pair), so those expand no rule at read
+        // cadence. What this row is, entirely, is the projection relation's own body, which the
+        // rail-two install operand reads at the view's own (site, use_site, position) grain
+        // because a coarser read would key the install at the definition and anti-join away every
+        // use site nothing was installed at. Two components beside it already expand the same
+        // body, so the marginal cost of this one is a third evaluation of a rule the pass was
+        // paying for twice; a registration of that relation takes all three out of this set at
+        // once.
+        REACH.put("NodeIdDecodeCoverageFacts", Set.of(
+            "graphitron_argmapping_match",
+            "graphql_element_field",
+            "intent_argmapping_bound_parameter_type",
+            "intent_argmapping_key_column_candidate",
+            "intent_field_routine_method",
+            "intent_resolved_node_key_projection",
+            "intent_resolved_node_key_shape"));
+
         REACH.put("ResolvedKeyProjections", Set.of(
             "graphitron_argmapping_match",
             "graphql_element_field",

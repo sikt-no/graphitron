@@ -698,6 +698,11 @@ public class GraphQLRewriteGenerator {
                 var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
                 var fused = new ArrayList<>(walkErrors);
                 fused.addAll(storeFacts.violations());
+                // The decode-coverage rule, stated where its two operands meet and nowhere else:
+                // the store's census of authored decoding @nodeId instructions, and the walk's own
+                // ledger of what it did about each. See NodeIdDecodeCoverage.
+                fused.addAll(NodeIdDecodeCoverage.violations(
+                    storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()));
                 var errors = List.copyOf(fused);
                 if (!errors.isEmpty() || !projection.emit()) {
                     return new Captured(walkErrors, errors, null);

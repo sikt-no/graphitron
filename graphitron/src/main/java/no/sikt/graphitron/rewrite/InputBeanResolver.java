@@ -95,7 +95,7 @@ final class InputBeanResolver {
      * access. Every unusable pairing returns {@link Result.Failed}, never a silent fallback; the
      * rejection messages name each case.
      */
-    Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef) {
+    Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef, String parentTypeName) {
         var argTypes = fieldDef.getArguments().stream()
             .collect(Collectors.toMap(
                 graphql.schema.GraphQLArgument::getName,
@@ -174,7 +174,9 @@ final class InputBeanResolver {
             // on that parity to read list-ness off the Java type alone.
             if (ctx.lookAheadVerdict(iot.getName()) instanceof GraphitronType.JooqTableRecordInputType jtr) {
                 JooqBuilt jbuilt = buildJooqRecord(jtr, iot, p.name(), method.methodName(),
-                    method.className(), arg.path().headName());
+                    method.className(), arg.path().headName(),
+                    ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
+                        arg.path().headName()));
                 if (jbuilt instanceof JooqBuilt.Fail jf) {
                     return new Result.Failed(jf.rejection());
                 }
@@ -185,7 +187,9 @@ final class InputBeanResolver {
                 continue;
             }
             var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
-                method.className(), new HashSet<>());
+                method.className(), new HashSet<>(),
+                ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(),
+                    arg.path().headName()));
             if (built instanceof Built.Fail f) {
                 return new Result.Failed(f.rejection());
             }
@@ -237,7 +241,7 @@ final class InputBeanResolver {
      */
     private JooqBuilt buildJooqRecord(GraphitronType.JooqTableRecordInputType jtr,
             graphql.schema.GraphQLInputObjectType iot, String paramName, String methodName,
-            String className, String slotName) {
+            String className, String slotName, ClassifyContext.UseSite useSite) {
         String where = "parameter '" + paramName + "' on method '" + methodName + "' in class '"
             + className + "' (GraphQL argument '" + slotName + "')";
         TableRef table = jtr.table();
@@ -253,7 +257,7 @@ final class InputBeanResolver {
         // Cycle detection is on SDL nested-input type names (ClassifyContext's "expanding" set),
         // a different axis than buildInputBean's Set<Class<?>> visited.
         Rejection rejection = collectJooqBindings(iot, table, where, List.of(),
-            ClassifyContext.root().expanding(iot.getName()), plainLeaves, keyDecodes);
+            ClassifyContext.under(useSite).expanding(iot.getName()), plainLeaves, keyDecodes);
         if (rejection != null) {
             return new JooqBuilt.Fail(rejection);
         }
@@ -407,10 +411,20 @@ final class InputBeanResolver {
                 // two decodes targeting the same column are a data-dependent concern deferred to
                 // the runtime value-agreement check (last-write-wins here).
                 var built = buildRecordKeyDecode(f, path, table, where);
+                var at = classifyCtx.coordinateOf(iot.getName(), f.getName());
                 if (built instanceof KeyDecodeResult.Fail kf) {
+                    if (at != null) ctx.decodeLedger().recordRefusal(at, kf.rejection());
                     return kf.rejection();
                 }
-                keyDecodes.add(((KeyDecodeResult.Ok) built).decode());
+                var decode = ((KeyDecodeResult.Ok) built).decode();
+                keyDecodes.add(decode);
+                // The record rail's install: this leaf is one of the JooqRecord arm's key decodes,
+                // which is what makes that arm carry a decode at all. The arm itself is assembled
+                // from every field of the input type, so the install is recorded here rather than
+                // shown as a carrier the ledger reads.
+                if (at != null) {
+                    ctx.decodeLedger().recordInstall(at);
+                }
             } else if (sdlElt.elementType() instanceof GraphQLInputObjectType nestedIot) {
                 // Nested directiveless grouping input → flatten its fields onto this table.
                 if (sdlElt.list()) {
@@ -430,7 +444,9 @@ final class InputBeanResolver {
                         + " flatten onto a single record (the column-axis analogue of a recursive bean)");
                 }
                 Rejection nested = collectJooqBindings(nestedIot, table, where, path,
-                    classifyCtx.expanding(nestedIot.getName()), plainLeaves, keyDecodes);
+                    classifyCtx.expanding(nestedIot.getName())
+                        .descending(iot.getName(), f.getName()),
+                    plainLeaves, keyDecodes);
                 if (nested != null) {
                     return nested;
                 }
@@ -577,7 +593,7 @@ final class InputBeanResolver {
      */
     private Built buildInputBean(Class<?> beanClass, GraphQLInputObjectType iot,
                                   String paramName, String methodName, String className,
-                                  Set<Class<?>> visited) {
+                                  Set<Class<?>> visited, ClassifyContext.UseSite useSite) {
         if (!visited.add(beanClass)) {
             return new Built.Fail(Rejection.structural(
                 "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -586,7 +602,8 @@ final class InputBeanResolver {
                 + " by the input-bean instantiation path"));
         }
         try {
-            return buildInputBeanBody(beanClass, iot, paramName, methodName, className, visited);
+            return buildInputBeanBody(beanClass, iot, paramName, methodName, className, visited,
+                useSite);
         } finally {
             visited.remove(beanClass);
         }
@@ -594,7 +611,7 @@ final class InputBeanResolver {
 
     private Built buildInputBeanBody(Class<?> beanClass, GraphQLInputObjectType iot,
                                       String paramName, String methodName, String className,
-                                      Set<Class<?>> visited) {
+                                      Set<Class<?>> visited, ClassifyContext.UseSite useSite) {
         if (!Modifier.isPublic(beanClass.getModifiers())) {
             return new Built.Fail(Rejection.structural(
                 "parameter '" + paramName + "' on method '" + methodName + "' in class '"
@@ -625,8 +642,8 @@ final class InputBeanResolver {
         // (order-dependent binding); on the JavaBean arm the same setter would be invoked twice.
         var sdlByBindingKey = new LinkedHashMap<String, IndexEntry>();
         Rejection indexRejection = indexSdlFields(iot, javaMembersByName, List.of(),
-            ClassifyContext.root().expanding(iot.getName()), beanClass, paramName, methodName,
-            className, sdlByBindingKey);
+            ClassifyContext.under(useSite).expanding(iot.getName()), beanClass, paramName,
+            methodName, className, sdlByBindingKey);
         if (indexRejection != null) {
             return new Built.Fail(indexRejection);
         }
@@ -648,7 +665,8 @@ final class InputBeanResolver {
      * type has a one-element path; a field hoisted out of a grouping input carries the group's field
      * names ahead of its own.
      */
-    private record IndexEntry(List<String> path, GraphQLInputObjectField field) {}
+    private record IndexEntry(List<String> path, GraphQLInputObjectField field,
+                              ClassifyContext.UseSite at) {}
 
     /**
      * Fills {@code out} with one entry per SDL field that binds against {@code javaMembersByName},
@@ -713,14 +731,18 @@ final class InputBeanResolver {
                     return gate;
                 }
                 Rejection nested = indexSdlFields(nestedIot, javaMembersByName, path,
-                    classifyCtx.expanding(nestedIot.getName()), beanClass, paramName, methodName,
-                    className, out);
+                    classifyCtx.expanding(nestedIot.getName())
+                        .descending(iot.getName(), f.getName()),
+                    beanClass, paramName, methodName, className, out);
                 if (nested != null) {
                     return nested;
                 }
                 continue;
             }
-            IndexEntry prior = out.put(key, new IndexEntry(path, f));
+            IndexEntry prior = out.put(key, new IndexEntry(path, f,
+                classifyCtx.useSite() == null
+                    ? null
+                    : classifyCtx.useSite().descending(iot.getName(), f.getName())));
             if (prior != null) {
                 return Rejection.structural(where + ": SDL input fields '"
                     + dottedPath(prior.path()) + "' and '" + dottedPath(path)
@@ -816,7 +838,7 @@ final class InputBeanResolver {
             }
             consumedKeys.add(component);
             FieldResult r = bindField(entry.field(), entry.path(), ce.getValue(),
-                paramName, methodName, className, visited);
+                paramName, methodName, className, visited, entry.at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
@@ -868,7 +890,7 @@ final class InputBeanResolver {
                 continue;
             }
             FieldResult r = bindField(e.getValue().field(), e.getValue().path(), member,
-                paramName, methodName, className, visited);
+                paramName, methodName, className, visited, e.getValue().at());
             if (r instanceof FieldResult.Fail f) {
                 return new Built.Fail(f.rejection());
             }
@@ -903,7 +925,8 @@ final class InputBeanResolver {
      */
     private FieldResult bindField(GraphQLInputObjectField sdlField, List<String> accessPath,
             JavaMember member,
-            String paramName, String methodName, String className, Set<Class<?>> visited) {
+            String paramName, String methodName, String className, Set<Class<?>> visited,
+            ClassifyContext.UseSite at) {
         // Messages name the dotted access path, so a hoisted leaf points at the SDL the author
         // wrote rather than at a bare field name that appears nowhere on the enclosing input type.
         String fieldPath = dottedPath(accessPath);
@@ -922,7 +945,7 @@ final class InputBeanResolver {
                     + "' is not a viable bean class"));
             }
             Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName,
-                className, visited);
+                className, visited, at);
             if (nested instanceof Built.Fail f) {
                 return new FieldResult.Fail(f.rejection());
             }
@@ -954,12 +977,21 @@ final class InputBeanResolver {
                 RecordLeaf recordLeaf = buildJooqRecordLeaf(sdlField, fieldPath,
                     javaElementTypeName, nonNull, paramName, methodName, className);
                 if (recordLeaf instanceof RecordLeaf.Fail rf) {
+                    if (at != null && sdlField.hasAppliedDirective(DIR_NODE_ID)) {
+                        ctx.decodeLedger().recordRefusal(at.here(), rf.rejection());
+                    }
                     return new FieldResult.Fail(rf.rejection());
                 }
                 leaf = ((RecordLeaf.Ok) recordLeaf).leaf();
+                if (at != null) {
+                    ctx.decodeLedger().recordSlot(at.here(), leaf);
+                }
             } else if (sdlField.hasAppliedDirective(DIR_NODE_ID)) {
-                return new FieldResult.Fail(singleValuedMemberDeferral(fieldPath, paramName,
-                    methodName, className));
+                var deferral = singleValuedMemberDeferral(fieldPath, paramName, methodName, className);
+                if (at != null) {
+                    ctx.decodeLedger().recordRefusal(at.here(), deferral);
+                }
+                return new FieldResult.Fail(deferral);
             } else {
                 // A scalar SDL field bound to a consumer-declared Java type lands on Direct only
                 // once the wire-coercion predicate confirms graphql-java's coercion output for the

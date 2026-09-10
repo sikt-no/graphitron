@@ -55,6 +55,12 @@ import java.util.Set;
  * separate from every family above because it judges no author spelling at all; the declaration is
  * well formed, and what fails is that nothing lowers it.
  *
+ * <p>{@link #nodeIdDecodeCoverage} is the second member that is not a detection, and it is not one
+ * for a different reason than {@link #keyProjections}: it is half of a rule whose other half the
+ * store does not hold at all. What the generator did about each decoding {@code @nodeId} coordinate
+ * is the classification run's own fact, so the verdict is pronounced where the run's ledger meets
+ * these rows, and what rides here is only the store's side of the subtraction.
+ *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
  * than to reject. It rides here because the store handle does, opened for the capture and closed with
@@ -69,7 +75,8 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
-                              ResolvedKeyProjections.Projections keyProjections) {
+                              ResolvedKeyProjections.Projections keyProjections,
+                              NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage) {
 
     /**
      * What each component of the pass reads, keyed by the component's own name, in the family
@@ -95,6 +102,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
+        roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         return Collections.unmodifiableMap(roster);
     }
 
@@ -107,7 +115,8 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
-            ResolvedKeyProjections.Projections.empty());
+            ResolvedKeyProjections.Projections.empty(),
+            NodeIdDecodeCoverageFacts.Facts.empty());
     }
 
     /** Every violation every family minted, each family's own order preserved within it. */
