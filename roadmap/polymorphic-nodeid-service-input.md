@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1359,3 +1359,77 @@ it.
 * `DerivedReadCostTest`'s three budgets move (120 to 124, 61 to 62, 147 to 149) with the arithmetic
   written on each; read and agreed, not a finding.
 * Build: `mvn install -Plocal-db` on the rebased tree at `fb07d4f` passes: BUILD SUCCESS, every module, 13 min wall clock, no test failures.
+
+### Round 5 (2026-09-10, In Review -> Done, reviewer session 01SeaMVavMcbNSuaxVj2hJDV)
+
+Verdict: rework; status moves back to `Ready`. Round 4's two findings are answered and answered
+cleanly. The build is green (`mvn install -Plocal-db` on the rebased tree at `ae45d74`: BUILD
+SUCCESS, every module, 12:47 wall clock, no test failures), no delivered test asserts a code string
+against a generated method body, the retirement sweep is clean, and the user-facing doc surfaces
+carry no roadmap vocabulary. One blocking finding on question 1, of the same recording kind round 4
+raised and with a consequence round 4's did not have: the delivery resolves a design fork the plan
+never poses, and resolves it one way in the walk and the other way in the store and the editor.
+
+The rest of question 1 passes, checked at the symbol rather than taken from round 4. The three
+container refusals in `resolvePolymorphicRecordDecode` carry the precedence and wording the Design
+gives them, nodehood is asked before kind with the answer-preserving reasoning on the comment,
+`admitPolymorphicSlotType` answers assignability with `isAssignableFrom` against the catalog's live
+record classes and forks its refusal on scalar-versus-record the way Slot typing says, and
+`AdmittedSlotType` is minted at the admission and nowhere else. The three `resolved_type_kind =
+'NODE_TYPE'` predicates sit at the endpoint, the argument-filter CTE and the input-field-filter CTE
+with the reason on each one's own comment, `POLYMORPHIC_RECORD` is a `CASE` branch inside the slot
+arm admitted by a `NOT EXISTS` over the members, and `s.candidates = 1` survives verbatim.
+
+Question 2's own evidence is the strongest part of the delivery and it holds. The execution tier
+demonstrates the stated goal end to end against PostgreSQL: a `Customer` id and a `Staff` id through
+one `UpdatableRecord<?>` slot with the service reporting back the record class it received, a `Film`
+id refused naming both candidates, a malformed id and a right-prefix-wrong-arity id both landing on
+the read side's own "not a valid id" wording, the list shape decoding each element on its own prefix,
+and the producer-parameter twin. That is the field report's shape, answered.
+
+**Finding 1 (question 1, blocking): a container with exactly one `@table` member is a fourth
+container refusal in the walk, and the store and the editor both admit that shape.** The Design
+section names three container refusals and the store's verdict vocabulary is five. Neither covers a
+container whose members are admissible and number one, which `union U = Customer` and a
+one-implementation interface both are, and which is legal SDL rather than a shape a schema cannot
+reach. `BuildContext.resolvePolymorphicRecordDecode` refuses it ("which has one `@table`
+implementation ... so there is nothing to dispatch on. Name that type instead"), which is what keeps
+`Polymorphic`'s two-candidate compact-constructor invariant from throwing `IllegalArgumentException`
+out of the walk on a schema an author can write. The refusal is right to exist and is nowhere in the
+plan.
+
+Three surfaces then disagree about one schema, and the item's own design rationale is what makes that
+a finding rather than a nit. `intent_node_container_member` reports the single member table-bound and
+a node type, so `intent_node_id_candidate_node_type`'s member arm yields its one row, no member count
+is asked anywhere along the chain, and `intent_node_id_decode` draws `POLYMORPHIC_RECORD` while
+`intent_node_id_polymorphic_decode_defect` draws no verdict: the store says the decode is carried
+out. `DiagnosticFacts.nodeTypeBindingArm` asks only that some member be table-bound and a node type,
+so the editor completes the container at `typeName:` and puts no squiggle under it. So the author is
+offered a completion for a value the build refuses, which is the mirror of the failure mode that
+arm's own comment says the union arm exists to prevent, and the Fact store section's claim that "the
+walk's refusals and the store's verdicts are the same facts under two names, within the two limits
+just stated" has an undisclosed third limit. No tier pins any of it: the 19 pipeline cases cover
+every other admission and refusal the walk has, and this one has none, so a later reading of the
+compact constructor as covering the case would turn legal SDL into a stack trace with nothing red.
+
+The fork is genuine and either answer is defensible, which is why it belongs in the body. Refusing is
+what shipped, and a one-member container really is the single-type decode wearing a container's name.
+Admitting is what the store and the editor already do, costs one relaxed invariant, and needs no new
+verdict: the emitted `if` chain works unchanged with one arm and a foreign id still meets the
+dispatch's message. Satisfied by: state the pick under Resolution with its reason, make the three
+surfaces agree on it, and pin it at the pipeline tier. Refusing means a fourth container verdict (or
+a stated reason the store declines to mirror this one), the keyset excluding a container with fewer
+than two admissible members, and a pipeline case plus a fact-store case. Admitting means dropping the
+walk's `candidates.size() < 2` arm and the record's two-candidate invariant, and a pipeline case over
+a one-member container decoding.
+
+#### Non-blocking
+
+* `admitPolymorphicSlotType` carries a third slot-typing refusal beyond Slot typing's two, for a slot
+  type no census could read. That one is disclosed where it belongs, enumerated on
+  `intent_node_id_polymorphic_decode_defect`'s comment as a shape falling outside the partition, with
+  the reason the polymorphic slot cannot stand aside onto an arity-only fallback. Read and agreed.
+* Implementation opens "Shipped at `ad09411`" as round 4 asked, and then says the round-4 rework
+  "adds no code" and "rides in the commit carrying this revision". It added three test cases, and the
+  commit is `50492f1`, which the body does not name. Naming the sha beside the first one would make
+  both landings readable from the body alone.
