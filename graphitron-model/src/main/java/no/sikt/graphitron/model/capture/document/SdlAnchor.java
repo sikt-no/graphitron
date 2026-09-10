@@ -9,31 +9,47 @@ import java.util.List;
 import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_IMPLEMENTS_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.castNull;
@@ -118,6 +134,16 @@ public final class SdlAnchor {
         directiveLocations(dsl, graph, touchedAt);
         directiveArguments(dsl, graph, touchedAt);
         rootOperations(dsl, graph, touchedAt);
+        typeDirectives(dsl, graph, touchedAt);
+        fieldDirectives(dsl, graph, touchedAt);
+        argumentDirectives(dsl, graph, touchedAt);
+        enumValueDirectives(dsl, graph, touchedAt);
+        schemaDirectives(dsl, graph, touchedAt);
+        typeDirectiveArguments(dsl, graph, touchedAt);
+        fieldDirectiveArguments(dsl, graph, touchedAt);
+        argumentDirectiveArguments(dsl, graph, touchedAt);
+        enumValueDirectiveArguments(dsl, graph, touchedAt);
+        schemaDirectiveArguments(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -304,6 +330,8 @@ public final class SdlAnchor {
 
     /** An argument's own name, where the relation it is read beside also has a {@code name}. */
     private static final Field<String> ARGUMENT_NAME = field(name("argument_name"), String.class);
+    private static final Field<String> VALUE_NAME = field(name("value_name"), String.class);
+    private static final Field<String> DIRECTIVE_NAME = field(name("directive_name"), String.class);
 
     /** The site columns a candidate carries up into a ranking that sits above a union. */
     private static final Field<Integer> DECLARATION_LINE = field(name("declaration_line"), Integer.class);
@@ -894,6 +922,418 @@ public final class SdlAnchor {
             .execute();
     }
 
+
+    /**
+     * Every directive an author applied, at the coordinate they applied it to. Five relations
+     * because five kinds of coordinate carry one, which is the split the entries already made: each
+     * reads one entry relation and resolves its parent position to a coordinate.
+     *
+     * <p>The ordinal is the repeat, numbered from zero within one coordinate and one directive
+     * name, in merge order. A directive is not repeatable unless its definition says so, so on
+     * almost every application it is zero and the column exists for the ones that are.
+     *
+     * <p>No rank filter, where the declaration anchors take rank one. Two documents applying one
+     * directive to one type are two applications and the corpus has both; which of two declarations
+     * of a name survives is a different question, and it is settled before this reads.
+     *
+     * <p>Directives applied to a directive definition's own arguments reach no relation here. The
+     * anchor family has no coordinate for one, an argument of a definition not being a schema
+     * element, and minting a spelling to hold it would put a coordinate in the store that the
+     * specification does not have.
+     */
+    private static void typeDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var a = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
+        var t = GRAPHQL_TYPE_DIRECTIVE;
+        var ranked = dsl
+            .select(d.NAME.as(TYPE_NAME), a.NAME.as(DIRECTIVE_NAME),
+                d.SOURCE_LINE.as(DECLARATION_LINE), d.SOURCE_COLUMN.as(DECLARATION_COLUMN),
+                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
+                a.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(d.NAME, a.NAME).orderBy(
+                        m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
+            .from(a)
+            .join(d).on(d.GRAPH_NAME.eq(a.GRAPH_NAME))
+                .and(d.SOURCE_NAME.eq(a.SOURCE_NAME))
+                .and(d.SOURCE_LINE.eq(a.PARENT_LINE))
+                .and(d.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(graph))
+                .and(m.TYPE_NAME.eq(d.NAME))
+                .and(m.SOURCE_NAME.eq(d.SOURCE_NAME))
+                .and(m.SOURCE_LINE.eq(d.SOURCE_LINE))
+                .and(m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph))
+            .asTable("ranked");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.DIRECTIVE_NAME, t.ORDINAL, t.DECLARATION_LINE,
+                t.DECLARATION_COLUMN, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
+                    ranked.field(DIRECTIVE_NAME), ranked.field(ORDINAL),
+                    ranked.field(DECLARATION_LINE), ranked.field(DECLARATION_COLUMN),
+                    ranked.field(SITE_NAME), ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
+            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The directives on a field, and an input object's fields are fields here as they are in
+     * {@link #fields}. Two entry relations and one anchor, because the coordinate is the same shape
+     * and which relation holds the parent is the only thing that differs; ranked over the union, so
+     * a repeat numbers across both arms rather than within one.
+     */
+    private static void fieldDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var a = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        var v = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var i = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
+        var t = GRAPHQL_FIELD_DIRECTIVE;
+        var candidates = dsl
+            .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME), a.NAME.as(DIRECTIVE_NAME),
+                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
+                a.SOURCE_COLUMN.as(SITE_COLUMN), m.MERGE_ORDINAL.as(MERGE_ORDINAL))
+            .from(a)
+            .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
+                .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
+                .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
+                .and(f.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(graph))
+                .and(m.TYPE_NAME.eq(f.TYPE_NAME))
+                .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
+                .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
+                .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph))
+            .unionAll(dsl
+                .select(i.TYPE_NAME, i.NAME, v.NAME, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
+                    m.MERGE_ORDINAL)
+                .from(v)
+                .join(i).on(i.GRAPH_NAME.eq(v.GRAPH_NAME))
+                    .and(i.SOURCE_NAME.eq(v.SOURCE_NAME))
+                    .and(i.SOURCE_LINE.eq(v.PARENT_LINE))
+                    .and(i.SOURCE_COLUMN.eq(v.PARENT_COLUMN))
+                .join(m).on(m.GRAPH_NAME.eq(graph))
+                    .and(m.TYPE_NAME.eq(i.TYPE_NAME))
+                    .and(m.SOURCE_NAME.eq(i.SOURCE_NAME))
+                    .and(m.SOURCE_LINE.eq(i.PARENT_LINE))
+                    .and(m.SOURCE_COLUMN.eq(i.PARENT_COLUMN))
+                .where(v.GRAPH_NAME.eq(graph)))
+            .asTable("candidates");
+        var ranked = dsl
+            .select(candidates.asterisk(),
+                rowNumber().over(partitionBy(candidates.field(TYPE_NAME),
+                        candidates.field(FIELD_NAME), candidates.field(DIRECTIVE_NAME)).orderBy(
+                        candidates.field(MERGE_ORDINAL).asc(), candidates.field(SITE_LINE).asc(),
+                        candidates.field(SITE_COLUMN).asc()))
+                    .minus(inline(1)).as(ORDINAL))
+            .from(candidates)
+            .asTable("ranked");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
+                    ranked.field(FIELD_NAME), ranked.field(DIRECTIVE_NAME), ranked.field(ORDINAL),
+                    ranked.field(SITE_NAME), ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /** The directives on a field's argument, whose parent is the argument the entry holds. */
+    private static void argumentDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var v = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var g = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
+        var t = GRAPHQL_ARGUMENT_DIRECTIVE;
+        var ranked = dsl
+            .select(g.TYPE_NAME.as(TYPE_NAME), g.FIELD_NAME.as(FIELD_NAME),
+                g.NAME.as(ARGUMENT_NAME), v.NAME.as(DIRECTIVE_NAME), v.SOURCE_NAME.as(SITE_NAME),
+                v.SOURCE_LINE.as(SITE_LINE), v.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(g.TYPE_NAME, g.FIELD_NAME, g.NAME, v.NAME).orderBy(
+                        m.MERGE_ORDINAL.asc(), v.SOURCE_LINE.asc(), v.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
+            .from(v)
+            .join(g).on(g.GRAPH_NAME.eq(v.GRAPH_NAME))
+                .and(g.SOURCE_NAME.eq(v.SOURCE_NAME))
+                .and(g.SOURCE_LINE.eq(v.PARENT_LINE))
+                .and(g.SOURCE_COLUMN.eq(v.PARENT_COLUMN))
+            .join(f).on(f.GRAPH_NAME.eq(g.GRAPH_NAME))
+                .and(f.SOURCE_NAME.eq(g.SOURCE_NAME))
+                .and(f.SOURCE_LINE.eq(g.PARENT_LINE))
+                .and(f.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(graph))
+                .and(m.TYPE_NAME.eq(f.TYPE_NAME))
+                .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
+                .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
+                .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
+            .where(v.GRAPH_NAME.eq(graph))
+            .asTable("ranked");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.DIRECTIVE_NAME,
+                t.ORDINAL, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
+                    ranked.field(FIELD_NAME), ranked.field(ARGUMENT_NAME),
+                    ranked.field(DIRECTIVE_NAME), ranked.field(ORDINAL), ranked.field(SITE_NAME),
+                    ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /** The directives on an enum value, whose parent is the value the entry holds. */
+    private static void enumValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var a = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+        var e = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
+        var t = GRAPHQL_ENUM_VALUE_DIRECTIVE;
+        var ranked = dsl
+            .select(e.TYPE_NAME.as(TYPE_NAME), e.NAME.as(VALUE_NAME), a.NAME.as(DIRECTIVE_NAME),
+                a.SOURCE_NAME.as(SITE_NAME), a.SOURCE_LINE.as(SITE_LINE),
+                a.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(e.TYPE_NAME, e.NAME, a.NAME).orderBy(
+                        m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
+            .from(a)
+            .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME))
+                .and(e.SOURCE_NAME.eq(a.SOURCE_NAME))
+                .and(e.SOURCE_LINE.eq(a.PARENT_LINE))
+                .and(e.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(graph))
+                .and(m.TYPE_NAME.eq(e.TYPE_NAME))
+                .and(m.SOURCE_NAME.eq(e.SOURCE_NAME))
+                .and(m.SOURCE_LINE.eq(e.PARENT_LINE))
+                .and(m.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
+            .where(a.GRAPH_NAME.eq(graph))
+            .asTable("ranked");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME), ranked.field(VALUE_NAME),
+                    ranked.field(DIRECTIVE_NAME), ranked.field(ORDINAL), ranked.field(SITE_NAME),
+                    ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The directives on the schema block, which has no coordinate to partition by: the graph is the
+     * coordinate. Ordered by the file's own age rather than by a merge ordinal, a schema block
+     * having no declaration relation to carry one, which is {@link #rootOperations}'s rule.
+     */
+    private static void schemaDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var a = GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
+        var s = STORE_SOURCE;
+        var t = GRAPHQL_SCHEMA_DIRECTIVE;
+        var ranked = dsl
+            .select(a.NAME.as(DIRECTIVE_NAME), a.SOURCE_NAME.as(SITE_NAME),
+                a.SOURCE_LINE.as(SITE_LINE), a.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(a.NAME).orderBy(
+                        coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).asc(),
+                        a.SOURCE_NAME.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
+            .from(a).join(s).on(s.SOURCE_NAME.eq(a.SOURCE_NAME))
+            .where(a.GRAPH_NAME.eq(graph))
+            .asTable("ranked");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ORDINAL, t.SOURCE_NAME, t.SOURCE_LINE,
+                t.SOURCE_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(DIRECTIVE_NAME),
+                    ranked.field(ORDINAL), ranked.field(SITE_NAME), ranked.field(SITE_LINE),
+                    ranked.field(SITE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+
+    /**
+     * The arguments an author passed to an application, one relation per coordinate the
+     * applications have. Each joins the argument entry to the application anchor by the position of
+     * the at sign it was written inside, which is the key that anchor already carries, so the
+     * ordinal a repeat took is read rather than counted a second time.
+     *
+     * <p>Nothing is ranked. An argument is named once inside one application, so the key is the
+     * application's plus the name; a document naming one twice is a schema problem, and the
+     * upsert keeps the later of the two rather than refusing the row.
+     */
+    private static void typeDirectiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var g = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var d = GRAPHQL_TYPE_DIRECTIVE;
+        var t = GRAPHQL_TYPE_DIRECTIVE_ARG;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.DIRECTIVE_ARGUMENT_NAME, t.VALUE_SDL, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    d.TYPE_NAME,
+                    d.DIRECTIVE_NAME, d.ORDINAL, g.NAME, g.VALUE_SDL,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(g)
+                // This reading's applications only. A directive replaced in place leaves the
+                // application it displaced sitting at the same at sign until the sweep runs, and
+                // an argument that matched it too would restamp it and outlive its own directive.
+                .join(d).on(d.GRAPH_NAME.eq(g.GRAPH_NAME))
+                    .and(d.TOUCHED_AT.eq(touchedAt))
+                    .and(d.SOURCE_NAME.eq(g.SOURCE_NAME))
+                    .and(d.SOURCE_LINE.eq(g.PARENT_LINE))
+                    .and(d.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+                .where(g.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    private static void fieldDirectiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var g = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var d = GRAPHQL_FIELD_DIRECTIVE;
+        var t = GRAPHQL_FIELD_DIRECTIVE_ARG;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.DIRECTIVE_ARGUMENT_NAME, t.VALUE_SDL, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    d.TYPE_NAME,
+                    d.FIELD_NAME,
+                    d.DIRECTIVE_NAME, d.ORDINAL, g.NAME, g.VALUE_SDL,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(g)
+                // This reading's applications only. A directive replaced in place leaves the
+                // application it displaced sitting at the same at sign until the sweep runs, and
+                // an argument that matched it too would restamp it and outlive its own directive.
+                .join(d).on(d.GRAPH_NAME.eq(g.GRAPH_NAME))
+                    .and(d.TOUCHED_AT.eq(touchedAt))
+                    .and(d.SOURCE_NAME.eq(g.SOURCE_NAME))
+                    .and(d.SOURCE_LINE.eq(g.PARENT_LINE))
+                    .and(d.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+                .where(g.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    private static void argumentDirectiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var g = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var d = GRAPHQL_ARGUMENT_DIRECTIVE;
+        var t = GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.DIRECTIVE_ARGUMENT_NAME, t.VALUE_SDL, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    d.TYPE_NAME,
+                    d.FIELD_NAME,
+                    d.ARGUMENT_NAME,
+                    d.DIRECTIVE_NAME, d.ORDINAL, g.NAME, g.VALUE_SDL,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(g)
+                // This reading's applications only. A directive replaced in place leaves the
+                // application it displaced sitting at the same at sign until the sweep runs, and
+                // an argument that matched it too would restamp it and outlive its own directive.
+                .join(d).on(d.GRAPH_NAME.eq(g.GRAPH_NAME))
+                    .and(d.TOUCHED_AT.eq(touchedAt))
+                    .and(d.SOURCE_NAME.eq(g.SOURCE_NAME))
+                    .and(d.SOURCE_LINE.eq(g.PARENT_LINE))
+                    .and(d.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+                .where(g.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    private static void enumValueDirectiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var g = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var d = GRAPHQL_ENUM_VALUE_DIRECTIVE;
+        var t = GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.DIRECTIVE_ARGUMENT_NAME, t.VALUE_SDL, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    d.TYPE_NAME,
+                    d.VALUE_NAME,
+                    d.DIRECTIVE_NAME, d.ORDINAL, g.NAME, g.VALUE_SDL,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(g)
+                // This reading's applications only. A directive replaced in place leaves the
+                // application it displaced sitting at the same at sign until the sweep runs, and
+                // an argument that matched it too would restamp it and outlive its own directive.
+                .join(d).on(d.GRAPH_NAME.eq(g.GRAPH_NAME))
+                    .and(d.TOUCHED_AT.eq(touchedAt))
+                    .and(d.SOURCE_NAME.eq(g.SOURCE_NAME))
+                    .and(d.SOURCE_LINE.eq(g.PARENT_LINE))
+                    .and(d.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+                .where(g.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    private static void schemaDirectiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var g = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var d = GRAPHQL_SCHEMA_DIRECTIVE;
+        var t = GRAPHQL_SCHEMA_DIRECTIVE_ARG;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ORDINAL,
+                t.DIRECTIVE_ARGUMENT_NAME, t.VALUE_SDL, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    d.DIRECTIVE_NAME, d.ORDINAL, g.NAME, g.VALUE_SDL,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(g)
+                // This reading's applications only. A directive replaced in place leaves the
+                // application it displaced sitting at the same at sign until the sweep runs, and
+                // an argument that matched it too would restamp it and outlive its own directive.
+                .join(d).on(d.GRAPH_NAME.eq(g.GRAPH_NAME))
+                    .and(d.TOUCHED_AT.eq(touchedAt))
+                    .and(d.SOURCE_NAME.eq(g.SOURCE_NAME))
+                    .and(d.SOURCE_LINE.eq(g.PARENT_LINE))
+                    .and(d.SOURCE_COLUMN.eq(g.PARENT_COLUMN))
+                .where(g.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
     /** The operation a conventionally-named type answers, as a case over the three names. */
     private static Field<String> operationOf(Field<String> typeName) {
         var name = CONVENTION_ROOTS.entrySet().iterator();
@@ -928,7 +1368,11 @@ public final class SdlAnchor {
         GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_TYPE_DECLARATION, GRAPHQL_TYPE, GRAPHQL_FIELD,
         GRAPHQL_ENUM_VALUE, GRAPHQL_ARGUMENT, GRAPHQL_UNION_MEMBER,
         GRAPHQL_IMPLEMENTS_INTERFACE, GRAPHQL_DIRECTIVE,
-        GRAPHQL_DIRECTIVE_LOCATION, GRAPHQL_DIRECTIVE_ARGUMENT, GRAPHQL_ROOT_OPERATION);
+        GRAPHQL_DIRECTIVE_LOCATION, GRAPHQL_DIRECTIVE_ARGUMENT, GRAPHQL_ROOT_OPERATION,
+        GRAPHQL_TYPE_DIRECTIVE, GRAPHQL_FIELD_DIRECTIVE, GRAPHQL_ARGUMENT_DIRECTIVE,
+        GRAPHQL_ENUM_VALUE_DIRECTIVE, GRAPHQL_SCHEMA_DIRECTIVE, GRAPHQL_TYPE_DIRECTIVE_ARG,
+        GRAPHQL_FIELD_DIRECTIVE_ARG, GRAPHQL_ARGUMENT_DIRECTIVE_ARG,
+        GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG, GRAPHQL_SCHEMA_DIRECTIVE_ARG);
 
     /**
      * Deletes this graph's anchor rows that this reading did not derive.

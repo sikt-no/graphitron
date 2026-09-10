@@ -36,6 +36,16 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_DIRECTIVE_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
@@ -88,6 +98,143 @@ class SdlAnchorTest {
                     tuple("FilmFilter.title", "INPUT_FIELD"),
                     tuple("Rating.G", "ENUM_VALUE"),
                     tuple("Rating.PG", "ENUM_VALUE"));
+        });
+    }
+
+    /**
+     * An application at each of the five coordinates that carry one, and none for the sixth site
+     * the grammar allows: a directive on a directive definition's own argument, which is not a
+     * schema element and so has no coordinate to hang off.
+     */
+    @Test
+    @DisplayName("an application lands at the coordinate it was written on, at each of the five sites")
+    void applicationsLandAtTheirCoordinate(@TempDir Path directory) {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var file = write(directory, "schema.graphqls", """
+                directive @mark(note: String) repeatable on OBJECT | FIELD_DEFINITION
+                  | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | SCHEMA
+                type Film @mark(note: "t") {
+                  title(prefix: String @mark(note: "a")): String @mark(note: "f")
+                }
+                input FilmFilter { title: String @mark(note: "i") }
+                enum Rating { G @mark(note: "e") }
+                schema @mark(note: "s") { query: Film }
+                """);
+            read(dsl, LocalDateTime.now(), file);
+
+            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME, GRAPHQL_TYPE_DIRECTIVE.ORDINAL)
+                    .from(GRAPHQL_TYPE_DIRECTIVE).fetch())
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple("Film", "mark", 0));
+
+            assertThat(dsl.select(GRAPHQL_FIELD_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_FIELD_DIRECTIVE.FIELD_NAME, GRAPHQL_FIELD_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_FIELD_DIRECTIVE).fetch())
+                .as("an input object's field is a field here, as it is in graphql_field")
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .containsExactlyInAnyOrder(tuple("Film", "title", "mark"),
+                    tuple("FilmFilter", "title", "mark"));
+
+            assertThat(dsl.select(GRAPHQL_ARGUMENT_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_ARGUMENT_DIRECTIVE.FIELD_NAME,
+                        GRAPHQL_ARGUMENT_DIRECTIVE.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT_DIRECTIVE)
+                    .fetch())
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple("Film", "title", "prefix"));
+
+            assertThat(dsl.select(GRAPHQL_ENUM_VALUE_DIRECTIVE.TYPE_NAME,
+                        GRAPHQL_ENUM_VALUE_DIRECTIVE.VALUE_NAME).from(GRAPHQL_ENUM_VALUE_DIRECTIVE)
+                    .fetch())
+                .extracting(r -> r.value1(), r -> r.value2())
+                .containsExactly(tuple("Rating", "G"));
+
+            assertThat(dsl.select(GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME,
+                        GRAPHQL_SCHEMA_DIRECTIVE.ORDINAL).from(GRAPHQL_SCHEMA_DIRECTIVE).fetch())
+                .as("the graph is the coordinate, a schema block having no name")
+                .extracting(r -> r.value1(), r -> r.value2())
+                .containsExactly(tuple("mark", 0));
+
+            assertThat(List.of(
+                    dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
+                        .from(GRAPHQL_TYPE_DIRECTIVE_ARG).fetchOne(0, String.class),
+                    dsl.select(GRAPHQL_ARGUMENT_DIRECTIVE_ARG.VALUE_SDL)
+                        .from(GRAPHQL_ARGUMENT_DIRECTIVE_ARG).fetchOne(0, String.class),
+                    dsl.select(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG.VALUE_SDL)
+                        .from(GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG).fetchOne(0, String.class),
+                    dsl.select(GRAPHQL_SCHEMA_DIRECTIVE_ARG.VALUE_SDL)
+                        .from(GRAPHQL_SCHEMA_DIRECTIVE_ARG).fetchOne(0, String.class)))
+                .as("each application's argument lands beside it, keyed by the ordinal the "
+                    + "application took rather than by one counted again")
+                .containsExactly("\"t\"", "\"a\"", "\"e\"", "\"s\"");
+            assertThat(dsl.select(GRAPHQL_FIELD_DIRECTIVE_ARG.VALUE_SDL)
+                    .from(GRAPHQL_FIELD_DIRECTIVE_ARG).fetch(0, String.class))
+                .as("and the field arm carries both of its coordinates' arguments")
+                .containsExactlyInAnyOrder("\"f\"", "\"i\"");
+        });
+    }
+
+    /**
+     * A directive replaced by another at the same at sign. Until the sweep runs, the displaced
+     * application is still a row at that position, so an argument derivation that matched on
+     * position alone would hand it a fresh stamp and leave it outliving its own directive.
+     */
+    @Test
+    @DisplayName("an application displaced in place takes its arguments with it")
+    void aDisplacedApplicationTakesItsArgumentsWithIt(@TempDir Path directory) {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var file = write(directory, "schema.graphqls", """
+                directive @mark(note: String) on OBJECT
+                directive @other(note: String) on OBJECT
+                type Film @mark(note: "first") { title: String }
+                """);
+            read(dsl, LocalDateTime.now(), file);
+            assertThat(dsl.fetchCount(GRAPHQL_TYPE_DIRECTIVE_ARG)).as("written").isEqualTo(1);
+
+            write(directory, "schema.graphqls", """
+                directive @mark(note: String) on OBJECT
+                directive @other(note: String) on OBJECT
+                type Film @other(note: "second") { title: String }
+                """);
+            read(dsl, LocalDateTime.now(), file);
+
+            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHQL_TYPE_DIRECTIVE).fetch(0, String.class))
+                .as("one application at that position, the one the author now writes")
+                .containsExactly("other");
+            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE_ARG.VALUE_SDL)
+                    .from(GRAPHQL_TYPE_DIRECTIVE_ARG).fetch(0, String.class))
+                .as("and one argument, belonging to it")
+                .containsExactly("\"second\"");
+        });
+    }
+
+    /**
+     * A repeatable directive twice at one coordinate, and the numbering is the corpus's order
+     * rather than either file's: the extension is read second whatever order the files arrive in,
+     * so its application is the later repeat.
+     */
+    @Test
+    @DisplayName("repeats number from zero in merge order, across a base and its extension")
+    void repeatsNumberInMergeOrder(@TempDir Path directory) {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var base = write(directory, "base.graphqls", """
+                directive @mark(note: String) repeatable on OBJECT
+                type Film @mark(note: "first") { title: String }
+                """);
+            var extension = write(directory, "extension.graphqls",
+                "extend type Film @mark(note: \"second\")");
+            read(dsl, LocalDateTime.now(), base, extension);
+
+            assertThat(dsl.select(GRAPHQL_TYPE_DIRECTIVE.ORDINAL, GRAPHQL_TYPE_DIRECTIVE.SOURCE_NAME)
+                    .from(GRAPHQL_TYPE_DIRECTIVE)
+                    .orderBy(GRAPHQL_TYPE_DIRECTIVE.ORDINAL).fetch())
+                .as("zero on the base declaration, one on the extension")
+                .extracting(r -> r.value1(), r -> r.value2().endsWith("extension.graphqls"))
+                .containsExactly(tuple(0, false), tuple(1, true));
         });
     }
 

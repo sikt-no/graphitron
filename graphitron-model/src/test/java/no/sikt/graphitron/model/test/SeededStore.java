@@ -2044,6 +2044,7 @@ public final class SeededStore {
             .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_LINE, sourceLine)
             .set(GRAPHQL_FIELD_DIRECTIVE.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_FIELD_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2075,6 +2076,7 @@ public final class SeededStore {
             .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_LINE, sourceLine)
             .set(GRAPHQL_TYPE_DIRECTIVE.SOURCE_COLUMN, 3)
+            .set(GRAPHQL_TYPE_DIRECTIVE.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

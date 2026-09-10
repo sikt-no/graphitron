@@ -1352,6 +1352,7 @@ CREATE TABLE graphql_schema_directive (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
@@ -1362,6 +1363,7 @@ COMMENT ON COLUMN graphql_schema_directive.ordinal IS '0 unless the directive is
 COMMENT ON COLUMN graphql_schema_directive.source_name IS 'position of the application site';
 COMMENT ON COLUMN graphql_schema_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_schema_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_schema_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_schema_directive_arg (
   graph_name              VARCHAR NOT NULL,
@@ -1369,6 +1371,7 @@ CREATE TABLE graphql_schema_directive_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, directive_name, ordinal)
     REFERENCES graphql_schema_directive (graph_name, directive_name, ordinal)
@@ -1379,6 +1382,7 @@ COMMENT ON COLUMN graphql_schema_directive_arg.directive_name IS 'the applied or
 COMMENT ON COLUMN graphql_schema_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_schema_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_schema_directive_arg.value_sdl IS 'the value as written, rendered from the AST; omitted arguments are absent rows';
+COMMENT ON COLUMN graphql_schema_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_type_directive (
   graph_name          VARCHAR NOT NULL,
@@ -1390,6 +1394,7 @@ CREATE TABLE graphql_type_directive (
   source_name         VARCHAR NOT NULL,
   source_line         INT,
   source_column       INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
@@ -1405,6 +1410,7 @@ COMMENT ON COLUMN graphql_type_directive.declaration_column IS 'column of the co
 COMMENT ON COLUMN graphql_type_directive.source_name IS 'NOT NULL as on graphql_field: half of the site FK';
 COMMENT ON COLUMN graphql_type_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_type_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_type_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_type_directive_arg (
   graph_name              VARCHAR NOT NULL,
@@ -1413,6 +1419,7 @@ CREATE TABLE graphql_type_directive_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
     REFERENCES graphql_type_directive (graph_name, type_name, directive_name, ordinal)
@@ -1424,6 +1431,7 @@ COMMENT ON COLUMN graphql_type_directive_arg.directive_name IS 'the applied or d
 COMMENT ON COLUMN graphql_type_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_type_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_type_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
+COMMENT ON COLUMN graphql_type_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_field_directive (
   graph_name     VARCHAR NOT NULL,
@@ -1434,6 +1442,7 @@ CREATE TABLE graphql_field_directive (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
@@ -1446,6 +1455,7 @@ COMMENT ON COLUMN graphql_field_directive.ordinal IS '0 unless the directive is 
 COMMENT ON COLUMN graphql_field_directive.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphql_field_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_field_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_field_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_field_directive_arg (
   graph_name              VARCHAR NOT NULL,
@@ -1455,6 +1465,7 @@ CREATE TABLE graphql_field_directive_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, directive_name, ordinal)
     REFERENCES graphql_field_directive (graph_name, type_name, field_name, directive_name, ordinal)
@@ -1467,6 +1478,7 @@ COMMENT ON COLUMN graphql_field_directive_arg.directive_name IS 'the applied or 
 COMMENT ON COLUMN graphql_field_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_field_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_field_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
+COMMENT ON COLUMN graphql_field_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_argument_directive (
   graph_name     VARCHAR NOT NULL,
@@ -1478,6 +1490,7 @@ CREATE TABLE graphql_argument_directive (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name)
@@ -1492,6 +1505,7 @@ COMMENT ON COLUMN graphql_argument_directive.ordinal IS 'as on graphql_field_dir
 COMMENT ON COLUMN graphql_argument_directive.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphql_argument_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_argument_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_argument_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_argument_directive_arg (
   graph_name              VARCHAR NOT NULL,
@@ -1502,6 +1516,7 @@ CREATE TABLE graphql_argument_directive_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name, directive_name, ordinal)
     REFERENCES graphql_argument_directive (graph_name, type_name, field_name, argument_name, directive_name, ordinal)
@@ -1515,6 +1530,7 @@ COMMENT ON COLUMN graphql_argument_directive_arg.directive_name IS 'the applied 
 COMMENT ON COLUMN graphql_argument_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_argument_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_argument_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
+COMMENT ON COLUMN graphql_argument_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_enum_value_directive (
   graph_name     VARCHAR NOT NULL,
@@ -1525,6 +1541,7 @@ CREATE TABLE graphql_enum_value_directive (
   source_name    VARCHAR,
   source_line    INT,
   source_column  INT,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal),
   FOREIGN KEY (graph_name, type_name, value_name) REFERENCES graphql_enum_value_element (graph_name, type_name, value_name)
 );
@@ -1537,6 +1554,7 @@ COMMENT ON COLUMN graphql_enum_value_directive.ordinal IS 'as on graphql_schema_
 COMMENT ON COLUMN graphql_enum_value_directive.source_name IS 'the SDL file the row was captured from';
 COMMENT ON COLUMN graphql_enum_value_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_value_directive.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_enum_value_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_enum_value_directive_arg (
   graph_name              VARCHAR NOT NULL,
@@ -1546,6 +1564,7 @@ CREATE TABLE graphql_enum_value_directive_arg (
   ordinal                 INT     NOT NULL,
   directive_argument_name VARCHAR NOT NULL,
   value_sdl               VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name, directive_name, ordinal, directive_argument_name),
   FOREIGN KEY (graph_name, type_name, value_name, directive_name, ordinal)
     REFERENCES graphql_enum_value_directive (graph_name, type_name, value_name, directive_name, ordinal)
@@ -1558,6 +1577,7 @@ COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_name IS 'the applie
 COMMENT ON COLUMN graphql_enum_value_directive_arg.ordinal IS 'the owning application''s ordinal';
 COMMENT ON COLUMN graphql_enum_value_directive_arg.directive_argument_name IS 'the definition''s formal argument this value binds';
 COMMENT ON COLUMN graphql_enum_value_directive_arg.value_sdl IS 'the value as written, rendered from the AST';
+COMMENT ON COLUMN graphql_enum_value_directive_arg.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE VIEW graphql_poly_member (graph_name, container_kind, container_name, member_type_name,
     position, declared_on, declaration_line, declaration_column, source_name, source_line,
