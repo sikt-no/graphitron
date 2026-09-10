@@ -1109,14 +1109,14 @@ public class DevMojo extends AbstractRewriteMojo {
         // act on; reassigned from the pass below, which returns one only when it emitted.
         this.lastGeneration = null;
         try {
+            // Every round, and before the pass, for the reason captureModel carries. A round the
+            // pass refuses gets one too, and gets it whether the refusal returns errors or throws:
+            // the schema the gatherers read is no less read for having been turned down.
+            captureModel(ctx, captureFor(ctx));
             // One pass: the emitted tree, the compile graph the incremental driver reads, and the
             // editor-facing catalog and diagnostics, from a single read of the schema and a single
             // capture of the graph's partition.
             var pass = generatorFor(ctx).runPass();
-            // Every round, and after the pass, for the reason captureModel carries: the pass
-            // clears relations it knows nothing about. A round that failed validation gets one
-            // too, the schema it read being no less read for having been refused.
-            captureModel(ctx, captureFor(ctx));
             this.lastGeneration = pass.generation().orElse(null);
             var errors = pass.output().report().errors();
             if (!errors.isEmpty()) {

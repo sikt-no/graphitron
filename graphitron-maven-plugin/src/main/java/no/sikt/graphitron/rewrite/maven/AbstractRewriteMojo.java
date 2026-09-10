@@ -1219,12 +1219,12 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var holder = new RunContext[1];
         withCodegenScope(ctx -> {
             holder[0] = ctx;
-            // One store for the whole invocation, opened by the port on the pass's own capture and
-            // given back here. The generator is handed the port rather than the directory, so a
-            // goal that grows a second pass shares this store with it instead of opening another.
+            // One store for the whole invocation, opened by the port on the first capture and given
+            // back here. The generator is handed the port rather than the directory, so a goal that
+            // grows a second pass shares this store with it instead of opening another.
             try (CapturePort capture = CapturePort.holding(ctx.storeDirectory())) {
-                call.invoke(new GraphQLRewriteGenerator(ctx, capture));
                 captureModel(ctx, capture);
+                call.invoke(new GraphQLRewriteGenerator(ctx, capture));
             } catch (SchemaProblem e) {
                 var loaded = loadedSchemaFiles(ctx);
                 // Wrap the SchemaProblem in a null-message intermediary so Maven's
@@ -1252,17 +1252,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * Writes the families the gatherers fill from the run's own configuration, into the store the
-     * pass just used.
+     * pass is about to use.
      *
-     * <p>After the pass rather than before it, and only while both capture paths run: the walk
-     * behind {@link GraphQLRewriteGenerator} clears this graph's rows from every relation carrying
-     * a graph column, and every capture relation carrying none, both chosen by shape rather than by
-     * a list. So it owns relations it knows nothing about, and anything written before it is
-     * written for nothing.
+     * <p>Before the pass, which is the only place it says anything about a build the pass refuses.
+     * These gatherers read the author's own inputs, so what they write is true whether or not a
+     * stage accepts the document, and a refusal is exactly when a reader wants to ask why. The pass
+     * that follows leaves them alone: its clear disclaims the relations they declare themselves the
+     * owner of.
      *
-     * <p>Which is also why this is a call beside that walk and not a step inside it. The two share
-     * the store and nothing else, so retiring the walk is deleting its call rather than unpicking
-     * this one out of it.
+     * <p>A call beside the pass's own walk and not a step inside it. The two share the store and
+     * nothing else, so retiring that walk is deleting its call rather than unpicking this one out
+     * of it.
      */
     void captureModel(RunContext ctx, CapturePort capture) {
         capture.captureModel(new GraphIdentity(ctx.graphName(), ctx.basedir()),

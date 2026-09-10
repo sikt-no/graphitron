@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
+import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -49,16 +50,19 @@ import static no.sikt.graphitron.model.Tables.STORE_STAMP;
  * Brings a store that already holds a previous run's rows to the state capture expects, deleting
  * exactly what this run owns and touching nothing else.
  *
- * <p>Owned means two things. The run's <em>graph</em>: every graph-keyed relation clears scoped to
- * this run's {@code graph_name} and rebuilds whole, because within one graph the parse it rebuilds
- * from is paid for regardless, and other graphs' rows are another run's business. And the run's
- * <em>crawled sources</em>: for each classpath entry in this run's input set, the stamp decides
- * retain-or-rewrite; a source not in the input set is never examined and never deleted, because a
- * jar absent from this module's classpath may be another graph's live dependency. (The jOOQ
- * package's partition is cleared by the catalog walk itself, which is where the owned package
- * first becomes known; schema-file source rows are taken over by upsert in the SDL walk.)
- * {@code store_source} and {@code store_graph} rows upsert with fresh {@code last_seen} /
+ * <p>Owned means two things, and excludes a third. The run's <em>graph</em>: every graph-keyed
+ * relation clears scoped to this run's {@code graph_name} and rebuilds whole, because within one
+ * graph the parse it rebuilds from is paid for regardless, and other graphs' rows are another run's
+ * business. And the run's <em>crawled sources</em>: for each classpath entry in this run's input
+ * set, the stamp decides retain-or-rewrite; a source not in the input set is never examined and
+ * never deleted, because a jar absent from this module's classpath may be another graph's live
+ * dependency. (The jOOQ package's partition is cleared by the catalog walk itself, which is where
+ * the owned package first becomes known; schema-file source rows are taken over by upsert in the SDL
+ * walk.) {@code store_source} and {@code store_graph} rows upsert with fresh {@code last_seen} /
  * {@code last_captured} stamps and are never deleted by a run that does not own them.
+ *
+ * <p>What it excludes is the relations a self-sweeping gatherer declares itself the owner of, which
+ * need no clear and must not get one; {@link #SELF_SWEEPING} says why.
  *
  * <p>A classpath partition survives when {@code store_source} recorded a content hash for it and
  * the entry still hashes to that. A directory root is never stamped, because it changes on every
@@ -95,6 +99,20 @@ final class StoreRefresh {
         SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
         JAVA_FILE, JAVA_CLASS_DECLARATION, JAVA_METHOD_DECLARATION, JAVA_FIELD_DECLARATION);
+
+    /**
+     * The gatherers that end a reading by sweeping it. Every row they write carries the instant it
+     * was written at, and the reading ends by deleting the rows carrying a different one, so a
+     * relation one of them owns already holds exactly its last reading and there is nothing here to
+     * empty. Clearing it anyway would lose a reading with no second chance to be taken: these run
+     * before the pass, so what they wrote is what a build the pass refuses has left to say.
+     *
+     * <p>Named rather than read off the {@code touched_at} column, which is on relations this walk
+     * writes too. There the column is one writer's stamp beside another writer's rows, not the
+     * whole relation's discipline, and a clear that skipped those would let this walk's rows pile
+     * up unbounded.
+     */
+    private static final Set<String> SELF_SWEEPING = Set.of("document", "classpath");
 
     private StoreRefresh() {}
 
@@ -193,28 +211,44 @@ final class StoreRefresh {
             .where(JVM_CLASS_SUPERTYPE.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_CLASS).where(JVM_CLASS.SOURCE_NAME.in(staleOwned)).execute();
 
-        for (Table<?> table : childrenFirst(graphScoped())) {
+        var swept = selfSwept(dsl);
+        for (Table<?> table : childrenFirst(graphScoped(swept))) {
             dsl.deleteFrom(table)
                 .where(table.field("GRAPH_NAME", String.class).eq(graphName))
                 .execute();
         }
-        for (Table<?> table : childrenFirst(wholesale())) {
+        for (Table<?> table : childrenFirst(wholesale(swept))) {
             dsl.deleteFrom(table).execute();
         }
     }
 
     /**
+     * The relations a {@link #SELF_SWEEPING} gatherer declares itself the owner of, lowercased to
+     * match the census. Asked of {@code meta_relation} rather than listed, so a relation moved
+     * between gatherers moves its lifecycle with it, and a relation nobody declared stays this
+     * walk's to empty.
+     */
+    private static Set<String> selfSwept(DSLContext dsl) {
+        return dsl.select(META_RELATION.RELATION_NAME)
+            .from(META_RELATION)
+            .where(META_RELATION.OWNER_NAME.in(SELF_SWEEPING))
+            .fetchSet(META_RELATION.RELATION_NAME);
+    }
+
+    /**
      * Every relation carrying the graph dimension, whose clear scopes to this run's graph. Derived
      * from the column rather than listed, so a new graph-keyed relation is ownership-scoped by
-     * default. {@code store_graph} itself is the one exclusion: the anchor row upserts with a
-     * fresh {@code last_captured} and is never deleted, while its recipe children rewrite fresh
-     * every run and so clear here with the rest.
+     * default. Two exclusions. {@code store_graph} itself, whose anchor row upserts with a fresh
+     * {@code last_captured} and is never deleted, while its recipe children rewrite fresh every run
+     * and so clear here with the rest. And the self-swept relations, which arrive already holding
+     * exactly their last reading.
      */
-    private static Set<Table<?>> graphScoped() {
+    private static Set<Table<?>> graphScoped(Set<String> swept) {
         var tables = new LinkedHashSet<Table<?>>();
         for (Table<?> table : Public.PUBLIC.getTables()) {
             if (table.getOptions().type() == TableOptions.TableType.VIEW
                 || table.equals(STORE_GRAPH)
+                || swept.contains(table.getName().toLowerCase(java.util.Locale.ROOT))
                 || table.field("GRAPH_NAME", String.class) == null) {
                 continue;
             }
@@ -226,10 +260,12 @@ final class StoreRefresh {
     /**
      * Every base relation the clear still empties outright: the generated relations less the
      * views, which hold no rows of their own, less the graph-scoped set above, less the
-     * source-partitioned families, less the three {@code store_} relations whose lifetimes
-     * this class is deciding ({@code store_graph}'s recipe children are graph-scoped by their
-     * column and clear there), and less the {@code meta_} family. Written in exemption polarity
-     * on purpose: a relation nobody thought about is emptied and rebuilt, never silently retained.
+     * source-partitioned families, less the self-swept ones, less the three {@code store_}
+     * relations whose lifetimes this class is deciding ({@code store_graph}'s recipe children are
+     * graph-scoped by their column and clear there), and less the {@code meta_} family. Written in
+     * exemption polarity on purpose: a relation nobody thought about is emptied and rebuilt, never
+     * silently retained, which is why the self-swept ones are exempted by a declaration they carry
+     * rather than by the shape of a column.
      *
      * <p>The {@code meta_} exemption is the one whose reason is not about cadence. Those rows are
      * the schema's description of itself, authored in the DDL and supplied by it, so no run
@@ -238,13 +274,14 @@ final class StoreRefresh {
      * warm store would then hold the schema with its own description missing, which reads as a
      * store that registers nothing rather than as one that was cleared.
      */
-    private static Set<Table<?>> wholesale() {
-        var graphScoped = graphScoped();
+    private static Set<Table<?>> wholesale(Set<String> swept) {
+        var graphScoped = graphScoped(swept);
         var tables = new LinkedHashSet<Table<?>>();
         for (Table<?> table : Public.PUBLIC.getTables()) {
             if (table.getOptions().type() == TableOptions.TableType.VIEW
                 || PARTITIONED.contains(table)
                 || graphScoped.contains(table)
+                || swept.contains(table.getName().toLowerCase(java.util.Locale.ROOT))
                 || table.getName().toLowerCase(java.util.Locale.ROOT).startsWith("meta_")
                 || table.equals(STORE_GRAPH)
                 || table.equals(STORE_SOURCE)

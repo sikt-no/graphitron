@@ -912,7 +912,7 @@ graphql-java's assembly refuses it with "The interface type 'Node' is not presen
 type 'Inventory'" and no such schema builds. The transcription argument on its own would therefore
 have been wrong. What makes the reference unaffordable is that capture reads the parsed registry
 before assembly and is handed the refusal as a value rather than an exception, so the store's record
-of a schema that did not build is the transcription plus the `graphql_schema_error` row beside it.
+of a schema that did not build is the transcription plus the `graphql_schema_problem` row beside it.
 Measured on exactly that document: capture completes, `graphql_poly_member` holds the row naming
 `Node`, `graphql_type` holds no `Node`, and one `ASSEMBLY` row carries the message and its position.
 A reference from `container_kind` makes that capture throw an integrity violation instead, so the

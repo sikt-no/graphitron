@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -23,11 +22,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The port's other capture: the gatherers handed the run's configuration, which find their own
  * sources, against whichever store the port is on.
  *
- * <p>Two claims. The families land in the store the pass used rather than in one this call opened,
- * which is why the method is on the port. And they last only until the next pass, which clears this
- * graph's rows from every relation carrying a graph column, chosen by shape rather than by a list,
- * so it owns relations it has never heard of. Neither is visible from what either capture produces
- * alone, and the second is why every caller captures after its pass rather than before.
+ * <p>Two claims, and neither is visible from what either capture produces alone. The families land
+ * in the store the pass used rather than in one this call opened, which is why the method is on the
+ * port. And they outlive the next pass, whose clear disclaims the relations these gatherers declare
+ * themselves the owner of, which is what lets a caller capture before its pass instead of after: a
+ * build the pass refuses still has what they wrote to say for it.
+ *
+ * <p>That the disclaim is scoped rather than a clear switched off is not asserted here, having a
+ * guard already: widen it to every relation carrying the instant and
+ * {@code WarmStartRefreshTest.aSiblingGraphsPartitionSurvivesARefresh} goes red.
  */
 class ModelCapturePortTest {
 
@@ -37,13 +40,12 @@ class ModelCapturePortTest {
         """;
 
     /**
-     * One store and three steps, which is a dev session's cadence: a pass, the model capture after
-     * it, and the next pass. Both claims are in that sequence, and neither is visible from what
-     * either capture produces alone.
+     * One store and three steps, which is a dev session's cadence: a pass, the model capture beside
+     * it, and the next pass.
      */
     @Test
-    @DisplayName("a model capture lands beside the pass, and the next pass clears it")
-    void itLandsBesideThePassAndTheNextPassClearsIt(@TempDir Path tmp) {
+    @DisplayName("a model capture lands beside the pass, and outlives the next one")
+    void itLandsBesideThePassAndOutlivesTheNextOne(@TempDir Path tmp) {
         try (var lent = FactStores.fileBacked(tmp.resolve("home"));
              var port = CapturePort.over(lent)) {
             port.capture(request(tmp));
@@ -66,11 +68,11 @@ class ModelCapturePortTest {
 
             port.capture(request(tmp));
 
-            assertThat(lent.dsl().fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY))
-                .as("and the next pass takes them, clearing this graph from every relation "
-                    + "carrying one, which is why every caller captures after its pass rather "
-                    + "than before")
-                .isZero();
+            assertThat(lent.dsl().select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME)
+                    .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
+                    .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME))
+                .as("and the next pass leaves them, its clear disclaiming what these gatherers own")
+                .contains("Film");
         }
     }
 
