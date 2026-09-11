@@ -224,8 +224,9 @@ class GraphitronFieldEntriesTest {
                     .fetch(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME))
                 .as("both applications are transcribed, which is the whole of what they say")
                 .containsExactlyInAnyOrder("splitQuery", "tenantFanOut");
-            assertThat(decodeRelationsHoldingRows(dsl))
-                .as("and no decode relation holds a row, there being nothing to decode")
+            assertThat(decodeRelationsHoldingRows(dsl, "film.graphqls"))
+                .as("and no decode relation holds a row from this document, there being nothing in "
+                    + "it to decode")
                 .isEmpty();
         });
     }
@@ -279,13 +280,20 @@ class GraphitronFieldEntriesTest {
     }
 
     /**
-     * The decode relations that hold a row, named off the generated model rather than listed, so a
-     * relation added to the decode is one this case sees without being told about it.
+     * The decode relations holding a row written from {@code source}, named off the generated model
+     * rather than listed, so a relation added to the decode is one this case sees without being told
+     * about it.
+     *
+     * <p>Scoped to the one document, because graphitron's own directives.graphqls is read by every
+     * capture and carries applications of its own: it marks an argument of @asConnection deprecated,
+     * which is a decode row like any other. A case about what one document decodes to has to ask
+     * about that document.
      */
-    private static List<String> decodeRelationsHoldingRows(DSLContext dsl) {
+    private static List<String> decodeRelationsHoldingRows(DSLContext dsl, String source) {
         return Public.PUBLIC.getTables().stream()
             .filter(table -> table.getName().toLowerCase(Locale.ROOT).startsWith("graphitron_ast_"))
-            .filter(table -> dsl.fetchCount(table) > 0)
+            .filter(table -> dsl.fetchCount(table,
+                table.field("SOURCE_NAME", String.class).like("%" + source)) > 0)
             .map(table -> table.getName().toLowerCase(Locale.ROOT))
             .sorted()
             .toList();

@@ -12,6 +12,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_CONDITION_STEP_ENTRY;
@@ -87,6 +88,7 @@ final class GraphitronInputValueEntries {
         referenceForConditionSteps(dsl, graph, touchedAt, conditioned(referenceForSteps));
 
         nodeIds(dsl, graph, touchedAt, wrote(applied(applications, "nodeId"), "typeName"));
+        deprecations(dsl, graph, touchedAt, applied(applications, "deprecated"));
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -96,6 +98,7 @@ final class GraphitronInputValueEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY, GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
+        GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY,
         GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY,
         GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY,
         GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY,
@@ -369,6 +372,40 @@ final class GraphitronInputValueEntries {
             .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
             .set(t.METHOD, excluded(t.METHOD))
             .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
+            .execute();
+    }
+
+    /**
+     * What a {@code @deprecated} application on an input value says.
+     *
+     * <p>Not graphitron's directive, and decoded here for the reason federation's {@code @key} is:
+     * graphitron gives it a meaning the specification does not, unifying it with a docstring
+     * convention GraphQL has no room for, so a consumer asking whether something is deprecated
+     * should not have to know which of the two marked it.
+     *
+     * <p>Every input value, not only a directive definition's argument. Which of the three parents
+     * the application sits under is the anchor's question, and an input field's own deprecation is
+     * a fact a reader wants at its own coordinate anyway.
+     */
+    private static void deprecations(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                     List<Directive> applications) {
+        var t = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> SdlEntries.sourceName(application),
+            application -> SdlEntries.sourceLine(application),
+            application -> SdlEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "reason"), t.REASON)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                t.TOUCHED_AT, t.REASON)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.REASON, excluded(t.REASON))
             .execute();
     }
 

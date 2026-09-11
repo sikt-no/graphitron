@@ -2762,6 +2762,59 @@ COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.source_column IS 'sou
 COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_input_value_node_id_entry.node_type_ref IS 'the typeName argument as written, naming the type the identifier belongs to. A bare @nodeId writes no row: the author is asking for the deduction, which sends the anchor to a different join entirely, and the absence of a row here is what says so';
 
+CREATE TABLE graphitron_ast_input_value_deprecated_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  reason        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_input_value_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_input_value_deprecated_entry IS 'What a deprecation marker on an input value says: the replacement hint the author gave, decoded. For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_input_value_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.reason IS 'the reason argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. The decode is the whole reason this relation exists beside the applied-argument row: that row carries the rendered literal, quotes included, and a consumer wanting the text would have to re-read SDL to get it';
+
+CREATE TABLE graphitron_deprecated_directive (
+  graph_name     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  reason         VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name),
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive (graph_name, directive_name)
+);
+COMMENT ON TABLE graphitron_deprecated_directive IS 'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention. For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.';
+COMMENT ON COLUMN graphitron_deprecated_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_deprecated_directive.directive_name IS 'the deprecated directive, without the leading @; a foreign key into graphql_directive, so a row here is about a directive the corpus declares';
+COMMENT ON COLUMN graphitron_deprecated_directive.reason IS 'the replacement hint, which for this convention is the whole description text: the token marks the description as carrying the notice and the prose around it is the notice. NOT NULL because a row exists exactly where the token was found, and a description holding it is never empty';
+COMMENT ON COLUMN graphitron_deprecated_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
+CREATE TABLE graphitron_deprecated_directive_argument (
+  graph_name     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  argument_name  VARCHAR NOT NULL,
+  reason         VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name, argument_name),
+  FOREIGN KEY (graph_name, directive_name, argument_name)
+    REFERENCES graphql_directive_argument (graph_name, directive_name, argument_name)
+);
+COMMENT ON TABLE graphitron_deprecated_directive_argument IS 'A formal argument of a declared directive is deprecated, by the native marker GraphQL admits there. For example the connectionName argument of @asConnection, marked with a reason, gives one row.';
+COMMENT ON COLUMN graphitron_deprecated_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_deprecated_directive_argument.directive_name IS 'the directive declaring the argument, without the leading @';
+COMMENT ON COLUMN graphitron_deprecated_directive_argument.argument_name IS 'the deprecated argument; keyed with the directive into graphql_directive_argument, so a row here is about an argument the corpus declares';
+COMMENT ON COLUMN graphitron_deprecated_directive_argument.reason IS 'the replacement hint the author gave, empty where they applied the marker and gave no reason. NOT NULL rather than nullable because the absence a reader cares about is the absence of the row: a marker with no reason still deprecates';
+COMMENT ON COLUMN graphitron_deprecated_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
 CREATE TABLE graphitron_table_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -12912,6 +12965,12 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('graph-directive',
+   'one directive the corpus declares, in one graph',
+   'graph_name, directive_name', 'sdl'),
+  ('graph-directive-argument',
+   'one formal argument of one directive the corpus declares, in one graph',
+   'graph_name, directive_name, argument_name', 'sdl'),
   ('graph-schema-problem',
    'one problem raised while creating one graph''s schema, at its place in the order they were raised',
    'graph_name, ordinal', 'sdl'),
@@ -13150,6 +13209,18 @@ INSERT INTO meta_relation VALUES
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
    'The element family states an element''s existence at four grains and states nowhere that an element exists, so a relation naming any coordinate has nothing to reference and renders one into a string instead, where no foreign key reaches it. This is the supertype those four have always implied, written by capture beside the anchors it generalises rather than stated as a union over them, which is what makes a reference to any coordinate one column and one key. The four carry the spelling and a foreign key back here, which is the join down to the parts and what makes an anchor with no coordinate impossible; one call writes both rows from one string, so there is no second rendering for a constraint to have to check. Keyed by the spelling and not by a decomposition, because the decompositions are exactly what differ between the four and the specification has already settled the grammar. The element kind names the row in the specification''s own vocabulary, so a reader wanting the parts joins the relation for it instead of splitting the spelling, FIELD and INPUT_FIELD sharing one because they share a coordinate form and are told apart by the parent''s kind.'),
+  ('graphitron_ast_input_value_deprecated_entry', 'sdl-declaration-site', 'document',
+   'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
+   'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
+   'A decode of one directive application, keyed by the application''s own position, so the input value it was written on and the file are one join away rather than columns here. @deprecated is not graphitron''s directive, and it is decoded here for the reason federation''s @key is: graphitron gives it a meaning GraphQL does not, unifying it with a docstring convention the specification has no room for, and a consumer asking whether something is deprecated should not have to know which of the two marked it. The decode is why this sits beside the applied-argument row rather than being read off it: that row carries the rendered literal, quotes and all, and recovering the text from it would mean re-reading SDL at every read.'),
+  ('graphitron_deprecated_directive', 'graph-directive', 'document',
+   'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention.',
+   'For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.',
+   'Derived once the corpus is read, because what a directive is cannot be settled by one file. The convention exists because GraphQL forbids @deprecated on a directive definition and graphitron needs to say it anyway, so the marker is a token in the description; finding it is a decode, and a decode belongs at capture rather than in every reader''s predicate. There is no column saying which marker was used, because the relation is: this one is the docstring form and the argument relation beside it is the native one, and no site admits both.'),
+  ('graphitron_deprecated_directive_argument', 'graph-directive-argument', 'document',
+   'A formal argument of a declared directive is deprecated, by the native marker GraphQL admits there.',
+   'For example the connectionName argument of @asConnection, marked with a reason, gives one row.',
+   'Derived from the input-value decode, whose rows this resolves to the coordinate they are about: an entry is keyed by where the application was written and a reader wants to ask about a directive and an argument by name. The resolution is the reason the anchor exists at all, and it is one the anchors of the graphql_ family deliberately do not offer: a directive applied to a directive definition''s own argument reaches no applied-directive anchor, an argument of a definition not being a schema element, so this is the one relation that says such an application happened at a coordinate.'),
   ('graphitron_ast_table_entry', 'sdl-declaration-site', 'document',
    'What an @table application says: the table this declaration is bound to, as written.',
    'For example type Film @table(name: "film") gives one row reading film.',

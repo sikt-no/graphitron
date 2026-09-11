@@ -71,6 +71,9 @@ public final class SdlCapture {
         // After every document, because an anchor is what the corpus says: a coordinate one file
         // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
         SdlAnchor.write(dsl, graph.name(), readAt);
+        // After the SDL anchors, which settle which of several declarations the corpus honours;
+        // graphitron's own anchors resolve against what that settled rather than asking again.
+        GraphitronAnchor.write(dsl, graph.name(), readAt);
         // What the merge refused and what the assembly refused are the same question asked of the
         // same corpus, so they arrive as one list in the order the stages ran.
         var raised = new ArrayList<>(parse.registryErrors());
