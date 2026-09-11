@@ -1,35 +1,35 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.language.SourceLocation;
-import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.lint.DeprecationRecognizer;
 import no.sikt.graphitron.model.lint.LintFix;
-import no.sikt.graphitron.model.lint.LintRule;
 
 /**
- * The context a {@link LintVisitor} receives for one {@link LintTarget}: a {@code report} sink that
- * records a finding for the visitor's rule, plus read access to the parsed schema (the
- * {@link TypeDefinitionRegistry} and a {@link DeprecationRecognizer} over it) for the rules that
- * need more than the single node.
+ * What a rule may ask beyond the node it was handed: where to report, and the two questions about
+ * the corpus that a single node cannot answer.
  *
- * <p>The engine binds a fresh context to the current (visitor, node) pair, so {@code report}
- * attributes the finding to the right {@link LintRule} and defaults its location to the node's,
- * without the visitor threading either through.
+ * <p>Both of those are reads of the fact store now rather than of a parsed registry. A rule asking
+ * whether something is deprecated, or what type a directive declares an argument to be, is asking
+ * about the corpus, and the corpus is a set of rows.
  */
 public interface LintContext {
 
-    /** Record a finding for the current rule at the target node's location. */
+    /** Reports a finding at the node's own location. */
     void report(String message);
 
-    /** Record a finding for the current rule at the target node's location, carrying a suggested fix. */
+    /** Reports a finding carrying a quick fix. */
     void report(String message, LintFix fix);
 
-    /** Record a finding for the current rule at an explicit location (for a sub-node of the target). */
+    /** Reports a finding at an explicit location, for a sub-node of the target. */
     void reportAt(SourceLocation location, String message);
 
-    /** The full parsed schema registry (consumer SDL plus the merged graphitron directive surface). */
-    TypeDefinitionRegistry registry();
-
-    /** A deprecation recognizer over {@link #registry()}, shared across the run. */
+    /** Whether the corpus marks something deprecated, by either of graphitron's two markers. */
     DeprecationRecognizer deprecation();
+
+    /**
+     * The type a declared directive gives one of its arguments, unwrapped of list and non-null, or
+     * null where the corpus declares no such argument. What a rule needs it for is the coordinate
+     * an object field written inside that argument's value belongs to.
+     */
+    String namedTypeOfDirectiveArgument(String directive, String argument);
 }

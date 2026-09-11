@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.language.Argument;
+import graphql.language.ArrayValue;
 import graphql.language.DescribedNode;
 import graphql.language.Description;
 import graphql.language.Directive;
@@ -12,6 +13,8 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.NamedNode;
+import graphql.language.ObjectField;
+import graphql.language.ObjectValue;
 import graphql.language.Node;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ScalarTypeDefinition;
@@ -19,9 +22,11 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.TypeDefinition;
 import graphql.language.UnionTypeDefinition;
+import graphql.language.Value;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.util.ArrayList;
@@ -35,6 +40,9 @@ import java.util.regex.Pattern;
 import no.sikt.graphitron.model.lint.DeprecationRecognizer;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
+
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+
 
 /**
  * The SDL lint engine: one shared traversal over the parsed graphql-java AST that dispatches
@@ -92,36 +100,37 @@ public final class LintEngine {
     /**
      * Runs every registered visitor over {@code registry} in one traversal, returning the findings
      * as {@link BuildWarning.LintFinding}s in source-walk order. Excludes only graphitron's own
-     * bundled surface; use {@link #run(TypeDefinitionRegistry, Set)} to additionally exclude
+     * bundled surface; use {@link #run(TypeDefinitionRegistry, Set, StoreHandle)} to additionally exclude
      * federation-injected definitions.
      */
-    public List<BuildWarning> run(TypeDefinitionRegistry registry) {
-        return run(registry, Set.of());
+    public List<BuildWarning> run(TypeDefinitionRegistry registry, StoreHandle store) {
+        return run(registry, Set.of(), store);
     }
 
     /**
-     * As {@link #run(TypeDefinitionRegistry)}, but also excludes the federation {@code @link}
+     * As {@link #run(TypeDefinitionRegistry, StoreHandle)}, but also excludes the federation {@code @link}
      * injector's definitions ({@code injectedNames}, from
      * {@link no.sikt.graphitron.rewrite.AttributedRegistry#injectedNames()}). Both {@code injectedNames}
      * and {@code BUNDLED_TYPE_NAMES} are generator-owned surface the author never wrote and cannot
- * rename or document, so linting them is pure noise; the exclusion widens the existing
+     * rename or document, so linting them is pure noise; the exclusion widens the existing
      * name-set skip to a second contributor rather than adding a new skip mechanism.
      */
-    public List<BuildWarning> run(TypeDefinitionRegistry registry, Set<String> injectedNames) {
+    public List<BuildWarning> run(TypeDefinitionRegistry registry, Set<String> injectedNames,
+                                  StoreHandle store) {
         var out = new ArrayList<BuildWarning>();
-        var recognizer = new DeprecationRecognizer(registry);
+        var recognizer = new DeprecationRecognizer(store);
         var rootOps = rootOperationTypeNames(registry);
         var excluded = new LinkedHashSet<>(BUNDLED_TYPE_NAMES);
         excluded.addAll(injectedNames);
 
         for (TypeDefinition<?> def : registry.types().values()) {
             if (excluded.contains(def.getName()) || matchesExcludedType(def.getName())) continue;
-            visitTypeDefinition(def, registry, recognizer, rootOps, out);
+            visitTypeDefinition(def, store, recognizer, rootOps, out);
         }
         for (ScalarTypeDefinition scalar : registry.scalars().values()) {
             if (excluded.contains(scalar.getName()) || matchesExcludedType(scalar.getName())) continue;
-            dispatch(LintNodeKind.SCALAR_TYPE, scalar, scalar.getName(), false, registry, recognizer, out);
-            visitAppliedDirectives(scalar, scalar.getName(), registry, recognizer, out);
+            dispatch(LintNodeKind.SCALAR_TYPE, scalar, scalar.getName(), false, store, recognizer, out);
+            visitAppliedDirectives(scalar, scalar.getName(), store, recognizer, out);
         }
         return out;
     }
@@ -160,44 +169,44 @@ public final class LintEngine {
     }
 
     private void visitTypeDefinition(
-        TypeDefinition<?> def, TypeDefinitionRegistry registry, DeprecationRecognizer recognizer,
+        TypeDefinition<?> def, StoreHandle store, DeprecationRecognizer recognizer,
         Set<String> rootOps, List<BuildWarning> out
     ) {
         String typeName = def.getName();
         boolean isRootOp = rootOps.contains(typeName);
         switch (def) {
             case ObjectTypeDefinition obj -> {
-                dispatch(LintNodeKind.OBJECT_TYPE, obj, typeName, isRootOp, registry, recognizer, out);
-                visitAppliedDirectives(obj, typeName, registry, recognizer, out);
+                dispatch(LintNodeKind.OBJECT_TYPE, obj, typeName, isRootOp, store, recognizer, out);
+                visitAppliedDirectives(obj, typeName, store, recognizer, out);
                 for (FieldDefinition f : obj.getFieldDefinitions()) {
-                    visitField(f, typeName, isRootOp, registry, recognizer, out);
+                    visitField(f, typeName, isRootOp, store, recognizer, out);
                 }
             }
             case InterfaceTypeDefinition iface -> {
-                dispatch(LintNodeKind.INTERFACE_TYPE, iface, typeName, isRootOp, registry, recognizer, out);
-                visitAppliedDirectives(iface, typeName, registry, recognizer, out);
+                dispatch(LintNodeKind.INTERFACE_TYPE, iface, typeName, isRootOp, store, recognizer, out);
+                visitAppliedDirectives(iface, typeName, store, recognizer, out);
                 for (FieldDefinition f : iface.getFieldDefinitions()) {
-                    visitField(f, typeName, isRootOp, registry, recognizer, out);
+                    visitField(f, typeName, isRootOp, store, recognizer, out);
                 }
             }
             case UnionTypeDefinition union -> {
-                dispatch(LintNodeKind.UNION_TYPE, union, typeName, isRootOp, registry, recognizer, out);
-                visitAppliedDirectives(union, typeName, registry, recognizer, out);
+                dispatch(LintNodeKind.UNION_TYPE, union, typeName, isRootOp, store, recognizer, out);
+                visitAppliedDirectives(union, typeName, store, recognizer, out);
             }
             case EnumTypeDefinition en -> {
-                dispatch(LintNodeKind.ENUM_TYPE, en, typeName, isRootOp, registry, recognizer, out);
-                visitAppliedDirectives(en, typeName, registry, recognizer, out);
+                dispatch(LintNodeKind.ENUM_TYPE, en, typeName, isRootOp, store, recognizer, out);
+                visitAppliedDirectives(en, typeName, store, recognizer, out);
                 for (EnumValueDefinition v : en.getEnumValueDefinitions()) {
-                    dispatch(LintNodeKind.ENUM_VALUE_DEFINITION, v, typeName, isRootOp, registry, recognizer, out);
-                    visitAppliedDirectives(v, typeName, registry, recognizer, out);
+                    dispatch(LintNodeKind.ENUM_VALUE_DEFINITION, v, typeName, isRootOp, store, recognizer, out);
+                    visitAppliedDirectives(v, typeName, store, recognizer, out);
                 }
             }
             case InputObjectTypeDefinition input -> {
-                dispatch(LintNodeKind.INPUT_OBJECT_TYPE, input, typeName, isRootOp, registry, recognizer, out);
-                visitAppliedDirectives(input, typeName, registry, recognizer, out);
+                dispatch(LintNodeKind.INPUT_OBJECT_TYPE, input, typeName, isRootOp, store, recognizer, out);
+                visitAppliedDirectives(input, typeName, store, recognizer, out);
                 for (InputValueDefinition v : input.getInputValueDefinitions()) {
-                    dispatch(LintNodeKind.INPUT_FIELD_DEFINITION, v, typeName, isRootOp, registry, recognizer, out);
-                    visitAppliedDirectives(v, typeName, registry, recognizer, out);
+                    dispatch(LintNodeKind.INPUT_FIELD_DEFINITION, v, typeName, isRootOp, store, recognizer, out);
+                    visitAppliedDirectives(v, typeName, store, recognizer, out);
                 }
             }
             default -> {
@@ -210,22 +219,22 @@ public final class LintEngine {
 
     private void visitField(
         FieldDefinition field, String enclosingType, boolean isRootOp,
-        TypeDefinitionRegistry registry, DeprecationRecognizer recognizer, List<BuildWarning> out
+        StoreHandle store, DeprecationRecognizer recognizer, List<BuildWarning> out
     ) {
-        dispatch(LintNodeKind.FIELD_DEFINITION, field, enclosingType, isRootOp, registry, recognizer, out);
-        visitAppliedDirectives(field, enclosingType, registry, recognizer, out);
+        dispatch(LintNodeKind.FIELD_DEFINITION, field, enclosingType, isRootOp, store, recognizer, out);
+        visitAppliedDirectives(field, enclosingType, store, recognizer, out);
         for (InputValueDefinition arg : field.getInputValueDefinitions()) {
-            dispatch(LintNodeKind.ARGUMENT_DEFINITION, arg, enclosingType, isRootOp, registry, recognizer, out);
-            visitAppliedDirectives(arg, enclosingType, registry, recognizer, out);
+            dispatch(LintNodeKind.ARGUMENT_DEFINITION, arg, enclosingType, isRootOp, store, recognizer, out);
+            visitAppliedDirectives(arg, enclosingType, store, recognizer, out);
         }
     }
 
     private void visitAppliedDirectives(
         DirectivesContainer<?> container, String enclosingType,
-        TypeDefinitionRegistry registry, DeprecationRecognizer recognizer, List<BuildWarning> out
+        StoreHandle store, DeprecationRecognizer recognizer, List<BuildWarning> out
     ) {
         for (Directive d : container.getDirectives()) {
-            dispatch(LintNodeKind.APPLIED_DIRECTIVE, d, enclosingType, false, registry, recognizer, out);
+            dispatch(LintNodeKind.APPLIED_DIRECTIVE, d, enclosingType, false, store, recognizer, out);
             // Applied-directive arguments are encountered but deliberately not a dispatch target in
             // v1 (NOT_LINTED); the rules that care read the arguments off the directive node directly.
         }
@@ -233,14 +242,14 @@ public final class LintEngine {
 
     private void dispatch(
         LintNodeKind kind, Node<?> node, String enclosingType, boolean isRootOp,
-        TypeDefinitionRegistry registry, DeprecationRecognizer recognizer, List<BuildWarning> out
+        StoreHandle store, DeprecationRecognizer recognizer, List<BuildWarning> out
     ) {
         var subscribers = byKind.get(kind);
         if (subscribers == null) return;
         var target = new LintTarget(kind, nameOf(node), descriptionOf(node), argumentsOf(node),
-            enclosingType, isRootOp, node.getSourceLocation(), node);
+            enclosingType, isRootOp, node.getSourceLocation());
         for (LintVisitor visitor : subscribers) {
-            var ctx = new SinkContext(visitor.rule(), node.getSourceLocation(), registry, recognizer, out);
+            var ctx = new SinkContext(visitor.rule(), node.getSourceLocation(), store, recognizer, out);
             visitor.inspect(target, ctx);
         }
     }
@@ -272,23 +281,42 @@ public final class LintEngine {
     }
 
     /**
-     * An applied directive's arguments: each name against its value where the author wrote a
-     * string, and against null where they wrote anything else. Empty at every other node kind.
+     * An applied directive's arguments: each name against the value where the author wrote a
+     * string, and against the object-field names written anywhere inside it. Empty at every other
+     * node kind.
      *
-     * <p>The null is load-bearing and is why this is not a map of only the strings: an argument
-     * written as a number is an argument the author passed, so a rule asking whether they passed
-     * anything has to see it, while a rule wanting the text must not read a number as one.
+     * <p>Both halves are columns the store holds, the value on the applied-argument row and the
+     * names in {@code graphql_ast_value_entry}, whose {@code holder_line} is repeated on every node
+     * of an expression so that "the names inside this argument" is one predicate rather than a
+     * descent. Read off the parse tree here only because this traversal still is one.
      */
-    private static Map<String, String> argumentsOf(Node<?> node) {
+    private static Map<String, LintTarget.AppliedArgument> argumentsOf(Node<?> node) {
         if (!(node instanceof Directive directive)) {
             return Map.of();
         }
-        var arguments = new LinkedHashMap<String, String>();
+        var arguments = new LinkedHashMap<String, LintTarget.AppliedArgument>();
         for (Argument argument : directive.getArguments()) {
-            arguments.put(argument.getName(),
-                argument.getValue() instanceof StringValue written ? written.getValue() : null);
+            var named = new LinkedHashSet<String>();
+            collectFieldNames(argument.getValue(), named);
+            arguments.put(argument.getName(), new LintTarget.AppliedArgument(
+                argument.getValue() instanceof StringValue written ? written.getValue() : null,
+                named));
         }
         return arguments;
+    }
+
+    /** Every object-field name in a written value, flattened, which is what the store's rows are. */
+    private static void collectFieldNames(Value<?> value, Set<String> into) {
+        switch (value) {
+            case ObjectValue object -> {
+                for (ObjectField field : object.getObjectFields()) {
+                    into.add(field.getName());
+                    collectFieldNames(field.getValue(), into);
+                }
+            }
+            case ArrayValue array -> array.getValues().forEach(v -> collectFieldNames(v, into));
+            case null, default -> { /* a scalar names no field */ }
+        }
     }
 
     private static Set<String> rootOperationTypeNames(TypeDefinitionRegistry registry) {
@@ -313,7 +341,7 @@ public final class LintEngine {
 
     /** Per-(visitor, node) sink: attributes each finding to the rule and the node's default location. */
     private record SinkContext(
-        LintRule rule, SourceLocation defaultLocation, TypeDefinitionRegistry registry,
+        LintRule rule, SourceLocation defaultLocation, StoreHandle store,
         DeprecationRecognizer recognizer, List<BuildWarning> out
     ) implements LintContext {
 
@@ -335,6 +363,21 @@ public final class LintEngine {
         @Override
         public DeprecationRecognizer deprecation() {
             return recognizer;
+        }
+
+        /**
+         * The lint engine's own query, named where it is asked. A query belongs to the reader
+         * that has the question: the store's schema is the shared contract, and a second
+         * reader wanting this would read the same relation rather than this method.
+         */
+        @Override
+        public String namedTypeOfDirectiveArgument(String directive, String argument) {
+            var t = GRAPHQL_DIRECTIVE_ARGUMENT;
+            return store.dsl().select(t.NAMED_TYPE).from(t)
+                .where(t.GRAPH_NAME.eq(store.graphName()))
+                .and(t.DIRECTIVE_NAME.eq(directive))
+                .and(t.ARGUMENT_NAME.eq(argument))
+                .fetchOne(t.NAMED_TYPE);
         }
     }
 }

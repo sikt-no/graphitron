@@ -2821,6 +2821,23 @@ COMMENT ON COLUMN graphitron_deprecated_directive_argument.argument_name IS 'the
 COMMENT ON COLUMN graphitron_deprecated_directive_argument.reason IS 'the replacement hint the author gave, empty where they applied the marker and gave no reason. NOT NULL rather than nullable because the absence a reader cares about is the absence of the row: a marker with no reason still deprecates';
 COMMENT ON COLUMN graphitron_deprecated_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
+CREATE TABLE graphitron_deprecated_input_field (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  reason     VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name)
+);
+COMMENT ON TABLE graphitron_deprecated_input_field IS 'A field of an input object is deprecated, by the native marker GraphQL admits there. For example input FilmFilter { legacyTitle: String @deprecated(reason: "use title") } gives one row.';
+COMMENT ON COLUMN graphitron_deprecated_input_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_deprecated_input_field.type_name IS 'the input object declaring the field';
+COMMENT ON COLUMN graphitron_deprecated_input_field.field_name IS 'the deprecated field; keyed with the type into graphql_field_element, an input object''s field being a field there like any other';
+COMMENT ON COLUMN graphitron_deprecated_input_field.reason IS 'the replacement hint the author gave, empty where they applied the marker and gave no reason. NOT NULL rather than nullable because the absence a reader cares about is the absence of the row';
+COMMENT ON COLUMN graphitron_deprecated_input_field.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
 CREATE TABLE graphitron_table_entry (
   graph_name       VARCHAR NOT NULL,
   type_name        VARCHAR NOT NULL,
@@ -12971,6 +12988,9 @@ INSERT INTO meta_materialize VALUES
    'The registration whose index is the whole of it, and the first in this register where leaving the index off would have been worse than not registering at all. This relation answers where a coordinate''s generated SQL is rooted, and a reader that holds a set of coordinates and asks it for each one''s table correlates into it by construction. intent_condition_membership is that reader: it folds five contributing sources into a set of coordinates and then joins this relation to give each one its table. Measured against a store captured from the example schema, 918 fields and 236 rows here, that reader is 6167 milliseconds with this relation a view and 342 with it this table, against a refresh of 77 milliseconds, which is one evaluation of the rule. The join was also written the other way round, driving from this relation and joining the fold''s contributor set in, which is the rewrite that fixed the same shape one increment earlier; here it measures 68349 milliseconds, because the contributor set is the more expensive of the two derived sides and reversing only moved the re-evaluation onto it. So the rewrite was tried first, as the doctrine here says it must be, and it is the case where the rewrite is not the answer. The index is argued at its own site and its figure belongs beside these: with the target carrying no index the same reader is 91045 milliseconds, fifteen times worse than the view. That is the mirror this register learned one increment ago, that an inlined view can be evaluated restricted where a table can only be scanned, arriving on a second relation and deciding a registration rather than refusing one. Priced against the register of twenty: removing it alone changes the refresh by less than the instrument''s own spread and makes its one reader about sixty times dearer. The registration this register''s own review called its exemplar of accretion turns out to earn its place.');
 
 INSERT INTO meta_grain VALUES
+  ('graph-field',
+   'one field one type declares, in one graph',
+   'graph_name, type_name, field_name', 'sdl'),
   ('graph-directive',
    'one directive the corpus declares, in one graph',
    'graph_name, directive_name', 'sdl'),
@@ -13219,6 +13239,10 @@ INSERT INTO meta_relation VALUES
    'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
    'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
    'A decode of one directive application, keyed by the application''s own position, so the input value it was written on and the file are one join away rather than columns here. @deprecated is not graphitron''s directive, and it is decoded here for the reason federation''s @key is: graphitron gives it a meaning GraphQL does not, unifying it with a docstring convention the specification has no room for, and a consumer asking whether something is deprecated should not have to know which of the two marked it. The decode is why this sits beside the applied-argument row rather than being read off it: that row carries the rendered literal, quotes and all, and recovering the text from it would mean re-reading SDL at every read.'),
+  ('graphitron_deprecated_input_field', 'graph-field', 'document',
+   'A field of an input object is deprecated, by the native marker GraphQL admits there.',
+   'For example input FilmFilter { legacyTitle: String @deprecated(reason: "use title") } gives one row.',
+   'Derived from the input-value decode beside the two directive relations, and for the same reason: an entry is keyed by where the marker was written and a reader wants to ask about a coordinate. Unlike the directive-argument one this coordinate does have an applied-directive anchor, an input object''s field being a field like any other, so the fact could have been read from there instead. It is derived here because that anchor carries the reason as the rendered literal, quotes and all, and a reader taking it from there would be re-reading SDL to get the text. One decode, three resolutions, and no consumer parses anything.'),
   ('graphitron_deprecated_directive', 'graph-directive', 'document',
    'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention.',
    'For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.',

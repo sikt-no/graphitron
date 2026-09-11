@@ -2,6 +2,20 @@ package no.sikt.graphitron.rewrite.lint;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.test.FactStores;
+import no.sikt.graphitron.model.test.SeededStore;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.rewrite.lint.rules.DeprecationsHaveAReasonVisitor;
 import no.sikt.graphitron.rewrite.lint.rules.TypesAndFieldsHaveDescriptionsVisitor;
@@ -32,17 +46,64 @@ class LintEngineTest {
     private static final String DIRECTIVES = SchemaLoader.directivesSdl();
 
     private static List<BuildWarning.LintFinding> findings(String sdl) {
-        return run(new SchemaParser().parse(sdl));
+        return run(new SchemaParser().parse(sdl), sdl);
     }
 
     private static List<BuildWarning.LintFinding> findingsWithDirectives(String sdl) {
-        return run(new SchemaParser().parse(DIRECTIVES + "\n" + sdl));
+        // The registry gets the vocabulary spelled out because this parse is standalone;
+        // capture gets only the case's own text, reading the bundled file itself.
+        return run(new SchemaParser().parse(DIRECTIVES + "\n" + sdl), sdl);
     }
 
     private static List<BuildWarning.LintFinding> run(TypeDefinitionRegistry registry) {
-        return LintEngine.builtIn().run(registry).stream()
-            .map(BuildWarning.LintFinding.class::cast)
-            .toList();
+        return run(registry, "");
+    }
+
+    /**
+     * The engine over a parsed registry and a store captured from the same SDL.
+     *
+     * <p>Two readings of one text, which is what the engine takes today: it still walks the parse
+     * tree, and it reads the corpus for the questions a single node cannot answer. The store is
+     * captured rather than stubbed because those questions are about rows: whether the corpus
+     * deprecates a directive, and what type it declares an argument to be. Capture reads
+     * graphitron's own directives.graphqls alongside whatever it is given, so the shipped
+     * deprecations are present in every case's store without the case saying so.
+     */
+    private static List<BuildWarning.LintFinding> run(TypeDefinitionRegistry registry, String sdl) {
+        Path directory = temporaryDirectory();
+        try (var store = FactStores.inMemory()) {
+            // The graph's anchor row is the caller's, not the SDL capture's: every row it
+            // writes holds a foreign key into it, so a gatherer does not mint what two need.
+            SeededStore.seedGraph(store.dsl(), GRAPH);
+            SdlCapture.capture(store.dsl(), new GraphIdentity(GRAPH, directory),
+                config(directory, sdl), LocalDateTime.now());
+            return LintEngine.builtIn()
+                .run(registry, new StoreHandle(store.dsl(), GRAPH)).stream()
+                .map(BuildWarning.LintFinding.class::cast)
+                .toList();
+        }
+    }
+
+    /** A graph name of this class's own, so a case's rows cannot be another's. */
+    private static final String GRAPH = "lint";
+
+    /** The SDL on disk, where capture finds its inputs. */
+    private static SubjectConfig config(Path directory, String sdl) {
+        try {
+            Files.writeString(directory.resolve("schema.graphqls"), sdl, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
+    }
+
+    private static Path temporaryDirectory() {
+        try {
+            return Files.createTempDirectory("lint-engine-test");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private static List<BuildWarning.LintFinding> forRule(List<BuildWarning.LintFinding> all, LintRule rule) {

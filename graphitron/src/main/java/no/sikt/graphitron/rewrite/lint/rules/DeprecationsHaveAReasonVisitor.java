@@ -42,7 +42,8 @@ public final class DeprecationsHaveAReasonVisitor implements LintVisitor {
         if (!DEPRECATED.equals(target.name())) {
             return;
         }
-        String reason = target.arguments().get(REASON);
+        var passed = target.arguments().get(REASON);
+        String reason = passed == null ? null : passed.value();
         if (reason != null && !reason.isBlank()) return;
 
         if (target.arguments().isEmpty()) {

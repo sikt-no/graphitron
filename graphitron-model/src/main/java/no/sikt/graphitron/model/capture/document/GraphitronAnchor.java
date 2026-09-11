@@ -9,8 +9,10 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.condition;
@@ -27,19 +29,20 @@ import static org.jooq.impl.DSL.val;
  *
  * <h2>Deprecation, which is one fact with two markers</h2>
  *
- * <p>GraphQL forbids {@code @deprecated} on a directive definition and admits it on that
+ * <p>GraphQL forbids the deprecation directive on a directive definition and admits it on that
  * definition's arguments, so graphitron says the first with a token in the description and the
- * second with the directive GraphQL gives it. A consumer asking whether a directive is deprecated
- * should not have to know which of the two marked it, and these two relations are what saves it
- * from knowing: one per marker, told apart by which relation a row is in rather than by a column,
- * because no site admits both.
+ * second with the directive GraphQL gives it. A consumer asking whether something is deprecated
+ * should not have to know which of the two marked it, and these relations are what save it from
+ * knowing: told apart by which relation a row is in rather than by a column, because no site
+ * admits both.
  *
- * <p>The argument anchor is the one thing the {@code graphql_} anchors deliberately do not offer. A
- * directive applied to a directive definition's own argument reaches no applied-directive anchor,
+ * <p>Three relations over one decode, and the three differ in how far the resolution reaches. The
+ * directive-argument one is the one thing the {@code graphql_} anchors deliberately do not offer:
+ * a directive applied to a directive definition's own argument reaches no applied-directive anchor,
  * an argument of a definition not being a schema element and a coordinate for one being a spelling
- * the specification does not have. So this resolves the entry rows itself, through the two parent
- * hops the AST relations already record, and is the one relation that says such an application
- * happened at a coordinate a reader can name.
+ * the specification does not have. The input-field one does have such an anchor and is derived here
+ * anyway, because that anchor carries the reason as the rendered literal and a reader taking it
+ * from there would be re-reading SDL for the text.
  */
 public final class GraphitronAnchor {
 
@@ -62,12 +65,14 @@ public final class GraphitronAnchor {
     public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         deprecatedDirectives(dsl, graph, touchedAt);
         deprecatedDirectiveArguments(dsl, graph, touchedAt);
+        deprecatedInputFields(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
     /** What the sweep deletes from, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED_DIRECTIVE, GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT);
+        List.of(GRAPHITRON_DEPRECATED_DIRECTIVE, GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT,
+            GRAPHITRON_DEPRECATED_INPUT_FIELD);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -128,6 +133,45 @@ public final class GraphitronAnchor {
                 .and(d.SOURCE_NAME.eq(a.SOURCE_NAME))
                 .and(d.SOURCE_LINE.eq(a.PARENT_LINE))
                 .and(d.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+                .where(e.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.REASON, excluded(t.REASON))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * A field of an input object carrying the native marker. One parent hop, where the argument arm
+     * takes two: an input field's parent is the type declaring it, and that declaration carries the
+     * type name the coordinate needs.
+     *
+     * <p>This coordinate does have an applied-directive anchor, unlike a directive definition's
+     * argument, so the fact could be read from there. It is derived here because that anchor holds
+     * the reason as the rendered literal and a reader taking it from there would be re-reading SDL
+     * for the text. One decode, three resolutions, and no consumer parses anything.
+     */
+    private static void deprecatedInputFields(DSLContext dsl, String graph,
+                                              LocalDateTime touchedAt) {
+        var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
+        var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var t = GRAPHITRON_DEPRECATED_INPUT_FIELD;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.REASON, t.TOUCHED_AT)
+            .select(dsl
+                .selectDistinct(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME,
+                    coalesce(e.REASON, inline("")), val(touchedAt, t.TOUCHED_AT))
+                .from(e)
+                .join(applied)
+                .on(applied.GRAPH_NAME.eq(e.GRAPH_NAME))
+                .and(applied.SOURCE_NAME.eq(e.SOURCE_NAME))
+                .and(applied.SOURCE_LINE.eq(e.SOURCE_LINE))
+                .and(applied.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
+                .join(f)
+                .on(f.GRAPH_NAME.eq(applied.GRAPH_NAME))
+                .and(f.SOURCE_NAME.eq(applied.SOURCE_NAME))
+                .and(f.SOURCE_LINE.eq(applied.PARENT_LINE))
+                .and(f.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
                 .where(e.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.REASON, excluded(t.REASON))

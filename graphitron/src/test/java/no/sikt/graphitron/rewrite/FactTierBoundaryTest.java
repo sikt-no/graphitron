@@ -31,8 +31,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * establish rather than a consequence of it.
  *
  * <ul>
- *   <li><b>Nothing that stays writes.</b> It holds today for a reason worth stating because it
- *       makes the rule cheap to keep: no value the generator computes reaches the store at all.
+ *   <li><b>Nothing that stays writes.</b> Reading is not the subject and never was: the generator
+ *       reads facts by design, and the lint engine, the plan tier and the producers all name
+ *       relations to do it. It holds today for a reason worth stating because it makes the rule
+ *       cheap to keep: no value the generator computes reaches the store at all.
  *       Capture is handed the registry as it stood before the synthesis rewrites, and it re-runs
  *       the {@code @asConnection} expansion from its own decoded rows rather than inheriting the
  *       pipeline's, so even work the generator has already done is refused. The plugin's own
@@ -55,27 +57,42 @@ class FactTierBoundaryTest {
     private static final Path REWRITE = Path.of("src/main/java/no/sikt/graphitron/rewrite");
 
     /**
-     * The store's write surface, in the three spellings a writer cannot avoid: the generated table
-     * constants a statement names, the sink every capture write goes through, and the boot package
-     * that opens a store to write to. A read needs none of the three, going through
-     * {@link no.sikt.graphitron.model.read.StoreHandle} and the fact tier's query classes, so
-     * naming any of them here is a write or the beginning of one.
-     *
-     * <p>Asked of this tree alone, not of the module: the query classes under
-     * {@code no.sikt.graphitron.plan} name table constants for their reads, which is what a query
-     * class does, so the surface reads as a write only where reads have a different route.
+     * Opening a store to write to, and the sink every capture write goes through. Naming either is a
+     * write whatever else the file does.
      */
     private static final Set<String> WRITE_SURFACE = Set.of(
-        "no.sikt.graphitron.model.Tables",
         "FactSink",
         "no.sikt.graphitron.model.boot");
 
     /**
-     * The store-ownership surface: the capture entry point, the type that owns an open store's
-     * lifetime, and the name of the setting that says where one lives. A pass needs none of the
-     * three, naming {@code CapturePort} and its request instead, so any of them here is a pass
-     * deciding something about the store rather than asking for facts.
+     * A statement against the fact store that changes rows, which no single token spells.
+     *
+     * <p>Two proxies were tried and each reported honest work as a violation. Naming the generated
+     * table constants was the first: a read in this tree went through the fact tier's query
+     * classes, so naming a relation meant writing to one, and that premise expired the day the lint
+     * engine began reading the store for the questions a single node cannot answer. The query
+     * classes under {@code no.sikt.graphitron.plan} had shown it for what it was all along, naming
+     * table constants for their reads because that is what a query class does, and escaping only by
+     * sitting outside the tree this file walks. Naming the write verbs was the second, and it lasted
+     * one run: {@code TypeFetcherGenerator} emits jOOQ source, so it spells {@code insertInto} as
+     * output rather than as an act.
+     *
+     * <p>The conjunction is what neither had. A reader names a relation and no verb; an emitter
+     * names a verb and no relation; a writer needs both in the same file. The generator reads a
+     * great deal and must write nothing, and a check that cannot tell those apart gets worked
+     * around rather than heeded: the first thing the old proxy caught was a one-line select, and the
+     * fix it suggested was to give that select away to a shared class in another module, where it
+     * would have had one caller and no grain of its own.
+     *
+     * <p>What it still cannot see is stated rather than hidden: a write assembled so that the
+     * relation and the verb sit in different files. Nothing does that today, and the two names above
+     * close the routes that avoid jOOQ entirely.
      */
+    private static final String FACT_RELATIONS = "no.sikt.graphitron.model.Tables";
+
+    private static final Set<String> WRITE_VERBS = Set.of(
+        "insertInto", "deleteFrom", "mergeInto", "truncate");
+
     private static final Set<String> OWNERSHIP_SURFACE = Set.of(
         "FactCapture",
         "RunStore",
@@ -91,10 +108,17 @@ class FactTierBoundaryTest {
                     violations.add(rel(file) + "  names  " + surface);
                 }
             }
+            if (names(body, FACT_RELATIONS)) {
+                for (String verb : WRITE_VERBS) {
+                    if (names(body, verb)) {
+                        violations.add(rel(file) + "  names a fact relation and  " + verb);
+                    }
+                }
+            }
         }
         assertThat(violations)
-            .as("the generator writing facts; add the query to the fact tier and read what it"
-                + " returns, and if a new fact is wanted, capture is where it is written")
+            .as("the generator writing facts; it may read whatever it likes and name the"
+                + " relations it reads, but a row it changes is capture's to write")
             .isEmpty();
     }
 

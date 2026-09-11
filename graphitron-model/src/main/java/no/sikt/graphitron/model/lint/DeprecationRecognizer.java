@@ -1,56 +1,44 @@
 package no.sikt.graphitron.model.lint;
 
-import graphql.language.Description;
-import graphql.language.DirectiveDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InputValueDefinition;
-import graphql.language.StringValue;
-import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.read.StoreHandle;
 
-import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Pattern;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
 
 /**
- * Recognises graphitron's two deprecation-marker conventions over a parsed graphql-java
- * {@link TypeDefinitionRegistry}, with no LSP dependency. Extracted down from {@code LspVocabulary}
- * so the build-side {@code no-deprecated-directive-usage} lint visitor can consume
- * it: graphitron-lsp depends on graphitron, not the reverse, so the recogniser cannot stay LSP-side
- * and be read build-side. {@code LspVocabulary} now delegates its {@code SchemaCoordinate}-keyed
- * deprecation queries here and keeps only the {@code SchemaCoordinate} adapter LSP-side.
+ * Answers whether something the corpus declares is deprecated, by reading what capture wrote.
  *
- * <p>The two markers graphitron unifies (GraphQL forces them apart: native {@code @deprecated} is
- * valid on field / argument / input-field / enum-value but <em>not</em> on a directive definition):
+ * <p>The two markers graphitron unifies are the reason this type exists at all. GraphQL forces them
+ * apart: native {@code @deprecated} is valid on a field, argument, input field and enum value, and
+ * <em>not</em> on a directive definition, so a deprecated directive says so with a token in its
+ * description instead. A reader asking whether something is deprecated should not have to know
+ * which of the two marked it, and does not.
  *
- * <ul>
- *   <li><b>Native</b>: a {@code @deprecated(reason:)} directive on a directive argument or an input
- *       field, read straight off the AST.</li>
- *   <li><b>Docstring</b>: a {@code @deprecated} token in a directive definition's description, for
- *       the whole-directive cases the native form cannot express.</li>
- * </ul>
+ * <p>It used to recognise them, over a parsed registry, at the moment a reader asked. Now capture
+ * records them and this reads the rows: {@code graphitron_deprecated_directive} for the docstring
+ * form, {@code graphitron_deprecated_directive_argument} for the native form on a directive's own
+ * argument, and {@code graphitron_deprecated_input_field} for the native form on an input
+ * object's field. Which marker a row came from is the relation it is in, so nothing here
+ * switches on a shape, and no method here parses anything: three relations, three reads.
  */
 public final class DeprecationRecognizer {
 
-    /**
-     * Javadoc-style {@code @deprecated} token in a description string, applied to the parsed
-     * description text rather than raw SDL bytes. The negative lookbehind avoids matching mid-word
-     * occurrences such as {@code my@deprecated}.
-     */
-    private static final Pattern DESCRIPTION_DEPRECATED_TOKEN =
-        Pattern.compile("(?<![A-Za-z0-9])@deprecated\\b");
+    private final StoreHandle store;
 
-    private final TypeDefinitionRegistry registry;
-
-    public DeprecationRecognizer(TypeDefinitionRegistry registry) {
-        this.registry = registry;
+    public DeprecationRecognizer(StoreHandle store) {
+        this.store = Objects.requireNonNull(store, "store");
     }
 
     /**
      * Carrier for deprecation info, agnostic to whether the marker came from native
-     * {@code @deprecated(reason:)} or graphitron's docstring {@code @deprecated} convention.
+     * {@code @deprecated(reason:)} or graphitron's docstring convention.
      *
      * @param reason the replacement-hint text. For native deprecation, the {@code reason:} arg's
-     *               value (empty string when {@code @deprecated} carries no reason). For docstring
+     *               value (empty string when the marker carries no reason). For docstring
      *               deprecation, the whole description text.
      * @param shape  whether the marker came from the native form or the docstring convention.
      */
@@ -66,67 +54,39 @@ public final class DeprecationRecognizer {
         }
     }
 
-    /** Whole-directive deprecation via the docstring {@code @deprecated} token. */
+    /** Whole-directive deprecation via the docstring token. */
     public Optional<DeprecationInfo> directiveDeprecation(String name) {
-        return findDirective(name)
-            .flatMap(d -> descriptionText(d.getDescription()))
-            .filter(text -> DESCRIPTION_DEPRECATED_TOKEN.matcher(text).find())
+        var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
+        return store.dsl().select(t.REASON).from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.DIRECTIVE_NAME.eq(name))
+            .fetchOptional(t.REASON)
             .map(DeprecationInfo::docstring);
     }
 
-    /** Directive-argument deprecation via the native {@code @deprecated(reason:)} marker. */
+    /** Directive-argument deprecation via the native marker. */
     public Optional<DeprecationInfo> directiveArgDeprecation(String directive, String arg) {
-        return findDirective(directive)
-            .flatMap(d -> findInputValue(d.getInputValueDefinitions(), arg))
-            .flatMap(DeprecationRecognizer::nativeDeprecationReason)
+        var t = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+        return store.dsl().select(t.REASON).from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.DIRECTIVE_NAME.eq(directive))
+            .and(t.ARGUMENT_NAME.eq(arg))
+            .fetchOptional(t.REASON)
             .map(DeprecationInfo::native_);
-    }
-
-    /** Input-field deprecation via the native {@code @deprecated(reason:)} marker. */
-    public Optional<DeprecationInfo> inputFieldDeprecation(String type, String field) {
-        return findInputType(type)
-            .flatMap(t -> findInputValue(t.getInputValueDefinitions(), field))
-            .flatMap(DeprecationRecognizer::nativeDeprecationReason)
-            .map(DeprecationInfo::native_);
-    }
-
-    private Optional<DirectiveDefinition> findDirective(String name) {
-        for (var d : registry.getDirectiveDefinitions().values()) {
-            if (d.getName().equals(name)) return Optional.of(d);
-        }
-        return Optional.empty();
-    }
-
-    private Optional<InputObjectTypeDefinition> findInputType(String name) {
-        return Optional.ofNullable(registry.getTypeOrNull(name, InputObjectTypeDefinition.class));
     }
 
     /**
-     * Linear lookup for an {@link InputValueDefinition} by name in a list. The graphql-java API
-     * exposes the lists but no name-keyed accessor; this helper avoids duplicating the loop in every
-     * consumer ({@code LspVocabulary}, {@code Diagnostics}, {@code ArgNameCompletions} delegate here).
+     * Input-field deprecation via the native marker, resolved to the field's coordinate by capture
+     * rather than read off the applied-directive anchor. That anchor holds the reason as the
+     * rendered literal, quotes and all; this holds what the author wrote.
      */
-    public static Optional<InputValueDefinition> findInputValue(
-        List<InputValueDefinition> values, String name) {
-        for (var v : values) {
-            if (v.getName().equals(name)) return Optional.of(v);
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<String> nativeDeprecationReason(InputValueDefinition v) {
-        for (var dir : v.getDirectives("deprecated")) {
-            for (var arg : dir.getArguments()) {
-                if (arg.getName().equals("reason") && arg.getValue() instanceof StringValue s) {
-                    return Optional.of(s.getValue());
-                }
-            }
-            return Optional.of("");
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<String> descriptionText(Description description) {
-        return Optional.ofNullable(description).map(Description::getContent);
+    public Optional<DeprecationInfo> inputFieldDeprecation(String type, String field) {
+        var t = GRAPHITRON_DEPRECATED_INPUT_FIELD;
+        return store.dsl().select(t.REASON).from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.TYPE_NAME.eq(type))
+            .and(t.FIELD_NAME.eq(field))
+            .fetchOptional(t.REASON)
+            .map(DeprecationInfo::native_);
     }
 }

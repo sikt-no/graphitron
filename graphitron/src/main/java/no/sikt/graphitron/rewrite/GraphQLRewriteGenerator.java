@@ -638,7 +638,7 @@ public class GraphQLRewriteGenerator {
      * schema and a rejected one differ only in whether a plan came back.
      */
     private record Captured(List<ValidationError> walkErrors, List<ValidationError> errors,
-                            EmitPlan plan) {}
+                            EmitPlan plan, List<BuildWarning> warnings) {}
 
     /**
      * The pipeline. Every public entry point runs this body and projects what it wants out of the
@@ -665,15 +665,6 @@ public class GraphQLRewriteGenerator {
         var catalog = projection.catalog()
             ? CatalogBuilder.build(jooq, assembled, ctx, census)
             : null;
-        // Computed here, logged by the entry point that wants them: the one-shot build goals emit a
-        // line per warning, the dev loop emits the same lines, and buildOutput() is silent because
-        // its consumer reads them off the store rather than the console. A capture-only run asks
-        // for no checks, so it assembles no warnings at all, the schema build's own included:
-        // nothing stores them and no entry point reads them back.
-        var warnings = projection.checks()
-            ? withLintFindings(schema, attributed)
-            : List.<BuildWarning>of();
-
         String outputPackage = ctx.outputPackage();
 
         // Capture, validate and plan share one open store, and the order between them is this
@@ -693,8 +684,16 @@ public class GraphQLRewriteGenerator {
                 if (!projection.checks()) {
                     // The capture is done by the time this callback runs, so a run that wanted
                     // only the store is finished here and pronounces no verdict on the schema.
-                    return new Captured(List.of(), List.of(), null);
+                    return new Captured(List.of(), List.of(), null, List.of());
                 }
+                // Assembled here, logged by the entry point that wants them: the one-shot build
+                // goals emit a line per warning, the dev loop emits the same lines, and
+                // buildOutput() is silent because its consumer reads them off the store rather
+                // than the console. Inside the window because the lint engine reads the store, on
+                // the same argument the detections above it take: what feeds the error stream has
+                // to come after the rows it judges. A capture-only run asks for no checks and
+                // assembles none at all, the schema build's own included.
+                var warnings = withLintFindings(schema, attributed, store);
                 var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
                 var fused = new ArrayList<>(walkErrors);
                 fused.addAll(storeFacts.violations());
@@ -705,13 +704,14 @@ public class GraphQLRewriteGenerator {
                     storeFacts.nodeIdDecodeCoverage(), bundle.decodeLedger()));
                 var errors = List.copyOf(fused);
                 if (!errors.isEmpty() || !projection.emit()) {
-                    return new Captured(walkErrors, errors, null);
+                    return new Captured(walkErrors, errors, null, warnings);
                 }
                 return new Captured(walkErrors, errors,
                     EmitPlan.produce(schema, federationLink, bundle.usesOneOf(), outputPackage,
-                        storeFacts.keyProjections(), store));
+                        storeFacts.keyProjections(), store), warnings);
             });
 
+        var warnings = captured.warnings();
         if (captured.plan() == null) {
             return new PassProducts(catalog, captured.walkErrors(), captured.errors(), warnings, null);
         }
@@ -927,13 +927,15 @@ public class GraphQLRewriteGenerator {
      * per-build classifier model stays advisory-only and only the user-facing report carries the
      * lint surface.
      */
-    private List<BuildWarning> withLintFindings(GraphitronSchema schema, AttributedRegistry attributed) {
+    private List<BuildWarning> withLintFindings(GraphitronSchema schema,
+                                                AttributedRegistry attributed,
+                                                no.sikt.graphitron.model.read.StoreHandle store) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
         // excludedTypes widens the engine's per-type skip; injectedNames excludes the
         // federation @link injector's generator-owned definitions at the same boundary.
         all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
-            .run(attributed.registry(), attributed.injectedNames()));
+            .run(attributed.registry(), attributed.injectedNames(), store));
         // Codegen-config advisories about the owned-connection runtime's identity posture, derived
         // from the <sessionState> config. Folded in here so they ride the same suppression, LSP
         // replay, and MCP projection as every other warning.

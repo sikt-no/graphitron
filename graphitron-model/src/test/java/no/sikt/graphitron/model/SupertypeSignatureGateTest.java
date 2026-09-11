@@ -239,16 +239,17 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_field_binding_entry", "graphitron_ast_input_value_binding_entry",
                "graphitron_enum_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
-        // One fact at three grains, and the payload is one column because a deprecation carries one
-        // thing: the replacement hint. What differs is what was deprecated and how the author said
-        // it, which is the key and the relation, not the payload. So this set is not a supertype
-        // owed but the shape working: an entry keyed where the marker was written, and two anchors
-        // keyed by what it marked, one per marker because GraphQL admits the native form on a
-        // directive's argument and forbids it on the directive. Collapsing them needs a relation
-        // with a nullable coordinate and a column saying which of three things a row is about,
-        // which is the shape every split in this family was made to avoid.
+        // One decode and three resolutions of it, and the payload is one column because a
+        // deprecation carries one thing: the replacement hint. What differs is what was deprecated
+        // and how the author said it, which is the key and the relation, not the payload. So this
+        // set is not a supertype owed but the shape working: an entry keyed where the marker was
+        // written, and three anchors keyed by what it marked, because the one decode reaches a
+        // directive, one of its arguments, or a field of an input object, and no two of those share
+        // a coordinate. Collapsing them needs a relation with a nullable coordinate and a column
+        // saying which of three things a row is about, which is the shape every split in this
+        // family was made to avoid.
         Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated_directive",
-               "graphitron_deprecated_directive_argument"));
+               "graphitron_deprecated_directive_argument", "graphitron_deprecated_input_field"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as

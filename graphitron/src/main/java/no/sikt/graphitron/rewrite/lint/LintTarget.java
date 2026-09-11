@@ -1,11 +1,11 @@
 package no.sikt.graphitron.rewrite.lint;
 
-import graphql.language.Node;
 import graphql.language.SourceLocation;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * One node the engine's traversal dispatches to a subscribed visitor, as values rather than as a
@@ -14,9 +14,10 @@ import java.util.Map;
  *
  * <p>Values because every one of them is a column the fact store already holds. A rule reading
  * {@link #name()} and {@link #description()} off this record reads what {@code graphql_type},
- * {@code graphql_field}, {@code graphql_argument} and {@code graphql_enum_value} carry, so the
- * traversal that fills it can become a query without any rule changing. That is the whole point of
- * the shape: the rules stop knowing there is a parse tree, and the engine is left as the one place
+ * {@code graphql_field}, {@code graphql_argument} and {@code graphql_enum_value} carry, and a rule
+ * reading {@link AppliedArgument#namedFields()} reads what {@code graphql_ast_value_entry} carries.
+ * So the traversal that fills it can become a query without any rule changing, which is the whole
+ * point of the shape: the rules do not know there is a parse tree, and the engine is the one place
  * that does.
  *
  * @param kind         which node position this is; also what a rule tests instead of asking the
@@ -28,35 +29,45 @@ import java.util.Map;
  *                     count) and whether a description token occupies the source before it (this
  *                     column being non-null, where blank does), the latter deciding whether a
  *                     rename fix may treat the node's location as its name token
- * @param arguments    for an applied directive, the arguments it was written with: the argument
- *                     name against its value where that value is a string, and against null where
- *                     it is anything else. Empty at every other kind. Keyed insertion-ordered, so a
- *                     reader asking whether the author passed anything at all asks this map
+ * @param arguments    for an applied directive, the arguments it was written with, in written
+ *                     order. Empty at every other kind
  * @param enclosingTypeName the type this node was written inside, or its own name at a type
  * @param enclosingTypeIsRootOperation whether that type is a root operation type
  * @param location     the node's source location (1-based line/column), the default finding range
- * @param node         the parse tree node. The one residue: {@code NoDeprecatedDirectiveUsageVisitor}
- *                     descends an applied directive's argument <em>values</em> to report deprecated
- *                     input fields used inside an application, which is a walk and not a lookup, so
- *                     it is the one rule {@link #arguments()} cannot serve. The store does hold the
- *                     structure: {@code graphql_ast_value_entry} carries one row per written value
- *                     node with its parent and its position, which is what that walk would read.
- *                     So this field is remaining work rather than the shape
  */
 public record LintTarget(
     LintNodeKind kind,
     String name,
     String description,
-    Map<String, String> arguments,
+    Map<String, AppliedArgument> arguments,
     String enclosingTypeName,
     boolean enclosingTypeIsRootOperation,
-    SourceLocation location,
-    Node<?> node
+    SourceLocation location
 ) {
 
+    /**
+     * One argument an applied directive was written with.
+     *
+     * @param value       the argument's value where the author wrote a string, null where they
+     *                    wrote anything else. The null is load-bearing: an argument written as a
+     *                    number is an argument they passed, so a rule asking whether they passed
+     *                    anything has to see it, while a rule wanting the text must not read a
+     *                    number as one
+     * @param namedFields every object-field name written anywhere inside the value, flattened. A
+     *                    rule asking which input fields an application named asks this rather than
+     *                    descending a value, and the flattening is what the one rule that asks
+     *                    already does: it checks every descendant name against the argument's own
+     *                    input type rather than tracking the nesting
+     */
+    public record AppliedArgument(String value, Set<String> namedFields) {
+        public AppliedArgument {
+            namedFields = Set.copyOf(namedFields == null ? Set.of() : namedFields);
+        }
+    }
+
     public LintTarget {
-        // Not Map.copyOf: a null value is meaningful here, an argument the author wrote as
-        // something other than a string, and that factory rejects one.
+        // Not Map.copyOf: insertion order is the order the author wrote the arguments in, and a
+        // rule reporting on several of them reports in that order.
         arguments = arguments == null || arguments.isEmpty()
             ? Map.of()
             : Collections.unmodifiableMap(new LinkedHashMap<>(arguments));

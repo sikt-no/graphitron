@@ -513,6 +513,7 @@ class FactCaptureAgreementTest {
             "graphitron_ast_input_value_deprecated_entry",
             "graphitron_deprecated_directive",
             "graphitron_deprecated_directive_argument",
+            "graphitron_deprecated_input_field",
             // And of an input-value application, where the two paths do not even agree on which
             // relation the row belongs to: GraphitronSchema routes an input object's field down its
             // field path, and the parser calls it an input value, so there is no population here to

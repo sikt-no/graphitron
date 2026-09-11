@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
+import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 
 import graphql.schema.idl.SchemaParser;
@@ -53,8 +55,15 @@ class LintInjectedFederationDefinitionsTest {
         // Mirror loadAttributedRegistry: synthesis decorates the author @node type in place.
         KeyNodeSynthesiser.apply(registry, TestSchemaHelper.nodeDeclaration());
 
-        List<BuildWarning.LintFinding> findings = LintEngine.builtIn().run(registry, injectedNames)
-            .stream().map(BuildWarning.LintFinding.class::cast).toList();
+        // An empty store: this case is about the name-set exclusion, and no rule it exercises asks
+        // the corpus anything. A store with no rows answers "nothing is deprecated", which is true
+        // of the fixture and is what the engine would read for it anyway.
+        List<BuildWarning.LintFinding> findings;
+        try (var store = FactStores.inMemory()) {
+            findings = LintEngine.builtIn()
+                .run(registry, injectedNames, new StoreHandle(store.dsl(), "federation"))
+                .stream().map(BuildWarning.LintFinding.class::cast).toList();
+        }
 
         // The author @node type's lowercase name still fires, and it is the ONLY pascal-case finding
         // (were the injected names not excluded, every federation__* / link__* name would fire too).
