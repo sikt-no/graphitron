@@ -40,7 +40,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * their names, which is a true report of a file that no longer has the seam its javadoc claims; the
  * fix there is the layout, not the suffix. Wording the failure for both readings is what keeps that
  * from being read as a naming defect. Its replacement needs none of that: a writer there holds one
- * site's relations and nothing else, so the file is the region and a hit is a naming defect.
+ * site's relations and nothing else, so the file is the region and a hit is a naming defect. Those
+ * are listed rather than found by walking the package, the list being what a new site writer has to
+ * join and a walk being something that covers nothing at all once the package moves.
  *
  * <p>What it does not catch is the other direction, a suffixed relation some stage writes. That
  * needs to tell a read from a write in source text, which this cannot, and it is the direction the
@@ -72,7 +74,8 @@ class EntryNamingGuardTest {
      */
     private static final List<Path> SITE_WRITERS = List.of(
         decodeWriter("GraphitronEntries.java"), decodeWriter("GraphitronTypeEntries.java"),
-        decodeWriter("GraphitronFieldEntries.java"));
+        decodeWriter("GraphitronFieldEntries.java"),
+        decodeWriter("GraphitronInputValueEntries.java"));
 
     private static Path decodeWriter(String file) {
         return Path.of("graphitron-model", "src", "main", "java", "no", "sikt", "graphitron",

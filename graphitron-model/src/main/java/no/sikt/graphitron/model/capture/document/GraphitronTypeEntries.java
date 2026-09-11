@@ -21,9 +21,11 @@ import static no.sikt.graphitron.model.capture.document.GraphitronEntries.classP
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.fieldPart;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.ofKind;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.string;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.stringOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -53,12 +55,13 @@ final class GraphitronTypeEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<SdlEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        tables(dsl, graph, touchedAt, applied(applications, "table"));
-        scalarTypes(dsl, graph, touchedAt, applied(applications, "scalarType"));
-        enums(dsl, graph, touchedAt, applied(applications, "enum"));
-        records(dsl, graph, touchedAt, applied(applications, "record"));
+        tables(dsl, graph, touchedAt, wrote(applied(applications, "table"), "name"));
+        scalarTypes(dsl, graph, touchedAt, wrote(applied(applications, "scalarType"), "scalar"));
+        enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
+        records(dsl, graph, touchedAt, naming(applied(applications, "record"), "record"));
         var handlers = elementsOf(applied(applications, "error"), "handlers");
-        genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC"));
+        genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
+            .filter(handler -> stringOf(inside(handler.value(), "className")) != null).toList());
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
         validationHandlers(dsl, graph, touchedAt, ofKind(handlers, "VALIDATION"));
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);

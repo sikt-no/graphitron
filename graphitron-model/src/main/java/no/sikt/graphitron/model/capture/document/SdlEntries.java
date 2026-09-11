@@ -1,33 +1,42 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Argument;
+import graphql.language.ArrayValue;
+import graphql.language.BooleanValue;
 import graphql.language.DescribedNode;
 import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.DirectiveDefinition;
 import graphql.language.DirectiveLocation;
 import graphql.language.EnumTypeDefinition;
+import graphql.language.EnumValue;
 import graphql.language.EnumValueDefinition;
 import graphql.language.FieldDefinition;
+import graphql.language.FloatValue;
 import graphql.language.ImplementingTypeDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
+import graphql.language.IntValue;
 import graphql.language.ListType;
 import graphql.language.NamedNode;
 import graphql.language.Node;
 import graphql.language.NonNullType;
+import graphql.language.NullValue;
 import graphql.language.ObjectTypeDefinition;
+import graphql.language.ObjectValue;
 import graphql.language.OperationTypeDefinition;
 import graphql.language.SDLExtensionDefinition;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.SchemaDefinition;
 import graphql.language.SourceLocation;
+import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
+import graphql.language.VariableReference;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -38,6 +47,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static graphql.language.AstPrinter.printAstCompact;
@@ -59,6 +70,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -117,6 +129,7 @@ public final class SdlEntries {
         enumValueDirectives(dsl, graph, touchedAt, document);
         schemaDirectives(dsl, graph, touchedAt, document);
         appliedArguments(dsl, graph, touchedAt, document);
+        values(dsl, graph, touchedAt, document);
         sweep(dsl, graph, source, touchedAt);
     }
 
@@ -137,7 +150,8 @@ public final class SdlEntries {
         GRAPHQL_AST_INPUT_FIELD_ENTRY, GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY,
         GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY, GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY,
         GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY,
-        GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY);
+        GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY,
+        GRAPHQL_AST_VALUE_ENTRY);
 
     /**
      * Deletes this file's rows that this reading did not touch, which are the nodes the author
@@ -307,7 +321,7 @@ public final class SdlEntries {
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
-            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
@@ -357,7 +371,7 @@ public final class SdlEntries {
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
-            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
@@ -406,7 +420,7 @@ public final class SdlEntries {
             nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
-            nested -> val(written(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
+            nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         if (rows.isEmpty()) {
             return;
@@ -750,6 +764,67 @@ public final class SdlEntries {
             .execute();
     }
 
+    /**
+     * Every value node the document wrote, one row each, whichever slot the expression was written
+     * at.
+     *
+     * <p>One relation and one writer for four holders, where the directive sites get one relation
+     * each. The difference is what a key can defend: a directive's parent is one kind of node and so
+     * one relation, while a value's holder is an applied argument or one of three declarations
+     * carrying a default, and no key names four tables. The row says which position holds it and
+     * stops there, the way {@code graphql_ast_applied_argument_entry} already does for its own
+     * parent.
+     */
+    private static void values(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                               TypeDefinitionRegistry document) {
+        // One statement per level, shallowest first, because the parent reference is a key into
+        // this same relation and a batch has no order for a constraint to see: inside one insert a
+        // child can be checked before the parent it names is there.
+        new TreeMap<>(writtenValues(document).stream()
+            .collect(Collectors.groupingBy(WrittenValue::depth)))
+            .values().forEach(level -> valuesOfDepth(dsl, graph, touchedAt, level));
+    }
+
+    /** The rows of one level of one document's expressions, whose parents are all already written. */
+    private static void valuesOfDepth(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                      List<WrittenValue> level) {
+        var t = GRAPHQL_AST_VALUE_ENTRY;
+        var rows = level.stream().collect(Rows.toRowList(
+            written -> val(graph, t.GRAPH_NAME),
+            written -> sourceName(written.node()),
+            written -> sourceLine(written.node()),
+            written -> sourceColumn(written.node()),
+            written -> sourceRef(written.node()),
+            written -> val(touchedAt, t.TOUCHED_AT),
+            written -> parentLine(written.holder()),
+            written -> parentColumn(written.holder()),
+            written -> val(enclosingLine(written.parent()), t.PARENT_LINE),
+            written -> val(enclosingColumn(written.parent()), t.PARENT_COLUMN),
+            written -> val(written.position(), t.POSITION),
+            written -> val(written.objectFieldName(), t.OBJECT_FIELD_NAME),
+            written -> val(valueKind(written.node()), t.KIND),
+            written -> val(valueText(written.node()), t.WRITTEN_TEXT)));
+        if (rows.isEmpty()) {
+            return;
+        }
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                t.TOUCHED_AT, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
+                t.POSITION, t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT)
+            .valuesOfRows(rows)
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.HOLDER_LINE, excluded(t.HOLDER_LINE))
+            .set(t.HOLDER_COLUMN, excluded(t.HOLDER_COLUMN))
+            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.POSITION, excluded(t.POSITION))
+            .set(t.OBJECT_FIELD_NAME, excluded(t.OBJECT_FIELD_NAME))
+            .set(t.KIND, excluded(t.KIND))
+            .set(t.WRITTEN_TEXT, excluded(t.WRITTEN_TEXT))
+            .execute();
+    }
+
     // ------------------------------------------------- where in a document each kind of node lives
 
     /** One accessor's extensions, whose map holds them per name and several per name. */
@@ -829,10 +904,20 @@ public final class SdlEntries {
      * the gatherers below hand back. Parent is graphql-java's own word for it and the columns are
      * named for it too. The three top-level kinds have no parent and stream the node alone.
      *
-     * <p>Visible to the package because {@link GraphitronEntries} decodes the same walk this one
+     * <p>Visible to the package because {@link GraphitronTypeEntries} decodes the same walk this one
      * transcribes, and two walks over one document would be two answers to which nodes it holds.
      */
     record Nested<N extends Node<?>>(Node<?> parent, N node) {}
+
+    /**
+     * One value node and where it was written: the node holding the whole expression, the value
+     * enclosing this one where there is one, and the index and field name it sits at inside that.
+     * The three positional fields are null together at the root of an expression, which sits inside
+     * no value. The depth is how many values enclose this one, held only so the insert can go a
+     * level at a time and never written down.
+     */
+    private record WrittenValue(Node<?> holder, Node<?> parent, Integer position,
+                                String objectFieldName, int depth, Value<?> node) {}
 
     private static <N extends Node<?>> void nest(List<Nested<N>> into, Node<?> parent, List<N> nodes) {
         nodes.forEach(node -> into.add(new Nested<>(parent, node)));
@@ -932,7 +1017,7 @@ public final class SdlEntries {
         return nested;
     }
 
-    private static List<Nested<Directive>> directivesOnInputValues(TypeDefinitionRegistry document) {
+    static List<Nested<Directive>> directivesOnInputValues(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         inputValues(document).forEach(value -> nest(nested, value.node(), value.node().getDirectives()));
         return nested;
@@ -972,6 +1057,60 @@ public final class SdlEntries {
     }
 
     /**
+     * Every value node in the document, flattened, each carrying where it sits.
+     *
+     * <p>Four slots can hold one: an argument of a directive application holds the value passed to
+     * it, and an argument, an input field and a directive definition's argument each hold a default.
+     * All four are the same fact, that a slot was written with a literal, so all four are walked
+     * into one list here rather than by four callers into four relations.
+     */
+    private static List<WrittenValue> writtenValues(TypeDefinitionRegistry document) {
+        List<WrittenValue> flat = new ArrayList<>();
+        applicationArguments(document).forEach(argument ->
+            walk(flat, argument.node(), null, null, null, 0, argument.node().getValue()));
+        inputValues(document).forEach(slot ->
+            walk(flat, slot.node(), null, null, null, 0, slot.node().getDefaultValue()));
+        return flat;
+    }
+
+    /**
+     * Adds this value and everything written inside it, depth first, each row carrying how many
+     * values enclose it so the caller can insert a level at a time.
+     *
+     * <p>An unwritten node stops the walk, taking whatever it contains with it. That is a built-in
+     * the engine provided rather than an author, and none of it is a fact about any document.
+     *
+     * <p>An object's field gets no row of its own. A field is a name and a value; the value is the
+     * row and the name is a column on it, which is one node fewer for a reader to walk through and
+     * loses nothing but the position of the name itself.
+     */
+    private static void walk(List<WrittenValue> flat, Node<?> holder, Node<?> parent,
+                             Integer position, String objectFieldName, int depth, Value<?> node) {
+        if (node == null || !written(node)) {
+            return;
+        }
+        flat.add(new WrittenValue(holder, parent, position, objectFieldName, depth, node));
+        switch (node) {
+            case ArrayValue list -> {
+                var items = list.getValues();
+                for (int index = 0; index < items.size(); index++) {
+                    walk(flat, holder, node, index, null, depth + 1, items.get(index));
+                }
+            }
+            case ObjectValue object -> {
+                var fields = object.getObjectFields();
+                for (int index = 0; index < fields.size(); index++) {
+                    var field = fields.get(index);
+                    walk(flat, holder, node, index, field.getName(), depth + 1, field.getValue());
+                }
+            }
+            default -> {
+                // A leaf, which is every kind but the two that contain values.
+            }
+        }
+    }
+
+    /**
      * The bare type names in a grammar position that allows no wrapper: an implements clause and a
      * union's members. The accessors hand these back as the raw supertype, so the narrowing happens
      * here, and a node that is somehow not a name is left out rather than refused, this being a
@@ -989,7 +1128,7 @@ public final class SdlEntries {
 
     /**
      * The position columns, bound to the Java type each holds rather than to any one relation's
-     * column. Visible to the package for the reason {@link Nested} is: {@link GraphitronEntries}
+     * column. Visible to the package for the reason {@link Nested} is: {@link GraphitronTypeEntries}
      * keys its rows at the position of a node this class also writes, and two readings of one
      * node's location are two chances to disagree about it.
      */
@@ -1023,13 +1162,26 @@ public final class SdlEntries {
     }
 
     /**
+     * Where the value this one was written inside was written, or null at the root of an expression.
+     * Separate from {@link #parentLine} because that one's argument is always there and this one's
+     * absence is the fact that the row is a root.
+     */
+    private static Integer enclosingLine(Node<?> parent) {
+        return parent == null ? null : parent.getSourceLocation().getLine();
+    }
+
+    private static Integer enclosingColumn(Node<?> parent) {
+        return parent == null ? null : parent.getSourceLocation().getColumn();
+    }
+
+    /**
      * A value exactly as written, or null where none was written.
      *
      * <p>Not {@code printAstCompact} directly: it renders a missing node as the empty string, and
      * the column this feeds says NULL where none was. An empty default and an absent one are
      * different things to say about a declaration, and only one of them an author can write.
      */
-    private static String written(Value<?> value) {
+    private static String writtenSdl(Value<?> value) {
         return value == null ? null : printAstCompact(value);
     }
 
@@ -1051,6 +1203,43 @@ public final class SdlEntries {
     private static boolean written(Node<?> node) {
         SourceLocation at = node.getSourceLocation();
         return at != null && at.getSourceName() != null;
+    }
+
+    /**
+     * Which of the nine value forms this is, read off the node class the parser produced. Eight are
+     * named and the ninth, a variable reference, is what is left: the parser makes no other kind of
+     * value, and naming it as the default is the same reading the declaration kinds take below.
+     */
+    private static String valueKind(Value<?> node) {
+        return switch (node) {
+            case StringValue ignored -> "STRING";
+            case IntValue ignored -> "INT";
+            case FloatValue ignored -> "FLOAT";
+            case BooleanValue ignored -> "BOOLEAN";
+            case NullValue ignored -> "NULL";
+            case EnumValue ignored -> "ENUM";
+            case ArrayValue ignored -> "LIST";
+            case ObjectValue ignored -> "OBJECT";
+            default -> "VARIABLE";
+        };
+    }
+
+    /**
+     * A leaf's text as the author wrote it. A string loses its quotes, which are grammar rather than
+     * value; nothing else is interpreted, so an int stays its digits and a float stays its own
+     * spelling. A list, an object and the null literal have no text of their own and give null,
+     * which is what the column's check requires of exactly those three.
+     */
+    private static String valueText(Value<?> node) {
+        return switch (node) {
+            case StringValue string -> string.getValue();
+            case IntValue integer -> integer.getValue().toString();
+            case FloatValue number -> number.getValue().toString();
+            case BooleanValue bool -> String.valueOf(bool.isValue());
+            case EnumValue name -> name.getName();
+            case VariableReference variable -> variable.getName();
+            default -> null;
+        };
     }
 
     /** Which of the six declaration forms this is, read off the node class the parser produced. */

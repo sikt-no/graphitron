@@ -141,6 +141,14 @@ class SupertypeSignatureGateTest {
      * provenance from the payload is what let the gate see that the two say the same thing, which is
      * the gate working rather than the gate being widened.
      *
+     * <p>The input-value site's decode joined six of these sets rather than adding any of its own,
+     * and that is the split being right rather than the roster growing. A directive the definition
+     * admits at both sites decodes to the same payload at each, so every one of its rows lands in
+     * the set its field-site twin was already in; the two path-step relations join the four already
+     * there for the same reason, an element being one input type both directives spell. Nothing
+     * about a decode differs by site except the relation it hangs from, which is the key, and a key
+     * is what this gate subtracts before it compares.
+     *
      * <p>The input-value three were such a set until each began spelling its own coordinate. They
      * are the same node to the parser still, but a coordinate is spelled from the row's ancestors
      * and the three sites have different ones: an input field names the declaration it sits in, a
@@ -178,37 +186,56 @@ class SupertypeSignatureGateTest {
         // spelled out here rather than exempted by a rule over the name.
         Set.of("graphitron_argument_condition_context_arg_entry",
                "graphitron_ast_field_condition_context_arg_entry",
+               "graphitron_ast_input_value_condition_context_arg_entry",
                "graphitron_ast_service_context_arg_entry",
                "graphitron_field_condition_context_arg_entry",
                "graphitron_service_context_arg_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
-               "graphitron_field_condition_entry"),
-        // Five, and they arrived by being stamped: an @enum application records a class, a method
+               "graphitron_ast_input_value_condition_entry", "graphitron_field_condition_entry"),
+        // Seven, and they arrived by being stamped: an @enum application records a class, a method
         // and an argMapping, which is what a service and an external field record too, at either
-        // stratum. What it would take to collapse them is a supertype at a coordinate none of them
+        // stratum. The two newest are the condition arm of a path element, which the step split put
+        // here: an element correlating by an external method records the same three things, and
+        // under the wide step row that was invisible because the row also carried six catalog
+        // columns. What it would take to collapse them is a supertype at a coordinate none of them
         // has, so the entry half of this set outlives the migration and this row does not.
         Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
+               "graphitron_ast_input_value_reference_condition_step_entry",
+               "graphitron_ast_input_value_reference_for_condition_step_entry",
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
                "graphitron_service_entry"),
         Set.of("graphitron_ast_default_order_field_entry", "graphitron_default_order_field_entry",
                "graphitron_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
-               "graphitron_field_node_id_entry"),
-        Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_field_reference_for_entry",
-               "graphitron_reference_for_entry"),
+               "graphitron_ast_input_value_node_id_entry", "graphitron_field_node_id_entry"),
+        Set.of("graphitron_argument_reference_for_entry",
+               "graphitron_ast_field_reference_for_entry",
+               "graphitron_ast_input_value_reference_for_entry", "graphitron_reference_for_entry"),
         // The two path-carrying directives spell an element identically, so their step relations
         // share a payload at the entry stratum exactly as their anchors already do on the row
         // above this roster's decode block. The anchor pair is told apart from this one only by
         // the folded columns the anchors carry for meeting a catalog name.
         Set.of("graphitron_ast_field_reference_for_step_entry",
                "graphitron_ast_field_reference_step_entry"),
+        // What the input-value site's step split leaves in its place, and the grouping is the split
+        // being right rather than a roster growing. Each arm now sits with the relations that say
+        // the same thing it says: the key arm is its own pair, the table arm joins @table because
+        // naming a table is one fact wherever it is written, and the condition arm joins the
+        // external-code-reference set above. None of that was visible while one row carried all
+        // three, which is the wide shape's real cost.
+        Set.of("graphitron_ast_input_value_reference_for_key_step_entry",
+               "graphitron_ast_input_value_reference_key_step_entry"),
+        Set.of("graphitron_ast_input_value_reference_for_table_step_entry",
+               "graphitron_ast_input_value_reference_table_step_entry",
+               "graphitron_ast_table_entry"),
         Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
         Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
         // The field-site binding entry pairs with the enum-value anchor rather than with the field
         // anchor, which carries a folded twin of its one column and so shares no payload with
         // anything. A pair the migration dissolves all the same, the enum-value site's own entry
         // being what replaces the member that stays.
-        Set.of("graphitron_ast_field_binding_entry", "graphitron_enum_value_binding_entry"),
+        Set.of("graphitron_ast_field_binding_entry", "graphitron_ast_input_value_binding_entry",
+               "graphitron_enum_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"));
 
     /**

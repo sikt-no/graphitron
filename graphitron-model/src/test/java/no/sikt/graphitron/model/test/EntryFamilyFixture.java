@@ -37,6 +37,16 @@ import java.util.Locale;
  * of what the decode does with {@code @table(name: "film")} is record the spelling. A fixture that
  * also had to satisfy the catalog would be a fixture about the catalog.
  *
+ * <p>{@code @nodeId} is written both ways on purpose, bare on {@code Film.id} and naming its type on
+ * {@code Actor.id}. The two are different things said: a bare application asks for the type to be
+ * deduced and writes no row, so a fixture carrying only that one would leave the relation empty and
+ * the gate below would be right to say so.
+ *
+ * <p>Two path elements carry a {@code condition:} of their own. That arm of a step reaches the
+ * classpath census where the others reach the catalog, so it is the one element shape whose decode
+ * relation the rest of this schema would leave empty, and an empty relation is what the coverage
+ * gate exists to refuse.
+ *
  * <p>One application is deliberately malformed. {@code Mutation.brokenMapping} carries an
  * {@code argMapping} the grammar rejects, because quarantining a value it cannot decode is one of
  * the things the decode does: a fixture that only ever hands it decodable values leaves
@@ -145,7 +155,7 @@ public final class EntryFamilyFixture {
         }
 
         type Actor @table(name: "actor") @node(typeId: "A") {
-          id: ID!
+          id: ID! @nodeId(typeName: "Actor")
           fullName: String @field(name: "full_name")
           agency: Agency @sourceRow(className: "no.example.ActorRows", method: "agencyKey")
         }
@@ -180,14 +190,21 @@ public final class EntryFamilyFixture {
     public static final String EXTENSION = """
         extend type Query {
           actorsByAgency(
-            agencyId: ID @reference(path: [{table: "agency"}, {table: "actor", key: "actor_agency_fk"}])
+            agencyId: ID @reference(path: [
+                {table: "agency"},
+                {table: "actor", key: "actor_agency_fk",
+                 condition: {className: "no.example.Conditions", method: "liveAgency"}}
+              ])
             filter: ActorFilter
             scope: ID
               @condition(
                 condition: {className: "no.example.Conditions", method: "inScope", argMapping: "scope: scopeId"}
                 contextArguments: ["tenantId"]
               )
-            target: ID @referenceFor(type: "Book", path: [{table: "book", key: "book_actor_fk"}])
+            target: ID @referenceFor(type: "Book", path: [
+                {table: "book", key: "book_actor_fk",
+                 condition: {className: "no.example.Conditions", method: "liveBook"}}
+              ])
             nameFilter: String @field(name: "full_name")
           ): [Actor!] @field(name: "actor")
 

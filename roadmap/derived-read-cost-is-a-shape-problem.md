@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-08
+last-updated: 2026-09-11
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -2207,3 +2207,265 @@ those needs a supertype at a coordinate none of them has.
 `EntryNamingGuardTest` scanned only `GraphitronFactCapture` and would not have seen the new writers
 at all, so a decode relation named without the suffix was unguarded the moment the replacement
 started. It now scans the facade and both site writers as whole files, with no seam to find.
+
+## The input-value site's decode (2026-09-10)
+
+`GraphitronInputValueEntries` decodes the eight graphitron directives that reach an input value,
+keyed by the position of the `@` token, which is `graphql_ast_input_value_directive_entry`'s key. One
+writer over the three parents the parser treats alike: a field's argument, an input object's field,
+and a directive definition's own argument. The incumbent has two relations here and routes an input
+object's field down its field path, which is why `@asFacet` and `@lookupKey` sit under
+`captureFieldDirective` there and here they do not.
+
+Three of the eight get no relation. `@lookupKey`, `@orderBy` and `@asFacet` declare no argument at
+all, so a row would carry its key and repeat what the applied-directive row already says.
+`@reference` gets no row of its own either, its only argument being the path.
+
+The third parent is live, and the note above said it would not be. No consumer schema writes a
+graphitron directive on a directive definition's argument, but the bundled vocabulary deprecates
+`@asConnection(connectionName:)`, so that arm of the union carries a row on every reading.
+
+Written first against trunk and then rewritten onto the field site's structure, which had landed in a
+sibling worktree meanwhile. Two designs of the shared vocabulary had been reached independently and
+the field site's is the one kept: a facade the document walk calls once, site writers handed the
+applications rather than the registry, and one sweep with a per-writer table list. The path element's
+decode moved into it, both directives that carry a path spelling an element identically at both sites.
+
+## Entry facts are what the author said, decided and normalized (2026-09-10)
+
+The first two site decodes transcribed the directive's argument shape, and that is the wrong subject.
+An entry holds a fact the author communicated through the schema, decided out of the syntax they
+wrote and put in a relation holding facts of that kind and nothing else; the anchor is that fact met
+with the catalog and the classpath. `fact-model.adoc` now states it, with the test to apply per
+column: an attribute of the fact the row states stays a column, a different fact gets a relation.
+
+Two framings were tried and discarded on the way, and both are worth recording because each looked
+right. Transcribing the input type is what produced a nine-column step row: `ReferenceElement` is one
+GraphQL input, so it looked like one thing, and it is three assertions. Splitting by what the anchor
+would join is closer but still wrong, being a rule about today's consumers, and it gives the wrong
+answer on `@mutation`: a table reaches `sql_table`, so the join rule splits it out, where the fact
+rule keeps it because a mutation with a table and one without are the same kind of thing.
+
+The evidence the subject was wrong was already in the readers.
+`intent_field_reference_step_hop` has four arms and each is discriminated by which columns of the
+step row are null. `@nodeId` respells `node_type_ref IS NULL` in six places, with two different
+deduction rules behind the implicit case. A fact left undecided at capture is a fact every reader
+decides for itself, which is what those predicates are.
+
+What changed at the input-value site, which is the worked example. The two path-step relations became
+six, by assertion rather than by directive: an element naming a table and a key and a condition
+writes three rows at one list position, and the position is what says they are one step. `@field`,
+`@referenceFor`, `@condition` and `@nodeId` took `NOT NULL` payloads and the writer now drops the
+applications that cannot fill them, children included, a context argument hanging off a `@condition`
+nobody decoded having nothing to belong to. A bare `@nodeId` writes no row, the deduction being what
+the author asked for and the absence being what records it.
+
+`SupertypeSignatureGateTest` regrouped and the regrouping is the argument for the split. The table
+steps joined `graphitron_ast_table_entry`, naming a table being one fact wherever it is written, and
+the condition steps joined `@enum`, `@service` and `@externalField`, an external code reference being
+one fact likewise. Neither was visible while one row carried all three.
+
+Still owed, on the same rule: the field site's two step splits, its `NOT NULL` pass and its bare
+`@nodeId`; the type site's `@table` and `@record`, whose absent argument is a deduction the same way,
+its two required references, and the `DATABASE` handler's two discriminators, which are alternative
+spellings of one assertion and take a CHECK rather than a split.
+
+A naming consequence, not acted on. These relations carry an `ast` infix that belongs only to the
+parse-tree family; an entry here is a decided fact, not a node. The end state is `graphitron_<x>_entry`
+beside an anchor named `graphitron_<x>`, which is the shape `SdlAnchor` already has and which the
+incumbent blocks by holding the unprefixed names.
+
+A dependency this creates. A malformed application writing no row is only safe while what the author
+wrote is still recoverable, and today that is `graphql_ast_applied_argument_entry.value_sdl`, one
+opaque string per argument. Recoverable by re-parsing, not queryable. Transcribing argument values as
+nodes is what would close it, and it is the same gap that keeps the decode in Java rather than in
+`INSERT ... SELECT`.
+
+## The entry burn down (2026-09-11)
+
+The question "is every entry fact captured" was settled by diffing lists rather than by reading
+writers. Two diffs: the directive names `directives.graphqls` declares against the names
+`GraphitronEntries` decodes, and the SDL node kinds the parser produces against the relations the
+transcription family holds. What follows is what those diffs returned, ordered as the work will be
+taken. The transcription family goes first, because its one remaining gap is what forces the decode
+family to do its work in Java.
+
+One rule governs the whole list, and it is the lesson of the argmapping work. That work took the
+right step: it read a mini language out of a directive argument and wrote one row per pair, with the
+path splitting done by generated columns rather than by a reader. It did not take the last step. The
+raw string is still set on every owning relation beside the pairs, so two representations of one fact
+sit in the store and a reader can pick either. And the pairs are keyed by coordinate with a nine
+valued `site` discriminator, which is the anchor grain: the entry stratum does not hold them at all,
+so nothing records where the mapping was written. **Decomposing a blob is only finished when the blob
+is gone and the rows are keyed where the author wrote them.**
+
+### The graphql_ family: the node kinds are complete, the values are not
+
+Every node kind the parser yields has a relation, and the check is a reading of the DDL rather than a
+belief. Type declarations carry their kind and their extension flag, so a `scalar` and an
+`extend type` are rows on the same terms as an object. Implements clauses, union members, fields,
+field arguments, input fields and enum values are each a relation with a written position and a
+parent position. Directive definitions carry `repeatable` and hang their locations and their
+arguments off themselves. The schema definition carries its extension flag and its operation types.
+Applied directives have a relation per site, all five of them, and their arguments have one relation
+between them, parented by position because a parent living in one of five relations admits no
+declarable key. Descriptions are a column on every node that can be described. Arguments of directive
+definitions reach the input value site, so a directive applied to one is transcribed like any other.
+
+What is not transcribed is any value.
+
+1. **Value trees were one opaque string, four times over. Landed 2026-09-11.** An applied argument holds
+   its value in `value_sdl`, and an argument, an input field and a directive definition argument each
+   hold a default in `default_value_sdl`. All four are printed AST. A directive argument is not a
+   string in the schema; it is a tree of literals, lists and input objects, and the family says so
+   nowhere. Everything downstream pays for that. The whole decode reads graphql-java `Value` objects
+   through hand written accessors, which is the only reason it is Java at all: the writers cannot be
+   `INSERT ... SELECT` while the thing they select from is a blob. It is also why "a malformed
+   application asserts nothing" is enforced by a Java filter rather than by the absence of a row.
+   What landed is `graphql_ast_value_entry`: one recursive relation over value nodes, keyed by the
+   value's own written position, carrying the position of the node that holds it, the position of
+   the enclosing value where there is one, the index or field name it sits at inside that enclosing
+   value, its kind, and its written text for the leaf kinds. One relation and not four, where the
+   directive sites get one each, because what forced the split there was that a key names one table
+   and a directive's parent is one kind of node; a value's holder is four kinds, so no key is
+   available at any grain and the reason to split is gone. The holder position is repeated on every
+   node of a tree rather than held at its root, so one predicate fetches a whole expression, which
+   is the choice `graphitron_argmapping_candidate` already made for the same reason.
+
+   Two things the build taught. The parent reference is a real key back into the relation, and H2
+   rejects it inside a single batched insert: a merge of a whole tree has no order for the
+   constraint to see, so a child can be checked before the parent it names exists. The writer goes a
+   level at a time, shallowest first, which is four statements for the deepest expression anyone
+   writes and keeps the constraint. And the object field gets no row of its own, a field being a
+   name and a value: the value is the row and the name is a column on it.
+
+   A second consumer is already waiting on it, in the session dissolving the capture port. Eight of
+   the nine lint rules there now read values rather than a parse tree; the ninth keeps its
+   graphql-java node because it descends an applied directive's argument values to report deprecated
+   input fields used inside an application, and the store held those values as rendered SDL with
+   nothing to descend. That rule is the shape of reader this relation exists for, and it is why the
+   decode is not the only thing the blob was costing.
+
+   Still owed here: the four blob columns. They are not dead, `value_sdl` propagating into five
+   anchor relations that the incumbent and the minting path both read, so the subtraction waits on
+   the decode flip below rather than being part of this step. Both columns now say so in their
+   comments.
+
+2. **A written type expression truncated past one list level. Landed 2026-09-11, harvested from the
+   session holding the connection work, and the reasoning this item first gave for deferring it was
+   wrong.** Beside `type_sdl` sit `named_type`, `non_null`, `is_list` and `item_non_null`, which
+   describe exactly one list wrapper, so `[[Film]]` and `[Film]` agreed on all four.
+
+   This item's first answer was to design a chain relation, one row per wrapper, and then decline to
+   build it on the ground that no reader needed it. The second half was false. The `@asConnection`
+   expansion mints only where the carrier is a bare list of a named type, and on the entries as they
+   stood the only way to ask that was to compare `type_sdl` against the four spellings a bare list
+   has, in SQL, assembled by concatenating `named_type`. The reader existed; it had just paid for
+   the missing column in string surgery inside a statement rather than by asking for one. **Absence
+   of a reader is not absence of a need, and a survey of what readers select will not find the
+   need, because the need shows up as what they had to write instead.**
+
+   What landed is `list_depth`, `NOT NULL` on the four entry relations, 0 for a named type, 1 for a
+   list of one, 2 for a list of lists, under `CHECK (is_list = (list_depth > 0))` so the flag and
+   the depth cannot disagree. The connection predicate is `list_depth = 1`.
+
+   Worth being precise about what that does and does not do, because it is not the chain relation
+   and is better than it here. It is not lossless: `[[Film!]]` and `[[Film]]` still agree on every
+   column, the inner item's nullability having nowhere to go. What it buys is that the four columns
+   describe an expression *exactly when* the depth is 0 or 1, which is a claim a reader can check
+   rather than a caveat it has to carry. A silent truncation became a bounded one, which is what the
+   reader actually needed, and it costs one column against a relation and a writer.
+
+   Two things left behind deliberately, both named in the harvested commit. A nested list is legal
+   GraphQL and capture records it, but graphitron cannot represent one: its wrapper algebra is
+   single, list or connection, so `[[String]]` builds as a list of a nullable string and the
+   generator emits `[String]` code with no rejection saying otherwise. That is a fact about the
+   generator and belongs in a detection over this column, which does not exist yet. And the three
+   `graphql_` anchors carry the same four columns and the same one-level reading; they are still
+   written by the walk as well as by the derivation, so propagating the depth waits on the walk
+   going away, at which point it is one line in each of three selects.
+
+3. **The node kind gate existed and was told to skip values. Corrected 2026-09-11.** This item said
+   nothing gated coverage, which was wrong. `SdlEntriesTest.everyNodeParsedIsARow` counts the
+   document twice, once as the store holds it and once by handing the same registry to
+   graphql-java's own `NodeTraverser`, which descends every child without being told which children
+   exist. It is exactly the gate this item asked for, and it was silent on values because the
+   function mapping a node to its relation returned null for them: a deliberate exclusion, written
+   when there was no relation to name. Naming the new one makes the gate count them, and it
+   falsifies. Stopping the walk from descending into an object's fields turns twenty five nodes into
+   twenty two and the gate goes red on the difference.
+
+   The lesson is worth more than the fix. The gap was invisible not because nothing checked, but
+   because the check had an exemption in it, and an exemption is a claim that ages. What is still
+   open is the same question one level up: the gate proves every node the parser reads becomes a
+   row, and nothing proves every relation the family declares is reachable from a document. That is
+   the other direction and it is what item nine asks for on the decode side.
+
+### The graphitron_ family: eighteen of thirty one directives decoded
+
+The decode covers `@table`, `@record`, `@scalarType`, `@enum`, `@error`, `@field`, `@condition`,
+`@reference`, `@referenceFor`, `@service`, `@externalField`, `@sourceRow`, `@asConnection`,
+`@nodeId`, `@mutation`, `@pivot`, `@defaultOrder` and `@routine`. The rest of the list is what it does
+not cover, plus what it covers at the wrong shape.
+
+4. **Two of the five sites are unwired. Open.** `SdlEntries` transcribes types, fields, input values,
+   enum values and schemas; the decode facade calls three. The enum value site is what strands the
+   three directives below that live only there. The schema site is where federation's `@link` lands,
+   which arrives from the consumer's corpus rather than from the shipped vocabulary and so shows up
+   in neither diff; the incumbent carries five relations for `@link` and `@key`, which is the measure
+   of what is missing.
+
+5. **Thirteen directives have no decode. Open.** At the type site, `@node` with its key column list,
+   `@discriminate` and `@discriminator`. At the field site, `@splitQuery`, `@tenantFanOut`,
+   `@multitableReference` and `@experimental_constructType`. At the input value site, `@lookupKey`,
+   `@orderBy` and `@asFacet`. At the enum value site, `@field`, `@index` and `@order`. And
+   `@notGenerated`, which is declared at five locations and is refused by the classifier wherever it
+   appears, so what the entry stratum records is an application the author should delete. Four of the
+   thirteen carry no arguments at all, which makes them the payload free shape the VALIDATION handler
+   already has: presence is the whole fact.
+
+6. **The field site's reference steps carry nine nullable columns. Open.** The input value site split
+   its steps into a key relation, a table relation and a condition relation, on the reading that a
+   path element naming a table, a path element naming a key and a path element naming a condition are
+   three different facts that a list index reunites. The field site's `@reference` and `@referenceFor`
+   steps are still one relation each with all nine columns nullable. This is a direct mirror of work
+   already done and is the cheapest item on the list.
+
+7. **Three alternative bases share one row at `@defaultOrder`. Open.** `index_ref`, `primary_key` and
+   the child field list are three ways of saying what a field sorts by, held as three nullable columns
+   plus a child relation, so a reader tells them apart with `IS NULL`. `@order` on an enum value is
+   declared with the identical three way shape, in as many words: exactly one of index, fields or
+   primaryKey. Deciding this once settles both, which is the argument for taking it before the enum
+   value site rather than after. `primaryKey: Boolean = false` is the interesting corner: absent and
+   `false` say the same thing, so the fact exists only when the flag is true, and a payload free
+   relation states it.
+
+8. **argMapping and columnMapping are blobs in the entry stratum. Open.** `@routine` holds both, and
+   `@service`, `@condition`, `@externalField` and `@enum` hold an argMapping inside their external
+   code reference. Every one of them is stored as the written string. The pairs exist, in
+   `graphitron_argmapping_entry`, but at the anchor grain and beside the blob rather than instead of
+   it. Two things are owed: the pairs move to the entry stratum keyed where they were written, and
+   the blob columns go. Whether a dotted path becomes a row per segment or stays a path with generated
+   columns is the open part; the generated columns work today and the segment relation would be the
+   consistent choice against how the value trees above are modelled.
+
+9. **Nothing gates directive coverage. Open.** The vocabulary is a file we ship, so a gate reading it
+   and asserting every declared name reaches a decode is cheap, and it is the only thing that stops
+   this list from silently reopening. The incumbent's own answer to the same problem is
+   `graphitron_undecoded_argument_entry`, a relation recording what it failed to model, which is worth
+   noting as a different and weaker choice: it makes the gap visible at run time to whoever reads the
+   store, rather than at build time to whoever opened the hole.
+
+### The order
+
+One through three, then four onwards, is the order the two families are named in, and it is also the
+order the dependencies run. Value trees first, because every item from five onwards is a writer that
+would otherwise be written twice: once against graphql-java accessors and again after the blob is
+gone. That first pass is done, and with it the graphql_ family: one landed, two landed
+from another session with this item's reasoning about it corrected, three found to be a gate that
+already existed. Six and seven next, being normalizations of relations that already exist and whose consumers
+are inside this arc. Then the sites and the thirteen directives, which is the bulk of the remaining
+volume but is mechanical once the decode is a select. Eight is placed after the value trees for the
+same reason and is the one item whose target shape is not yet settled. Nine is a gate and lands with the work it
+guards rather than before it; three turned out to be a gate that already existed and needed one
+line.

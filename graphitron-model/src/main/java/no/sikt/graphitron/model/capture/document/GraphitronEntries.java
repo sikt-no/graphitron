@@ -60,6 +60,8 @@ public final class GraphitronEntries {
             SdlEntries.directivesOnTypes(document), touchedAt);
         GraphitronFieldEntries.write(dsl, graph, source,
             SdlEntries.directivesOnFields(document), touchedAt);
+        GraphitronInputValueEntries.write(dsl, graph, source,
+            SdlEntries.directivesOnInputValues(document), touchedAt);
     }
 
     /**
@@ -91,6 +93,31 @@ public final class GraphitronEntries {
     static List<Directive> applied(List<SdlEntries.Nested<Directive>> applications, String name) {
         return applications.stream().map(SdlEntries.Nested::node)
             .filter(application -> application.getName().equals(name)).toList();
+    }
+
+    /**
+     * The applications that wrote {@code argument} as a string. The rest assert nothing an entry
+     * relation can hold, and for one of two reasons the absence of a row states equally well: a
+     * required argument omitted is a malformed application, and an optional one omitted is the
+     * deduction the author asked for by leaving it out. The applied-directive row says the directive
+     * was applied either way, which is what keeps those distinguishable from not applying it.
+     */
+    static List<Directive> wrote(List<Directive> applications, String argument) {
+        return applications.stream().filter(a -> string(a, argument) != null).toList();
+    }
+
+    /** The applications that wrote {@code argument} as an enum token, on the same terms. */
+    static List<Directive> token(List<Directive> applications, String argument) {
+        return applications.stream().filter(a -> token(a, argument) != null).toList();
+    }
+
+    /**
+     * The applications whose {@code argument} holds a reference naming a class. That name is the
+     * identity of the fact the row states, so an application without one writes no row.
+     */
+    static List<Directive> naming(List<Directive> applications, String argument) {
+        return applications.stream()
+            .filter(a -> inside(a, argument, "className") != null).toList();
     }
 
     /** One object literal of one application's list argument, at the index it was written at. */
@@ -135,6 +162,26 @@ public final class GraphitronEntries {
             }
         }
         return written;
+    }
+
+    /**
+     * One path element of one application, decoded. Both directives that carry a path spell an
+     * element identically, and both are written at more than one site, so the decode is shared and
+     * only the relation the rows land in differs.
+     */
+    record Step(Directive application, int position, String tableRef, String keyRef,
+                String className, String method, String argMapping) {}
+
+    /** The path elements of {@code applications}, in the order each application wrote them. */
+    static List<Step> steps(List<Directive> applications) {
+        return elementsOf(applications, "path").stream()
+            .map(element -> new Step(element.application(), element.position(),
+                stringOf(inside(element.value(), "table")),
+                stringOf(inside(element.value(), "key")),
+                inside(element.value(), "condition", "className"),
+                inside(element.value(), "condition", "method"),
+                inside(element.value(), "condition", "argMapping")))
+            .toList();
     }
 
     /**

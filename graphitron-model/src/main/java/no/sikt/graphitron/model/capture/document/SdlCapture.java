@@ -33,7 +33,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * <p>Two writers per document and one over the corpus, in that order. The AST entries transcribe
  * every node, the graphitron entries decode the directive applications among them onto the rows the
  * first wrote, and the anchors are derived once every document has been read: what a coordinate is
- * cannot be settled by any one file, only by all of them.
+ * cannot be settled by any one file, only by all of them. The decode is a writer per directive site
+ * behind one call, an entry referencing the AST row it decodes and those rows living in a different
+ * relation at each site.
  */
 public final class SdlCapture {
 

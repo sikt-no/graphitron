@@ -476,7 +476,7 @@ class FactCaptureAgreementTest {
             "graphql_ast_operation_type_definition_entry", "graphql_ast_type_directive_entry",
             "graphql_ast_field_directive_entry", "graphql_ast_input_value_directive_entry",
             "graphql_ast_enum_value_directive_entry", "graphql_ast_schema_directive_entry",
-            "graphql_ast_applied_argument_entry",
+            "graphql_ast_applied_argument_entry", "graphql_ast_value_entry",
             // The decode of a type-site directive application, keyed by the application's own
             // position. GraphitronSchema holds one binding per type where these hold one per
             // application, so two documents binding one type have nothing to agree about here.
@@ -500,6 +500,22 @@ class FactCaptureAgreementTest {
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
             "graphitron_ast_routine_entry",
+            // And of an input-value application, where the two paths do not even agree on which
+            // relation the row belongs to: GraphitronSchema routes an input object's field down its
+            // field path, and the parser calls it an input value, so there is no population here to
+            // compare. GraphitronInputValueEntriesTest pins them, over a corpus writing both parents
+            // a consumer schema writes and repeating a repeatable directive on one input value.
+            "graphitron_ast_input_value_binding_entry",
+            "graphitron_ast_input_value_condition_entry",
+            "graphitron_ast_input_value_condition_context_arg_entry",
+            "graphitron_ast_input_value_reference_key_step_entry",
+            "graphitron_ast_input_value_reference_table_step_entry",
+            "graphitron_ast_input_value_reference_condition_step_entry",
+            "graphitron_ast_input_value_reference_for_entry",
+            "graphitron_ast_input_value_reference_for_key_step_entry",
+            "graphitron_ast_input_value_reference_for_table_step_entry",
+            "graphitron_ast_input_value_reference_for_condition_step_entry",
+            "graphitron_ast_input_value_node_id_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it,
             // at whichever of the three reading stages said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did

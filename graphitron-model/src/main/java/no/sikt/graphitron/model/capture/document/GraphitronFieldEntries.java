@@ -31,9 +31,12 @@ import static no.sikt.graphitron.model.capture.document.GraphitronEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.integer;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.naming;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.steps;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.string;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.token;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.wrote;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.writtenIn;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -69,33 +72,33 @@ final class GraphitronFieldEntries {
      */
     static void write(DSLContext dsl, String graph, String source,
                       List<SdlEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
-        bindings(dsl, graph, touchedAt, applied(applications, "field"));
+        bindings(dsl, graph, touchedAt, wrote(applied(applications, "field"), "name"));
 
-        var conditions = applied(applications, "condition");
+        var conditions = naming(applied(applications, "condition"), "condition");
         conditions(dsl, graph, touchedAt, conditions);
         conditionContextArguments(dsl, graph, touchedAt, conditions);
 
         referenceSteps(dsl, graph, touchedAt, steps(applied(applications, "reference")));
-        var referenceFor = applied(applications, "referenceFor");
+        var referenceFor = wrote(applied(applications, "referenceFor"), "type");
         referencesFor(dsl, graph, touchedAt, referenceFor);
         referenceForSteps(dsl, graph, touchedAt, steps(referenceFor));
 
-        var services = applied(applications, "service");
+        var services = naming(applied(applications, "service"), "service");
         services(dsl, graph, touchedAt, services);
         serviceContextArguments(dsl, graph, touchedAt, services);
 
-        externalFields(dsl, graph, touchedAt, applied(applications, "externalField"));
-        sourceRows(dsl, graph, touchedAt, applied(applications, "sourceRow"));
+        externalFields(dsl, graph, touchedAt, naming(applied(applications, "externalField"), "reference"));
+        sourceRows(dsl, graph, touchedAt, wrote(applied(applications, "sourceRow"), "className"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
-        nodeIds(dsl, graph, touchedAt, applied(applications, "nodeId"));
-        mutations(dsl, graph, touchedAt, applied(applications, "mutation"));
-        pivots(dsl, graph, touchedAt, applied(applications, "pivot"));
+        nodeIds(dsl, graph, touchedAt, wrote(applied(applications, "nodeId"), "typeName"));
+        mutations(dsl, graph, touchedAt, token(applied(applications, "mutation"), "typeName"));
+        pivots(dsl, graph, touchedAt, wrote(wrote(applied(applications, "pivot"), "on"), "value"));
 
         var defaultOrders = applied(applications, "defaultOrder");
         defaultOrders(dsl, graph, touchedAt, defaultOrders);
         defaultOrderFields(dsl, graph, touchedAt, defaultOrders);
 
-        routines(dsl, graph, touchedAt, applied(applications, "routine"));
+        routines(dsl, graph, touchedAt, wrote(applied(applications, "routine"), "name"));
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -188,26 +191,8 @@ final class GraphitronFieldEntries {
             .execute();
     }
 
-    /**
-     * One path element of one application, decoded. The two directives that carry a path spell an
-     * element identically, so the decode is shared and only the relation the rows land in differs.
-     */
-    private record Step(Directive application, int position, String tableRef, String keyRef,
-                        String className, String method, String argMapping) {}
-
-    private static List<Step> steps(List<Directive> applications) {
-        return elementsOf(applications, "path").stream()
-            .map(element -> new Step(element.application(), element.position(),
-                stringOf(inside(element.value(), "table")),
-                stringOf(inside(element.value(), "key")),
-                inside(element.value(), "condition", "className"),
-                inside(element.value(), "condition", "method"),
-                inside(element.value(), "condition", "argMapping")))
-            .toList();
-    }
-
     private static void referenceSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<Step> steps) {
+                                       List<GraphitronEntries.Step> steps) {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
@@ -270,7 +255,7 @@ final class GraphitronFieldEntries {
     }
 
     private static void referenceForSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                          List<Step> steps) {
+                                          List<GraphitronEntries.Step> steps) {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),

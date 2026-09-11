@@ -117,7 +117,7 @@ report name the incumbent and the incursion rather than listing two declarations
 === The AST entries reference nothing, and their file is named twice
 
 One relation per SDL node kind and site, from `graphql_ast_type_declaration_entry` through
-`graphql_ast_applied_argument_entry`. Kind is not always enough to name one: an input value has one
+`graphql_ast_value_entry`. Kind is not always enough to name one: an input value has one
 shape at all three sites it can be written and a directive application one shape at all five, and
 each site takes a relation of its own so that a row can name its parent by key. The shared `ast`
 segment is the one place a family is
@@ -125,7 +125,7 @@ subdivided by name, because the `graphql_` family now spans two levels: the anch
 by coordinate, in the specification's vocabulary, and these are parser nodes keyed by position, in
 graphql-java's.
 
-Five things about them are not what a reader would expect.
+Six things about them are not what a reader would expect.
 
 *A node's parent is a key where the parent is one relation, and a bare position where it is not.* A
 node names the node it was written inside by that node's position. Both rows come out of one parse of
@@ -136,6 +136,20 @@ so the parent is a union of relations and a key names one table. A position is u
 whichever relation holds the parent, so those two references are sound and only unspellable, which
 makes them detections over the union rather than constraints. The keys are why the writers run
 outermost first and the sweep runs their list backwards.
+
+*A value is one relation for four holders, and the only relation here that references itself.* An
+argument of a directive application holds the value passed to it, and an argument, an input field and
+a directive definition's argument each hold a default. Those are four sites, which by the rule above
+would be four relations, and they are one. The rule is about what a key can defend rather than about
+sites: a directive's parent is one kind of node at each site, so a key is available and splitting buys
+one; a value's holder is four kinds at every site, so no key is available at any grain and the split
+buys nothing. What a value does have a key for is the value enclosing it, which is always a value, and
+that reference is a real foreign key back into the same relation. Two consequences worth knowing. The
+writer inserts a level at a time, shallowest first, because a batched insert of a whole tree gives the
+constraint no order and a child can be checked before its parent is there. And the holder position is
+repeated on every node of a tree rather than held at its root, so one predicate fetches a whole
+expression and no reader climbs to find out which slot it was written at. An object's field gets no row
+of its own: a field is a name and a value, so the value is the row and the name is a column on it.
 
 *Nothing here references an anchor.* The anchors are derived from these rows, so an entry holding a
 foreign key into one would make the entries conditional on something built out of them.
@@ -206,6 +220,69 @@ what the entries carry and they carry nothing else.
 A reference between declarations is a different matter and stays available where nesting is lexical:
 a field is written inside the type site that encloses it, in the same file, so a child may reference
 its parent's position. What is never a key here is anything a second document has to supply.
+
+== Entry facts are what the author said; anchors are those facts met with reality
+
+An entry relation holds a fact the author communicated through the schema. That is what the word
+means across this store, and the two families spend it differently. A `graphql_` entry is what one
+document said, and its anchor is what the corpus says once the merge has ranked the documents. A
+graphitron entry is what one directive application asserted, and its anchor is that assertion met
+with the catalog and the classpath. Both are the same shape: said, then resolved, with the resolving
+named and kept apart from the saying.
+
+So this stratum's work is deciding. A directive's arguments are a syntax; the facts are what the
+author meant by writing them, and each fact belongs in a relation that holds facts of that kind and
+nothing else. Normalized, in the ordinary sense, and decided here rather than left as a shape for
+every reader to interpret. The anchors then have something to check, which is a consequence of the
+modelling and not the reason for it: modelling for the check directly is how the walk this replaces
+came to route an input object's field down its field path, because that was what one consumer
+wanted.
+
+The question to ask of every column is whether it is an *attribute of the fact the row states* or a
+*different fact*. A different fact gets its own relation. An attribute stays a column, and may be
+nullable without apology when the definition lets the author leave it out.
+
+A `@reference` path element is the worked example. It may name a table, a foreign key and a condition
+method, in any combination, and those are three independent assertions rather than one thing with
+three attributes: there is no entity here whose attributes they are, which is exactly why a single
+row for the element needed nine nullable columns and a legality rule no constraint could state. Three
+relations, one per assertion, and an element making several writes to several of them at one list
+position. The position is what says they are one step, so composition is a join and every relation
+stays total.
+
+`@asConnection` is the counter-case that keeps the rule honest. A page size and an overridden type
+name are two optional attributes of one assertion, both left out by most authors and neither changing
+what the row is. One relation, two nullable columns, no split. So is `@mutation`, which names an
+operation and may name a table: a mutation with a table and one without are the same kind of thing.
+
+Absence is itself sometimes the fact. A bare `@table` asks for the table name to be deduced from the
+type, and a bare `@nodeId` asks for the target type to be deduced from context; each is something the
+author said, and it is recorded as the absence of the row that would have named the thing explicitly.
+That is only sound because the applied-directive row says the directive was applied, so "applied and
+named nothing" and "not applied" stay distinguishable.
+
+A required argument the author omitted is not an assertion at all. It is a malformed application, it
+writes no entry row, and what they wrote instead stands in the transcription of the value. A row of
+nulls would say a third thing that is neither.
+
+Where two columns are alternative spellings of one assertion rather than two, the constraint says so
+and the relation stays whole: a `DATABASE` error handler discriminates on a vendor code or on a SQL
+state and the directive rejects both together, which is one relation and one CHECK.
+
+The names do not say this yet, and that is worth knowing before reading them. The graphitron entry
+relations carry an `ast` infix they should not. It is the right word only where the rows really are
+the parse tree, as the AST entries above are; these are decided facts about what an author meant. The
+end state is the shape `SdlAnchor` already has, an entry named `graphitron_<x>_entry` and its anchor
+named `graphitron_<x>`, which is blocked only by the incumbent still holding the unprefixed names.
+
+*Enforced by:* partly, and the gap is worth stating. A CHECK holds the alternative-spelling case and
+`NOT NULL` holds the required one, both in the DDL. `SupertypeSignatureGateTest` reports when two
+relations carry the same payload, which catches a split made for a distinction that turned out not to
+be one, and it reads as a census of which facts are the same fact stated at different sites. What
+nothing checks is the rule itself: no gate can see that a nullable column is standing in for a fact,
+because the evidence is in what the readers do with it rather than in the schema. The symptom to look
+for is a reader discriminating on `IS NULL` over an entry relation; where one appears, a fact was left
+undecided at capture and every reader has been deciding it since.
 
 == Ownership: the second axis, and what `intent_` is for
 

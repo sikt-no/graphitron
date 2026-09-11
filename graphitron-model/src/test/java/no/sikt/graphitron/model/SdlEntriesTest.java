@@ -14,6 +14,7 @@ import graphql.language.SchemaDefinition;
 import graphql.language.TypeDefinition;
 import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
+import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.util.TraversalControl;
 import graphql.util.TraverserContext;
@@ -59,6 +60,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -108,6 +110,7 @@ class SdlEntriesTest {
             GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY, GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY,
             GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY));
         RELATIONS.put("APPLIED_ARGUMENT", List.of(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY));
+        RELATIONS.put("VALUE", List.of(GRAPHQL_AST_VALUE_ENTRY));
     }
 
     @Test
@@ -553,6 +556,163 @@ class SdlEntriesTest {
     }
 
     /**
+     * A written expression, one row per node, reassembling into the tree the author typed.
+     *
+     * <p>The point of the relation is that no reader parses a literal to get at a part of it. So
+     * this reads the parts: which slot holds the expression, what encloses each node, where it sits
+     * inside that, and what it says. The object field gets no row of its own, its name being a
+     * column on the value written at it, which is what the {@code table} row asserts.
+     */
+    @Test
+    @DisplayName("a written expression is one row per node, holding the tree the author typed")
+    void aWrittenExpressionIsOneRowPerNode(@TempDir Path tmp) {
+        Path file = write(tmp, "values.graphqls", """
+            directive @path(steps: [Step!], flag: Boolean, nothing: String) on OBJECT
+            input Step { table: String, depth: Int }
+            type Film @path(steps: [{table: "film_actor", depth: 1}], flag: true, nothing: null) {
+              a: String
+            }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            var t = GRAPHQL_AST_VALUE_ENTRY;
+
+            assertThat(dsl.select(t.KIND, t.WRITTEN_TEXT, t.POSITION, t.OBJECT_FIELD_NAME).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .and(t.PARENT_LINE.isNull())
+                    .fetch())
+                .as("one root per slot that was written with an expression, at the three arguments "
+                    + "of the application and the two defaults this document has none of")
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(), r -> r.value4())
+                .containsExactlyInAnyOrder(
+                    tuple("LIST", null, null, null),
+                    tuple("BOOLEAN", "true", null, null),
+                    tuple("NULL", null, null, null));
+
+            var list = dsl.select(t.SOURCE_LINE, t.SOURCE_COLUMN).from(t)
+                .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne();
+            var object = dsl.select(t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.OBJECT_FIELD_NAME).from(t)
+                .where(t.SOURCE_NAME.eq(file.toString()))
+                .and(t.PARENT_LINE.eq(list.value1())).and(t.PARENT_COLUMN.eq(list.value2()))
+                .fetchOne();
+
+            assertThat(tuple(object.value3(), object.value4()))
+                .as("the list's only element is at index 0 and sits at no object field, a list "
+                    + "having indices where an object has names")
+                .isEqualTo(tuple(0, null));
+
+            assertThat(dsl.select(t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT, t.POSITION).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .and(t.PARENT_LINE.eq(object.value1())).and(t.PARENT_COLUMN.eq(object.value2()))
+                    .fetch())
+                .as("the object's fields are rows of their values, each carrying the name it was "
+                    + "written at and the order the author wrote them in")
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(), r -> r.value4())
+                .containsExactlyInAnyOrder(
+                    tuple("table", "STRING", "film_actor", 0),
+                    tuple("depth", "INT", "1", 1));
+
+            assertThat(dsl.selectDistinct(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .and(t.KIND.in("LIST", "OBJECT", "STRING", "INT"))
+                    .fetch())
+                .as("every node of one expression names one holder, so a reader fetches the whole "
+                    + "of it on one predicate and never walks upward")
+                .hasSize(1);
+
+            assertThat(dsl.select(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne())
+                .as("and the holder is the applied argument the expression was written at")
+                .isEqualTo(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_LINE,
+                        GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_COLUMN)
+                    .from(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY)
+                    .where(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
+                    .and(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.NAME.eq("steps"))
+                    .fetchOne());
+        });
+    }
+
+    /**
+     * The other three holders. An applied argument is the one everybody thinks of, but a default is
+     * written the same way and says the same kind of thing, so the four share a relation and are
+     * told apart by which row the holder position lands in.
+     */
+    @Test
+    @DisplayName("a default value is an expression too, held by the declaration that wrote it")
+    void aDefaultValueIsAnExpressionToo(@TempDir Path tmp) {
+        Path file = write(tmp, "defaults.graphqls", """
+            directive @tag(name: String = "fallback") on OBJECT
+            input Filter { q: String = "all" }
+            type Query { films(first: Int = 10): String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            var t = GRAPHQL_AST_VALUE_ENTRY;
+
+            assertThat(dsl.select(t.KIND, t.WRITTEN_TEXT).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString())).fetch())
+                .as("three defaults, at the three kinds of declaration that can carry one, and no "
+                    + "applied argument in the file at all")
+                .extracting(r -> r.value1(), r -> r.value2())
+                .containsExactlyInAnyOrder(
+                    tuple("STRING", "fallback"), tuple("STRING", "all"), tuple("INT", "10"));
+
+            assertThat(dsl.select(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.WRITTEN_TEXT.eq("10"))
+                    .fetchOne())
+                .as("held by the argument that declared it, which is a row of the relation for "
+                    + "that site and not of the applied argument relation")
+                .isEqualTo(dsl.select(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_LINE,
+                        GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_COLUMN)
+                    .from(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY)
+                    .where(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
+                    .and(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.NAME.eq("first"))
+                    .fetchOne());
+        });
+    }
+
+    /**
+     * An expression the author shortened. The nodes that went away have to go, and the ones inside
+     * them cannot be reached by the sweep's own predicate: a nested node's row carries the same
+     * instant as its parent and is deleted by the same pass, but only because the pass reaches it.
+     * Removing the cascade from the relation makes the delete a refusal rather than a leak, which is
+     * the sharper thing to have to notice.
+     */
+    @Test
+    @DisplayName("shortening an expression removes the nodes that went away, however deep they sat")
+    void shorteningAnExpressionRemovesTheNodesThatWentAway(@TempDir Path tmp) {
+        Path file = write(tmp, "shrink.graphqls", """
+            directive @path(steps: [Step!]) on OBJECT
+            input Step { table: String }
+            type Film @path(steps: [{table: "film_actor"}, {table: "actor"}]) { a: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, file);
+            var t = GRAPHQL_AST_VALUE_ENTRY;
+
+            assertThat(dsl.fetchCount(t, t.SOURCE_NAME.eq(file.toString())))
+                .as("a list, two objects and two strings").isEqualTo(5);
+
+            write(tmp, "shrink.graphqls", """
+                directive @path(steps: [Step!]) on OBJECT
+                input Step { table: String }
+                type Film @path(steps: [{table: "film_actor"}]) { a: String }
+                """);
+            read(dsl, file);
+
+            assertThat(dsl.select(t.WRITTEN_TEXT).from(t)
+                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("STRING"))
+                    .fetch(t.WRITTEN_TEXT))
+                .as("the element the author deleted is gone, and so is the string written inside it")
+                .containsExactly("film_actor");
+        });
+    }
+
+    /**
      * The coverage claim, checked against a second mechanism rather than against itself.
      *
      * <p>Every other assertion here names a kind the reader was written to hold, so none of them can
@@ -567,8 +727,10 @@ class SdlEntriesTest {
     void everyNodeParsedIsARow(@TempDir Path tmp) {
         Path file = write(tmp, "census.graphqls", """
             "a directive" directive @tag(name: String! = "x", extra: [Int!]) repeatable on OBJECT | FIELD_DEFINITION
+            directive @shape(at: Point, off: Boolean, none: String) on OBJECT
+            input Point { x: Int, y: [Float!] }
             "an interface" interface Named @tag(name: "i") { "a field" name: String @tag(name: "f") }
-            type Film implements Named @tag(name: "t") {
+            type Film implements Named @tag(name: "t", extra: [1, 2]) @shape(at: {x: 1, y: [1.5]}, off: false, none: null) {
               name: String
               rated("an argument" scale: Rating = G @tag(name: "a")): Rating
             }
@@ -663,6 +825,7 @@ class SdlEntriesTest {
             case graphql.language.Argument ignored -> "APPLIED_ARGUMENT";
             case TypeName ignored when parent instanceof UnionTypeDefinition -> "UNION_MEMBER";
             case TypeName ignored when parent instanceof ImplementingTypeDefinition -> "IMPLEMENTS";
+            case Value<?> ignored -> "VALUE";
             default -> null;
         };
     }

@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * to one type are two rows and neither is refused; which of them the corpus honours is a question
  * asked of the rows afterwards.
  */
-class GraphitronEntriesTest {
+class GraphitronTypeEntriesTest {
 
     private static final String GRAPH = "decoded";
 
@@ -100,20 +100,28 @@ class GraphitronEntriesTest {
         });
     }
 
-    /** A bare application is a row: the directive was applied, and it said nothing further. */
+    /**
+     * A bare application asserts the deduction, and the absence of a row is what records it. The
+     * fact this relation holds is "bound to the table named X"; a bare {@code @table} names none,
+     * asking instead for the type's own name to be used, which is a different thing said and not a
+     * null version of this one. That it was applied at all is the applied-directive row's to say.
+     */
     @Test
-    @DisplayName("a directive applied with no arguments is a row carrying nulls")
-    void aBareApplicationIsARow(@TempDir Path tmp) {
+    @DisplayName("a directive applied with no arguments writes no row, and is still applied")
+    void aBareApplicationAssertsTheDeduction(@TempDir Path tmp) {
         write(tmp, "bare.graphqls", "type Film @table { title: String }\n");
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHITRON_AST_TABLE_ENTRY.TABLE_REF)
-                    .from(GRAPHITRON_AST_TABLE_ENTRY).fetch(GRAPHITRON_AST_TABLE_ENTRY.TABLE_REF))
-                .as("the type's own name is not supplied here: what a bare @table resolves to is a "
-                    + "question for the anchors")
-                .containsExactly((String) null);
+            assertThat(dsl.select(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME)
+                    .from(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY)
+                    .fetch(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME))
+                .as("applied, which is what keeps this apart from a type carrying no @table at all")
+                .containsExactly("table");
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_TABLE_ENTRY))
+                .as("and naming nothing, so there is no bound-to-this-table fact to hold")
+                .isZero();
         });
     }
 
