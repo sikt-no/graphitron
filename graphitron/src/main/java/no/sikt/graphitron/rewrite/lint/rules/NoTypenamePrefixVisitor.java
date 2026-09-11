@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.lint.rules;
 
-import graphql.language.FieldDefinition;
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
@@ -50,7 +49,7 @@ public final class NoTypenamePrefixVisitor implements LintVisitor {
     }
 
     private static Optional<LintFix> renameFix(String type, String field, LintTarget target) {
-        if (!(target.node() instanceof FieldDefinition def) || def.getDescription() != null) {
+        if (target.kind() != LintNodeKind.FIELD_DEFINITION || target.description() != null) {
             return Optional.empty();
         }
         String remainder = field.substring(type.length());

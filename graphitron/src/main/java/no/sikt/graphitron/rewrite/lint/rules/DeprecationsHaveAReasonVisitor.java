@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.lint.rules;
 
-import graphql.language.Directive;
 import graphql.language.SourceLocation;
-import graphql.language.StringValue;
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
@@ -41,21 +39,18 @@ public final class DeprecationsHaveAReasonVisitor implements LintVisitor {
 
     @Override
     public void inspect(LintTarget target, LintContext ctx) {
-        if (!(target.node() instanceof Directive directive) || !directive.getName().equals(DEPRECATED)) {
+        if (!DEPRECATED.equals(target.name())) {
             return;
         }
-        var reason = directive.getArgument(REASON);
-        boolean hasReason = reason != null
-            && reason.getValue() instanceof StringValue s
-            && !s.getValue().isBlank();
-        if (hasReason) return;
+        String reason = target.arguments().get(REASON);
+        if (reason != null && !reason.isBlank()) return;
 
-        if (directive.getArguments().isEmpty()) {
+        if (target.arguments().isEmpty()) {
             // Insert right after "@deprecated": the '@' is at the directive's column, the name is the
             // ten following characters, so the insertion point is column + 1 + "deprecated".length().
             SourceLocation at = new SourceLocation(
-                directive.getSourceLocation().getLine(),
-                directive.getSourceLocation().getColumn() + 1 + DEPRECATED.length());
+                target.location().getLine(),
+                target.location().getColumn() + 1 + DEPRECATED.length());
             ctx.report(MESSAGE, LintFix.insertAt(FIX_DESCRIPTION, at, REASON_PLACEHOLDER));
         } else {
             ctx.report(MESSAGE);

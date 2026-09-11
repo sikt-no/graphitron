@@ -1,15 +1,6 @@
 package no.sikt.graphitron.rewrite.lint.rules;
 
-import graphql.language.Description;
-import graphql.language.EnumTypeDefinition;
-import graphql.language.FieldDefinition;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InterfaceTypeDefinition;
-import graphql.language.Node;
-import graphql.language.ObjectTypeDefinition;
-import graphql.language.ScalarTypeDefinition;
 import graphql.language.SourceLocation;
-import graphql.language.UnionTypeDefinition;
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
@@ -51,7 +42,7 @@ public final class TypesAndFieldsHaveDescriptionsVisitor implements LintVisitor 
 
     @Override
     public void inspect(LintTarget target, LintContext ctx) {
-        boolean described = hasDescription(target.node());
+        boolean described = target.described();
         if (target.kind() == LintNodeKind.FIELD_DEFINITION) {
             if (target.enclosingTypeIsRootOperation() && !described) {
                 ctx.report(FIELD_MESSAGE.formatted(target.name()), descriptionFix(target.location()));
@@ -72,17 +63,4 @@ public final class TypesAndFieldsHaveDescriptionsVisitor implements LintVisitor 
         return LintFix.insertAt(FIX_DESCRIPTION, at, DESCRIPTION_PLACEHOLDER + "\n" + indent);
     }
 
-    private static boolean hasDescription(Node<?> node) {
-        Description description = switch (node) {
-            case ObjectTypeDefinition n -> n.getDescription();
-            case InterfaceTypeDefinition n -> n.getDescription();
-            case UnionTypeDefinition n -> n.getDescription();
-            case EnumTypeDefinition n -> n.getDescription();
-            case InputObjectTypeDefinition n -> n.getDescription();
-            case ScalarTypeDefinition n -> n.getDescription();
-            case FieldDefinition n -> n.getDescription();
-            default -> null;
-        };
-        return description != null && description.getContent() != null && !description.getContent().isBlank();
-    }
 }

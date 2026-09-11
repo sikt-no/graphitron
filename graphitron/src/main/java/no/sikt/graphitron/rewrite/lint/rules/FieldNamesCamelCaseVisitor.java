@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.lint.rules;
 
-import graphql.language.FieldDefinition;
 import no.sikt.graphitron.rewrite.lint.LintContext;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.rewrite.lint.LintNodeKind;
@@ -51,7 +50,7 @@ public final class FieldNamesCamelCaseVisitor implements LintVisitor {
      * name.
      */
     static java.util.Optional<LintFix> renameFix(String name, LintTarget target) {
-        if (!(target.node() instanceof FieldDefinition field) || field.getDescription() != null) {
+        if (target.kind() != LintNodeKind.FIELD_DEFINITION || target.description() != null) {
             return java.util.Optional.empty();
         }
         String candidate = toCamelCase(name);

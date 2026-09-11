@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.language.Argument;
+import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.DirectivesContainer;
 import graphql.language.EnumTypeDefinition;
@@ -9,10 +10,12 @@ import graphql.language.FieldDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.InterfaceTypeDefinition;
+import graphql.language.NamedNode;
 import graphql.language.Node;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.SourceLocation;
+import graphql.language.StringValue;
 import graphql.language.TypeDefinition;
 import graphql.language.UnionTypeDefinition;
 import graphql.schema.idl.SchemaParser;
@@ -22,6 +25,7 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -232,11 +236,58 @@ public final class LintEngine {
     ) {
         var subscribers = byKind.get(kind);
         if (subscribers == null) return;
-        var target = new LintTarget(kind, node, enclosingType, isRootOp);
+        var target = new LintTarget(kind, nameOf(node), descriptionOf(node), argumentsOf(node),
+            enclosingType, isRootOp, node.getSourceLocation(), node);
         for (LintVisitor visitor : subscribers) {
             var ctx = new SinkContext(visitor.rule(), node.getSourceLocation(), registry, recognizer, out);
             visitor.inspect(target, ctx);
         }
+    }
+
+    /**
+     * The three readings that turn a parse tree node into the values {@link LintTarget} carries.
+     *
+     * <p>Here rather than in the rules that used to do them, and that is the point of the move: each
+     * is a column the fact store holds, so the day this traversal becomes a query the rules are
+     * already reading what the query would hand them.
+     */
+    private static String nameOf(Node<?> node) {
+        return node instanceof NamedNode<?> named ? named.getName() : null;
+    }
+
+    /** The node's own description as written; see {@link LintTarget#description()} for why raw. */
+    private static String descriptionOf(Node<?> node) {
+        Description description = switch (node) {
+            case ObjectTypeDefinition n -> n.getDescription();
+            case InterfaceTypeDefinition n -> n.getDescription();
+            case UnionTypeDefinition n -> n.getDescription();
+            case EnumTypeDefinition n -> n.getDescription();
+            case InputObjectTypeDefinition n -> n.getDescription();
+            case ScalarTypeDefinition n -> n.getDescription();
+            case FieldDefinition n -> n.getDescription();
+            default -> null;
+        };
+        return description == null ? null : description.getContent();
+    }
+
+    /**
+     * An applied directive's arguments: each name against its value where the author wrote a
+     * string, and against null where they wrote anything else. Empty at every other node kind.
+     *
+     * <p>The null is load-bearing and is why this is not a map of only the strings: an argument
+     * written as a number is an argument the author passed, so a rule asking whether they passed
+     * anything has to see it, while a rule wanting the text must not read a number as one.
+     */
+    private static Map<String, String> argumentsOf(Node<?> node) {
+        if (!(node instanceof Directive directive)) {
+            return Map.of();
+        }
+        var arguments = new LinkedHashMap<String, String>();
+        for (Argument argument : directive.getArguments()) {
+            arguments.put(argument.getName(),
+                argument.getValue() instanceof StringValue written ? written.getValue() : null);
+        }
+        return arguments;
     }
 
     private static Set<String> rootOperationTypeNames(TypeDefinitionRegistry registry) {
