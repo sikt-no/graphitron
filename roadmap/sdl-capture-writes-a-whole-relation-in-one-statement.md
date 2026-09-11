@@ -1,7 +1,7 @@
 ---
 id: R945
 title: "SDL capture writes a whole relation in one statement and H2's parser exhausts the heap"
-status: Spec
+status: In Review
 bucket: bug
 priority: 1
 theme: dev-loop
@@ -92,6 +92,32 @@ relations that grew large first, and stopped there. The 26 statements in the thr
 4 in `StoreEntries` and the two `sources()` writers were left as they were. Measured on the
 reporting consumer with the 26 SDL sites wrapped in the same loop: peak RSS falls from 16471 MB and
 an OOM at 1:38 to a flat 1050 MB with the capture completing (7689 classes, 6874 class files).
+
+## Delivered (2026-09-11)
+
+Implemented as specified, from the branch retiring the SDL walk, because the two are the same
+sequencing question: every entry relation that arc adds is another site, and the walk it removes is
+the *bounded* writer, the sink batching where the entries do not. Fixing this after the walk went
+would have meant meeting the quadratic on a tree with no fallback.
+
+`RowChunks.execute(rows, chunk -> statement)` walks `of(rows)` and executes per chunk, and all 86
+`valuesOfRows` sites in `graphitron-model` main sources go through it: 19 in `SdlEntries`, 21 in
+`GraphitronFieldEntries`, 12 in `GraphitronInputValueEntries`, 7 in `GraphitronTypeEntries`, 15 in
+`JooqFactCapture`, 7 in `ClasspathFactCapture`, 4 in `StoreEntries` and 1 in `SdlSchemaProblems`.
+The `rows.isEmpty()` guards are gone, `execute` running no statement for an empty list; the guards
+on input collections that precede row construction stay, not being about the statement.
+
+One correction to the spec's own count. It says 46 sites, which was true when it was written and is
+not now: the entry migration has landed the input-value site's twelve and the field site's step
+split since, and both are exactly the kind of writer this bounds. The number is not load-bearing,
+but "all of them, no roster" is, so it is restated against the tree rather than carried forward.
+
+`MultiRowWritesAreChunkedTest` is the gate, and it discriminates on enclosure as the spec asks: each
+`valuesOfRows` must sit lexically inside a `RowChunks.execute` call, decided by walking back over
+balanced parentheses to the innermost call still open. Watched failing both ways it must. Unwrapping
+one statement reports it by file and line. And the trap the spec names, a writer whose whole row
+list is simply called `chunk`, is reported too, where a scan keying on the argument's name would
+have passed it.
 
 ## Implementation
 

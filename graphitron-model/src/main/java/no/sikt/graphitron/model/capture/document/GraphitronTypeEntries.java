@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
+import no.sikt.graphitron.model.sink.RowChunks;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
@@ -95,18 +96,15 @@ final class GraphitronTypeEntries {
                 t.TABLE_REF_NAMESPACE_PART),
             application -> val(QualifiedNameGrammar.namePart(string(application, "name")),
                 t.TABLE_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.TABLE_REF, excluded(t.TABLE_REF))
+                .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
+                .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
     }
 
     private static void scalarTypes(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -121,18 +119,15 @@ final class GraphitronTypeEntries {
             application -> val(string(application, "scalar"), t.SCALAR_REF),
             application -> val(classPart(string(application, "scalar")), t.SCALAR_REF_CLASS_PART),
             application -> val(fieldPart(string(application, "scalar")), t.SCALAR_REF_FIELD_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.SCALAR_REF, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
-            .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
-            .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.SCALAR_REF, t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
+                .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
+                .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART)));
     }
 
     private static void enums(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -147,18 +142,15 @@ final class GraphitronTypeEntries {
             application -> val(inside(application, "enumReference", "className"), t.CLASS_NAME),
             application -> val(inside(application, "enumReference", "method"), t.METHOD),
             application -> val(inside(application, "enumReference", "argMapping"), t.ARGMAPPING)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+                .set(t.METHOD, excluded(t.METHOD))
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 
     private static void records(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -171,16 +163,13 @@ final class GraphitronTypeEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(inside(application, "record", "className"), t.CLASS_NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.CLASS_NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.CLASS_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME)));
     }
 
     private static void genericHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -196,18 +185,15 @@ final class GraphitronTypeEntries {
             handler -> val(stringOf(inside(handler.value(), "className")), t.CLASS_NAME),
             handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
             handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CLASS_NAME, t.MATCHES, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.MATCHES, excluded(t.MATCHES))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.CLASS_NAME, t.MATCHES, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+                .set(t.MATCHES, excluded(t.MATCHES))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void databaseHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -224,19 +210,16 @@ final class GraphitronTypeEntries {
             handler -> val(stringOf(inside(handler.value(), "sqlState")), t.SQL_STATE),
             handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
             handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CODE, t.SQL_STATE, t.MATCHES, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CODE, excluded(t.CODE))
-            .set(t.SQL_STATE, excluded(t.SQL_STATE))
-            .set(t.MATCHES, excluded(t.MATCHES))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.CODE, t.SQL_STATE, t.MATCHES, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CODE, excluded(t.CODE))
+                .set(t.SQL_STATE, excluded(t.SQL_STATE))
+                .set(t.MATCHES, excluded(t.MATCHES))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     /** The position is the whole row: the directive gives this kind no field it may carry. */
@@ -250,14 +233,11 @@ final class GraphitronTypeEntries {
             handler -> SdlEntries.sourceColumn(handler.application()),
             handler -> val(handler.position(), t.POSITION),
             handler -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 }

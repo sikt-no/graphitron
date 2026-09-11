@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.sink.RowChunks;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
@@ -167,19 +168,16 @@ public final class StoreEntries {
                 entry -> val(entry.binding().tag().orElse(null), t.TAG),
                 entry -> val(entry.binding().descriptionNote().orElse(null), t.DESCRIPTION_NOTE),
                 entry -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.KIND, t.ENTRY_VALUE, t.TAG, t.DESCRIPTION_NOTE,
-                t.TOUCHED_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.KIND, excluded(t.KIND))
-            .set(t.ENTRY_VALUE, excluded(t.ENTRY_VALUE))
-            .set(t.TAG, excluded(t.TAG))
-            .set(t.DESCRIPTION_NOTE, excluded(t.DESCRIPTION_NOTE))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.KIND, t.ENTRY_VALUE, t.TAG, t.DESCRIPTION_NOTE,
+                    t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.ENTRY_VALUE, excluded(t.ENTRY_VALUE))
+                .set(t.TAG, excluded(t.TAG))
+                .set(t.DESCRIPTION_NOTE, excluded(t.DESCRIPTION_NOTE))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**
@@ -195,15 +193,12 @@ public final class StoreEntries {
             i -> val(i, t.ORDINAL),
             i -> val(extensions.get(i), t.EXTENSION),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.EXTENSION, t.TOUCHED_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.EXTENSION, excluded(t.EXTENSION))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.EXTENSION, t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.EXTENSION, excluded(t.EXTENSION))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**
@@ -267,14 +262,10 @@ public final class StoreEntries {
             ruleId -> val(graph, t.GRAPH_NAME),
             ruleId -> val(ruleId, t.RULE_ID),
             ruleId -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.RULE_ID, t.TOUCHED_AT)
-            .valuesOfRows(rows)
+        RowChunks.execute(rows, chunk -> dsl.insertInto(t, t.GRAPH_NAME, t.RULE_ID, t.TOUCHED_AT)
+            .valuesOfRows(chunk)
             .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**
@@ -291,15 +282,12 @@ public final class StoreEntries {
             i -> val(i, t.ORDINAL),
             i -> val(patterns.get(i), t.TYPE_PATTERN),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.TYPE_PATTERN, t.TOUCHED_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TYPE_PATTERN, excluded(t.TYPE_PATTERN))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.TYPE_PATTERN, t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TYPE_PATTERN, excluded(t.TYPE_PATTERN))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**

@@ -38,6 +38,7 @@ import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
 import graphql.language.VariableReference;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.sink.RowChunks;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Rows;
@@ -184,20 +185,17 @@ public final class SdlEntries {
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(node.getName(), t.NAME),
             node -> val(text(node), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.KIND, excluded(t.KIND))
-            .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void directiveDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -213,19 +211,16 @@ public final class SdlEntries {
             node -> val(node.getName(), t.NAME),
             node -> val(node.isRepeatable(), t.REPEATABLE),
             node -> val(text(node), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.NAME, t.REPEATABLE, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.REPEATABLE, excluded(t.REPEATABLE))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.NAME, t.REPEATABLE, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.REPEATABLE, excluded(t.REPEATABLE))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void schemaDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -240,18 +235,15 @@ public final class SdlEntries {
             node -> val(touchedAt, t.TOUCHED_AT),
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(text(node), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.IS_EXTENSION, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.IS_EXTENSION, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void fieldDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -275,29 +267,26 @@ public final class SdlEntries {
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
-                t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
-            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
-            .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
-            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
-            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+                    t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                    t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void fieldArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -323,32 +312,29 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
-                t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
-                t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.FIELD_NAME, excluded(t.FIELD_NAME))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
-            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
-            .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
-            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
-            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
-            .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
+                    t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+                    t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                    t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.FIELD_NAME, excluded(t.FIELD_NAME))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
+                .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void inputFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -373,31 +359,28 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
-                t.DEFAULT_VALUE_SDL,
-                t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
-            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
-            .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
-            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
-            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
-            .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+                    t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                    t.DEFAULT_VALUE_SDL,
+                    t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
+                .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     /** What a directive definition declares, where appliedArguments below is what an application passes. */
@@ -422,29 +405,26 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
-                t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
-            .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
-            .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
-            .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
-            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
-            .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+                    t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                    t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
+                .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void enumValueDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -462,21 +442,18 @@ public final class SdlEntries {
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
 
     private static void implementsClauses(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -493,20 +470,17 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.INTERFACE_NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.INTERFACE_NAME, excluded(t.INTERFACE_NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.INTERFACE_NAME, excluded(t.INTERFACE_NAME)));
     }
 
     private static void unionMembers(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -523,20 +497,17 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.MEMBER_NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .set(t.MEMBER_NAME, excluded(t.MEMBER_NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+                .set(t.MEMBER_NAME, excluded(t.MEMBER_NAME)));
     }
 
     private static void directiveLocations(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -552,19 +523,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.LOCATION)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.LOCATION)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.LOCATION, excluded(t.LOCATION))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.LOCATION)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.LOCATION, excluded(t.LOCATION)));
     }
 
     private static void operationTypeDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -581,20 +549,17 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.OPERATION),
             nested -> val(nested.node().getTypeName().getName(), t.TYPE_NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.OPERATION, t.TYPE_NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.OPERATION, excluded(t.OPERATION))
-            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.OPERATION, t.TYPE_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.OPERATION, excluded(t.OPERATION))
+                .set(t.TYPE_NAME, excluded(t.TYPE_NAME)));
     }
 
     private static void typeDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -610,19 +575,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME)));
     }
     private static void fieldDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
@@ -637,19 +599,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME)));
     }
     /** All three input-value sites in one relation: the parent is a union whichever way this is cut. */
     private static void inputValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -665,19 +624,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME)));
     }
     private static void enumValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
@@ -692,19 +648,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME)));
     }
     private static void schemaDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
@@ -719,19 +672,16 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME)));
     }
 
     private static void appliedArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -748,20 +698,17 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getValue()), t.VALUE_SDL)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.VALUE_SDL)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.NAME, excluded(t.NAME))
-            .set(t.VALUE_SDL, excluded(t.VALUE_SDL))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.VALUE_SDL)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.NAME, excluded(t.NAME))
+                .set(t.VALUE_SDL, excluded(t.VALUE_SDL)));
     }
 
     /**
@@ -804,25 +751,22 @@ public final class SdlEntries {
             written -> val(written.objectFieldName(), t.OBJECT_FIELD_NAME),
             written -> val(valueKind(written.node()), t.KIND),
             written -> val(valueText(written.node()), t.WRITTEN_TEXT)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                t.TOUCHED_AT, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
-                t.POSITION, t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.HOLDER_LINE, excluded(t.HOLDER_LINE))
-            .set(t.HOLDER_COLUMN, excluded(t.HOLDER_COLUMN))
-            .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-            .set(t.POSITION, excluded(t.POSITION))
-            .set(t.OBJECT_FIELD_NAME, excluded(t.OBJECT_FIELD_NAME))
-            .set(t.KIND, excluded(t.KIND))
-            .set(t.WRITTEN_TEXT, excluded(t.WRITTEN_TEXT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
+                    t.TOUCHED_AT, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
+                    t.POSITION, t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.HOLDER_LINE, excluded(t.HOLDER_LINE))
+                .set(t.HOLDER_COLUMN, excluded(t.HOLDER_COLUMN))
+                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
+                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+                .set(t.POSITION, excluded(t.POSITION))
+                .set(t.OBJECT_FIELD_NAME, excluded(t.OBJECT_FIELD_NAME))
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.WRITTEN_TEXT, excluded(t.WRITTEN_TEXT)));
     }
 
     // ------------------------------------------------- where in a document each kind of node lives

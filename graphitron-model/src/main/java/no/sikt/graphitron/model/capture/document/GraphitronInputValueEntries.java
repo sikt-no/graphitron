@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
+import no.sikt.graphitron.model.sink.RowChunks;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
@@ -119,16 +120,13 @@ final class GraphitronInputValueEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "name"), t.NAME_REF)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.NAME_REF)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.NAME_REF, excluded(t.NAME_REF))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.NAME_REF)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.NAME_REF, excluded(t.NAME_REF)));
     }
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -144,19 +142,16 @@ final class GraphitronInputValueEntries {
             application -> val(inside(application, "condition", "method"), t.METHOD),
             application -> val(inside(application, "condition", "argMapping"), t.ARGMAPPING),
             application -> val(bool(application, "override"), t.OVERRIDE)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.OVERRIDE)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.OVERRIDE, excluded(t.OVERRIDE))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.OVERRIDE)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+                .set(t.METHOD, excluded(t.METHOD))
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
+                .set(t.OVERRIDE, excluded(t.OVERRIDE)));
     }
 
     private static void conditionContextArguments(DSLContext dsl, String graph,
@@ -171,16 +166,13 @@ final class GraphitronInputValueEntries {
             written -> val(written.position(), t.POSITION),
             written -> val(touchedAt, t.TOUCHED_AT),
             written -> val(written.value(), t.NAME)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.NAME)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.NAME, excluded(t.NAME))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.NAME, excluded(t.NAME)));
     }
 
     private static void referencesFor(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -193,16 +185,13 @@ final class GraphitronInputValueEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "type"), t.PARTICIPANT_TYPE_REF)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.PARTICIPANT_TYPE_REF)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.PARTICIPANT_TYPE_REF, excluded(t.PARTICIPANT_TYPE_REF))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.PARTICIPANT_TYPE_REF)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARTICIPANT_TYPE_REF, excluded(t.PARTICIPANT_TYPE_REF)));
     }
 
 
@@ -221,18 +210,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.KEY_REF, excluded(t.KEY_REF))
-            .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
-            .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.KEY_REF, excluded(t.KEY_REF))
+                .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
+                .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART)));
     }
 
 
@@ -249,18 +235,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.TABLE_REF, excluded(t.TABLE_REF))
+                .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
+                .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
     }
 
 
@@ -277,18 +260,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+                .set(t.METHOD, excluded(t.METHOD))
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 
 
@@ -305,18 +285,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.KEY_REF, excluded(t.KEY_REF))
-            .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
-            .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.KEY_REF, excluded(t.KEY_REF))
+                .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
+                .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART)));
     }
 
 
@@ -333,18 +310,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.TABLE_REF, excluded(t.TABLE_REF))
-            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.TABLE_REF, excluded(t.TABLE_REF))
+                .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
+                .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
     }
 
 
@@ -361,18 +335,15 @@ final class GraphitronInputValueEntries {
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
-                t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-            .set(t.METHOD, excluded(t.METHOD))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+                .set(t.METHOD, excluded(t.METHOD))
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 
     /**
@@ -397,16 +368,13 @@ final class GraphitronInputValueEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "reason"), t.REASON)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.REASON)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.REASON, excluded(t.REASON))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.REASON)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.REASON, excluded(t.REASON)));
     }
 
     private static void nodeIds(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -419,15 +387,12 @@ final class GraphitronInputValueEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "typeName"), t.NODE_TYPE_REF)));
-        if (rows.isEmpty()) {
-            return;
-        }
-        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT, t.NODE_TYPE_REF)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .set(t.NODE_TYPE_REF, excluded(t.NODE_TYPE_REF))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.NODE_TYPE_REF)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.NODE_TYPE_REF, excluded(t.NODE_TYPE_REF)));
     }
 }

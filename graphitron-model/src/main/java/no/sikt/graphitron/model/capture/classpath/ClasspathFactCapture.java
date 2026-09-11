@@ -80,15 +80,15 @@ public final class ClasspathFactCapture {
             at -> val(at.coordinate(), t.COORDINATE),
             at -> val(touchedAt, t.LAST_SEEN),
             at -> val(touchedAt, t.READ_AT)));
-        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.LAST_SEEN,
-                t.READ_AT)
-            .valuesOfRows(rows)
-            .onDuplicateKeyUpdate()
-            .set(t.ORIGIN, excluded(t.ORIGIN))
-            .set(t.COORDINATE, excluded(t.COORDINATE))
-            .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
-            .set(t.READ_AT, excluded(t.READ_AT))
-            .execute();
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.LAST_SEEN,
+                    t.READ_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.ORIGIN, excluded(t.ORIGIN))
+                .set(t.COORDINATE, excluded(t.COORDINATE))
+                .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
+                .set(t.READ_AT, excluded(t.READ_AT)));
     }
 
     private static void classes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -99,14 +99,12 @@ public final class ClasspathFactCapture {
             at -> val(at.className(), t.CLASS_NAME),
             at -> val(at.kind(), t.CLASS_KIND),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.CLASS_KIND, t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.CLASS_KIND, excluded(t.CLASS_KIND))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     private static void supertypes(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -119,15 +117,13 @@ public final class ClasspathFactCapture {
                 d -> val(d.what().name(), t.SUPERTYPE_NAME),
                 d -> val(d.what().declaredVia(), t.DECLARED_VIA),
                 d -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.SUPERTYPE_NAME, t.DECLARED_VIA,
                     t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.DECLARED_VIA, excluded(t.DECLARED_VIA))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -141,15 +137,13 @@ public final class ClasspathFactCapture {
                 d -> val(d.what().descriptor(), t.DESCRIPTOR),
                 d -> val(d.what().returnType(), t.RETURN_TYPE),
                 d -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
                     t.RETURN_TYPE, t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.RETURN_TYPE, excluded(t.RETURN_TYPE))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     private static void parameters(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -170,16 +164,14 @@ public final class ClasspathFactCapture {
             d -> val(d.parameter().name(), t.PARAMETER_NAME),
             d -> val(d.parameter().type(), t.PARAMETER_TYPE),
             d -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR, t.POSITION,
                     t.PARAMETER_NAME, t.PARAMETER_TYPE, t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.PARAMETER_NAME, excluded(t.PARAMETER_NAME))
                 .set(t.PARAMETER_TYPE, excluded(t.PARAMETER_TYPE))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     private static void recordComponents(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -193,16 +185,14 @@ public final class ClasspathFactCapture {
                 d -> val(d.what().position(), t.POSITION),
                 d -> val(d.what().type(), t.COMPONENT_TYPE),
                 d -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.COMPONENT_NAME, t.POSITION,
                     t.COMPONENT_TYPE, t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.POSITION, excluded(t.POSITION))
                 .set(t.COMPONENT_TYPE, excluded(t.COMPONENT_TYPE))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     private static void fields(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
@@ -216,16 +206,14 @@ public final class ClasspathFactCapture {
                 d -> val(d.what().type(), t.FIELD_TYPE),
                 d -> val(d.what().isStatic(), t.IS_STATIC),
                 d -> val(touchedAt, t.TOUCHED_AT)));
-        for (var chunk : RowChunks.of(rows)) {
+        RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.FIELD_NAME, t.FIELD_TYPE, t.IS_STATIC,
                     t.TOUCHED_AT)
                 .valuesOfRows(chunk)
                 .onDuplicateKeyUpdate()
                 .set(t.FIELD_TYPE, excluded(t.FIELD_TYPE))
                 .set(t.IS_STATIC, excluded(t.IS_STATIC))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .execute();
-        }
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /** Every class paired with each of the things {@code of} reads off it. */
