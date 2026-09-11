@@ -100,7 +100,7 @@ class CommentRenderabilityGateTest {
     void theDetectorPinsItsAcceptanceLine() {
         // Accepted: plain prose, the corpus's own shapes, and paired monospace spans.
         assertThat(scan("t", "the graph''s configured name; walk_ and store_ stay apart")).isEmpty();
-        assertThat(scan("t", "per the jvm_scalar_type_field precedent, since the arm lives in lint_")).isEmpty();
+        assertThat(scan("t", "per the code_scalar_constant precedent, since the arm lives in lint_")).isEmpty();
         assertThat(scan("t", "a `graph_name` column leads every key")).isEmpty();
         assertThat(scan("t", "quoted directive syntax: @reference(path: [{key: \"x\"}])")).isEmpty();
         assertThat(scan("t", "an unpaired opener like _this renders literally")).isEmpty();

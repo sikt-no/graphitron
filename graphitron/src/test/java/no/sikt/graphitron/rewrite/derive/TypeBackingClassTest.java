@@ -377,13 +377,13 @@ class TypeBackingClassTest {
     private static CompletionData.ExternalReference reference(
         String sourceName, String className, CompletionData.Method... methods) {
         return new CompletionData.ExternalReference(className, className, "",
-            List.of(methods), List.of(), List.of(), "CLASS", sourceName, List.of());
+            List.of(methods), List.of(), "CLASS", sourceName, List.of());
     }
 
     private static CompletionData.ExternalReference record(
         String sourceName, String className, CompletionData.RecordComponent... components) {
         return new CompletionData.ExternalReference(className, className, "",
-            List.of(), List.of(components), List.of(), "RECORD", sourceName, List.of());
+            List.of(), List.of(components), "RECORD", sourceName, List.of());
     }
 
     private static CompletionData.Method method(

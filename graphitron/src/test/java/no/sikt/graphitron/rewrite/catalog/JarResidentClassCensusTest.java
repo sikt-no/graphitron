@@ -43,7 +43,7 @@ class JarResidentClassCensusTest {
     private static final ClassDesc GRAPHQL_SCALAR_TYPE = ClassDesc.of("graphql.schema.GraphQLScalarType");
 
     @Test
-    void aJarResidentClassAndItsScalarFieldReachTheCensus(@TempDir Path tmp) throws IOException {
+    void aJarResidentClassReachesTheCensus(@TempDir Path tmp) throws IOException {
         Path jar = jarWith(tmp, "com/example/lib/LibraryScalars.class",
             ClassFile.of().build(ClassDesc.of("com.example.lib.LibraryScalars"), cb -> {
                 cb.withFlags(ClassFile.ACC_PUBLIC);
@@ -57,9 +57,6 @@ class JarResidentClassCensusTest {
             .filter(reference -> "com.example.lib.LibraryScalars".equals(reference.className()))
             .findFirst();
         assertThat(libraryClass).as("a jar on the compile classpath is scanned").isPresent();
-        assertThat(libraryClass.get().scalarConstants())
-            .extracting(CompletionData.ScalarConstant::fieldName)
-            .containsExactly("Date");
         assertThat(libraryClass.get().sourceName()).isEqualTo(jar.toString());
         assertThat(libraryClass.get().fromJar()).isTrue();
     }

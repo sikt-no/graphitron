@@ -126,11 +126,13 @@ class SupertypeSignatureGateTest {
      * which was the successor rather than the incumbent: written and never read, and a successor
      * nothing reads is not stood up beside anything, so it was dropped rather than finished.
      *
-     * <p>The arm that replaces it is deliberately not a fourth row. {@code code_scalar_constant}
-     * supersedes {@code jvm_scalar_type_field} and this gate does not see them as one payload under
-     * two keys, which is the difference between a census re-read and an arm: the arm admits what a
-     * directive may name where the incumbent recorded what a walk resolved, so the two populations
-     * are not the same fact counted twice.
+     * <p>The arm that replaced the scalar-constant census never became a fourth row either, and the
+     * reason is worth keeping now that its incumbent is gone too. {@code code_scalar_constant} was
+     * stood up beside {@code jvm_scalar_type_field} for one change, and this gate refused to see
+     * them as one payload under two keys, which is the difference between a census re-read and an
+     * arm: the arm admits what a directive may name where the incumbent recorded what a walk
+     * resolved. Two populations that are not the same fact counted twice do not become one by
+     * being about the same constants, and the incumbent was retired rather than reconciled.
      *
      * <p>One row left the roster in the same change and for the same reason read backwards.
      * {@code graphitron_error_entry} and {@code graphql_type_directive} shared a payload only while

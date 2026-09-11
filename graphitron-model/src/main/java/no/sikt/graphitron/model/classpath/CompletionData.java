@@ -139,10 +139,6 @@ public record CompletionData(
      * reflection-bound SDL types whose backing class is a Java
      * record.
      *
-     * <p>{@code scalarConstants} lists this class's {@code public static}
- * {@code GraphQLScalarType} fields; it backs {@code @scalarType(scalar:)}
-     * completion, which composes {@code className + "." + fieldName} for each.
-     *
      * <p>{@code sourceName} is the classpath entry the class was read from: a compile-output
      * directory or a jar. Only {@link ClasspathScanner} knows one; every other producer leaves it
      * empty, the same way {@link #inferredKind} stands in for a classfile nobody read.
@@ -157,7 +153,6 @@ public record CompletionData(
         String description,
         List<Method> methods,
         List<RecordComponent> recordComponents,
-        List<ScalarConstant> scalarConstants,
         String classKind,
         String sourceName,
         List<Supertype> supertypes
@@ -165,7 +160,6 @@ public record CompletionData(
         public ExternalReference {
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
-            scalarConstants = List.copyOf(scalarConstants);
             supertypes = List.copyOf(supertypes);
         }
 
@@ -176,11 +170,10 @@ public record CompletionData(
             String description,
             List<Method> methods,
             List<RecordComponent> recordComponents,
-            List<ScalarConstant> scalarConstants,
             String classKind,
             String sourceName
         ) {
-            this(name, className, description, methods, recordComponents, scalarConstants,
+            this(name, className, description, methods, recordComponents,
                 classKind, sourceName, List.of());
         }
 
@@ -196,11 +189,9 @@ public record CompletionData(
             String description,
             List<Method> methods,
             List<RecordComponent> recordComponents,
-            List<ScalarConstant> scalarConstants,
             String classKind
         ) {
-            this(name, className, description, methods, recordComponents, scalarConstants,
-                classKind, "");
+            this(name, className, description, methods, recordComponents, classKind, "");
         }
 
         /**
@@ -230,27 +221,10 @@ public record CompletionData(
             String className,
             String description,
             List<Method> methods,
-            List<RecordComponent> recordComponents,
-            List<ScalarConstant> scalarConstants
-        ) {
-            this(name, className, description, methods, recordComponents, scalarConstants,
-                inferredKind(recordComponents));
-        }
-
-        /**
-         * Back-compat constructor defaulting {@code scalarConstants} to an empty
-         * list. Keeps existing LSP / test callers that build
-         * {@link ExternalReference} without the scalar-constant slot
-         * compiling unchanged.
-         */
-        public ExternalReference(
-            String name,
-            String className,
-            String description,
-            List<Method> methods,
             List<RecordComponent> recordComponents
         ) {
-            this(name, className, description, methods, recordComponents, List.of());
+            this(name, className, description, methods, recordComponents,
+                inferredKind(recordComponents));
         }
     }
 
@@ -326,17 +300,6 @@ public record CompletionData(
             this(name, displayType, displayType);
         }
     }
-
-    /**
-     * One {@code public static GraphQLScalarType} field on an
-     * {@link ExternalReference} — the field name only; the owning class FQN is
-     * {@link ExternalReference#className()}, so {@code @scalarType(scalar:)}
-     * completion composes {@code className + "." + fieldName} (matching the
-     * {@link RecordComponent} / {@link Method} shape). Source: the JVM field
-     * table read by {@link ClasspathScanner}, matching on the exact
- * {@code GraphQLScalarType} field descriptor.
-     */
-    public record ScalarConstant(String fieldName) {}
 
     /**
      * Method on an {@link ExternalReference}. Carries the bytecode-derived

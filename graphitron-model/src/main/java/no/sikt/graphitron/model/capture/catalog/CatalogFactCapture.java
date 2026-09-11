@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture.catalog;
 
 import no.sikt.graphitron.model.classpath.CompletionData;
-import no.sikt.graphitron.model.classpath.ScalarConstantInput;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.sources.ClasspathSources;
@@ -25,7 +24,6 @@ import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -138,12 +136,7 @@ public final class CatalogFactCapture {
                         List<CompletionData.ExternalReference> extensions,
                         ClasspathSources sources) {
         captureCatalog(sink, jooq);
-        // A scalar constant's coercing is only readable off a loaded class, so the census pass is
-        // handed the classpath the catalog itself was loaded through rather than assembling a
-        // second one. A caller with no catalog has no codegen classpath either, and falls back to
-        // the loader JooqCatalog's own convenience constructor defaults to.
-        captureExtensions(sink, sources, extensions,
-            jooq == null ? Thread.currentThread().getContextClassLoader() : jooq.codegenLoader());
+        captureExtensions(sink, sources, extensions);
     }
 
     /**
@@ -631,8 +624,7 @@ public final class CatalogFactCapture {
      * what the scan read, not what it was pointed at.
      */
     private static void captureExtensions(FactSink sink, ClasspathSources sources,
-                                          List<CompletionData.ExternalReference> extensions,
-                                          ClassLoader loader) {
+                                          List<CompletionData.ExternalReference> extensions) {
         for (CompletionData.ExternalReference reference : extensions) {
             // Membership is noted ahead of the class claim: a warm run pre-claims a retained
             // partition's classes, and the retained partition is still this graph's read.
@@ -743,18 +735,6 @@ public final class CatalogFactCapture {
                     refRow.setVariance(ref.variance());
                     sink.add(refRow);
                 }
-            }
-
-            for (CompletionData.ScalarConstant constant : reference.scalarConstants()) {
-                if (!sink.claim(JVM_SCALAR_TYPE_FIELD, className, constant.fieldName())) {
-                    continue;
-                }
-                var row = sink.dsl().newRecord(JVM_SCALAR_TYPE_FIELD);
-                row.setSourceName(source);
-                row.setClassName(className);
-                row.setFieldName(constant.fieldName());
-                row.setInputType(ScalarConstantInput.of(className, constant.fieldName(), loader));
-                sink.add(row);
             }
         }
     }

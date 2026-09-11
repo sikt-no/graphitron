@@ -45,10 +45,10 @@ class CompletionStoreWiringTest {
     @Test
     void oneGraphsPopupDoesNotOfferAnothersClasses(@TempDir Path tmp) {
         try (var fixture = StoreFixture.of(tmp, "api", "type Query { x: Int }\n",
-                List.of(StoreFixture.reference("com.example.ApiService", List.of(), List.of(),
+                List.of(StoreFixture.reference("com.example.ApiService", List.of(),
                     "/nonexistent/api.jar")))
                 .andGraph(tmp, "billing", "type Query { y: Int }\n",
-                    List.of(StoreFixture.reference("com.example.BillingService", List.of(), List.of(),
+                    List.of(StoreFixture.reference("com.example.BillingService", List.of(),
                         "/nonexistent/billing.jar")))) {
 
             assertThat(classNames(fixture.handleFor("api"))).containsExactly("com.example.ApiService");

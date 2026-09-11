@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Completion for {@code @scalarType(scalar:)} on a {@code scalar X} declaration.
- * Candidates are the {@code className.fieldName} of every {@code jvm_scalar_type_field} row the
- * graph's classpath walk captured; the constant whose field name matches the enclosing scalar's SDL
+ * Candidates are the {@code className.fieldName} of every {@code code_scalar_constant} row on the
+ * graph's classpath entries; the constant whose field name matches the enclosing scalar's SDL
  * name (case-insensitive) is offered first.
  */
 class ScalarTypeCompletionsTest {
@@ -33,14 +33,15 @@ class ScalarTypeCompletionsTest {
 
     private static StoreFixture store;
 
-    // Source of truth is the walk, not a static table: two scanned classes, a library's
-    // extended-scalars holder and a consumer's own scalar holder, each carrying scalar constants.
+    // Source of truth is the store, not a static table: two holders on the graph's classpath, a
+    // library's extended-scalars class and a consumer's own, each carrying scalar constants.
     @BeforeAll
     static void capture() {
-        store = StoreFixture.ofClasspath(tmp, List.of(
-            StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars",
-                "GraphQLBigDecimal", "DateTime", "UUID"),
-            StoreFixture.scalarHolder("com.example.Scalars", "MONEY")));
+        store = StoreFixture.ofClasspath(tmp, List.of())
+            .withScalarConstants(
+                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars",
+                    "GraphQLBigDecimal", "DateTime", "UUID"),
+                StoreFixture.scalarHolder("com.example.Scalars", "MONEY"));
     }
 
     @AfterAll

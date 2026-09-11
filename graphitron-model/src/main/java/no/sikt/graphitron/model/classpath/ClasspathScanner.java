@@ -8,7 +8,6 @@ import java.io.UncheckedIOException;
 import java.lang.classfile.Attributes;
 import java.lang.classfile.ClassFile;
 import java.lang.classfile.ClassModel;
-import java.lang.classfile.FieldModel;
 import java.lang.classfile.MethodModel;
 import java.lang.classfile.MethodSignature;
 import java.lang.classfile.Signature;
@@ -76,7 +75,6 @@ public final class ClasspathScanner {
     private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
 
     /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion.*/
-    private static final String GRAPHQL_SCALAR_TYPE_DESCRIPTOR = "Lgraphql/schema/GraphQLScalarType;";
 
     private ClasspathScanner() {}
 
@@ -288,9 +286,8 @@ public final class ClasspathScanner {
         if (jooqPrefix != null && fqn.startsWith(jooqPrefix)) return null;
         var methods = readMethods(cm);
         var recordComponents = readRecordComponents(cm);
-        var scalarConstants = readScalarConstants(cm);
         return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents,
-            scalarConstants, declaredKind(cm), source, readSupertypes(cm));
+            declaredKind(cm), source, readSupertypes(cm));
     }
 
     /**
@@ -336,31 +333,6 @@ public final class ClasspathScanner {
         if (flags.has(AccessFlag.ENUM)) return "ENUM";
         if (cm.findAttribute(Attributes.record()).isPresent()) return "RECORD";
         return "CLASS";
-    }
-
-    /**
-     * Reads {@code public static} fields whose JVM type descriptor is exactly
-     * {@code Lgraphql/schema/GraphQLScalarType;} so the LSP can complete
-     * {@code @scalarType(scalar:)} from the constants actually present on the
-     * consumer's codegen classpath rather than a hardcoded convention list.
-     *
-     * <p>Exact descriptor compare, not assignability: the parse-only scan
-     * resolves no type hierarchy, and the constant is declared as
-     * {@code GraphQLScalarType} directly. {@code final} is intentionally not
-     * required: the reflective resolver binds a non-final constant just as
-     * well. The scan offers a candidate FQN only; the reflective resolver and
-     * diagnostics remain the source of truth that reject a bad constant at
-     * build time.
-     */
-    private static List<CompletionData.ScalarConstant> readScalarConstants(ClassModel cm) {
-        var constants = new ArrayList<CompletionData.ScalarConstant>();
-        for (FieldModel f : cm.fields()) {
-            if (!f.flags().has(AccessFlag.PUBLIC)) continue;
-            if (!f.flags().has(AccessFlag.STATIC)) continue;
-            if (!GRAPHQL_SCALAR_TYPE_DESCRIPTOR.equals(f.fieldTypeSymbol().descriptorString())) continue;
-            constants.add(new CompletionData.ScalarConstant(f.fieldName().stringValue()));
-        }
-        return List.copyOf(constants);
     }
 
     /**

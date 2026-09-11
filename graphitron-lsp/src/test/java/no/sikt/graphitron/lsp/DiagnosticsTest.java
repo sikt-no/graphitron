@@ -95,7 +95,8 @@ class DiagnosticsTest {
     static void capture() {
         catalogOnly = StoreFixture.ofCatalog(catalogRoot, TABLE_SDL);
         multiSchema = StoreFixture.ofMultiSchemaCatalog(multiSchemaRoot, PLACEHOLDER_SDL);
-        withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus());
+        withClasses = StoreFixture.ofCatalog(classesRoot, PLACEHOLDER_SDL, classCensus())
+            .withScalarConstants(SCALARS);
         withBackingClasses = StoreFixture.ofCatalog(backingRoot, BACKED_SDL,
             StoreFixture.backingClasses());
         withNodes = StoreFixture.of(nodesRoot, """
@@ -127,6 +128,14 @@ class DiagnosticsTest {
     }
 
     /**
+     * The scalar arm's holder: a class in the census whose constants are code rows beside it. The
+     * scalar cases need both halves, one asking whether the class resolves and one whether the
+     * constant does.
+     */
+    private static final StoreFixture.ScalarHolder SCALARS =
+        StoreFixture.scalarHolder("com.example.Scalars", "MONEY");
+
+    /**
      * The classes the class-name, method and scalar arms name. Each carries {@code foo}, the method
      * the happy paths reference, so a case about a class name does not trip the sibling method arm;
      * {@code FilmService} carries the two the method cases name and, deliberately, no {@code missing}.
@@ -139,7 +148,7 @@ class DiagnosticsTest {
             StoreFixture.jarClass("com.example.RealRecord", foo),
             StoreFixture.jarClass("com.example.RealEnum", foo),
             StoreFixture.jarClass("com.example.RealLifter", foo),
-            StoreFixture.scalarHolder("com.example.Scalars", "MONEY"),
+            SCALARS.asClass(),
             StoreFixture.jarClass("com.example.FilmService", List.of(
                 StoreFixture.method("list", "List"),
                 StoreFixture.method("get", "String"))));

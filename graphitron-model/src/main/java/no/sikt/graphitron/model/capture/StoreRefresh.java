@@ -30,7 +30,6 @@ import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -94,7 +93,6 @@ final class StoreRefresh {
     private static final Set<Table<?>> PARTITIONED = Set.of(
         JVM_CLASS, JVM_CLASS_SUPERTYPE, JVM_METHOD, JVM_METHOD_PARAMETER,
         JVM_RECORD_COMPONENT, JVM_DECLARED_TYPE_REF,
-        JVM_SCALAR_TYPE_FIELD,
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_ENUM_BINDING, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN,
         SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
@@ -205,8 +203,6 @@ final class StoreRefresh {
         dsl.deleteFrom(JVM_METHOD).where(JVM_METHOD.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_RECORD_COMPONENT)
             .where(JVM_RECORD_COMPONENT.SOURCE_NAME.in(staleOwned)).execute();
-        dsl.deleteFrom(JVM_SCALAR_TYPE_FIELD)
-            .where(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_CLASS_SUPERTYPE)
             .where(JVM_CLASS_SUPERTYPE.SOURCE_NAME.in(staleOwned)).execute();
         dsl.deleteFrom(JVM_CLASS).where(JVM_CLASS.SOURCE_NAME.in(staleOwned)).execute();

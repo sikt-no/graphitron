@@ -106,7 +106,7 @@ class NodeIdDecodeSlotCaptureTest {
                     parameter("in", FILM_RECORD)),
                 method("find", "(Ljava/lang/Integer;)Ljava/lang/String;",
                     parameter("id", "java.lang.Integer"))),
-            List.of(), List.of(), "CLASS", APP, List.of()));
+            List.of(), "CLASS", APP, List.of()));
     }
 
     private static CompletionData.Method method(String name, String descriptor,

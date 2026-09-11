@@ -66,8 +66,9 @@ class CompletionTextEditTest {
             """,
             List.of(
                 StoreFixture.jarClass("com.example.FilmService",
-                    List.of(StoreFixture.method("list", "List"))),
-                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars", "DateTime")));
+                    List.of(StoreFixture.method("list", "List")))))
+            .withScalarConstants(
+                StoreFixture.scalarHolder("graphql.scalars.ExtendedScalars", "DateTime"));
     }
 
     @AfterAll

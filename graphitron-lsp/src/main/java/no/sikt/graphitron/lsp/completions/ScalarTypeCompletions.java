@@ -23,12 +23,12 @@ import static org.jooq.impl.DSL.when;
 /**
  * Completion for {@code @scalarType(scalar: "|")} on a {@code scalar X}
  * declaration. Suggests {@code className.fieldName} for each
- * {@code public static GraphQLScalarType} constant the graph's classpath walk
- * met, prioritising the constant whose field name matches the enclosing
+ * {@code public static GraphQLScalarType} constant the graph's classpath
+ * carries, prioritising the constant whose field name matches the enclosing
  * scalar's SDL name.
  *
- * <p>The candidates are {@code jvm_scalar_type_field} rows: the walk enumerates
- * the {@code GraphQLScalarType} fields actually on the classpath, so it surfaces
+ * <p>The candidates are {@code code_scalar_constant} rows: the arm admits the
+ * {@code GraphQLScalarType} fields actually on the classpath, so it surfaces
  * the consumer's own scalar constants ({@code com.example.Scalars.MONEY}) as
  * well as any library's, with no coupling to
  * {@code graphql-java-extended-scalars}. Every suggestion is a well-formed
