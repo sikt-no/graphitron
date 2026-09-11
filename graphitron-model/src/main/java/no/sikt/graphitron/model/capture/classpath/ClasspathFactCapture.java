@@ -5,7 +5,7 @@ import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
 
-import java.nio.file.Path;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,9 +37,11 @@ public final class ClasspathFactCapture {
     /**
      * Makes the census rows of {@code entries} be what their classfiles now declare.
      *
+     * @param entries    the classpath as its producer classified it, each carrying how it
+     *                   reached the classpath; a bare path could not say
      * @param skipPrefix a package to leave out of the census, or null to leave nothing out
      */
-    public static void capture(DSLContext dsl, List<Path> entries, String skipPrefix,
+    public static void capture(DSLContext dsl, List<ClasspathEntry> entries, String skipPrefix,
                                LocalDateTime touchedAt) {
         var census = ClassfileCensus.read(entries, skipPrefix);
         if (census.entries().isEmpty()) {
@@ -74,11 +76,16 @@ public final class ClasspathFactCapture {
         var rows = entries.stream().collect(Rows.toRowList(
             at -> val(at.source(), t.SOURCE_NAME),
             at -> val(at.kind(), t.SOURCE_KIND),
+            at -> val(at.origin(), t.ORIGIN),
+            at -> val(at.coordinate(), t.COORDINATE),
             at -> val(touchedAt, t.LAST_SEEN),
             at -> val(touchedAt, t.READ_AT)));
-        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.LAST_SEEN, t.READ_AT)
+        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.LAST_SEEN,
+                t.READ_AT)
             .valuesOfRows(rows)
             .onDuplicateKeyUpdate()
+            .set(t.ORIGIN, excluded(t.ORIGIN))
+            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
             .set(t.READ_AT, excluded(t.READ_AT))
             .execute();

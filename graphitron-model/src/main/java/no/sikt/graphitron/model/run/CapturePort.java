@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -52,11 +53,12 @@ public sealed interface CapturePort extends AutoCloseable {
      * where a {@link CaptureRequest} carries sources a caller already read, so folding one into the
      * other would make each the other's business.
      *
-     * @param classpath directories and jars, read as bytes; empty takes no census
+     * @param classpath directories and jars as the producer classified them, read as bytes;
+     *                  empty takes no census
      * @param jooq      the catalog, already built because it can only be read by running the
      *                  generated code; null captures no catalog facts
      */
-    void captureModel(GraphIdentity graph, SubjectConfig config, List<Path> classpath,
+    void captureModel(GraphIdentity graph, SubjectConfig config, List<ClasspathEntry> classpath,
                       JooqCatalog jooq);
 
     /**
@@ -74,7 +76,8 @@ public sealed interface CapturePort extends AutoCloseable {
      * rows apart, so what the second no longer finds would stay.
      */
     private static RunStore.CaptureBody modelBody(GraphIdentity graph, SubjectConfig config,
-                                                  List<Path> classpath, JooqCatalog jooq) {
+                                                  List<ClasspathEntry> classpath,
+                                                  JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         return (dsl, warm) -> ModelCapture.capture(dsl, graph, config, classpath, jooq, readAt);
     }
@@ -159,8 +162,8 @@ public sealed interface CapturePort extends AutoCloseable {
         }
 
         @Override
-        public void captureModel(GraphIdentity graph, SubjectConfig config, List<Path> classpath,
-                                 JooqCatalog jooq) {
+        public void captureModel(GraphIdentity graph, SubjectConfig config,
+                                 List<ClasspathEntry> classpath, JooqCatalog jooq) {
             // Opened by the capture and given straight back, this arm holding nothing between
             // calls. Nothing is read here, so there is no window to keep it open for.
             RunStore.forRun(storeDirectory, graph, modelBody(graph, config, classpath, jooq))
@@ -203,7 +206,7 @@ public sealed interface CapturePort extends AutoCloseable {
 
         @Override
         public synchronized void captureModel(GraphIdentity graph, SubjectConfig config,
-                                              List<Path> classpath, JooqCatalog jooq) {
+                                              List<ClasspathEntry> classpath, JooqCatalog jooq) {
             capture(graph, modelBody(graph, config, classpath, jooq));
         }
 

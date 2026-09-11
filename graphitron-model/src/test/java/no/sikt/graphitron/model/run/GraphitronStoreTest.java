@@ -10,6 +10,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+
 import java.nio.file.Path;
 import java.util.List;
 
@@ -30,7 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GraphitronStoreTest {
 
     /** This module's own compiled classes, which every tier has on disk by the time it runs. */
-    private static final List<Path> CLASSPATH = List.of(Path.of("target", "classes"));
+    private static final List<ClasspathEntry> CLASSPATH =
+        List.of(ClasspathEntry.project(Path.of("target", "classes")));
 
     /** The fixture module's generated jOOQ package, on this module's own test classpath. */
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";

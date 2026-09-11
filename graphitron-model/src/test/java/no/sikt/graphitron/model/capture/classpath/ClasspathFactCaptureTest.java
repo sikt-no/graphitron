@@ -6,12 +6,15 @@ import org.junit.jupiter.api.Test;
 
 import org.jooq.DSLContext;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
+
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.JVM_CLASSFILE;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASSFILE_FIELD;
 import static no.sikt.graphitron.model.Tables.JVM_CLASSFILE_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_CLASSFILE_PARAMETER;
@@ -32,7 +35,46 @@ class ClasspathFactCaptureTest {
     private static final LocalDateTime SECOND = FIRST.plusMinutes(1);
 
     /** This module's own compiled classes, which every test tier has on disk by the time it runs. */
-    private static final List<Path> ENTRY = List.of(Path.of("target", "classes"));
+    private static final List<ClasspathEntry> ENTRY =
+        List.of(ClasspathEntry.project(Path.of("target", "classes")));
+
+    /**
+     * How an entry reached the classpath is the producer's decision and nothing downstream can
+     * recover it from a path, so the census carries it rather than re-deriving it. Two entries with
+     * the same kind and different origins are what discriminates the case: a reactor sibling and a
+     * declared jar are both a DIRECTORY or a JAR, and only the origin tells them apart.
+     */
+    @Test
+    @DisplayName("an entry's origin and coordinate are recorded, not flattened to its path")
+    void theProducersClassificationSurvivesTheCensus() {
+        Path own = Path.of("target", "classes");
+        Path sibling = Path.of("..", "graphitron-javapoet", "target", "classes");
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            ClasspathFactCapture.capture(dsl, List.of(
+                ClasspathEntry.project(own),
+                new ClasspathEntry(sibling, ClasspathEntry.Origin.SIBLING, "graphitron-javapoet")),
+                null, FIRST);
+
+            assertThat(dsl.select(STORE_SOURCE.ORIGIN, STORE_SOURCE.COORDINATE)
+                    .from(STORE_SOURCE).where(STORE_SOURCE.SOURCE_NAME.eq(own.toString()))
+                    .fetchOne())
+                .as("the module's own output, which names no coordinate because the origin says it")
+                .satisfies(row -> {
+                    assertThat(row.value1()).isEqualTo("PROJECT");
+                    assertThat(row.value2()).isNull();
+                });
+
+            assertThat(dsl.select(STORE_SOURCE.ORIGIN, STORE_SOURCE.COORDINATE)
+                    .from(STORE_SOURCE).where(STORE_SOURCE.SOURCE_NAME.eq(sibling.toString()))
+                    .fetchOne())
+                .as("and a reactor sibling, told apart from the entry above by origin alone")
+                .satisfies(row -> {
+                    assertThat(row.value1()).isEqualTo("SIBLING");
+                    assertThat(row.value2()).isEqualTo("graphitron-javapoet");
+                });
+        }
+    }
 
     @Test
     @DisplayName("classes, their supertypes, methods and parameters are written")

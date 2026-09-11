@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -9,7 +10,6 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -31,6 +31,10 @@ import java.util.List;
  * <p>Absence is per input: no classpath is no census, no catalog is no catalog facts, and neither
  * touches the schema.
  *
+ * <p>The classpath arrives classified rather than as bare paths. How an entry reached the classpath
+ * is a decision its producer took and no consumer can recover from a path, and it is what a reader
+ * scopes by to ask about the reactor rather than about the world.
+ *
  * <p>Takes a {@link DSLContext} rather than a store, so a caller already holding one open for more
  * than this captures into the store its own readers are on.
  */
@@ -45,7 +49,8 @@ public final class ModelCapture {
      * one could not tell each other's rows apart and what the second no longer finds would stay.
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
-                               List<Path> classpath, JooqCatalog jooq, LocalDateTime readAt) {
+                               List<ClasspathEntry> classpath, JooqCatalog jooq,
+                               LocalDateTime readAt) {
         writeGraph(dsl, graph, readAt);
         SdlCapture.capture(dsl, graph, config, readAt);
         StoreEntries.write(dsl, graph.name(), config, readAt);

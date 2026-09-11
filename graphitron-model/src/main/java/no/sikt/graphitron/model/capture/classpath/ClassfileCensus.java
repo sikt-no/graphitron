@@ -10,6 +10,7 @@ import java.lang.constant.ClassDesc;
 import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,7 +41,7 @@ public final class ClassfileCensus {
     public record Census(List<EntryAt> entries, List<ClassAt> classes) {}
 
     /** A classpath entry this reading read, and which kind of container it is. */
-    public record EntryAt(String source, String kind) {}
+    public record EntryAt(String source, String kind, String origin, String coordinate) {}
 
     /** One class, and everything public it declares. */
     public record ClassAt(String source, String className, String kind, List<SupertypeAt> supertypes,
@@ -66,20 +67,26 @@ public final class ClassfileCensus {
      * <p>A class name is kept once: the first entry to declare it wins, which is the copy a
      * classloader would resolve, so this census and the loader agree on which copy is the one.
      *
+     * <p>Each entry keeps the classification its producer gave it. How an entry reached the
+     * classpath cannot be recovered from its path, so a reader that wants the reactor rather than
+     * the world would have nothing to scope by if this dropped it.
+     *
      * @param entries    directories and jars, in the order a classloader would search them
      * @param skipPrefix a package prefix to leave out, or null to leave nothing out
      */
-    public static Census read(List<Path> entries, String skipPrefix) {
+    public static Census read(List<ClasspathEntry> entries, String skipPrefix) {
         var read = new ArrayList<EntryAt>();
         var classes = new ArrayList<ClassAt>();
         var seen = new LinkedHashSet<String>();
-        for (Path entry : entries) {
+        for (ClasspathEntry classified : entries) {
+            Path entry = classified.path();
             String source = entry.toString();
             boolean directory = Files.isDirectory(entry);
             if (!directory && !(Files.isRegularFile(entry) && source.endsWith(".jar"))) {
                 continue;
             }
-            read.add(new EntryAt(source, directory ? "DIRECTORY" : "JAR"));
+            read.add(new EntryAt(source, directory ? "DIRECTORY" : "JAR",
+                classified.origin().name(), classified.coordinate()));
             for (ClassAt at : directory ? readDirectory(entry, source, skipPrefix)
                                         : readJar(entry, source, skipPrefix)) {
                 if (seen.add(at.className())) {

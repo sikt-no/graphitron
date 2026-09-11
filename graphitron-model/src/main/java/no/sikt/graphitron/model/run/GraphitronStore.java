@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 import java.nio.file.Path;
@@ -59,7 +60,8 @@ public final class GraphitronStore {
      * leaves the store as it found it, and every relation dates the same reading.
      */
     public static void capture(GraphitronModelStore store, GraphIdentity graph,
-                               SubjectConfig config, List<Path> classpath, JooqCatalog jooq) {
+                               SubjectConfig config, List<ClasspathEntry> classpath,
+                               JooqCatalog jooq) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         store.dsl().transaction(tx ->
             ModelCapture.capture(tx.dsl(), graph, config, classpath, jooq, readAt));

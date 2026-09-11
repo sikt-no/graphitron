@@ -1159,7 +1159,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     void captureModel(RunContext ctx, CapturePort capture) {
         capture.captureModel(new GraphIdentity(ctx.graphName(), ctx.basedir()),
             SubjectConfig.of(ctx),
-            ctx.classpathRoots().stream().map(ClasspathEntry::path).toList(),
+            ctx.classpathRoots(),
             // Off the declared parameter rather than the context's, which carries the sentinel a
             // goal tolerating no packages substitutes. A catalog loaded from that name finds no
             // class and warns, and a goal already saying it captures no database facts should not
