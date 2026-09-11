@@ -58,7 +58,7 @@ public final class SdlCapture {
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                LocalDateTime readAt) {
-        var parse = SchemaLoader.parsePerSource(schemaFiles(config, graph.baseDir()));
+        var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
             SdlEntries.write(dsl, graph.name(), document.sourceName(), document.registry(), readAt);
@@ -76,27 +76,6 @@ public final class SdlCapture {
         var raised = new ArrayList<>(parse.registryErrors());
         raised.addAll(SchemaAssembly.of(parse.registry()).errors());
         SdlSchemaProblems.write(dsl, graph.name(), parse.failures(), List.copyOf(raised), readAt);
-    }
-
-    /**
-     * The files the recipe resolves to, or none.
-     *
-     * <p>A pattern matching nothing and a scanner that failed both yield no files here rather than
-     * a refusal, because a gatherer that throws gathers nothing: a run whose recipe is half broken
-     * still has the other half's facts, and pronouncing on the recipe is the caller's.
-     */
-    private static List<SchemaSource.File> schemaFiles(SubjectConfig config, Path baseDir) {
-        return config.recipe()
-            .filter(recipe -> !recipe.bindings().isEmpty())
-            .map(recipe -> recipe.expand(baseDir))
-            .filter(SchemaRecipe.Expansion.Resolved.class::isInstance)
-            .map(SchemaRecipe.Expansion.Resolved.class::cast)
-            .map(resolved -> resolved.matches().stream()
-                .map(match -> match.input().source())
-                .filter(SchemaSource.File.class::isInstance)
-                .map(SchemaSource.File.class::cast)
-                .toList())
-            .orElseGet(List::of);
     }
 
     /**

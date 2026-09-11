@@ -42,7 +42,6 @@
             </schemaInput>
           </schemaInputs>
           <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
-          <storeDirectory>target/model-store</storeDirectory>
         </configuration>
       </plugin>
     </plugins>

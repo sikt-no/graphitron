@@ -1,9 +1,10 @@
 // Verifies the capture-only IT: the goal filled a store, refused nothing, and wrote no code.
 
-// The store the run left behind, under the home the pom pinned. The database file sits inside a
-// stamped subdirectory (the DDL hash and generator version name it), so this looks for the file
-// rather than for a path.
-def storeHome = new File(basedir, "target/model-store")
+// The store the run left behind, at the default home: under the build directory, because the
+// store is this module's own build output and no goal here pins one. The database file sits
+// inside a stamped subdirectory (the DDL hash and generator version name it), so this looks for
+// the file rather than for a path.
+def storeHome = new File(basedir, "target/graphitron-model")
 assert storeHome.isDirectory() :
     "Expected the capture run to create its store home: ${storeHome}"
 

@@ -154,6 +154,51 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     static final ReadBudget MCP_READ_BUDGET = new ReadBudget.Bounded(60_000);
 
+    /**
+     * The session's store home: the consumer's override taken verbatim, or the per-user cache
+     * location with a per-workspace segment. One file per workspace, holding every graph that
+     * workspace's modules capture, and no file holding two workspaces' graphs, so two checkouts of
+     * one repository cannot thrash each other's partitions through equal artifactIds.
+     *
+     * <p>Overridden away from the build directory because a session's store is the one that is
+     * shared: its language server and MCP readers answer from it between builds, so it has to
+     * outlive a {@code mvn clean} and be reachable by a module that is not the one being built. A
+     * one-shot goal has neither need, which is why the base class puts its store in the build and
+     * this is the only override of it.
+     */
+    @Override
+    Path resolveStoreDirectory(Path basedir) {
+        // Maven binds the CLI property into the field at injection; consulting the system property
+        // here mirrors that for programmatically constructed mojos (the unit tier), whose runs
+        // would otherwise resolve the developer's real cache and orphan one workspace segment per
+        // @TempDir. The plugin's own surefire pins it for exactly that reason.
+        String configured = storeDirectory != null && !storeDirectory.isBlank()
+            ? storeDirectory
+            : System.getProperty("graphitron.store.directory");
+        if (configured != null && !configured.isBlank()) {
+            var home = Path.of(configured.trim());
+            return (home.isAbsolute() ? home : basedir.resolve(home)).normalize();
+        }
+        return userCacheRoot()
+            .resolve("graphitron")
+            .resolve("model")
+            .resolve(workspaceSegment(workspaceRoot(basedir)));
+    }
+
+    /**
+     * Where this session's fact store is kept; the store's <em>home</em>, under which the store
+     * itself keeps a compatibility-stamped subdirectory. Omit for the platform's per-user cache
+     * location with a per-workspace segment, resolved by {@link #resolveStoreDirectory}; set it
+     * (or pass {@code -Dgraphitron.store.directory=...}) to pin the store somewhere else.
+     *
+     * <p>A dev parameter and not a build one. The one-shot goals write their store under the build
+     * directory and own it outright, so there is nothing for a consumer to point elsewhere; a
+     * session's store is shared with the readers it serves, and where it lives is a session's
+     * business.
+     */
+    @Parameter(property = "graphitron.store.directory")
+    String storeDirectory;
+
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;
 

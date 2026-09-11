@@ -141,16 +141,6 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     String supergraph;
 
-    /**
-     * Where the fact store is kept between runs; the store's <em>home</em>, under which the store
-     * itself keeps a compatibility-stamped subdirectory. Omit for the platform's per-user cache
-     * location with a per-workspace segment, resolved by {@link #resolveStoreDirectory}; set it
-     * (or pass {@code -Dgraphitron.store.directory=...}) to keep the store inside the build for
-     * hermetic CI jobs or containers that discard {@code $HOME}.
-     */
-    @Parameter(property = "graphitron.store.directory")
-    String storeDirectory;
-
     @Parameter
     String outputPackage;
 
@@ -437,41 +427,32 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The fact store's home: the per-user cache location with a per-workspace segment, or the
-     * consumer's {@code <storeDirectory>} / {@code -Dgraphitron.store.directory} override taken
-     * verbatim (a pinned home is already scoped to whatever the consumer meant it to be scoped
-     * to). This is the only store-home resolver in the tree; every other opener reaches the
-     * store through the {@link RunContext} it built. The store itself appends a
-     * compatibility-stamped subdirectory under whatever home this returns, so the value means
+     * The fact store's home: under the build directory, like everything else a run produces (same
+     * test-instance fallback as {@link #resolveOutputResourcesDirectory(Path)}). The store appends
+     * a compatibility-stamped subdirectory under whatever home this returns, so the value means
      * "home", never "the directory the file sits in".
      *
-     * <p>The workspace segment is what makes the graph-name scoping structural rather than
-     * hopeful: one file per workspace, holding every graph that workspace's modules capture, and
-     * no file holding two workspaces' graphs, so two checkouts of one repository cannot thrash
-     * each other's partitions through equal artifactIds. The store is a cache with no state of
-     * record; a run that cannot use it boots cold and correct, so nothing here is ever worth a
-     * build failure. {@code mvn clean} no longer removes it, the file no longer being build
-     * output; the remedy for a damaged store is deleting the cache directory (or the one
-     * workspace segment under it) by hand.
+     * <p>One store per module, holding that module's one graph, and it is build output: a run
+     * writes only where it already writes, {@code mvn clean} removes it, and nothing else on the
+     * machine is on the file. That is what makes the store's ownership binary rather than
+     * arbitrated. A store shared across a workspace is a dev session's, not a build's, and
+     * {@code DevMojo} overrides this to say so; the sharing is what that session exists to offer
+     * its readers, and the only place worth paying for it.
      */
-    final Path resolveStoreDirectory(Path basedir) {
-        // Maven binds the CLI property into the field at injection; consulting the system
-        // property here mirrors that for programmatically constructed mojos (the unit tier),
-        // whose runs would otherwise resolve the developer's real cache and orphan one
-        // workspace segment per @TempDir. The plugin's own surefire pins it for exactly that
-        // reason.
-        String configured = storeDirectory != null && !storeDirectory.isBlank()
-            ? storeDirectory
-            : System.getProperty("graphitron.store.directory");
-        if (configured != null && !configured.isBlank()) {
-            var home = Path.of(configured.trim());
-            return (home.isAbsolute() ? home : basedir.resolve(home)).normalize();
-        }
-        Path workspace = workspaceRoot(basedir);
-        return userCacheRoot()
-            .resolve("graphitron")
-            .resolve("model")
-            .resolve(workspaceSegment(workspace));
+    Path resolveStoreDirectory(Path basedir) {
+        return buildDirectory(basedir).resolve("graphitron-model").normalize();
+    }
+
+    /**
+     * The module's build directory, or {@code basedir/target} for a hand-built
+     * {@link MavenProject} test instance with no build directory set ({@code DevMojoTest},
+     * {@code CodegenLoaderTest}, {@code GenerateMojoTest}). Every target-rooted resolver below
+     * goes through this rather than restating the fallback.
+     */
+    private Path buildDirectory(Path basedir) {
+        var configured = project.getBuild() != null ? project.getBuild().getDirectory() : null;
+        var targetDir = configured != null ? Path.of(configured) : basedir.resolve("target");
+        return targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir);
     }
 
     /**
@@ -481,7 +462,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * the store is a cache by nature: rebuildable from sources, no state of record, always safe
      * to delete.
      */
-    private static Path userCacheRoot() {
+    static Path userCacheRoot() {
         Path home = Path.of(System.getProperty("user.home"));
         String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
         if (os.contains("win")) {
@@ -504,7 +485,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * collision-free, and legible in a directory listing when a user goes looking for what is
      * filling their cache.
      */
-    private static String workspaceSegment(Path workspace) {
+    static String workspaceSegment(Path workspace) {
         Path leaf = workspace.getFileName();
         String name = leaf != null ? leaf.toString() : "workspace";
         try {
@@ -624,13 +605,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * {@code CodegenLoaderTest}, {@code GenerateMojoTest}).
      */
     final Path resolveOutputResourcesDirectory(Path basedir) {
-        var buildDirectory = project.getBuild() != null
-            ? project.getBuild().getDirectory()
-            : null;
-        var targetDir = buildDirectory != null
-            ? Path.of(buildDirectory)
-            : basedir.resolve("target");
-        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+        return buildDirectory(basedir)
             .resolve("generated-resources/graphitron")
             .normalize();
     }
@@ -642,13 +617,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * restarts and dies on {@code mvn clean}.
      */
     final Path resolveRagCacheDirectory(Path basedir) {
-        var buildDirectory = project.getBuild() != null
-            ? project.getBuild().getDirectory()
-            : null;
-        var targetDir = buildDirectory != null
-            ? Path.of(buildDirectory)
-            : basedir.resolve("target");
-        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+        return buildDirectory(basedir)
             .resolve("graphitron-mcp-rag")
             .normalize();
     }
@@ -662,13 +631,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * shadows any stale copy in {@code target/classes}.
      */
     final Path resolveGraphitronClassesDirectory(Path basedir) {
-        var buildDirectory = project.getBuild() != null
-            ? project.getBuild().getDirectory()
-            : null;
-        var targetDir = buildDirectory != null
-            ? Path.of(buildDirectory)
-            : basedir.resolve("target");
-        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+        return buildDirectory(basedir)
             .resolve("graphitron-classes")
             .normalize();
     }

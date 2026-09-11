@@ -4,7 +4,10 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -89,5 +92,28 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
         return new SubjectConfig(Optional.ofNullable(recipe), Optional.ofNullable(jooqPackage),
             Optional.empty(), Optional.empty(), Optional.empty(), LintConfig.empty(),
             SessionStateConfig.none());
+    }
+
+    /**
+     * The schema files this configuration resolves to under {@code baseDir}, or none.
+     *
+     * <p>A question about the configuration, answered by it: the recipe is the whole of what
+     * decides, so nothing but this record is consulted. A pattern matching nothing and a scanner
+     * that failed both resolve to no files here rather than to a refusal, which is what lets a run
+     * whose recipe is half broken still have the other half's facts. A caller that wants the
+     * refusal itself expands the recipe, {@link SchemaRecipe.Expansion} being where that is said.
+     */
+    public List<SchemaSource.File> schemaFiles(Path baseDir) {
+        return recipe
+            .filter(configured -> !configured.bindings().isEmpty())
+            .map(configured -> configured.expand(baseDir))
+            .filter(SchemaRecipe.Expansion.Resolved.class::isInstance)
+            .map(SchemaRecipe.Expansion.Resolved.class::cast)
+            .map(resolved -> resolved.matches().stream()
+                .map(match -> match.input().source())
+                .filter(SchemaSource.File.class::isInstance)
+                .map(SchemaSource.File.class::cast)
+                .toList())
+            .orElseGet(List::of);
     }
 }
