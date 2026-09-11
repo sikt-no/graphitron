@@ -13,7 +13,7 @@ import org.jooq.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
+import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.lower;
@@ -68,16 +68,16 @@ public final class ScalarTypeCompletions {
         // in the ORDER BY makes it a second one.
         Field<Integer> rank = (scalarName == null
             ? inline(0)
-            : when(lower(JVM_SCALAR_TYPE_FIELD.FIELD_NAME).eq(scalarName.toLowerCase()), inline(0))
+            : when(lower(CODE_SCALAR_CONSTANT.FIELD_NAME).eq(scalarName.toLowerCase()), inline(0))
                 .otherwise(inline(1))).as("rank");
         var rows = store.dsl()
             // Distinct, because one constant reachable through two sources is one candidate: the
             // reference an author writes names the class and the field, and says nothing about which
             // classpath entry it came from.
-            .selectDistinct(JVM_SCALAR_TYPE_FIELD.CLASS_NAME, JVM_SCALAR_TYPE_FIELD.FIELD_NAME, rank)
-            .from(JVM_SCALAR_TYPE_FIELD)
-            .where(store.reads(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME))
-            .orderBy(field(name("rank")), JVM_SCALAR_TYPE_FIELD.CLASS_NAME, JVM_SCALAR_TYPE_FIELD.FIELD_NAME)
+            .selectDistinct(CODE_SCALAR_CONSTANT.CLASS_NAME, CODE_SCALAR_CONSTANT.FIELD_NAME, rank)
+            .from(CODE_SCALAR_CONSTANT)
+            .where(store.reads(CODE_SCALAR_CONSTANT.SOURCE_NAME))
+            .orderBy(field(name("rank")), CODE_SCALAR_CONSTANT.CLASS_NAME, CODE_SCALAR_CONSTANT.FIELD_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());
         for (var row : rows) {

@@ -541,16 +541,11 @@ class FactCaptureAgreementTest {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         // The classfile census: what the compiled classes on the classpath declare, read with no
-        // vocabulary from any schema. GraphitronSchema has no counterpart because the walk it
-        // came from read the classpath through one directive's needs, keeping the fields typed
-        // GraphQLScalarType and nothing else, so there is no population here to agree with. What
-        // pins them is ClasspathFactCaptureTest, over this module's own compiled classes.
-        for (String relation : List.of(
-            "jvm_classfile", "jvm_classfile_supertype", "jvm_classfile_method",
-            "jvm_classfile_parameter", "jvm_classfile_record_component",
-            "jvm_classfile_field")) {
-            registrations.put(relation, Arm.UNSHADOWED);
-        }
+        // vocabulary from any schema: what an author may name at one directive, admitted by that
+        // arm's own rule rather than by a census's. GraphitronSchema has no counterpart because the
+        // walk it came from resolved a reference only once an author had written one, where an arm
+        // states the candidates whether or not anybody has. What pins it is CodeCaptureTest.
+        registrations.put("code_scalar_constant", Arm.UNSHADOWED);
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);

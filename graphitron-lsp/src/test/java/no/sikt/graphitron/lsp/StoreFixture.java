@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactWriters;
+import no.sikt.graphitron.model.test.SeededStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.classpath.ClasspathScanner;
@@ -87,6 +88,33 @@ final class StoreFixture implements AutoCloseable {
         this.directory = directory;
     }
 
+    /** {@link #StoreFixture(CapturedStore, Path)} for a capture that was handed a census. */
+    private StoreFixture(CapturedStore captured, Path directory,
+                         List<CompletionData.ExternalReference> classpath) {
+        this(captured, directory);
+        writeScalarConstants(captured.dsl(), classpath);
+    }
+
+    /**
+     * States what the census's scalar holders declare, in the terms the code family states them in.
+     *
+     * <p>The walk transcribes a census; what a schema may name at {@code @scalarType} is the code
+     * family's own arm, and that arm reads classfiles. A reference assembled here has none (its
+     * entry is a path that does not exist, which is what makes it a stand-in), so the rows are
+     * written rather than read, and the input type is absent for the same reason: there is nothing
+     * to load. The completion this feeds reads the class and the field and never the input type,
+     * so the fixture is not standing in for a fact the arm would have answered differently.
+     */
+    private static void writeScalarConstants(DSLContext dsl,
+                                             List<CompletionData.ExternalReference> classpath) {
+        for (CompletionData.ExternalReference reference : classpath) {
+            for (CompletionData.ScalarConstant constant : reference.scalarConstants()) {
+                SeededStore.seedScalarConstant(dsl, reference.sourceName(), reference.className(),
+                    constant.fieldName(), null);
+            }
+        }
+    }
+
     private DSLContext dsl() {
         return captured.dsl();
     }
@@ -144,7 +172,7 @@ final class StoreFixture implements AutoCloseable {
                                               List<CompletionData.ExternalReference> classpath,
                                               String jooqPackage) {
         return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
-            new JooqCatalog(jooqPackage), classpath), directory);
+            new JooqCatalog(jooqPackage), classpath), directory, classpath);
     }
 
     /**
@@ -160,7 +188,8 @@ final class StoreFixture implements AutoCloseable {
 
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
-        return new StoreFixture(CapturedStore.of(directory, graphName, sdl, classpath), directory);
+        return new StoreFixture(CapturedStore.of(directory, graphName, sdl, classpath), directory,
+            classpath);
     }
 
     /**
@@ -206,6 +235,7 @@ final class StoreFixture implements AutoCloseable {
                           List<CompletionData.ExternalReference> classpath) {
         requireOwnDirectory(directory);
         captured.andGraph(otherGraph, sdl, classpath);
+        writeScalarConstants(captured.dsl(), classpath);
         return this;
     }
 

@@ -17,7 +17,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.JVM_CLASSFILE;
+import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -142,13 +142,17 @@ class GraphitronStoreTest {
                 .as("the schema the recipe named").isEqualTo(1);
             assertThat(store.dsl().fetchCount(SQL_TABLE, SQL_TABLE.TABLE_NAME.eq("film")))
                 .as("the database the jOOQ package describes").isEqualTo(1);
-            assertThat(store.dsl().fetchCount(JVM_CLASSFILE, JVM_CLASSFILE.CLASS_NAME
-                    .eq("no.sikt.graphitron.model.run.GraphitronStore")))
-                .as("and the classes on the classpath, read as bytes rather than loaded")
-                .isEqualTo(1);
-            assertThat(store.dsl().fetchCount(JVM_CLASSFILE,
-                    JVM_CLASSFILE.CLASS_NAME.like(JOOQ_PACKAGE + ".%")))
-                .as("less the generated jOOQ package, which the caller excludes").isZero();
+            // The third input is a classpath whose classes name no scalar constant, so the arm
+            // over it admits nothing and says so with an empty partition rather than with silence.
+            // What the call did read is the entry, which is registered and classified.
+            assertThat(store.dsl().select(STORE_SOURCE.ORIGIN).from(STORE_SOURCE)
+                    .where(STORE_SOURCE.SOURCE_NAME.eq(CLASSPATH.getFirst().path().toString()))
+                    .fetchOne(STORE_SOURCE.ORIGIN))
+                .as("and the classpath, read and registered under how it reached the run")
+                .isEqualTo("PROJECT");
+            assertThat(store.dsl().fetchCount(CODE_SCALAR_CONSTANT,
+                    CODE_SCALAR_CONSTANT.CLASS_NAME.like(JOOQ_PACKAGE + ".%")))
+                .as("and nothing from the generated jOOQ package, which the caller excludes").isZero();
         }
     }
 
@@ -169,7 +173,8 @@ class GraphitronStoreTest {
             assertThat(store.dsl().fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY))
                 .as("the schema still lands").isPositive();
             assertThat(store.dsl().fetchCount(SQL_TABLE)).as("no catalog rows").isZero();
-            assertThat(store.dsl().fetchCount(JVM_CLASSFILE)).as("and no census rows").isZero();
+            assertThat(store.dsl().fetchCount(CODE_SCALAR_CONSTANT))
+                .as("and no code rows").isZero();
         }
     }
 

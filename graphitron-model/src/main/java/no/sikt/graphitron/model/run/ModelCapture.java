@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model.run;
 
-import no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture;
+import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
@@ -55,7 +55,8 @@ public final class ModelCapture {
         SdlCapture.capture(dsl, graph, config, readAt);
         StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, jooq, readAt);
-        ClasspathFactCapture.capture(dsl, classpath, config.jooqPackage().orElse(null), readAt);
+        CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),
+            jooq == null ? null : jooq.codegenLoader(), readAt);
     }
 
     /**

@@ -112,6 +112,10 @@ class ScalarJavaTypeCaptureTest {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         try (var captured = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, SDL, jooq, census())) {
+            // The walk registers the entry and links it to the graph; the constants on it are the
+            // code family's to state, so both writers run over the same test-class root.
+            CapturedStore.captureCode(captured.dsl(), testClassRoot(), ctx.jooqPackage(),
+                ctx.codegenLoader());
             body.accept(captured.dsl());
         }
     }

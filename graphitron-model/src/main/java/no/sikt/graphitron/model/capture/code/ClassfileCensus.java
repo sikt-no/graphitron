@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.classpath;
+package no.sikt.graphitron.model.capture.code;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;

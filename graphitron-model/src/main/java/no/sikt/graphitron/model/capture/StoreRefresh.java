@@ -112,7 +112,7 @@ final class StoreRefresh {
      * whole relation's discipline, and a clear that skipped those would let this walk's rows pile
      * up unbounded.
      */
-    private static final Set<String> SELF_SWEEPING = Set.of("document", "classpath");
+    private static final Set<String> SELF_SWEEPING = Set.of("document", "code");
 
     private StoreRefresh() {}
 

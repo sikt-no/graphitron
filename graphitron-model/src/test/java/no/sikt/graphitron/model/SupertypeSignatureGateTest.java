@@ -119,15 +119,18 @@ class SupertypeSignatureGateTest {
      * appears on the reconstruction roster below for the same reason, and that row is a record of
      * the cure rather than of the defect.
      *
-     * <p>Two rows are one fact written twice while a successor is being stood up beside its
-     * incumbent, and each goes when the incumbent does rather than when somebody writes a supertype.
-     * {@code jvm_class} and {@code jvm_classfile}, with their supertype twins, are the class census
-     * read two ways. Naming them here is not an exemption: a supertype over the pair would be the
-     * wrong answer, because it is not two kinds of one thing but one thing counted twice, and the
-     * fix is the subtraction that is already planned. It was three rows until the verdict pair went,
-     * and that one is the worked example of the sentence above: {@code graphql_schema_error}
-     * recorded per relation what {@code graphql_schema_problem} records per stage, and when the
-     * incumbent was retired the row left this roster rather than earning a supertype.
+     * <p>The category of one fact written twice is empty, and it emptied by subtraction rather
+     * than by anybody writing a supertype, which is what the rows in it always said would happen.
+     * Three went. The verdict pair went when {@code graphql_schema_error} was retired for the
+     * relation recording all three stages. The class census pair went with {@code jvm_classfile},
+     * which was the successor rather than the incumbent: written and never read, and a successor
+     * nothing reads is not stood up beside anything, so it was dropped rather than finished.
+     *
+     * <p>The arm that replaces it is deliberately not a fourth row. {@code code_scalar_constant}
+     * supersedes {@code jvm_scalar_type_field} and this gate does not see them as one payload under
+     * two keys, which is the difference between a census re-read and an arm: the arm admits what a
+     * directive may name where the incumbent recorded what a walk resolved, so the two populations
+     * are not the same fact counted twice.
      *
      * <p>One row left the roster in the same change and for the same reason read backwards.
      * {@code graphitron_error_entry} and {@code graphql_type_directive} shared a payload only while
@@ -159,8 +162,6 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
-        Set.of("jvm_class", "jvm_classfile"),
-        Set.of("jvm_class_supertype", "jvm_classfile_supertype"),
         Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
                "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
                "graphql_ast_type_directive_entry"),

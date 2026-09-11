@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
@@ -76,7 +77,6 @@ import static no.sikt.graphitron.model.Tables.INTENT_INPUT_OCCURRENCE_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CLASS;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
-import static no.sikt.graphitron.model.Tables.JVM_SCALAR_TYPE_FIELD;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
@@ -894,18 +894,19 @@ public final class SeededStore {
     }
 
     /**
-     * One {@code public static GraphQLScalarType} constant the census reached, and the Java type
-     * it coerces a value to. A null {@code inputType} is the census's own answer for a constant it
-     * could not read one off, which the resolution treats as no answer at all.
+     * One {@code public static GraphQLScalarType} constant the reading reached, and the Java type
+     * it coerces a value to. A null {@code inputType} is the reading's own answer for a constant it
+     * could not read one off, which the resolution treats as no answer at all. The owning class
+     * needs no census row: the arm keys on the entry it read the class from, nothing more.
      */
     public static void seedScalarConstant(DSLContext dsl, String sourceName, String className,
                                           String fieldName, String inputType) {
-        seedClass(dsl, sourceName, className, "CLASS");
-        dsl.insertInto(JVM_SCALAR_TYPE_FIELD)
-            .set(JVM_SCALAR_TYPE_FIELD.SOURCE_NAME, sourceName)
-            .set(JVM_SCALAR_TYPE_FIELD.CLASS_NAME, className)
-            .set(JVM_SCALAR_TYPE_FIELD.FIELD_NAME, fieldName)
-            .set(JVM_SCALAR_TYPE_FIELD.INPUT_TYPE, inputType)
+        dsl.insertInto(CODE_SCALAR_CONSTANT)
+            .set(CODE_SCALAR_CONSTANT.SOURCE_NAME, sourceName)
+            .set(CODE_SCALAR_CONSTANT.CLASS_NAME, className)
+            .set(CODE_SCALAR_CONSTANT.FIELD_NAME, fieldName)
+            .set(CODE_SCALAR_CONSTANT.INPUT_TYPE, inputType)
+            .set(CODE_SCALAR_CONSTANT.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

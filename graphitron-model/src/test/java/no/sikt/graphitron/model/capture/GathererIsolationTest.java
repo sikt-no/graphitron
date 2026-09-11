@@ -56,8 +56,8 @@ class GathererIsolationTest {
         roll.put("capture/catalog", "CatalogFactCapture");
         // And two read the classpath: this one writes the sql_ family from the jOOQ catalog.
         roll.put("capture/jooq", "JooqFactCapture");
-        // And this one writes the jvm_classfile_ census from the classfiles themselves.
-        roll.put("capture/classpath", "ClasspathFactCapture");
+        // And this one reads the classfiles, for what a schema may name at each directive.
+        roll.put("capture/code", "CodeCapture");
         roll.put("capture/sdl", "SdlFactCapture");
         // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document, and
         // the verdict beside them, the three reading stages having one relation between them.

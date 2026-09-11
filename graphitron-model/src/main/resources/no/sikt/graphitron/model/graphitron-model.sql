@@ -5226,115 +5226,21 @@ COMMENT ON COLUMN jvm_scalar_type_field.input_type IS 'the fully-qualified Java 
 -- Graph scoping, for a query that needs it, happens on the jvm_ or sql_ side of the name join
 -- through store_graph_source; this family answers for a file, and a file belongs to whoever
 -- compiles it.
-CREATE TABLE jvm_classfile (
-  source_name VARCHAR NOT NULL,
-  class_name  VARCHAR NOT NULL,
-  class_kind  VARCHAR NOT NULL,
-  touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
-  CHECK (class_kind IN ('CLASS', 'INTERFACE', 'ENUM', 'RECORD', 'ANNOTATION'))
-);
-COMMENT ON TABLE jvm_classfile IS 'One class of one classpath entry, as its classfile declares it. For example org.jooq.Result, an INTERFACE read from the jOOQ jar.';
-COMMENT ON COLUMN jvm_classfile.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile.class_kind IS 'which form the classfile declares, read off its own flags and attributes';
-COMMENT ON COLUMN jvm_classfile.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
-CREATE TABLE jvm_classfile_supertype (
-  source_name    VARCHAR NOT NULL,
-  class_name     VARCHAR NOT NULL,
-  supertype_name VARCHAR NOT NULL,
-  declared_via   VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, supertype_name),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name),
-  CHECK (declared_via IN ('EXTENDS', 'IMPLEMENTS'))
-);
-COMMENT ON TABLE jvm_classfile_supertype IS 'One supertype one class declares, in the clause it was declared in. For example a service interface extending nothing and implementing java.io.Serializable draws one IMPLEMENTS row.';
-COMMENT ON COLUMN jvm_classfile_supertype.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile_supertype.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile_supertype.supertype_name IS 'the binary name written above this class. Nothing says a classfile for it was read: a chain''s last hop is usually a JDK type no entry on this classpath holds';
-COMMENT ON COLUMN jvm_classfile_supertype.declared_via IS 'which clause the name was written in, the classfile''s superclass slot or its interface list';
-COMMENT ON COLUMN jvm_classfile_supertype.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
-CREATE TABLE jvm_classfile_method (
-  source_name          VARCHAR NOT NULL,
-  class_name           VARCHAR NOT NULL,
-  method_name          VARCHAR NOT NULL,
-  descriptor           VARCHAR NOT NULL,
-  return_type          VARCHAR NOT NULL,
-  touched_at           TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
-);
-COMMENT ON TABLE jvm_classfile_method IS 'One public method of one class, overloads told apart by descriptor. For example a service method returning java.util.List declared as List<Film> draws one row carrying both forms.';
-COMMENT ON COLUMN jvm_classfile_method.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile_method.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile_method.method_name IS 'the method''s name as the classfile spells it';
-COMMENT ON COLUMN jvm_classfile_method.descriptor IS 'the JVM method descriptor, which is what tells two overloads apart; a rendering of the erased parameter types would fuse a method taking com.foo.Result with one taking com.bar.Result';
-COMMENT ON COLUMN jvm_classfile_method.return_type IS 'the return type''s binary name, erased as the descriptor carries it';
-COMMENT ON COLUMN jvm_classfile_method.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
-CREATE TABLE jvm_classfile_parameter (
-  source_name             VARCHAR NOT NULL,
-  class_name              VARCHAR NOT NULL,
-  method_name             VARCHAR NOT NULL,
-  descriptor              VARCHAR NOT NULL,
-  position                INT     NOT NULL,
-  parameter_name          VARCHAR,
-  parameter_type          VARCHAR NOT NULL,
-  touched_at              TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES jvm_classfile_method (source_name, class_name, method_name, descriptor)
-);
-COMMENT ON TABLE jvm_classfile_parameter IS 'One position in one method''s parameter list. For example a condition method taking a table and an argument draws two rows, at positions 0 and 1.';
-COMMENT ON COLUMN jvm_classfile_parameter.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile_parameter.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile_parameter.method_name IS 'the method''s name as the classfile spells it';
-COMMENT ON COLUMN jvm_classfile_parameter.descriptor IS 'the JVM method descriptor, which is what tells two overloads apart; a rendering of the erased parameter types would fuse a method taking com.foo.Result with one taking com.bar.Result';
-COMMENT ON COLUMN jvm_classfile_parameter.position IS '0-based position in the declaration''s own order';
-COMMENT ON COLUMN jvm_classfile_parameter.parameter_name IS 'the name the MethodParameters attribute carries, or NULL where the class was compiled without it. Absence is a compiler flag, not a fact about the method';
-COMMENT ON COLUMN jvm_classfile_parameter.parameter_type IS 'the parameter type''s binary name, erased as the descriptor carries it';
-COMMENT ON COLUMN jvm_classfile_parameter.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
-CREATE TABLE jvm_classfile_record_component (
-  source_name             VARCHAR NOT NULL,
-  class_name              VARCHAR NOT NULL,
-  component_name          VARCHAR NOT NULL,
-  position                INT     NOT NULL,
-  component_type          VARCHAR NOT NULL,
-  touched_at              TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, component_name),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
-);
-COMMENT ON TABLE jvm_classfile_record_component IS 'One component of one record class, at its place in the declaration. For example record FilmRow(int id, String title) draws two rows, at positions 0 and 1.';
-COMMENT ON COLUMN jvm_classfile_record_component.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile_record_component.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile_record_component.component_name IS 'the component''s name as the Record attribute carries it';
-COMMENT ON COLUMN jvm_classfile_record_component.position IS '0-based position in the declaration''s own order';
-COMMENT ON COLUMN jvm_classfile_record_component.component_type IS 'the component type''s binary name, erased';
-COMMENT ON COLUMN jvm_classfile_record_component.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
-CREATE TABLE jvm_classfile_field (
+CREATE TABLE code_scalar_constant (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
   field_name  VARCHAR NOT NULL,
-  field_type  VARCHAR NOT NULL,
-  is_static   BOOLEAN NOT NULL,
+  input_type  VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, field_name),
-  FOREIGN KEY (source_name, class_name) REFERENCES jvm_classfile (source_name, class_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
-COMMENT ON TABLE jvm_classfile_field IS 'One public field of one class, whatever its type. For example a class holding two GraphQL scalar constants and an unrelated int draws three rows.';
-COMMENT ON COLUMN jvm_classfile_field.source_name IS 'the classpath entry this class was read from, anchored by store_source; the partition a reading of that entry replaces';
-COMMENT ON COLUMN jvm_classfile_field.class_name IS 'the binary name of the class, as the classfile spells it with the slashes turned into dots';
-COMMENT ON COLUMN jvm_classfile_field.field_name IS 'the field''s name as the classfile spells it';
-COMMENT ON COLUMN jvm_classfile_field.field_type IS 'the field type''s binary name, erased as the descriptor carries it. A reader wanting the fields of one type asks for it here rather than being handed a relation that was filtered to one type when the classfile was read';
-COMMENT ON COLUMN jvm_classfile_field.is_static IS 'whether the field is static, which is what tells a constant from an instance member';
-COMMENT ON COLUMN jvm_classfile_field.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of the entries it read that carry a different instant, which are the classes the entry no longer holds and which an upsert alone cannot find';
-
+COMMENT ON TABLE code_scalar_constant IS 'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to. For example a DATE_TIME field coercing to java.time.OffsetDateTime.';
+COMMENT ON COLUMN code_scalar_constant.source_name IS 'the classpath entry the owning class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to scope by origin or by the graph''s own source set';
+COMMENT ON COLUMN code_scalar_constant.class_name IS 'the owning class''s binary name, the left part of the reference an author writes';
+COMMENT ON COLUMN code_scalar_constant.field_name IS 'the constant''s own name, the right part of that reference; completing the key';
+COMMENT ON COLUMN code_scalar_constant.input_type IS 'the fully-qualified Java type a value of this constant''s scalar arrives as, the input parameter of the Coercing it holds, boxed where that is primitive. NULL where the constant does not resolve to one, which folds four cases this arm does not tell apart: the class does not load, the field is not a public static GraphQLScalarType, its initialiser throws, or the coercing declares no usable input. The one column here that a classfile cannot answer, read by loading the class instead, so absence is unresolved and never not-a-scalar';
+COMMENT ON COLUMN code_scalar_constant.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the constants a recompiled entry no longer declares';
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -6673,7 +6579,7 @@ SELECT t.graph_name, t.type_name, engine.java_type
 SELECT s.graph_name, s.type_name, f.input_type
   FROM graphitron_scalar_type_entry s
   JOIN store_graph_source g ON g.graph_name = s.graph_name
-  JOIN jvm_scalar_type_field f
+  JOIN code_scalar_constant f
     ON f.source_name = g.source_name AND f.class_name = s.scalar_ref_class_part
    AND f.field_name = s.scalar_ref_field_part
  WHERE f.input_type IS NOT NULL;
@@ -12714,6 +12620,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, introduction, definition) AS VA
   ('jvm_', 'The declared classpath census', 4, 'A census of the classes available on the declared compile classpath: the classes themselves, their public methods and parameters, their record components and supertypes. When the schema names Java code, this census is what the name is checked against. Presence says nothing about purpose; a class earns its row by being on the classpath, not by being used.', 'What the classfiles on the declared compile classpath declare: the module''s own output, its reactor siblings, and the dependencies the module declares itself, never a transitive-only jar. Not extension_: naming a family for a presumed role is what this name replaces, because an ObjectMapper on the classpath extends nothing yet still earns a row.'),
   ('java_', 'The consumer''s Java sources', 5, 'Where things are written in the consumer''s own Java sources: the position and documentation comment of each class, method and field declaration, from a plain parse of the source files. It exists so tools can point at a line in a file the author owns. It reads the sources rather than the compiled output deliberately, because the two answer different questions and may legitimately disagree.', 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reported when the emitted sources were last compiled: one row per diagnostic, in the compiler''s own words. Each compile round replaces the previous one wholesale, so the family always describes the latest round and nothing older.', 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
+  ('code_', 'What a schema may name in Java', 7, 'What an author may write at each directive that names Java code: one arm per directive, each admitting the members that directive can take. A reader asking what may go in @scalarType(scalar:) reads the arm for it rather than filtering a census of every class.', 'One gatherer per thing an author writes, which is what this family is for and what the classpath census it replaces was not. A census answers what the classpath holds, so its one scope rule has to serve every reader and serves none of them exactly; the arms here each carry their own corpus and their own admission rule. Five of them read the reactor, since what a consumer names at @service, @condition, @externalField, @enum and a reference''s condition is their own code; two read the whole classpath, the scalar constants and the throwables, because what an author names there belongs to a library. Arguments, return types and declared exceptions are not arms of their own: they are facts about a method, and a method has exactly one arm.'),
   ('intent_', 'Derived intent', 8, 'The derivation layer: what follows once the schema''s readings, the database catalog and the classpath census are put side by side. Rows here are computed, never captured; each view states one rule, and taller derivations are built by reading shorter ones. What puts a rule here is that its facts cross families, so the gatherer that runs after all of them owns it: a rule reading a single family belongs to that family instead. This is the family the generator and the editor tooling actually plan from.', 'The third and topmost layer of the SDL depth ordering, graphql_ under graphitron_ under this name, whose upper two layers are both derivation over what graphql_ captured: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations, and a materialized one owns why it is stored in one of two places: its own table comment where no view could express the rule, or its meta_materialize row where a view expresses the rule correctly and only too slowly. That changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. A registered reduction is two relations under one rule, the _live view stating it and the canonically named table holding it, and both are residents here for the same reason. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them and which layer among themselves on that same rule, a resolution keyed on a written name sitting under the ones keyed on a coordinate; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change. What admits one is not that its rows are computed but that its owner is the gatherer that runs last rather than any one corpus''s own, and that is decidable rather than editorial: expand a candidate through every relation of this family it names until only captured relations are left, reading a materialized target as its rule so a registration cannot hide a crossing underneath it, and count the families those captured relations sit in, where graphql_ and graphitron_ are one family because they are one gatherer. Two or more is what this prefix is for. One means the rule belongs to that family instead, filed and named there and refreshed by the gatherer that owns it, which knows when its own corpus is complete and may therefore store the rule or not without a row in meta_materialize. A rule that does cross still owes the cut: the part of it reading one family belongs to that family, and what stays here is the join. The contributor-facing statement of this rule, and the transaction control it presumes, are on the fact model page under the architecture docs.'),
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s error verdicts, in the sealed rejection hierarchy''s own vocabulary. Transitional by construction: each kind of verdict moves out as its detection is rebuilt store-native, and the family empties as that migration completes.', 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as the classification walk itself: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s findings: one row per finding, plus the corrections a rule can compute for its own findings. A correction here is a suggestion an editor may offer, never a rewrite the build performs. The family speaks the linter''s vocabulary, where severity follows from the rule.', 'The linter''s vocabulary (lint_finding.lint_rule is LintRule.id()), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
@@ -12734,6 +12641,7 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('jvm_class', 0), ('jvm_method', 1), ('jvm_record_component', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
+  ('code_scalar_constant', 0),
   ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2), ('intent_node_type', 3),
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
@@ -12840,7 +12748,7 @@ INSERT INTO meta_gatherer VALUES
   ('sdl', 'no.sikt.graphitron.model.capture.sdl.SdlFactCapture'),
   ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture'),
   ('catalog', 'no.sikt.graphitron.model.capture.catalog.CatalogFactCapture'),
-  ('classpath', 'no.sikt.graphitron.model.capture.classpath.ClasspathFactCapture'),
+  ('code', 'no.sikt.graphitron.model.capture.code.CodeCapture'),
   ('document', 'no.sikt.graphitron.model.capture.document.SdlCapture'),
   ('jooq', 'no.sikt.graphitron.model.capture.jooq.JooqFactCapture'),
   ('store', 'no.sikt.graphitron.model.capture.store.StoreEntries'),
@@ -12864,7 +12772,7 @@ INSERT INTO meta_gatherer_corpus VALUES
   ('sdl', 'sdl'),
   ('catalog', 'catalog'),
   ('catalog', 'classpath'),
-  ('classpath', 'classpath'),
+  ('code', 'classpath'),
   ('document', 'sdl'),
   ('jooq', 'catalog'),
   ('store', 'configuration'),
@@ -12891,7 +12799,8 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('derivation', 'graphitron'),
   ('derivation', 'catalog'),
   ('derivation', 'java-source'),
-  ('derivation', 'compile');
+  ('derivation', 'compile'),
+  ('derivation', 'code');
 
 CREATE TABLE meta_grain (
   grain_name    VARCHAR NOT NULL,
@@ -13130,9 +13039,6 @@ INSERT INTO meta_grain VALUES
    'source_name, class_name, component_name', 'classpath'),
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
-   'source_name, class_name, field_name', 'classpath'),
-  ('class-field',
-   'one field of one class',
    'source_name, class_name, field_name', 'classpath'),
   ('source-file',
    'one .java source file this store holds declarations from',
@@ -13551,30 +13457,10 @@ INSERT INTO meta_relation VALUES
    'One public static field whose declared type is exactly graphql.schema.GraphQLScalarType, and the Java type it coerces a value to.',
    'For example a DATE_TIME field an author names in @scalarType, coercing to java.time.OffsetDateTime.',
    '@scalarType resolves against these fields, and the selector is in the relation''s name because the population is selected: a total-sounding name for every static field would mislead about the contents. final is deliberately not required, the reflective resolver binding a non-final field just as well, so these are not necessarily constants. What a field coerces to sits here rather than in a relation of its own because it is a fact about the field and nothing else can be keyed by one: every such field declares the same type, so the answer is only readable off a loaded class, which is why the classfile scan records the field and this column is filled beside it rather than by it.'),
-  ('jvm_classfile', 'classpath-class', 'classpath',
-   'One class of one classpath entry, as its classfile declares it.',
-   'For example org.jooq.Result, an INTERFACE read from the jOOQ jar.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
-  ('jvm_classfile_supertype', 'class-supertype', 'classpath',
-   'One supertype one class declares, in the clause it was declared in.',
-   'For example a service interface extending nothing and implementing java.io.Serializable draws one IMPLEMENTS row.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
-  ('jvm_classfile_method', 'class-method', 'classpath',
-   'One public method of one class, overloads told apart by descriptor.',
-   'For example a service method returning java.util.List declared as List<Film> draws one row carrying both forms.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
-  ('jvm_classfile_parameter', 'method-parameter', 'classpath',
-   'One position in one method''s parameter list.',
-   'For example a condition method taking a table and an argument draws two rows, at positions 0 and 1.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
-  ('jvm_classfile_record_component', 'record-component', 'classpath',
-   'One component of one record class, at its place in the declaration.',
-   'For example record FilmRow(int id, String title) draws two rows, at positions 0 and 1.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
-  ('jvm_classfile_field', 'class-field', 'classpath',
-   'One public field of one class, whatever its type.',
-   'For example a class holding two GraphQL scalar constants and an unrelated int draws three rows.',
-   'What one classfile says, and nothing about who will read it. This census admits a class on the classfile''s own terms, public and not synthetic, and records every public member it declares; which of them a directive may name is a predicate a reader applies, not a filter applied when the bytes were read. A relation whose population was narrowed to one consumer''s vocabulary makes the store''s contents a fact about that consumer, and the narrowing cannot be undone by a later reader. Keyed on the entry rather than on a graph, because a classpath entry is shared: several graphs may read one, and the sweep is scoped to the entries a reading read.'),
+  ('code_scalar_constant', 'scalar-type-field', 'code',
+   'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
+   'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',
+   'The first arm of a family whose shape is one gatherer per thing an author writes, rather than one index of every class on the classpath. An index answers what the classpath holds and leaves every reader to re-filter it; this answers what may be written at one directive, and the filter is the arm''s own admission rule. The admission is a classfile fact, a public static field whose declared type is exactly GraphQLScalarType, so the candidate set is read from bytes. The input type is not, and the column says so: it is reached by loading the class, the coercing being a live object rather than a signature. Not reactor-limited, alone among the arms but for the throwables, because the constants an author names are a library''s and the premise that consumer vocabulary lives in reactor source was falsified outright by @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date").'),
   ('java_file', 'source-file', 'java-source',
    'One .java file whose declarations this store holds, and the stamp they were read at.',
    'For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.',

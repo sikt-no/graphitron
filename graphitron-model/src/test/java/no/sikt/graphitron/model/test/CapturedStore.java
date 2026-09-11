@@ -5,7 +5,9 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.capture.FactCapture;
+import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.capture.document.SdlSchemaProblems;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.classpath.CompletionData;
@@ -352,6 +354,26 @@ public final class CapturedStore implements AutoCloseable {
         raised.addAll(assembly.errors());
         SdlSchemaProblems.write(dsl, graphName, parse.failures(), List.copyOf(raised),
             LocalDateTime.now());
+    }
+
+    /**
+     * Writes what a schema may name in the Java on one classpath entry, for a test that drove the
+     * walk and wants the code family beside what the walk transcribed.
+     *
+     * <p>A primitive for the same reason {@link #writeSchemaProblems} is one: the two writers are
+     * on either side of the migration. The walk transcribes the classpath as a census, {@link
+     * CodeCapture} states what one directive may name, and a fixture whose assertions span both
+     * reaches each directly. The entry is this build's own output, which is what a fixture
+     * pointing at its own test classes is saying.
+     *
+     * <p>The graph is linked to the entry by whoever registered it; this writes the entry's rows,
+     * not the reading that claimed it for a graph.
+     */
+    public static void captureCode(DSLContext dsl, Path entry, String skipPrefix,
+                                   ClassLoader loader) {
+        CodeCapture.capture(dsl,
+            List.of(new ClasspathEntry(entry, ClasspathEntry.Origin.PROJECT, null, null)),
+            skipPrefix, loader, LocalDateTime.now());
     }
 
     /** The graph identity a fixture captured under, shared so readers can scope by it. */
