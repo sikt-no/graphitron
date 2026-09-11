@@ -3325,18 +3325,19 @@ class BuildContext {
          * whichever member it belongs to, so the resolution carries one {@link Candidate} per member
          * in member order rather than one table.
          *
-         * <p>Two or more candidates always: a one-member container is the single-type case, which
-         * the container arms below refuse rather than resolve, so no consumer of this arm has to
-         * decide whether a list of one means dispatch or not.
+         * <p>At least one candidate, and the count is not otherwise constrained: a container with one
+         * admissible member is legal SDL that dispatches on one prefix, so what tells this arm from
+         * {@link Resolved} is which type the author <em>named</em>, not how many members it happens to
+         * have today. An empty candidate set is a container the arms below refuse.
          */
         record Polymorphic(String containerName, List<Candidate> candidates)
                 implements NodeIdRecordDecode {
             public Polymorphic {
                 candidates = List.copyOf(candidates);
-                if (candidates.size() < 2) {
+                if (candidates.isEmpty()) {
                     throw new IllegalArgumentException(
-                        "Polymorphic node id decode needs at least two candidates; one candidate is"
-                        + " the single-type decode, which Resolved carries");
+                        "Polymorphic node id decode needs at least one candidate; a container with no"
+                        + " admissible member is refused rather than resolved");
                 }
             }
         }
@@ -3450,6 +3451,15 @@ class BuildContext {
      * spelling of it would be a trap; the message offers both remedies. A container with no
      * {@code @table} members has nothing to decode into. A {@code @table} member that is not a node
      * type is named, on the model of the single-type path's own not-a-node message.
+     *
+     * <p>How <em>many</em> admissible members the container has is not one of the questions. A
+     * container with one is legal SDL and decodes through the same chain with one arm, and its member
+     * count is the schema's rather than the author's: an interface gains implementations over time, so
+     * refusing at one would make the correct spelling of a slot depend on the count of the day and
+     * send the author back to the single-type spelling and out of it again. That is the drift the
+     * directive exists to remove. The single-table container above is the shape that does stay
+     * refused, and for a reason the count does not share: it binds one table, so no member ever adds a
+     * record class to dispatch on.
      */
     private NodeIdRecordDecode resolvePolymorphicRecordDecode(String typeName, GraphQLType rawGqlType) {
         // The container's own @table binding is asked about first: on a single-table discriminated
@@ -3490,12 +3500,6 @@ class BuildContext {
             candidates.add(new NodeIdRecordDecode.Candidate(member.getName(),
                 resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
                 resolved.table()));
-        }
-        if (candidates.size() < 2) {
-            return new NodeIdRecordDecode.Rejected(
-                "@nodeId(typeName: '" + typeName + "') names '" + typeName
-                + "', which has one @table implementation ('" + candidates.getFirst().typeName()
-                + "'), so there is nothing to dispatch on. Name that type instead");
         }
         return new NodeIdRecordDecode.Polymorphic(typeName, candidates);
     }

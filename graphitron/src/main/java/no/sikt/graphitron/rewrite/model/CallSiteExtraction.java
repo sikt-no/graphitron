@@ -302,8 +302,12 @@ public sealed interface CallSiteExtraction
      *
      * <p>{@code candidates} is a list and not a map keyed on the typeId each entry already holds: the
      * order is the emission order, and a list states it without spelling one value twice. At least
-     * two of them, which the compact constructor holds: a one-candidate polymorphic decode is the
-     * single-type case, and {@link NodeIdDecodeRecord} is what carries that.
+     * one of them, which the compact constructor holds; the count is not otherwise constrained. A
+     * one-candidate leaf is a container whose one implementation is admissible, which is legal SDL
+     * and dispatches through the same chain with one arm: the container's member count is the
+     * schema's own and grows, so a leaf refusing it would make the slot's spelling depend on the
+     * count of the day. {@link NodeIdDecodeRecord} remains the leaf for a slot naming <em>one node
+     * type</em>, which is a different thing from a container that currently has one member.
      *
      * <p>{@code slotType} is the {@link AdmittedSlotType} the assignability check minted, which is
      * the helper's return type; {@code nonNull} reflects the SDL slot's nullability on
@@ -323,10 +327,10 @@ public sealed interface CallSiteExtraction
                     "NodeIdDecodePolymorphicRecord containerName must be non-empty");
             }
             candidates = List.copyOf(candidates == null ? List.<PolymorphicCandidate>of() : candidates);
-            if (candidates.size() < 2) {
+            if (candidates.isEmpty()) {
                 throw new IllegalArgumentException(
-                    "NodeIdDecodePolymorphicRecord needs at least two candidates; one candidate is"
-                    + " the single-type decode, which NodeIdDecodeRecord carries");
+                    "NodeIdDecodePolymorphicRecord needs at least one candidate; a container with no"
+                    + " admissible member has nothing to decode an id into, which the walk refuses");
             }
             if (slotType == null) {
                 throw new IllegalArgumentException(

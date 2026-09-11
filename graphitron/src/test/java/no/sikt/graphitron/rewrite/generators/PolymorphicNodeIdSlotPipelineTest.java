@@ -195,6 +195,45 @@ class PolymorphicNodeIdSlotPipelineTest {
             .containsExactly("Customer", "Staff");
     }
 
+    /**
+     * A container with one admissible member decodes rather than being refused, and the same chain
+     * carries it with one arm. The member count is the schema's own and grows with it, so refusing
+     * here would make the slot's correct spelling depend on the count of the day: the author would
+     * name the member today and have to move both the SDL and the Java slot the moment a second
+     * implementation lands, which is the drift this directive exists to remove. The single-table
+     * container stays refused for a reason the count does not share, and that case is below.
+     *
+     * <p>The store and the editor admit this shape by asking no count at all, so the walk admitting
+     * it is what makes the three surfaces answer one schema one way.
+     */
+    @Test
+    void aContainerWithOneAdmissibleMemberDecodesThroughTheSameChain() {
+        String sdl = OCCUPANTS + """
+            union SoleOccupant = Customer
+            input AssignOccupantInput {
+                occupant: ID! @nodeId(typeName: "SoleOccupant")
+            }
+            type Query {
+                assignOccupant(in: AssignOccupantInput!): String
+                    @service(service: {className: "%s", method: "assignOccupant"})
+            }
+            """.formatted(SERVICE_STUB);
+        var leaf = beanLeaf(sdl, false);
+        assertThat(leaf.candidates())
+            .as("one member, one candidate, and the leaf is still the polymorphic one")
+            .extracting(CallSiteExtraction.PolymorphicCandidate::typeName)
+            .containsExactly("Customer");
+        assertThat(leaf.slotType().typeName().toString()).isEqualTo("org.jooq.UpdatableRecord<?>");
+
+        var fetchers = findSpec("QueryFetchers", sdl);
+        assertThat(fetchers.methodSpecs())
+            .extracting(MethodSpec::name)
+            .as("the container helper and its one member helper, as at any other member count")
+            .contains("decodeSoleOccupantRecord", "decodeSoleOccupantRecordCustomer");
+        assertThat(method(fetchers, "decodeSoleOccupantRecord").returnType().toString())
+            .isEqualTo("org.jooq.UpdatableRecord<?>");
+    }
+
     // ===== Refusals =====
 
     @Test

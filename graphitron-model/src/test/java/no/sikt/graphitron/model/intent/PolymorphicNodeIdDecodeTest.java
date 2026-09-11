@@ -263,6 +263,35 @@ class PolymorphicNodeIdDecodeTest {
         });
     }
 
+    /**
+     * A container with one admissible member draws its one row and no verdict, which is the store's
+     * half of a rule the walk states the same way: what makes a decode polymorphic is the type the
+     * author named, not how many members it has today. No relation along the chain asks a count, so
+     * this case is what says that silence is the rule rather than an oversight, and that the editor's
+     * completion for such a container leads to a schema the build accepts.
+     */
+    @Test
+    void aContainerWithOneAdmissibleMemberDrawsItsOneRowAndNoVerdict() {
+        withCatalog(dsl -> {
+            seedType(dsl, GRAPH, "SoleOccupant", "UNION");
+            seedUnionMember(dsl, GRAPH, "SoleOccupant", "Customer", 1);
+            seedNodeType(dsl, "Customer", "customer", "customer_id");
+            seedField(dsl, GRAPH, "Query", "occupants", "Customer", true);
+            seedProducerSlot(dsl, "occupant", UPDATABLE);
+            seedArgumentNodeId(dsl, GRAPH, "Query", "occupants", "occupant", "SoleOccupant");
+
+            assertThat(candidates(dsl))
+                .filteredOn(row -> row.startsWith("SoleOccupant "))
+                .as("the member arm yields the one member, beside the identity rows")
+                .containsExactly("SoleOccupant -> Customer");
+            assertThat(destinations(dsl)).containsExactly(
+                "Query.occupants(occupant) Customer POLYMORPHIC_RECORD 1");
+            assertThat(polymorphicDefects(dsl))
+                .as("no verdict refuses a container for its member count")
+                .isEmpty();
+        });
+    }
+
     /** One member's record failing the ancestry test refuses the whole slot, not just that member. */
     @Test
     void oneMemberFailingTheAncestryTestRefusesTheWholeSlot() {

@@ -1,13 +1,13 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-09-08
-last-updated: 2026-09-10
+last-updated: 2026-09-11
 ---
 
 # @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot
@@ -182,6 +182,27 @@ refusals, all structural and all located at the slot:
   resolves it or refuses it as not an object type is checked at pickup, and a refusal there is a
   pre-existing gap this item reports rather than fixes.)
 
+**How many admissible members the container has is not a fourth refusal.** A container with exactly
+one, which `union U = Customer` and a one-implementation interface both are, resolves and decodes
+through the same chain with one dispatch arm. The fork is real and the other answer is defensible, so
+the reason is stated rather than assumed: the member set belongs to the schema and grows, and refusing
+at one would make the correct spelling of a slot a function of the implementation count on the day it
+was written. The author would name the member today, then move both the SDL and the Java slot the
+moment a second implementation lands, and a slot left un-moved would silently accept one
+implementation's ids forever. That is the drift this item already refuses to build in when it declines
+`@nodeId(anyOf: [...])` under "Other solutions we've considered", and the count is the same list kept
+implicitly. The single-table container above stays refused for a reason the count does not share: it
+binds one table, so no member it ever gains adds a record class to dispatch on, and the single-type
+decode is its permanent answer rather than today's.
+
+The store and the editor reach the same answer by asking no count anywhere along the chain, which is
+what makes this the pick that leaves the three surfaces agreeing without a verdict of its own: no
+relation between `intent_node_container_member` and `POLYMORPHIC_RECORD` counts members, and the
+LSP keyset arm asks only that some member be table-bound and a node type. What the walk gives up is
+one refusal arm; what the leaf gives up is a two-candidate invariant, which becomes a one-candidate
+one, since what tells a polymorphic decode from a single-type one is the type the author *named* and
+not the size of its member set.
+
 The read-side `NodeIdLeafResolver.resolve` is untouched: its candidate set comes from the consuming
 field's return type, and the how-to already documents that shape.
 
@@ -258,8 +279,8 @@ rather than a map keyed on the typeId, which each entry already holds: the order
 order and a list states it without spelling one value twice. `slotType` is the admitted supertype the
 helper returns, wrapped in a one-component record the classifier mints only where the assignability
 check passed, so the acceptance is carried in the type instead of being a `ClassName` an emit site
-could be handed from anywhere. Its compact constructor refuses fewer than two candidates: a one-candidate polymorphic leaf is the
-single-type case, and that cross-axis invariant belongs to the compiler. It is a sibling rather than a widening because every consumer of `NodeIdDecodeRecord`
+could be handed from anywhere. Its compact constructor refuses an empty candidate list, a container the walk refuses rather than
+resolves; it puts no upper or lower bound beyond that, per the member-count rule under Resolution. It is a sibling rather than a widening because every consumer of `NodeIdDecodeRecord`
 (`InputBeanInstantiationEmitter`, `ServiceMethodCallEmitter.scalarLeaf`, `ArgCallEmitter`,
 `ConditionGlueRenderer`, `TypeFetcherGenerator`) reads a single table off it and emits a single
 helper call; a widened record would hand each of them a list they must not receive, and the
@@ -611,10 +632,12 @@ answering what the value may name and the defect rows answering what happened.
 
 ## Implementation
 
-Shipped at `ad09411`. The file-by-file list below is what landed, and it stays rather than collapsing
-to the note alone because the Done gate reads it against the Design section above. The round-4 rework
-adds no code: it is the LSP diagnostic cases and the read-side refusal's pipeline case named under
-Tests, and it rides in the commit carrying this revision.
+Shipped at `ad09411`, with the round-4 rework at `50492f1` (three test cases, no production code: the
+two LSP diagnostic cases and the read-side refusal's pipeline case named under Tests). The round-5
+rework rides in the commit carrying this revision: the walk's one-member refusal removed, both
+candidate-count invariants relaxed to one, and the two cases that pin the admission. The file-by-file
+list below is what landed, and it stays rather than collapsing to the notes alone because the Done
+gate reads it against the Design section above.
 
 Symbol-anchored, no line numbers; re-find by search at pickup.
 
@@ -637,7 +660,9 @@ Symbol-anchored, no line numbers; re-find by search at pickup.
   a refusal on a miss instead of the `ThrowOnMismatch` fall-through.
 * `CallSiteExtraction`: the `NodeIdDecodePolymorphicRecord` leaf with its compact-constructor
   invariants and the admitted-slot-type wrapper the classifier mints; every exhaustive switch over
-  the sealed interface gains its arm (the compiler lists them).
+  the sealed interface gains its arm (the compiler lists them). Its candidate-count invariant, and
+  the twin on `BuildContext.NodeIdRecordDecode.Polymorphic`, admit one candidate and refuse only the
+  empty list, per the member-count rule under Resolution.
 * `InputBeanInstantiationEmitter`, `ServiceMethodCallEmitter.scalarLeaf`, `ArgCallEmitter`: render
   the `decode<Container>Record` / `…RecordList` call and collect the helper onto the `*Fetchers`
   class the way the single-type helpers are collected today; the helper body reuses
@@ -754,9 +779,11 @@ adjacent and the write side follows both.
   `UpdatableRecord<?>` slot over a candidate whose record is a `TableRecordImpl` is refused naming
   that candidate. The same matrix at a producer parameter, including that the old
   `KEY_ARITY_EXCEEDS_SLOT` no longer fires for an `UpdatableRecord<?>` parameter under a polymorphic
-  `typeName`. One case is not a slot's: a container named at a read-side lookup argument is refused
-  for its coordinate rather than for its kind, which is the wording that has to agree with
-  `CONTAINER_NOT_AT_A_SLOT` and which the store's rows cannot pin.
+  `typeName`. A container with one admissible member decodes, carrying its one candidate and emitting
+  the same container helper with one dispatch arm, which is the member-count rule under Resolution as
+  a case rather than as prose. One case is not a slot's: a container named at a read-side lookup
+  argument is refused for its coordinate rather than for its kind, which is the wording that has to
+  agree with `CONTAINER_NOT_AT_A_SLOT` and which the store's rows cannot pin.
 * Fact-store tier (`graphitron-model`, `intent` package, beside `NodeIdDecodeDestinationTest` and
   `NodeIdDecodeDefectTest`): seeded anchors for `sql_table_record_supertype`,
   `intent_node_container_member` (a container with a non-node `@table` member, and one with none,
@@ -768,7 +795,9 @@ adjacent and the write side follows both.
   with `resolved_type_kind = 'POLY_CONTAINER'` and `basis = 'EXPLICIT_TYPE_NAME'` (and that a
   `@node`-carrying container draws `NODE_TYPE` instead, the kind fork being a claim and not a hope),
   the `POLYMORPHIC_RECORD` rows (one per member, each with that member's arity, at a
-  producer-parameter slot where the store can see the slot's type), and each of the five verdicts.
+  producer-parameter slot where the store can see the slot's type), each of the five verdicts, and a
+  one-member container drawing its one candidate row, its one destination row and no verdict, which is
+  the store half of the member-count rule and the reason the three surfaces answer that schema alike.
   The population edge gets its own three, all at coordinates the walk refuses, so the widening's
   reach is a claim and not a discovery: a container-naming `@nodeId(typeName:)` argument on a
   generated fetch field draws `CONTAINER_NOT_AT_A_SLOT` and draws no `intent_argument_filter_role`
@@ -1423,6 +1452,25 @@ than two admissible members, and a pipeline case plus a fact-store case. Admitti
 walk's `candidates.size() < 2` arm and the record's two-candidate invariant, and a pipeline case over
 a one-member container decoding.
 
+Response: admitted, and the pick is stated under Resolution with its reason. The member set belongs to
+the schema and grows, so refusing at one would make a slot's correct spelling a function of the
+implementation count on the day it was written and send the author back through the single-type
+spelling when a second implementation lands, which is the drift the item already declines to build in
+under `@nodeId(anyOf: [...])`. `SINGLE_TABLE_CONTAINER` stays refused on the ground the count does not
+share, that a table-binding container gains no record class from any member it ever adds. Two
+invariants relaxed, not one: `CallSiteExtraction.NodeIdDecodePolymorphicRecord`'s compact constructor
+and its twin on `BuildContext.NodeIdRecordDecode.Polymorphic`, both now refusing only the empty list,
+which is the shape the walk refuses rather than resolves; the walk's `candidates.size() < 2` arm is
+gone and its javadoc carries the reason. Two cases pin it rather than the one asked for, because the
+finding is about three surfaces and not one:
+`PolymorphicNodeIdSlotPipelineTest.aContainerWithOneAdmissibleMemberDecodesThroughTheSameChain` for
+the walk and the emitted chain, and
+`PolymorphicNodeIdDecodeTest.aContainerWithOneAdmissibleMemberDrawsItsOneRowAndNoVerdict` for the
+store, the second turning "no relation counts members" from a reading of the SQL into an asserted
+row set. The editor needs no change and no case of its own: `DiagnosticFacts.nodeTypeBindingArm` asks
+only that some member be table-bound and a node type, so the completion it already offers now leads to
+a schema the build accepts, which is what the finding said it did not.
+
 #### Non-blocking
 
 * `admitPolymorphicSlotType` carries a third slot-typing refusal beyond Slot typing's two, for a slot
@@ -1433,3 +1481,7 @@ a one-member container decoding.
   "adds no code" and "rides in the commit carrying this revision". It added three test cases, and the
   commit is `50492f1`, which the body does not name. Naming the sha beside the first one would make
   both landings readable from the body alone.
+
+  Response: taken. Implementation now names `50492f1` beside `ad09411` and says what each landing
+  carried, with the round-5 rework named as the commit carrying this revision in the same sentence
+  shape, so a later round can pin it the same way.
