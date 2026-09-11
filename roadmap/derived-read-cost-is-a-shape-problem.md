@@ -2670,6 +2670,122 @@ their own, which a boundary guard in that module already enforces, so the move's
 holds. And the per-version sweep still runs under the new home, so nothing accumulates that did not
 accumulate before.
 
+## One gatherer per thing an author writes, not one index of every class (2026-09-11)
+
+The classpath is captured as a census of every public class on it, and that is the wrong shape. The
+census exists for nameability: `ClasspathScanner`'s own charter calls it "the set a schema is
+permitted to name", and the editor reads it for completion, hover and diagnostics. The generator
+reads none of it. Every Java-facing decision it makes is taken by loading the class reflectively
+through the codegen loader, across a hundred-odd sites in `ServiceCatalog`, `ScalarTypeResolver`,
+`ClassAccessorResolver`, `RecordBindingResolver`, `InputBeanResolver`, `LifterMethodResolver`,
+`ErrorChannel` and `FieldBuilder`. So the store holds a broad, shallow index nobody generates from,
+and the facts a build actually turns on are held nowhere.
+
+The census's one exclusion rule is where the defect shows. It skips the generated jOOQ package,
+correctly, because an author may not name a generated record in `@service`. That is right for
+nameability and wrong for assignability, and `sql_table_record_supertype` exists to patch the
+difference from the catalog side. One index, one scope rule, two purposes that want different ones.
+
+**The replacement is a gatherer per thing an author writes.** Each declares its own corpus and its
+own fact shape, so the scope rule sits with the purpose rather than being shared by everything.
+Five of them read the reactor, meaning the Maven multi-module build the run is part of:
+
+1. a service gatherer, over what may appear in `@service(service:)`
+2. a condition gatherer, over what may appear in `@condition(condition:)`
+3. an externalField gatherer, over what may appear in `@externalField(reference:)`
+4. an enum gatherer, over what may appear in `@enum(enumReference:)`
+5. a reference gatherer, over what may appear in `ReferenceElement.condition`
+
+There is no record gatherer and no argument gatherer. `@record` is deprecated and ignored, its own
+definition saying the backing class is inferred and there is no successor directive, so nothing is
+owed it. Arguments are not a subject of their own: the five above each capture the arguments, the
+return type and the declared exceptions of the methods they capture, because those are facts about a
+method and a method has exactly one gatherer.
+
+Two further arms read the classpath rather than the reactor, and each has a reason the reactor
+constraint cannot hold. The `GraphQLScalarType` static fields `@scalarType(scalar:)` names are the
+first, and the history says why rather than the reasoning: the scan once skipped everything that was
+not a directory on the premise that consumer vocabulary lives in reactor source, and
+`@scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")` falsified that outright. The second is
+the throwables an `@error` handler names, described at the end of this chapter.
+
+**Eager rather than lazy, and the reactor constraint is what makes that affordable.** Capturing only
+what a schema already references would make the store's contents a function of the schema, so an
+editor could not offer a method nobody had written yet, which is most of what completion is for.
+Anything we know how to reflect on when referenced we know how to reflect on when not. The cost is
+the whole question, and bounding the population to reactor classes is the answer to it.
+
+The constraint is not a narrowing of what consumers do. Counted over every `className:` written in
+this repository's schemas, 198 references land as 191 reactor, four `java.lang`, two
+`org.jooq.exception` and one `org.jooq.impl`. The last is the `transitive-not-nameable` integration
+test, a negative fixture proving that naming it is refused, so it argues for the constraint. The
+other six are `@error` handler classes, and the arm that answers them is the last section here.
+
+**One family, one model, one main gatherer.** The seven arms share most of their shape, a class and a
+member and the types around it, so they are a `code_` family with one model behind them rather than
+six unrelated writers. What differs between them is the corpus each reads and the predicate each
+admits a candidate on, which is exactly what a per-arm gatherer is for.
+
+**What the arms have to capture that nothing captures today.** The discriminators the generator
+already uses are in `ReflectionError.AmbiguousMethod`: name shared, static modifier, return type,
+parameter count, throws clause, parameter position. Of those, neither census holds the static
+modifier on a method, the throws clause, or constructors, which `InstanceHolderUnconstructible`
+needs because an instance `@service` method is dispatched through a public constructor whose
+parameters are each a `DSLContext` or a declared context argument. And the newer census erases
+generics where the older one kept them: `jvm_method.declared_return_type` reads the classfile
+Signature attribute and holds `List<Film>`, `Field<String>`, `T`, while
+`jvm_classfile_method.return_type` is the descriptor's erasure. A service returning a list of
+something cannot be read off the newer family at all.
+
+**Two candidate sets that disagree, and the authority question between them.** A reactor class has
+bytecode and source alike, and they hold different facts: the classfile has erased types and the
+Signature attribute, the source has parameter names unconditionally and javadoc. The `java_` family
+already exists for the source side, written by `JavaSourceFacts` per file against a content hash, so
+an unchanged file costs one hash and no write; what it holds today is coordinates,
+`parameter_count` and javadoc, and it is driven only from `graphitron:dev`. Which side is
+authoritative is a per-fact decision and it should be taken the way the catalog side was: ask the
+artifact that owns the fact. Parameter names are a source fact, since `ReflectionError.ParameterNamesMissing`
+is a live refusal for a consumer compiled without `-parameters` and the source never loses them.
+Erased types are a bytecode fact.
+
+**A seventh arm, over every throwable the classpath holds.** Six of the seven out-of-reactor
+references above are `@error` handler exception classes: `java.lang.IllegalArgumentException`, and in
+`graphitron-sakila-example`'s own schema `org.jooq.exception.IntegrityConstraintViolationException`
+on two error types. No reactor method declares either, an unchecked jOOQ exception appearing in no
+`throws` clause, so none of the five method arms reaches them and the reactor constraint cannot
+apply. This arm harvests every throwable on the classpath instead, which is affordable because the
+population is small and self-limiting: measured over `graphitron-sakila-example`'s compile classpath,
+154 entries and 19901 classes yield 418 throwables, one class in forty-eight.
+
+Which classpath that is taken over matters more than the figure. `GenerateMojo`, `ValidateMojo` and
+`CaptureMojo` declare `ResolutionScope.COMPILE`, and `DevMojo` hands `resolveCompileClasspath()` to
+the census even though it resolves test scope for its own incremental compiler. A test-scoped
+dependency is therefore never in the census and this arm never sees one. The same module measured
+over its test classpath yields 1193 throwables across 62362 classes, and the difference is almost
+entirely testcontainers at 175 and groovy at 87: a count taken over the wrong classpath overstates
+the arm threefold and points its ranking at libraries no build reads.
+
+What it captures beyond the name is what makes the harvest usable rather than a list. The classpath
+entry it came from, so a consumer's own exception is told from a library's; whether that entry is
+reactor, declared or transitive, which `ClasspathEntry.Origin` already classifies for the scanner;
+and the supertype chain, which is what a `DATABASE` handler's match against any `java.sql.SQLException`
+in the cause chain reads and what sorts a specific exception under its family. Unchecked
+outnumber checked 299 to 119, and the distinction matters at the author's end rather than ours: a
+checked exception is one their own signature can name, an unchecked one is what jOOQ throws past
+them, which is exactly the `IntegrityConstraintViolationException` case above.
+
+Relevance has to be a stored axis rather than a reader's guess, and the measurement is what says so.
+The largest origins are graphql-java at 81 and jOOQ at 29, then a tail of Jakarta, Vert.x, Netty and
+Jackson at nineteen or fewer each. Only jOOQ's, with the JDK's `java.sql` set beside them, are what a
+consumer maps an error from; the rest are transport and serialisation internals nobody names. So the
+ordering a completion list wants is not the harvest's own, and a reader given only names would have
+to invent the ranking. The facts above are what it ranks on.
+
+That leaves this chapter with no open question. What it does leave is a measurement taken on one
+classpath, and ours at that: `graphitron-sakila-example` carries the whole Quarkus runtime because it
+is an example rather than a library, so 418 is an upper bound on a leaner consumer and a floor on
+nothing.
+
 ## The SDL walk is redundant, measured (2026-09-11)
 
 The classpath side of this item is replacing one broad index of every class with a gatherer per
