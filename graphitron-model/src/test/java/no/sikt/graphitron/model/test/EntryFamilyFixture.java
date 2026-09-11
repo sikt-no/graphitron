@@ -42,10 +42,20 @@ import java.util.Locale;
  * deduced and writes no row, so a fixture carrying only that one would leave the relation empty and
  * the gate below would be right to say so.
  *
- * <p>Two path elements carry a {@code condition:} of their own. That arm of a step reaches the
- * classpath census where the others reach the catalog, so it is the one element shape whose decode
- * relation the rest of this schema would leave empty, and an empty relation is what the coverage
- * gate exists to refuse.
+ * <p>Four path elements carry a {@code condition:} of their own, two of them on output fields
+ * rather than on arguments, one under each of the two directives that carry a path. The
+ * {@code @referenceFor} one is on {@code Query.media} and could not be anywhere else: the manual
+ * admits a condition step on that directive at an output coordinate only, so the argument-site
+ * applications below cannot stand in for it. That arm of a step reaches the classpath census where the others
+ * reach the catalog, so it is the one element shape whose decode relation the rest of this schema
+ * would leave empty, and an empty relation is what the coverage gate exists to refuse. A step's
+ * three facts are three relations per site now, so covering the arm at one site covers nothing at
+ * the other: {@code Film.actors} is the output-field case and {@code Query.actorsByAgency}'s
+ * arguments are the input-value one.
+ *
+ * <p>That same element states a table and a key as well, which is the overlap worth having: one
+ * element writing a row into three relations at one position is what the position column is for,
+ * and a fixture whose elements each stated one thing would never exercise it.
  *
  * <p>One application is deliberately malformed. {@code Mutation.brokenMapping} carries an
  * {@code argMapping} the grammar rejects, because quarantining a value it cannot decode is one of
@@ -106,7 +116,10 @@ public final class EntryFamilyFixture {
           reportedFilms: [Film!]
             @routine(name: "public.reported_films", argMapping: "pEnv: env", columnMapping: "pFilmId: film_id")
 
-          media: [Media!] @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}])
+          media: [Media!] @referenceFor(type: "Book", path: [
+              {table: "book", key: "book_media_fk",
+               condition: {className: "no.example.Conditions", method: "liveMedia"}}
+            ])
         }
 
         interface Media @discriminate(on: "media_type") {
@@ -125,7 +138,11 @@ public final class EntryFamilyFixture {
           id: ID! @nodeId
           title: String @field(name: "title")
           rentalRate: Money
-          actors: [Actor!] @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}])
+          actors: [Actor!] @reference(path: [
+              {table: "film_actor"},
+              {table: "actor", key: "film_actor_actor_id_fk",
+               condition: {className: "no.example.Conditions", method: "liveActor"}}
+            ])
           reviews: [Review!] @splitQuery
           awardCount: Int @externalField(reference: {className: "no.example.FilmFields", method: "awardCount"})
           ratingBreakdown: RatingBreakdown

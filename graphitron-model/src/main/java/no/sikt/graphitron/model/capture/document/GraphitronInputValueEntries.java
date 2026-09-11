@@ -21,6 +21,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFEREN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.applied;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.conditioned;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.tabled;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.keyed;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.naming;
@@ -201,23 +204,6 @@ final class GraphitronInputValueEntries {
 
 
     // ------------------------------------------- one step, as many rows as the author made claims
-
-    /**
-     * A step writes to every relation the fields it carries warrant, at one position. An element
-     * naming a table and a key is a row in each, and the position is what says they are one step, so
-     * every relation stays total and no reader has to spell which combination it meant.
-     */
-    private static List<Step> keyed(List<Step> steps) {
-        return steps.stream().filter(step -> step.keyRef() != null).toList();
-    }
-
-    private static List<Step> tabled(List<Step> steps) {
-        return steps.stream().filter(step -> step.tableRef() != null).toList();
-    }
-
-    private static List<Step> conditioned(List<Step> steps) {
-        return steps.stream().filter(step -> step.className() != null).toList();
-    }
 
     private static void referenceKeySteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
                            List<Step> steps) {

@@ -192,14 +192,17 @@ class SupertypeSignatureGateTest {
                "graphitron_service_context_arg_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
                "graphitron_ast_input_value_condition_entry", "graphitron_field_condition_entry"),
-        // Seven, and they arrived by being stamped: an @enum application records a class, a method
+        // Nine, and they arrived by being stamped: an @enum application records a class, a method
         // and an argMapping, which is what a service and an external field record too, at either
-        // stratum. The two newest are the condition arm of a path element, which the step split put
-        // here: an element correlating by an external method records the same three things, and
-        // under the wide step row that was invisible because the row also carried six catalog
-        // columns. What it would take to collapse them is a supertype at a coordinate none of them
-        // has, so the entry half of this set outlives the migration and this row does not.
+        // stratum. Four of them are the condition arm of a path element, one per directive per
+        // site, which the step split put here: an element correlating by an external method records
+        // the same three things, and under the wide step row that was invisible because the row
+        // also carried six catalog columns. What it would take to collapse them is a supertype at a
+        // coordinate none of them has, so the entry half of this set outlives the migration and
+        // this row does not.
         Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
+               "graphitron_ast_field_reference_condition_step_entry",
+               "graphitron_ast_field_reference_for_condition_step_entry",
                "graphitron_ast_input_value_reference_condition_step_entry",
                "graphitron_ast_input_value_reference_for_condition_step_entry",
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
@@ -211,21 +214,20 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_reference_for_entry",
                "graphitron_ast_field_reference_for_entry",
                "graphitron_ast_input_value_reference_for_entry", "graphitron_reference_for_entry"),
-        // The two path-carrying directives spell an element identically, so their step relations
-        // share a payload at the entry stratum exactly as their anchors already do on the row
-        // above this roster's decode block. The anchor pair is told apart from this one only by
-        // the folded columns the anchors carry for meeting a catalog name.
-        Set.of("graphitron_ast_field_reference_for_step_entry",
-               "graphitron_ast_field_reference_step_entry"),
-        // What the input-value site's step split leaves in its place, and the grouping is the split
-        // being right rather than a roster growing. Each arm now sits with the relations that say
-        // the same thing it says: the key arm is its own pair, the table arm joins @table because
-        // naming a table is one fact wherever it is written, and the condition arm joins the
-        // external-code-reference set above. None of that was visible while one row carried all
-        // three, which is the wide shape's real cost.
-        Set.of("graphitron_ast_input_value_reference_for_key_step_entry",
+        // What the step split leaves in place of the two wide relations, at both sites now, and the
+        // grouping is the split being right rather than a roster growing. Each arm sits with the
+        // relations that say the same thing it says: the key arm with the other three key arms, the
+        // table arm with them and with @table, because naming a table is one fact wherever it is
+        // written, and the condition arm with the external-code-reference set above. None of that
+        // was visible while one row carried all three, which is the wide shape's real cost, and it
+        // is why both sites were worth reconciling before the anchors are derived from either.
+        Set.of("graphitron_ast_field_reference_for_key_step_entry",
+               "graphitron_ast_field_reference_key_step_entry",
+               "graphitron_ast_input_value_reference_for_key_step_entry",
                "graphitron_ast_input_value_reference_key_step_entry"),
-        Set.of("graphitron_ast_input_value_reference_for_table_step_entry",
+        Set.of("graphitron_ast_field_reference_for_table_step_entry",
+               "graphitron_ast_field_reference_table_step_entry",
+               "graphitron_ast_input_value_reference_for_table_step_entry",
                "graphitron_ast_input_value_reference_table_step_entry",
                "graphitron_ast_table_entry"),
         Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),

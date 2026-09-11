@@ -185,6 +185,26 @@ public final class GraphitronEntries {
     }
 
     /**
+     * A step writes to every relation the fields it carries warrant, at one position. An element
+     * naming a table and a key is a row in each, and the position is what says they are one step, so
+     * every relation stays total and no reader has to spell which combination it meant.
+     *
+     * <p>Here rather than at a site because both sites that carry a path split it the same way, and
+     * a fact stated the same way at two sites is a fact a rule is written about once.
+     */
+    static List<Step> keyed(List<Step> steps) {
+        return steps.stream().filter(step -> step.keyRef() != null).toList();
+    }
+
+    static List<Step> tabled(List<Step> steps) {
+        return steps.stream().filter(step -> step.tableRef() != null).toList();
+    }
+
+    static List<Step> conditioned(List<Step> steps) {
+        return steps.stream().filter(step -> step.className() != null).toList();
+    }
+
+    /**
      * The elements whose {@code handler} field names one kind. An element whose token is none of
      * the kinds the directive declares lands in no relation, its list position spoken for and its
      * text standing in the verbatim argument row.

@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
@@ -136,18 +138,66 @@ class GraphitronFieldEntriesTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
-            var step = GRAPHITRON_AST_FIELD_REFERENCE_STEP_ENTRY;
+            var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+            var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
 
-            assertThat(dsl.selectDistinct(step.SOURCE_LINE).from(step).fetch(step.SOURCE_LINE))
+            assertThat(dsl.selectDistinct(table.SOURCE_LINE).from(table).fetch(table.SOURCE_LINE))
                 .as("the two applications sit at two positions, which is their whole identity here")
                 .hasSize(2);
-            assertThat(dsl.select(step.POSITION, step.TABLE_REF, step.KEY_REF).from(step).fetch())
+            assertThat(dsl.select(table.SOURCE_LINE, table.POSITION, table.TABLE_REF).from(table)
+                    .orderBy(table.SOURCE_LINE).fetch())
                 .as("and each numbers its own path from zero, the index being the author's order "
                     + "inside one application rather than across the field")
+                .extracting(r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple(0, "film_actor"), tuple(0, "actor"));
+            assertThat(dsl.select(key.SOURCE_LINE, key.POSITION, key.KEY_REF).from(key).fetch())
+                .as("only the element that named a key is a row here, and it carries the position "
+                    + "of the table row it shares an element with")
+                .extracting(r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple(0, "film_actor_actor_id_fk"));
+        });
+    }
+
+    /**
+     * What the split buys, said once: an element states a table, a key and a condition, and each is
+     * a row of its own relation at the one position they share. The position is the whole of what
+     * says they are one step, which is why every column of the three is total where the old shape
+     * had nine nullable ones and no constraint able to say which combinations were legal.
+     */
+    @Test
+    @DisplayName("one path element stating three facts is a row in each relation, at one position")
+    void oneElementIsARowPerFactItStates(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", """
+            type Film {
+              actors: [Actor!] @reference(path: [
+                  {table: "sakila.actor", key: "public.film_actor_fk",
+                   condition: {className: "no.example.Conditions", method: "liveActor"}}
+                ])
+            }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+            var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+            var condition = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
+
+            assertThat(dsl.select(table.POSITION, table.TABLE_REF_NAMESPACE_PART,
+                        table.TABLE_REF_NAME_PART).from(table).fetch())
+                .as("the table it named, cut where the grammar cuts it")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactlyInAnyOrder(
-                    tuple(0, "film_actor", null),
-                    tuple(0, "actor", "film_actor_actor_id_fk"));
+                .containsExactly(tuple(0, "sakila", "actor"));
+            assertThat(dsl.select(key.POSITION, key.KEY_REF_NAMESPACE_PART, key.KEY_REF_NAME_PART)
+                    .from(key).fetch())
+                .as("the constraint it named, at the same position")
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple(0, "public", "film_actor_fk"));
+            assertThat(dsl.select(condition.POSITION, condition.CLASS_NAME, condition.METHOD)
+                    .from(condition).fetch())
+                .as("and the condition it named, at the same position again; three relations, one "
+                    + "element, and nothing nullable to say which of them applied")
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .containsExactly(tuple(0, "no.example.Conditions", "liveActor"));
         });
     }
 
