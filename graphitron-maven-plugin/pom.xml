@@ -139,10 +139,14 @@
                          "restricted method ... has been called" warning. @{argLine} leads so the
                          JaCoCo agent flags from -Pcoverage survive this override. -->
                     <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
-                    <!-- The mojo tests construct and execute real mojos, so without a pinned home
-                         resolveStoreDirectory would write the developer's or CI runner's actual
-                         user cache and orphan one workspace segment per @TempDir run. Same
-                         hermeticity move as the invoker <properties> below. -->
+                    <!-- DevMojo is the one goal whose store home is the per-user cache, and its
+                         resolver consults this property the way Maven would inject the parameter.
+                         Without the pin, a test constructing a DevMojo writes the developer's or CI
+                         runner's actual cache and orphans one workspace segment per @TempDir run.
+                         The three build goals put their store under the module's build directory
+                         and ignore this, so it is a dev-tier pin rather than a blanket one;
+                         DevMojoTest clears it for the two cases whose subject is the cache branch
+                         itself. -->
                     <systemPropertyVariables>
                         <graphitron.store.directory>${project.build.directory}/test-store</graphitron.store.directory>
                     </systemPropertyVariables>
@@ -167,17 +171,20 @@
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
                     <showErrors>true</showErrors>
                     <!--
-                      The ITs are real consumer builds, so left alone they would resolve the fact
-                      store's default home and write into the developer's or CI runner's actual
-                      user cache; worse, their basedir is a fresh clone under target/it on every
-                      build, so each run would orphan the previous workspace segment. Pinning the
-                      home under this module's build directory keeps the tree hermetic and lets
-                      mvn clean remove it; the three ITs then share one store under three distinct
-                      artifactIds, which is a free extra exercise of the multi-graph store.
+                      No store pin here, and that is the assertion rather than an omission. Every IT
+                      runs generate or capture, whose store is the module's own build output under
+                      the clone's target/, so the tree is hermetic because of where the goal puts
+                      its store rather than because this pom told it somewhere else, and
+                      capture-only's verify.groovy checks exactly that. A pin would take that claim
+                      back and test the pom instead of the goal.
+
+                      What it costs: these ITs used to share one home under three artifactIds, which
+                      exercised the multi-graph store for free. One store per module is one graph per
+                      store, so that exercise is gone from this tier. The population it covered is
+                      covered deliberately in graphitron-model, by
+                      WarmStartRefreshTest.aSiblingGraphsPartitionSurvivesARefresh, which is where a
+                      claim about sibling partitions belongs anyway.
                     -->
-                    <properties>
-                        <graphitron.store.directory>${project.build.directory}/it-store</graphitron.store.directory>
-                    </properties>
                     <extraArtifacts>
                         <extraArtifact>no.sikt:graphitron-sakila-db:${project.version}</extraArtifact>
                     </extraArtifacts>

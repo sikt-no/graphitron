@@ -870,4 +870,166 @@ class DevMojoTest {
         mojo.docsWarmFactory = () -> null;
         return mojo;
     }
+
+    // ---------------------------------------------------------------- where this session's store goes
+
+    /**
+     * The override is the whole of what the store move left configurable, and until this case it
+     * was unpinned: deleting it would put a session's store under the build directory, where the
+     * next {@code mvn clean} deletes it and the language server and query tools this session exists
+     * to serve go cold between builds. The base class's own resolver is pinned beside it, so the two
+     * halves of that distinction are asserted against each other rather than one at a time.
+     *
+     * <p>The pinned home this module's surefire sets has to come off for the duration, that pin
+     * existing precisely so a test run does not resolve the developer's real cache; here the cache
+     * branch is the subject, and a {@code @TempDir} workspace gives it a segment of its own that no
+     * other run can be holding.
+     */
+    @Test
+    void resolveStoreDirectory_isTheUserCacheAndNotTheBuildDirectory(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(root.resolve("leaf"));
+        var session = new DevMojo();
+        session.project = projectAt(leaf);
+        var build = new CaptureMojo();
+        build.project = projectAt(leaf);
+
+        Path buildHome = build.resolveStoreDirectory(leaf);
+        Path sessionHome = withoutPinnedHome(() -> session.resolveStoreDirectory(leaf));
+
+        assertThat(buildHome)
+            .as("a one-shot goal owns its store outright, so it goes where its other output goes")
+            .isEqualTo(leaf.resolve("target").resolve("graphitron-model"));
+        assertThat(sessionHome)
+            .as("a session's store is shared with its readers, so it outlives a clean")
+            .isNotEqualTo(buildHome)
+            .doesNotExist();
+        assertThat(sessionHome.startsWith(root))
+            .as("and lives outside the workspace entirely, being reachable from a sibling too")
+            .isFalse();
+        assertThat(sessionHome.getParent().getParent().getFileName())
+            .as("under the per-user cache convention this class documents")
+            .hasToString("graphitron");
+    }
+
+    /**
+     * The segment is what keeps two checkouts of one repository from thrashing each other's
+     * partitions through equal artifactIds, so it has to be a function of the workspace and not of
+     * the module the build happened to start in.
+     */
+    @Test
+    void resolveStoreDirectory_isOneHomePerWorkspaceRatherThanPerModule(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("one", "two"));
+        Path one = Files.createDirectories(root.resolve("one"));
+        Path two = Files.createDirectories(root.resolve("two"));
+        var mojo = new DevMojo();
+        mojo.project = projectAt(one);
+
+        assertThat(withoutPinnedHome(() -> mojo.resolveStoreDirectory(one)))
+            .as("two modules of one workspace answer from one store, which is what makes them "
+                + "composable at all")
+            .isEqualTo(withoutPinnedHome(() -> mojo.resolveStoreDirectory(two)));
+    }
+
+    /** A pinned home is taken verbatim, which is the hermetic-CI and no-$HOME escape hatch. */
+    @Test
+    void resolveStoreDirectory_takesAPinnedHomeVerbatim(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(root.resolve("leaf"));
+        var mojo = new DevMojo();
+        mojo.project = projectAt(leaf);
+
+        mojo.storeDirectory = root.resolve("pinned").toString();
+        assertThat(mojo.resolveStoreDirectory(leaf)).isEqualTo(root.resolve("pinned"));
+
+        mojo.storeDirectory = "relative/home";
+        assertThat(mojo.resolveStoreDirectory(leaf))
+            .as("a relative pin resolves against the module, which is where a consumer wrote it")
+            .isEqualTo(leaf.resolve("relative/home"));
+
+        mojo.storeDirectory = "   ";
+        assertThat(mojo.resolveStoreDirectory(leaf))
+            .as("a blank pin is not a pin; it falls back rather than resolving the empty path")
+            .isEqualTo(mojo.resolveStoreDirectory(leaf))
+            .isNotEqualTo(leaf.resolve(""));
+    }
+
+
+    @Test
+    void workspaceRoot_resolvesToTheOutermostAggregator(@TempDir Path root) throws Exception {
+        // A nested aggregator tree: the workspace is the OUTERMOST root, not the intermediate
+        // aggregator, because two subgraph modules under different intermediate aggregators of
+        // one checkout have to land in one store to be composable at all.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("group"));
+        Path group = Files.createDirectories(root.resolve("group"));
+        Files.writeString(group.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(group.resolve("leaf"));
+
+        assertThat(DevMojo.workspaceRoot(leaf))
+            .isEqualTo(root.toAbsolutePath().normalize());
+    }
+
+    @Test
+    void workspaceRoot_isTheSameFromTheRootAndFromALeafModule(@TempDir Path root) throws Exception {
+        // The property the whole segment rests on: building one module from inside its own
+        // directory and building it from the reactor root must resolve one workspace, or the
+        // sub-module build boots cold against a store one directory away.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("group"));
+        Path group = Files.createDirectories(root.resolve("group"));
+        Files.writeString(group.resolve("pom.xml"), aggregatorPom("leaf"));
+        Path leaf = Files.createDirectories(group.resolve("leaf"));
+
+        assertThat(DevMojo.workspaceRoot(leaf))
+            .isEqualTo(DevMojo.workspaceRoot(root))
+            .isEqualTo(DevMojo.workspaceRoot(group));
+    }
+
+    @Test
+    void workspaceRoot_isTheModuleItselfWhenNoAncestorListsIt(@TempDir Path root) throws Exception {
+        // No aggregator on disk means the module genuinely is its own workspace: the fallback
+        // fires on a property of the tree, not on how Maven happened to resolve a parent.
+        Files.writeString(root.resolve("pom.xml"), aggregatorPom("someone-else"));
+        Files.createDirectories(root.resolve("someone-else"));
+        Path standalone = Files.createDirectories(root.resolve("standalone"));
+
+        assertThat(DevMojo.workspaceRoot(standalone))
+            .isEqualTo(standalone.toAbsolutePath().normalize());
+    }
+
+    /**
+     * Runs {@code resolution} with this module's surefire-pinned store home out of the way, so the
+     * cache branch is what answers. Restored afterwards, the pin being what keeps every other case
+     * in this class off the developer's real cache.
+     */
+    private static Path withoutPinnedHome(java.util.function.Supplier<Path> resolution) {
+        String pinned = System.getProperty("graphitron.store.directory");
+        if (pinned != null) {
+            System.clearProperty("graphitron.store.directory");
+        }
+        try {
+            return resolution.get();
+        } finally {
+            if (pinned != null) {
+                System.setProperty("graphitron.store.directory", pinned);
+            }
+        }
+    }
+
+    /** A hand-built project rooted at {@code basedir}, which is what the resolvers read. */
+    private static MavenProject projectAt(Path basedir) {
+        var project = new MavenProject();
+        project.setFile(basedir.resolve("pom.xml").toFile());
+        return project;
+    }
+
+    /** The aggregator poms the workspace walk reads; identical to the sibling scan's fixture. */
+    private static String aggregatorPom(String... modules) {
+        var sb = new StringBuilder("<project><modelVersion>4.0.0</modelVersion>"
+            + "<groupId>test</groupId><artifactId>aggregator</artifactId><version>1.0</version>"
+            + "<packaging>pom</packaging><modules>");
+        for (String m : modules) {
+            sb.append("<module>").append(m).append("</module>");
+        }
+        return sb.append("</modules></project>").toString();
+    }
 }

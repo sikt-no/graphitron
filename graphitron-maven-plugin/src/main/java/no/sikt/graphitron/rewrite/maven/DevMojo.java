@@ -51,9 +51,13 @@ import java.io.IOException;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -198,6 +202,74 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     @Parameter(property = "graphitron.store.directory")
     String storeDirectory;
+
+    /**
+     * The platform's cache convention for per-user tool state: {@code $XDG_CACHE_HOME} (falling
+     * back to {@code ~/.cache}) on Linux, {@code ~/Library/Caches} on macOS,
+     * {@code %LOCALAPPDATA%} on Windows. The cache convention rather than the data one because
+     * the store is a cache by nature: rebuildable from sources, no state of record, always safe
+     * to delete.
+     */
+    static Path userCacheRoot() {
+        Path home = Path.of(System.getProperty("user.home"));
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (os.contains("win")) {
+            String localAppData = System.getenv("LOCALAPPDATA");
+            return localAppData != null && !localAppData.isBlank()
+                ? Path.of(localAppData)
+                : home.resolve("AppData").resolve("Local");
+        }
+        if (os.contains("mac")) {
+            return home.resolve("Library").resolve("Caches");
+        }
+        String xdg = System.getenv("XDG_CACHE_HOME");
+        return xdg != null && !xdg.isBlank() && Path.of(xdg).isAbsolute()
+            ? Path.of(xdg)
+            : home.resolve(".cache");
+    }
+
+    /**
+     * The root directory's leaf name plus a hash of its absolute normalized path: filesystem-safe,
+     * collision-free, and legible in a directory listing when a user goes looking for what is
+     * filling their cache.
+     */
+    static String workspaceSegment(Path workspace) {
+        Path leaf = workspace.getFileName();
+        String name = leaf != null ? leaf.toString() : "workspace";
+        try {
+            var digest = MessageDigest.getInstance("SHA-256");
+            var hash = HexFormat.of().formatHex(
+                digest.digest(workspace.toString().getBytes(StandardCharsets.UTF_8)));
+            return name + "-" + hash.substring(0, 16);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required of every JVM", e);
+        }
+    }
+
+    /**
+     * The workspace a module belongs to: the outermost reactor root, resolved off the filesystem
+     * aggregator chain by chaining {@link AbstractRewriteMojo#nearestAggregator}'s one step until no ancestor pom
+     * lists the current directory. Outermost rather than nearest because two subgraph modules
+     * under different intermediate aggregators of one checkout have to land in one store to be
+     * composable at all. Filesystem-only on purpose: the Maven session's top-level project and
+     * execution root both answer "where was {@code mvn} invoked", so a module built from inside
+     * its own directory would resolve a different workspace than the same module built from the
+     * root and boot cold against a store one directory away; and the parent chain is a different
+     * graph than the aggregator chain (an empty {@code <relativePath/>} resolves the parent from
+     * the repository, an aggregator need not be the parent), so it cannot serve either. Each hop
+     * is a strict ancestor of the previous, so the walk terminates on path depth; a module no
+     * ancestor pom lists resolves to itself, which fires on a property of the tree (there is no
+     * aggregator on disk) rather than on how Maven happened to resolve anything.
+     */
+    static Path workspaceRoot(Path moduleBasedir) {
+        Path workspace = moduleBasedir.toAbsolutePath().normalize();
+        for (Path aggregator = nearestAggregator(workspace);
+             aggregator != null;
+             aggregator = nearestAggregator(workspace)) {
+            workspace = aggregator;
+        }
+        return workspace;
+    }
 
     @Parameter(property = "graphitron.dev.port", defaultValue = "8487")
     int port;

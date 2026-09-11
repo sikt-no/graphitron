@@ -6,7 +6,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -31,6 +34,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * generates from those annotations at the {@code process-classes} phase, before the
  * {@code test} phase runs, so it is reliably on disk by the time this test executes.
  *
+ * <p>Presence is not the whole of the claim. A parameter documented under the wrong heading is
+ * documented wrongly: the shared table's own lead-in says its parameters apply to every goal, so a
+ * dev-only parameter listed there tells the reader to configure something three goals will ignore.
+ * {@link #everyRowSitsUnderTheGoalsThatDeclareIt()} pins the section each row sits in against the
+ * goals the descriptor says declare it, which is what a union of every table against every goal
+ * cannot see.
+ *
  * <p>Companion to {@code DirectiveDocCoverageTest}; same shape, scoped
  * to the Mojo parameter surface rather than the SDL directive surface. A new
  * {@code @Parameter} field cannot land green without a doc row; a removed field
@@ -44,6 +54,19 @@ class MojoDocCoverageTest {
     /** Goals whose parameters this test verifies against the doc. */
     private static final Set<String> VERIFIED_GOALS =
         Set.of("generate", "validate", "capture", "dev");
+
+    /**
+     * Which goals a parameter documented under each heading must be declared by, exactly. Every
+     * parameter table in the doc has to sit under a heading named here, so a new section of
+     * parameters fails this test rather than being silently unchecked: an unlisted heading is a
+     * claim about scope that nothing has checked.
+     */
+    private static final Map<String, Set<String>> SECTION_GOALS = Map.of(
+        "Shared parameters", VERIFIED_GOALS,
+        "`dev`-goal parameters", Set.of("dev"));
+
+    /** Splits the doc into level-one sections, so a row can be attributed to the heading above it. */
+    private static final Pattern SECTION_HEADING = Pattern.compile("^== (.+)$", Pattern.MULTILINE);
 
     /**
      * Splits the doc text on AsciiDoc table delimiters ({@code |===}). The body
@@ -129,6 +152,103 @@ class MojoDocCoverageTest {
                 + "goals); "
                 + "remove the stale row(s)")
             .isEmpty();
+    }
+
+    /**
+     * The section a row sits under has to match the goals that declare the parameter. A parameter
+     * every verified goal declares belongs under the shared heading; one only {@code dev} declares
+     * belongs under the dev heading. Moving a parameter between Mojos without moving its row leaves
+     * the doc telling a reader to configure something the goal will ignore, and the coverage
+     * assertion above cannot report it: that one unions every table against every goal, so a row
+     * that changes owner still matches.
+     */
+    @Test
+    void everyRowSitsUnderTheGoalsThatDeclareIt() throws IOException {
+        Map<String, Set<String>> declaringGoals = declaringGoalsFromDescriptor();
+        Map<String, String> sectionByRow = parametersByDocSection();
+
+        Map<String, String> misplaced = new TreeMap<>();
+        sectionByRow.forEach((parameter, section) -> {
+            Set<String> declared = declaringGoals.get(parameter);
+            if (declared == null) {
+                // A row with no parameter at all is the coverage test's finding, not this one's.
+                return;
+            }
+            Set<String> expected = SECTION_GOALS.get(section);
+            if (!declared.equals(expected)) {
+                misplaced.put(parameter, "documented under '" + section + "' (which is for "
+                    + new TreeSet<>(expected) + ") but declared by " + new TreeSet<>(declared));
+            }
+        });
+
+        assertThat(sectionByRow)
+            .as("no parameter rows were found; did the doc's table or heading shape change?")
+            .isNotEmpty();
+        assertThat(misplaced)
+            .as("parameter rows in mojo-configuration.adoc sitting under a heading whose goals do "
+                + "not match the goals declaring the parameter; move the row")
+            .isEmpty();
+    }
+
+    /** Every editable parameter of a verified goal, against the goals that declare it. */
+    private static Map<String, Set<String>> declaringGoalsFromDescriptor() throws IOException {
+        String text = Files.readString(descriptor(), StandardCharsets.UTF_8);
+        Map<String, Set<String>> byParameter = new TreeMap<>();
+        Matcher mojoMatcher = MOJO_BLOCK.matcher(text);
+        while (mojoMatcher.find()) {
+            String mojoBlock = mojoMatcher.group(1);
+            Matcher goalMatcher = MOJO_GOAL.matcher(mojoBlock);
+            if (!goalMatcher.find() || !VERIFIED_GOALS.contains(goalMatcher.group(1))) {
+                continue;
+            }
+            String goal = goalMatcher.group(1);
+            Matcher paramMatcher = EDITABLE_PARAMETER.matcher(mojoBlock);
+            while (paramMatcher.find()) {
+                byParameter.computeIfAbsent(paramMatcher.group(1), name -> new TreeSet<>()).add(goal);
+            }
+        }
+        return byParameter;
+    }
+
+    /**
+     * Each documented parameter against the heading its table sits under. Every parameter table has
+     * to be under a heading {@link #SECTION_GOALS} names, so a table added under a new heading fails
+     * here instead of going unchecked.
+     */
+    private static Map<String, String> parametersByDocSection() throws IOException {
+        String text = Files.readString(locateDoc(), StandardCharsets.UTF_8);
+        Map<String, String> bySection = new LinkedHashMap<>();
+        Matcher headings = SECTION_HEADING.matcher(text);
+        int bodyStart = -1;
+        String title = null;
+        while (headings.find()) {
+            if (title != null) {
+                collectRows(text.substring(bodyStart, headings.start()), title, bySection);
+            }
+            title = headings.group(1).trim();
+            bodyStart = headings.end();
+        }
+        if (title != null) {
+            collectRows(text.substring(bodyStart), title, bySection);
+        }
+        return bySection;
+    }
+
+    /** The parameter rows of every parameter table inside one section's body. */
+    private static void collectRows(String body, String section, Map<String, String> into) {
+        for (String block : TABLE_DELIM.split(body)) {
+            if (!PARAMETER_TABLE_HEADER.matcher(block).find()) continue;
+            assertThat(SECTION_GOALS)
+                .as("parameter table under a heading this test does not know the goal scope of: '"
+                    + section + "'; add it to SECTION_GOALS or the rows below it go unchecked")
+                .containsKey(section);
+            for (String row : block.split("\\R\\s*\\R+")) {
+                if (PARAMETER_TABLE_HEADER.matcher(row).find()) continue;
+                String firstLine = row.lines().filter(s -> !s.isBlank()).findFirst().orElse("");
+                Matcher m = FIRST_COL_BACKTICKED.matcher(firstLine);
+                if (m.find()) into.put(m.group(1), section);
+            }
+        }
     }
 
     /** Every goal the generated descriptor declares. */

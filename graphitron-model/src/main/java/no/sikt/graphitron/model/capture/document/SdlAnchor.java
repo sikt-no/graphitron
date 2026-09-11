@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import org.jooq.DSLContext;
+import org.jooq.Record1;
 import org.jooq.Field;
 import org.jooq.Table;
 
@@ -61,6 +62,8 @@ import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.upper;
+import static org.jooq.impl.DSL.row;
+import static org.jooq.impl.DSL.values;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.rowNumber;
 import static org.jooq.impl.DSL.inline;
@@ -206,7 +209,14 @@ public final class SdlAnchor {
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(COORDINATE),
                     ranked.field(ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
-                .from(ranked).where(ranked.field(RANK).eq(1)))
+                .from(ranked).where(ranked.field(RANK).eq(1))
+                // Outside the rank, because a specified scalar has no site to rank by: the five
+                // are one coordinate each and cannot collide with a declared one, a document that
+                // redeclares String being refused before any of this.
+                .unionAll(dsl
+                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
+                        val("NAMED_TYPE", t.ELEMENT_KIND), val(touchedAt, t.TOUCHED_AT))
+                    .from(SPECIFIED_SCALARS)))
             .onDuplicateKeyUpdate()
             .set(t.ELEMENT_KIND, excluded(t.ELEMENT_KIND))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -254,7 +264,11 @@ public final class SdlAnchor {
             .select(dsl
                 .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, d.COORDINATE,
                     val(touchedAt, t.TOUCHED_AT))
-                .from(d).where(d.GRAPH_NAME.eq(graph)))
+                .from(d).where(d.GRAPH_NAME.eq(graph))
+                .unionAll(dsl
+                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
+                        SPECIFIED_SCALAR_NAME, val(touchedAt, t.TOUCHED_AT))
+                    .from(SPECIFIED_SCALARS)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -313,6 +327,25 @@ public final class SdlAnchor {
     private static final Field<String> DEFAULT_VALUE_SDL = field(name("default_value_sdl"), String.class);
     private static final Field<String> DESCRIPTION = field(name("description"), String.class);
     private static final Field<Integer> MERGE_ORDINAL = field(name("merge_ordinal"), Integer.class);
+
+    /**
+     * The scalars the specification gives every schema, which no document declares and the entries
+     * therefore do not hold. A transcription records what an author wrote and these were not
+     * written; they have no position to key a row by and no file to hang one on. They are still
+     * types a field can name, so the anchors carry them: an anchor is the authored fact met with
+     * reality, and the engine's own vocabulary is part of that reality on the same terms the
+     * catalog is.
+     *
+     * <p>An existence row and no declaration site, which is the shape the walk gave them too. They
+     * declare no members, so nothing needs a site to hang on.
+     */
+    private static final Table<Record1<String>> SPECIFIED_SCALARS = values(
+        row("Boolean"), row("Float"), row("ID"), row("Int"), row("String"))
+        .as("specified_scalar", "type_name");
+
+    /** The one column of {@link #SPECIFIED_SCALARS}, as the arms below select it. */
+    private static final Field<String> SPECIFIED_SCALAR_NAME =
+        field(name("specified_scalar", "type_name"), String.class);
 
     /** Which arm a root-operation candidate came from, spelled sorting before assumed. */
     private static final Field<Integer> PRECEDENCE = field(name("precedence"), Integer.class);
@@ -378,7 +411,8 @@ public final class SdlAnchor {
                     rowNumber().over(partitionBy(d.NAME).orderBy(
                         d.IS_EXTENSION.asc(),
                         coalesce(s.MTIME, val(BEFORE_EVERY_FILE, s.MTIME)).asc(),
-                        d.SOURCE_NAME.asc(), d.SOURCE_LINE.asc(), d.SOURCE_COLUMN.asc())),
+                        d.SOURCE_NAME.asc(), d.SOURCE_LINE.asc(), d.SOURCE_COLUMN.asc()))
+                        .minus(inline(1)),
                     d.IS_EXTENSION, d.KIND, val(touchedAt, t.TOUCHED_AT))
                 .from(d).join(s).on(s.SOURCE_NAME.eq(d.SOURCE_NAME))
                 .where(d.GRAPH_NAME.eq(graph)))
@@ -414,7 +448,15 @@ public final class SdlAnchor {
                     .and(m.SOURCE_LINE.eq(d.SOURCE_LINE))
                     .and(m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph))
-                .and(m.MERGE_ORDINAL.eq(1)))
+                // Zero, because merge order is 0-based: the base declaration leads the chain and
+                // a base-less chain's first extension holds 0, which the column's own comment and
+                // the density gate both state.
+                .and(m.MERGE_ORDINAL.eq(0))
+                .unionAll(dsl
+                    .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
+                        val("SCALAR", t.KIND), castNull(t.DESCRIPTION),
+                        val(touchedAt, t.TOUCHED_AT))
+                    .from(SPECIFIED_SCALARS)))
             .onDuplicateKeyUpdate()
             .set(t.KIND, excluded(t.KIND))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
@@ -479,7 +521,7 @@ public final class SdlAnchor {
                     candidates.field(SITE_COLUMN).asc())).as(RANK),
                 rowNumber().over(partitionBy(candidates.field(TYPE_NAME)).orderBy(
                     candidates.field(MERGE_ORDINAL).asc(), candidates.field(SITE_LINE).asc(),
-                    candidates.field(SITE_COLUMN).asc())).as(ORDINAL))
+                    candidates.field(SITE_COLUMN).asc())).minus(inline(1)).as(ORDINAL))
             .from(candidates)
             .asTable("ranked");
         dsl.insertInto(t)
@@ -525,7 +567,8 @@ public final class SdlAnchor {
                 rowNumber().over(partitionBy(e.TYPE_NAME, e.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), e.SOURCE_LINE.asc(), e.SOURCE_COLUMN.asc())).as(RANK),
                 rowNumber().over(partitionBy(e.TYPE_NAME).orderBy(
-                    m.MERGE_ORDINAL.asc(), e.SOURCE_LINE.asc(), e.SOURCE_COLUMN.asc())).as(ORDINAL))
+                    m.MERGE_ORDINAL.asc(), e.SOURCE_LINE.asc(), e.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
             .from(e)
             .join(m).on(m.GRAPH_NAME.eq(graph))
                 .and(m.TYPE_NAME.eq(e.TYPE_NAME))
@@ -577,7 +620,8 @@ public final class SdlAnchor {
                 rowNumber().over(partitionBy(a.TYPE_NAME, a.FIELD_NAME, a.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
                 rowNumber().over(partitionBy(a.TYPE_NAME, a.FIELD_NAME).orderBy(
-                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(ORDINAL))
+                    m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(ORDINAL))
             .from(a)
             .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
                 .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
@@ -812,7 +856,7 @@ public final class SdlAnchor {
                 rowNumber().over(partitionBy(w.DIRECTIVE_NAME, a.NAME).orderBy(
                     a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
                 rowNumber().over(partitionBy(w.DIRECTIVE_NAME).orderBy(
-                    a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(ORDINAL))
+                    a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).minus(inline(1)).as(ORDINAL))
             .from(a)
             .join(w).on(w.GRAPH_NAME.eq(graph))
                 .and(w.SOURCE_NAME.eq(a.SOURCE_NAME))

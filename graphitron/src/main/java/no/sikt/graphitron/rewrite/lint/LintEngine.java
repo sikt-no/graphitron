@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.language.Argument;
+import graphql.language.DescribedNode;
 import graphql.language.Description;
 import graphql.language.Directive;
 import graphql.language.DirectivesContainer;
@@ -255,18 +256,18 @@ public final class LintEngine {
         return node instanceof NamedNode<?> named ? named.getName() : null;
     }
 
-    /** The node's own description as written; see {@link LintTarget#description()} for why raw. */
+    /**
+     * The node's own description as written; see {@link LintTarget#description()} for why raw.
+     *
+     * <p>Off the interface rather than a switch over the kinds that have one. A switch would need a
+     * default arm, and a default arm here is a claim: it says every kind not listed writes no
+     * description, which was wrong for the three input positions and the enum value the moment they
+     * were dispatched, and wrong silently, no rule happening to ask them. graphql-java already
+     * answers the question for every node that can, so nothing is left to keep in step.
+     */
     private static String descriptionOf(Node<?> node) {
-        Description description = switch (node) {
-            case ObjectTypeDefinition n -> n.getDescription();
-            case InterfaceTypeDefinition n -> n.getDescription();
-            case UnionTypeDefinition n -> n.getDescription();
-            case EnumTypeDefinition n -> n.getDescription();
-            case InputObjectTypeDefinition n -> n.getDescription();
-            case ScalarTypeDefinition n -> n.getDescription();
-            case FieldDefinition n -> n.getDescription();
-            default -> null;
-        };
+        Description description =
+            node instanceof DescribedNode<?> described ? described.getDescription() : null;
         return description == null ? null : description.getContent();
     }
 

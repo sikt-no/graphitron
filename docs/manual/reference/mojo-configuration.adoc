@@ -1,8 +1,8 @@
 = Maven plugin configuration
-:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the four goals (generate, validate, capture, dev), the eleven shared <configuration> parameters, the dev-only watch parameters, the <schemaInput> POM binding, and the CLI -D properties.
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the four goals (generate, validate, capture, dev), the ten shared <configuration> parameters, the eight dev-only parameters, the <schemaInput> POM binding, and the CLI -D properties.
 :!toc:
 
-`graphitron-maven-plugin` exposes four Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), `capture` (fills the fact store and stops), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds four of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
+`graphitron-maven-plugin` exposes four Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), `capture` (fills the fact store and stops), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds eight of its own. One of the parameters (`<schemaInputs>`) is a list-of-complex-objects with its own POM binding.
 
 This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
 
@@ -34,6 +34,27 @@ This page is the parameter-by-parameter reference. The xref:../tutorial/01-prere
 |===
 
 The plugin coordinates are `no.sikt:graphitron-maven-plugin`; bind a goal to a `<execution>` block under the rewrite plugin's `<executions>` to wire it into the standard Maven lifecycle, or invoke from the command line with `mvn graphitron:<goal>`.
+
+[#fact-store-location]
+=== Where the fact store lives
+
+All four goals read and write a fact store, which is what lets a run start from the previous run's
+rows instead of re-reading every jar on your classpath. Where it lives depends on which kind of run
+it is, and on the three build goals it is not a choice you make.
+
+`generate`, `validate` and `capture` put it under the module's build directory, at
+`target/graphitron-model/`, with everything else a run produces. One store per module holding that
+module's one graph, owned outright by the build that wrote it and removed by `mvn clean`. There is
+nothing to configure and nowhere else to want it: a hermetic CI job already gets a store inside the
+workspace, and a container that discards `$HOME` never goes near one.
+
+`dev` puts it in your per-user cache instead, because a session's store is shared. Its language
+server and its query tools answer from the store between builds, so it has to survive a `mvn clean`
+and be reachable from a module other than the one being built. That is the one case worth a
+parameter, and xref:#dev-goal-parameters[`<storeDirectory>`] on the `dev` goal is it.
+
+The store never holds anything that cannot be rebuilt from your sources, so deleting it is always
+safe.
 
 == Shared parameters
 
@@ -81,26 +102,6 @@ The following parameters apply to every goal:
   `@key` is written. Omit for a standalone graph; standalone is the default rather than a state you
   spell.
 
-| `storeDirectory`
-| `File` (path)
-| a per-user cache directory
-| Where the fact store is kept between runs, so a build starts from the previous run's rows
-  instead of re-reading every jar on the classpath. The default is your platform's cache location
-  for per-user tool state (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on
-  Linux, `~/Library/Caches/graphitron/model/` on macOS, `%LOCALAPPDATA%\graphitron\model\` on
-  Windows), with one store home per project checkout, shared by that checkout's modules. Inside that
-  home the store keeps a separate directory per graphitron version, so upgrading the plugin starts a
-  fresh cache instead of reusing one the new version cannot read. Graphitron keeps the three most
-  recently used of those directories and releases the older ones the next time it opens the store, so
-  a checkout does not accumulate one cache per version it has ever built with. It only releases a
-  directory no process is holding, so a `graphitron:dev` session in another window keeps its own cache
-  for as long as it runs. Set this
-  parameter, or pass `-Dgraphitron.store.directory=...`, to keep the store inside the build
-  instead: a hermetic CI job that wants nothing written outside the workspace, or a container
-  that discards `$HOME`. The store holds no state of record and is rebuilt from your sources
-  whenever it cannot be read, so deleting it is always safe and never loses anything; it is a
-  cache, not build output, which is why `mvn clean` no longer removes it.
-
 | `schemaInputs`
 | `List<SchemaInputBinding>`
 | empty
@@ -125,21 +126,14 @@ The following parameters apply to every goal:
 | `String` (database column name)
 | (none)
 | Name of the database column that carries the tenant id in a database-per-tenant deployment, matched against catalog columns the way column lookups already match (Java name first, then SQL name, both case-insensitive). Configuring it classifies every catalog table as tenant-scoped (carries the column) or global (does not); the tenant Java type is read off the jOOQ catalog's column type, and all carrying tables must agree on that type or the build fails. A configured column no table carries also fails the build, because silently classifying every table as global would route tenant data through the default connection. Omit for single-tenant builds; none of the tenant machinery exists then.
-
-| `devDatabase`
-| `DevDatabaseBinding`
-| (none)
-| Dev database for the MCP `execute` tool (`dev` goal only). A `<devDatabase>` block carrying plain connection coordinates: `<url>`, `<user>`, `<password>`, `<dialect>` (explicit and enumerated, `POSTGRES` or `ORACLE`, never defaulted), the `<claims>` payload handed to the `<sessionState>` mount method (inline, or `@/path/to/file`; the file is re-read on every call), and the `<allowClaimsOverride>` opt-in for a per-call claims argument (default off). Environment variables override the POM on every field (`GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`, `GRAPHITRON_DEV_CLAIMS`, `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`), so credentials stay out of the checked-in file. With no url from either source the `execute` tool is simply absent and every other dev tool works without it; a url with a missing or unsupported dialect fails the goal. See xref:../how-to/mcp-agent-context.adoc#execute-tool[Run a query without an app server].
-
-| `storeConsole`
-| `StoreConsoleBinding`
-| (none)
-| Read-only SQL console onto the dev session's own fact store (`dev` goal only). `<enabled>` opens it, and the session logs the whole `psql` command, including the port it bound. The port is ephemeral unless you pin one with `<port>`; pin one only for a stable connect line, and expect a pinned port to collide when you run more than one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The listener is confined to `127.0.0.1`, and the console refuses to start if it cannot verify that, so it is never reachable from another machine. Writes to the store's relations are refused, which catches a slip rather than sandboxing the client. Absent or disabled, no port is bound and the session is unchanged, and the log says how to turn it on. See xref:../how-to/dev-loop.adoc#store-console[Query the fact store while the session runs].
 |===
 
+[#dev-goal-parameters]
 == `dev`-goal parameters
 
-Five watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
+Eight parameters unique to the `dev` goal: five watch-loop knobs, the store home, and two POM blocks
+configuring tools only a session runs. The knobs and the store home take a CLI property; the two
+blocks are overridden by environment variables instead, named in their own rows.
 
 [cols="1,1,1,1,3",options="header"]
 |===
@@ -174,6 +168,38 @@ Five watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
 | `observed`
 | `graphitron.dev.rediscover`
 | How a round decides what to re-read. `observed`, the default, lets the session skip re-reading an input it has watched continuously since the store last read it, so a save costs work proportional to the edit rather than to the workspace. `always` turns that off: nothing is trusted and every round rediscovers what changed by reading bytes, exactly as the loop behaved before the mechanism existed. Reach for `always` when the session appears not to notice edits, which happens where a filesystem watcher under-reports: bind mounts, some network shares, and container-mounted working trees. It costs the saving and nothing else, an unobserved round being a correct round, so it is also the one-line bisect for a bug report.
+
+| `storeDirectory`
+| `File` (path)
+| a per-user cache directory
+| `graphitron.store.directory`
+| Where this session's fact store is kept, so the session and the readers it serves start from the
+  previous round's rows instead of re-reading every jar on the classpath. The default is your platform's cache location
+  for per-user tool state (`$XDG_CACHE_HOME/graphitron/model/` or `~/.cache/graphitron/model/` on
+  Linux, `~/Library/Caches/graphitron/model/` on macOS, `%LOCALAPPDATA%\graphitron\model\` on
+  Windows), with one store home per project checkout, shared by that checkout's modules. Inside that
+  home the store keeps a separate directory per graphitron version, so upgrading the plugin starts a
+  fresh cache instead of reusing one the new version cannot read. Graphitron keeps the three most
+  recently used of those directories and releases the older ones the next time it opens the store, so
+  a checkout does not accumulate one cache per version it has ever built with. It only releases a
+  directory no process is holding, so a session in another window keeps its own cache for as long as
+  it runs. Set this parameter, or pass `-Dgraphitron.store.directory=...`, to pin the home somewhere
+  else: a hermetic CI job that wants nothing written outside the workspace, or a container that
+  discards `$HOME`. The store holds no state of record and is rebuilt from your sources whenever it
+  cannot be read, so deleting it is always safe and never loses anything. A session parameter and not
+  a build one; xref:#fact-store-location[the note above] says why the three build goals have none.
+
+| `devDatabase`
+| `DevDatabaseBinding`
+| (none)
+| (none; environment variables only)
+| Dev database for the MCP `execute` tool. A `<devDatabase>` block carrying plain connection coordinates: `<url>`, `<user>`, `<password>`, `<dialect>` (explicit and enumerated, `POSTGRES` or `ORACLE`, never defaulted), the `<claims>` payload handed to the `<sessionState>` mount method (inline, or `@/path/to/file`; the file is re-read on every call), and the `<allowClaimsOverride>` opt-in for a per-call claims argument (default off). Environment variables override the POM on every field (`GRAPHITRON_DEV_DB_URL`, `GRAPHITRON_DEV_DB_USER`, `GRAPHITRON_DEV_DB_PASSWORD`, `GRAPHITRON_DEV_DB_DIALECT`, `GRAPHITRON_DEV_CLAIMS`, `GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE`), so credentials stay out of the checked-in file. With no url from either source the `execute` tool is simply absent and every other dev tool works without it; a url with a missing or unsupported dialect fails the goal. See xref:../how-to/mcp-agent-context.adoc#execute-tool[Run a query without an app server].
+
+| `storeConsole`
+| `StoreConsoleBinding`
+| (none)
+| (none; environment variables only)
+| Read-only SQL console onto the dev session's own fact store. `<enabled>` opens it, and the session logs the whole `psql` command, including the port it bound. The port is ephemeral unless you pin one with `<port>`; pin one only for a stable connect line, and expect a pinned port to collide when you run more than one dev session. `GRAPHITRON_DEV_STORE_CONSOLE` and `GRAPHITRON_DEV_STORE_CONSOLE_PORT` override the POM. The listener is confined to `127.0.0.1`, and the console refuses to start if it cannot verify that, so it is never reachable from another machine. Writes to the store's relations are refused, which catches a slip rather than sandboxing the client. Absent or disabled, no port is bound and the session is unchanged, and the log says how to turn it on. See xref:../how-to/dev-loop.adoc#store-console[Query the fact store while the session runs].
 |===
 
 The CLI properties take precedence over `<configuration>` values, so `mvn graphitron:dev -Dgraphitron.dev.port=9090` works without editing the POM.
@@ -389,6 +415,8 @@ The reflection sites that resolve consumer-declared classes (`@service` / `@exte
 == Drift protection
 
 A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven-plugin`) asserts every `@Parameter`-annotated field on `AbstractRewriteMojo`, `GenerateMojo`, `ValidateMojo`, and `DevMojo` has a row in this page's parameter tables, and every parameter row corresponds to an annotated field on one of those Mojos. A new `@Parameter` field cannot land green without a doc row; a removed field forces the row's removal.
+
+The same test also pins which heading each row sits under against the goals that declare the parameter, because presence in the wrong table is still wrong: this page says the shared parameters apply to every goal, so a dev-only parameter listed among them tells you to configure something three goals ignore. Moving a parameter between Mojos therefore forces its row to move too, and a parameter table added under a heading the test does not know the goal scope of fails rather than going unchecked.
 
 == See also
 

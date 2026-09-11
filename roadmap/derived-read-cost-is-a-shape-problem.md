@@ -2358,16 +2358,28 @@ What is not transcribed is any value.
 
    This item's first answer was to design a chain relation, one row per wrapper, and then decline to
    build it on the ground that no reader needed it. The second half was false. The `@asConnection`
-   expansion mints only where the carrier is a bare list of a named type, and on the entries as they
-   stood the only way to ask that was to compare `type_sdl` against the four spellings a bare list
-   has, in SQL, assembled by concatenating `named_type`. The reader existed; it had just paid for
-   the missing column in string surgery inside a statement rather than by asking for one. **Absence
-   of a reader is not absence of a need, and a survey of what readers select will not find the
-   need, because the need shows up as what they had to write instead.**
+   expansion mints only where the carrier is a bare list of a named type, and the only way to ask
+   that was to take the rendered expression apart a character at a time. `MacroCapture.element` is
+   where it happens: trim, strip a trailing bang, require a leading bracket and a trailing one, strip
+   the item's bang, then reject anything still holding a bracket or a bang, which is how a nested
+   list is excluded. The reader existed; it had just paid for the missing column in string surgery
+   rather than by asking for one. **Absence of a reader is not absence of a need, and a survey of
+   what readers select will not find the need, because the need shows up as what they had to write
+   instead.**
 
    What landed is `list_depth`, `NOT NULL` on the four entry relations, 0 for a named type, 1 for a
    list of one, 2 for a list of lists, under `CHECK (is_list = (list_depth > 0))` so the flag and
-   the depth cannot disagree. The connection predicate is `list_depth = 1`.
+   the depth cannot disagree.
+
+   Two corrections to how that was recorded, both found in the review below. The surgery is Java and
+   not SQL: the commit that landed the column said the comparison happened in a statement, and this
+   item repeated it. And the column does not yet serve the reader it was cut for. `MacroCapture`
+   reads `graphql_field`, an anchor, and the column landed on the entries only, so the predicate that
+   would replace the string parsing cannot be written yet. The commit deferred the anchors for a
+   reason that is sound on its own terms, that they have a second writer in the walk and teaching a
+   dissolving gatherer to fill a new `NOT NULL` column would duplicate the depth helper across a
+   boundary a guard polices, but it did not connect that deferral to this reader, so the column reads
+   as done when it is half placed. Item 10 below is the other half.
 
    Worth being precise about what that does and does not do, because it is not the chain relation
    and is better than it here. It is not lossless: `[[Film!]]` and `[[Film]]` still agree on every
@@ -2456,6 +2468,20 @@ not cover, plus what it covers at the wrong shape.
    noting as a different and weaker choice: it makes the gap visible at run time to whoever reads the
    store, rather than at build time to whoever opened the hole.
 
+10. **`list_depth` reaches no reader, because the reader is on the other side of the entry boundary.
+    Open, and it is item two's other half.** The column is on the four entry relations. The reader
+    the column was cut for, `MacroCapture.element`, joins `graphql_field`, which is an anchor and has
+    no such column, so the string parsing that motivated the whole thing is still there and the
+    column is `NOT NULL` on four relations with nothing selecting it.
+
+    What that needs is settled by the chapter below rather than by a choice here. The reason the
+    anchors could not take the column is that they have a second writer, and that writer is now
+    measured as redundant, so the answer is not "make it nullable" or "copy the depth helper across
+    the boundary" but "the walk goes, then the column lands". After it, `SdlAnchor` carries the
+    column in one field of each of three selects, `element` becomes a read of `named_type`,
+    `item_non_null` and `list_depth = 1` off the row the carrier query already fetches, and the
+    character-at-a-time parser goes with it.
+
 ### The order
 
 One through three, then four onwards, is the order the two families are named in, and it is also the
@@ -2468,4 +2494,272 @@ are inside this arc. Then the sites and the thirteen directives, which is the bu
 volume but is mechanical once the decode is a select. Eight is placed after the value trees for the
 same reason and is the one item whose target shape is not yet settled. Nine is a gate and lands with the work it
 guards rather than before it; three turned out to be a gate that already existed and needed one
-line.
+line. Ten arrived from the review below rather than from the two diffs, which is worth saying because
+neither diff could have returned it: both ask what the entries hold, and ten is about a column the
+entries do hold and a reader that cannot reach it. It goes with the walk's dissolution, not with the
+rest of this list, because that is the thing standing in its way.
+
+What the chapter after next changes about this order is not the order but the reason for it. Four
+through nine read as completeness, one more site and one more directive until the list is empty.
+They are not: they are the remaining blockers on deleting both walks, and the walks are most of what
+this arc exists to remove.
+
+## The port dissolution, folded in (2026-09-11)
+
+Two commits from the session working the capture port arrived as exploration marked not for trunk,
+which is a judgement their author was not the one to make: the arc has no item of its own and this
+item is carrying it. Both fold in, and one of them bears directly on machinery already recorded
+above.
+
+**A build's store is build output, and that makes its ownership binary.** The store moves under the
+module's build directory, where the three resolvers beside it already put their output, and the
+`<storeDirectory>` parameter moves down to the dev goal, which is the only one that needs it. The
+reasoning is a distinction this item had not drawn: a session's store is shared, its language server
+and its readers answering from it between builds, so it has to outlive a clean and be reachable from
+a module that is not the one being built. A one-shot goal has neither need. One store per module,
+holding that module's one graph, removed by a clean like everything else a run produces.
+
+What that decides is not the location. It is that "delete exactly what this run owns" becomes
+"delete everything, it is all ours", and most of what `RunStore` and `StoreRefresh` do is police the
+sharing it removes: ownership arbitration between graphs, retain-or-rewrite per classpath source,
+and a retention seed scoped so a sibling's partition cannot block this run's row. The self-sweeping
+disclaim this item added to the clear, which reads `meta_relation` to find the relations whose
+gatherer sweeps its own rows, is paid for by the same sharing. None of it is touched here and none of
+it becomes dead, the dev session still sharing; what changes is that the machinery is a session's
+concern rather than every build's, which is the smaller thing to have to keep true. The commit is the
+decision, not the simplification, and the simplification is now available to take.
+
+One consequence the commit did not name, recorded here because it is a capability and not a detail.
+`store_graph_supergraph` says which supergraph a graph declared itself part of, and the point of a
+grouping fact is asking it across the group. In a build's store there is one graph, so the relation
+holds at most one row and the question cannot be put to it at all. Nothing loses an answer today:
+the readers that would ask are the session's, and the session keeps the workspace-wide home where
+every module's graph still lands. But the relation now answers only in one of the two kinds of
+store, and a reader written against a build's store would find it silently degenerate rather than
+empty for a reason. Worth knowing before anything is built on it.
+
+Riding with it, `schemaFiles` moves off `SdlCapture` onto `SubjectConfig`. It took the configuration
+as its first argument and consulted nothing else, which is the shape of a method on it, and it leaves
+the capture a writer of rows rather than an expander of recipes.
+
+**Eight of nine lint rules stopped reading structure out of a parse tree.** `LintTarget` carries
+values instead of a node: name, description, source position, the enclosing type and whether it is a
+root operation, and an applied directive's arguments. Every one is a column the store holds, so when
+the traversal becomes a query the rules do not change, which is the point.
+
+That sentence is deliberately narrower than the commit's. The commit said the eight no longer touch
+graphql-java, and two of them still name `SourceLocation`, one constructing a position and one
+reading a column off it. The type is not a reach into the parse tree, a position being a line and a
+column, but it is a graphql-java type in the rules and in the record's own signature, and the
+difference matters for the claim being made: the rules will need an edit the day the walk becomes a
+query, just a mechanical one. Getting rid of it is not a lint change. `SourceLocation` is the shared
+vocabulary of the whole diagnostics surface, carried by `BuildWarning`, `ValidationError`,
+`SchemaParseException` and the fix records the language server projects, so replacing it here alone
+would leave two position types inside one record family. It is a diagnostics item and not one of
+this arc's, and `LintRuleIsolationTest` now holds it as a named exemption so it cannot quietly widen
+into something else.
+
+Two details the move had to get exactly
+right, both recorded in the commit: the description column stays raw, because one rule asks whether
+the author documented the node and two rename fixes ask whether a description token occupies the
+source ahead of it, and normalising would silently change when a fix is offered; and the argument map
+holds a null for an argument written as something other than a string, because passing a number is
+still passing something, which is the difference between a fix and a plain report.
+
+The ninth rule keeps its node, and the reason the commit gave for it had already lapsed. It descends
+an applied directive's argument values to report deprecated input fields used inside an application,
+and the store held those values as rendered SDL with no structure to descend. That was true when the
+commit was written and stopped being true the same day: item one of the burn down decomposes every
+written expression into rows. The residue stands for a different reason, which is the honest one:
+that rule walks where the others look up, and one row per argument name cannot serve a walk. The
+rows it wants exist now, so this is remaining work rather than an open question, and the projection
+the record already carries is the one the query will make, an argument's name against its value
+where that value is a string.
+
+One caution, discharged rather than assumed. The harvested store move was verified against the plugin
+and the model, two modules, and it changes where every module's store lives. Run over the whole
+reactor it holds, 7619 tests green, with the example module's store visibly landing under its own
+build directory. The sibling-partition guard this item leans on elsewhere, which is what proved the
+clear's disclaim is scoped rather than switched off, still passes: the dev session's sharing is the
+population it covers and that is the half the move keeps.
+
+## The harvest, reviewed (2026-09-11)
+
+Folding two commits in is a decision about direction. Whether they meet the bar is a separate
+question and was not asked at the time, so it is asked here, against the tree rather than against
+what the commits say about themselves. The direction holds in all three, counting the `list_depth`
+commit harvested a day earlier. The evidence does not, and it fails the same way in each: a decision
+is argued well and then shipped with nothing that would go red if the decision were reversed. That
+is the one thing the value-tree work does differently, and it is what this section closes.
+
+**The argument map's null was protected by nothing, and the measurement says what it costs.** The
+lint record holds an applied directive's arguments as a name against its value where the author wrote
+a string and against null where they wrote anything else, built by hand because `Map.copyOf` rejects
+a null value. The commit argues that carefully and ships two test cases, a bare `@deprecated` and one
+with a string reason, neither of which reaches the null. Writing the third case,
+`@deprecated(reason: 5)`, and then swapping the rejected alternative back in gives thirty three
+passes and one error: a `NullPointerException` out of the engine's own run, not a misreport. So the
+alternative the commit rejects crashes a consumer's lint pass, and the suite had nothing to say about
+it. The commit's stated evidence, that no test changed, is evidence for the eight rules it moved and
+none at all for the two decisions the record itself makes.
+
+The rest of the review, in the order it is being worked.
+
+1. **Two records state what this branch falsified.** `LintTarget`'s node component says the store
+   holds an applied directive's argument values as rendered SDL with no structure to descend. Item
+   one of the burn down made that false the same day. The correction went into the commit message
+   and the false sentence stayed in main sources, which is the wrong half to fix. Alongside it, the
+   `list_depth` commit motivates itself by string surgery over `type_sdl` in SQL. The surgery is
+   real and it is in Java, `MacroCapture.element` taking the rendered expression apart a character at
+   a time, and no statement anywhere compares `type_sdl` to anything. This item repeated the SQL
+   claim and added one of its own, that the connection predicate is `list_depth = 1`, in the present
+   tense, when there is no such predicate and there cannot yet be one: the reader is on an anchor and
+   the column is on the entries. Both records now say so, and the placement is item 10.
+
+2. **The consumer manual now lies, and the gate that exists to stop that cannot see it.** The store
+   move left the `storeDirectory` row under the manual's shared-parameters heading, which says the
+   parameters below apply to every goal, describing a default that is no longer the default and
+   telling the reader to set the parameter to keep the store inside the build, which is now where it
+   already is, and closing with the claim that a clean no longer removes it. The page's own summary
+   counts eleven shared parameters and four dev-only ones; it is ten and five. `MojoDocCoverageTest`
+   stayed green because it unions every parameter table against every goal, so a row that changes
+   which goal owns it is invisible to it. A gate whose exemption is structural rather than listed,
+   which is the same shape as the census gate's silence about values.
+
+3. **The store move's load-bearing half has no test.** Nothing in the tree names
+   `resolveStoreDirectory`, before the move or after. Removing the dev goal's override moves a
+   session's store into the build directory, where the next clean deletes it and the readers it
+   serves go cold between builds, which is the exact failure the override exists to prevent. The
+   invoker case covers the base class's new default and nothing covers the override.
+
+4. **Nothing guards the isolation the lint move exists to create.** No test asserts the rules package
+   is off graphql-java, though this repository has the pattern three times over. Without one the next
+   rule reaches for the node and the arc reverses quietly. The exemption wants to be a named list of
+   exactly the residue, so that shrinking it is a deliberate edit rather than a number going down.
+
+5. **The claim that eight rules are off graphql-java is not what the code says.** Two of them import
+   `SourceLocation`, one constructing one and the other reading its column, and the record's own
+   signature carries that type. So the rules do still know about a parse tree, and the central claim,
+   that they will not change when the walk becomes a query, is not yet true. The store holds the
+   position as two integers; our own position value is what makes the residue genuinely one rule.
+
+6. **The record's description column is not total over the kinds the engine dispatches, and its
+   javadoc says it is.** The reading has seven arms and a default that answers null, while the engine
+   also dispatches input fields, field arguments and enum values, all three description-bearing. No
+   rule reads it at those kinds, both consumers guarding by kind first, so nothing is red. That is
+   burn down item three's lesson word for word.
+
+7. **Three helpers were left in the wrong class and widened so a subclass could reach them.** The
+   cache root, the workspace segment and the workspace root have exactly one caller now, and their
+   javadoc explains a policy the class holding them no longer has.
+
+8. **Two pins are inert and their comments still take the credit.** The unit tier's pinned home and
+   the invoker's both claim to be what stops a run writing the developer's real cache, true now only
+   for the dev goal. The invoker's adds that its three cases share one store under three artifactIds,
+   a free extra exercise of the multi-graph store, and that exercise is gone: each case writes its
+   own store under its own clone. The sibling-partition guard still covers the population at the unit
+   tier, so nothing is uncovered, but the loss was silent.
+
+9. **What the supergraph relation can say has narrowed, unrecorded.** One graph per store means a
+   build's store holds at most one row in it and the grouping is unqueryable there. The dev session
+   keeps the workspace-wide home and is where the readers are, so no answer is lost today. A designed
+   capability scoped down belongs in the record either way.
+
+Two things were checked and are clean. The readers are handed their handle and resolve no home of
+their own, which a boundary guard in that module already enforces, so the move's reasoning about them
+holds. And the per-version sweep still runs under the new home, so nothing accumulates that did not
+accumulate before.
+
+## The SDL walk is redundant, measured (2026-09-11)
+
+The classpath side of this item is replacing one broad index of every class with a gatherer per
+thing an author writes, on the ground that one index with one scope rule cannot serve two purposes
+and grows a patch relation where the purposes differ. The SDL side has the same defect in a
+different key, and it had never been stated: the `graphql_` anchors have two producers.
+
+`SdlFactCapture` walks a merged registry with graphql-java accessors in hand and writes twenty seven
+relations. `SdlAnchor` derives twenty six of them out of the entry stratum in SQL. Both run on a
+mojo build, the derivation first and the walk second, both writing with an upsert, so **every anchor
+row a reader sees is the walk's and the derivation's is overwritten unexamined.** Nothing chose that
+arrangement and nothing states it. What it costs is not the duplication, it is that a column added
+to an anchor has to be taught to two writers in two languages, which is exactly what stopped item ten.
+
+**So the question was measured rather than argued.** `SdlWalkIsRedundantTest` captures one corpus
+twice, once by each producer, into two stores, and compares the twenty six shared relations by
+primary key and then column by column, excluding the instant, because two readings are two instants
+and that is what the column is for, and the generated columns, which are a function of the row
+beside them and would report one disagreement twice. The corpus carries every declaration form, both
+directive sites that take arguments, an interface, a union, an enum, an extension and a schema block,
+so agreement means something.
+
+The first run returned eight relations, and the shape of the answer is the useful part. Five differed
+in one column and it was the same column: the derivation numbered ordinals from one where the walk
+and the schema number them from zero. Six of `SdlAnchor`'s eleven ordinal computations already
+subtracted one and five had not, and a sixth defect fell out of fixing them, a base declaration
+selected as `merge_ordinal = 1` that had been consistent with the derivation's own off-by-one and
+with nothing else. The column comment says it outright, "on a base-less chain the first extension
+holds 0", and a density gate says it again. Three relations differed by five rows each, the scalars
+the specification gives every schema, which no document declares and the entries therefore do not
+hold. Those are the engine's facts rather than an author's, so they belong to the derivation as a
+constant and not to a transcription as rows, and the walk's own comment already framed them the same
+way: an existence row and no declaration site.
+
+**With those closed the derivation writes what the walk writes, exactly, and the case is green.**
+
+The twenty seventh relation needs no closing. `graphql_duplicate_declaration` is the overflow of a
+coordinate-keyed grain: the anchors admit one row per coordinate, so the losing occurrence of a
+duplicate has nowhere to go and lands there rendered as text. Its own comment already names it "its
+family's overflow relation" and pairs it with `graphitron_undecoded_argument_entry`, which this
+item's burn down had separately called the weaker choice. The entry stratum is keyed by position,
+where a field declared twice is two ordinary rows, so the shape that needs an overflow is the shape
+the entries replaced. Nothing in the tree reads it. A second case pins that: the walk fills it, the
+derivation leaves it empty, and the same duplicate stands in the entries as two rows.
+
+**What this is worth.** The SDL walk is 1234 lines. It cannot go alone: the graphitron decode is
+driven by its traversal, taking a site reference from it and borrowing its position helpers, so the
+two are 2690 lines that leave together. With them go the sink's record-binding arms for twenty seven
+relations, the overflow relation, and the second writer that makes every anchor column cost twice.
+
+**What that changes about the order.** Nothing, and that is the point. Items four through nine of the
+burn down read as completeness, one more site and one more directive until the list is empty, and
+that reading undersells them: they are the remaining blockers on deleting both walks. The decode has
+to be complete in the entry stratum before the traversal driving it can go. The prize was not visible
+while the SDL half was assumed to be load-bearing, and it is measured now rather than assumed.
+
+**Then the same question was put to the whole reactor rather than to one corpus.** A case over one
+schema is evidence about that schema. So the running order was inverted in a throwaway experiment,
+the entries and the anchors derived from them running after the walk inside the pass, which makes
+the derivation's rows the ones every downstream reader sees: the classification stages, the intent
+derivations, the generator, the pipeline tier, the integration builds. Every behavioural test in the
+reactor passes. The one failure was `GathererIsolationTest` objecting that the pass named
+`SdlEntries` and `SdlAnchor` directly instead of going through their package's face, which is a
+remark about the experiment's shortcut and not about a row. An earlier round of the same experiment
+had two failures, both one duplicated diagnostic, because the face also writes schema problems and
+running it twice reported the assembly's error twice; narrowing to the entries and the anchors left
+none.
+
+So the walk's `graphql_` half is not redundant on a fixture. It is redundant against every reader in
+the tree.
+
+**Which makes the answer to "delete it" precise, and it is half yes.** `SdlFactCapture` is two things
+sharing a file. One writes the twenty seven relations and is dead weight. The other is the traversal
+that drives the graphitron decode: the walk holds a `GraphitronFactCapture` and calls into it at each
+directive site with the coordinate and the per-name application ordinal. That half cannot go, because
+the `graphitron_` anchors have no derivation at all. `SdlAnchor` is the `graphql_` family's; the
+`graphitron_` family has no counterpart, and writing one is what burn down items four through nine
+amount to.
+
+The two halves are interleaved rather than layered, which is why the file cannot simply be cut in
+two: `captureSite` writes a declaration row and then dispatches that site's directives,
+`captureFields` writes a field row and then dispatches the field's. What a strip removes is
+twenty four row writes, twenty claims, seventeen quarantine calls and the whole of `SdlCoordinates`,
+leaving a traversal that computes directive ordinals and makes five decode calls. The claim and
+quarantine machinery goes with them, being the duplicate detection that feeds the overflow relation,
+which is the one part needing care rather than mechanism: a claim that currently skips a duplicate
+also stops the decode seeing it, so removing it changes what the decode is offered, and that has to
+be established before it is assumed.
+
+Two things this deliberately does not do. It does not strip the walk, which is the next commit and
+wants its own verification rather than riding on this one. And it does not leave the running order
+inverted: with the walk still writing last, the six defects fixed here stay invisible in production
+until the strip lands, and the case above is what will notice if they come back.

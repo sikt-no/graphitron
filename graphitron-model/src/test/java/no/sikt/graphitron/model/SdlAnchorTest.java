@@ -385,7 +385,11 @@ class SdlAnchorTest {
                     tuple("Rating", "ENUM", null));
 
             // The type expression is decomposed as the entry decomposed it, and the ordinal counts
-            // within the type rather than within the file.
+            // within the type rather than within the file, from zero. These three cases read 1 and 2
+            // until the walk and this derivation were compared: the derivation numbered from one,
+            // where the column's own comment, the density gate over merge order and the walk all
+            // number from zero, and nothing caught it because the walk writes last and its rows are
+            // the ones a reader sees.
             assertThat(dsl.select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.ORDINAL,
                         GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.NON_NULL, GRAPHQL_FIELD.IS_LIST)
                     .from(GRAPHQL_FIELD)
@@ -393,8 +397,8 @@ class SdlAnchorTest {
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3(), row.value4(),
                         row.value5())))
                 .containsExactlyInAnyOrder(
-                    tuple("title", 1, "String!", true, false),
-                    tuple("rated", 2, "[String]", false, true));
+                    tuple("title", 0, "String!", true, false),
+                    tuple("rated", 1, "[String]", false, true));
 
             // An input field lands in the same relation and is the one kind that carries a default.
             assertThat(dsl.select(GRAPHQL_FIELD.DEFAULT_VALUE_SDL).from(GRAPHQL_FIELD)
@@ -408,13 +412,13 @@ class SdlAnchorTest {
                     .from(GRAPHQL_ARGUMENT).where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(GRAPH))
                     .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
-                .containsExactly(tuple("prefix", 1, "\"x\""));
+                .containsExactly(tuple("prefix", 0, "\"x\""));
 
             assertThat(dsl.select(GRAPHQL_ENUM_VALUE.VALUE_NAME, GRAPHQL_ENUM_VALUE.ORDINAL)
                     .from(GRAPHQL_ENUM_VALUE).where(GRAPHQL_ENUM_VALUE.GRAPH_NAME.eq(GRAPH))
                     .and(GRAPHQL_ENUM_VALUE.TYPE_NAME.eq("Rating"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
-                .containsExactlyInAnyOrder(tuple("G", 1), tuple("PG", 2));
+                .containsExactlyInAnyOrder(tuple("G", 0), tuple("PG", 1));
         });
     }
 
@@ -438,7 +442,7 @@ class SdlAnchorTest {
                     .from(GRAPHQL_FIELD).where(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH))
                     .and(GRAPHQL_FIELD.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
-                .containsExactlyInAnyOrder(tuple("title", 1), tuple("rated", 2));
+                .containsExactlyInAnyOrder(tuple("title", 0), tuple("rated", 1));
 
             // The kind and the description are the base declaration's, an extension carrying neither.
             assertThat(dsl.select(GRAPHQL_TYPE.KIND, GRAPHQL_TYPE.DESCRIPTION).from(GRAPHQL_TYPE)
@@ -453,7 +457,7 @@ class SdlAnchorTest {
                     .where(GRAPHQL_TYPE_DECLARATION.GRAPH_NAME.eq(GRAPH))
                     .and(GRAPHQL_TYPE_DECLARATION.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
-                .containsExactlyInAnyOrder(tuple(1, false), tuple(2, true));
+                .containsExactlyInAnyOrder(tuple(0, false), tuple(1, true));
         });
     }
 
@@ -522,7 +526,7 @@ class SdlAnchorTest {
                     .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(GRAPH))
                     .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq("table"))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
-                .containsExactlyInAnyOrder(tuple("name", 1, null), tuple("schema", 2, "\"public\""));
+                .containsExactlyInAnyOrder(tuple("name", 0, null), tuple("schema", 1, "\"public\""));
         });
     }
 

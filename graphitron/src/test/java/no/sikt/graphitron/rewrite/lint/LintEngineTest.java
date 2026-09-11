@@ -9,7 +9,10 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.lint.LintFix;
@@ -126,6 +129,57 @@ class LintEngineTest {
         assertThat(forRule(findings("enum Color { DARK_RED }"), LintRule.ENUM_VALUES_SCREAMING_SNAKE_CASE)).isEmpty();
     }
 
+    // --- what the target carries ---
+
+    /**
+     * The description column has to be total over the kinds the engine dispatches, or a rule that
+     * asks a kind nobody has asked yet reads null and calls the node undocumented. It was not: the
+     * reading listed seven node classes and answered null for the rest, while the traversal also
+     * reaches input fields, field arguments and enum values, every one of which carries a
+     * description in the SDL grammar. Nothing was red, both readers of the column guarding by kind
+     * first, which is exactly why this case exists rather than a rule discovering it later.
+     */
+    @Test
+    void everyDispatchedKindThatCanCarryADescriptionCarriesItOnTheTarget() {
+        var seen = new EnumMap<LintNodeKind, String>(LintNodeKind.class);
+        var capture = new LintVisitor() {
+            @Override public LintRule rule() { return LintRule.TYPES_AND_FIELDS_HAVE_DESCRIPTIONS; }
+            @Override public Set<LintNodeKind> kinds() { return EnumSet.allOf(LintNodeKind.class); }
+            @Override public void inspect(LintTarget target, LintContext ctx) {
+                seen.merge(target.kind(), String.valueOf(target.description()),
+                    (first, next) -> first);
+            }
+        };
+
+        new LintEngine(List.of(capture)).run(new SchemaParser().parse("""
+            "a described object"
+            type Widget {
+              "a described field"
+              size("a described argument" unit: String): String
+            }
+            "a described input"
+            input WidgetFilter {
+              "a described input field"
+              name: String
+            }
+            "a described enum"
+            enum WidgetKind {
+              "a described enum value"
+              ROUND
+            }
+            """));
+
+        assertThat(seen)
+            .as("every description-bearing position the traversal reaches reports its description")
+            .containsEntry(LintNodeKind.OBJECT_TYPE, "a described object")
+            .containsEntry(LintNodeKind.FIELD_DEFINITION, "a described field")
+            .containsEntry(LintNodeKind.ARGUMENT_DEFINITION, "a described argument")
+            .containsEntry(LintNodeKind.INPUT_OBJECT_TYPE, "a described input")
+            .containsEntry(LintNodeKind.INPUT_FIELD_DEFINITION, "a described input field")
+            .containsEntry(LintNodeKind.ENUM_TYPE, "a described enum")
+            .containsEntry(LintNodeKind.ENUM_VALUE_DEFINITION, "a described enum value");
+    }
+
     // --- deprecations-have-a-reason ---
 
     @Test
@@ -138,6 +192,20 @@ class LintEngineTest {
     void deprecationsHaveAReason_silentWhenReasonGiven() {
         assertThat(forRule(findings("type Widget { old: String @deprecated(reason: \"use new\") }"),
             LintRule.DEPRECATIONS_HAVE_A_REASON)).isEmpty();
+    }
+
+    /**
+     * An argument written as something other than a string. The author passed something, so the
+     * insert-a-reason fix would land inside an argument list that already exists; the rule reports
+     * and offers nothing. {@code LintTarget} holds that as a null value under the argument's name,
+     * which is why its arguments map is not built by {@code Map.copyOf}.
+     */
+    @Test
+    void deprecationsHaveAReason_flagsANonStringReasonAndOffersNoFix() {
+        var found = forRule(findings("type Widget { old: String @deprecated(reason: 5) }"),
+            LintRule.DEPRECATIONS_HAVE_A_REASON);
+        assertThat(found).hasSize(1);
+        assertThat(found.getFirst().fix()).isEmpty();
     }
 
     // --- types-and-fields-have-descriptions ---

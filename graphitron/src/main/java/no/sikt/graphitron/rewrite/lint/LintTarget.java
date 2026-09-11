@@ -37,9 +37,11 @@ import java.util.Map;
  * @param location     the node's source location (1-based line/column), the default finding range
  * @param node         the parse tree node. The one residue: {@code NoDeprecatedDirectiveUsageVisitor}
  *                     descends an applied directive's argument <em>values</em> to report deprecated
- *                     input fields used inside an application, and the store holds those values as
- *                     rendered SDL rather than as a structure to descend. Every other rule is off
- *                     the parse tree, so this field is the remaining work rather than the shape
+ *                     input fields used inside an application, which is a walk and not a lookup, so
+ *                     it is the one rule {@link #arguments()} cannot serve. The store does hold the
+ *                     structure: {@code graphql_ast_value_entry} carries one row per written value
+ *                     node with its parent and its position, which is what that walk would read.
+ *                     So this field is remaining work rather than the shape
  */
 public record LintTarget(
     LintNodeKind kind,
