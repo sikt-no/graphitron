@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
+import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -25,12 +27,12 @@ import static org.jooq.impl.DSL.val;
  * reflectively instead. An arm answers what may be written at one coordinate, and the predicate
  * that decides it is the arm's own.
  *
- * <p>One arm so far, the scalar constants. The rest are named in this family's charter: five over
- * the reactor, for what a consumer writes at {@code @service}, {@code @condition},
- * {@code @externalField}, {@code @enum} and a reference's condition, and one more over the whole
- * classpath for the throwables an {@code @error} handler names. Arguments, return types and
- * declared exceptions get no arm of their own, being facts about a method, and a method has
- * exactly one arm.
+ * <p>Two arms so far, and they are the two the classpath answers rather than the reactor: the
+ * constants {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler
+ * names. The five still to come read the reactor instead, for what a consumer writes at
+ * {@code @service}, {@code @condition}, {@code @externalField}, {@code @enum} and a reference's
+ * condition. Arguments, return types and declared exceptions get no arm of their own, being facts
+ * about a method, and a method has exactly one arm.
  *
  * <p>Keyed and swept on the classpath entry, because an entry is shared: several graphs may read
  * one, and a reading replaces the rows of the entries it read and no others.
@@ -59,8 +61,9 @@ public final class CodeCapture {
         }
         sources(dsl, census.entries(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
+        throwables(dsl, census.classes(), new ClassAncestry(census.classes(), loader), touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
-        // declaring a constant loses its row.
+        // declaring a member loses its row.
         sweep(dsl, census.entries().stream().map(ClassfileCensus.EntryAt::source).toList(),
             touchedAt);
     }
@@ -127,10 +130,83 @@ public final class CodeCapture {
     }
 
     /**
+     * The throwables an {@code @error} handler may name: a class that extends its way to
+     * {@code java.lang.Throwable}, and every type it is beside it.
+     *
+     * <p>The whole classpath and not the reactor, because the exceptions an author maps are the
+     * ones no reactor signature names. An unchecked exception is thrown past the method that
+     * caused it, so no {@code throws} clause carries it and no arm that reads a signature arrives
+     * at one; the jOOQ integrity-constraint exception an {@code @error} handler names is exactly
+     * that case.
+     *
+     * <p>Ancestry is written for the same reason it is followed: it is what tells a checked
+     * throwable from an unchecked one and what sorts a specific exception under the family a
+     * handler matches on, and none of it can be recomputed here later, the chain running through
+     * classes that are on no classpath entry and have no rows.
+     */
+    private static void throwables(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                   ClassAncestry ancestry, LocalDateTime touchedAt) {
+        record Ancestor(String source, String className, String supertypeName) {}
+        var found = new ArrayList<ClassfileCensus.ClassAt>();
+        var ancestors = new ArrayList<Ancestor>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            if (!ancestry.isThrowable(at.className())) {
+                continue;
+            }
+            found.add(at);
+            for (String supertype : ancestry.ancestorsOf(at.className())) {
+                ancestors.add(new Ancestor(at.source(), at.className(), supertype));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var t = CODE_THROWABLE;
+        var rows = found.stream().collect(Rows.toRowList(
+            at -> val(at.source(), t.SOURCE_NAME),
+            at -> val(at.className(), t.CLASS_NAME),
+            at -> val(touchedAt, t.TOUCHED_AT)));
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        if (ancestors.isEmpty()) {
+            return;
+        }
+        var s = CODE_THROWABLE_SUPERTYPE;
+        var ancestorRows = ancestors.stream().collect(Rows.toRowList(
+            a -> val(a.source(), s.SOURCE_NAME),
+            a -> val(a.className(), s.CLASS_NAME),
+            a -> val(a.supertypeName(), s.SUPERTYPE_NAME),
+            a -> val(touchedAt, s.TOUCHED_AT)));
+        RowChunks.execute(ancestorRows, chunk ->
+            dsl.insertInto(s, s.SOURCE_NAME, s.CLASS_NAME, s.SUPERTYPE_NAME, s.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT)));
+    }
+
+    /**
      * Deletes the rows of the entries this reading read that it did not touch, which are the
-     * constants those entries no longer declare.
+     * members those entries no longer declare.
+     *
+     * <p>The ancestry rows are swept first and on their own instant rather than by cascade: a
+     * throwable that kept its row and lost a supertype is a live case, the class having been
+     * recompiled against a shallower hierarchy, and a cascade from the parent would never fire
+     * for it.
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
+        var s = CODE_THROWABLE_SUPERTYPE;
+        dsl.deleteFrom(s)
+            .where(s.SOURCE_NAME.in(sources))
+            .and(s.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var throwable = CODE_THROWABLE;
+        dsl.deleteFrom(throwable)
+            .where(throwable.SOURCE_NAME.in(sources))
+            .and(throwable.TOUCHED_AT.ne(touchedAt))
+            .execute();
         var t = CODE_SCALAR_CONSTANT;
         dsl.deleteFrom(t)
             .where(t.SOURCE_NAME.in(sources))

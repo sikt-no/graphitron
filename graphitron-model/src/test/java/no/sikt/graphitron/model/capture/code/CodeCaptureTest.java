@@ -13,11 +13,14 @@ import java.util.function.Consumer;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
+import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The first arm of the code family: what an author may name in {@code @scalarType(scalar:)}.
+ * The two arms of the code family a classpath answers: what an author may name in
+ * {@code @scalarType(scalar:)}, and the throwables an {@code @error} handler may name.
  *
  * <p>What these pin is the arm's admission rule rather than a census's completeness. The
  * predecessor wrote every public class on the classpath and left the filtering to whoever read it;
@@ -89,6 +92,52 @@ class CodeCaptureTest {
         });
     }
 
+    /**
+     * The arm's whole difficulty in one case. A classfile names its superclass and stops, so the
+     * chain above {@code AssertException} is readable from the jar for exactly one hop and leaves
+     * the classpath at {@code RuntimeException}, which is in no entry. An arm that only read
+     * classfiles would meet a class it could not prove was a throwable and write nothing.
+     */
+    @Test
+    @DisplayName("a throwable is admitted with the ancestry its chain leaves the classpath for")
+    void aThrowableIsAdmittedWithItsAncestry() {
+        withCapture(FIRST, dsl -> {
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
+                .as("a library throwable an @error handler could name").isEqualTo(1);
+            assertThat(ancestorsOf(dsl, "graphql.AssertException"))
+                .as("one hop inside the jar, and the rest read by loading what the jar points at")
+                .contains("graphql.GraphQLException", "java.lang.RuntimeException",
+                    "java.lang.Exception", "java.lang.Throwable", "java.lang.Object");
+        });
+    }
+
+    /** The admission is a filter, as on the sibling arm: most of a classpath is not a throwable. */
+    @Test
+    @DisplayName("a class that is not a throwable draws no row")
+    void aPlainClassIsNotAdmitted() {
+        withCapture(FIRST, dsl -> {
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.Scalars")))
+                .as("a class on the same jar, holding scalars and extending nothing").isZero();
+            assertThat(dsl.fetchCount(CODE_THROWABLE))
+                .as("and the arm is not empty, so the case above is a filter and not a failure")
+                .isPositive();
+        });
+    }
+
+    /**
+     * That the ancestry answers checked-ness is why it is stored rather than folded into a column,
+     * so the derivation is pinned at the relation rather than left to whoever reads it first.
+     */
+    @Test
+    @DisplayName("the closure is what says a throwable is unchecked")
+    void theClosureSaysUnchecked() {
+        withCapture(FIRST, dsl -> assertThat(ancestorsOf(dsl, "graphql.AssertException"))
+            .as("java.lang.RuntimeException in the closure is exactly what unchecked means")
+            .contains("java.lang.RuntimeException"));
+    }
+
     @Test
     @DisplayName("reading twice restamps rather than doubling")
     void readingTwiceRestamps() {
@@ -96,6 +145,8 @@ class CodeCaptureTest {
             var dsl = store.dsl();
             CodeCapture.capture(dsl, CLASSPATH, null, null, FIRST);
             int afterFirst = dsl.fetchCount(CODE_SCALAR_CONSTANT);
+            int throwablesAfterFirst = dsl.fetchCount(CODE_THROWABLE);
+            int ancestorsAfterFirst = dsl.fetchCount(CODE_THROWABLE_SUPERTYPE);
             CodeCapture.capture(dsl, CLASSPATH, null, null, SECOND);
 
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT))
@@ -103,6 +154,15 @@ class CodeCaptureTest {
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT,
                     CODE_SCALAR_CONSTANT.TOUCHED_AT.eq(FIRST)))
                 .as("and none still carrying the older reading's instant").isZero();
+            assertThat(dsl.fetchCount(CODE_THROWABLE))
+                .as("the same throwables").isEqualTo(throwablesAfterFirst);
+            assertThat(dsl.fetchCount(CODE_THROWABLE_SUPERTYPE))
+                .as("and the same ancestry, which is swept on its own instant rather than by"
+                    + " cascade and would empty if that sweep were wrong")
+                .isEqualTo(ancestorsAfterFirst);
+            assertThat(dsl.fetchCount(CODE_THROWABLE_SUPERTYPE,
+                    CODE_THROWABLE_SUPERTYPE.TOUCHED_AT.eq(FIRST)))
+                .as("none of it carrying the older reading's instant either").isZero();
         }
     }
 
@@ -111,6 +171,14 @@ class CodeCaptureTest {
             CodeCapture.capture(store.dsl(), CLASSPATH, null, null, at);
             body.accept(store.dsl());
         }
+    }
+
+    /** Every type one throwable is, as the store holds it. */
+    private static List<String> ancestorsOf(DSLContext dsl, String className) {
+        return dsl.select(CODE_THROWABLE_SUPERTYPE.SUPERTYPE_NAME)
+            .from(CODE_THROWABLE_SUPERTYPE)
+            .where(CODE_THROWABLE_SUPERTYPE.CLASS_NAME.eq(className))
+            .fetch(CODE_THROWABLE_SUPERTYPE.SUPERTYPE_NAME);
     }
 
     /** Where the graphql-java jar sits on this JVM's own classpath. */

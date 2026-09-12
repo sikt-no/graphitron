@@ -5231,6 +5231,34 @@ COMMENT ON COLUMN code_scalar_constant.class_name IS 'the owning class''s binary
 COMMENT ON COLUMN code_scalar_constant.field_name IS 'the constant''s own name, the right part of that reference; completing the key';
 COMMENT ON COLUMN code_scalar_constant.input_type IS 'the fully-qualified Java type a value of this constant''s scalar arrives as, the input parameter of the Coercing it holds, boxed where that is primitive. NULL where the constant does not resolve to one, which folds four cases this arm does not tell apart: the class does not load, the field is not a public static GraphQLScalarType, its initialiser throws, or the coercing declares no usable input. The one column here that a classfile cannot answer, read by loading the class instead, so absence is unresolved and never not-a-scalar';
 COMMENT ON COLUMN code_scalar_constant.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the constants a recompiled entry no longer declares';
+
+CREATE TABLE code_throwable (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_throwable IS 'One throwable on the classpath, which is what an author may name as an @error handler''s exception. For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.';
+COMMENT ON COLUMN code_throwable.source_name IS 'the classpath entry the class was read from, anchored by store_source; the key''s leading dimension, and what a reader joins through to rank a candidate by origin or by coordinate';
+COMMENT ON COLUMN code_throwable.class_name IS 'the throwable''s binary name, which is what an author writes; completing the key';
+COMMENT ON COLUMN code_throwable.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the throwables a recompiled entry no longer declares';
+
+CREATE TABLE code_throwable_supertype (
+  source_name    VARCHAR NOT NULL,
+  class_name     VARCHAR NOT NULL,
+  supertype_name VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, supertype_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_throwable (source_name, class_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_throwable_supertype IS 'Every type a throwable is, itself excluded: the superclass chain above it and every interface it or they implement, transitively. For example IntegrityConstraintViolationException being a DataAccessException, a RuntimeException, an Exception, a Throwable and an Object.';
+COMMENT ON COLUMN code_throwable_supertype.source_name IS 'the entry the throwable was read from, as on code_throwable; the key''s leading dimension';
+COMMENT ON COLUMN code_throwable_supertype.class_name IS 'the throwable this row is about, as on code_throwable; the row is deleted with it';
+COMMENT ON COLUMN code_throwable_supertype.supertype_name IS 'one type the throwable is, by binary name, completing the key. java.lang.Throwable is a row on every throwable, being the admission fact itself, and java.lang.Object is a row for the same reason it is one on sql_table_record_supertype: this states what the class is rather than what its source declared, and a throwable is an Object';
+COMMENT ON COLUMN code_throwable_supertype.touched_at IS 'when the reading that produced this row ran; swept with the throwable it hangs on';
+
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -12631,7 +12659,7 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('jvm_class', 0), ('jvm_method', 1), ('jvm_record_component', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
-  ('code_scalar_constant', 0),
+  ('code_scalar_constant', 0), ('code_throwable', 1),
   ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2), ('intent_node_type', 3),
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
@@ -13014,6 +13042,9 @@ INSERT INTO meta_grain VALUES
    'source_name, class_name', 'classpath'),
   ('class-supertype',
    'one supertype one class declares',
+   'source_name, class_name, supertype_name', 'classpath'),
+  ('class-ancestor',
+   'one type one class is, the class itself excluded',
    'source_name, class_name, supertype_name', 'classpath'),
   ('class-method',
    'one method of one class, overloads told apart by descriptor',
@@ -13447,6 +13478,14 @@ INSERT INTO meta_relation VALUES
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',
    'The first arm of a family whose shape is one gatherer per thing an author writes, rather than one index of every class on the classpath. An index answers what the classpath holds and leaves every reader to re-filter it; this answers what may be written at one directive, and the filter is the arm''s own admission rule. The admission is a classfile fact, a public static field whose declared type is exactly GraphQLScalarType, so the candidate set is read from bytes. The input type is not, and the column says so: it is reached by loading the class, the coercing being a live object rather than a signature. Not reactor-limited, alone among the arms but for the throwables, because the constants an author names are a library''s and the premise that consumer vocabulary lives in reactor source was falsified outright by @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date").'),
+  ('code_throwable', 'classpath-class', 'code',
+   'One throwable on the classpath, which is what an author may name as an @error handler''s exception.',
+   'For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.',
+   'The one arm whose corpus cannot be the reactor. The five method arms reach a class by reading a signature that names it, and the exceptions an author maps are precisely the ones no signature names: jOOQ throws unchecked past the method, so no throws clause mentions them and no reactor walk arrives at one. Harvesting every throwable instead is affordable because the population is small and self-limiting, one class in forty-eight over a real compile classpath, and it is bounded further by that classpath being the compile scope every mojo resolves, so a test-scoped library never reaches it. Admission is a chain and not a name test: the class extends its way to java.lang.Throwable, which is read from classfiles where the chain stays on the classpath and by loading the class where it leaves it, so a chain that cannot be closed admits nothing rather than guessing.'),
+  ('code_throwable_supertype', 'class-ancestor', 'code',
+   'Every type a throwable is, itself excluded: the superclass chain above it and every interface it or they implement, transitively.',
+   'For example IntegrityConstraintViolationException being a DataAccessException, a RuntimeException, an Exception, a Throwable and an Object.',
+   'The closure and not the edges, for the reason sql_table_record_supertype holds one: the chain above a throwable runs through java.lang, which is no classpath entry and has no rows here, so the store would hold no edges a closure could be recomputed from and a recursive join would stop at the first JDK ancestor. What reads it is the ranking the harvest owes a reader. Whether a throwable is checked is this relation''s answer rather than a column, java.lang.RuntimeException or java.lang.Error appearing in the closure being exactly what unchecked means, and the same join sorts a specific exception under the family a handler matches on, which is what a DATABASE handler asks when it looks for a java.sql.SQLException in a cause chain.'),
   ('java_file', 'source-file', 'java-source',
    'One .java file whose declarations this store holds, and the stamp they were read at.',
    'For example a consumer''s FilmService.java, under the root it was walked from and stamped with the content hash it was parsed at.',
