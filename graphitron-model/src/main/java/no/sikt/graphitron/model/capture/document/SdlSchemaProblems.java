@@ -3,7 +3,7 @@ package no.sikt.graphitron.model.capture.document;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
-import no.sikt.graphitron.model.sink.RowChunks;
+import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 
@@ -81,10 +81,10 @@ public final class SdlSchemaProblems {
                 i -> val(problems.get(i).line(), t.SOURCE_LINE),
                 i -> val(problems.get(i).column(), t.SOURCE_COLUMN)));
 
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.ORDINAL, t.TOUCHED_AT, t.STAGE, t.ERROR_CLASS,
                     t.MESSAGE, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.STAGE, excluded(t.STAGE))

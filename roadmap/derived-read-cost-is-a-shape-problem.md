@@ -1778,6 +1778,12 @@ nothing outside the class spelled them. `SdlFactCapture.capture` returned the wa
 during the additive window and returns void again, and `EntryWriterAgreementTest` and
 `CapturedStore.entriesDecodedByTheWalk` went with the arm they compared against.
 
+**Java, the write path.** `RowChunks`, its `ROWS_PER_STATEMENT` bound, `of` and `execute`, and the
+chunk vocabulary in the javadoc around them: a statement carrying its rows has no bound worth
+picking once the rows are bound per row instead. `MultiRowWritesAreChunkedTest` went with it,
+replaced by `WritesBindPerRowTest`, which holds the stronger claim that the module has no multi-row
+write rather than that its multi-row writes are bounded.
+
 **Swept, with seven survivors found and fixed.** One in main sources: the comment on
 `intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
 rung as current. Six in roadmap bodies, four of them live plans rather than history:
@@ -3070,3 +3076,153 @@ naming it. One resolved question and one positional question, answered from the 
 4. **The editor's six remaining reads**, each needing its decode captured first.
 5. **The generator's two**, `graphitron_argmapping_entry` and `graphitron_field_reference_step_entry`,
    whose conversion leaves `GraphitronSchema` as its single remaining incumbent input.
+
+## The entry stratum costs more to write than everything else the store holds (2026-09-12)
+
+The read side has been counted twice now, the write side never. Capture's largest single cost is
+writing the entry stratum, and it is the mechanism rather than the tuning: 7194 entry rows cost more
+wall clock than the 86139 rows of every other family put together. The stratum this item is growing
+is the expensive one, so the number gets worse as the migration proceeds rather than better.
+
+**How it was measured.** JFR at `settings=profile` over `mvn graphitron:capture` on
+`graphitron-sakila-example`, plus a temporary probe timing each write mechanism and counting its
+rows. Neither instrument was kept; the probe is reproduced in the numbers below and nothing in the
+tree depends on it.
+
+| mechanism | rows | time | per row |
+|---|---|---|---|
+| `FactSink` generic arm, a bind batch | 64589 | 1.6 s | 25 us |
+| `FactWrites`, a written bind batch | 21550 | 0.8 s | 35 us |
+| `RowChunks`, a multi-row `VALUES` upsert | 7194 | 8.7 s | 1200 us |
+
+Forty times the per-row cost, and the hot callers are not incidental. Ranked, they are
+`SdlEntries.valuesOfDepth`, `fieldDefinitions`, `appliedArguments`, `fieldDirectives`,
+`fieldArguments` and `typeDeclarations`, with `GraphitronFieldEntries.bindings` and
+`JooqFactCapture.columns` behind them. That is the entry stratum and the families feeding it.
+
+**The cost is H2 parsing, not inserting.** The hottest leaf frame in the whole process is
+`org.h2.command.Parser.setSQL`, 334 of 2788 samples. Of those, 253 carry no graphitron frame at all,
+because the stack is truncated at 200 frames by `parseQueryExpressionBody` recursing into itself: a
+multi-row upsert renders as a MERGE over a chain of unioned SELECTs and H2 recurses once per row
+group. `RowChunks` predicts exactly this and bounds it; what its bound got wrong is the number. One
+500-row chunk of `fieldDefinitions` renders to 172740 characters of SQL and takes 844 ms to parse.
+
+**Total time is linear in the bound**, which is what per-statement cost quadratic in rows predicts.
+Same 7194 rows every run:
+
+| chunk | 500 | 200 | 100 | 50 | 25 | 10 |
+|---|---|---|---|---|---|---|
+| ms | 7829 | 3607 | 1839 | 1595 | 1694 | 1488 |
+
+It flattens around 50, where fixed per-statement overhead takes over. Three interleaved repeats of
+the endpoints under a loaded machine, carrying the untouched `FactSink` figure as a control: 7592 /
+8689 / 9973 against 1799 / 1635 / 2053, with the control flat at 1549 to 1686 throughout. So the
+constant alone is worth about 4.8x. It is not the fix, because even at its optimum the mechanism is
+still nine times the bind batch's per-row cost.
+
+### What jOOQ offers, and the one that looks right and is not
+
+Three candidates, measured against the real relation, seventeen columns and 800 rows, interleaved in
+one JVM so machine load falls on all of them equally. All five wrote the same 800 rows, asserted
+rather than assumed.
+
+| shape | steady state |
+|---|---|
+| `valuesOfRows(chunk)`, chunk 500, today | 99 ms |
+| `valuesOfRows(chunk)`, chunk 50 | 38 ms |
+| `dsl.batched(cfg -> ...)` | 114 ms |
+| `dsl.batch(query).bind(...)` | 36 ms |
+| `dsl.batch(query, Object[][])` | 27 ms |
+
+`dsl.batched` is the trap. It is jOOQ's transparent batching: wrap a block, keep writing ordinary
+single-row statements, and `BatchedConnection` turns consecutive identical SQL into `addBatch()`. It
+names MERGE among the statements it buffers, and it is the option that preserves a declarative call
+site most obviously. It is also slower than what we do today, because it batches only the JDBC side:
+jOOQ still builds and renders a Query per row, and rendering that 2581-character MERGE 800 times
+costs more than the parse it saves.
+
+`dsl.batch(Query, Object[][])` is what jOOQ documents for this, and its javadoc states the logic it
+runs: prepare once from `query.getSQL(false)`, bind per value, `addBatch()` per row, one
+`executeBatch()`. One render and one parse for a whole relation. It is also what `FactWrites` already
+does, so it makes capture's two write paths agree rather than diverge. One precondition, checked: the
+store uses default `Settings`, so `StatementType` is `PREPARED_STATEMENT`. Under `STATIC_STATEMENT`
+jOOQ inlines the bind values and the whole benefit is gone.
+
+### The declarative half does not move
+
+This is the fact that was not available when the bound was chosen. The bind batch was considered then
+and set aside partly on the expectation that it would cost the typed `Rows.toRowList` spelling at
+every site. It does not. The collector already produces the values; only the statement changes.
+
+```diff
+-        RowChunks.execute(rows, chunk ->
++        BindBatch.execute(dsl, rows, markers ->
+             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                     t.SOURCE_REF, t.TOUCHED_AT, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
+-                .valuesOfRows(chunk)
++                .values(markers)
+                 .onDuplicateKeyUpdate()
+```
+
+Three lines per site, and the extractor list above it, the column list and the conflict clause are
+all untouched. `BindBatch` is about 25 lines: take the `List<RowN>` the collector built, unwrap each
+`Param` to its value, render the statement once against a row of null markers, hand jOOQ the value
+table. Column types still come off `insertInto(t, cols)`, which is where they came from before;
+`val(x, t.COL)` never gave compile-time checking either, its value parameter being `Object`.
+
+**Measured on the whole capture**, converting all 81 sites across the eight capture classes. Machine
+load was 27 to 32 during the run so wall clock was unusable, and the figures below are JFR sample
+proportions, which are load independent, with untouched code as the control.
+
+| | before | after |
+|---|---|---|
+| entry-write mechanism | 15.85% | 2.43% |
+| of which deep parser recursion | 9.29% | 0% |
+| any H2 `Parser` frame anywhere | 15.39% | 2.78% |
+| `FactSink.flush`, control | 6.99% | 7.75% |
+| `Materializations.refreshPartition`, control | 14.78% | 19.05% |
+
+Against the `FactSink.flush` control the write path falls from 2.27 times its cost to 0.31, a 7.3x
+shift. The controls rising in share is the expected shape when the measured thing shrinks and the run
+is otherwise unchanged.
+
+**Behaviour is unchanged.** The one failure the conversion produces is
+`MultiRowWritesAreChunkedTest`, which asserts that at least sixty multi-row writes exist and that
+each sits inside the bound; after the conversion there are none, so its floor fails. That guard
+polices the mechanism being removed rather than any behaviour, and it is replaced below. Landed on
+this branch with the replacement in place, `graphitron-model` runs 1191 tests green and the reactor
+7657 with no failures, the sakila example's execution tier among them.
+
+The site count differs between the measurement and the landing, 81 against 89, and the eight are
+writers this branch carries that the measured tree did not: three catalog writers added when the
+catalog family was reduced to one producer, and five in `CodeCapture`. The measurement is left at
+the number it was taken over rather than restated, since nothing about the proportions depends on
+the eight. What is worth recording is that the gate found them: the conversion arrived as a patch
+against the smaller tree, applied cleanly, and left all eight writing rows into the statement, and
+`WritesBindPerRowTest` named each by file and line rather than letting a green build claim the
+module had been converted.
+
+There is one semantic difference and it runs in the safe direction. Two rows sharing a key inside one
+multi-row MERGE can collide, which is why the bound has to argue that no caller has an intra-call key
+collision. One statement per row makes the second an update instead, so the change can remove a
+failure mode and cannot add one.
+
+### What it retires, and what replaces the guard
+
+`RowChunks`, `ROWS_PER_STATEMENT` and the chunk vocabulary in the javadoc around them lost their
+callers and are gone. `MultiRowWritesAreChunkedTest` is inverted rather than deleted, as
+`WritesBindPerRowTest`: the module has no multi-row write at all, instead of having bounded ones.
+That is the stronger claim, there is no longer a bound to pick or a constant to justify, and the
+javadoc explaining why the quadratic matters carries over unchanged. The floor moves with it, held
+over the `BindBatch.execute` sites, because what must not quietly disappear is the population of
+relations written through the bind batch.
+
+The bug report filed against the original heap exhaustion is a report rather than a solution, and
+this dissolves it: the bound it delivered was the right diagnosis reaching for the wrong lever, and
+there is nothing left for it to hold once the statement no longer carries its rows.
+
+Left out deliberately. The extractor list and the column list are two parallel sequences that have to
+stay in the same order, and nothing checks that. A shape pairing each column with its extractor would
+derive both from one declaration and make them impossible to desynchronise. That is a real
+improvement and it rewrites all 89 call sites rather than substituting one line in each, so it is a
+separate piece of work, not a rider on this one.

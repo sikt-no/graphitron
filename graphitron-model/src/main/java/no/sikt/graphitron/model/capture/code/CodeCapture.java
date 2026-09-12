@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.capture.code;
 
 import no.sikt.graphitron.model.classpath.ScalarConstantInput;
 import no.sikt.graphitron.model.config.ClasspathEntry;
-import no.sikt.graphitron.model.sink.RowChunks;
+import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 
@@ -112,10 +112,10 @@ public final class CodeCapture {
             at -> val(at.coordinate(), t.COORDINATE),
             at -> val(touchedAt, t.LAST_SEEN),
             at -> val(touchedAt, t.READ_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.ORIGIN, t.COORDINATE, t.LAST_SEEN,
                     t.READ_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.COORDINATE, excluded(t.COORDINATE))
@@ -154,9 +154,9 @@ public final class CodeCapture {
             c -> val(c.fieldName(), t.FIELD_NAME),
             c -> val(ScalarConstantInput.of(c.className(), c.fieldName(), loader), t.INPUT_TYPE),
             c -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.FIELD_NAME, t.INPUT_TYPE, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.INPUT_TYPE, excluded(t.INPUT_TYPE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -199,9 +199,9 @@ public final class CodeCapture {
             at -> val(at.source(), t.SOURCE_NAME),
             at -> val(at.className(), t.CLASS_NAME),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
         if (ancestors.isEmpty()) {
@@ -213,9 +213,9 @@ public final class CodeCapture {
             a -> val(a.className(), s.CLASS_NAME),
             a -> val(a.supertypeName(), s.SUPERTYPE_NAME),
             a -> val(touchedAt, s.TOUCHED_AT)));
-        RowChunks.execute(ancestorRows, chunk ->
+        BindBatch.execute(dsl, ancestorRows, markers ->
             dsl.insertInto(s, s.SOURCE_NAME, s.CLASS_NAME, s.SUPERTYPE_NAME, s.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT)));
     }
@@ -277,10 +277,10 @@ public final class CodeCapture {
             m -> val(m.at().descriptor(), t.DESCRIPTOR),
             m -> val(m.at().isStatic(), t.IS_STATIC),
             m -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR, t.IS_STATIC,
                     t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.IS_STATIC, excluded(t.IS_STATIC))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -307,10 +307,10 @@ public final class CodeCapture {
             row -> val(row.at().name(), p.PARAMETER_NAME),
             row -> val(row.at().type(), p.PARAMETER_TYPE),
             row -> val(touchedAt, p.TOUCHED_AT)));
-        RowChunks.execute(parameterRows, chunk ->
+        BindBatch.execute(dsl, parameterRows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
                     p.PARAMETER_NAME, p.PARAMETER_TYPE, p.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
                 .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
@@ -357,10 +357,10 @@ public final class CodeCapture {
             l -> val(l.at().descriptor(), t.DESCRIPTOR),
             l -> val(l.table(), t.TABLE_PARAMETER_TYPE),
             l -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
                     t.TABLE_PARAMETER_TYPE, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TABLE_PARAMETER_TYPE, excluded(t.TABLE_PARAMETER_TYPE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));

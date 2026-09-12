@@ -7,7 +7,7 @@ priority: 1
 theme: dev-loop
 depends-on: []
 created: 2026-09-11
-last-updated: 2026-09-11
+last-updated: 2026-09-12
 ---
 
 # SDL capture writes a whole relation in one statement and H2's parser exhausts the heap
@@ -129,7 +129,61 @@ one statement reports it by file and line. And the trap the spec names, a writer
 list is simply called `chunk`, is reported too, where a scan keying on the argument's name would
 have passed it.
 
+## Superseded by binding per row (2026-09-12)
+
+The bound is retired and the goal is met more completely than it specified. A sibling session
+profiled the whole capture and found this item's diagnosis correct and its remedy aimed one step
+short: the cost is H2 parsing rather than inserting, `Parser.setSQL` being the hottest leaf frame in
+the process, so bounding the rows per statement makes total time linear in the bound rather than
+removing the term. Measured across the bounds 500 to 10, time falls from 7829 ms to 1488 ms and
+flattens where fixed per-statement overhead takes over: the constant is worth about 4.8x and there
+is no bound at which the mechanism stops costing nine times what a bind batch costs per row. The
+supporting numbers, the three jOOQ shapes weighed against each other and the profile proportions,
+are in the `derived-read-cost-is-a-shape-problem` chapter dated the same day.
+
+What replaced it. `BindBatch.execute(dsl, rows, markers -> statement)` renders the statement once
+against a row of bind markers and hands jOOQ the values as a table, one render and one parse for a
+whole relation however many rows it has. All 89 `valuesOfRows` sites in `graphitron-model` main
+sources go through it: 19 in `SdlEntries`, 21 in `GraphitronFieldEntries`, 12 in
+`GraphitronInputValueEntries`, 7 in `GraphitronTypeEntries`, 18 in `JooqFactCapture`, 7 in
+`CodeCapture`, 4 in `StoreEntries` and 1 in `SdlSchemaProblems`. The declarative half does not move:
+the `Rows.toRowList` extractor list, the column list and the conflict clause are untouched at every
+site, which is what made the conversion a substitution rather than a rewrite.
+
+Eight of those 89 are not in the sibling's measurement, which converted 81. Three are the
+`store_source`, `store_graph_source` and `sql_table_record_supertype` writers this branch added when
+the catalog family was reduced to one producer, and five are `CodeCapture` writers this branch
+carries and the measured tree did not. They were converted here by hand, in the shape the other 81
+established, and the gate is what found them: the sibling's patch left them untouched and
+`WritesBindPerRowTest` named each by file and line.
+
+`RowChunks`, its `ROWS_PER_STATEMENT` bound and `MultiRowWritesAreChunkedTest` are gone. The gate is
+replaced rather than deleted, by `WritesBindPerRowTest`, which asserts that `.valuesOfRows(` appears
+nowhere in the module instead of asserting that each occurrence sits inside the bound. That is the
+stronger claim and the cheaper check: there is no bound to pick, no constant to justify, and no
+enclosure to decide. The floor that stops a scan reaching nothing from passing moves with it, held
+over the `BindBatch.execute` sites, and the javadoc explaining why the quadratic matters carries
+over unchanged. Watched failing: reintroducing one `.valuesOfRows(` in `StoreEntries` reports
+`StoreEntries.java:174` and fails the build.
+
+One semantic difference, and it runs in the safe direction. Two rows sharing a key inside one
+multi-row MERGE can collide, which is why the bound had to argue that no caller has an intra-call
+key collision. One row per statement execution makes the second an update instead, which is the
+disposition the conflict clause already states for rows arriving in separate readings, so the change
+can remove a failure mode and cannot add one.
+
+One precondition, checked rather than assumed. `dsl.batch(Query, Object[][])` prepares once from
+`query.getSQL(false)` and binds per row, which is the whole benefit, and jOOQ takes that path only
+under `StatementType.PREPARED_STATEMENT`. The store uses default `Settings`, so it does. Under
+`STATIC_STATEMENT` jOOQ's `BatchSingle.executeStatic` binds each row into the query and re-renders
+it inlined, so the behaviour stays correct and only the benefit is lost; the precondition is a
+performance one, not a correctness one.
+
 ## Implementation
+
+This section and the `Tests` section below specify the bound, which is what shipped on
+2026-09-11 and what the section above retired. They are kept as written because the delivery
+record refers to them; the mechanism they describe is not in the tree.
 
 **One way to write a relation.** `RowChunks` gains
 `execute(List<R> rows, Function<List<R>, ? extends Query> statement)`, which walks `of(rows)` and

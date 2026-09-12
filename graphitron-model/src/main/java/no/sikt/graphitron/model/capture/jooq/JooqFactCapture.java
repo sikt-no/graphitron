@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model.capture.jooq;
 
-import no.sikt.graphitron.model.sink.RowChunks;
+import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
 import org.jooq.EnumType;
@@ -116,9 +116,9 @@ public final class JooqFactCapture {
             source -> val("JOOQ_SCHEMA", t.SOURCE_KIND),
             source -> val(touchedAt, t.LAST_SEEN),
             source -> val(touchedAt, t.READ_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.LAST_SEEN, t.READ_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
                 .set(t.READ_AT, excluded(t.READ_AT)));
@@ -137,10 +137,10 @@ public final class JooqFactCapture {
             at -> val(jooq.keysClassFqn(at.table().getSchema()).orElse(null), t.KEYS_CLASS_FQN),
             at -> val(jooq.tablesClassFqn(at.table().getSchema()).orElse(null), t.TABLES_CLASS_FQN),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.KEYS_CLASS_FQN, t.TABLES_CLASS_FQN,
                     t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.KEYS_CLASS_FQN, excluded(t.KEYS_CLASS_FQN))
                 .set(t.TABLES_CLASS_FQN, excluded(t.TABLES_CLASS_FQN))
@@ -159,10 +159,10 @@ public final class JooqFactCapture {
             at -> val(at.table().getRecordType().getName(), t.RECORD_CLASS_FQN),
             at -> val(nullIfBlank(at.table().getComment()), t.DESCRIPTION),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TABLE_TYPE, t.JOOQ_NAME,
                     t.CLASS_FQN, t.RECORD_CLASS_FQN, t.DESCRIPTION, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TABLE_TYPE, excluded(t.TABLE_TYPE))
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
@@ -209,10 +209,10 @@ public final class JooqFactCapture {
             i -> val(facts.get(i).nullable(), t.NULLABLE),
             i -> val(nullIfBlank(facts.get(i).comment()), t.DESCRIPTION),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.COLUMN_NAME, t.ORDINAL,
                     t.JOOQ_NAME, t.SQL_TYPE, t.BINDING_TYPE, t.NULLABLE, t.DESCRIPTION, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.ORDINAL, excluded(t.ORDINAL))
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
@@ -238,10 +238,10 @@ public final class JooqFactCapture {
             c -> val(c.jooqName(), t.JOOQ_NAME),
             c -> val(c.keyPosition(), t.KEY_POSITION),
             c -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
                     t.CONSTRAINT_TYPE, t.JOOQ_NAME, t.KEY_POSITION, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.CONSTRAINT_TYPE, excluded(t.CONSTRAINT_TYPE))
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
@@ -269,10 +269,10 @@ public final class JooqFactCapture {
             at -> val(at.position(), t.POSITION),
             at -> val(at.value(), t.COLUMN_NAME),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
                     t.POSITION, t.COLUMN_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -290,10 +290,10 @@ public final class JooqFactCapture {
             at -> val(at.name(), t.TABLE_NAME),
             at -> val(at.table().getPrimaryKey().getName(), t.CONSTRAINT_NAME),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
                     t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.CONSTRAINT_NAME, excluded(t.CONSTRAINT_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -331,11 +331,11 @@ public final class JooqFactCapture {
             i -> val(split(keys.get(i).targetTable())[1], t.REFERENCED_TABLE),
             i -> val(keys.get(i).referencedConstraintName(), t.REFERENCED_CONSTRAINT_NAME),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.REFERENCED_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME,
                     t.CONSTRAINT_NAME, t.REFERENCED_SCHEMA, t.REFERENCED_TABLE,
                     t.REFERENCED_CONSTRAINT_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.REFERENCED_SOURCE_NAME, excluded(t.REFERENCED_SOURCE_NAME))
                 .set(t.REFERENCED_SCHEMA, excluded(t.REFERENCED_SCHEMA))
@@ -365,9 +365,9 @@ public final class JooqFactCapture {
             i -> val(owners.get(i).name(), t.TABLE_NAME),
             i -> val(found.get(i).name(), t.INDEX_NAME),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.INDEX_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
@@ -397,10 +397,10 @@ public final class JooqFactCapture {
             i -> val(named.get(i).position(), t.POSITION),
             i -> val(named.get(i).value(), t.COLUMN_NAME),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.INDEX_NAME, t.POSITION,
                     t.COLUMN_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -431,10 +431,10 @@ public final class JooqFactCapture {
             i -> val(found.get(i).keyColumnsForm().name(), t.KEY_COLUMNS_FORM),
             i -> val(found.get(i).keyColumnsClass(), t.KEY_COLUMNS_CLASS),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TYPE_ID_FORM, t.TYPE_ID,
                     t.TYPE_ID_CLASS, t.KEY_COLUMNS_FORM, t.KEY_COLUMNS_CLASS, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TYPE_ID_FORM, excluded(t.TYPE_ID_FORM))
                 .set(t.TYPE_ID, excluded(t.TYPE_ID))
@@ -465,10 +465,10 @@ public final class JooqFactCapture {
             at -> val(at.position(), t.POSITION),
             at -> val(at.value(), t.COLUMN_NAME),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.POSITION, t.COLUMN_NAME,
                     t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
@@ -489,10 +489,10 @@ public final class JooqFactCapture {
             at -> val(jooq.routineCallFactsOf(at.table()).routinesClassFqn(), t.ROUTINES_CLASS_FQN),
             at -> val(jooq.routineCallFactsOf(at.table()).methodName(), t.ROUTINES_METHOD_NAME),
             at -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.ROUTINE_NAME, t.ROUTINE_TYPE,
                     t.ROUTINES_CLASS_FQN, t.ROUTINES_METHOD_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.ROUTINE_TYPE, excluded(t.ROUTINE_TYPE))
                 .set(t.ROUTINES_CLASS_FQN, excluded(t.ROUTINES_CLASS_FQN))
@@ -526,10 +526,10 @@ public final class JooqFactCapture {
             i -> val(found.get(i).javaName(), t.JOOQ_NAME),
             i -> val(found.get(i).bindingType(), t.BINDING_TYPE),
             i -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.ROUTINE_NAME, t.POSITION, t.JOOQ_NAME,
                     t.BINDING_TYPE, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
                 .set(t.BINDING_TYPE, excluded(t.BINDING_TYPE))
@@ -585,9 +585,9 @@ public final class JooqFactCapture {
             source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
             source -> val(touchedAt, s.LAST_SEEN),
             source -> val(touchedAt, s.READ_AT)));
-        RowChunks.execute(registry, chunk ->
+        BindBatch.execute(dsl, registry, markers ->
             dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
                 .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
@@ -600,9 +600,9 @@ public final class JooqFactCapture {
         var membership = sources.stream().collect(Rows.toRowList(
             source -> val(graphName, t.GRAPH_NAME),
             source -> val(source, t.SOURCE_NAME)));
-        RowChunks.execute(membership, chunk ->
+        BindBatch.execute(dsl, membership, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyIgnore());
     }
 
@@ -637,9 +637,9 @@ public final class JooqFactCapture {
             found1 -> val(found1.name(), t.SUPERTYPE_NAME)));
         // Every column is a key column, so a row that is still true is the row that is already
         // there and there is nothing on it to update.
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.SUPERTYPE_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyIgnore());
     }
 
@@ -678,9 +678,9 @@ public final class JooqFactCapture {
             key -> val(enumSchemaOf(fieldByClass.get(key)), t.TABLE_SCHEMA),
             key -> val(enumTypeNameOf(fieldByClass.get(key)), t.TYPE_NAME),
             key -> val(touchedAt, t.TOUCHED_AT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_FQN, t.TABLE_SCHEMA, t.TYPE_NAME, t.TOUCHED_AT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }

@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
-import no.sikt.graphitron.model.sink.RowChunks;
+import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
@@ -147,10 +147,10 @@ final class GraphitronFieldEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "name"), t.NAME_REF)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.NAME_REF)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME_REF, excluded(t.NAME_REF)));
@@ -169,10 +169,10 @@ final class GraphitronFieldEntries {
             application -> val(inside(application, "condition", "method"), t.METHOD),
             application -> val(inside(application, "condition", "argMapping"), t.ARGMAPPING),
             application -> val(bool(application, "override"), t.OVERRIDE)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING, t.OVERRIDE)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -193,10 +193,10 @@ final class GraphitronFieldEntries {
             written -> val(written.position(), t.POSITION),
             written -> val(touchedAt, t.TOUCHED_AT),
             written -> val(written.value(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME, excluded(t.NAME)));
@@ -212,10 +212,10 @@ final class GraphitronFieldEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "type"), t.PARTICIPANT_TYPE_REF)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.PARTICIPANT_TYPE_REF)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARTICIPANT_TYPE_REF, excluded(t.PARTICIPANT_TYPE_REF)));
@@ -234,10 +234,10 @@ final class GraphitronFieldEntries {
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.TABLE_REF, excluded(t.TABLE_REF))
@@ -258,10 +258,10 @@ final class GraphitronFieldEntries {
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.KEY_REF, excluded(t.KEY_REF))
@@ -282,10 +282,10 @@ final class GraphitronFieldEntries {
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -306,10 +306,10 @@ final class GraphitronFieldEntries {
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.TABLE_REF, excluded(t.TABLE_REF))
@@ -330,10 +330,10 @@ final class GraphitronFieldEntries {
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.KEY_REF, excluded(t.KEY_REF))
@@ -354,10 +354,10 @@ final class GraphitronFieldEntries {
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -377,10 +377,10 @@ final class GraphitronFieldEntries {
             application -> val(inside(application, "service", "className"), t.CLASS_NAME),
             application -> val(inside(application, "service", "method"), t.METHOD),
             application -> val(inside(application, "service", "argMapping"), t.ARGMAPPING)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -400,10 +400,10 @@ final class GraphitronFieldEntries {
             written -> val(written.position(), t.POSITION),
             written -> val(touchedAt, t.TOUCHED_AT),
             written -> val(written.value(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME, excluded(t.NAME)));
@@ -421,10 +421,10 @@ final class GraphitronFieldEntries {
             application -> val(inside(application, "reference", "className"), t.CLASS_NAME),
             application -> val(inside(application, "reference", "method"), t.METHOD),
             application -> val(inside(application, "reference", "argMapping"), t.ARGMAPPING)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -444,10 +444,10 @@ final class GraphitronFieldEntries {
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "className"), t.CLASS_NAME),
             application -> val(string(application, "method"), t.METHOD)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
@@ -465,10 +465,10 @@ final class GraphitronFieldEntries {
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(integer(application, "defaultFirstValue"), t.DEFAULT_FIRST_VALUE),
             application -> val(string(application, "connectionName"), t.CONNECTION_NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.DEFAULT_FIRST_VALUE, t.CONNECTION_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.DEFAULT_FIRST_VALUE, excluded(t.DEFAULT_FIRST_VALUE))
@@ -485,10 +485,10 @@ final class GraphitronFieldEntries {
             application -> SdlEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "typeName"), t.NODE_TYPE_REF)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.NODE_TYPE_REF)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NODE_TYPE_REF, excluded(t.NODE_TYPE_REF)));
@@ -510,11 +510,11 @@ final class GraphitronFieldEntries {
                 t.TABLE_REF_NAMESPACE_PART),
             application -> val(QualifiedNameGrammar.namePart(string(application, "table")),
                 t.TABLE_REF_NAME_PART)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.OPERATION, t.MULTI_ROW, t.TABLE_REF,
                     t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.OPERATION, excluded(t.OPERATION))
@@ -536,10 +536,10 @@ final class GraphitronFieldEntries {
             application -> val(string(application, "on"), t.ON_COLUMN),
             application -> val(string(application, "value"), t.VALUE_COLUMN),
             application -> val(string(application, "vocabulary"), t.VOCABULARY_REF)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.ON_COLUMN, t.VALUE_COLUMN, t.VOCABULARY_REF)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.ON_COLUMN, excluded(t.ON_COLUMN))
@@ -559,10 +559,10 @@ final class GraphitronFieldEntries {
             application -> val(string(application, "index"), t.INDEX_REF),
             application -> val(bool(application, "primaryKey"), t.PRIMARY_KEY),
             application -> val(token(application, "direction"), t.DIRECTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.INDEX_REF, excluded(t.INDEX_REF))
@@ -584,10 +584,10 @@ final class GraphitronFieldEntries {
             element -> val(stringOf(inside(element.value(), "collate")), t.COLLATE),
             element -> val(GraphitronEntries.tokenOf(inside(element.value(), "direction")),
                 t.DIRECTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.TOUCHED_AT, t.NAME_REF, t.COLLATE, t.DIRECTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME_REF, excluded(t.NAME_REF))
@@ -611,11 +611,11 @@ final class GraphitronFieldEntries {
                 t.ROUTINE_REF_NAME_PART),
             application -> val(string(application, "argMapping"), t.ARGMAPPING),
             application -> val(string(application, "columnMapping"), t.COLUMN_MAPPING)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.ROUTINE_REF, t.ROUTINE_REF_NAMESPACE_PART, t.ROUTINE_REF_NAME_PART,
                     t.ARGMAPPING, t.COLUMN_MAPPING)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.ROUTINE_REF, excluded(t.ROUTINE_REF))

@@ -38,7 +38,7 @@ import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
 import graphql.language.VariableReference;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.sink.RowChunks;
+import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Rows;
@@ -185,10 +185,10 @@ public final class SdlEntries {
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(node.getName(), t.NAME),
             node -> val(text(node), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -211,10 +211,10 @@ public final class SdlEntries {
             node -> val(node.getName(), t.NAME),
             node -> val(node.isRepeatable(), t.REPEATABLE),
             node -> val(text(node), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.NAME, t.REPEATABLE, t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -235,10 +235,10 @@ public final class SdlEntries {
             node -> val(touchedAt, t.TOUCHED_AT),
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(text(node), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.IS_EXTENSION, t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -267,12 +267,12 @@ public final class SdlEntries {
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
                     t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -312,13 +312,13 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
                     t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
                     t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -359,13 +359,13 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
                     t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -405,12 +405,12 @@ public final class SdlEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
                     t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -442,10 +442,10 @@ public final class SdlEntries {
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -470,10 +470,10 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.INTERFACE_NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -497,10 +497,10 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.MEMBER_NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -523,10 +523,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.LOCATION)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.LOCATION)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -549,10 +549,10 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.OPERATION),
             nested -> val(nested.node().getTypeName().getName(), t.TYPE_NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.OPERATION, t.TYPE_NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -575,10 +575,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -599,10 +599,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -624,10 +624,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -648,10 +648,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -672,10 +672,10 @@ public final class SdlEntries {
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -698,10 +698,10 @@ public final class SdlEntries {
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getValue()), t.VALUE_SDL)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.VALUE_SDL)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -751,11 +751,11 @@ public final class SdlEntries {
             written -> val(written.objectFieldName(), t.OBJECT_FIELD_NAME),
             written -> val(valueKind(written.node()), t.KIND),
             written -> val(valueText(written.node()), t.WRITTEN_TEXT)));
-        RowChunks.execute(rows, chunk ->
+        BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
                     t.TOUCHED_AT, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
                     t.POSITION, t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT)
-                .valuesOfRows(chunk)
+                .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
