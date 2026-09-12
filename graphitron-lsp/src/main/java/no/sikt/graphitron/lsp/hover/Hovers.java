@@ -38,7 +38,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.LIST_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -232,20 +232,25 @@ public final class Hovers {
      * on a name as common as {@code id} answered from whichever table came first; a key column of a
      * node is a column of that node's own table or of nothing.
      *
-     * <p>The binding is {@code @table}'s {@code name} argument as written, and the type-name
-     * fallback when it is absent is the same derivation the generator applies. A qualifier is
-     * dropped, since {@code sql_table} keys the schema separately.
+     * <p>Read off {@code graphitron_tabletype}, the anchor stating which catalog table a type
+     * settled on. This used to take {@code @table}'s {@code name} argument as written and redo the
+     * resolution here: drop a qualifier at the last period, stand the type name in where the
+     * argument was absent, then match the catalog case-insensitively. All three are steps the
+     * derivation already takes once per corpus, and the last is a match on an expression that no
+     * index can serve. Reading the settled answer instead lets the catalog be joined on its key,
+     * and a binding that did not resolve now types nothing rather than being resolved a second way
+     * here.
      */
     private static List<CatalogColumns.Column> nodeColumns(StoreHandle store, String typeName) {
-        String tableRef = store.dsl()
-            .select(GRAPHITRON_TABLE_ENTRY.TABLE_REF)
-            .from(GRAPHITRON_TABLE_ENTRY)
-            .where(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(typeName))
-            .fetchOne(GRAPHITRON_TABLE_ENTRY.TABLE_REF);
-        String tableName = tableRef == null || tableRef.isBlank() ? typeName : tableRef;
-        int dot = tableName.lastIndexOf('.');
-        return CatalogColumns.of(store, dot < 0 ? tableName : tableName.substring(dot + 1));
+        var t = GRAPHITRON_TABLETYPE;
+        var row = store.dsl()
+            .select(t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME)
+            .from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .and(t.TYPE_NAME.eq(typeName))
+            .fetchOne();
+        return row == null ? List.of()
+            : CatalogColumns.of(store, new CatalogTable(row.value1(), row.value2(), row.value3()));
     }
 
     private static String formatNodeType(
