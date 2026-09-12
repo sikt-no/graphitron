@@ -45,6 +45,8 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.testCont
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
@@ -351,6 +353,59 @@ class WarmStartRefreshTest {
                 .containsExactly("com.example.lib.LibraryClass");
             assertThat(store.dsl().fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_KIND.eq("JAR")))
                 .as("the jar's own source row survives with its partition").isEqualTo(1);
+        }
+    }
+
+    /**
+     * The same claim one family further in, where it had no case and was not true.
+     *
+     * <p>The sibling case below asserts it over a graph-keyed relation, which the refresh scopes by
+     * {@code graph_name}. The {@code sql_} family is scoped by source instead, and its lifecycle is
+     * the catalog gatherer's: that walk deletes each owned source's rows across all sixteen of its
+     * relations and rewrites them, leaving a source it did not read alone. Five of the sixteen were
+     * nonetheless being emptied outright by the refresh beforehand, because the list it reads to
+     * tell a source-partitioned relation from a rebuild-me-wholesale one is hand-written and the
+     * schema grew past it. The visible shape is a half-deleted partition: a schema row standing with
+     * no routine rows under it, which nothing downstream can tell from a schema that declares no
+     * routine.
+     *
+     * <p>Seeded rather than captured from a second catalog, and that is the point of the case
+     * rather than a shortcut: the claim is about a source this run never reads, so a fixture that
+     * had to produce one from a real jOOQ package would be asserting something narrower. What the
+     * rows have to be is well-formed and foreign, which is all this writes.
+     */
+    @Test
+    @DisplayName("a source-partitioned catalog relation survives a run that never read its source")
+    void anUnreadCatalogSourceKeepsItsWholePartition(@TempDir Path tmp) {
+        Path directory = tmp.resolve("graphitron-model");
+        capture(directory, tmp, List.of());
+
+        String foreign = "com.example.othermodule.jooq";
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            var dsl = store.dsl();
+            dsl.insertInto(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND,
+                    STORE_SOURCE.LAST_SEEN)
+                .values(foreign, "JOOQ_SCHEMA", java.time.LocalDateTime.now())
+                .execute();
+            dsl.insertInto(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLE_SCHEMA)
+                .values(foreign, "public").execute();
+            dsl.insertInto(SQL_ROUTINE, SQL_ROUTINE.SOURCE_NAME, SQL_ROUTINE.TABLE_SCHEMA,
+                    SQL_ROUTINE.ROUTINE_NAME, SQL_ROUTINE.ROUTINE_TYPE)
+                .values(foreign, "public", "reported_films", "FUNCTION").execute();
+        }
+
+        capture(directory, tmp, List.of());
+
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            assertThat(store.dsl().fetchCount(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME.eq(foreign)))
+                .as("the schema row, which the refresh already knew was a source's to keep")
+                .isEqualTo(1);
+            assertThat(store.dsl().fetchCount(SQL_ROUTINE, SQL_ROUTINE.SOURCE_NAME.eq(foreign)))
+                .as("and the routine row under it, which is the same fact about the same source "
+                    + "and has to survive on the same terms; a partition kept by halves is worse "
+                    + "than one dropped whole, a reader having no way to tell it from a schema "
+                    + "that declares no routine")
+                .isEqualTo(1);
         }
     }
 

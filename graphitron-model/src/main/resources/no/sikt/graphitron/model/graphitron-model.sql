@@ -2861,7 +2861,7 @@ CREATE TABLE graphitron_table_entry (
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-COMMENT ON TABLE graphitron_table_entry IS '@table on a type: the author binds the type to a database table. On an INPUT_OBJECT the application is captured like any other; the ignored-and- warned status of that site is a detection.';
+COMMENT ON TABLE graphitron_table_entry IS 'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it. For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.';
 COMMENT ON COLUMN graphitron_table_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_table_entry.type_name IS 'the OBJECT, INPUT_OBJECT, or INTERFACE carrying @table';
 COMMENT ON COLUMN graphitron_table_entry.source_name IS 'the applying declaration site (keyed with the line and column below); doubles as the file of the position columns';
@@ -2959,7 +2959,7 @@ CREATE TABLE graphitron_scalar_type_entry (
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-COMMENT ON TABLE graphitron_scalar_type_entry IS '@scalarType on a scalar: the Java constant backing it. Under registry capture the application is read like any other; the SDL pre-pass the current consumer needs (assembly strips directives off spec built-in redeclarations) dies with the assembled source.';
+COMMENT ON TABLE graphitron_scalar_type_entry IS 'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it. For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.';
 COMMENT ON COLUMN graphitron_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_scalar_type_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_scalar_type_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
@@ -3456,7 +3456,7 @@ CREATE TABLE graphitron_connection_entry (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_connection_entry IS '@asConnection on a field: the macro''s spec, as authored, and the whole of what the expansion reads. Its output is rows in the minted relations, keyed by this field''s own coordinate, and nothing it produces lands in the transcription.';
+COMMENT ON TABLE graphitron_connection_entry IS 'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it. For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.';
 COMMENT ON COLUMN graphitron_connection_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_connection_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_connection_entry.field_name IS 'the field name within the owning type';
@@ -3580,7 +3580,7 @@ CREATE TABLE graphitron_default_order_entry (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_default_order_entry IS '@defaultOrder on a field: the same specification shape plus the directive-level direction that serves as the per-entry fallback.';
+COMMENT ON TABLE graphitron_default_order_entry IS 'The ordering a field sorts by when the client asks for none, as one row per field however many @defaultOrder applications the corpus wrote on it. For example @defaultOrder(primaryKey: true, direction: DESC) gives one row stating the basis and the fallback direction, with the field list beside it.';
 COMMENT ON COLUMN graphitron_default_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_default_order_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_default_order_entry.field_name IS 'the field name within the owning type';
@@ -3602,7 +3602,7 @@ CREATE TABLE graphitron_default_order_field_entry (
   PRIMARY KEY (graph_name, type_name, field_name, position),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_default_order_entry (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_default_order_field_entry IS 'An ordered FieldSort entry of a @defaultOrder.';
+COMMENT ON TABLE graphitron_default_order_field_entry IS 'One field a @defaultOrder sorts by, at its place in the order the rows are read in. For example @defaultOrder(fields: [{name: "title", collate: "xdanish_ai", direction: DESC}]) gives one row at position 0.';
 COMMENT ON COLUMN graphitron_default_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_default_order_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_default_order_field_entry.field_name IS 'the field name within the owning type';
@@ -3628,7 +3628,7 @@ CREATE TABLE graphitron_mutation_entry (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_mutation_entry IS '@mutation on a field: the DML statement spec.';
+COMMENT ON TABLE graphitron_mutation_entry IS 'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it. For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.';
 COMMENT ON COLUMN graphitron_mutation_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_mutation_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_mutation_entry.field_name IS 'the field name within the owning type';
@@ -3858,7 +3858,7 @@ CREATE TABLE graphitron_pivot_entry (
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
 );
-COMMENT ON TABLE graphitron_pivot_entry IS '@pivot on a field: the aggregate-projection spec.';
+COMMENT ON TABLE graphitron_pivot_entry IS 'The two columns a @pivot application projects an aggregate across, as one row per field however many applications the corpus wrote on it. For example @pivot(on: "category", value: "total") gives one row naming the column that spreads and the column that fills.';
 COMMENT ON COLUMN graphitron_pivot_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_pivot_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_pivot_entry.field_name IS 'the field name within the owning type';
@@ -4115,7 +4115,7 @@ CREATE TABLE graphitron_record_entry (
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
 );
-COMMENT ON TABLE graphitron_record_entry IS '@record (deprecated, ignored) on an object or input type. class_name is the one payload value a consumer reads: the warning arms compare it against the reflected backing class.';
+COMMENT ON TABLE graphitron_record_entry IS 'The class a type says it is backed by through @record, which is deprecated and read only to warn. For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.';
 COMMENT ON COLUMN graphitron_record_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_record_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_record_entry.source_name IS 'half of the site FK, so NOT NULL; a graphitron application always has an SDL position';
@@ -12895,6 +12895,7 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'catalog'),
   ('derivation', 'configuration'),
   ('derivation', 'sdl'),
+  ('derivation', 'document'),
   ('derivation', 'graphitron'),
   ('derivation', 'catalog'),
   ('derivation', 'java-source'),
@@ -13068,6 +13069,12 @@ INSERT INTO meta_grain VALUES
   ('expanded-field',
    'one field coordinate the generator works with in one graph, at the type expression the generator reads there',
    'graph_name, type_name, field_name', 'sdl'),
+  ('graph-type',
+   'one named type the corpus declares, in one graph',
+   'graph_name, type_name', 'sdl'),
+  ('field-order-position',
+   'one position of the ordering one field sorts by when the client asks for none, in one graph',
+   'graph_name, type_name, field_name, position', 'sdl'),
   ('minted-conflict',
    'one coordinate several macro applications would mint and disagree about, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -13278,6 +13285,38 @@ INSERT INTO meta_relation VALUES
    'What a @record application says: the class this declaration is backed by, as written.',
    'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. One column out of the object literal rather than three, because the directive''s argument shares its shape with @enum''s and not its meaning: a record backing names a class and nothing calls a method on it.'),
+  ('graphitron_table_entry', 'graph-type', 'document',
+   'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it.',
+   'For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.',
+   'Derived from the entry beside it, which holds every application at the position it was written, by ranking a type''s applications in corpus merge order and taking the first. That rank is the whole of what this relation adds: a type-keyed grain admits one row and a type may carry the directive on its base declaration and on any extension, so the choice has to be made somewhere and here it is a statement a reader can read rather than an arrival order a walk had. A repeat is not refused, the losing application still standing in the entry stratum, which is what lets the repeated-application detection be a query rather than an overflow relation. The written name arrives by an outer join and is null on a bare application, which is a binding all the same: an author who wrote no name asked for the type''s own, and the deduction belongs to whoever resolves against the catalog rather than to the row that records what was written.'),
+  ('graphitron_scalar_type_entry', 'graph-scalar', 'document',
+   'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it.',
+   'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.',
+   'Derived from the entry beside it on the same terms as the table binding, a rank over a type''s applications in corpus merge order with the first taken. Where that one joins the decode outwards this joins it inwards, and the difference is the relation''s own shape rather than a preference: the reference is this row''s only unkeyed column and it is NOT NULL, so an application naming nothing has no fact to state and draws no row, which is what the walk this replaces said by returning early. Whether the named class declares such a field is the classpath census''s question and is asked where the resolving happens.'),
+  ('graphitron_record_entry', 'graph-type', 'document',
+   'The class a type says it is backed by through @record, which is deprecated and read only to warn.',
+   'For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.',
+   'Derived from the entry beside it by the same rank the table binding takes, and joined outwards for a reason that costs nothing to state: the class name is this relation''s only payload column and it is nullable, so an application whose literal named no class lands as the null row rather than as no row, which is what the walk this replaces wrote. The directive is deprecated and its own definition says the backing class is inferred, so the one consumer left compares this against what reflection found and warns where they differ; that is why the relation survives the directive being ignored.'),
+  ('graphitron_connection_entry', 'graph-field', 'document',
+   'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it.',
+   'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.',
+   'Derived from the entry beside it by the rank the type-site bindings take, one hop further out: a field''s coordinate is its type and its name, so the merge order deciding between two applications is the order of the declarations their fields were written in. Both payload columns arrive by an outer join and both are optional, the directive defaulting the page size and deriving the type name, so what the row asserts is that the author asked for a connection here and what they wrote about it is whatever they wrote. The expansion this feeds reads no other relation, which is why the macro''s whole specification is these two columns and a coordinate.'),
+  ('graphitron_pivot_entry', 'graph-field', 'document',
+   'The two columns a @pivot application projects an aggregate across, as one row per field however many applications the corpus wrote on it.',
+   'For example @pivot(on: "category", value: "total") gives one row naming the column that spreads and the column that fills.',
+   'Derived from the entry beside it on the terms the connection relation states. An inner join where that one takes an outer, and the relation''s own shape is the reason: both columns are NOT NULL and neither has a deduction behind it, so an application naming neither asserts nothing and draws no row, which is what the walk this replaces said by returning early. Whether either column exists on the table the field reads is the catalog''s question and is asked where the resolving happens.'),
+  ('graphitron_mutation_entry', 'graph-field', 'document',
+   'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it.',
+   'For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.',
+   'Derived from the entry beside it, joined inwards because the operation is the fact: it is NOT NULL and an application that named none asserts nothing. The table spelling is optional and rides with the row, the directive deducing it from the field''s own return type where the author left it out. That spelling is also a row of graphitron_spelled_reference_entry, which is keyed by the value rather than by a site and written from every site that can name a table or a routine, so it is the one thing this decode''s arm still writes: a relation keyed by a value moves when the last of its writers does rather than when the first does.'),
+  ('graphitron_default_order_entry', 'graph-field', 'document',
+   'The ordering a field sorts by when the client asks for none, as one row per field however many @defaultOrder applications the corpus wrote on it.',
+   'For example @defaultOrder(primaryKey: true, direction: DESC) gives one row stating the basis and the fallback direction, with the field list beside it.',
+   'Derived from the entry beside it, joined outwards because every payload column is optional by construction: an application states its basis as an index, as the primary key or as the field list in the child relation, and which of the three it chose is read by asking which column is filled. That the three are exclusive is a rule about the directive that no constraint over these columns states, and settling it is owed with the enum-value site, whose @order is declared with the identical three-way shape and should not be decided twice.'),
+  ('graphitron_default_order_field_entry', 'field-order-position', 'document',
+   'One field a @defaultOrder sorts by, at its place in the order the rows are read in.',
+   'For example @defaultOrder(fields: [{name: "title", collate: "xdanish_ai", direction: DESC}]) gives one row at position 0.',
+   'Derived from the entry beside it, and the position is ranked again rather than copied, which is the one place the two strata disagree about a number. The entry numbers an element by where the author wrote it, so an element of the wrong shape takes its index and contributes no row; this relation numbers the rows it holds, densely from zero, which is what the walk it replaces did by counting as it wrote. Dense numbering loses where the element sat and nothing reads that gap, so the anchor keeps what its readers have and the entry keeps what the author wrote. An element naming no field is dropped before the ranking, the name here being NOT NULL, and the positions close over it exactly as the walk''s counter did.'),
   ('graphitron_ast_error_generic_handler_entry', 'sdl-application-value', 'document',
    'A GENERIC handler of an @error application, at its position in the list, as written.',
    'For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.',

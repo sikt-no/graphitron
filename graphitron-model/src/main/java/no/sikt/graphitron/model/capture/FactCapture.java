@@ -4,6 +4,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
+import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
@@ -384,9 +385,21 @@ public final class FactCapture {
             JooqFactCapture.capture(txDsl, graph.name(), jooq, readAt);
             CatalogFactCapture.capture(sink, extensions, sources);
             sink.flush();
+            // The document gatherer's entries, which this pass has to write because the relations
+            // moving off the walk are derived from them and from nothing else. It straddles the
+            // walk rather than preceding it: nothing here meets a row the walk writes, the entry
+            // stratum being keyed by written position, but graphitron's anchors below key into the
+            // graphql_ ones and those are still the walk's to write. The order is therefore the
+            // one production already has, with the walk's rows the ones a reader sees wherever
+            // both still produce; what changes is that the overlap is no longer the whole.
+            SdlCapture.captureEntries(txDsl, graph, config, readAt);
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
+            // Between the walk and the stages, which is the only place it can go. It keys into the
+            // graphql_ anchors, so it cannot precede the walk that writes them; the stages below
+            // read the relations it derives, so it cannot follow them.
+            SdlCapture.captureGraphitronAnchors(txDsl, graph, readAt);
             GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from

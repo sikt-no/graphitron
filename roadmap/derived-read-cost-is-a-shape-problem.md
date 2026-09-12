@@ -3226,3 +3226,205 @@ stay in the same order, and nothing checks that. A shape pairing each column wit
 derive both from one declaration and make them impossible to desynchronise. That is a real
 improvement and it rewrites all 89 call sites rather than substituting one line in each, so it is a
 separate piece of work, not a rider on this one.
+
+## The first three anchors off the walk, and what moving one costs (2026-09-12)
+
+The walk's `graphql_` half is measured redundant earlier in this item. This one moves the
+first of the `graphitron_` half and reports what the move turned out to cost, because the cost is
+not where the plan had it. Three relations, `graphitron_table_entry`,
+`graphitron_scalar_type_entry` and `graphitron_record_entry`, are derived by `GraphitronAnchor` out
+of the entry stratum and the walk's arms that wrote them are gone. The derivation is fifty lines and
+was the cheap part. Everything else here is a prerequisite that refused, which is this arc's usual
+shape, and four of them are worth recording because they bind every later relation too.
+
+**Moving a relation means declaring it, and the declaration pass is not optional after all.** It is
+item 7 of the burn down and it is ordered late, on the reasoning that declaring relations about to
+dissolve is writing rationales for the doomed. That reasoning holds for the `intent_` views and not
+for these: `StoreRefresh` decides what a warm pass empties by reading `meta_relation`, so a relation
+whose owner is not declared `document` is cleared by the walk's pass and, once the walk no longer
+writes it, is not written back. The declaration is the mechanism, not the documentation. So each of
+the three arrived with a `meta_relation` row, a grain, and its `COMMENT ON TABLE` restated to echo
+them, and the undeclared roster is down to 231. A new grain, `graph-type`, is the key these relations
+share and nothing else had named.
+
+**The derivation's own content is a rank and two joins, and the rank is the fact the walk was
+hiding.** A type-keyed relation admits one row and a type may carry the directive on its base
+declaration and on any extension, so the walk chose by arriving first. Stated in SQL that is
+`row_number` over the corpus merge order, which is the same choice said out loud. The two joins are
+the polarity question: `@table` joins the decode outwards, a bare application being a binding whose
+name column is empty rather than an absent row, and `@scalarType` joins it inwards, its reference
+being NOT NULL and an application naming nothing having no fact to state. `GraphitronTypeAnchorsTest`
+is those three properties and nothing about spelling.
+
+**One relation cannot move alone if a second one is fed from its site.** The `@table` arm is not
+gone entirely: it still writes `graphitron_spelled_reference_entry`, which is keyed by the spelling,
+fed from seven sites, and therefore moves when the last of them does rather than when the first does.
+`@enum` is out of this batch for the same reason and a second one: it feeds the `ENUM` arm of
+`graphitron_method_reference_entry`, and its entry relation makes `class_name` NOT NULL where the
+incumbent keeps a row with the method and the argMapping and no class. That second one is a real
+narrowing rather than a coupling, so it wants a decision rather than an ordering.
+
+**The pass that reads a merged registry cannot write relations keyed by a position in one file, and
+that is what actually gates this work.** The document gatherer runs in `ModelCapture`; the walk runs
+in `FactCapture`; a mojo build runs both and everything else in the tree runs one. So the first
+relation to move off the walk was, in every store captured through the walk alone, simply empty,
+and 112 cases said so. `FactCapture` now runs the entry writers before its walk and graphitron's
+anchors between the walk and the stages, which is the only place the anchors fit: they key into the
+`graphql_` anchors, which are still the walk's, and the stages below read what they derive. The
+face `SdlCapture` offers for that is deliberately not the whole of itself, because running the whole
+face there would raise one assembly's problems twice and meet the walk's own inserts on the
+`graphql_` keys.
+
+That change has a consequence a caller can trip over: a pass handed a registry with
+`SubjectConfig.none()` beside it now clears the entry stratum and has no corpus to write back. Every
+production caller has the configuration, and the harnesses that did not now state the corpus they
+captured. It is still a shape that can be got wrong silently, and the honest fix is upstream of this
+item: a pass should be given the documents rather than the merge.
+
+**An exemption that was protecting rows was breaking them, and the demotion hid it.** `StoreRefresh`
+exempted every `document`-owned relation from the clear, so that what the model capture wrote before
+the pass survived it. But the clear still emptied the `graphql_` anchors those rows key into, so on
+every warm pass the delete met a foreign key and threw, and `RunStore` answers a capture failure by
+demoting the run to a private store rather than failing it. Two exempt relations reach it on the
+vocabulary graphitron itself ships, so this was the ordinary path and not a corner. With the document
+gatherer running inside the pass the exemption is unnecessary as well as wrong, and it is gone.
+Worth stating on its own: the mechanism that made a deterministic capture bug survivable is also the
+mechanism that kept this one invisible, and nothing in the tree was in a position to notice.
+
+### The field site, four directives, and the number the two strata disagree about
+
+`@asConnection`, `@pivot`, `@mutation` and `@defaultOrder` follow the type site off the walk, which
+is five relations counting the ordered child. They were chosen by a property rather than by size:
+each is declared at `FIELD_DEFINITION` and nowhere else, so each anchor derives from one entry
+relation. A directive also legal on an input object's field has its applications split across two,
+an input object's field being an input value in the entry stratum rather than a field, and its
+anchor is then a union with a parent-kind test. `@field` and `@nodeId` are the two that need that
+shape and they are deliberately not here; getting the test wrong would admit a field argument's row
+as if it were an input field's, silently.
+
+**That criterion is about which relation an anchor reads, and it is not the hard part.** One entry
+relation is still a bag. An author who copies a schema file gets two declarations of every type in
+it, so `graphitron_ast_table_entry` holds `film` from one copy and, once the copy is edited,
+`film_copy` from the other, while the anchor holds one row. Measured: the anchor keeps the older
+declaration's, the other claim is not in it, and `graphql_duplicate_declaration` is empty. Assembly
+does report a redefined *type*, so a build is not silent there, but an element-level duplicate is
+retained by the registry with no error at all, which is the case the field-site rank case exercises.
+The multiplicity is the same at every site and was already true of all eight relations here.
+
+**And keeping the first is the right answer, which is the overflow argument one stratum up.** An
+anchor is a designed resolution: its grain admits one row per coordinate and deciding which is what
+it is for. Asking whether the decision was contested is a query across the two strata, not a third
+relation, for the same reason the transcription needs no overflow: the bag holds every reading at
+the position it was written, so nothing is lost by resolving above it. What this does oblige is that
+an anchor state its rule rather than merely apply it, since a query over the bag has to know what
+was resolved and how. Every derivation here says so in as many words, oldest declaration first by
+corpus merge order, and that sentence is load-bearing rather than descriptive.
+
+What has no home yet is the query. A reader wanting to know that a coordinate was contested can
+write it, and none does, so a diverged copy is discoverable and undiscovered. That is a detection
+over the entry-to-anchor anti-join, which is where the entry and anchor pattern has always said a
+diagnostic about author error belongs, and it is worth an item rather than a relation.
+
+**The rank reaches one hop further.** A field's coordinate is its type and its name, so the merge
+order that decides between two applications is the order of the declarations their fields were
+written in: application to field definition to type declaration. The choice is also reachable here
+in a way it is not at the type site, where a repeated non-repeatable application fails assembly. A
+field declared twice is retained by the registry rather than refused, so one coordinate genuinely
+carries two applications and the anchor genuinely picks, which the case pins by first asserting both
+are entries.
+
+**One place the two strata disagree about a value rather than a row, and it is worth stating.**
+`@defaultOrder(fields:)` numbers its elements by where the author wrote them in the entry, so an
+element the decode refuses keeps its index and contributes no row. The anchor numbers the rows it
+holds, densely from zero, because that is what the walk did by counting as it wrote. So the position
+is ranked again rather than copied. Dense numbering loses where the element sat and nothing reads
+that gap today; the anchor keeps what its readers have and the entry keeps what the author wrote,
+which is the division of labour the two strata exist for.
+
+**And the clear became one statement instead of eight.** Each derivation emptied the relation it
+fills, which works until a relation has a child: the ordered fields reference their ordering, so the
+parent's delete met the child's key. One clear over the writer's whole population, children before
+parents, in the order the roster already states.
+
+### The wholesale clear, retired, and what that says about the register's cousin
+
+`StoreRefresh` is the mechanism that lets a walk delete. A writer upserting rows keyed by a
+coordinate cannot notice a coordinate the author removed, so something empties the partition ahead
+of it, and that is the whole of why the class exists. It is the same shape as `meta_materialize` one
+layer down, and it dissolves the same way: not by being argued down, but by every relation acquiring
+an owner that marks and sweeps its own rows, after which the mechanism has nothing left to do.
+
+Measured, it is three arms of very different sizes. The graph-scoped arm covers 205 relations, every
+graph-keyed base table bar the graph's anchor row, and it shrinks one relation at a time as
+ownership spreads. The classpath arm serves the `jvm_` census and goes with it. The wholesale arm
+turned out to cover **five** relations, and it is retired here.
+
+**Retired because it was redundant where it was right and destructive where it was not.** All five
+are `sql_`, all five are keyed on `source_name`, and `CatalogFactCapture.clearSchemaSources` already
+deletes all five per owned source, in dependency order, before rewriting them. The wholesale arm
+deleted them for *every* source, because the list it consulted to tell a source-partitioned relation
+from a rebuild-me-wholesale one was hand-written and the schema had grown five relations past it. On
+a store shared by two modules that leaves a partition kept by halves: the sibling's `sql_table`
+survives, its `sql_node_metadata` and `sql_routine` children do not, and no reader can tell that
+from a schema declaring neither. The class's own comment forbids exactly this.
+
+Uncaught because the case for it was stated one family too narrow.
+`WarmStartRefreshTest.aSiblingGraphsPartitionSurvivesARefresh` asserts survival over `graphql_type`,
+which is graph-keyed and therefore scoped by a column; the source-partitioned families are scoped by
+the list, and nothing asserted over them. The new case seeds a well-formed foreign source rather
+than producing one from a second jOOQ catalog, deliberately: the claim is about a source this run
+never reads, and a fixture that had to generate one would be asserting something narrower. Verified
+failing before the fix, on the routine row alone with the schema row already passing, which is the
+half-deleted partition stated as an assertion.
+
+**And the list was the defect rather than its contents.** Extending it would have restored the
+behaviour and kept the mechanism that fails silently the next time the schema grows. What the arm
+was really carrying is a polarity worth keeping, that a relation nobody thought about is rebuilt
+rather than silently retained, and that polarity does not need it: `MetaDeclarationGateTest` fails
+the build on an observed relation with no declared owner and no line on the frozen roster. That is
+stricter, it fires at build time rather than at a consumer's next read, and it asks for an owner,
+which is the thing actually wanted.
+
+The class now says all of this in its own comment, marked as dissolving, with what is left of it
+named as a measure of what has not moved yet.
+
+### The two passes do not compose, which is why the pass runs the document gatherer
+
+The arrangement above, where `FactCapture` runs the entry writers before its walk and graphitron's
+anchors between the walk and the stages, was first justified from the test harnesses: a relation off
+the walk is empty in a store captured through the walk alone. That justification is backwards, and
+the experiment that replaced it with a harness fix is recorded here because it failed for a better
+reason than the one it was testing.
+
+Nothing in production runs `FactCapture` without the document gatherer having run. Both mojos call
+`captureModel` first; every caller that does not is a test. So the harness was the thing producing a
+store no run produces, and `CapturedStore` says in its own comment that it cannot do that.
+
+But a harness cannot replicate the run's sequence either, because the sequence does not compose.
+`ModelCapture` and `FactCapture` both write `store_graph_schema_input`, one by mark and sweep and one
+by plain insert, and both write the `graphql_` families. Run them in order on a cold store and the
+second collides with the first. Production survives it only because the pass is warm and the clear
+sits between them. Make the harness warm to match, and the clear deletes the `graphql_` anchors out
+from under the document-owned rows that key into them, which is the failure the exemption causes and
+which a two-pass probe reproduces directly.
+
+So while the pass clears, anything written before the clear is either destroyed or blocks it, and
+the pass running the document gatherer itself is the only arrangement with neither fault. In
+production that costs one extra parse of the corpus per build; it looked expensive only because the
+test suite performs thousands of captures. What removes it is not a better justification but
+finishing this migration: when the decode is empty the walk drives nothing, when the walk goes the
+clear has nothing that cannot delete itself, and when the clear goes the pass has nothing left to
+compensate for.
+
+**Underneath all of it is that no single thing owns "capture a graph".** Two mojos write the sequence
+down; 77 test files reach it through `CapturedStore`, twelve drive `FactCapture` directly, 21 go
+through the generator's own port, and one has a harness of its own. That is why half a capture was
+reachable without anything noticing, and it is the same absence the collision above is a symptom of.
+
+**One more thing refused, and it is not this batch's to fix.** `SdlCapture.capture` assembles in
+order to raise the problem rows, and `SchemaAssembly.of` throws on a schema that applies a
+non-repeatable directive twice. So the face this item has been building cannot capture the very case
+its own rank exists for, which is a schema an author can write and which the walk captures happily.
+The facts and the problems are two public entry points now and the rank's case uses the first, but
+capture must not throw on author input is one of the three findings this item already carries, and
+this is a live instance of it.

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.Public;
+import no.sikt.graphitron.model.capture.document.GraphitronAnchor;
 import no.sikt.graphitron.model.capture.document.GraphitronEntries;
 import no.sikt.graphitron.model.capture.document.SdlEntries;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
@@ -294,6 +295,13 @@ public final class EntryFamilyFixture {
             GraphitronEntries.write(captured.dsl(), captured.graphName(), document.sourceName(),
                 document.registry(), READ_AT);
         }
+        // After every document, because this writer resolves across the corpus rather than within
+        // one file. It is here for the same reason the two above are: it is one of the document
+        // gatherer's writers, and what that gatherer writes is what this fixture is a fixture of.
+        // Three of the relations the suffix counts as entries are its now, which is the suffix
+        // going wrong rather than the fixture: a relation keyed by a coordinate is an anchor
+        // whatever it is called, and the name it carries is the rename this migration still owes.
+        GraphitronAnchor.write(captured.dsl(), captured.graphName(), READ_AT);
     }
 
     /**

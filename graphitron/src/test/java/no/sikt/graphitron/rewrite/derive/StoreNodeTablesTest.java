@@ -162,7 +162,7 @@ class StoreNodeTablesTest {
         var registry = CapturedStore.registryOf(tmp, sdl);
         try (var store = FactStores.inMemory()) {
             FactCapture.capture(store.dsl(), CapturedStore.graph(tmp),
-                SubjectConfig.none(), registry, CapturedStore.attributionOf(tmp),
+                CapturedStore.corpusOf(tmp), registry, CapturedStore.attributionOf(tmp),
                 new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
             return StoreNodeTables.read(store.dsl(), CapturedStore.GRAPH);
         }

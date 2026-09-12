@@ -30,6 +30,17 @@ If `mvn -version` reports Java 21, the session inherited a stale `JAVA_HOME`; se
 
 **Prefer `mvnd` over `mvn` in web sessions.** The hook installs mvnd (Maven Daemon) and warms its daemon, so repeat Maven commands skip the 3-8 s JVM start that plain `mvn` pays each time. Every `mvn` command in this file works verbatim as `mvnd`; behaviour is identical (mvnd runs modules in parallel by default, which the test suite supports and CI enforces with `-T 1C`). If `mvnd` is absent its install failed; plain `mvn` is always correct. One quirk: don't combine `mvnd` with `-q` when you need a tool's stdout (it can be swallowed); details in `.claude/web-environment.md`.
 
+**Give your session its own local Maven repository.** Sessions on one machine share `~/.m2`, and the workflow puts several of them there at once: the reviewer rule wants a different session, and worktrees under `.claude/worktrees/` are how that is usually arranged. Installs are the only writes, so they are the only thing that collides, and a concurrent `mvn install` replaces the `no.sikt:*:10-SNAPSHOT` artifacts another session is resolving mid-build. Add both flags to every `mvn` / `mvnd` invocation, not just the verification build:
+
+```bash
+-Dmaven.repo.local=$HOME/.m2-<session>/repository \
+-Dmaven.repo.local.tail=$HOME/.m2/repository
+```
+
+The first sends this session's installs somewhere nobody else reads. The second is Maven 3.9's chained local repository: the resolver reads the head first, falls back to the tail, and never writes to the tail, so the shared cache of third-party releases stays shared instead of being downloaded again, which on a populated machine is tens of gigabytes. After one full `install` the head holds this session's own snapshots, so a scoped `-pl` build resolves upstream modules from artifacts it built itself.
+
+Without it the failure is easy to misread, because your tree is clean and your diff is unrelated: a scoped build fails to compile against a helper that is plainly in the source tree, or a test fails on a relation your DDL plainly declares. Suspect the shared repository before you suspect your own change, and compare the installed jar's *content* rather than its timestamp, since the clobbering write is recent by definition and so looks fresh.
+
 ## Common commands
 
 ```bash
@@ -46,7 +57,7 @@ mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 mvn install -Plocal-db -Pquick
 ```
 
-The full install is fast; it is the *verification build* defined under "Building and testing" below. The scoped command above is for the inner loop only: it reads the *installed* artifacts of every upstream module, so add `-am` (also-make) whenever an upstream module changed in this session, and `-amd` (also-make-dependents) when you need the modules downstream of your edit rebuilt. A bare `-pl` on a dirty upstream produces stale results silently. `docs/architecture/how-to/testing.adoc` is the full command reference.
+The full install is fast; it is the *verification build* defined under "Building and testing" below. The scoped command above is for the inner loop only: it reads the *installed* artifacts of every upstream module, so add `-am` (also-make) whenever an upstream module changed in this session, and `-amd` (also-make-dependents) when you need the modules downstream of your edit rebuilt. A bare `-pl` on a dirty upstream produces stale results silently, and on a shared local repository it can read an artifact no session in this worktree built at all, which is what the per-session repository above removes. `docs/architecture/how-to/testing.adoc` is the full command reference.
 
 ## Building and testing
 

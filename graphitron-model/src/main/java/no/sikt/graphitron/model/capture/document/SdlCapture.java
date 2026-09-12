@@ -58,6 +58,54 @@ public final class SdlCapture {
      */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                LocalDateTime readAt) {
+        var parse = captureFacts(dsl, graph, config, readAt);
+        // What the merge refused and what the assembly refused are the same question asked of the
+        // same corpus, so they arrive as one list in the order the stages ran.
+        var raised = new ArrayList<>(parse.registryErrors());
+        raised.addAll(SchemaAssembly.of(parse.registry()).errors());
+        SdlSchemaProblems.write(dsl, graph.name(), parse.failures(), List.copyOf(raised), readAt);
+    }
+
+    /**
+     * {@link #capture} without the problem rows: what this gatherer writes about the corpus, and
+     * nothing about whether the corpus assembled.
+     *
+     * <p>The split is worth having on its own terms rather than only for the caller it was cut for.
+     * Raising the problems means assembling, and a corpus an author is mid-edit on may refuse to
+     * assemble while every fact this writes about it is still true; a reading that wants the facts
+     * should not have to survive the assembly to get them.
+     */
+    public static SchemaLoader.PerSourceParse captureFacts(DSLContext dsl, GraphIdentity graph,
+                                                           SubjectConfig config,
+                                                           LocalDateTime readAt) {
+        var parse = captureEntries(dsl, graph, config, readAt);
+        // Before the SDL anchors rather than with graphitron's own, because those anchors end their
+        // reading by sweeping the coordinates the corpus stopped declaring, and a graphitron row
+        // still pointing at one would refuse the sweep. GraphitronAnchor.clear carries the argument.
+        GraphitronAnchor.clear(dsl, graph.name());
+        // After every document, because an anchor is what the corpus says: a coordinate one file
+        // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
+        SdlAnchor.write(dsl, graph.name(), readAt);
+        captureGraphitronAnchors(dsl, graph, readAt);
+        return parse;
+    }
+
+    /**
+     * The per-document half alone: every source's registry row and both entry writers over it,
+     * with the parse returned so a caller wanting more of this reading pays for one parse.
+     *
+     * <p>Public because the incumbent pass has to run it. A relation that has moved off that pass's
+     * walk is written by this gatherer and by nothing else, so a store captured through the walk
+     * would hold nothing where its readers expect the moved relation. Split from the rest rather
+     * than offered whole for two reasons the walk makes true: running the face there would report
+     * one assembly's problems twice, and the {@code graphql_} anchors have two producers still, so
+     * a second one running in the same pass would meet the walk's own inserts on their keys. What
+     * this half writes meets nothing: the entry stratum is keyed by written position and the walk
+     * does not write a row of it.
+     */
+    public static SchemaLoader.PerSourceParse captureEntries(DSLContext dsl, GraphIdentity graph,
+                                                             SubjectConfig config,
+                                                             LocalDateTime readAt) {
         var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
@@ -68,17 +116,23 @@ public final class SdlCapture {
         for (var failure : parse.failures()) {
             writeSource(dsl, failure.sourceName(), readAt);
         }
-        // After every document, because an anchor is what the corpus says: a coordinate one file
-        // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
-        SdlAnchor.write(dsl, graph.name(), readAt);
+        return parse;
+    }
+
+    /**
+     * graphitron's own anchors alone, resolved out of the entries the reading already wrote.
+     *
+     * <p>Public for the same caller and apart from the SDL anchors for the reason above: that
+     * caller's walk writes the {@code graphql_} ones itself, and these do not duplicate anything
+     * it writes. They read them, though, keying into {@code graphql_type_element} and
+     * {@code graphql_type_declaration}, so this runs after whichever producer of those the pass
+     * has rather than beside the entries.
+     */
+    public static void captureGraphitronAnchors(DSLContext dsl, GraphIdentity graph,
+                                                LocalDateTime readAt) {
         // After the SDL anchors, which settle which of several declarations the corpus honours;
         // graphitron's own anchors resolve against what that settled rather than asking again.
         GraphitronAnchor.write(dsl, graph.name(), readAt);
-        // What the merge refused and what the assembly refused are the same question asked of the
-        // same corpus, so they arrive as one list in the order the stages ran.
-        var raised = new ArrayList<>(parse.registryErrors());
-        raised.addAll(SchemaAssembly.of(parse.registry()).errors());
-        SdlSchemaProblems.write(dsl, graph.name(), parse.failures(), List.copyOf(raised), readAt);
     }
 
     /**

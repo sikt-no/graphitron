@@ -234,7 +234,7 @@ public final class CapturedStore implements AutoCloseable {
         }
         var store = FactStores.inMemory();
         var assembly = SchemaAssembly.of(parse.registry());
-        FactCapture.capture(store.dsl(), false, graph(directory), SubjectConfig.none(),
+        FactCapture.capture(store.dsl(), false, graph(directory), corpusOf(files, directory),
             parse.registry(), assembly, new SdlVerdicts(parse.failures(), parse.registryErrors()),
             attributionOfFiles(files), jooq, List.of());
         writeSchemaProblems(store.dsl(), GRAPH, parse, assembly);
@@ -333,11 +333,16 @@ public final class CapturedStore implements AutoCloseable {
      *
      * <p>This level promises that a fixture cannot encode a state capture never writes, and it was
      * keeping half of it. The walk writes the anchor families and the incumbent decode;
-     * {@link ModelCapture} writes the entry strata, the configuration corpus and the problem rows,
-     * and no arm here reached it. So a reader repointed at an entry found an empty relation in
-     * every test while a real run, capturing through {@code CapturePort}, had the rows all along.
-     * A fixture able to encode a state production never has is the one thing this level exists to
-     * prevent.
+     * {@link ModelCapture} writes the configuration corpus and the problem rows, and no arm here
+     * reached it. So a reader repointed at an entry found an empty relation in every test while a
+     * real run, capturing through {@code CapturePort}, had the rows all along. A fixture able to
+     * encode a state production never has is the one thing this level exists to prevent.
+     *
+     * <p>The entry strata are the walk's pass's own now, written inside it rather than by the
+     * reading that follows, because the relations that have moved off the walk derive from those
+     * entries and the decode stages below the walk read what they derive. That is why the corpus
+     * reaches both calls here: a reading handed none of it writes no entries, which a pass whose
+     * own stages read them cannot survive, where before it merely left a relation empty.
      *
      * <p>Walk first and the capture second, which is the order that composes and not a preference.
      * Both write the {@code graphql_} anchors and they agree on them exactly, which is the walk
@@ -347,8 +352,9 @@ public final class CapturedStore implements AutoCloseable {
      * {@code graphql_directive} at the first directive either of them writes.
      *
      * <p>No catalog and no classpath here, the walk having taken both already from the arguments
-     * this arm was given. What the second reading adds is the documents, which is the half the walk
-     * cannot state.
+     * this arm was given. What the second reading still adds is what the walk's pass leaves out of
+     * its own document reading: the problem rows, which mean assembling the corpus, and the
+     * {@code graphql_} anchors' sweep of the coordinates the corpus stopped declaring.
      *
      * <p>Each graph names its own files rather than matching a pattern under the directory: the
      * arms capturing a second graph write its file beside the first, and a glob would hand each
@@ -358,15 +364,29 @@ public final class CapturedStore implements AutoCloseable {
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
         FactCapture.capture(store.dsl(), warm, new GraphIdentity(graphName, directory),
-            SubjectConfig.none(), registry, attributionOfFiles(files), jooq, census);
+            corpusOf(files, directory), registry, attributionOfFiles(files), jooq, census);
         ModelCapture.capture(store.dsl(), new GraphIdentity(graphName, directory),
-            subjectOf(directory, files), List.of(), null, LocalDateTime.now());
+            corpusOf(files, directory), List.of(), null, LocalDateTime.now());
     }
 
-    /** The files themselves, named one by one, so a graph's capture reads no other graph's source. */
-    private static SubjectConfig subjectOf(Path directory, List<Path> files) {
+    /**
+     * The corpus both readings are of, stated as the configuration a run would have had.
+     *
+     * <p>A merged registry used to be the whole of what a capture needed, and the walk's pass took
+     * {@code SubjectConfig.none()} because nothing in it asked where the documents were. The
+     * document gatherer does: its rows are keyed by the position a node was written at in one file,
+     * which a merged registry cannot say, so it re-reads the corpus from configuration. Both
+     * readings therefore get the same corpus, and the walk's pass gets it too rather than none of
+     * it, which is what the arm below turns on.
+     *
+     * <p>Literal bindings rather than a glob over the directory, so the corpus is exactly the files
+     * this capture was given. Several arms here write more than one file into one directory and
+     * then capture one of them, and a pattern would quietly hand the gatherer the other.
+     */
+    private static SubjectConfig corpusOf(List<Path> files, Path directory) {
         return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            files.stream().map(file -> SchemaRecipe.Binding.literal(SchemaSource.file(file))).toList(),
+            files.stream().map(file -> SchemaRecipe.Binding.literal(SchemaSource.file(file)))
+                .toList(),
             List.of("graphqls")));
     }
 
@@ -468,6 +488,25 @@ public final class CapturedStore implements AutoCloseable {
      */
     public static Path fixtureFile(Path directory) {
         return fixtureFile(directory, GRAPH);
+    }
+
+    /**
+     * The corpus {@link #registryOf} wrote, stated as the configuration a run would have had, for a
+     * test that drives {@link FactCapture#capture} itself.
+     *
+     * <p>A pass used to need only the merged registry, so these tests handed it
+     * {@code SubjectConfig.none()} and lost nothing. It runs the document gatherer now, whose rows
+     * are keyed by a position in one file and which therefore re-reads the corpus from
+     * configuration, so a pass given no corpus writes none of that gatherer's relations. Silent
+     * until one of them is a relation the pass used to write itself.
+     */
+    public static SubjectConfig corpusOf(Path directory) {
+        return corpusOf(directory, GRAPH);
+    }
+
+    /** {@link #corpusOf(Path)} for a graph the caller named, which names the fixture's file. */
+    public static SubjectConfig corpusOf(Path directory, String graphName) {
+        return corpusOf(List.of(fixtureFile(directory, graphName)), directory);
     }
 
     /** {@link #fixtureFile(Path)} for a graph the caller names. */

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.Public;
-import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.sources.ClasspathSources;
@@ -20,10 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
-import static no.sikt.graphitron.model.Tables.JAVA_FILE;
-import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
@@ -31,23 +26,33 @@ import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
-import static no.sikt.graphitron.model.Tables.SQL_INDEX;
-import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
-import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 
 /**
  * Brings a store that already holds a previous run's rows to the state capture expects, deleting
  * exactly what this run owns and touching nothing else.
+ *
+ * <h2>This class is dissolving, and what is left of it is a measure of what has not moved</h2>
+ *
+ * <p>It exists because the walk it prepares for cannot delete anything. A writer that upserts rows
+ * keyed by a coordinate has no way to notice a coordinate the author removed, so something else has
+ * to empty the partition first, and this is that something. Every gatherer written since is
+ * incremental first and marks and sweeps its own rows instead: it stamps what this reading wrote
+ * and deletes what carries a different stamp, which needs no pass in front of it and, unlike a
+ * clear, leaves a reading that fails with the previous one still standing. A relation whose owner
+ * does that needs nothing here, and the way it says so is {@link #SELF_SWEEPING}, read from the
+ * declared owner rather than from any list kept here.
+ *
+ * <p>So this class shrinks as ownership spreads rather than being retired in one move, and what
+ * remains is exactly the population with no owner that sweeps. Two arms are left of the three.
+ * The wholesale arm is gone, retired below. The graph-scoped arm still covers 205 relations, which
+ * is every graph-keyed base table bar the graph's own anchor row, and it goes relation by relation
+ * as each gets a declared, sweeping owner. The classpath arm is the {@code jvm_} census's, and it
+ * goes with that family, which the {@code code_} gatherers are replacing. There is nothing here to
+ * generalise or improve: the work is elsewhere, and this is the residue of it.
+ *
+ * <h2>What it still does</h2>
  *
  * <p>Owned means two things, and excludes a third. The run's <em>graph</em>: every graph-keyed
  * relation clears scoped to this run's {@code graph_name} and rebuilds whole, because within one
@@ -63,6 +68,31 @@ import static no.sikt.graphitron.model.Tables.STORE_STAMP;
  * <p>What it excludes is the relations a self-sweeping gatherer declares itself the owner of, which
  * need no clear and must not get one; {@link #SELF_SWEEPING} says why.
  *
+ * <h2>The wholesale arm, retired</h2>
+ *
+ * <p>A third arm emptied outright every base relation the other two did not reach, and it was
+ * written in exemption polarity on purpose: a relation nobody had thought about was rebuilt rather
+ * than silently retained. What it exempted included a hand-written list of the source-partitioned
+ * families, and that list is what failed. The schema grew five {@code sql_} relations past it, so
+ * five relations keyed by {@code source_name} were being deleted for every source on every warm
+ * pass while the catalog walk rewrote only the sources this run owns. The result was a partition
+ * kept by halves: a sibling module's {@code sql_table} standing with its {@code sql_node_metadata}
+ * and {@code sql_routine} children gone, which no reader can tell from a schema that declares
+ * neither. That is precisely the loss the paragraph above forbids, and it went unseen because the
+ * case for it asserted over a graph-keyed relation, where the scoping is by a column rather than
+ * by a list.
+ *
+ * <p>The arm is not fixed by extending the list, because the list is the defect. Its whole
+ * population turned out to be those five, and the catalog gatherer already deletes all five per
+ * owned source, in order, before rewriting them. So the arm was redundant where it was correct and
+ * destructive where it was not, and it is gone rather than corrected.
+ *
+ * <p>The polarity it carried is worth keeping and does not need it. What catches a relation nobody
+ * thought about is {@code MetaDeclarationGateTest}: an observed relation with no declared owner and
+ * no line on the frozen undeclared roster fails the build. That is a stricter statement than a
+ * delete, it fires at build time rather than at a consumer's next read, and it asks for the thing
+ * actually wanted, which is an owner.
+ *
  * <p>A classpath partition survives when {@code store_source} recorded a content hash for it and
  * the entry still hashes to that. A directory root is never stamped, because it changes on every
  * compile; the SDL families are re-walked from a parse the pipeline pays for anyway.
@@ -77,40 +107,30 @@ import static no.sikt.graphitron.model.Tables.STORE_STAMP;
  */
 final class StoreRefresh {
 
-    /**
-     * The source-partitioned families: relations whose rows survive by source rather than being
-     * cleared wholesale or by graph. Listed rather than derived: a relation added here without a
-     * matching delete (in {@link #clear} for {@code jvm_}, in the catalog walk for {@code sql_},
-     * in {@link JavaSourceFacts} for {@code java_}) would keep rows whose partition went away,
-     * which is what the "an empty refresh empties every relation" anchor exists to catch.
-     *
-     * <p>The {@code java_} family is here for a reason the other two do not share: capture never
-     * writes it at all. Its writer runs on the {@code .java} cadence and owns both halves of its
-     * own lifecycle, so a generator round has nothing to retain or rewrite there, and a round that
-     * cleared it would blank every module's Javadoc and positions on a cadence that has nothing to
-     * do with sources changing.
-     */
-    private static final Set<Table<?>> PARTITIONED = Set.of(
-        JVM_CLASS, JVM_CLASS_SUPERTYPE, JVM_METHOD, JVM_METHOD_PARAMETER,
-        JVM_RECORD_COMPONENT, JVM_DECLARED_TYPE_REF,
-        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_ENUM_BINDING, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN,
-        SQL_PRIMARY_KEY,
-        SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN,
-        JAVA_FILE, JAVA_CLASS_DECLARATION, JAVA_METHOD_DECLARATION, JAVA_FIELD_DECLARATION);
+    // The source-partitioned families used to be listed here, so that a wholesale arm below could
+    // exempt them. Both are gone; the retirement is argued in the class comment.
 
     /**
      * The gatherers that end a reading by sweeping it. Every row they write carries the instant it
      * was written at, and the reading ends by deleting the rows carrying a different one, so a
      * relation one of them owns already holds exactly its last reading and there is nothing here to
-     * empty. Clearing it anyway would lose a reading with no second chance to be taken: these run
-     * before the pass, so what they wrote is what a build the pass refuses has left to say.
+     * empty. Clearing it anyway would lose a reading with no second chance to be taken: this one
+     * runs before the pass, so what it wrote is what a build the pass refuses has left to say.
+     *
+     * <p>The document gatherer was here until it started running inside the pass, and the exemption
+     * was not merely redundant then, it was wrong. A relation it owns keys into the {@code graphql_}
+     * anchors, which are the walk's and are cleared, so the clear was deleting a parent out from
+     * under an exempt child and the referential failure that followed demoted the run to a private
+     * store rather than failing it. Two exempt relations reach it on the vocabulary graphitron
+     * itself ships, so the path was every warm pass rather than a corner. Now that the pass rewrites
+     * them itself, emptying them is the ordinary discipline again and the contradiction is gone.
      *
      * <p>Named rather than read off the {@code touched_at} column, which is on relations this walk
      * writes too. There the column is one writer's stamp beside another writer's rows, not the
      * whole relation's discipline, and a clear that skipped those would let this walk's rows pile
      * up unbounded.
      */
-    private static final Set<String> SELF_SWEEPING = Set.of("document", "code");
+    private static final Set<String> SELF_SWEEPING = Set.of("code");
 
     private StoreRefresh() {}
 
@@ -189,9 +209,11 @@ final class StoreRefresh {
 
     /**
      * Empties what this run owns, children before parents throughout so no delete trips a foreign
-     * key: the stale owned classpath partitions are peeled off from their leaves inwards, the
-     * graph's own partition is walked in the reverse of the order the sink writes it in, and the
-     * wholesale remainder the same way.
+     * key: the stale owned classpath partitions are peeled off from their leaves inwards, and the
+     * graph's own partition is walked in the reverse of the order the sink writes it in.
+     *
+     * <p>Two arms where there were three. What the third emptied is the catalog gatherer's to
+     * empty, per source, and always was.
      */
     private static void clear(DSLContext dsl, String graphName, Set<String> named, Set<String> fresh) {
         var staleOwned = new LinkedHashSet<>(named);
@@ -212,9 +234,6 @@ final class StoreRefresh {
             dsl.deleteFrom(table)
                 .where(table.field("GRAPH_NAME", String.class).eq(graphName))
                 .execute();
-        }
-        for (Table<?> table : childrenFirst(wholesale(swept))) {
-            dsl.deleteFrom(table).execute();
         }
     }
 
@@ -253,41 +272,6 @@ final class StoreRefresh {
         return tables;
     }
 
-    /**
-     * Every base relation the clear still empties outright: the generated relations less the
-     * views, which hold no rows of their own, less the graph-scoped set above, less the
-     * source-partitioned families, less the self-swept ones, less the three {@code store_}
-     * relations whose lifetimes this class is deciding ({@code store_graph}'s recipe children are
-     * graph-scoped by their column and clear there), and less the {@code meta_} family. Written in
-     * exemption polarity on purpose: a relation nobody thought about is emptied and rebuilt, never
-     * silently retained, which is why the self-swept ones are exempted by a declaration they carry
-     * rather than by the shape of a column.
-     *
-     * <p>The {@code meta_} exemption is the one whose reason is not about cadence. Those rows are
-     * the schema's description of itself, authored in the DDL and supplied by it, so no run
-     * rewrites them and a clear would simply lose them: the family's views cannot be emptied at
-     * all and were skipped as views, but the register is a base table and would have been. A
-     * warm store would then hold the schema with its own description missing, which reads as a
-     * store that registers nothing rather than as one that was cleared.
-     */
-    private static Set<Table<?>> wholesale(Set<String> swept) {
-        var graphScoped = graphScoped(swept);
-        var tables = new LinkedHashSet<Table<?>>();
-        for (Table<?> table : Public.PUBLIC.getTables()) {
-            if (table.getOptions().type() == TableOptions.TableType.VIEW
-                || PARTITIONED.contains(table)
-                || graphScoped.contains(table)
-                || swept.contains(table.getName().toLowerCase(java.util.Locale.ROOT))
-                || table.getName().toLowerCase(java.util.Locale.ROOT).startsWith("meta_")
-                || table.equals(STORE_GRAPH)
-                || table.equals(STORE_SOURCE)
-                || table.equals(STORE_STAMP)) {
-                continue;
-            }
-            tables.add(table);
-        }
-        return tables;
-    }
 
     private static List<Table<?>> childrenFirst(Set<Table<?>> tables) {
         var ordered = new ArrayList<>(FactSink.parentsFirst(tables));

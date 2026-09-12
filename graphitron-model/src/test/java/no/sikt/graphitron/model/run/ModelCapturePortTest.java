@@ -24,13 +24,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Two claims, and neither is visible from what either capture produces alone. The families land
  * in the store the pass used rather than in one this call opened, which is why the method is on the
- * port. And they outlive the next pass, whose clear disclaims the relations these gatherers declare
- * themselves the owner of, which is what lets a caller capture before its pass instead of after: a
- * build the pass refuses still has what they wrote to say for it.
+ * port. And they survive the next pass, which is what lets a caller capture before its pass instead
+ * of after: a build the pass refuses still has what they wrote to say for it, the pass's own clear
+ * and rewrite being one transaction that a refusal rolls back whole.
  *
- * <p>That the disclaim is scoped rather than a clear switched off is not asserted here, having a
- * guard already: widen it to every relation carrying the instant and
- * {@code WarmStartRefreshTest.aSiblingGraphsPartitionSurvivesARefresh} goes red.
+ * <p>The second claim used to be about the clear disclaiming what these gatherers own, and it is
+ * not any more. The disclaim went when the document gatherer started running inside the pass: while
+ * it ran only outside, the clear was emptying the {@code graphql_} anchors from under exempt rows
+ * that key into them, so the exemption was not protecting those rows, it was breaking them. What
+ * holds the claim up now is that the pass writes them.
  */
 class ModelCapturePortTest {
 
@@ -71,15 +73,25 @@ class ModelCapturePortTest {
             assertThat(lent.dsl().select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME)
                     .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
                     .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME))
-                .as("and the next pass leaves them, its clear disclaiming what these gatherers own")
+                .as("and the next pass still has them, now because it writes them itself rather "
+                    + "than because its clear stepped around them")
                 .contains("Film");
         }
     }
 
-    /** One pass's whole capture under {@link CapturedStore#GRAPH}, from {@code baseDir}. */
+    /**
+     * One pass's whole capture under {@link CapturedStore#GRAPH}, from {@code baseDir}.
+     *
+     * <p>Carrying the same corpus the model capture is given, which used to be
+     * {@code SubjectConfig.none()}: a merged registry was the whole of what the pass read, so where
+     * the documents were did not come into it. It does now. The pass runs the document gatherer,
+     * whose rows are keyed by a position in one file and which therefore re-reads the corpus from
+     * configuration, and a pass handed a registry with no corpus beside it would clear that
+     * gatherer's relations and have nothing to write back into them.
+     */
     private static CaptureRequest request(Path baseDir) {
         var registry = CapturedStore.registryOf(baseDir, SDL);
-        return CaptureRequest.unseeded(CapturedStore.graph(baseDir), SubjectConfig.none(), registry,
+        return CaptureRequest.unseeded(CapturedStore.graph(baseDir), configOver(baseDir), registry,
             SchemaAssembly.of(registry), SdlVerdicts.none(), CapturedStore.attributionOf(baseDir),
             null, List.of(), ClassifiedRun.absent());
     }

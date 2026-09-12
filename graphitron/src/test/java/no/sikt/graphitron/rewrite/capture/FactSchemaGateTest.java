@@ -903,9 +903,10 @@ class FactSchemaGateTest {
      */
     private static void captureMaterializationFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
+        var registry = CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE);
         FactCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            SubjectConfig.none(),
-            CapturedStore.registryOf(directory, MATERIALIZED_FIXTURE),
+            CapturedStore.corpusOf(directory),
+            registry,
             CapturedStore.attributionOf(directory),
             fixtureCatalog(), List.of());
     }

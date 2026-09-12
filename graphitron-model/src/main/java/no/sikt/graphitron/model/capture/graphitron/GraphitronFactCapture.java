@@ -23,7 +23,6 @@ import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture.SiteRef;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
-import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
@@ -47,9 +46,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_ENTRY;
@@ -81,13 +77,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
@@ -275,36 +268,19 @@ public final class GraphitronFactCapture {
         String type = site.typeName();
         switch (directive.getName()) {
             case "table" -> {
+                // The relation this arm wrote is derived now, by GraphitronAnchor, out of the entry
+                // the document's own reader writes. What stays here is the spelling, which is a
+                // different relation: graphitron_spelled_reference_entry is keyed by the value and
+                // written from seven sites, so it moves when the last of them does rather than when
+                // the first does. The claim stays with it, first-wins per type being what decides
+                // whose spelling the corpus records when a type carries more than one application.
                 if (!sink.claim(GRAPHITRON_TABLE_ENTRY, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_TABLE_ENTRY);
-                record.setTypeName(type);
-                site(site, directive, record::setSourceName, record::setDeclarationLine,
-                    record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                String written = string(directive, "name");
-                qualified(written, record::setTableRef,
-                    record::setTableRefNamespacePart, record::setTableRefNamePart);
                 // The site records what the author wrote, which on a bare @table is nothing; the
                 // spelling it resolves against is the type's own name, and that is the fact the
                 // supertype holds. Split rather than passed through spelledReference because this
                 // is the one site whose spelling is not the value it stores.
+                String written = string(directive, "name");
                 spelling(written == null ? type : written);
-                sink.add(record);
-            }
-            case "scalarType" -> {
-                if (!sink.claim(GRAPHITRON_SCALAR_TYPE_ENTRY, type)) return;
-                String scalar = string(directive, "scalar");
-                if (scalar == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_SCALAR_TYPE_ENTRY);
-                record.setTypeName(type);
-                site(site, directive, record::setSourceName, record::setDeclarationLine,
-                    record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                record.setScalarRef(scalar);
-                if (ConstantReferenceGrammar.split(scalar)
-                        instanceof ConstantReferenceGrammar.Reference.Parsed parsed) {
-                    record.setScalarRefClassPart(parsed.classFqn());
-                    record.setScalarRefFieldPart(parsed.fieldName());
-                }
-                sink.add(record);
             }
             case "enum" -> {
                 if (!sink.claim(GRAPHITRON_ENUM_ENTRY, type)) return;
@@ -319,15 +295,6 @@ public final class GraphitronFactCapture {
                 sink.add(record);
                 methodReference("ENUM", type, type, null, null, null, null,
                     reference.className(), reference.method(), directive);
-            }
-            case "record" -> {
-                if (!sink.claim(GRAPHITRON_RECORD_ENTRY, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_RECORD_ENTRY);
-                record.setTypeName(type);
-                site(site, directive, record::setSourceName, record::setDeclarationLine,
-                    record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                record.setClassName(codeReference(directive, "record").className());
-                sink.add(record);
             }
             case "error" -> {
                 if (!sink.claim(GRAPHITRON_ERROR_ENTRY, type)) return;
@@ -654,16 +621,6 @@ public final class GraphitronFactCapture {
                     type, field, null, null, null,
                     string(directive, "className"), string(directive, "method"), directive);
             }
-            case "asConnection" -> {
-                if (!sink.claim(GRAPHITRON_CONNECTION_ENTRY, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_CONNECTION_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setDefaultFirstValue(integer(directive, "defaultFirstValue"));
-                record.setConnectionName(string(directive, "connectionName"));
-                sink.add(record);
-            }
             case "asFacet" -> marker(GRAPHITRON_FACET_ENTRY, type, field, directive);
             case "splitQuery" -> marker(GRAPHITRON_SPLIT_QUERY_ENTRY, type, field, directive);
             case "tenantFanOut" -> marker(GRAPHITRON_TENANT_FAN_OUT_ENTRY, type, field, directive);
@@ -679,60 +636,14 @@ public final class GraphitronFactCapture {
                 sink.add(record);
             }
             case "mutation" -> {
+                // The relation is derived now, by GraphitronAnchor. What is left is the spelling,
+                // for the reason @table's arm carries: graphitron_spelled_reference_entry is keyed
+                // by the value across the seven sites that write one, so it moves when the last of
+                // them does. The claim stays with it, first-wins per coordinate being what decides
+                // whose spelling the corpus records where a field carries more than one application.
                 if (!sink.claim(GRAPHITRON_MUTATION_ENTRY, type, field)) return;
-                String operation = tokenOf(argument(directive, "typeName"));
-                if (operation == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_MUTATION_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setOperation(operation);
-                record.setMultiRow(bool(directive, "multiRow"));
-                spelledReference(string(directive, "table"), record::setTableRef,
-                    record::setTableRefNamespacePart, record::setTableRefNamePart);
-                sink.add(record);
-            }
-            case "pivot" -> {
-                if (!sink.claim(GRAPHITRON_PIVOT_ENTRY, type, field)) return;
-                String on = string(directive, "on");
-                String value = string(directive, "value");
-                if (on == null || value == null) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_PIVOT_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setOnColumn(on);
-                record.setValueColumn(value);
-                record.setVocabularyRef(string(directive, "vocabulary"));
-                sink.add(record);
-            }
-            case "defaultOrder" -> {
-                if (!sink.claim(GRAPHITRON_DEFAULT_ORDER_ENTRY, type, field)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                record.setIndexRef(string(directive, "index"));
-                record.setPrimaryKey_(bool(directive, "primaryKey"));
-                record.setDirection(tokenOf(argument(directive, "direction")));
-                sink.add(record);
-                int position = 0;
-                for (Value<?> entry : list(directive, "fields")) {
-                    if (!(entry instanceof ObjectValue object)) {
-                        undecoded(directive, "fields", entry);
-                        continue;
-                    }
-                    String name = stringOf(field(object, "name"), directive, "fields");
-                    if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setPosition(position++);
-                    row.setNameRef(name);
-                    row.setCollate(stringOf(field(object, "collate"), directive, "fields"));
-                    row.setDirection(tokenOf(field(object, "direction")));
-                    sink.add(row);
-                }
+                if (tokenOf(argument(directive, "typeName")) == null) return;
+                spelling(string(directive, "table"));
             }
             case "routine" -> {
                 if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
