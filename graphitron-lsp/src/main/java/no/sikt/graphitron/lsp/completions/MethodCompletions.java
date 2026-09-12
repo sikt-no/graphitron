@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.completions;
 
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.ClasspathMethods;
+import no.sikt.graphitron.lsp.facts.ExternalFieldLifters;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -25,31 +26,34 @@ import java.util.List;
  * provider only acts once that has resolved.
  *
  * <p>One provider, two lists. Under {@code @externalField} the offered set narrows to the methods
- * matching that directive's contract, a lifter returning a jOOQ {@code Field<X>} from a single
- * parameter, and falls back to the whole list when the class exposes none. That used to be two
- * providers chained by a dispatch-site ordering, with the narrowing in one and the fall-through in
- * the chaining; both were reading the same census, so the split bought nothing the arm cannot state
- * for itself. It is one query either way: the shape is a predicate over the rows already fetched,
- * not a second trip.
+ * that directive may name, and falls back to the whole list when the class exposes none. That used
+ * to be two providers chained by a dispatch-site ordering, with the narrowing in one and the
+ * fall-through in the chaining; both were reading the same census, so the split bought nothing the
+ * arm cannot state for itself.
  *
- * <p>Overloads stay distinct because {@code jvm_method} keys on the descriptor, so two methods
- * sharing a display name are two candidates with two signatures rather than one arbitrary winner.
+ * <p>What narrows is {@link ExternalFieldLifters}, which is the relation that admits a lifter rather
+ * than this provider's reading of a shape. The reading it replaces compared an arity to one and a
+ * return type's simple name to {@code Field}, which is as far as the census goes: nothing there says
+ * whether a method is static, and nothing resolves {@code Field} to jOOQ's. So a one-argument method
+ * returning any type named {@code Field} was offered as a lifter, and a suggestion could fail to
+ * bind at build. Both clauses are the arm's now, with the parameter-is-a-table clause the census
+ * could not reach at all, so what is offered is what the generator would accept.
+ *
+ * <p>Two reads where there was one, and the second is the point rather than a cost: the census
+ * answers what the class declares and the arm answers which of those a directive may name, and no
+ * amount of reading the first produces the second.
+ *
+ * <p>Overloads stay distinct because both relations key on the descriptor, so two methods sharing a
+ * display name are two candidates with two signatures rather than one arbitrary winner, and the
+ * narrowing admits them one at a time.
  *
  * <p>The census read itself is {@link ClasspathMethods}, shared with hover's method arm, which asks
  * the same question of the same two relations under one name instead of all of them.
  */
 public final class MethodCompletions {
 
-    /** Directive whose method slot narrows to the lifter shape. */
+    /** Directive whose method slot narrows to what the lifter arm admitted. */
     private static final String EXTERNAL_FIELD_DIRECTIVE = "externalField";
-
-    /**
-     * Erased display name of a jOOQ {@code Field<X>} return type. Matched against
-     * {@link ClasspathMethods.Method#returnType()} and deliberately not against the declared form
-     * beside it: this is a question about the type's identity, and every {@code Field<X>} answers it
-     * the same way while the declared spellings all differ.
-     */
-    private static final String FIELD_RETURN_TYPE = "Field";
 
     private MethodCompletions() {}
 
@@ -73,7 +77,8 @@ public final class MethodCompletions {
             // The narrowed list wins when it has anything in it, and the whole list stands when the
             // class exposes no lifter. Deliberate: an author on a class that cannot lift a field is
             // better served by seeing what it does have than by an empty popup.
-            var lifters = methods.stream().filter(MethodCompletions::liftsField).toList();
+            var admitted = ExternalFieldLifters.descriptorsOf(store, classFqn.get());
+            var lifters = methods.stream().filter(m -> admitted.contains(m.descriptor())).toList();
             if (!lifters.isEmpty()) {
                 methods = lifters;
             }
@@ -84,17 +89,5 @@ public final class MethodCompletions {
                 method.name(), CompletionItemKind.Method, context.replaceRange(), method.signature()));
         }
         return items;
-    }
-
-    /**
-     * Whether a method matches {@code @externalField}'s contract: one parameter in, a jOOQ
-     * {@code Field} out. This directive's own rule rather than anything the census states, which is
-     * why it sits here and not beside the shared read. Confirming the parameter is specifically a
-     * jOOQ {@code Table} would need the parameter's classified role, which no relation carries yet;
-     * the shape is the approximation, and a suggested method can still fail to bind, the same
-     * best-effort contract the generic list lives under.
-     */
-    private static boolean liftsField(ClasspathMethods.Method method) {
-        return method.arity() == 1 && FIELD_RETURN_TYPE.equals(method.returnType());
     }
 }

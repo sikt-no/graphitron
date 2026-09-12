@@ -110,6 +110,27 @@ final class StoreFixture implements AutoCloseable {
         return this;
     }
 
+    /**
+     * The lifters a class exposes, written beside the census rows that class already has.
+     *
+     * <p>{@link #withScalarConstants}'s shape and for the same reason: whether a method may be named
+     * at {@code @externalField} is the code family's answer and the census states none of it, so a
+     * holder names the entry, the class and the admitted methods, and this writes them. A fixture
+     * that seeds a method here is claiming the arm admitted it, which is what a real capture would
+     * have decided by reading the classfile.
+     */
+    StoreFixture withExternalFieldLifters(LifterHolder... holders) {
+        for (LifterHolder holder : holders) {
+            SeededStore.seedSource(dsl(), holder.sourceName(), "DIRECTORY");
+            SeededStore.seedGraphSource(dsl(), graphName, holder.sourceName());
+            for (CompletionData.Method lifter : holder.lifters()) {
+                SeededStore.seedExternalFieldMethod(dsl(), holder.sourceName(), holder.className(),
+                    lifter.name(), lifter.descriptor(), lifter.parameters().getFirst().type());
+            }
+        }
+        return this;
+    }
+
     private DSLContext dsl() {
         return captured.dsl();
     }
@@ -441,6 +462,39 @@ final class StoreFixture implements AutoCloseable {
 
     /** The entry a fabricated holder sits on; a path that does not exist, like the other jars. */
     private static final String SCALAR_JAR = "/nonexistent/scalars.jar";
+
+    /**
+     * A class exposing lifters, reactor-resident because that is the only place one can live: a
+     * lifter is called on the consumer's own generated tables and is written in the consumer's own
+     * code, so the arm reads the reactor and nothing else. The directory has to exist, on
+     * {@link #reactorClass}'s terms, capture telling a directory from a jar by looking.
+     *
+     * <p>Not a census reference, on {@link #scalarHolder}'s terms. {@link LifterHolder#asClass}
+     * gives the census side, and the methods a holder names are the ones the arm admitted; a class
+     * whose census rows include methods absent here is a class declaring non-lifters, which is the
+     * case worth writing.
+     */
+    static LifterHolder lifterHolder(
+        Path classesDirectory, String className, List<CompletionData.Method> lifters
+    ) {
+        return new LifterHolder(classesDirectory.toString(), className, lifters);
+    }
+
+    /**
+     * One class's lifters, as a fixture states them: the entry, the class, and the methods the arm
+     * admitted. A holder is two facts written by two different things, which is
+     * {@link ScalarHolder}'s split and the same one.
+     */
+    record LifterHolder(String sourceName, String className, List<CompletionData.Method> lifters) {
+
+        /**
+         * The holder as the census sees it: every method the class declares, lifters and not,
+         * saying nothing about which is which.
+         */
+        CompletionData.ExternalReference asClass(List<CompletionData.Method> allMethods) {
+            return reference(className, allMethods, sourceName);
+        }
+    }
 
     /**
      * One class's scalar constants, as a fixture states them.

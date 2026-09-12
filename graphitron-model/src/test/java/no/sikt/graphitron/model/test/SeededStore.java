@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
@@ -907,6 +908,25 @@ public final class SeededStore {
             .set(CODE_SCALAR_CONSTANT.FIELD_NAME, fieldName)
             .set(CODE_SCALAR_CONSTANT.INPUT_TYPE, inputType)
             .set(CODE_SCALAR_CONSTANT.TOUCHED_AT, SEEDED_READING)
+            .execute();
+    }
+
+    /**
+     * One method the lifter arm admitted: what an author may name in {@code @externalField}. The
+     * admission itself is the arm's, so a row here asserts the method passed it, and the parameter
+     * type is the one fact the arm carries beside its key, being the clause a reader has to decide
+     * for itself. The owning class needs no census row, on {@link #seedScalarConstant}'s terms.
+     */
+    public static void seedExternalFieldMethod(DSLContext dsl, String sourceName, String className,
+                                               String methodName, String descriptor,
+                                               String tableParameterType) {
+        dsl.insertInto(CODE_EXTERNAL_FIELD_METHOD)
+            .set(CODE_EXTERNAL_FIELD_METHOD.SOURCE_NAME, sourceName)
+            .set(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME, className)
+            .set(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME, methodName)
+            .set(CODE_EXTERNAL_FIELD_METHOD.DESCRIPTOR, descriptor)
+            .set(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE, tableParameterType)
+            .set(CODE_EXTERNAL_FIELD_METHOD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

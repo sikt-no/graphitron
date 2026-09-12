@@ -74,7 +74,8 @@ public final class ClasspathMethods {
         for (var row : rows) {
             String key = row.value1() + row.value2();
             if (!key.equals(currentKey)) {
-                current = new Method(row.value1(), row.value3(), row.value7(), new ArrayList<>());
+                current = new Method(row.value1(), row.value2(), row.value3(), row.value7(),
+                    new ArrayList<>());
                 methods.add(current);
                 currentKey = key;
             }
@@ -93,9 +94,13 @@ public final class ClasspathMethods {
      * <p>Both type forms are carried because the surfaces want different ones. Rendering wants the
      * declared form; a check on whether a method returns a particular type wants the erasure, which
      * is the form that answers the identity question without a spelling in it.
+     *
+     * @param descriptor the census's overload discriminator, carried so a surface can correlate one
+     *     method to what another relation says about it. Never rendered: a descriptor is the key a
+     *     classfile keys by, and an author reads {@link #signature()}
      */
-    public record Method(String name, String returnType, String declaredReturnType,
-                         List<Parameter> parameters) {
+    public record Method(String name, String descriptor, String returnType,
+                         String declaredReturnType, List<Parameter> parameters) {
 
         /** How many parameters the method declares, which is what joins the source-side Javadoc. */
         public int arity() {
