@@ -17,7 +17,9 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.run.ModelCapture;
 import org.jooq.DSLContext;
 
 import java.io.IOException;
@@ -325,11 +327,47 @@ public final class CapturedStore implements AutoCloseable {
         captureFiles(store, List.of(file), directory, graphName, registry, jooq, census, warm);
     }
 
+    /**
+     * Both readings of the documents: the walk, and then {@link ModelCapture}, which is what a run
+     * captures through.
+     *
+     * <p>This level promises that a fixture cannot encode a state capture never writes, and it was
+     * keeping half of it. The walk writes the anchor families and the incumbent decode;
+     * {@link ModelCapture} writes the entry strata, the configuration corpus and the problem rows,
+     * and no arm here reached it. So a reader repointed at an entry found an empty relation in
+     * every test while a real run, capturing through {@code CapturePort}, had the rows all along.
+     * A fixture able to encode a state production never has is the one thing this level exists to
+     * prevent.
+     *
+     * <p>Walk first and the capture second, which is the order that composes and not a preference.
+     * Both write the {@code graphql_} anchors and they agree on them exactly, which is the walk
+     * redundancy measured elsewhere; the difference is how. The walk's sink inserts and the
+     * derivation upserts, so the derivation lands on the walk's rows without complaint while the
+     * walk lands on the derivation's and fails on its key. Put the other way round it collides on
+     * {@code graphql_directive} at the first directive either of them writes.
+     *
+     * <p>No catalog and no classpath here, the walk having taken both already from the arguments
+     * this arm was given. What the second reading adds is the documents, which is the half the walk
+     * cannot state.
+     *
+     * <p>Each graph names its own files rather than matching a pattern under the directory: the
+     * arms capturing a second graph write its file beside the first, and a glob would hand each
+     * graph the other's source.
+     */
     private static void captureFiles(GraphitronModelStore store, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
         FactCapture.capture(store.dsl(), warm, new GraphIdentity(graphName, directory),
             SubjectConfig.none(), registry, attributionOfFiles(files), jooq, census);
+        ModelCapture.capture(store.dsl(), new GraphIdentity(graphName, directory),
+            subjectOf(directory, files), List.of(), null, LocalDateTime.now());
+    }
+
+    /** The files themselves, named one by one, so a graph's capture reads no other graph's source. */
+    private static SubjectConfig subjectOf(Path directory, List<Path> files) {
+        return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            files.stream().map(file -> SchemaRecipe.Binding.literal(SchemaSource.file(file))).toList(),
+            List.of("graphqls")));
     }
 
     // ---------------------------------------------------------------------------------------

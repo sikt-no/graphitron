@@ -18,7 +18,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_EN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 
@@ -189,17 +191,41 @@ public final class BindingUsages {
         return method == null ? match : match.and(methodColumn.eq(method));
     }
 
-    /** The types whose {@code @table} binding resolves to this table, positioned by their site. */
+    /**
+     * The types whose {@code @table} binding resolves to this table, positioned by their site.
+     *
+     * <p>Two relations at two keys, joined rather than conflated. Which types resolved to the table
+     * is a coordinate fact and {@code intent_bound_table} states it; where the binding was written
+     * is a position, and the entry is keyed there. The coordinate is not a column of the entry and
+     * is not meant to be: a transcription says what stands at a position and references the
+     * {@code graphql_} entry it decorates, so the type name is reached through that reference, to
+     * the type directive holding its declaration's position in {@code parent_line} and
+     * {@code parent_column}, and from there to the declaration carrying the name. The reading this
+     * replaces took the type name off the binding row itself, which is why that row had to resolve
+     * while the document was still being read.
+     *
+     * <p>One row per site and not per type, which is the keying showing through: a type extended
+     * across two sources and annotated on both has two sites and is two rows here.
+     */
     private static Result<Record3<String, Integer, Integer>> boundTypeSites(
         StoreHandle store, CatalogTable table
     ) {
+        var e = GRAPHITRON_AST_TABLE_ENTRY;
+        var d = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var m = GRAPHQL_TYPE_DECLARATION;
         return store.dsl()
-            .select(GRAPHITRON_TABLE_ENTRY.SOURCE_NAME, GRAPHITRON_TABLE_ENTRY.SOURCE_LINE,
-                GRAPHITRON_TABLE_ENTRY.SOURCE_COLUMN)
+            .select(e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN)
             .from(INTENT_BOUND_TABLE)
-            .join(GRAPHITRON_TABLE_ENTRY)
-            .on(GRAPHITRON_TABLE_ENTRY.GRAPH_NAME.eq(INTENT_BOUND_TABLE.GRAPH_NAME))
-            .and(GRAPHITRON_TABLE_ENTRY.TYPE_NAME.eq(INTENT_BOUND_TABLE.TYPE_NAME))
+            .join(m).on(m.GRAPH_NAME.eq(INTENT_BOUND_TABLE.GRAPH_NAME))
+                .and(m.TYPE_NAME.eq(INTENT_BOUND_TABLE.TYPE_NAME))
+            .join(d).on(d.GRAPH_NAME.eq(m.GRAPH_NAME))
+                .and(d.SOURCE_NAME.eq(m.SOURCE_NAME))
+                .and(d.PARENT_LINE.eq(m.SOURCE_LINE))
+                .and(d.PARENT_COLUMN.eq(m.SOURCE_COLUMN))
+            .join(e).on(e.GRAPH_NAME.eq(d.GRAPH_NAME))
+                .and(e.SOURCE_NAME.eq(d.SOURCE_NAME))
+                .and(e.SOURCE_LINE.eq(d.SOURCE_LINE))
+                .and(e.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
             .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
             .and(INTENT_BOUND_TABLE.TABLE_SOURCE_NAME.eq(table.sourceName()))
             .and(INTENT_BOUND_TABLE.TABLE_SCHEMA.eq(table.schema()))

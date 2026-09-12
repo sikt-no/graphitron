@@ -2795,8 +2795,10 @@ CREATE TABLE graphitron_deprecated_directive (
   reason         VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name),
+  -- Cascading: a directive that stops being declared has no deprecation marker to keep, and the
+  -- refresh that clears the declaration would otherwise be blocked by the marker referencing it.
   FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive (graph_name, directive_name)
+    REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_deprecated_directive IS 'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention. For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.';
 COMMENT ON COLUMN graphitron_deprecated_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2811,8 +2813,9 @@ CREATE TABLE graphitron_deprecated_directive_argument (
   reason         VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, argument_name),
+  -- Cascading, for the reason stated on the sibling above.
   FOREIGN KEY (graph_name, directive_name, argument_name)
-    REFERENCES graphql_directive_argument (graph_name, directive_name, argument_name)
+    REFERENCES graphql_directive_argument (graph_name, directive_name, argument_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_deprecated_directive_argument IS 'A formal argument of a declared directive is deprecated, by the native marker GraphQL admits there. For example the connectionName argument of @asConnection, marked with a reason, gives one row.';
 COMMENT ON COLUMN graphitron_deprecated_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2828,8 +2831,9 @@ CREATE TABLE graphitron_deprecated_input_field (
   reason     VARCHAR NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
+  -- Cascading, for the reason stated on the directive sibling.
   FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_deprecated_input_field IS 'A field of an input object is deprecated, by the native marker GraphQL admits there. For example input FilmFilter { legacyTitle: String @deprecated(reason: "use title") } gives one row.';
 COMMENT ON COLUMN graphitron_deprecated_input_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';

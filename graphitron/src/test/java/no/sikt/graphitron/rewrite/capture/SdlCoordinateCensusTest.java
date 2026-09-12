@@ -150,11 +150,20 @@ class SdlCoordinateCensusTest {
      * 0 wherever it sits in the file, extensions follow in document order, and each element family's
      * ordinal continues across the site boundary rather than restarting at each site.
      *
-     * <p>Every merge-ordered family is here, because every one of them is numbered by a counter
-     * {@code SdlFactCapture.ElementOrdinals} holds per type and carries across the sites: the field,
-     * argument, enum-value and union-member ordinals, and the per-name type-directive ordinals whose
-     * counter is type-wide for exactly this reason. A family pinned only by density would pass on all
-     * five with the merge order inverted.
+     * <p>Every merge-ordered family is here, because every one of them is numbered by a counter that
+     * carries across the sites: the field, enum-value and union-member ordinals, the per-name
+     * type-directive ordinals, and the argument ordinals. A family pinned only by density would pass
+     * on all five with the merge order inverted.
+     *
+     * <p>Type-wide for four of them and per-field for the arguments, which is where the two
+     * producers disagreed and the disagreement is settled here rather than left to whichever writes
+     * last. {@code SdlFactCapture.ElementOrdinals} holds one counter per type and spends it on every
+     * family, so the walk numbers a second field's first argument after the first field's last. The
+     * derivation partitions arguments by field, and {@code graphql_argument.ordinal}'s own comment
+     * says "declaration order within the field", so the derivation states the modelled grain and the
+     * walk's type-wide count is the shared counter showing through. Both order a field's own
+     * arguments identically, which is why nothing downstream noticed; only the absolute value
+     * differs. Pinned to the documented grain because the walk is the writer being retired.
      */
     @Test
     @DisplayName("the base definition is merge ordinal zero, and extensions follow in document order")
@@ -188,16 +197,19 @@ class SdlCoordinateCensusTest {
                 .as("an extended enum numbers the same way")
                 .containsExactly("G=0", "PG=1", "R=2");
 
+            // Ordered by field and then ordinal, because the ordinal alone no longer totally orders
+            // the type's arguments: it is per-field, so every field's first argument is 0.
             assertThat(dsl.select(GRAPHQL_ARGUMENT.FIELD_NAME, GRAPHQL_ARGUMENT.ARGUMENT_NAME,
                     GRAPHQL_ARGUMENT.ORDINAL)
                 .from(GRAPHQL_ARGUMENT)
                 .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Query"))
-                .orderBy(GRAPHQL_ARGUMENT.ORDINAL)
+                .orderBy(GRAPHQL_ARGUMENT.FIELD_NAME, GRAPHQL_ARGUMENT.ORDINAL)
                 .fetch(r -> r.value1() + "." + r.value2() + "=" + r.value3()))
-                .as("the argument counter is the type's, not the field's: the extension's argument "
-                    + "continues the base field's sequence rather than restarting at 0")
-                .containsExactly("film.title=0", "film.limit=1", "films.match=2");
+                .as("the argument counter is the field's, which is the grain the column's own"
+                    + " comment states; an extension adding an argument to a second field starts"
+                    + " that field at 0 and continues the field it extends")
+                .containsExactly("film.title=0", "film.limit=1", "films.match=0");
 
             assertThat(dsl.select(GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME, GRAPHQL_POLY_MEMBER.POSITION)
                 .from(GRAPHQL_POLY_MEMBER)
