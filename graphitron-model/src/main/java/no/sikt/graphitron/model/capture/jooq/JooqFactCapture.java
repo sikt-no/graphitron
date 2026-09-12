@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.jooq;
 import no.sikt.graphitron.model.sink.RowChunks;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import org.jooq.DSLContext;
+import org.jooq.EnumType;
 import org.jooq.Field;
 import org.jooq.Rows;
 import org.jooq.Schema;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
@@ -31,6 +33,7 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -52,8 +55,12 @@ public final class JooqFactCapture {
 
     private JooqFactCapture() {}
 
+    /** The source kind a generated jOOQ package is registered under. */
+    private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
+
     /** Makes the {@code sql_} rows of every source {@code jooq} describes be what it now says. */
-    public static void capture(DSLContext dsl, JooqCatalog jooq, LocalDateTime touchedAt) {
+    public static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
+                               LocalDateTime touchedAt) {
         if (jooq == null) {
             return;
         }
@@ -61,6 +68,7 @@ public final class JooqFactCapture {
         if (tables.isEmpty()) {
             return;
         }
+        graphSources(dsl, graphName, tables, touchedAt);
         // Parents before children, which the sweep then takes in reverse.
         sources(dsl, tables, touchedAt);
         schemas(dsl, jooq, tables, touchedAt);
@@ -77,6 +85,7 @@ public final class JooqFactCapture {
         nodeKeyColumns(dsl, jooq, tables, touchedAt);
         routines(dsl, jooq, tables, touchedAt);
         routineParameters(dsl, jooq, tables, touchedAt);
+        recordSupertypes(dsl, tables);
         enumBindings(dsl, tables, touchedAt);
         sweep(dsl, sourceNames(tables), touchedAt);
     }
@@ -527,6 +536,124 @@ public final class JooqFactCapture {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
+    /**
+     * The database enum a bound Java enum stands for, read off its first constant: jOOQ generates
+     * every constant as an {@link EnumType}, which carries the catalog coordinate the class name
+     * alone does not. Null where the type is not one of those, which is guarded because
+     * {@code getEnumConstants} can return an empty array rather than because a catalog reaches it.
+     */
+    private static EnumType enumTypeOf(Field<?> field) {
+        Object[] constants = field.getType().getEnumConstants();
+        return constants != null && constants.length > 0 && constants[0] instanceof EnumType type
+            ? type
+            : null;
+    }
+
+    /** The schema the bound database enum lives in, or null where the binding names no coordinate. */
+    private static String enumSchemaOf(Field<?> field) {
+        EnumType type = enumTypeOf(field);
+        return type == null || type.getSchema() == null ? null : type.getSchema().getName();
+    }
+
+    /** The bound database enum's own name, or null where the binding names no coordinate. */
+    private static String enumTypeNameOf(Field<?> field) {
+        EnumType type = enumTypeOf(field);
+        return type == null ? null : type.getName();
+    }
+
+    /**
+     * Which graph read the sources this family is keyed by.
+     *
+     * <p>Two rows per generated package, in the order their keys require. The registry row says the
+     * source exists at all, which every source-keyed fact hangs a foreign key on and which the
+     * membership row below references in turn.
+     *
+     * <p>The {@code sql_} family keys on the source and not on the graph, so a graph-scoped reader
+     * reaches it through this relation, and every view over the catalog joins it. The gatherers that
+     * write through {@link no.sikt.graphitron.model.sink.FactSink} get the row for free, the sink
+     * stamping the graph on everything it writes; this one writes through the {@code DSLContext} and
+     * so has to say it itself. Absent, the catalog is captured and every graph-scoped view over it
+     * returns nothing, which reads as a capture that did not run.
+     */
+    private static void graphSources(DSLContext dsl, String graphName, List<TableAt> tables,
+                                     LocalDateTime touchedAt) {
+        List<String> sources = tables.stream().map(TableAt::source).distinct().toList();
+
+        var s = STORE_SOURCE;
+        var registry = sources.stream().collect(Rows.toRowList(
+            source -> val(source, s.SOURCE_NAME),
+            source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
+            source -> val(touchedAt, s.LAST_SEEN),
+            source -> val(touchedAt, s.READ_AT)));
+        RowChunks.execute(registry, chunk ->
+            dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
+                .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
+                .set(s.READ_AT, excluded(s.READ_AT)));
+
+        if (graphName == null) {
+            return;
+        }
+        var t = STORE_GRAPH_SOURCE;
+        var membership = sources.stream().collect(Rows.toRowList(
+            source -> val(graphName, t.GRAPH_NAME),
+            source -> val(source, t.SOURCE_NAME)));
+        RowChunks.execute(membership, chunk ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyIgnore());
+    }
+
+    /**
+     * Every type a table's generated record <em>is</em>, itself excluded: the superclass chain and
+     * every interface reachable from it.
+     *
+     * <p>Captured rather than derived, and that is the one thing to know before reading it. The
+     * classpath census drops the generated jOOQ package on purpose, so no census edge climbs out of
+     * a generated record, and the chain above one runs through jOOQ's own runtime classes that
+     * nothing scans. This walk holds the record {@link Class} itself, so it is the only reader that
+     * can state the closure at all.
+     */
+    private static void recordSupertypes(DSLContext dsl, List<TableAt> tables) {
+        var t = SQL_TABLE_RECORD_SUPERTYPE;
+        record Supertype(TableAt at, String name) {}
+        var found = new ArrayList<Supertype>();
+        for (TableAt at : tables) {
+            Class<?> recordClass = at.table().getRecordType();
+            if (recordClass == null || recordClass.getName().equals("org.jooq.Record")) {
+                continue;
+            }
+            var seen = new LinkedHashSet<Class<?>>();
+            collectSupertypes(recordClass, seen);
+            seen.remove(recordClass);
+            seen.forEach(supertype -> found.add(new Supertype(at, supertype.getName())));
+        }
+        var rows = found.stream().collect(Rows.toRowList(
+            found1 -> val(found1.at().source(), t.SOURCE_NAME),
+            found1 -> val(found1.at().schema(), t.TABLE_SCHEMA),
+            found1 -> val(found1.at().name(), t.TABLE_NAME),
+            found1 -> val(found1.name(), t.SUPERTYPE_NAME)));
+        // Every column is a key column, so a row that is still true is the row that is already
+        // there and there is nothing on it to update.
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.SUPERTYPE_NAME)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyIgnore());
+    }
+
+    /** The closure above one class: its interfaces, their interfaces, and its superclass chain. */
+    private static void collectSupertypes(Class<?> cls, Set<Class<?>> out) {
+        if (cls == null || !out.add(cls)) {
+            return;
+        }
+        for (Class<?> each : cls.getInterfaces()) {
+            collectSupertypes(each, out);
+        }
+        collectSupertypes(cls.getSuperclass(), out);
+    }
+
     /** The Java enum a column binds to, which is a fact about the generated code and not the table. */
     private static void enumBindings(DSLContext dsl, List<TableAt> tables, LocalDateTime touchedAt) {
         var t = SQL_ENUM_BINDING;
@@ -548,8 +675,8 @@ public final class JooqFactCapture {
         var rows = keys.stream().collect(Rows.toRowList(
             key -> val(byClass.get(key).source(), t.SOURCE_NAME),
             key -> val(fieldByClass.get(key).getType().getName(), t.CLASS_FQN),
-            key -> val(null, t.TABLE_SCHEMA),
-            key -> val(null, t.TYPE_NAME),
+            key -> val(enumSchemaOf(fieldByClass.get(key)), t.TABLE_SCHEMA),
+            key -> val(enumTypeNameOf(fieldByClass.get(key)), t.TYPE_NAME),
             key -> val(touchedAt, t.TOUCHED_AT)));
         RowChunks.execute(rows, chunk ->
             dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_FQN, t.TABLE_SCHEMA, t.TYPE_NAME, t.TOUCHED_AT)

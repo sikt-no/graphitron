@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
+import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
@@ -374,7 +375,14 @@ public final class FactCapture {
             // last; the decode is not among them, the walk writing the as-written half as it goes.
             ConfigurationFactCapture.capture(sink, config);
             sink.flush();
-            CatalogFactCapture.capture(sink, jooq, extensions, sources);
+            // The catalog family, written once. These were two gatherers over the same fourteen
+            // relations, one per capture entry point. Comparing the whole store after each found
+            // three differences, all now closed in the one that stays: two columns of
+            // sql_enum_binding, the source registry and its graph membership, and the record
+            // supertype closure. What is left here is the classpath references, which it cannot
+            // produce, and the order is a foreign key.
+            JooqFactCapture.capture(txDsl, graph.name(), jooq, readAt);
+            CatalogFactCapture.capture(sink, extensions, sources);
             sink.flush();
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());

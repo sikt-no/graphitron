@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.jooq;
 
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.SeededStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -26,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JooqFactCaptureTest {
 
     private static final String JOOQ_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq";
+    private static final String GRAPH = "jooq-capture";
     private static final LocalDateTime FIRST = LocalDateTime.of(2026, 1, 1, 12, 0);
     private static final LocalDateTime SECOND = FIRST.plusMinutes(1);
 
@@ -76,12 +79,13 @@ class JooqFactCaptureTest {
     @DisplayName("capturing twice leaves one catalog's rows, restamped")
     void capturingTwiceIsIdempotent() {
         try (var store = GraphitronStore.inMemory()) {
+            SeededStore.seedGraph(store.dsl(), GRAPH);
             var jooq = new JooqCatalog(JOOQ_PACKAGE);
-            JooqFactCapture.capture(store.dsl(), jooq, FIRST);
+            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, FIRST);
             int afterFirst = store.dsl().fetchCount(SQL_TABLE);
             int columnsAfterFirst = store.dsl().fetchCount(SQL_COLUMN);
 
-            JooqFactCapture.capture(store.dsl(), jooq, SECOND);
+            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE))
                 .as("the second reading replaces the first rather than adding to or emptying it")
@@ -93,6 +97,38 @@ class JooqFactCaptureTest {
     }
 
     /**
+     * A binding names the database enum, not only the Java class it binds to.
+     *
+     * <p>These two columns held null until 2026-09-12, and nothing said so: the family had two
+     * producers, one per capture entry point, and the other one filled them, so on any build that
+     * ran both the rows a reader saw were complete. Comparing the two producers row by row is what
+     * found it, and this is the half of that comparison worth keeping now that there is one
+     * producer left. A reader resolving a column's enum needs the coordinate; the class name alone
+     * does not carry it.
+     */
+    @Test
+    @DisplayName("an enum binding carries the database enum's own coordinate, not just the class")
+    void anEnumBindingCarriesItsCatalogCoordinate() {
+        withCapture(FIRST, dsl -> {
+            var rows = dsl.select(SQL_ENUM_BINDING.CLASS_FQN, SQL_ENUM_BINDING.TABLE_SCHEMA,
+                    SQL_ENUM_BINDING.TYPE_NAME)
+                .from(SQL_ENUM_BINDING).fetch();
+
+            assertThat(rows)
+                .as("the fixture catalog binds at least one column to a generated enum")
+                .isNotEmpty();
+            assertThat(rows)
+                .as("every binding says which database enum it stands for")
+                .allSatisfy(row -> {
+                    assertThat(row.value3()).as("the enum's own name, for " + row.value1())
+                        .isNotNull();
+                    assertThat(row.value2()).as("the schema it lives in, for " + row.value1())
+                        .isNotNull();
+                });
+        });
+    }
+
+    /**
      * The sweep's own claim: a row this reading did not touch goes. Stood up by planting a row for
      * a table the catalog does not have, which is what a dropped table leaves behind.
      */
@@ -100,8 +136,9 @@ class JooqFactCaptureTest {
     @DisplayName("a table the catalog no longer has is swept")
     void aTableTheCatalogNoLongerHasIsSwept() {
         try (var store = GraphitronStore.inMemory()) {
+            SeededStore.seedGraph(store.dsl(), GRAPH);
             var jooq = new JooqCatalog(JOOQ_PACKAGE);
-            JooqFactCapture.capture(store.dsl(), jooq, FIRST);
+            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, FIRST);
             String source = store.dsl().select(SQL_TABLE.SOURCE_NAME).from(SQL_TABLE)
                 .limit(1).fetchOne(SQL_TABLE.SOURCE_NAME);
             String schema = store.dsl().select(SQL_TABLE.TABLE_SCHEMA).from(SQL_TABLE)
@@ -113,7 +150,7 @@ class JooqFactCaptureTest {
                     "gone.Dropped", "gone.DroppedRecord", FIRST.minusDays(1))
                 .execute();
 
-            JooqFactCapture.capture(store.dsl(), jooq, SECOND);
+            JooqFactCapture.capture(store.dsl(), GRAPH, jooq, SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE,
                     SQL_TABLE.TABLE_NAME.eq("dropped_by_the_dba")))
@@ -125,7 +162,8 @@ class JooqFactCaptureTest {
 
     private static void withCapture(LocalDateTime touchedAt, java.util.function.Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
-            JooqFactCapture.capture(store.dsl(), new JooqCatalog(JOOQ_PACKAGE), touchedAt);
+            SeededStore.seedGraph(store.dsl(), GRAPH);
+            JooqFactCapture.capture(store.dsl(), GRAPH, new JooqCatalog(JOOQ_PACKAGE), touchedAt);
             body.accept(store.dsl());
         }
     }

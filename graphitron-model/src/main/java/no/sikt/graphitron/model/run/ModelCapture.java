@@ -54,7 +54,7 @@ public final class ModelCapture {
         writeGraph(dsl, graph, readAt);
         SdlCapture.capture(dsl, graph, config, readAt);
         StoreEntries.write(dsl, graph.name(), config, readAt);
-        JooqFactCapture.capture(dsl, jooq, readAt);
+        JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
         CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),
             jooq == null ? null : jooq.codegenLoader(), readAt);
     }

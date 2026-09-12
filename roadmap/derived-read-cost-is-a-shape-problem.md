@@ -2895,3 +2895,54 @@ Two things this deliberately does not do. It does not strip the walk, which is t
 wants its own verification rather than riding on this one. And it does not leave the running order
 inverted: with the walk still writing last, the six defects fixed here stay invisible in production
 until the strip lands, and the case above is what will notice if they come back.
+
+## The catalog family had two producers too (2026-09-12)
+
+The SDL walk is not a special case. Every family the two capture entry points reach has a gatherer
+each: the SDL walk against `SdlAnchor`, `CatalogFactCapture` against `JooqFactCapture`,
+`ConfigurationFactCapture` against `StoreEntries`, and the classpath pair the code family has already
+half dissolved. The two entry points did not merely duplicate an orchestration. They doubled the
+capture layer, and every family is mid-migration between its pair.
+
+The catalog pair is now one. What it took is worth recording, because three attempts failed first and
+they failed the same way.
+
+**A relation name is not a row.** Both gatherers named the same fourteen relations, which is what
+made them look interchangeable, and swapping the pass onto the newer one turned forty four classes
+red. A second attempt fixed one measured difference and turned the same forty four red. A third
+guessed at another and did it again. Each guess came off a grep and was tested with a twenty minute
+reactor build, which is the most expensive instrument available and the least informative.
+
+**What worked was a cheap instrument used first.** Capture the same catalog twice, once by each
+gatherer, into two stores, and diff row counts for every relation the schema declares. One minute.
+It named three gaps in the newer gatherer, and the important one was not on any list a person would
+have written:
+
+1. `sql_enum_binding.table_schema` and `.type_name` were literal nulls. The binding named the Java
+   class and not the database enum it stands for.
+2. Neither `store_source` nor `store_graph_source` was written. This is the one that mattered. The
+   `sql_` family keys on the source, so every graph-scoped view joins membership to scope it; absent
+   it, the catalog is captured and every view over it returns nothing, which is exactly what forty
+   four classes were seeing while three diagnoses blamed something else.
+3. `sql_table_record_supertype` was not written at all, and genuinely could not be derived: the
+   classpath census drops the generated jOOQ package on purpose, so no census edge climbs out of a
+   generated record and only the catalog walk holds the record class.
+
+**Why a hand-picked list could not have found the second or third.** The first instrument compared
+relations both gatherers were known to write, which is the intersection, so a relation only one of
+them populates is invisible to it by construction. Diffing the whole schema costs a dozen more lines
+and is the difference between an instrument that answers and one that reassures.
+
+**The sink is why membership was free.** A gatherer writing through `FactSink` gets its graph stamped
+on everything, and notes membership as a side effect. One writing through the `DSLContext` has no
+graph and must say so. That is not an argument for keeping the sink: it is what the sink was hiding,
+and the newer gatherer now registers its own sources and states its own membership, which is what
+`SdlCapture` and `CodeCapture` already do for themselves.
+
+**The instrument was deleted when the two became one.** It was a migration tool and not a gate: run
+once, act, dissolve. A standing comparison between two producers is a standing acceptance that there
+are two.
+
+What is left in the older gatherer is the classpath references, which it alone can produce; fifteen
+helpers went with the catalog half, 682 lines down to 222. The configuration pair is next, by the
+same method.
