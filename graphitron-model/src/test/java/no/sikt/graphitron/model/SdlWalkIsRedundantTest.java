@@ -159,6 +159,12 @@ class SdlWalkIsRedundantTest {
         scalar Date
 
         extend type Film { released: Date }
+
+        # A second argument-bearing field on a type that already had one, supplied by an extension.
+        # Without it the two producers cannot disagree about graphql_argument.ordinal: with one such
+        # field per type, numbering per type and numbering per field give the same values, and the
+        # case passed while the counters differed in scope.
+        extend type Root { search(term: String!, limit: Int): [Media!] }
         """;
 
     @Test

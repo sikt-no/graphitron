@@ -155,15 +155,13 @@ class SdlCoordinateCensusTest {
      * type-directive ordinals, and the argument ordinals. A family pinned only by density would pass
      * on all five with the merge order inverted.
      *
-     * <p>Type-wide for four of them and per-field for the arguments, which is where the two
-     * producers disagreed and the disagreement is settled here rather than left to whichever writes
-     * last. {@code SdlFactCapture.ElementOrdinals} holds one counter per type and spends it on every
-     * family, so the walk numbers a second field's first argument after the first field's last. The
-     * derivation partitions arguments by field, and {@code graphql_argument.ordinal}'s own comment
-     * says "declaration order within the field", so the derivation states the modelled grain and the
-     * walk's type-wide count is the shared counter showing through. Both order a field's own
-     * arguments identically, which is why nothing downstream noticed; only the absolute value
-     * differs. Pinned to the documented grain because the walk is the writer being retired.
+     * <p>Type-wide for four of them and per-field for the arguments, which is the grain
+     * {@code graphql_argument.ordinal}'s own comment states and the grain both of its readers use,
+     * each windowing by field before ordering on it. An argument belongs to a field and not to a
+     * type, so it needs no counter that survives the site boundary: the field carrying it is claimed
+     * once and every argument it has arrives with it. Both producers spent the type's counter on
+     * arguments until this case looked, which numbered a second field's first argument after the
+     * first field's last.
      */
     @Test
     @DisplayName("the base definition is merge ordinal zero, and extensions follow in document order")

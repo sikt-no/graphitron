@@ -482,7 +482,6 @@ public final class SdlFactCapture {
     /** Per-type running ordinals; declaration order across sites is the merge order. */
     static final class ElementOrdinals {
         int field;
-        int argument;
         int enumValue;
         int unionMember;
         /**
@@ -702,7 +701,7 @@ public final class SdlFactCapture {
             sink.add(record);
 
             captureFieldDirectives(site.typeName(), name, field.getDirectives(), false);
-            captureArguments(site.typeName(), name, field.getInputValueDefinitions(), ordinals);
+            captureArguments(site.typeName(), name, field.getInputValueDefinitions());
         }
     }
 
@@ -741,8 +740,22 @@ public final class SdlFactCapture {
         }
     }
 
+    /**
+     * A field's arguments, numbered within that field, which is the grain
+     * {@code graphql_argument.ordinal} states and the grain its readers use: both of them window
+     * by field before ordering on it.
+     *
+     * <p>A counter local to the call and not one of {@link ElementOrdinals}'s, because an argument
+     * belongs to a field and not to the type. Those counters are per type so a family's numbering
+     * survives the site boundary, a type declared across several extensions numbering its fields,
+     * enum values and union members in one sequence. An argument needs no such thing: the field
+     * carrying it is claimed once, so every argument it has arrives in this one call, and spending
+     * the type's counter on them numbered a second field's first argument after the first field's
+     * last.
+     */
     private void captureArguments(String typeName, String fieldName,
-                                  List<InputValueDefinition> arguments, ElementOrdinals ordinals) {
+                                  List<InputValueDefinition> arguments) {
+        int ordinal = 0;
         for (InputValueDefinition argument : arguments) {
             String name = argument.getName();
             if (!coordinates.claimArgument(typeName, fieldName, name)) {
@@ -753,7 +766,7 @@ public final class SdlFactCapture {
             record.setTypeName(typeName);
             record.setFieldName(fieldName);
             record.setArgumentName(name);
-            record.setOrdinal(ordinals.argument++);
+            record.setOrdinal(ordinal++);
             var wrapping = Wrapping.of(argument.getType());
             record.setTypeSdl(wrapping.typeSdl());
             record.setNamedType(wrapping.namedType());

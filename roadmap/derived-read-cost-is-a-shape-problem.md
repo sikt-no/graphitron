@@ -3034,13 +3034,19 @@ fifty one of the seventy one anchors.
 **Two defects fell out, both invisible until one store held both families.** The three deprecation
 anchors referenced the `graphql_` declarations without cascading, so a warm recapture clearing a
 directive argument was blocked by the marker pointing at it; every sibling cascades and these now do.
-And the two producers number a type's arguments differently, the walk spending one counter across the
-type and the derivation partitioning by field, which `graphql_argument.ordinal`'s comment already
-called "declaration order within the field". Nothing can tell: the column's two consumers are views
-that establish the field partition before looking at it, and the generator never sees it. The durable
-part is the corpus gap. `SdlWalkIsRedundantTest` compares this relation and passes, having no type
-where an extension annotates a second field, so the case built to prove the producers agree is blind
-exactly where a per-type counter and a per-field one diverge, and the corpus should grow that type.
+And both producers numbered a type's arguments with one counter spent across
+the type, where `graphql_argument.ordinal`'s comment already said "declaration order within the
+field". An argument belongs to a field and needs no counter surviving the site boundary, the field
+carrying it being claimed once; the type's counter is what fields, enum values and union members
+need, and it was spent on arguments too. Nothing could tell: the column's only consumers are views
+that window by field before ordering on it, and the generator never sees it. Both writers now number
+within the field.
+
+The durable part is how it stayed hidden. `SdlWalkIsRedundantTest` compares this relation and passed,
+its corpus having no type where an extension annotates a second field, so with one argument-bearing
+field per type the two numberings coincide and a case built to prove the producers agree was blind
+exactly where their counters differ. The corpus has that type now, and reverting either writer makes
+the case name the column.
 
 ### The order
 
