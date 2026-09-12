@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-11
+last-updated: 2026-09-12
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -2946,3 +2946,121 @@ are two.
 What is left in the older gatherer is the classpath references, which it alone can produce; fifteen
 helpers went with the catalog half, 682 lines down to 222. The configuration pair is next, by the
 same method.
+
+## The consumers, and the order the read side moves in (2026-09-12)
+
+The burn down counts what capture writes. What anything reads had not been counted, and it decides
+the order: a relation with no reader is not a migration step, and a reader still on the incumbent
+shape is one whether the burn down lists it or not.
+
+**How it was counted.** The main sources of the three consumers were scanned for relation names, the
+names resolved against the DDL, and each expanded to the relations nothing derives: a view through
+its definition, an anchor through the `INSERT ... SELECT` that fills it. That second expansion is
+what a reading of the schema file alone misses, the store having two derivation mechanisms of which
+only one is SQL. Anchors are tables filled from Java, one statement each, twenty six in `SdlAnchor`;
+the intent layer is 114 views over 27 tables.
+
+| | relations named | files naming them | roots reached |
+|---|---|---|---|
+| `graphitron` | 17 | 2 | 32 |
+| `graphitron-mcp` | 43 | 8 | 69 |
+| `graphitron-lsp` | 57 | 14 | 82 |
+| union | 81 | 24 | 89 of 210 |
+
+**The generator is barely a consumer of the store**, naming seventeen relations in two files, because
+six of `EmitPlan`'s seven producers read `GraphitronSchema` and the layer building it is 285 files
+and 82194 lines. A plan measuring progress by the generator's read count reports nothing for a long
+time and then everything at once. `RoutineWriteFacts` is what the other six become and states the
+discipline itself: nothing there decides anything, membership is the seat relation's verdict.
+
+**The language server reaches lowest and that is correct**, naming sixteen entry relations. An editor
+asks what is written at a cursor; the entry stratum is keyed by the position a node was written at
+and the anchors by coordinate. The grain of the question picks the stratum, which is the first
+evidence from a real consumer that both keys are wanted.
+
+### Three strata, and the one that is mis-keyed
+
+| | key | references | carries |
+|---|---|---|---|
+| `graphitron_ast_*_entry`, 59 | position | `graphql_ast_*_entry` | authored text, position |
+| `graphitron_*_entry`, 56 | coordinate | the `graphql_` anchors | both, wrongly |
+| the `graphitron_` anchors, 18 | coordinate | the other families' anchors | resolved facts only |
+
+The middle row is not an anchor wearing the wrong suffix but an entry wearing the wrong key. A
+transcription says what stands at a position and references the `graphql_` entry it decorates; it
+cannot reference an anchor, the anchors being derived after the documents are read. The incumbent
+references `graphql_type_element` and `graphql_type_declaration` and keys on the coordinate, which is
+one mistake stated twice: it resolved at capture time because the pipeline writing it held a merged
+registry and had no stratum to put an unresolved fact in. The anchors carry neither a position nor
+the text an author typed: `graphitron_tabletype` holds a resolved schema and table,
+`graphitron_field_table` a `target_basis`, `graphitron_node` a `type_id_origin`. So a reader picks
+its stratum by what it asks for, and seventeen facts are currently stated in both.
+
+**What the new shape costs to write is already measured.** The same site, decoded both ways:
+
+| | `GraphitronFactCapture` | `GraphitronFieldEntries` |
+|---|---|---|
+| lines | 1359 | 627 |
+| `if` / `else` | 91 | 2 |
+| `switch` / `case` | 45 | 0 |
+| `instanceof` | 13 | 0 |
+| null checks | 40 | 0 |
+
+The incumbent branches because it decodes and resolves in one pass with nothing captured to fall back
+on, so every question it cannot answer from the node in hand becomes a conditional. The replacement
+is twenty one statements and two conditionals because transcription has no decisions in it. The
+resolution those 149 branch points performed is what one `INSERT ... SELECT` does per anchor.
+
+### The fixture had to capture the way a run does
+
+Every read that moves to an entry was blocked by the fixture level, not by the query: `CapturePort`
+captures through `ModelCapture` and `CapturedStore` captured through the walk alone, so the entry
+strata were populated for a real run and empty in every test. A level promising that a fixture cannot
+encode a state capture never writes was keeping half of that promise.
+
+The gap was measured before it was closed. One corpus captured twice, every relation counted under
+each: the `graphql_` anchors agree exactly, thirty one directives, fifty two elements, twenty three
+fields, eighteen types. Only the capture writes the entry strata, the configuration corpus and the
+problem rows; only the walk writes the `graphitron_` decode and its anchors. Neither is a superset,
+so a swap was never available and running both is.
+
+**Order is the whole of it.** Both write the `graphql_` anchors and agree on the rows, but the walk's
+sink inserts where the derivation upserts. Derivation first fails on its own rows at the first
+directive either writes; walk first lets the derivation replace identical values in silence. This is
+an augmentation and not the rebuild the level eventually wants: `SeededStore` and `CapturedStore`
+predate `ModelCapture`, and rebuilding them on it is gated on the walk strip, the walk still writing
+fifty one of the seventy one anchors.
+
+**Two defects fell out, both invisible until one store held both families.** The three deprecation
+anchors referenced the `graphql_` declarations without cascading, so a warm recapture clearing a
+directive argument was blocked by the marker pointing at it; every sibling cascades and these now do.
+And the two producers number a type's arguments differently, the walk spending one counter across the
+type and the derivation partitioning by field, which `graphql_argument.ordinal`'s comment already
+called "declaration order within the field". Nothing can tell: the column's two consumers are views
+that establish the field partition before looking at it, and the generator never sees it. The durable
+part is the corpus gap. `SdlWalkIsRedundantTest` compares this relation and passes, having no type
+where an extension annotates a second field, so the case built to prove the producers agree is blind
+exactly where a per-type counter and a per-field one diverge, and the corpus should grow that type.
+
+### The order
+
+`@table` is done, and it is the shape the rest take: `Hovers` wanted the table a node type binds to
+and had been taking the authored text, splitting a qualifier off the last period, standing the type
+name in where the argument was absent and matching the catalog with `equalIgnoreCase`, which are
+three steps `TableTypes` takes once per corpus and a fourth that no index can serve. It reads
+`graphitron_tabletype`. `BindingUsages` wanted the site a binding was written at, so it reads
+`graphitron_ast_table_entry` and reaches the coordinate through the reference the transcription
+carries, to the type directive holding its declaration's position and from there to the declaration
+naming it. One resolved question and one positional question, answered from the two strata.
+
+1. **The five remaining covered reads**, `service`, `routine`, `mutation`, `external_field` and
+   `field_node_id`, each with a correct entry written and no anchor yet, so each owes the anchor
+   `@table` already had.
+2. **`field_reference`**, where the new stratum split one relation into table, key and condition
+   steps. The anchor recombining them is where per-stated-fact splitting has to pay for itself at a
+   read rather than at a write; if the recombination is awkward that is evidence about the split.
+3. **`node` and `node_keycolumn`**, read by both the editor and the macro consumer, and burn down
+   work before they are migration work.
+4. **The editor's six remaining reads**, each needing its decode captured first.
+5. **The generator's two**, `graphitron_argmapping_entry` and `graphitron_field_reference_step_entry`,
+   whose conversion leaves `GraphitronSchema` as its single remaining incumbent input.
