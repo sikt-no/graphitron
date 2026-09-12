@@ -328,7 +328,7 @@ published one, `graphitron_node_keycolumn` ranks three tiers, `graphitron_field_
 target rules and only one of them reads a directive. A pair is not a decode with its resolution
 bolted on; it is two relations answering different questions that happen to meet at an anti-join.
 
-**The SDL walk writes every entry; the graphitron gatherer writes every anchor.** Settled 2026-09-07,
+**A document's reader writes every entry; a derivation writes every anchor.** Settled 2026-09-07,
 and it is the ownership rule applied to base relations rather than an exception to it. The fact model
 already decides an owner by asking what a row is a function of, and it has only ever run that
 question over views. An entry is a function of one document and nothing else: it joins nothing,
@@ -337,6 +337,17 @@ its owner is that document's crawler. An anchor is the opposite shape by constru
 joining an entry against `sql_node_metadata`, and could not run inside a walk at all. The two halves
 are the two answers to the ownership question, and the family they share was never what the question
 asked.
+
+That sentence read "the SDL walk writes every entry" until 2026-09-11, and the correction is the rule
+working rather than the rule bending. An entry is a function of one document, so its owner is
+whatever reads one document, and the walk never was that: it reads a merged registry, which is a
+function of the corpus. Naming it the entry writer put a corpus-shaped reader in front of a
+document-shaped fact, and everything that cost is in the diagnosis two sections down, where the
+walk's 42 sites of first-wins logic and its overflow relation are exactly what a coordinate-keyed
+grain needs and a position-keyed one does not. The writers now are `SdlEntries` and
+`GraphitronEntries`, per document, behind `SdlCapture`; the anchors are `SdlAnchor` and, from
+2026-09-11, `GraphitronAnchor`. The walk is being retired, and the measurement that it can be is a
+later chapter here.
 
 What this asks of the SDL gatherer is not a new capability. It is already a graphitron gatherer in
 the sense that matters: it holds the parse, it sees a field's applications in written order, and it
