@@ -28,24 +28,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * of thing a guard exists for: the rules are the population, the engine is deliberately not, being
  * the one place in the package that knows there is a parse tree.
  *
- * <p>Two exemptions, named rather than counted, so shrinking the list is a deliberate edit and a
- * new reach is a failure. Both are debts with different lifetimes: the node reader is one rule's,
- * and this arc retires it; the source position is the diagnostics vocabulary's and outlives this
- * package.
+ * <p>One exemption, named rather than counted, so shrinking it is a deliberate edit and a new reach
+ * is a failure. There were two. The second was a rule that still held a parse tree node to walk an
+ * applied directive's argument values, and it is gone: capture writes deprecation as a fact now, so
+ * that rule reads rows like the rest.
+ *
+ * <p>How that exemption was retired is worth keeping, because the first version of this class would
+ * not have noticed. It asserted the exempted file was still in the package, which stayed true after
+ * the rule stopped naming a single graphql-java type, so a dead exemption would have sat here
+ * reading as though it were owed. An exemption has to be checked by the thing it claims, not by
+ * something correlated with it.
  */
 @UnitTier
 class LintRuleIsolationTest {
 
     private static final String RULES_PACKAGE = "src/main/java/no/sikt/graphitron/rewrite/lint/rules";
-
-    /**
-     * The one rule that may still hold a parse tree node. It descends an applied directive's
-     * argument <em>values</em> to report deprecated input fields used inside an application, which
-     * is a walk rather than the lookup {@link LintTarget#arguments()} serves. The store does hold
-     * the structure that walk wants, one row per written value node with its parent and position,
-     * so this is remaining work and not the shape; the line goes when the walk becomes a query.
-     */
-    private static final String NODE_READER = "NoDeprecatedDirectiveUsageVisitor.java";
 
     /**
      * The one graphql-java type every other rule may still name. A finding carries a source
@@ -80,9 +77,6 @@ class LintRuleIsolationTest {
         Map<String, Set<String>> reaches = new TreeMap<>();
         for (Path rule : rules) {
             String fileName = rule.getFileName().toString();
-            if (fileName.equals(NODE_READER)) {
-                continue;
-            }
             Set<String> named = new TreeSet<>();
             Matcher m = GRAPHQL_TYPE.matcher(Files.readString(rule, StandardCharsets.UTF_8));
             while (m.find()) {
@@ -98,33 +92,27 @@ class LintRuleIsolationTest {
         assertThat(reaches)
             .as("lint rules naming a graphql-java type. A rule reads values off " + LintTarget.class
                 .getSimpleName() + " so the traversal can become a query without it changing; if "
-                + "the value it needs is not there, add the column rather than the node. The two "
-                + "standing exemptions are " + NODE_READER + " and " + ALLOWED_TYPE)
+                + "the value it needs is not there, add the column rather than the node. The one "
+                + "standing exemption is " + ALLOWED_TYPE)
             .isEmpty();
     }
 
     /**
-     * The exemptions are claims about the tree, so they are checked against it. A stale name in
-     * either constant would silently widen the guard: an exemption for a file that no longer exists
-     * exempts nothing and reads as though it does, and one for a type no rule names any more is a
-     * debt already paid that the list still reports as owed.
+     * The exemption is a claim about the tree, so it is checked against it, and checked by what it
+     * claims rather than by a proxy for it. A type no rule names any more is a debt already paid
+     * that this list would otherwise keep reporting as owed, which is how an exemption outlives its
+     * reason.
      */
     @Test
-    @DisplayName("both exemptions still name something the tree has")
-    void theExemptionsAreStillOwed() throws IOException {
-        List<Path> rules = rules();
-
-        assertThat(rules).map(path -> path.getFileName().toString())
-            .as("the exempted node reader is not in the rules package; drop the exemption")
-            .contains(NODE_READER);
-
+    @DisplayName("the standing exemption is still owed")
+    void theExemptionIsStillOwed() throws IOException {
         boolean anyNamesTheType = false;
-        for (Path rule : rules) {
+        for (Path rule : rules()) {
             anyNamesTheType |= Files.readString(rule, StandardCharsets.UTF_8).contains(ALLOWED_TYPE);
         }
         assertThat(anyNamesTheType)
             .as("no rule names " + ALLOWED_TYPE + " any more, so the exemption is paid; delete it "
-                + "and this assertion with it")
+                + "and this case with it")
             .isTrue();
     }
 

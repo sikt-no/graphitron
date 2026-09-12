@@ -212,7 +212,9 @@ class LintEngineTest {
             }
         };
 
-        new LintEngine(List.of(capture)).run(new SchemaParser().parse("""
+        try (var store = FactStores.inMemory()) {
+            SeededStore.seedGraph(store.dsl(), GRAPH);
+            new LintEngine(List.of(capture)).run(new SchemaParser().parse("""
             "a described object"
             type Widget {
               "a described field"
@@ -228,7 +230,8 @@ class LintEngineTest {
               "a described enum value"
               ROUND
             }
-            """));
+            """), new StoreHandle(store.dsl(), GRAPH));
+        }
 
         assertThat(seen)
             .as("every description-bearing position the traversal reaches reports its description")
