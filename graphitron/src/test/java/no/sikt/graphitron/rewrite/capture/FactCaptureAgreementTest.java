@@ -313,6 +313,12 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       about how many, to seeded rows in the module whose DDL declares it, both sides of the
  *       comparison being a cardinality a row can state; every case pairs a disagreement with an
  *       agreement over the same producer so the detection's silence is asserted and not assumed;
+ *       {@code no.sikt.graphitron.model.intent.ExternalFieldContractDefectTest} binds
+ *       {@code intent_external_field_contract_defect}, where an {@code @externalField} names a
+ *       method that exists and cannot do the job, to seeded rows in the same module; the accusation
+ *       is a NOT EXISTS against the relation that admits such a method, so every case pairs an
+ *       accusation with a silence over one class, and the silences carry their own causes apart,
+ *       an admitted method and a method the arm never read being different answers;
  *       with
  *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingShadowTest} beside it running the
  *       differential against the classification walk's own answer on both axes, projected in that
@@ -691,6 +697,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_type_backing", Arm.DERIVED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_producer_cardinality_conflict", Arm.DERIVED);
+        registrations.put("intent_external_field_contract_defect", Arm.DERIVED);
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("intent_field_demand_rule", Arm.DERIVED);

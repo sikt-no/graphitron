@@ -7703,6 +7703,28 @@ COMMENT ON COLUMN intent_producer_cardinality_conflict.descriptor IS 'the produc
 COMMENT ON COLUMN intent_producer_cardinality_conflict.field_is_list IS 'what the SDL says, carried from graphql_field.is_list; always the negation of the column beside it, and carried anyway so a reader learns which way the disagreement runs without joining back';
 COMMENT ON COLUMN intent_producer_cardinality_conflict.producer_delivers_many IS 'what the declared return says, carried from intent_declared_type_element.delivers_many; the other half of the disagreement this row reports';
 
+CREATE VIEW intent_external_field_contract_defect
+  (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor) AS
+SELECT p.graph_name, p.type_name, p.field_name,
+       p.source_name, p.class_name, p.method_name, p.descriptor
+  FROM intent_field_producer_method p
+  JOIN store_source s ON s.source_name = p.source_name
+ WHERE p.declared_via = 'EXTERNAL_FIELD'
+   AND s.origin IN ('PROJECT', 'SIBLING')
+   AND NOT EXISTS (SELECT 1 FROM code_external_field_method a
+                    WHERE a.source_name = p.source_name
+                      AND a.class_name = p.class_name
+                      AND a.method_name = p.method_name
+                      AND a.descriptor = p.descriptor);
+COMMENT ON VIEW intent_external_field_contract_defect IS 'One @externalField naming a method that exists and cannot do the job: one row per reference resolving to a class method the directive''s contract does not admit. For example a field whose reference names fromName, which takes a String and returns an org.jooq.Field, where the directive admits only a method taking the table.';
+COMMENT ON COLUMN intent_external_field_contract_defect.graph_name IS 'the owning graph''s partition, carried from intent_field_producer_method';
+COMMENT ON COLUMN intent_external_field_contract_defect.type_name IS 'the accused coordinate''s owning type';
+COMMENT ON COLUMN intent_external_field_contract_defect.field_name IS 'the accused coordinate''s field name within that type; the field whose @externalField named the method';
+COMMENT ON COLUMN intent_external_field_contract_defect.source_name IS 'the named method''s classpath entry, as on intent_field_producer_method; reactor-origin by construction, since no other entry is one the admitting relation read';
+COMMENT ON COLUMN intent_external_field_contract_defect.class_name IS 'the class declaring the named method, exactly as the reference resolved it';
+COMMENT ON COLUMN intent_external_field_contract_defect.method_name IS 'the named method''s name: the directive''s method argument, or the SDL field''s own name where @externalField omitted it';
+COMMENT ON COLUMN intent_external_field_contract_defect.descriptor IS 'the named method''s raw JVM descriptor, which tells two overloads of one reference apart and is the column that pairs this row with the admission that is missing';
+
 CREATE VIEW intent_type_backing_seed (graph_name, type_name, class_name) AS
 SELECT p.graph_name, f.named_type, e.element_class
   FROM intent_field_producer_method p
@@ -13010,6 +13032,9 @@ INSERT INTO meta_grain VALUES
   ('reference-for-application',
    'one @referenceFor application at one coordinate that consumes it, in one graph',
    'graph_name, site, type_name, field_name, argument_name, ordinal, consuming_type_name, consuming_field_name', 'sdl'),
+  ('external-field-contract-defect',
+   'one @externalField reference that resolved to a class method the directive cannot admit, at one coordinate in one graph',
+   'graph_name, type_name, field_name, source_name, class_name, method_name, descriptor', 'sdl'),
   ('nodeid-landing-defect',
    'one refused key landing of one @nodeId decode, at one use site and one branch of it, in one graph',
    'graph_name, site, use_site, origin_source_name, origin_schema, origin_table, verdict, position', 'sdl'),
@@ -13601,6 +13626,10 @@ INSERT INTO meta_relation VALUES
    'The rejection each minting row of intent_field_unlowerable_ordering carries: one row per rejected coordinate and availability route, holding the sealed Rejection hierarchy''s verdict on it and the message a report would print.',
    'For example the multitable root carrying @defaultOrder draws a DEFERRED row whose message names the interface, its participants and both remedies, while a list-returning @routine write draws none, its rejection being held.',
    'A table because no view over this store can state the render: the message names the multitable container''s participants in a sentence and picks its remedy off the availability route, which is Java''s composition of facts held separately rather than a fact of any graph. Written by a capture-cadence writer that clears its graph partition and re-mints, sharing the one mint of the value with the build-error consumer so a violation cannot be worded two ways. Its cadence is one step later than its siblings'', and that is a dependency rather than a preference: the view it renders reads the materialized intent_field_scope_table, so a call beside the flush would render the previous capture''s rows. Not total over the view, and the gap is the population''s own: the KEY_CAPTURE_SCATTER verdict mints no rejection while its only live instance sits in graphitron''s own example schema, so those coordinates are counted by the view and worded nowhere until that write is given an order to deliver. The two route columns are here because the view is keyed per route and the diagnostics arm joins these rows to it; a rejection keyed on the coordinate alone would fan two locations onto one message.'),
+  ('intent_external_field_contract_defect', 'external-field-contract-defect', 'derivation',
+   'One @externalField naming a method that exists and cannot do the job: one row per reference resolving to a class method the directive''s contract does not admit.',
+   'For example a field whose reference names fromName, which takes a String and returns an org.jooq.Field, where the directive admits only a method taking the table.',
+   'The gap intent_field_producer_method states in its own comment and declines to close: that relation adds the census match and nothing else, the census carrying neither a static flag nor the shape of the sole parameter, so an @externalField row there does not assert the method satisfies the directive. Both facts are code_external_field_method''s now, and the check is a NOT EXISTS against the relation whose subject is the admission rather than a second reading of a return type. Its own relation rather than a clause on the resolution, on intent_producer_cardinality_conflict''s grounds: the resolution answers which method a reference names and stays true whether or not that method can serve. That precedent also covers why this is worth stating, the generator''s refusal being a silence a reader could not observe. Nothing gates on these rows yet. The population is the reactor, a limit rather than a definition, the admitting relation reading the modules a build compiles; a reference into a jar has no row either way. Scoped by store_source.origin positively, that column being nullable and an unrecorded origin not-classified rather than not-reactor. No clause column says which half failed and none is recoverable: the arm records that it admitted a method, never why it refused one, and naming the clause would mean reading the return type and the parameter here, the reading this relation exists to stop trusting. Overloads contribute a row each, on intent_field_producer_method''s terms.'),
   ('intent_node_id_decode_landing_defect', 'nodeid-landing-defect', 'derivation',
    'One @nodeId decode whose key landing the store can show is wrong: one row per refused instruction, use site and branch, in a closed verdict vocabulary of two.',
    'For example a path stopping on film_category where the node type is bound to category draws PATH_STOPS_SHORT naming both tables, and a key column jOOQ binds as String landing on one it binds as Long draws LANDING_TYPE_DISAGREEMENT naming both.',

@@ -155,8 +155,12 @@ class DerivedReadCostTest {
      * {@code graphql_union_member} and {@code graphql_implements_interface} now, so a relation that
      * was a table is a reader. It reaches no registration, both arms being captured relations, so
      * it costs this domain a row and no cells.
+     *
+     * <p>Raised to 126 by {@code intent_external_field_contract_defect}, which reads the producer
+     * resolution against the relation that admits an {@code @externalField} method. Both are
+     * captured or derived without a registration between them, so it is another row and no cells.
      */
-    private static final int READERS_IN_SCHEMA = 125;
+    private static final int READERS_IN_SCHEMA = 126;
 
     /**
      * Views whose derivation reaches at least one registration's target.

@@ -405,9 +405,23 @@ public final class SeededStore {
      *        the DDL's own check constraint rejects anything else
      */
     public static void seedSource(DSLContext dsl, String sourceName, String sourceKind) {
+        seedSource(dsl, sourceName, sourceKind, null);
+    }
+
+    /**
+     * The same source with how it reached the classpath recorded, for a case whose subject is a
+     * reader that scopes by it. A null {@code origin} is the column's own not-recorded, which a
+     * reader scoping to the reactor must not read as an answer, so a case pinning that reading
+     * passes null deliberately rather than for want of a value.
+     *
+     * @param origin {@code PROJECT}, {@code SIBLING}, {@code DECLARED}, {@code TRANSITIVE} or null
+     */
+    public static void seedSource(DSLContext dsl, String sourceName, String sourceKind,
+                                  String origin) {
         dsl.insertInto(STORE_SOURCE)
             .set(STORE_SOURCE.SOURCE_NAME, sourceName)
             .set(STORE_SOURCE.SOURCE_KIND, sourceKind)
+            .set(STORE_SOURCE.ORIGIN, origin)
             .set(STORE_SOURCE.LAST_SEEN, LocalDateTime.now())
             .onDuplicateKeyIgnore()
             .execute();
