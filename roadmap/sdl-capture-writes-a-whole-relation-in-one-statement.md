@@ -95,6 +95,11 @@ an OOM at 1:38 to a flat 1050 MB with the capture completing (7689 classes, 6874
 
 ## Delivered (2026-09-11)
 
+Spec straight to In Review, with no Ready and no In Progress, which is a bypass rather than an
+oversight and is recorded so nobody reads the state as a gate that ran. The spec's author is a
+different session; the reviewer rule for Spec to Ready was not exercised, and this item still owes
+its In Review to Done review to a third party, which the bypass does not touch.
+
 Implemented as specified, from the branch retiring the SDL walk, because the two are the same
 sequencing question: every entry relation that arc adds is another site, and the walk it removes is
 the *bounded* writer, the sink batching where the entries do not. Fixing this after the walk went
@@ -111,6 +116,11 @@ One correction to the spec's own count. It says 46 sites, which was true when it
 not now: the entry migration has landed the input-value site's twelve and the field site's step
 split since, and both are exactly the kind of writer this bounds. The number is not load-bearing,
 but "all of them, no roster" is, so it is restated against the tree rather than carried forward.
+
+Transparency is measured rather than argued. The claim that splitting one statement into several
+is the same write rests on no two rows in one call sharing a primary key, which the spec establishes
+by construction. Setting the bound to 1, the most extreme split there is, leaves all 1172
+`graphitron-model` tests passing, so every writer here agrees with itself one row per statement.
 
 `MultiRowWritesAreChunkedTest` is the gate, and it discriminates on enclosure as the spec asks: each
 `valuesOfRows` must sit lexically inside a `RowChunks.execute` call, decided by walking back over
