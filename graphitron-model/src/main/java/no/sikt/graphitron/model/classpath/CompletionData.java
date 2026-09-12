@@ -311,15 +311,6 @@ public record CompletionData(
      * overloads are two rows there, so an ambiguous jump is a row count rather
      * than a silent no-jump (see the LSP {@code DefinitionTarget}).
      *
-     * <p>{@code returnsCondition} is the parse-boundary classification of
-     * whether this method's return type is jOOQ's {@code org.jooq.Condition}.
-     * {@link ClasspathScanner} computes it from the <em>un-erased</em>
-     * return descriptor before {@code returnType} loses its package, so the
-     * fact is exact (a consumer's own type named {@code Condition} does not
-     * match). The MCP {@code conditions} tool reads this pre-classified
-     * value rather than re-deriving a fragile simple-name predicate from
-     * {@code returnType}.
-     *
      * <p>{@code descriptor} is the raw JVM method descriptor, the overload discriminator
      * {@code returnType} and {@code parameters} lose: both render erased simple names, so two
      * methods taking same-named types from different packages are indistinguishable through them.
@@ -339,7 +330,6 @@ public record CompletionData(
         String returnType,
         String description,
         List<Parameter> parameters,
-        boolean returnsCondition,
         String descriptor,
         String declaredReturnType,
         List<TypeRef> returnTypeRefs
@@ -354,31 +344,20 @@ public record CompletionData(
          * the classfile scan.
          */
         public Method(String name, String returnType, String description,
-                      List<Parameter> parameters, boolean returnsCondition, String descriptor,
+                      List<Parameter> parameters, String descriptor,
                       String declaredReturnType) {
-            this(name, returnType, description, parameters, returnsCondition, descriptor,
+            this(name, returnType, description, parameters, descriptor,
                 declaredReturnType, List.of());
         }
 
         /**
-         * Back-compat constructor defaulting {@code returnsCondition} to
-         * {@code false} (a non-condition method). Keeps existing LSP / test
-         * callers that build {@link Method} without the condition classification
-         * compiling unchanged.
+         * A method from a caller that read no classfile, so it has no descriptor to carry. Empty,
+         * never a rendering of the erased display types: that rendering is what the fact store used
+         * to key methods on, and two public methods taking same-named types from different packages
+         * collided on it silently.
          */
         public Method(String name, String returnType, String description, List<Parameter> parameters) {
-            this(name, returnType, description, parameters, false, "");
-        }
-
-        /**
-         * Back-compat constructor for a caller that read no classfile, so it has no descriptor to
-         * carry. Empty, never a rendering of the erased display types: that rendering is what the
-         * fact store used to key methods on, and two public methods taking same-named types from
-         * different packages collided on it silently.
-         */
-        public Method(String name, String returnType, String description,
-                      List<Parameter> parameters, boolean returnsCondition) {
-            this(name, returnType, description, parameters, returnsCondition, "");
+            this(name, returnType, description, parameters, "");
         }
 
         /**
@@ -386,8 +365,8 @@ public record CompletionData(
          * a non-generic type and the reading a caller that saw no {@code Signature} attribute gets.
          */
         public Method(String name, String returnType, String description,
-                      List<Parameter> parameters, boolean returnsCondition, String descriptor) {
-            this(name, returnType, description, parameters, returnsCondition, descriptor, returnType);
+                      List<Parameter> parameters, String descriptor) {
+            this(name, returnType, description, parameters, descriptor, returnType);
         }
     }
 

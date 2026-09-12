@@ -227,19 +227,13 @@ class ClasspathScannerTest {
         assertThat(refs).hasSize(1);
         var methods = refs.get(0).methods();
         // Both the real jOOQ Condition and the consumer's own Condition erase to the simple display
-        // name "Condition", so returnType alone cannot tell them apart.
+        // name "Condition", which is the whole reason the census cannot tell them apart and the
+        // condition arm matches on the descriptor instead. What survives here is the erasure the
+        // census does state; the un-erased test moved with the fact, to CodeCaptureTest.
         assertThat(methods).filteredOn(m -> m.name().equals("realCondition")).singleElement()
-            .satisfies(m -> {
-                assertThat(m.returnType()).isEqualTo("Condition");
-                assertThat(m.returnsCondition()).isTrue();
-            });
+            .satisfies(m -> assertThat(m.returnType()).isEqualTo("Condition"));
         assertThat(methods).filteredOn(m -> m.name().equals("fakeCondition")).singleElement()
-            .satisfies(m -> {
-                assertThat(m.returnType()).isEqualTo("Condition");
-                assertThat(m.returnsCondition()).isFalse();
-            });
-        assertThat(methods).filteredOn(m -> m.name().equals("plain")).singleElement()
-            .satisfies(m -> assertThat(m.returnsCondition()).isFalse());
+            .satisfies(m -> assertThat(m.returnType()).isEqualTo("Condition"));
     }
 
     @Test

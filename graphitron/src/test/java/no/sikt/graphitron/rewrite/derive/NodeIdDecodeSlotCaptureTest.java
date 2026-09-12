@@ -111,7 +111,7 @@ class NodeIdDecodeSlotCaptureTest {
 
     private static CompletionData.Method method(String name, String descriptor,
                                                CompletionData.Parameter parameter) {
-        return new CompletionData.Method(name, "String", "", List.of(parameter), false, descriptor,
+        return new CompletionData.Method(name, "String", "", List.of(parameter), descriptor,
             "String", List.of(new CompletionData.TypeRef("", "java.lang.String", "NONE")));
     }
 

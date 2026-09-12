@@ -488,7 +488,7 @@ final class StoreFixture implements AutoCloseable {
     /** A method whose descriptor is synthesised from its parameter types, enough to key it apart. */
     static CompletionData.Method method(String name, String returnType, CompletionData.Parameter... parameters) {
         return new CompletionData.Method(
-            name, returnType, "", List.of(parameters), false,
+            name, returnType, "", List.of(parameters),
             "(" + Arrays.stream(parameters).map(CompletionData.Parameter::type)
                 .reduce("", String::concat) + ")" + returnType);
     }
@@ -508,7 +508,7 @@ final class StoreFixture implements AutoCloseable {
         var erased = method(name, returnClassFqn.substring(returnClassFqn.lastIndexOf('.') + 1));
         return new CompletionData.Method(
             erased.name(), erased.returnType(), erased.description(), erased.parameters(),
-            erased.returnsCondition(), erased.descriptor(), erased.returnType(),
+            erased.descriptor(), erased.returnType(),
             List.of(new CompletionData.TypeRef("", returnClassFqn, "NONE")));
     }
 
@@ -525,7 +525,7 @@ final class StoreFixture implements AutoCloseable {
         var erased = method(name, returnType, parameters);
         return new CompletionData.Method(
             erased.name(), erased.returnType(), erased.description(), erased.parameters(),
-            erased.returnsCondition(), erased.descriptor(), declaredReturnType);
+            erased.descriptor(), declaredReturnType);
     }
 
     /** A parameter whose declared form differs from its erasure, on {@link #genericMethod}'s terms. */

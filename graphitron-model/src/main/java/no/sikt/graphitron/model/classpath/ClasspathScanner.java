@@ -71,8 +71,6 @@ public final class ClasspathScanner {
     /** The implicit superclass the JVM writes for anything with no {@code extends} clause. */
     private static final String OBJECT = "java.lang.Object";
 
-    /** JVM field descriptor of {@code org.jooq.Condition}; the exact return-type match for the condition fact. */
-    private static final String JOOQ_CONDITION_DESCRIPTOR = "Lorg/jooq/Condition;";
 
     /** JVM field descriptor of {@code graphql.schema.GraphQLScalarType}; the exact field-type match for @scalarType completion.*/
 
@@ -373,13 +371,6 @@ public final class ClasspathScanner {
             // `<clinit>` in the constant pool; skip both.
             if (name.startsWith("<")) continue;
             var desc = m.methodTypeSymbol();
-            // Classify the return type at the parse boundary, from the
-            // un-erased descriptor: once displayName() drops the package, a
-            // simple-name match cannot tell org.jooq.Condition from a
-            // consumer's own type named Condition. Exact descriptor compare,
-            // not assignability: the parse-only scan resolves no type
-            // hierarchy, and the jOOQ idiom returns Condition directly.
-            boolean returnsCondition = JOOQ_CONDITION_DESCRIPTOR.equals(desc.returnType().descriptorString());
             String returnType = displayName(desc.returnType());
             // The real JVM descriptor, not a rendering of the erased display names: two public
             // methods taking com.foo.Result and com.bar.Result render identically once the package
@@ -417,7 +408,7 @@ public final class ClasspathScanner {
                 ));
             }
             methods.add(new CompletionData.Method(
-                name, returnType, "", List.copyOf(parameters), returnsCondition, descriptor,
+                name, returnType, "", List.copyOf(parameters), descriptor,
                 declaredReturnType,
                 typeRefs(signature.map(MethodSignature::result), desc.returnType())));
         }

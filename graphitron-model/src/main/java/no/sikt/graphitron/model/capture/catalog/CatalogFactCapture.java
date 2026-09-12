@@ -141,7 +141,6 @@ public final class CatalogFactCapture {
                 row.setDescriptor(descriptor);
                 row.setReturnType(method.returnType());
                 row.setDeclaredReturnType(method.declaredReturnType());
-                row.setReturnsCondition(method.returnsCondition());
                 sink.add(row);
                 for (CompletionData.TypeRef ref : method.returnTypeRefs()) {
                     var refRow = sink.dsl().newRecord(JVM_DECLARED_TYPE_REF);

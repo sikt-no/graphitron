@@ -181,7 +181,7 @@ class SeparateFetchTest {
 
     private static CompletionData.Method method(
         String name, String descriptor, CompletionData.TypeRef... refs) {
-        return new CompletionData.Method(name, "Object", "", List.of(), false, descriptor,
+        return new CompletionData.Method(name, "Object", "", List.of(), descriptor,
             "Object", List.of(refs));
     }
 

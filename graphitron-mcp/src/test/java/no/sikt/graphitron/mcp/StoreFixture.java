@@ -125,6 +125,13 @@ public final class StoreFixture implements AutoCloseable {
     public static StoreFixture ofCodeFixtures(Path directory) {
         var fixture = new StoreFixture(
             CapturedStore.of(directory, GRAPH, PLACEHOLDER_SDL, codeFixtureCensus()));
+        // The condition kind reads the code family, which the walk does not write, so the arm runs
+        // over the same entry the census was scanned from. The same entry and not the fixture
+        // package below it: the tool correlates an admitted method to its census class on the
+        // source name, so an arm writing a different one would correlate with nothing. What the
+        // wider read admits beyond the fixtures cannot surface, the class list being the census's
+        // and the census being filtered to them.
+        CapturedStore.captureCode(fixture.captured.dsl(), testClassesRoot(), JOOQ_PACKAGE, null);
         FactWriters.refreshJavaSources(fixture.captured.dsl(), List.of(codeFixtureSources()));
         return fixture;
     }

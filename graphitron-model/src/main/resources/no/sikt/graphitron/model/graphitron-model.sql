@@ -5101,7 +5101,6 @@ CREATE TABLE jvm_method (
   descriptor        VARCHAR NOT NULL,
   return_type       VARCHAR NOT NULL,
   declared_return_type VARCHAR NOT NULL,
-  returns_condition BOOLEAN NOT NULL,
   bean_property     VARCHAR GENERATED ALWAYS AS (
     CASE WHEN LEFT(method_name, 3) = 'get' AND LENGTH(method_name) > 3
               AND SUBSTRING(method_name, 4, 1) <> LOWER(SUBSTRING(method_name, 4, 1))
@@ -5122,7 +5121,6 @@ COMMENT ON COLUMN jvm_method.descriptor IS 'raw JVM descriptor; the overload dis
 COMMENT ON COLUMN jvm_method.return_type IS 'erased source-form return type: what the JVM descriptor carries, package dropped. The form a check on a type''s identity compares against';
 COMMENT ON COLUMN jvm_method.bean_property IS 'the property name this method offers an SDL author, or null where the method is not an accessor: get or is followed by an upper-case letter, with that letter lowered and the prefix dropped. Computed by the database because it is a pure function of the column beside it, which is what makes it a stored value an index can serve rather than an expression evaluated once per candidate row. That distinction is the whole reason the column exists: the rule was spelled inline in intent_class_member_slot and joined against by intent_field_accessor_hop, and a join key computed inside a view is a key no index can answer, so the hop nested-loops over the census. Stored and indexed, the same hop returns the same rows in under two seconds where it did not complete in two minutes. Null is not-an-accessor and never an accessor whose name is unknown; the rule''s own terms are on intent_class_member_slot, which still owns what a slot is and reads this column rather than restating it. No return type is consulted, so a method named isTitle returning a String offers title exactly as the rule always said';
 COMMENT ON COLUMN jvm_method.declared_return_type IS 'the return type as the source declared it, package dropped and type arguments kept (List<Film>, Field<String>, T). Read from the classfile Signature attribute, and equal to return_type wherever the compiler emitted no attribute, which it does only where erasure loses nothing. Never NULL and never coalesced by a reader: whether a classfile stored the declared form separately is an encoding detail, not a fact about the method, so the census answers the question once. This is the column an accessor walk follows, a container''s element type being exactly what the erasure drops';
-COMMENT ON COLUMN jvm_method.returns_condition IS 'matched on the un-erased org.jooq.Condition descriptor, so a consumer''s own Condition type does not false-match';
 
 CREATE TABLE jvm_declared_type_ref (
   source_name      VARCHAR NOT NULL,

@@ -114,9 +114,8 @@ final class FactWrites {
                          t.METHOD_NAME,
                          t.DESCRIPTOR,
                          t.RETURN_TYPE,
-                         t.DECLARED_RETURN_TYPE,
-                         t.RETURNS_CONDITION)
-                .values(markers(7)))
+                         t.DECLARED_RETURN_TYPE)
+                .values(markers(6)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -124,8 +123,7 @@ final class FactWrites {
                                row.get(t.METHOD_NAME),
                                row.get(t.DESCRIPTOR),
                                row.get(t.RETURN_TYPE),
-                               row.get(t.DECLARED_RETURN_TYPE),
-                               row.get(t.RETURNS_CONDITION));
+                               row.get(t.DECLARED_RETURN_TYPE));
         }
         batch.execute();
     }

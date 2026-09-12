@@ -15,6 +15,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
@@ -217,12 +218,21 @@ final class CodeQueries {
      * The predicate selecting the classes of one kind: what the class declares, as an {@code EXISTS}
      * over the relation that declares it. A semi-join rather than a join, so a class with several
      * methods is still one row.
+     *
+     * <p>The condition arm reads {@code code_condition_method} where the other two read the census,
+     * and the asymmetry is the point rather than an inconsistency: what may be written at a
+     * directive is that arm's own answer, so this asks the relation whose subject is the question
+     * instead of re-deriving it from a return type. Two consequences follow and both are wanted.
+     * The population narrows to the reactor, which is where a condition an author may name lives.
+     * And the admission rule stops being stated here at all, so it cannot drift from the one the
+     * arm applies.
      */
     private static Condition declaring(Kind kind) {
         return switch (kind) {
             case SERVICE -> exists(selectOne().from(JVM_METHOD).where(methodOfClass()));
-            case CONDITION -> exists(selectOne().from(JVM_METHOD).where(methodOfClass())
-                .and(JVM_METHOD.RETURNS_CONDITION.isTrue()));
+            case CONDITION -> exists(selectOne().from(CODE_CONDITION_METHOD)
+                .where(CODE_CONDITION_METHOD.SOURCE_NAME.eq(JVM_CLASS.SOURCE_NAME)
+                    .and(CODE_CONDITION_METHOD.CLASS_NAME.eq(JVM_CLASS.CLASS_NAME))));
             case RECORD -> exists(selectOne().from(JVM_RECORD_COMPONENT).where(componentOfClass()));
         };
     }
@@ -234,7 +244,26 @@ final class CodeQueries {
      * answered with the whole class.
      */
     private static Condition narrowing(Kind kind) {
-        return kind == Kind.CONDITION ? JVM_METHOD.RETURNS_CONDITION.isTrue() : noCondition();
+        return kind == Kind.CONDITION ? exists(selectOne().from(CODE_CONDITION_METHOD)
+            .where(admittedAsCondition())) : noCondition();
+    }
+
+    /**
+     * The correlation from a census method to the arm that admits it, on the whole method key so
+     * one overload of a name cannot stand in for another.
+     *
+     * <p>The projection still reads the census rather than the arm, and the reason is a fact the
+     * arm does not hold: the census carries the {@code Signature} attribute, so it can say
+     * {@code List&lt;Film&gt;} where the arm's erased column says {@code java.util.List}. What has
+     * moved here is the admission and only the admission. The projection follows when the arm
+     * carries a declared form of its own, and until it does, reading it from the family that has
+     * it is the honest answer rather than a worse one.
+     */
+    private static Condition admittedAsCondition() {
+        return CODE_CONDITION_METHOD.SOURCE_NAME.eq(JVM_METHOD.SOURCE_NAME)
+            .and(CODE_CONDITION_METHOD.CLASS_NAME.eq(JVM_METHOD.CLASS_NAME))
+            .and(CODE_CONDITION_METHOD.METHOD_NAME.eq(JVM_METHOD.METHOD_NAME))
+            .and(CODE_CONDITION_METHOD.DESCRIPTOR.eq(JVM_METHOD.DESCRIPTOR));
     }
 
     /**

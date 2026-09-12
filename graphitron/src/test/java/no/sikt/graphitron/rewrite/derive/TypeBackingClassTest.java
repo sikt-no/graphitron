@@ -388,14 +388,14 @@ class TypeBackingClassTest {
 
     private static CompletionData.Method method(
         String name, String descriptor, CompletionData.TypeRef... refs) {
-        return new CompletionData.Method(name, "Object", "", List.of(), false, descriptor,
+        return new CompletionData.Method(name, "Object", "", List.of(), descriptor,
             "Object", List.of(refs));
     }
 
     /** A method taking parameters and handing back a list of films, the input axis's shape. */
     private static CompletionData.Method producer(
         String name, String descriptor, List<CompletionData.Parameter> parameters) {
-        return new CompletionData.Method(name, "Object", "", parameters, false, descriptor,
+        return new CompletionData.Method(name, "Object", "", parameters, descriptor,
             "Object", List.of(ref("", "java.util.List"), ref("0", "app.FilmRecord")));
     }
 

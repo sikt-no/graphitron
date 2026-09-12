@@ -2644,7 +2644,6 @@ public final class SeededStore {
             .set(JVM_METHOD.DESCRIPTOR, descriptor)
             .set(JVM_METHOD.RETURN_TYPE, "Object")
             .set(JVM_METHOD.DECLARED_RETURN_TYPE, "Object")
-            .set(JVM_METHOD.RETURNS_CONDITION, false)
             .execute();
         declaredReturn.forEach((typePath, referencedClass) ->
             dsl.insertInto(JVM_DECLARED_TYPE_REF)
@@ -2814,13 +2813,6 @@ public final class SeededStore {
         }
         descriptor.append(")Lorg/jooq/Condition;");
         seedMethod(dsl, sourceName, className, methodName, descriptor.toString());
-        dsl.update(JVM_METHOD)
-            .set(JVM_METHOD.RETURNS_CONDITION, true)
-            .where(JVM_METHOD.SOURCE_NAME.eq(sourceName))
-            .and(JVM_METHOD.CLASS_NAME.eq(className))
-            .and(JVM_METHOD.METHOD_NAME.eq(methodName))
-            .and(JVM_METHOD.DESCRIPTOR.eq(descriptor.toString()))
-            .execute();
         for (int position = 0; position < parameterClasses.length; position++) {
             String parameterClass = parameterClasses[position];
             seedMethodParameter(dsl, sourceName, className, methodName, descriptor.toString(),
