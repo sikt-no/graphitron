@@ -9,7 +9,11 @@ import org.jooq.Rows;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
@@ -27,12 +31,19 @@ import static org.jooq.impl.DSL.val;
  * reflectively instead. An arm answers what may be written at one coordinate, and the predicate
  * that decides it is the arm's own.
  *
- * <p>Two arms so far, and they are the two the classpath answers rather than the reactor: the
- * constants {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler
- * names. The five still to come read the reactor instead, for what a consumer writes at
- * {@code @service}, {@code @condition}, {@code @externalField}, {@code @enum} and a reference's
- * condition. Arguments, return types and declared exceptions get no arm of their own, being facts
- * about a method, and a method has exactly one arm.
+ * <p>Three arms so far, and they divide by corpus rather than by kind. Two read the whole
+ * classpath, because what they admit is a library's to declare: the constants
+ * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. The
+ * third reads the reactor, because a condition is consumer code by construction, and the four
+ * still to come join it, for what a consumer writes at {@code @service}, {@code @externalField},
+ * {@code @enum} and a reference's condition. Arguments, return types and declared exceptions get
+ * no arm of their own, being facts about a method, and a method has exactly one arm.
+ *
+ * <p>The arms are deliberately specific rather than one method model with a discriminator on it.
+ * A relation per arm is what lets each drop the facts its own admission fixes, which is why the
+ * condition arm carries no return type: it is {@code org.jooq.Condition} on every row it could
+ * ever hold. The supertype over them is a thing to write once several arms exist and their shared
+ * payload is a measured fact rather than a prediction.
  *
  * <p>Keyed and swept on the classpath entry, because an entry is shared: several graphs may read
  * one, and a reading replaces the rows of the entries it read and no others.
@@ -41,6 +52,17 @@ public final class CodeCapture {
 
     /** The declared type a constant must have to be nameable in {@code @scalarType(scalar:)}. */
     private static final String SCALAR_TYPE = "graphql.schema.GraphQLScalarType";
+
+    /** The return type a method must have to be nameable in {@code @condition(condition:)}. */
+    private static final String JOOQ_CONDITION = "org.jooq.Condition";
+
+    /**
+     * The entry origins the reactor built: this module's own output and its siblings'. A declared
+     * or transitive dependency is somebody else's code, which is what the arms over consumer code
+     * are scoped away from.
+     */
+    private static final Set<String> REACTOR_ORIGINS =
+        Set.of(ClasspathEntry.Origin.PROJECT.name(), ClasspathEntry.Origin.SIBLING.name());
 
     private CodeCapture() {}
 
@@ -62,6 +84,7 @@ public final class CodeCapture {
         sources(dsl, census.entries(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         throwables(dsl, census.classes(), new ClassAncestry(census.classes(), loader), touchedAt);
+        conditionMethods(dsl, reactorClasses(census), touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, census.entries().stream().map(ClassfileCensus.EntryAt::source).toList(),
@@ -188,6 +211,103 @@ public final class CodeCapture {
     }
 
     /**
+     * The classes of the entries the reactor built, which is the corpus the arms over consumer code
+     * read.
+     *
+     * <p>A predicate over what the producer already classified rather than a second classpath: an
+     * entry is the reactor's exactly when its origin is this module's own output or a sibling
+     * module's, and a declared or transitive dependency is somebody else's code no matter what it
+     * declares. Scoping here and not in the census, because the classpath arms beside these read
+     * the whole of it and the two must go on reading one reading of the bytes.
+     */
+    private static List<ClassfileCensus.ClassAt> reactorClasses(ClassfileCensus.Census census) {
+        var reactor = census.entries().stream()
+            .filter(at -> REACTOR_ORIGINS.contains(at.origin()))
+            .map(ClassfileCensus.EntryAt::source)
+            .collect(Collectors.toSet());
+        return census.classes().stream()
+            .filter(at -> reactor.contains(at.source()))
+            .toList();
+    }
+
+    /**
+     * The methods {@code @condition(condition:)} may name: a method returning exactly
+     * {@code org.jooq.Condition}.
+     *
+     * <p>The return type is the whole admission, and it is read un-erased so a consumer's own type
+     * named {@code Condition} cannot pass. Everything else the generator asks of a condition
+     * method, that it take at least two parameters and that one of them carry the source table, is
+     * a judgement about one directive application rather than about candidacy: an author may write
+     * a method that fails it, and the refusal they get should name the method rather than pretend
+     * it does not exist.
+     *
+     * <p>The parameters go in beside the method for the same reason the ancestry goes in beside a
+     * throwable: a descriptor states types and nothing else, so the name a binding targets and the
+     * declared type that decides which position carries the table are readable now or never.
+     */
+    private static void conditionMethods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                         LocalDateTime touchedAt) {
+        record Method(String source, String className, ClassfileCensus.MethodAt at) {}
+        var found = new ArrayList<Method>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.MethodAt method : at.methods()) {
+                if (JOOQ_CONDITION.equals(method.returnType())) {
+                    found.add(new Method(at.source(), at.className(), method));
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var t = CODE_CONDITION_METHOD;
+        var rows = found.stream().collect(Rows.toRowList(
+            m -> val(m.source(), t.SOURCE_NAME),
+            m -> val(m.className(), t.CLASS_NAME),
+            m -> val(m.at().name(), t.METHOD_NAME),
+            m -> val(m.at().descriptor(), t.DESCRIPTOR),
+            m -> val(m.at().isStatic(), t.IS_STATIC),
+            m -> val(touchedAt, t.TOUCHED_AT)));
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR, t.IS_STATIC,
+                    t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.IS_STATIC, excluded(t.IS_STATIC))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+
+        record Parameter(String source, String className, String methodName, String descriptor,
+                         ClassfileCensus.ParameterAt at) {}
+        var parameters = new ArrayList<Parameter>();
+        for (Method m : found) {
+            for (ClassfileCensus.ParameterAt parameter : m.at().parameters()) {
+                parameters.add(new Parameter(m.source(), m.className(), m.at().name(),
+                    m.at().descriptor(), parameter));
+            }
+        }
+        if (parameters.isEmpty()) {
+            return;
+        }
+        var p = CODE_CONDITION_METHOD_PARAMETER;
+        var parameterRows = parameters.stream().collect(Rows.toRowList(
+            row -> val(row.source(), p.SOURCE_NAME),
+            row -> val(row.className(), p.CLASS_NAME),
+            row -> val(row.methodName(), p.METHOD_NAME),
+            row -> val(row.descriptor(), p.DESCRIPTOR),
+            row -> val(row.at().position(), p.POSITION),
+            row -> val(row.at().name(), p.PARAMETER_NAME),
+            row -> val(row.at().type(), p.PARAMETER_TYPE),
+            row -> val(touchedAt, p.TOUCHED_AT)));
+        RowChunks.execute(parameterRows, chunk ->
+            dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
+                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
+                .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
+                .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
+    }
+
+    /**
      * Deletes the rows of the entries this reading read that it did not touch, which are the
      * members those entries no longer declare.
      *
@@ -197,6 +317,16 @@ public final class CodeCapture {
      * for it.
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
+        var parameter = CODE_CONDITION_METHOD_PARAMETER;
+        dsl.deleteFrom(parameter)
+            .where(parameter.SOURCE_NAME.in(sources))
+            .and(parameter.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var condition = CODE_CONDITION_METHOD;
+        dsl.deleteFrom(condition)
+            .where(condition.SOURCE_NAME.in(sources))
+            .and(condition.TOUCHED_AT.ne(touchedAt))
+            .execute();
         var s = CODE_THROWABLE_SUPERTYPE;
         dsl.deleteFrom(s)
             .where(s.SOURCE_NAME.in(sources))

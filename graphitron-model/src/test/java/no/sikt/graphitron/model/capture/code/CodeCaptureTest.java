@@ -12,6 +12,8 @@ import java.util.function.Consumer;
 
 import org.jooq.DSLContext;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
@@ -19,8 +21,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The two arms of the code family a classpath answers: what an author may name in
- * {@code @scalarType(scalar:)}, and the throwables an {@code @error} handler may name.
+ * The three arms of the code family: what an author may name in {@code @scalarType(scalar:)},
+ * the throwables an {@code @error} handler may name, and the methods {@code @condition(condition:)}
+ * may name.
  *
  * <p>What these pin is the arm's admission rule rather than a census's completeness. The
  * predecessor wrote every public class on the classpath and left the filtering to whoever read it;
@@ -37,6 +40,22 @@ class CodeCaptureTest {
         ClasspathEntry.project(Path.of("target", "classes")),
         new ClasspathEntry(graphqlJavaJar(), ClasspathEntry.Origin.DECLARED,
             "com.graphql-java:graphql-java"));
+
+    /** Where the condition fixture is compiled to; this module's own output, so reactor-built. */
+    private static final Path TEST_CLASSES = Path.of("target", "test-classes");
+
+    private static final String FIXTURE =
+        "no.sikt.graphitron.model.capture.code.fixtures.ConditionFixture";
+
+    /**
+     * The reactor's own output beside a dependency that declares a great many condition methods.
+     * jOOQ is the sharpest case the classpath has for the scope rule: every {@code Condition} the
+     * arm must not admit is on it, so a scope that leaked would not merely be wrong, it would bury
+     * the consumer's own methods under thousands.
+     */
+    private static final List<ClasspathEntry> REACTOR_AND_JOOQ = List.of(
+        ClasspathEntry.project(TEST_CLASSES),
+        new ClasspathEntry(jooqJar(), ClasspathEntry.Origin.DECLARED, "org.jooq:jooq"));
 
     @Test
     @DisplayName("a GraphQLScalarType constant is admitted, with the type its scalar coerces to")
@@ -166,6 +185,90 @@ class CodeCaptureTest {
         }
     }
 
+    // ===== The condition arm: what a consumer may name at @condition(condition:) =====
+
+    /**
+     * The admission is the return type and nothing else, so the case that pins it is one class
+     * carrying four methods the arm must tell apart: two overloads that qualify, one that returns
+     * something else, and one that is not public.
+     */
+    @Test
+    @DisplayName("a method returning a condition is admitted, its overloads told apart by descriptor")
+    void aConditionMethodIsAdmitted() {
+        withReactorCapture(dsl -> {
+            assertThat(methodsOn(dsl, FIXTURE))
+                .as("both overloads of the qualifying name, and neither of the two beside them")
+                .containsExactlyInAnyOrder(
+                    "titleContains(Ljava/lang/String;Ljava/lang/String;)Lorg/jooq/Condition;",
+                    "titleContains(Ljava/lang/String;)Lorg/jooq/Condition;",
+                    "nonStatic(Ljava/lang/String;)Lorg/jooq/Condition;");
+        });
+    }
+
+    /**
+     * Staticness is recorded and not required. An author can write a non-static condition method,
+     * and the generator's refusal should be able to name it rather than behave as though no such
+     * method existed.
+     */
+    @Test
+    @DisplayName("a non-static condition method is a candidate, recorded as non-static")
+    void staticnessIsRecordedNotRequired() {
+        withReactorCapture(dsl -> assertThat(dsl.select(CODE_CONDITION_METHOD.IS_STATIC)
+                .from(CODE_CONDITION_METHOD)
+                .where(CODE_CONDITION_METHOD.CLASS_NAME.eq(FIXTURE))
+                .and(CODE_CONDITION_METHOD.METHOD_NAME.eq("nonStatic"))
+                .fetchOne(CODE_CONDITION_METHOD.IS_STATIC))
+            .as("a candidate the generator may still refuse, told apart by this column")
+            .isFalse());
+    }
+
+    /**
+     * The parameters are the method's own fact, and this module is compiled without
+     * {@code -parameters}, so it is also the case that pins what an absent name means: a compiler
+     * flag, not an unnamed parameter.
+     */
+    @Test
+    @DisplayName("a condition method's positions are recorded, nameless without -parameters")
+    void parametersAreRecordedByPosition() {
+        withReactorCapture(dsl -> {
+            var rows = dsl.select(CODE_CONDITION_METHOD_PARAMETER.POSITION,
+                    CODE_CONDITION_METHOD_PARAMETER.PARAMETER_TYPE,
+                    CODE_CONDITION_METHOD_PARAMETER.PARAMETER_NAME)
+                .from(CODE_CONDITION_METHOD_PARAMETER)
+                .where(CODE_CONDITION_METHOD_PARAMETER.CLASS_NAME.eq(FIXTURE))
+                .and(CODE_CONDITION_METHOD_PARAMETER.METHOD_NAME.eq("titleContains"))
+                .and(CODE_CONDITION_METHOD_PARAMETER.DESCRIPTOR
+                    .eq("(Ljava/lang/String;Ljava/lang/String;)Lorg/jooq/Condition;"))
+                .orderBy(CODE_CONDITION_METHOD_PARAMETER.POSITION)
+                .fetch();
+
+            assertThat(rows).as("both positions, in order").hasSize(2);
+            assertThat(rows.get(0).value1()).isZero();
+            assertThat(rows.get(0).value2()).isEqualTo("java.lang.String");
+            assertThat(rows).as("this module compiles without -parameters, so no position is named")
+                .allSatisfy(row -> assertThat(row.value3()).isNull());
+        });
+    }
+
+    /**
+     * The scope rule, against the one dependency that would bury the consumer's own methods if it
+     * leaked. jOOQ declares {@code Condition} returns by the thousand and is a declared dependency,
+     * so none of them is a candidate.
+     */
+    @Test
+    @DisplayName("a declared dependency's condition methods are not the reactor's to admit")
+    void onlyTheReactorIsAdmitted() {
+        withReactorCapture(dsl -> {
+            assertThat(dsl.fetchCount(CODE_CONDITION_METHOD,
+                    CODE_CONDITION_METHOD.SOURCE_NAME.eq(jooqJar().toString())))
+                .as("jOOQ's own condition-returning methods, which an author may not name here")
+                .isZero();
+            assertThat(dsl.fetchCount(CODE_CONDITION_METHOD))
+                .as("and the reactor's are, so the case above is a scope and not an empty capture")
+                .isPositive();
+        });
+    }
+
     private static void withCapture(LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             CodeCapture.capture(store.dsl(), CLASSPATH, null, null, at);
@@ -190,5 +293,34 @@ class CodeCaptureTest {
         }
         throw new AssertionError("graphql-java is a compile dependency of this module and must be on "
             + "the test classpath; this arm has nothing to read without it");
+    }
+
+    /** Captures the reactor fixture beside jOOQ, which is the scope rule's own case. */
+    private static void withReactorCapture(Consumer<DSLContext> body) {
+        try (var store = GraphitronStore.inMemory()) {
+            CodeCapture.capture(store.dsl(), REACTOR_AND_JOOQ, null, null, FIRST);
+            body.accept(store.dsl());
+        }
+    }
+
+    /** The condition methods one class declares, spelled as name plus descriptor. */
+    private static List<String> methodsOn(DSLContext dsl, String className) {
+        return dsl.select(CODE_CONDITION_METHOD.METHOD_NAME, CODE_CONDITION_METHOD.DESCRIPTOR)
+            .from(CODE_CONDITION_METHOD)
+            .where(CODE_CONDITION_METHOD.CLASS_NAME.eq(className))
+            .fetch(row -> row.value1() + row.value2());
+    }
+
+    /** Where the jOOQ jar sits on this JVM's own classpath. */
+    private static Path jooqJar() {
+        for (String element : System.getProperty("java.class.path").split(java.io.File.pathSeparator)) {
+            String name = Path.of(element).getFileName().toString();
+            if (name.startsWith("jooq-") && name.endsWith(".jar") && !name.contains("meta")
+                && !name.contains("codegen")) {
+                return Path.of(element);
+            }
+        }
+        throw new AssertionError("jOOQ is a compile dependency of this module and must be on the "
+            + "test classpath; the condition arm's scope case has nothing to exclude without it");
     }
 }

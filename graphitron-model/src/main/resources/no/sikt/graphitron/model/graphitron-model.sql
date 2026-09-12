@@ -5259,6 +5259,48 @@ COMMENT ON COLUMN code_throwable_supertype.class_name IS 'the throwable this row
 COMMENT ON COLUMN code_throwable_supertype.supertype_name IS 'one type the throwable is, by binary name, completing the key. java.lang.Throwable is a row on every throwable, being the admission fact itself, and java.lang.Object is a row for the same reason it is one on sql_table_record_supertype: this states what the class is rather than what its source declared, and a throwable is an Object';
 COMMENT ON COLUMN code_throwable_supertype.touched_at IS 'when the reading that produced this row ran; swept with the throwable it hangs on';
 
+CREATE TABLE code_condition_method (
+  source_name VARCHAR NOT NULL,
+  class_name  VARCHAR NOT NULL,
+  method_name VARCHAR NOT NULL,
+  descriptor  VARCHAR NOT NULL,
+  is_static   BOOLEAN NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_condition_method IS 'One method an author may name in @condition(condition:), on a class the reactor built. For example a public static filmTitleContains(Film, String) returning an org.jooq.Condition.';
+COMMENT ON COLUMN code_condition_method.source_name IS 'the classpath entry the declaring class was read from, anchored by store_source; the key''s leading dimension, and what scopes the arm to the reactor, an entry''s origin being PROJECT or SIBLING exactly when the reactor built it';
+COMMENT ON COLUMN code_condition_method.class_name IS 'the declaring class''s binary name, the left part of the reference an author writes';
+COMMENT ON COLUMN code_condition_method.method_name IS 'the method''s own name, the right part of that reference; not unique on its own, which is why the descriptor completes the key';
+COMMENT ON COLUMN code_condition_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads of one name apart, and the directive names only the name, so a reference resolving to several rows here is the ambiguity the generator refuses rather than a defect of this relation';
+COMMENT ON COLUMN code_condition_method.is_static IS 'whether the method is declared static, which decides whether a call needs an instance. Carried because it is one of the discriminators the generator tells admitted overloads apart by and neither census held it; not an admission rule, a non-static condition method being a candidate an author may name and the generator''s to refuse';
+COMMENT ON COLUMN code_condition_method.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the methods a recompiled entry no longer declares';
+
+CREATE TABLE code_condition_method_parameter (
+  source_name    VARCHAR NOT NULL,
+  class_name     VARCHAR NOT NULL,
+  method_name    VARCHAR NOT NULL,
+  descriptor     VARCHAR NOT NULL,
+  position       INT NOT NULL,
+  parameter_name VARCHAR,
+  parameter_type VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, method_name, descriptor)
+    REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE code_condition_method_parameter IS 'One position in the parameter list of a method @condition(condition:) may name. For example position 0 of filmTitleContains, named film and typed no.sikt.example.tables.Film.';
+COMMENT ON COLUMN code_condition_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_condition_method; the key''s leading dimension';
+COMMENT ON COLUMN code_condition_method_parameter.class_name IS 'the declaring class, as on code_condition_method';
+COMMENT ON COLUMN code_condition_method_parameter.method_name IS 'the method, as on code_condition_method';
+COMMENT ON COLUMN code_condition_method_parameter.descriptor IS 'the method''s descriptor, as on code_condition_method; with the three columns above, the method this position belongs to, and the row is deleted with it';
+COMMENT ON COLUMN code_condition_method_parameter.position IS 'the position in the parameter list, 0-based, completing the key. Position is the key and not the name, because a name is what a classfile may not carry and a position is what it always does';
+COMMENT ON COLUMN code_condition_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. Absence is a compiler flag rather than a fact about the method, and it is the same absence the generator refuses a binding on, so a reader must not read NULL as an unnamed parameter';
+COMMENT ON COLUMN code_condition_method_parameter.parameter_type IS 'the parameter''s declared type by binary name, erased. What decides which of the three roles a position plays: the generator reads the source table off a parameter typed as a jOOQ table and nothing else';
+COMMENT ON COLUMN code_condition_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
+
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -12659,7 +12701,7 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('jvm_class', 0), ('jvm_method', 1), ('jvm_record_component', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
-  ('code_scalar_constant', 0), ('code_throwable', 1),
+  ('code_scalar_constant', 0), ('code_throwable', 1), ('code_condition_method', 2),
   ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2), ('intent_node_type', 3),
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
@@ -13478,6 +13520,14 @@ INSERT INTO meta_relation VALUES
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',
    'The first arm of a family whose shape is one gatherer per thing an author writes, rather than one index of every class on the classpath. An index answers what the classpath holds and leaves every reader to re-filter it; this answers what may be written at one directive, and the filter is the arm''s own admission rule. The admission is a classfile fact, a public static field whose declared type is exactly GraphQLScalarType, so the candidate set is read from bytes. The input type is not, and the column says so: it is reached by loading the class, the coercing being a live object rather than a signature. Not reactor-limited, alone among the arms but for the throwables, because the constants an author names are a library''s and the premise that consumer vocabulary lives in reactor source was falsified outright by @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date").'),
+  ('code_condition_method', 'class-method', 'code',
+   'One method an author may name in @condition(condition:), on a class the reactor built.',
+   'For example a public static filmTitleContains(Film, String) returning an org.jooq.Condition.',
+   'The first arm whose corpus is the reactor, and the first over methods. Admission is the return type read off the classfile and nothing else: exactly org.jooq.Condition, matched un-erased so a consumer''s own Condition type cannot pass. What the generator does with a named method beyond that, how many parameters it wants and which of them carries the table, is a judgement about one directive application rather than about candidacy, so none of it narrows this population. The return type is therefore not a column: the admission fixes it, and a relation stating it would repeat its own predicate on every row. Reactor-scoped because a condition is consumer code by construction, and the entry origin already says which entries the reactor built, so the scope is a predicate rather than a second classpath. Public methods only, which is the census''s own rule and the one the generator''s own silence already had: a non-public method is not a candidate an author can name successfully.'),
+  ('code_condition_method_parameter', 'method-parameter', 'code',
+   'One position in the parameter list of a method @condition(condition:) may name.',
+   'For example position 0 of filmTitleContains, named film and typed no.sikt.example.tables.Film.',
+   'A method''s parameters are the method''s own fact and belong to the arm that admits it, which is why there is no parameter gatherer beside the five. Written here rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and whether a position takes the source table is read from its declared type. Keyed on position and not on name, since the name is exactly the part a classfile may omit. The throws clause has no column and no relation yet, deliberately: declared exceptions feed the @error channel-coverage check, which is a @service concern, and this arm would be capturing a fact with no reader.'),
   ('code_throwable', 'classpath-class', 'code',
    'One throwable on the classpath, which is what an author may name as an @error handler''s exception.',
    'For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.',

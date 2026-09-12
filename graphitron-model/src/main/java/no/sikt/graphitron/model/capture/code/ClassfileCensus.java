@@ -51,7 +51,7 @@ public final class ClassfileCensus {
     /** A name written above a class, and the clause it was written in. */
     public record SupertypeAt(String name, String declaredVia) {}
 
-    public record MethodAt(String name, String descriptor, String returnType,
+    public record MethodAt(String name, String descriptor, String returnType, boolean isStatic,
                            List<ParameterAt> parameters) {}
 
     public record ParameterAt(int position, String name, String type) {}
@@ -219,7 +219,7 @@ public final class ClassfileCensus {
                     binaryName(type.parameterType(i))));
             }
             methods.add(new MethodAt(name, type.descriptorString(),
-                binaryName(type.returnType()), parameters));
+                binaryName(type.returnType()), flags.has(AccessFlag.STATIC), parameters));
         }
         return methods;
     }
