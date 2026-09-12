@@ -296,13 +296,34 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a one-argument Field-returning method whose argument is no table is not a lifter")
     void theShapeIsNotTheContract() {
-        withReactorCapture(dsl -> {
-            assertThat(liftersOn(dsl, LIFTERS))
-                .as("the shape matches and the contract does not, so it is left out")
-                .doesNotContain("notATable")
-                .as("and neither does anything failing the other three clauses")
-                .doesNotContain("notAField", "notStatic", "twoParameters");
-        });
+        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS))
+            .as("the shape matches and the contract does not, so it is left out")
+            .doesNotContain("notATable"));
+    }
+
+    /**
+     * The other three clauses, one case each rather than one case listing them.
+     *
+     * <p>Worth the three methods: the contract is a conjunction, and a case per clause is what
+     * makes a regression name itself. Asserted together, any clause going missing fails the same
+     * test, so the failure says the arm admits too much and not which rule stopped holding.
+     */
+    @Test
+    @DisplayName("an instance method is not a lifter, however well its signature reads")
+    void aNonStaticMethodIsNotAdmitted() {
+        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("notStatic"));
+    }
+
+    @Test
+    @DisplayName("a method returning something other than a Field is not a lifter")
+    void aMethodReturningNoFieldIsNotAdmitted() {
+        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("notAField"));
+    }
+
+    @Test
+    @DisplayName("a lifter takes the table and nothing else, so a second parameter disqualifies it")
+    void aTwoParameterMethodIsNotAdmitted() {
+        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("twoParameters"));
     }
 
     /** The table lifted from is carried, being the one clause the site rather than the method decides. */
