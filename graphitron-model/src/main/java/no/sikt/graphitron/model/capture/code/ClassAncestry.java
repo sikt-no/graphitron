@@ -74,6 +74,19 @@ final class ClassAncestry {
     }
 
     /**
+     * Whether {@code className} is {@code supertype}, itself counting.
+     *
+     * <p>The interface arm of {@link #isThrowable}, and interfaces are why it reads the whole
+     * closure where that one reads a chain: a jOOQ table reaches {@code org.jooq.Table} through
+     * implements clauses, often several levels up a superclass chain it shares with nothing else.
+     * Best-effort on the same terms as the closure it reads, so a type the loader cannot resolve
+     * answers no rather than guessing yes.
+     */
+    boolean isA(String className, String supertype) {
+        return supertype.equals(className) || ancestorsOf(className).contains(supertype);
+    }
+
+    /**
      * Every type {@code className} is, itself excluded, in the order the walk met them.
      *
      * <p>Best-effort where {@link #isThrowable} is strict, and the asymmetry is deliberate: a name

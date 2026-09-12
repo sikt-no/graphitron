@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
@@ -31,18 +32,18 @@ import static org.jooq.impl.DSL.val;
  * reflectively instead. An arm answers what may be written at one coordinate, and the predicate
  * that decides it is the arm's own.
  *
- * <p>Three arms so far, and they divide by corpus rather than by kind. Two read the whole
+ * <p>Four arms so far, and they divide by corpus rather than by kind. Two read the whole
  * classpath, because what they admit is a library's to declare: the constants
- * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. The
- * third reads the reactor, because a condition is consumer code by construction, and the four
- * still to come join it, for what a consumer writes at {@code @service}, {@code @externalField},
- * {@code @enum} and a reference's condition. Arguments, return types and declared exceptions get
- * no arm of their own, being facts about a method, and a method has exactly one arm.
+ * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. Two read
+ * the reactor, a condition and a lifter both being consumer code by construction, and the three
+ * still to come join them, for what a consumer writes at {@code @service}, {@code @enum} and a
+ * reference's condition. Arguments, return types and declared exceptions get no arm of their own,
+ * being facts about a method, and a method has exactly one arm.
  *
  * <p>The arms are deliberately specific rather than one method model with a discriminator on it.
  * A relation per arm is what lets each drop the facts its own admission fixes, which is why the
- * condition arm carries no return type: it is {@code org.jooq.Condition} on every row it could
- * ever hold. The supertype over them is a thing to write once several arms exist and their shared
+ * condition arm carries no return type and the lifter arm carries neither that nor a static flag:
+ * each is one value on every row the arm could ever hold. The supertype over them is a thing to write once several arms exist and their shared
  * payload is a measured fact rather than a prediction.
  *
  * <p>Keyed and swept on the classpath entry, because an entry is shared: several graphs may read
@@ -55,6 +56,12 @@ public final class CodeCapture {
 
     /** The return type a method must have to be nameable in {@code @condition(condition:)}. */
     private static final String JOOQ_CONDITION = "org.jooq.Condition";
+
+    /** The return type a lifter must have to be nameable in {@code @externalField(reference:)}. */
+    private static final String JOOQ_FIELD = "org.jooq.Field";
+
+    /** The type that lifter's sole parameter must be, which is the table it lifts from. */
+    private static final String JOOQ_TABLE = "org.jooq.Table";
 
     /**
      * The entry origins the reactor built: this module's own output and its siblings'. A declared
@@ -83,8 +90,11 @@ public final class CodeCapture {
         }
         sources(dsl, census.entries(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
-        throwables(dsl, census.classes(), new ClassAncestry(census.classes(), loader), touchedAt);
-        conditionMethods(dsl, reactorClasses(census), touchedAt);
+        var reactor = reactorClasses(census);
+        var ancestry = new ClassAncestry(census.classes(), loader);
+        throwables(dsl, census.classes(), ancestry, touchedAt);
+        conditionMethods(dsl, reactor, touchedAt);
+        externalFieldMethods(dsl, reactor, ancestry, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, census.entries().stream().map(ClassfileCensus.EntryAt::source).toList(),
@@ -308,6 +318,55 @@ public final class CodeCapture {
     }
 
     /**
+     * The lifters {@code @externalField(reference:)} may name: a public static method taking one
+     * jOOQ table and returning {@code org.jooq.Field}.
+     *
+     * <p>Every clause is checked because every clause is about the method. The generator's one
+     * remaining requirement, that the table lifted from is the table the field was written on, is
+     * about the application and is left to a reader with the parameter type this writes.
+     *
+     * <p>The parameter test is assignability and not a name match, a consumer's lifter taking the
+     * generated table class for its own table rather than the interface. That class is not in the
+     * census, the generated package being the one thing the reading skips, so the chain above it is
+     * followed by loading it, which is the same walk the throwables arm makes for the same reason.
+     */
+    private static void externalFieldMethods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                             ClassAncestry ancestry, LocalDateTime touchedAt) {
+        record Lifter(String source, String className, ClassfileCensus.MethodAt at, String table) {}
+        var found = new ArrayList<Lifter>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.MethodAt method : at.methods()) {
+                if (!method.isStatic() || !JOOQ_FIELD.equals(method.returnType())
+                    || method.parameters().size() != 1) {
+                    continue;
+                }
+                String parameter = method.parameters().getFirst().type();
+                if (ancestry.isA(parameter, JOOQ_TABLE)) {
+                    found.add(new Lifter(at.source(), at.className(), method, parameter));
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var t = CODE_EXTERNAL_FIELD_METHOD;
+        var rows = found.stream().collect(Rows.toRowList(
+            l -> val(l.source(), t.SOURCE_NAME),
+            l -> val(l.className(), t.CLASS_NAME),
+            l -> val(l.at().name(), t.METHOD_NAME),
+            l -> val(l.at().descriptor(), t.DESCRIPTOR),
+            l -> val(l.table(), t.TABLE_PARAMETER_TYPE),
+            l -> val(touchedAt, t.TOUCHED_AT)));
+        RowChunks.execute(rows, chunk ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.METHOD_NAME, t.DESCRIPTOR,
+                    t.TABLE_PARAMETER_TYPE, t.TOUCHED_AT)
+                .valuesOfRows(chunk)
+                .onDuplicateKeyUpdate()
+                .set(t.TABLE_PARAMETER_TYPE, excluded(t.TABLE_PARAMETER_TYPE))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
      * Deletes the rows of the entries this reading read that it did not touch, which are the
      * members those entries no longer declare.
      *
@@ -317,6 +376,11 @@ public final class CodeCapture {
      * for it.
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
+        var lifter = CODE_EXTERNAL_FIELD_METHOD;
+        dsl.deleteFrom(lifter)
+            .where(lifter.SOURCE_NAME.in(sources))
+            .and(lifter.TOUCHED_AT.ne(touchedAt))
+            .execute();
         var parameter = CODE_CONDITION_METHOD_PARAMETER;
         dsl.deleteFrom(parameter)
             .where(parameter.SOURCE_NAME.in(sources))

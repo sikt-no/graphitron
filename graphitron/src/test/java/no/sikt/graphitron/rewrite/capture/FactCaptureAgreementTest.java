@@ -548,6 +548,7 @@ class FactCaptureAgreementTest {
         registrations.put("code_scalar_constant", Arm.UNSHADOWED);
         registrations.put("code_condition_method", Arm.UNSHADOWED);
         registrations.put("code_condition_method_parameter", Arm.UNSHADOWED);
+        registrations.put("code_external_field_method", Arm.UNSHADOWED);
         registrations.put("code_throwable", Arm.UNSHADOWED);
         registrations.put("code_throwable_supertype", Arm.UNSHADOWED);
         registrations.put("graphql_directive_site", Arm.DERIVED);

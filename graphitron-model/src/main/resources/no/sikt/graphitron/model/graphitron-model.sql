@@ -5299,6 +5299,24 @@ COMMENT ON COLUMN code_condition_method_parameter.parameter_name IS 'the paramet
 COMMENT ON COLUMN code_condition_method_parameter.parameter_type IS 'the parameter''s declared type by binary name, erased. What decides which of the three roles a position plays: the generator reads the source table off a parameter typed as a jOOQ table and nothing else';
 COMMENT ON COLUMN code_condition_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
+CREATE TABLE code_external_field_method (
+  source_name          VARCHAR NOT NULL,
+  class_name           VARCHAR NOT NULL,
+  method_name          VARCHAR NOT NULL,
+  descriptor           VARCHAR NOT NULL,
+  table_parameter_type VARCHAR NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_external_field_method IS 'One method an author may name in @externalField(reference:), on a class the reactor built. For example a public static titleUpper(Film) returning an org.jooq.Field.';
+COMMENT ON COLUMN code_external_field_method.source_name IS 'the classpath entry the declaring class was read from, anchored by store_source; the key''s leading dimension, and what scopes the arm to the reactor';
+COMMENT ON COLUMN code_external_field_method.class_name IS 'the declaring class''s binary name, the left part of the reference an author writes';
+COMMENT ON COLUMN code_external_field_method.method_name IS 'the method''s own name, the right part of that reference';
+COMMENT ON COLUMN code_external_field_method.descriptor IS 'the JVM method descriptor, completing the key and telling two overloads of one name apart';
+COMMENT ON COLUMN code_external_field_method.table_parameter_type IS 'the binary name of the sole parameter''s declared type, which is a jOOQ table by the admission rule. Carried because the one contract clause this relation cannot decide is the site''s: whether the table a method lifts from is the table the field is written on, which a reader answers by comparing this to the parent. There is no position column, the admission fixing it at zero, and no return type, the admission fixing that at org.jooq.Field';
+COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the methods a recompiled entry no longer declares';
+
 CREATE TABLE java_file (
   file        VARCHAR NOT NULL,
   source_root VARCHAR NOT NULL,
@@ -12700,6 +12718,7 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
   ('code_scalar_constant', 0), ('code_throwable', 1), ('code_condition_method', 2),
+  ('code_external_field_method', 3),
   ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2), ('intent_node_type', 3),
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
@@ -13526,6 +13545,10 @@ INSERT INTO meta_relation VALUES
    'One position in the parameter list of a method @condition(condition:) may name.',
    'For example position 0 of filmTitleContains, named film and typed no.sikt.example.tables.Film.',
    'A method''s parameters are the method''s own fact and belong to the arm that admits it, which is why there is no parameter gatherer beside the five. Written here rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and whether a position takes the source table is read from its declared type. Keyed on position and not on name, since the name is exactly the part a classfile may omit. The throws clause has no column and no relation yet, deliberately: declared exceptions feed the @error channel-coverage check, which is a @service concern, and this arm would be capturing a fact with no reader.'),
+  ('code_external_field_method', 'class-method', 'code',
+   'One method an author may name in @externalField(reference:), on a class the reactor built.',
+   'For example a public static titleUpper(Film) returning an org.jooq.Field.',
+   'The whole of this directive''s contract is a fact about the method, which is what lets the relation be the candidate set rather than an approximation of it. The generator admits a lifter that is public and static, takes exactly one parameter typed as a jOOQ table, and returns org.jooq.Field; every clause of that is readable before any schema is consulted, so every clause is an admission rule here and none of them is a column. The one clause left out is the only one that is not about the method: whether the table it lifts from is the table the field was written on, which is the site''s question and is answered by comparing the parameter type this relation does carry. Reading the contract off the shape alone was the alternative, and the editor already does it that way for want of a relation to ask: a method taking one argument and returning a Field looks like a lifter whether or not its parameter is a table, and the suggestion it produces can fail to bind. Raw Field is the single clause not gated on, the parameterisation living in the Signature attribute this arm does not read, so a method returning raw Field is admitted here and refused by name at build.'),
   ('code_throwable', 'classpath-class', 'code',
    'One throwable on the classpath, which is what an author may name as an @error handler''s exception.',
    'For example org.jooq.exception.IntegrityConstraintViolationException, read from the jOOQ jar.',

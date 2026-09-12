@@ -14,6 +14,7 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
@@ -21,9 +22,9 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The three arms of the code family: what an author may name in {@code @scalarType(scalar:)},
- * the throwables an {@code @error} handler may name, and the methods {@code @condition(condition:)}
- * may name.
+ * The four arms of the code family: what an author may name in {@code @scalarType(scalar:)}, the
+ * throwables an {@code @error} handler may name, the methods {@code @condition(condition:)} may
+ * name, and the lifters {@code @externalField(reference:)} may name.
  *
  * <p>What these pin is the arm's admission rule rather than a census's completeness. The
  * predecessor wrote every public class on the classpath and left the filtering to whoever read it;
@@ -46,6 +47,9 @@ class CodeCaptureTest {
 
     private static final String FIXTURE =
         "no.sikt.graphitron.model.capture.code.fixtures.ConditionFixture";
+
+    private static final String LIFTERS =
+        "no.sikt.graphitron.model.capture.code.fixtures.ExternalFieldFixture";
 
     /**
      * The reactor's own output beside a dependency that declares a great many condition methods.
@@ -269,6 +273,51 @@ class CodeCaptureTest {
         });
     }
 
+    // ===== The externalField arm: what a consumer may name at @externalField(reference:) =====
+
+    /**
+     * The whole contract, admitted at once. Both spellings of a lifter qualify: one reaching
+     * {@code Table} through a superclass chain, as a generated table class does, and one naming the
+     * interface outright.
+     */
+    @Test
+    @DisplayName("a lifter is admitted whether it names a table class or the table interface")
+    void aLifterIsAdmitted() {
+        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS))
+            .as("the two methods satisfying every clause of the contract")
+            .containsExactlyInAnyOrder("titleUpper", "byInterface"));
+    }
+
+    /**
+     * The case the relation exists for. A method taking one argument and returning a
+     * {@code Field} is the shape an editor with nothing to ask has to settle for, and this one is
+     * not a lifter: its argument is not a table. The arm says so where a shape cannot.
+     */
+    @Test
+    @DisplayName("a one-argument Field-returning method whose argument is no table is not a lifter")
+    void theShapeIsNotTheContract() {
+        withReactorCapture(dsl -> {
+            assertThat(liftersOn(dsl, LIFTERS))
+                .as("the shape matches and the contract does not, so it is left out")
+                .doesNotContain("notATable")
+                .as("and neither does anything failing the other three clauses")
+                .doesNotContain("notAField", "notStatic", "twoParameters");
+        });
+    }
+
+    /** The table lifted from is carried, being the one clause the site rather than the method decides. */
+    @Test
+    @DisplayName("the table a lifter lifts from is recorded, for the site to check against")
+    void theTableParameterIsRecorded() {
+        withReactorCapture(dsl -> assertThat(dsl.select(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE)
+                .from(CODE_EXTERNAL_FIELD_METHOD)
+                .where(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME.eq(LIFTERS))
+                .and(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME.eq("titleUpper"))
+                .fetchOne(CODE_EXTERNAL_FIELD_METHOD.TABLE_PARAMETER_TYPE))
+            .as("what a reader compares against the parent table the field was written on")
+            .isEqualTo(LIFTERS + "$FixtureTable"));
+    }
+
     private static void withCapture(LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             CodeCapture.capture(store.dsl(), CLASSPATH, null, null, at);
@@ -322,5 +371,13 @@ class CodeCaptureTest {
         }
         throw new AssertionError("jOOQ is a compile dependency of this module and must be on the "
             + "test classpath; the condition arm's scope case has nothing to exclude without it");
+    }
+
+    /** The lifter method names one class declares. */
+    private static List<String> liftersOn(DSLContext dsl, String className) {
+        return dsl.select(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME)
+            .from(CODE_EXTERNAL_FIELD_METHOD)
+            .where(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME.eq(className))
+            .fetch(CODE_EXTERNAL_FIELD_METHOD.METHOD_NAME);
     }
 }
