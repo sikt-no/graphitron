@@ -2860,10 +2860,15 @@ the tree.
 **Which makes the answer to "delete it" precise, and it is half yes.** `SdlFactCapture` is two things
 sharing a file. One writes the twenty seven relations and is dead weight. The other is the traversal
 that drives the graphitron decode: the walk holds a `GraphitronFactCapture` and calls into it at each
-directive site with the coordinate and the per-name application ordinal. That half cannot go, because
-the `graphitron_` anchors have no derivation at all. `SdlAnchor` is the `graphql_` family's; the
-`graphitron_` family has no counterpart, and writing one is what burn down items four through nine
-amount to.
+directive site with the coordinate and the per-name application ordinal. That half cannot go until
+the `graphitron_` anchors are derived the way the `graphql_` ones now are.
+
+Written the same day this was, and corrected here rather than left standing: that derivation is not
+absent. `GraphitronAnchor` arrived from the session working the entry migration and is
+`SdlAnchor`'s counterpart by the same idiom, one statement per anchor, an insert over a select, run
+once the corpus is read. It holds three relations. The walk writes fifty one of the seventy one, so
+what is owed is a size rather than a beginning, and burn down items four through nine are the entry
+side that derivation reads from.
 
 The two halves are interleaved rather than layered, which is why the file cannot simply be cut in
 two: `captureSite` writes a declaration row and then dispatches that site's directives,
