@@ -2969,6 +2969,76 @@ COMMENT ON COLUMN graphitron_ast_discriminator_entry.source_column IS 'source co
 COMMENT ON COLUMN graphitron_ast_discriminator_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_discriminator_entry.discriminator_value IS 'the value argument decoded to the string the author wrote. NOT NULL because the definition requires the argument, so an application without it is refused before a decode sees it. Always a string here whatever the column''s SQL type, the comparison being the resolution''s to make';
 
+CREATE TABLE graphitron_ast_federation_key_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  fields_sdl    VARCHAR NOT NULL,
+  resolvable    BOOLEAN,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_federation_key_entry IS 'What a federation @key application says: the field set naming the entity''s key, and whether the subgraph resolves it, as written. For example type Film @key(fields: "id reviews { id }") gives one row carrying that field set verbatim.';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.source_column IS 'source column of the same, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.fields_sdl IS 'the fields argument as the author typed it, kept whole beside the selections it parsed into. The parse is a reading and this is what was read, so a reader wanting to re-emit the directive takes this column and a reader wanting its structure takes the rows below';
+COMMENT ON COLUMN graphitron_ast_federation_key_entry.resolvable IS 'the resolvable argument decoded to the boolean the author wrote, or NULL where they wrote none. NULL rather than true, the directive''s declared default being a generator constant and not a fact about the document';
+
+CREATE TABLE graphitron_ast_federation_key_selection_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_federation_key_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_federation_key_selection_entry IS 'One leaf selection the field set parsed into, at its index in that parse. For example "id reviews { id }" gives two rows, one for id and one for the id inside reviews.';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.source_column IS 'source column of the same, so the four together name the application whose field set was parsed';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_federation_key_selection_entry.position IS 'the index of this selection in the field set, counting leaves in written order. The grammar yields a list and a relation holds a set, so the order is a column; a decoded element that is a node the author wrote needs none, being identified by the position it was written at';
+
+CREATE TABLE graphitron_ast_federation_key_segment_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position         INT     NOT NULL,
+  segment_position INT     NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  segment_name     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, segment_position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_federation_key_selection_entry
+      (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_federation_key_segment_entry IS 'One segment of one parsed selection, at its depth from the outermost inward. For example the selection reached by "reviews { id }" gives two rows, reviews then id.';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.source_column IS 'source column of the same, so the four together name the application whose field set was parsed';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.position IS 'which selection of the parse this segment belongs to';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.segment_position IS 'the depth of this segment within that selection, zero being the outermost. Nesting survives the parse as segments rather than being rendered back into a dotted name a reader would take apart again';
+COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.segment_name IS 'the field this segment names, as the grammar cut it. Whether the type declares such a field is a question for a resolution and not for this row';
+
 CREATE TABLE graphitron_deprecated_directive (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
@@ -13299,6 +13369,12 @@ INSERT INTO meta_grain VALUES
   ('sdl-written-value',
    'one value node written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-parsed-selection',
+   'one leaf selection of one field set, at its index in the list the grammar reads it as, under the application that wrote it',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('sdl-parsed-selection-segment',
+   'one segment of one such selection, at its depth from the outermost inward',
+   'graph_name, source_name, source_line, source_column, position, segment_position', 'sdl'),
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
@@ -13697,6 +13773,18 @@ INSERT INTO meta_relation VALUES
    'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
+  ('graphitron_ast_federation_key_entry', 'sdl-declaration-site', 'document',
+   'What a federation @key application says: the field set naming the entity''s key, and whether the subgraph resolves it, as written.',
+   'For example type Film @key(fields: "id reviews { id }") gives one row carrying that field set verbatim.',
+   'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one type apart: the directive repeats and no ordinal is assigned here. The field set is kept whole in a column and parsed into the two relations below it, which is this family''s only grammar whose output is rows. The string stays because the parse is a reading of it and a re-emitter wants what was read. The rows exist because the anchors this derives into have held selections and segments since before the entry stratum did: the shape is transcribed rather than chosen here, and a decode that rendered the parse back into a dotted name would hand that derivation a string to take apart again. No reader outside those anchors consumes a key today, so what the rows are worth is a question the first one will settle.'),
+  ('graphitron_ast_federation_key_selection_entry', 'sdl-parsed-selection', 'document',
+   'One leaf selection the field set parsed into, at its index in that parse.',
+   'For example "id reviews { id }" gives two rows, one for id and one for the id inside reviews.',
+   'A grammar yields a list and a relation holds a set, so the order is a column. That is all the ordinal is. A decoded element that is a node the author wrote carries no such column, being identified by the position it was written at and ordered by the value stratum that records it; a field set is one string, so its selections have no position of their own and the ordinal is what makes them a list rather than a bag. A malformed field set yields whatever prefix parsed, so a selection missing from here is a defect a detection reports over the column beside it rather than an absence this relation asserts.'),
+  ('graphitron_ast_federation_key_segment_entry', 'sdl-parsed-selection-segment', 'document',
+   'One segment of one parsed selection, at its depth from the outermost inward.',
+   'For example the selection reached by "reviews { id }" gives two rows, reviews then id.',
+   'Nesting is part of federation''s grammar and survives the decode as segments, rather than being flattened into a dotted string. Two relations rather than one because a selection exists whether or not it nests: the selection row is what a reader counts and joins on, and the segments are how deep it went. That today''s generator rejects a nested key is a detection''s business and not a limit on what capture records, which is the same rule every decode in this family takes about input it is handed.'),
   ('graphitron_ast_discriminate_entry', 'sdl-declaration-site', 'document',
    'What a @discriminate application says: the column whose value decides which subtype a row is, as written.',
    'For example interface Media @discriminate(on: "media_type") gives one row whose on_column is media_type.',

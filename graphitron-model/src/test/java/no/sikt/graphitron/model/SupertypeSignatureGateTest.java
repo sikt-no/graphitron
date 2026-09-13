@@ -253,6 +253,12 @@ class SupertypeSignatureGateTest {
         // the position of the at sign the ordinal would sort by.
         Set.of("graphitron_ast_link_entry", "graphitron_link_entry"),
         Set.of("graphitron_ast_link_import_entry", "graphitron_link_import_entry"),
+        // Federation's key segments, which pair on the one column either of them carries beyond its
+        // key. Only the segment does: the key entry keeps the field set as a string the anchor
+        // holds beside a declaration site, and a selection row is key and nothing else, so neither
+        // of those two has a payload to share with anything.
+        Set.of("graphitron_ast_federation_key_segment_entry",
+               "graphitron_federation_key_field_segment_entry"),
         // @node's key columns, which pair the same way. Only the child does: the anchor above it
         // carries the declaration site the application was written on as four columns of its own,
         // where the entry carries that by being keyed at the position, so the two share no payload

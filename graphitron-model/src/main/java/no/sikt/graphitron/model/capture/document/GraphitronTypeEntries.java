@@ -2,17 +2,22 @@ package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
+import no.sikt.graphitron.model.grammar.FieldSetGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
@@ -22,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_RECORD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.applied;
+import static no.sikt.graphitron.model.capture.document.GraphitronEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.classPart;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronEntries.fieldPart;
@@ -43,8 +49,8 @@ import static org.jooq.impl.DSL.val;
  * written on, and in which file, is one join away rather than a column.
  *
  * <p>The type-site directives this writes are {@code @table}, {@code @scalarType}, {@code @enum},
- * {@code @record}, {@code @error}, {@code @node}, {@code @discriminate} and {@code @discriminator},
- * and two of those eight surprise. {@code @error} has no
+ * {@code @record}, {@code @error}, {@code @node}, {@code @discriminate},
+ * {@code @discriminator} and federation's {@code @key}, and two of those nine surprise. {@code @error} has no
  * relation, its only argument being the handler list, so a row carrying its key and nothing else
  * would say what the applied-directive row already says. Its handlers have one relation per kind,
  * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
@@ -79,6 +85,12 @@ final class GraphitronTypeEntries {
         discriminates(dsl, graph, touchedAt, wrote(applied(applications, "discriminate"), "on"));
         discriminators(dsl, graph, touchedAt,
             wrote(applied(applications, "discriminator"), "value"));
+
+        var keys = wrote(applied(applications, "key"), "fields");
+        federationKeys(dsl, graph, touchedAt, keys);
+        var selections = selectionsOf(keys);
+        federationKeySelections(dsl, graph, touchedAt, selections);
+        federationKeySegments(dsl, graph, touchedAt, selections);
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -96,7 +108,9 @@ final class GraphitronTypeEntries {
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
-        GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY);
+        GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY,
+        GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY,
+        GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY, GRAPHITRON_AST_FEDERATION_KEY_ENTRY);
 
     private static void tables(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                List<Directive> applications) {
@@ -347,5 +361,100 @@ final class GraphitronTypeEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.DISCRIMINATOR_VALUE, excluded(t.DISCRIMINATOR_VALUE)));
+    }
+
+    /**
+     * Federation's {@code @key}, whose field set is kept whole here and parsed into the two
+     * relations below.
+     *
+     * <p>The string stays because the parse is a reading of it: an emitter re-declaring the
+     * directive wants what the author typed, and a reader wanting the key's shape takes the rows.
+     */
+    private static void federationKeys(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                       List<Directive> applications) {
+        var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> SdlEntries.sourceName(application),
+            application -> SdlEntries.sourceLine(application),
+            application -> SdlEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "fields"), t.FIELDS_SDL),
+            application -> val(bool(application, "resolvable"), t.RESOLVABLE)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.FIELDS_SDL, t.RESOLVABLE)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.FIELDS_SDL, excluded(t.FIELDS_SDL))
+                .set(t.RESOLVABLE, excluded(t.RESOLVABLE)));
+    }
+
+    /** One leaf selection of one application's field set, at the index the parse gave it. */
+    private record Selection(Directive application, int position, List<String> segments) {}
+
+    /**
+     * Every application's field set, parsed. The grammar yields an ordered list and a relation
+     * holds a set, so each selection carries its index.
+     */
+    private static List<Selection> selectionsOf(List<Directive> applications) {
+        var selections = new ArrayList<Selection>();
+        for (Directive application : applications) {
+            int position = 0;
+            for (List<String> segments : FieldSetGrammar.paths(string(application, "fields"))) {
+                selections.add(new Selection(application, position++, segments));
+            }
+        }
+        return selections;
+    }
+
+    private static void federationKeySelections(DSLContext dsl, String graph,
+                                                LocalDateTime touchedAt,
+                                                List<Selection> selections) {
+        var t = GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
+        var rows = selections.stream().collect(Rows.toRowList(
+            selection -> val(graph, t.GRAPH_NAME),
+            selection -> SdlEntries.sourceName(selection.application()),
+            selection -> SdlEntries.sourceLine(selection.application()),
+            selection -> SdlEntries.sourceColumn(selection.application()),
+            selection -> val(selection.position(), t.POSITION),
+            selection -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.POSITION, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** One segment of one parsed selection, at its depth from the outermost inward. */
+    private record Segment(Selection selection, int depth, String name) {}
+
+    private static void federationKeySegments(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                              List<Selection> selections) {
+        var t = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+        var segments = new ArrayList<Segment>();
+        for (Selection selection : selections) {
+            for (int depth = 0; depth < selection.segments().size(); depth++) {
+                segments.add(new Segment(selection, depth, selection.segments().get(depth)));
+            }
+        }
+        var rows = segments.stream().collect(Rows.toRowList(
+            segment -> val(graph, t.GRAPH_NAME),
+            segment -> SdlEntries.sourceName(segment.selection().application()),
+            segment -> SdlEntries.sourceLine(segment.selection().application()),
+            segment -> SdlEntries.sourceColumn(segment.selection().application()),
+            segment -> val(segment.selection().position(), t.POSITION),
+            segment -> val(segment.depth(), t.SEGMENT_POSITION),
+            segment -> val(touchedAt, t.TOUCHED_AT),
+            segment -> val(segment.name(), t.SEGMENT_NAME)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.POSITION, t.SEGMENT_POSITION, t.TOUCHED_AT, t.SEGMENT_NAME)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.SEGMENT_NAME, excluded(t.SEGMENT_NAME)));
     }
 }

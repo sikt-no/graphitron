@@ -20,6 +20,9 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
@@ -378,6 +381,129 @@ class GraphitronTypeEntriesTest {
                     .fetch(d.DISCRIMINATOR_VALUE))
                 .as("both applications, neither displacing the other at one coordinate")
                 .containsExactly("BOOK", "PAPER");
+        });
+    }
+
+
+    /** The federation vocabulary a consumer declares for itself, above every key case below. */
+    private static final String FEDERATION =
+        "directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT\n";
+
+    /**
+     * The field set is kept whole and parsed, and both are the point: an emitter re-declaring the
+     * directive wants the string the author typed, and every consumer of a key wants the selections.
+     * Nesting survives as segments rather than as a dotted name a reader would take apart again.
+     */
+    @Test
+    @DisplayName("a field set is kept as written and parsed into selections that keep their nesting")
+    void theFieldSetIsBothKeptAndParsed(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", FEDERATION + """
+            type Film @key(fields: "id reviews { id }") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.fetch(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
+                .as("what the author typed, verbatim")
+                .extracting(row -> row.get(GRAPHITRON_AST_FEDERATION_KEY_ENTRY.FIELDS_SDL))
+                .containsExactly("id reviews { id }");
+
+            var g = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+            assertThat(dsl.select(g.POSITION, g.SEGMENT_POSITION, g.SEGMENT_NAME).from(g)
+                    .orderBy(g.POSITION, g.SEGMENT_POSITION).fetch())
+                .as("two leaf selections, the second reached through reviews")
+                .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
+                .containsExactly(
+                    tuple(0, 0, "id"),
+                    tuple(1, 0, "reviews"),
+                    tuple(1, 1, "id"));
+
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY))
+                .as("and a selection row each, which is what a reader counts and joins on")
+                .isEqualTo(2);
+        });
+    }
+
+    /**
+     * The grammar is tolerant on the same terms as every capture path: a field set that does not
+     * parse yields whatever prefix did and never throws. The argument is a legal string whatever it
+     * contains, so unlike a wrong-typed argument this reaches the decode rather than being refused,
+     * and the column beside the rows is what a detection reports from.
+     */
+    @Test
+    @DisplayName("a field set that does not parse keeps its string and yields what parsed")
+    void aMalformedFieldSetIsToleratedAndStillRecorded(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", FEDERATION + """
+            type Film @key(fields: "id reviews {") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.fetch(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
+                .as("the application is a fact of the document whatever its field set says")
+                .extracting(row -> row.get(GRAPHITRON_AST_FEDERATION_KEY_ENTRY.FIELDS_SDL))
+                .containsExactly("id reviews {");
+
+            var g = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+            assertThat(dsl.select(g.SEGMENT_NAME).from(g).orderBy(g.POSITION, g.SEGMENT_POSITION)
+                    .fetch(g.SEGMENT_NAME))
+                .as("and the prefix that parsed is there rather than nothing")
+                .contains("id");
+        });
+    }
+
+    /**
+     * The directive repeats and no ordinal is assigned here, so two keys on one type are told apart
+     * by where each was written. Under a coordinate key the second displaced the first.
+     */
+    @Test
+    @DisplayName("two keys on one type are two rows with their own selections")
+    void twoKeysOnOneTypeKeepTheirOwnSelections(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", FEDERATION + """
+            type Film
+              @key(fields: "id")
+              @key(fields: "isbn") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+
+            assertThat(dsl.select(t.FIELDS_SDL).from(t).orderBy(t.SOURCE_LINE, t.SOURCE_COLUMN)
+                    .fetch(t.FIELDS_SDL))
+                .as("both applications, neither displacing the other")
+                .containsExactly("id", "isbn");
+
+            var g = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
+            assertThat(dsl.select(g.SEGMENT_NAME).from(g).orderBy(g.SOURCE_LINE, g.SOURCE_COLUMN)
+                    .fetch(g.SEGMENT_NAME))
+                .as("each with its own selection, hanging off its own application")
+                .containsExactly("id", "isbn");
+        });
+    }
+
+    /**
+     * An omitted {@code resolvable} stays NULL rather than becoming the directive's declared
+     * default, on the rule every optional argument in this stratum takes: a default is a generator
+     * constant, and NULL is what says the author did not choose.
+     */
+    @Test
+    @DisplayName("an omitted resolvable stays NULL rather than becoming its default")
+    void anOmittedResolvableIsNotDefaulted(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", FEDERATION + """
+            type Film @key(fields: "id") { title: String }
+            type Actor @key(fields: "id", resolvable: false) { name: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+
+            assertThat(dsl.select(t.RESOLVABLE).from(t).orderBy(t.SOURCE_LINE).fetch(t.RESOLVABLE))
+                .as("the absence of a choice as an absence, and the choice as what was written")
+                .containsExactly(null, false);
         });
     }
 

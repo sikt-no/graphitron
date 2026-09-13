@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.graphitron;
+package no.sikt.graphitron.model.grammar;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -7,8 +7,11 @@ import java.util.List;
 
 /**
  * Decodes federation's field-set grammar, the string form {@code @key(fields:)} carries, into the
- * ordered selections {@code graphitron_federation_key_field_entry} stores, each one a list of
- * segments.
+ * ordered selections the key's field relations store, each one a list of segments.
+ *
+ * <p>Beside the other grammars rather than inside a capture package, because both decodes of
+ * {@code @key} need it and they sit in different packages while one replaces the other. It reads a
+ * string and knows no relation, which is what every class here has in common.
  *
  * <p>The grammar is a parse boundary SQL cannot express, so it decodes at capture. Nesting is part
  * of the grammar and survives the decode as the segments of a selection ({@code "a { b c }"} yields
@@ -19,7 +22,7 @@ import java.util.List;
  * <p>Like every capture path this one is tolerant: a malformed field set yields whatever prefix
  * parsed and never throws, because the value arrives from a registry that validated nothing.
  */
-final class FieldSetGrammar {
+public final class FieldSetGrammar {
 
     private FieldSetGrammar() {}
 
@@ -27,7 +30,7 @@ final class FieldSetGrammar {
      * The leaf selections of {@code fieldSet}, in written order, each as its segments from the
      * outermost inward. An unnested selection is one segment, so no list is empty.
      */
-    static List<List<String>> paths(String fieldSet) {
+    public static List<List<String>> paths(String fieldSet) {
         var paths = new ArrayList<List<String>>();
         Deque<String> prefix = new ArrayDeque<>();
         String pending = null;
