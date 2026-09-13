@@ -2789,6 +2789,98 @@ COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.source_column IS '
 COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_input_value_deprecated_entry.reason IS 'the reason argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. The decode is the whole reason this relation exists beside the applied-argument row: that row carries the rendered literal, quotes included, and a consumer wanting the text would have to re-read SDL to get it';
 
+CREATE TABLE graphitron_ast_enum_value_binding_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name_ref      VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_enum_value_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_enum_value_binding_entry IS 'What a @field application on an enum value says: the database column the value binds to, as written. For example TITLE @field(name: "title") gives one row whose name_ref is title.';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_enum_value_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_enum_value_binding_entry.name_ref IS 'the name argument decoded to the string the author wrote. Whether a column of that name exists is the anchor''s question and not this row''s';
+
+CREATE TABLE graphitron_ast_index_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  index_ref     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_enum_value_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_index_entry IS 'What an @index application says: the database index the enum value names, as written. For example TITLE_INDEX @index(name: "idx_film_title") gives one row whose index_ref is idx_film_title.';
+COMMENT ON COLUMN graphitron_ast_index_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_index_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_index_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_index_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_enum_value_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_index_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_index_entry.index_ref IS 'the name argument decoded to the string the author wrote. NOT NULL because it is the only argument the directive has, so an application without it would give a row carrying its key and nothing else, which is what the applied-directive row already says';
+
+CREATE TABLE graphitron_ast_order_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  index_ref     VARCHAR,
+  primary_key   BOOLEAN,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_enum_value_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_order_entry IS 'What an @order application says: which of the three sorting surfaces an enum value selects, as written. For example BY_TITLE @order(fields: [{name: "title"}]) gives one row whose two columns are both NULL, the sort being the child rows.';
+COMMENT ON COLUMN graphitron_ast_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_order_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_order_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_order_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_enum_value_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_order_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_order_entry.index_ref IS 'the index argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string';
+COMMENT ON COLUMN graphitron_ast_order_entry.primary_key IS 'the primaryKey argument decoded to the boolean the author wrote, or NULL where they wrote none. NULL rather than false, the directive''s own default being a generator constant and not a fact about the document';
+
+CREATE TABLE graphitron_ast_order_field_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  name_ref      VARCHAR,
+  collate       VARCHAR,
+  direction     VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_order_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_order_field_entry IS 'One fields element of an @order application, at its position in the list, as written. For example fields: [{name: "title", collate: "xdanish_ai"}] gives one row at position 0.';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_enum_value_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.position IS 'the index the element was written at, which is the sort order the author asked for; an element that is not an object literal takes its index and writes no row, so the ones after it keep the numbering the author would count';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.name_ref IS 'the element''s name field decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.collate IS 'the element''s collate field on the same terms. A database-specific collation name, resolving against nothing here';
+COMMENT ON COLUMN graphitron_ast_order_field_entry.direction IS 'the element''s direction field as the enum token the author wrote, or NULL where they wrote none';
+
 CREATE TABLE graphitron_deprecated_directive (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
@@ -13413,6 +13505,22 @@ INSERT INTO meta_relation VALUES
    'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
+  ('graphitron_ast_enum_value_binding_entry', 'sdl-declaration-site', 'document',
+   'What a @field application on an enum value says: the database column the value binds to, as written.',
+   'For example TITLE @field(name: "title") gives one row whose name_ref is title.',
+   'A decode of one directive application, keyed by the application''s own position. The directive is admitted at four sites and this relation holds one of them, the site being the key rather than a discriminator: a @field on an enum value names a sort column and a @field on an output field names the column the field reads, and the two have different consumers. The name is kept as the string the author typed and nothing is cut from it, an enum value''s binding naming one column and no qualified form. Whether a column of that name exists on the table the enclosing @order resolves against is the anchor''s question, which is why the second argument the directive declares is absent here: javaName concerns a generated accessor and not a column, and no reader of this site has asked for it.'),
+  ('graphitron_ast_index_entry', 'sdl-declaration-site', 'document',
+   'What an @index application says: the database index the enum value names, as written.',
+   'For example TITLE_INDEX @index(name: "idx_film_title") gives one row whose index_ref is idx_film_title.',
+   'A decode of one directive application, keyed by the application''s own position. The one argument the directive declares is its whole payload, so the column is NOT NULL and an application that wrote no name writes no row: such a row would carry its key and nothing else, which is what the applied-directive row already says, and that is the rule every single-argument decode in this family takes. The index name resolves against the catalog and not against anything here; an @index naming an index the database does not have is a document this relation transcribes and a detection reports.'),
+  ('graphitron_ast_order_entry', 'sdl-declaration-site', 'document',
+   'What an @order application says: which of the three sorting surfaces an enum value selects, as written.',
+   'For example BY_TITLE @order(fields: [{name: "title"}]) gives one row whose two columns are both NULL, the sort being the child rows.',
+   'A decode of one directive application, keyed by the application''s own position, and the enum-value twin of graphitron_ast_default_order_entry. The directive admits exactly one of an index, a field list and the primary key, and no constraint here states that: an application naming two is a document this relation transcribes and a detection reports. The field list is the child relation rather than a rendered literal, so an application that took that surface is a row here whose payload columns are both null and whose sort is the rows beside it, which is also why a row is written for every application rather than only for those that wrote an argument. The primary-key column is null where the author wrote nothing, the directive''s declared default being a generator constant rather than a fact about the document.'),
+  ('graphitron_ast_order_field_entry', 'sdl-application-value', 'document',
+   'One fields element of an @order application, at its position in the list, as written.',
+   'For example fields: [{name: "title", collate: "xdanish_ai"}] gives one row at position 0.',
+   'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. An element that is not an object literal takes its index and contributes no row, which keeps the positions of the elements after it the ones the author would count. Each field of the element becomes a column, all three nullable because an element may write only its name and because a NULL direction is what says the element takes the enclosing application''s, filling one in being a loss of which of the two the author wrote.'),
   ('graphitron_ast_input_value_binding_entry', 'sdl-declaration-site', 'document',
    'What a @field application on an input value says: the column this argument or input field binds to, as written.',
    'For example films(titleFilter: String @field(name: "title")) gives one row reading title.',

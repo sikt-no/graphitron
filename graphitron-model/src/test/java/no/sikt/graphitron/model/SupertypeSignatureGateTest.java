@@ -210,8 +210,8 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_input_value_reference_for_condition_step_entry",
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
                "graphitron_service_entry"),
-        Set.of("graphitron_ast_default_order_field_entry", "graphitron_default_order_field_entry",
-               "graphitron_order_field_entry"),
+        Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry",
+               "graphitron_default_order_field_entry", "graphitron_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
                "graphitron_ast_input_value_node_id_entry", "graphitron_field_node_id_entry"),
         Set.of("graphitron_argument_reference_for_entry",
@@ -237,11 +237,17 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
         // The field-site binding entry pairs with the enum-value anchor rather than with the field
         // anchor, which carries a folded twin of its one column and so shares no payload with
-        // anything. A pair the migration dissolves all the same, the enum-value site's own entry
-        // being what replaces the member that stays.
-        Set.of("graphitron_ast_field_binding_entry", "graphitron_ast_input_value_binding_entry",
+        // anything. The enum-value site's own entry has since arrived and joined them, which is the
+        // member that replaces the anchor when the migration dissolves the row.
+        Set.of("graphitron_ast_enum_value_binding_entry", "graphitron_ast_field_binding_entry",
+               "graphitron_ast_input_value_binding_entry",
                "graphitron_enum_value_binding_entry"),
         Set.of("graphitron_ast_pivot_entry", "graphitron_pivot_entry"),
+        // The enum-value site's two sorting pairs, on the terms every pair above is on: an
+        // as-written relation beside the resolved one it will be derived into, both coming off this
+        // roster together on the day that derivation lands.
+        Set.of("graphitron_ast_index_entry", "graphitron_index_entry"),
+        Set.of("graphitron_ast_order_entry", "graphitron_order_entry"),
         // One decode and three resolutions of it, and the payload is one column because a
         // deprecation carries one thing: the replacement hint. What differs is what was deprecated
         // and how the author said it, which is the key and the relation, not the payload. So this

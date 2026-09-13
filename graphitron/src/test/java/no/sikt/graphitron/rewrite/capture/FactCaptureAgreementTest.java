@@ -536,6 +536,14 @@ class FactCaptureAgreementTest {
             "graphitron_ast_input_value_reference_for_table_step_entry",
             "graphitron_ast_input_value_reference_for_condition_step_entry",
             "graphitron_ast_input_value_node_id_entry",
+            // And of an enum-value application, the sorting vocabulary read where it was written.
+            // Keyed by the position of the @ token like every entry above it, where GraphitronSchema
+            // holds one sort specification per enum value, so a value carrying two applications is
+            // two rows here and one reading there. GraphitronEnumValueEntriesTest pins them, over a
+            // corpus writing each of the three surfaces @order admits and a field list whose
+            // elements do not all decode.
+            "graphitron_ast_enum_value_binding_entry", "graphitron_ast_index_entry",
+            "graphitron_ast_order_entry", "graphitron_ast_order_field_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it,
             // at whichever of the three reading stages said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did

@@ -62,6 +62,8 @@ public final class GraphitronEntries {
             SdlEntries.directivesOnFields(document), touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source,
             SdlEntries.directivesOnInputValues(document), touchedAt);
+        GraphitronEnumValueEntries.write(dsl, graph, source,
+            SdlEntries.directivesOnEnumValues(document), touchedAt);
     }
 
     /**

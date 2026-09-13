@@ -967,7 +967,7 @@ public final class SdlEntries {
         return nested;
     }
 
-    private static List<Nested<Directive>> directivesOnEnumValues(TypeDefinitionRegistry document) {
+    static List<Nested<Directive>> directivesOnEnumValues(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         enumValues(document).forEach(value -> nest(nested, value.node(), value.node().getDirectives()));
         return nested;
