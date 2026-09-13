@@ -30,6 +30,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -210,20 +211,20 @@ class GraphitronInputValueEntriesTest {
             var keys = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
             var conditions = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_CONDITION_STEP_ENTRY;
 
-            assertThat(dsl.select(tables.POSITION, tables.TABLE_REF_NAMESPACE_PART,
+            assertThat(dsl.select(writtenAt(tables), tables.TABLE_REF_NAMESPACE_PART,
                         tables.TABLE_REF_NAME_PART)
-                    .from(tables).orderBy(tables.POSITION).fetch())
+                    .from(tables).orderBy(writtenAt(tables)).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .as("both elements name a table, each cut where the grammar cuts it")
                 .containsExactly(tuple(0, "sakila", "agency"), tuple(1, null, "actor"));
 
-            assertThat(dsl.select(keys.POSITION, keys.KEY_REF_NAMESPACE_PART, keys.KEY_REF_NAME_PART)
+            assertThat(dsl.select(writtenAt(keys), keys.KEY_REF_NAMESPACE_PART, keys.KEY_REF_NAME_PART)
                     .from(keys).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .as("only the second names a key, and it lands at that element's own position")
                 .containsExactly(tuple(1, "sakila", "actor_agency_fk"));
 
-            assertThat(dsl.select(conditions.POSITION, conditions.CLASS_NAME, conditions.METHOD,
+            assertThat(dsl.select(writtenAt(conditions), conditions.CLASS_NAME, conditions.METHOD,
                         conditions.ARGMAPPING)
                     .from(conditions).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3(),
@@ -294,10 +295,10 @@ class GraphitronInputValueEntriesTest {
                 .extracting(row -> row.value1(), row -> row.value2())
                 .as("null where the author wrote nothing, and what they wrote where they did")
                 .containsExactly(tuple("inScope", null), tuple(null, true));
-            assertThat(dsl.select(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY.POSITION,
+            assertThat(dsl.select(writtenAt(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY),
                         GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY.NAME)
                     .from(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY)
-                    .orderBy(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY.POSITION)
+                    .orderBy(writtenAt(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
                     .fetch())
                 .extracting(row -> row.value1(), row -> row.value2())
                 .as("the list argument keeps the order the author wrote")

@@ -62,7 +62,7 @@ final class GraphitronTypeEntries {
         records(dsl, graph, touchedAt, naming(applied(applications, "record"), "record"));
         var handlers = elementsOf(applied(applications, "error"), "handlers");
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
-            .filter(handler -> stringOf(inside(handler.value(), "className")) != null).toList());
+            .filter(handler -> stringOf(inside(handler.node(), "className")) != null).toList());
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
         validationHandlers(dsl, graph, touchedAt, ofKind(handlers, "VALIDATION"));
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
@@ -177,16 +177,15 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
+            handler -> SdlEntries.sourceName(handler.node()),
+            handler -> SdlEntries.sourceLine(handler.node()),
+            handler -> SdlEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT),
-            handler -> val(stringOf(inside(handler.value(), "className")), t.CLASS_NAME),
-            handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
-            handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
+            handler -> val(stringOf(inside(handler.node(), "className")), t.CLASS_NAME),
+            handler -> val(stringOf(inside(handler.node(), "matches")), t.MATCHES),
+            handler -> val(stringOf(inside(handler.node(), "description")), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.MATCHES, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -201,17 +200,16 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
+            handler -> SdlEntries.sourceName(handler.node()),
+            handler -> SdlEntries.sourceLine(handler.node()),
+            handler -> SdlEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT),
-            handler -> val(stringOf(inside(handler.value(), "code")), t.CODE),
-            handler -> val(stringOf(inside(handler.value(), "sqlState")), t.SQL_STATE),
-            handler -> val(stringOf(inside(handler.value(), "matches")), t.MATCHES),
-            handler -> val(stringOf(inside(handler.value(), "description")), t.DESCRIPTION)));
+            handler -> val(stringOf(inside(handler.node(), "code")), t.CODE),
+            handler -> val(stringOf(inside(handler.node(), "sqlState")), t.SQL_STATE),
+            handler -> val(stringOf(inside(handler.node(), "matches")), t.MATCHES),
+            handler -> val(stringOf(inside(handler.node(), "description")), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CODE, t.SQL_STATE, t.MATCHES, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -228,13 +226,12 @@ final class GraphitronTypeEntries {
         var t = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
-            handler -> SdlEntries.sourceName(handler.application()),
-            handler -> SdlEntries.sourceLine(handler.application()),
-            handler -> SdlEntries.sourceColumn(handler.application()),
-            handler -> val(handler.position(), t.POSITION),
+            handler -> SdlEntries.sourceName(handler.node()),
+            handler -> SdlEntries.sourceLine(handler.node()),
+            handler -> SdlEntries.sourceColumn(handler.node()),
             handler -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()

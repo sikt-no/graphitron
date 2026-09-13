@@ -187,14 +187,13 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
         var rows = writtenIn(applications, "contextArguments").stream().collect(Rows.toRowList(
             written -> val(graph, t.GRAPH_NAME),
-            written -> SdlEntries.sourceName(written.application()),
-            written -> SdlEntries.sourceLine(written.application()),
-            written -> SdlEntries.sourceColumn(written.application()),
-            written -> val(written.position(), t.POSITION),
+            written -> SdlEntries.sourceName(written.node()),
+            written -> SdlEntries.sourceLine(written.node()),
+            written -> SdlEntries.sourceColumn(written.node()),
             written -> val(touchedAt, t.TOUCHED_AT),
             written -> val(written.value(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -226,16 +225,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -250,16 +248,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -274,16 +271,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -298,16 +294,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.tableRef(), t.TABLE_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -322,16 +317,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.keyRef(), t.KEY_REF),
             step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
             step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -346,16 +340,15 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
         var rows = steps.stream().collect(Rows.toRowList(
             step -> val(graph, t.GRAPH_NAME),
-            step -> SdlEntries.sourceName(step.application()),
-            step -> SdlEntries.sourceLine(step.application()),
-            step -> SdlEntries.sourceColumn(step.application()),
-            step -> val(step.position(), t.POSITION),
+            step -> SdlEntries.sourceName(step.node()),
+            step -> SdlEntries.sourceLine(step.node()),
+            step -> SdlEntries.sourceColumn(step.node()),
             step -> val(touchedAt, t.TOUCHED_AT),
             step -> val(step.className(), t.CLASS_NAME),
             step -> val(step.method(), t.METHOD),
             step -> val(step.argMapping(), t.ARGMAPPING)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -394,14 +387,13 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
         var rows = writtenIn(applications, "contextArguments").stream().collect(Rows.toRowList(
             written -> val(graph, t.GRAPH_NAME),
-            written -> SdlEntries.sourceName(written.application()),
-            written -> SdlEntries.sourceLine(written.application()),
-            written -> SdlEntries.sourceColumn(written.application()),
-            written -> val(written.position(), t.POSITION),
+            written -> SdlEntries.sourceName(written.node()),
+            written -> SdlEntries.sourceLine(written.node()),
+            written -> SdlEntries.sourceColumn(written.node()),
             written -> val(touchedAt, t.TOUCHED_AT),
             written -> val(written.value(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -575,17 +567,16 @@ final class GraphitronFieldEntries {
         var t = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
         var rows = elementsOf(applications, "fields").stream().collect(Rows.toRowList(
             element -> val(graph, t.GRAPH_NAME),
-            element -> SdlEntries.sourceName(element.application()),
-            element -> SdlEntries.sourceLine(element.application()),
-            element -> SdlEntries.sourceColumn(element.application()),
-            element -> val(element.position(), t.POSITION),
+            element -> SdlEntries.sourceName(element.node()),
+            element -> SdlEntries.sourceLine(element.node()),
+            element -> SdlEntries.sourceColumn(element.node()),
             element -> val(touchedAt, t.TOUCHED_AT),
-            element -> val(stringOf(inside(element.value(), "name")), t.NAME_REF),
-            element -> val(stringOf(inside(element.value(), "collate")), t.COLLATE),
-            element -> val(GraphitronEntries.tokenOf(inside(element.value(), "direction")),
+            element -> val(stringOf(inside(element.node(), "name")), t.NAME_REF),
+            element -> val(stringOf(inside(element.node(), "collate")), t.COLLATE),
+            element -> val(GraphitronEntries.tokenOf(inside(element.node(), "direction")),
                 t.DIRECTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.TOUCHED_AT, t.NAME_REF, t.COLLATE, t.DIRECTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()

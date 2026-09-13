@@ -34,6 +34,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -568,21 +570,47 @@ public final class GraphitronAnchor {
      * one are the elements the author wrote, numbered from zero without a hole.
      *
      * <p>So the two strata agree about this number as they agree about the rows, and the statement
-     * says so by selecting {@code position} instead of ranking over it.
+     * says so by selecting the index instead of ranking over it. The index is the element's own,
+     * read off {@code graphql_ast_value_entry}: a decode states what an element meant and not where
+     * it sat, that being a fact the element already carries.
+     *
+     * <p>Reaching the element from the application is one join and not a walk down the value tree.
+     * {@code graphql_ast_value_entry} repeats the holder on every node of an expression, so every
+     * element of the list names the applied argument directly, and the decode is found from the
+     * element by the key it now carries.
+     *
+     * <p>An element with no index of its own is the one the author wrote without a list around it.
+     * GraphQL coerces a lone value to the list of one, so the argument's whole expression is that
+     * element, and a value at the root of an expression has no enclosing list to hold a position in.
+     * Index zero is what the coercion says it is, and stating it here is cheaper than a second
+     * relation for the one-element spelling.
      */
     private static void defaultOrderFields(DSLContext dsl, String graph) {
         var c = claimedOnField(dsl, graph, "defaultOrder");
         var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
+        var v = GRAPHQL_AST_VALUE_ENTRY;
+        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
         var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.NAME_REF, t.COLLATE,
                 t.DIRECTION)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    e.POSITION, e.NAME_REF, e.COLLATE, e.DIRECTION)
+                    coalesce(v.POSITION, inline(0)), e.NAME_REF, e.COLLATE, e.DIRECTION)
                 .from(c)
-                .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    graph, c))
+                .join(a).on(a.GRAPH_NAME.eq(graph))
+                    .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
+                    .and(a.PARENT_LINE.eq(c.field(SITE_LINE)))
+                    .and(a.PARENT_COLUMN.eq(c.field(SITE_COLUMN)))
+                    .and(a.NAME.eq("fields"))
+                .join(v).on(v.GRAPH_NAME.eq(graph))
+                    .and(v.SOURCE_NAME.eq(a.SOURCE_NAME))
+                    .and(v.HOLDER_LINE.eq(a.SOURCE_LINE))
+                    .and(v.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
+                .join(e).on(e.GRAPH_NAME.eq(graph))
+                    .and(e.SOURCE_NAME.eq(v.SOURCE_NAME))
+                    .and(e.SOURCE_LINE.eq(v.SOURCE_LINE))
+                    .and(e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
                 .where(c.field(RANK).eq(1)))
             .execute();
     }

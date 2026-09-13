@@ -143,45 +143,48 @@ public final class GraphitronEntries {
             .filter(a -> inside(a, argument, "className") != null).toList();
     }
 
-    /** One object literal of one application's list argument, at the index it was written at. */
-    record Element(Directive application, int position, ObjectValue value) {}
+    /**
+     * One object literal of one application's list argument.
+     *
+     * <p>The element itself, not the application and an index into it. Every element the author
+     * wrote is already a row of {@code graphql_ast_value_entry}, keyed by where it was written and
+     * carrying the index it sits at, so a decode of one names that row and restates neither.
+     */
+    record Element(Directive application, ObjectValue node) {}
 
     /**
-     * Every object literal in {@code argumentName} across {@code applications}, each with the index
-     * it was written at. An element that is not an object literal takes its index and contributes
-     * no row, so the indices of the ones after it are the ones the author would count.
+     * Every object literal in {@code argumentName} across {@code applications}.
+     *
+     * <p>No numbering. An element of some other shape contributes no row here and needs no index
+     * spoken for, the list it was written in having stated every element and its order already.
      */
     static List<Element> elementsOf(List<Directive> applications, String argumentName) {
         var elements = new ArrayList<Element>();
         for (Directive application : applications) {
-            int position = 0;
             for (Object written : list(application, argumentName)) {
                 if (written instanceof ObjectValue object) {
-                    elements.add(new Element(application, position, object));
+                    elements.add(new Element(application, object));
                 }
-                position++;
             }
         }
         return elements;
     }
 
-    /** One string of one application's list argument, at the index it was written at. */
-    record Written(Directive application, int position, String value) {}
+    /** One string of one application's list argument, on {@link Element}'s terms. */
+    record Written(Directive application, StringValue node) {
+        String value() {
+            return node.getValue();
+        }
+    }
 
-    /**
-     * Every string in {@code argumentName} across {@code applications}, numbered the way
-     * {@link #elementsOf} numbers object literals: an element of some other shape takes its index
-     * and contributes no row.
-     */
+    /** Every string in {@code argumentName} across {@code applications}. */
     static List<Written> writtenIn(List<Directive> applications, String argumentName) {
         var written = new ArrayList<Written>();
         for (Directive application : applications) {
-            int position = 0;
             for (Object element : list(application, argumentName)) {
                 if (element instanceof StringValue string) {
-                    written.add(new Written(application, position, string.getValue()));
+                    written.add(new Written(application, string));
                 }
-                position++;
             }
         }
         return written;
@@ -192,25 +195,25 @@ public final class GraphitronEntries {
      * element identically, and both are written at more than one site, so the decode is shared and
      * only the relation the rows land in differs.
      */
-    record Step(Directive application, int position, String tableRef, String keyRef,
+    record Step(Directive application, ObjectValue node, String tableRef, String keyRef,
                 String className, String method, String argMapping) {}
 
-    /** The path elements of {@code applications}, in the order each application wrote them. */
+    /** The path elements of {@code applications}, each naming the element it decodes. */
     static List<Step> steps(List<Directive> applications) {
         return elementsOf(applications, "path").stream()
-            .map(element -> new Step(element.application(), element.position(),
-                stringOf(inside(element.value(), "table")),
-                stringOf(inside(element.value(), "key")),
-                inside(element.value(), "condition", "className"),
-                inside(element.value(), "condition", "method"),
-                inside(element.value(), "condition", "argMapping")))
+            .map(element -> new Step(element.application(), element.node(),
+                stringOf(inside(element.node(), "table")),
+                stringOf(inside(element.node(), "key")),
+                inside(element.node(), "condition", "className"),
+                inside(element.node(), "condition", "method"),
+                inside(element.node(), "condition", "argMapping")))
             .toList();
     }
 
     /**
-     * A step writes to every relation the fields it carries warrant, at one position. An element
-     * naming a table and a key is a row in each, and the position is what says they are one step, so
-     * every relation stays total and no reader has to spell which combination it meant.
+     * A step writes to every relation the fields it carries warrant. An element naming a table and
+     * a key is a row in each, and both name the same element, so every relation stays total and no
+     * reader has to spell which combination it meant.
      *
      * <p>Here rather than at a site because both sites that carry a path split it the same way, and
      * a fact stated the same way at two sites is a fact a rule is written about once.
@@ -229,12 +232,12 @@ public final class GraphitronEntries {
 
     /**
      * The elements whose {@code handler} field names one kind. An element whose token is none of
-     * the kinds the directive declares lands in no relation, its list position spoken for and its
-     * text standing in the verbatim argument row.
+     * the kinds the directive declares lands in no relation, and it is still an element: the list
+     * it was written in holds it, in order, with its text in the verbatim argument row.
      */
     static List<Element> ofKind(List<Element> elements, String kind) {
         return elements.stream()
-            .filter(element -> kind.equals(tokenOf(inside(element.value(), "handler")))).toList();
+            .filter(element -> kind.equals(tokenOf(inside(element.node(), "handler")))).toList();
     }
 
     // ------------------------------------------------------------------- reading an argument

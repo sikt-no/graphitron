@@ -22,12 +22,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * anchor that replaces the walk has to recombine, and this is the case that says it can, before any
  * of it moves.
  *
- * <p><b>Why a recombination needs a spine.</b> No relation holds the element. Each of the three
- * holds only the elements that wrote its own fact, so the set of positions an application has is the
- * union of three sets and not the contents of any one of them. Every other anchor derived off this
- * stratum joins one entry relation to one coordinate; this is the first read where what a split
- * bought at the write has to be paid back, which is the whole reason the split is worth measuring
- * here rather than arguing about.
+ * <p><b>Where the element set comes from.</b> Not from the three relations. Each holds only the
+ * elements that wrote its own fact, so an element writing none of them is in none of them, and a
+ * set taken as their union is missing exactly those. The set is the argument's own value list,
+ * which {@code graphql_ast_value_entry} transcribes with no filtering at all: one row per element,
+ * in authored order, carrying the kind it was written as. So the spine is that list's children and
+ * the three relations are payload joined onto it by the element each decodes.
  *
  * <p><b>Two arms, not one relation with a site column.</b> {@code @reference} is admitted at three
  * SDL sites and the two strata cut them differently. The walk keys by graphql field, so an output
@@ -46,18 +46,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * replacing the ranking with the authored position leaves every case here green, where before the
  * rule it turned the second one red.
  *
- * <p><b>One divergence is live and neither numbering reaches it.</b> A path element may be legal
- * and still write no step row, {@code ReferenceElement} declaring every field optional, so
- * {@code @reference(path: [{table: "a"}, {}, {table: "b"}])} assembles and the bare element names
- * no table, no key and no condition. The walk writes three rows at 0, 1 and 2; the three step
- * relations hold 0 and 2 between them and the element at 1 appears in none of them. A spine built
- * from those relations therefore loses a row, which a rank turns into a renumbering and a copy
- * turns into a hole, both wrong and neither recoverable from the relations being read. What closes
- * it is a coordinate rather than arithmetic: the element is already a row of
- * {@code graphql_ast_value_entry}, in authored order and unfiltered, and a decode keyed by that
- * row can name an element that decoded to nothing. Until these relations carry that key the
- * comparison holds only for paths whose every element states at least one fact, which is what the
- * corpora here are.
+ * <p><b>The divergence a numbering could not reach is closed, by a key rather than by arithmetic.</b>
+ * A path element may be legal and still write no step row, {@code ReferenceElement} declaring every
+ * field optional, so {@code @reference(path: [{table: "a"}, {}, {table: "b"}])} assembles and the
+ * bare element names no table, no key and no condition. The walk writes three rows; the three step
+ * relations hold two between them and the element in the middle appears in none. No spine built
+ * from those relations can see it, so a rank renumbered around it and a copy left a hole. Keyed by
+ * the element, a decode can name one that decoded to nothing and the spine holds every element the
+ * author wrote, which is what lets the corpus below carry that shape and still agree.
  */
 class ReferenceStepRecombinationTest {
 
@@ -89,34 +85,32 @@ class ReferenceStepRecombinationTest {
      */
     private static String arm(String claim, String prefix) {
         return """
-            SELECT c.type_name, c.field_name, c.ordinal,
-                   p.position AS position,
+            SELECT c.type_name, c.field_name, c.ordinal, e.position,
                    t.table_ref, t.table_ref_namespace_part, t.table_ref_name_part,
                    k.key_ref, k.key_ref_namespace_part, k.key_ref_name_part,
                    d.class_name, d.method, d.argmapping
               FROM %1$s c
-              JOIN (SELECT source_name, source_line, source_column, position
-                      FROM %2$s_table_step_entry WHERE graph_name = ?
-                    UNION
-                    SELECT source_name, source_line, source_column, position
-                      FROM %2$s_key_step_entry WHERE graph_name = ?
-                    UNION
-                    SELECT source_name, source_line, source_column, position
-                      FROM %2$s_condition_step_entry WHERE graph_name = ?) p
-                ON p.source_name = c.site_name AND p.source_line = c.site_line
-               AND p.source_column = c.site_column
+              JOIN graphql_ast_applied_argument_entry ga
+                ON ga.graph_name = ? AND ga.source_name = c.site_name
+               AND ga.parent_line = c.site_line AND ga.parent_column = c.site_column
+               AND ga.name = 'path'
+              JOIN graphql_ast_value_entry lst
+                ON lst.graph_name = ? AND lst.source_name = ga.source_name
+               AND lst.holder_line = ga.source_line AND lst.holder_column = ga.source_column
+               AND lst.parent_line IS NULL
+              JOIN graphql_ast_value_entry e
+                ON e.graph_name = ? AND e.source_name = lst.source_name
+               AND e.parent_line = lst.source_line AND e.parent_column = lst.source_column
+               AND e.kind = 'OBJECT'
               LEFT JOIN %2$s_table_step_entry t
-                ON t.graph_name = ? AND t.source_name = p.source_name
-               AND t.source_line = p.source_line AND t.source_column = p.source_column
-               AND t.position = p.position
+                ON t.graph_name = ? AND t.source_name = e.source_name
+               AND t.source_line = e.source_line AND t.source_column = e.source_column
               LEFT JOIN %2$s_key_step_entry k
-                ON k.graph_name = ? AND k.source_name = p.source_name
-               AND k.source_line = p.source_line AND k.source_column = p.source_column
-               AND k.position = p.position
+                ON k.graph_name = ? AND k.source_name = e.source_name
+               AND k.source_line = e.source_line AND k.source_column = e.source_column
               LEFT JOIN %2$s_condition_step_entry d
-                ON d.graph_name = ? AND d.source_name = p.source_name
-               AND d.source_line = p.source_line AND d.source_column = p.source_column
-               AND d.position = p.position
+                ON d.graph_name = ? AND d.source_name = e.source_name
+               AND d.source_line = e.source_line AND d.source_column = e.source_column
             """.formatted(claim, prefix);
     }
 
@@ -234,6 +228,7 @@ class ReferenceStepRecombinationTest {
                   byAgency: ID
                     @reference(path: [{table: "agency"}])
                     @reference(path: [{table: "film"}, {table: "agency", key: "film_agency_fk"}])
+                  bare: ID @reference(path: [{table: "film"}, {}, {table: "agency"}])
                 }
                 type Actor { id: ID! }
                 """)) {
@@ -245,7 +240,9 @@ class ReferenceStepRecombinationTest {
             assertThat(rows(edge, RECOMBINED, 14))
                 .as("a repeated application is two ordinals, and it is two at an output field and "
                     + "at an input object's field alike, which is the pair of arms the union is "
-                    + "for")
+                    + "for. The bare element is the shape no spine over the step relations could "
+                    + "see: it decodes to nothing, and the element it was written as is what the "
+                    + "row is found by")
                 .containsExactlyElementsOf(rows(edge, WALKED, 1));
         }
     }

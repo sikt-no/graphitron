@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -144,13 +145,13 @@ class GraphitronFieldEntriesTest {
             assertThat(dsl.selectDistinct(table.SOURCE_LINE).from(table).fetch(table.SOURCE_LINE))
                 .as("the two applications sit at two positions, which is their whole identity here")
                 .hasSize(2);
-            assertThat(dsl.select(table.SOURCE_LINE, table.POSITION, table.TABLE_REF).from(table)
+            assertThat(dsl.select(table.SOURCE_LINE, writtenAt(table), table.TABLE_REF).from(table)
                     .orderBy(table.SOURCE_LINE).fetch())
                 .as("and each numbers its own path from zero, the index being the author's order "
                     + "inside one application rather than across the field")
                 .extracting(r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "film_actor"), tuple(0, "actor"));
-            assertThat(dsl.select(key.SOURCE_LINE, key.POSITION, key.KEY_REF).from(key).fetch())
+            assertThat(dsl.select(key.SOURCE_LINE, writtenAt(key), key.KEY_REF).from(key).fetch())
                 .as("only the element that named a key is a row here, and it carries the position "
                     + "of the table row it shares an element with")
                 .extracting(r -> r.value2(), r -> r.value3())
@@ -182,17 +183,17 @@ class GraphitronFieldEntriesTest {
             var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
             var condition = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
 
-            assertThat(dsl.select(table.POSITION, table.TABLE_REF_NAMESPACE_PART,
+            assertThat(dsl.select(writtenAt(table), table.TABLE_REF_NAMESPACE_PART,
                         table.TABLE_REF_NAME_PART).from(table).fetch())
                 .as("the table it named, cut where the grammar cuts it")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "sakila", "actor"));
-            assertThat(dsl.select(key.POSITION, key.KEY_REF_NAMESPACE_PART, key.KEY_REF_NAME_PART)
+            assertThat(dsl.select(writtenAt(key), key.KEY_REF_NAMESPACE_PART, key.KEY_REF_NAME_PART)
                     .from(key).fetch())
                 .as("the constraint it named, at the same position")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "public", "film_actor_fk"));
-            assertThat(dsl.select(condition.POSITION, condition.CLASS_NAME, condition.METHOD)
+            assertThat(dsl.select(writtenAt(condition), condition.CLASS_NAME, condition.METHOD)
                     .from(condition).fetch())
                 .as("and the condition it named, at the same position again; three relations, one "
                     + "element, and nothing nullable to say which of them applied")
@@ -253,7 +254,7 @@ class GraphitronFieldEntriesTest {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
             var arg = GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
-            assertThat(dsl.select(arg.POSITION, arg.NAME).from(arg).fetch())
+            assertThat(dsl.select(writtenAt(arg), arg.NAME).from(arg).fetch())
                 .as("both elements, at the indices the author wrote them at")
                 .extracting(r -> r.value1(), r -> r.value2())
                 .containsExactlyInAnyOrder(tuple(0, "tenantId"), tuple(1, "localeId"));
@@ -271,7 +272,7 @@ class GraphitronFieldEntriesTest {
 
             assertThat(dsl.fetchCount(GRAPHITRON_AST_SERVICE_ENTRY))
                 .as("the application is still there, so nothing cascaded").isEqualTo(1);
-            assertThat(dsl.select(arg.POSITION, arg.NAME).from(arg).fetch())
+            assertThat(dsl.select(writtenAt(arg), arg.NAME).from(arg).fetch())
                 .as("and the element the author dropped is not a fact any more, which only this "
                     + "writer's own sweep could have found")
                 .extracting(r -> r.value1(), r -> r.value2())

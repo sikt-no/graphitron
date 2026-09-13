@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -131,8 +132,8 @@ class GraphitronEnumValueEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 
-            assertThat(dsl.select(t.POSITION, t.NAME_REF, t.COLLATE).from(t)
-                    .orderBy(t.POSITION).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME_REF, t.COLLATE).from(t)
+                    .orderBy(writtenAt(t)).fetch())
                 .as("both elements, at the indices the author wrote them at")
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .containsExactly(
@@ -170,7 +171,7 @@ class GraphitronEnumValueEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 
-            assertThat(dsl.select(t.POSITION, t.NAME_REF).from(t).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME_REF).from(t).fetch())
                 .as("the legal element is withheld with the illegal one, the application being the "
                     + "unit the definition admits or does not")
                 .isEmpty();

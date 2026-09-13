@@ -20,6 +20,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -64,7 +65,7 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
-            assertThat(dsl.select(t.POSITION, t.NAME, t.ALIAS).from(t).orderBy(t.POSITION).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME, t.ALIAS).from(t).orderBy(writtenAt(t)).fetch())
                 .as("a bare name, an aliased object and a bare name after it, at their own indices")
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .containsExactly(
@@ -147,7 +148,7 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
-            assertThat(dsl.select(t.POSITION, t.NAME).from(t).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME).from(t).fetch())
                 .as("the object naming nothing writes no row, and the name after it is still at 1")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple(1, "@key"));

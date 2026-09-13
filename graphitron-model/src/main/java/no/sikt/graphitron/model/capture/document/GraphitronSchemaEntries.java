@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
+import graphql.language.Node;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
@@ -94,16 +95,15 @@ final class GraphitronSchemaEntries {
         var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
         var rows = importsOf(applications).stream().collect(Rows.toRowList(
             entry -> val(graph, t.GRAPH_NAME),
-            entry -> SdlEntries.sourceName(entry.application()),
-            entry -> SdlEntries.sourceLine(entry.application()),
-            entry -> SdlEntries.sourceColumn(entry.application()),
-            entry -> val(entry.position(), t.POSITION),
+            entry -> SdlEntries.sourceName(entry.node()),
+            entry -> SdlEntries.sourceLine(entry.node()),
+            entry -> SdlEntries.sourceColumn(entry.node()),
             entry -> val(touchedAt, t.TOUCHED_AT),
             entry -> val(entry.name(), t.NAME),
             entry -> val(entry.alias(), t.ALIAS)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.POSITION, t.TOUCHED_AT, t.NAME, t.ALIAS)
+                    t.TOUCHED_AT, t.NAME, t.ALIAS)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -112,30 +112,28 @@ final class GraphitronSchemaEntries {
     }
 
     /** One import, whichever of the two spellings the author reached for. */
-    private record Import(Directive application, int position, String name, String alias) {}
+    private record Import(Directive application, Node<?> node, String name, String alias) {}
 
     /**
      * Every import of every application, in the order each was written.
      *
-     * <p>The two spellings arrive as two lists because the facade reads one shape per call, and the
-     * position each element carries is what puts them back together: an element occupies its index
-     * whichever spelling it took, so merging on position restores the author's order without either
-     * list knowing about the other. An element that named nothing contributes no row and keeps its
-     * index all the same, which is what the two readings already do to anything they do not
-     * recognise.
+     * <p>The two spellings arrive as two lists because the facade reads one shape per call, and each
+     * row names the element it decodes, so the two lists need nothing to put them back together: an
+     * element is one node whichever spelling it took, and the order they were written in is the
+     * list's own rather than something either reading has to carry.
      */
     private static List<Import> importsOf(List<Directive> applications) {
         var imports = new ArrayList<Import>();
         for (var written : writtenIn(applications, "import")) {
-            imports.add(new Import(written.application(), written.position(), written.value(), null));
+            imports.add(new Import(written.application(), written.node(), written.value(), null));
         }
         for (var element : elementsOf(applications, "import")) {
-            String name = stringOf(inside(element.value(), "name"));
+            String name = stringOf(inside(element.node(), "name"));
             if (name == null) {
                 continue;
             }
-            imports.add(new Import(element.application(), element.position(), name,
-                stringOf(inside(element.value(), "as"))));
+            imports.add(new Import(element.application(), element.node(), name,
+                stringOf(inside(element.node(), "as"))));
         }
         return imports;
     }

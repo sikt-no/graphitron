@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -148,18 +149,18 @@ class GraphitronTypeEntriesTest {
             var validation = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
             var generic = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 
-            assertThat(dsl.select(database.POSITION, database.CODE, database.SQL_STATE)
+            assertThat(dsl.select(writtenAt(database), database.CODE, database.SQL_STATE)
                     .from(database).fetch())
                 .as("one discriminator written, the other absent, and no column for a class name")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "23505", null));
 
-            assertThat(dsl.select(validation.POSITION).from(validation)
-                    .fetch(validation.POSITION))
+            assertThat(dsl.select(writtenAt(validation)).from(validation)
+                    .fetch(writtenAt(validation)))
                 .as("the position is the whole row, this kind carrying nothing the directive allows")
                 .containsExactly(1);
 
-            assertThat(dsl.select(generic.POSITION, generic.CLASS_NAME, generic.DESCRIPTION)
+            assertThat(dsl.select(writtenAt(generic), generic.CLASS_NAME, generic.DESCRIPTION)
                     .from(generic).fetch())
                 .as("and the index is the author's order across all three, not a count per kind")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())

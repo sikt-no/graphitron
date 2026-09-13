@@ -141,18 +141,17 @@ final class GraphitronEnumValueEntries {
         var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
         var rows = elementsOf(applications, "fields").stream().collect(Rows.toRowList(
             element -> val(graph, t.GRAPH_NAME),
-            element -> SdlEntries.sourceName(element.application()),
-            element -> SdlEntries.sourceLine(element.application()),
-            element -> SdlEntries.sourceColumn(element.application()),
-            element -> val(element.position(), t.POSITION),
+            element -> SdlEntries.sourceName(element.node()),
+            element -> SdlEntries.sourceLine(element.node()),
+            element -> SdlEntries.sourceColumn(element.node()),
             element -> val(touchedAt, t.TOUCHED_AT),
-            element -> val(stringOf(inside(element.value(), "name")), t.NAME_REF),
-            element -> val(stringOf(inside(element.value(), "collate")), t.COLLATE),
-            element -> val(GraphitronEntries.tokenOf(inside(element.value(), "direction")),
+            element -> val(stringOf(inside(element.node(), "name")), t.NAME_REF),
+            element -> val(stringOf(inside(element.node(), "collate")), t.COLLATE),
+            element -> val(GraphitronEntries.tokenOf(inside(element.node(), "direction")),
                 t.DIRECTION)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.POSITION, t.TOUCHED_AT, t.NAME_REF, t.COLLATE, t.DIRECTION)
+                    t.TOUCHED_AT, t.NAME_REF, t.COLLATE, t.DIRECTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))

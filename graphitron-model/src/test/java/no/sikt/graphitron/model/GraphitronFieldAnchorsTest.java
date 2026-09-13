@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -75,8 +76,8 @@ class GraphitronFieldAnchorsTest {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
             var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-            assertThat(dsl.select(e.POSITION, e.NAME_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(e.POSITION).fetch().map(Record::intoList))
+            assertThat(dsl.select(writtenAt(e), e.NAME_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
+                    .orderBy(writtenAt(e)).fetch().map(Record::intoList))
                 .as("the entry keeps every element where the author wrote it")
                 .containsExactly(List.of(0, "title"), List.of(1, "released"),
                     List.of(2, "rating"));
