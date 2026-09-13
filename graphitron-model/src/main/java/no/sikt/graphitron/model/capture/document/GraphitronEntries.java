@@ -3,11 +3,19 @@ package no.sikt.graphitron.model.capture.document;
 import graphql.language.ArrayValue;
 import graphql.language.BooleanValue;
 import graphql.language.Directive;
+import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValue;
+import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InterfaceTypeDefinition;
 import graphql.language.IntValue;
+import graphql.language.NullValue;
+import graphql.language.Node;
 import graphql.language.ObjectField;
+import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectValue;
+import graphql.language.ScalarTypeDefinition;
 import graphql.language.StringValue;
+import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
@@ -57,15 +65,62 @@ public final class GraphitronEntries {
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
         GraphitronTypeEntries.write(dsl, graph, source,
-            SdlEntries.directivesOnTypes(document), touchedAt);
+            admittedOnTypes(SdlEntries.directivesOnTypes(document)), touchedAt);
         GraphitronFieldEntries.write(dsl, graph, source,
-            SdlEntries.directivesOnFields(document), touchedAt);
+            admittedOnFields(SdlEntries.directivesOnFields(document)), touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source,
             SdlEntries.directivesOnInputValues(document), touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source,
             SdlEntries.directivesOnEnumValues(document), touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source,
             SdlEntries.directivesOnSchemas(document), touchedAt);
+    }
+
+    /**
+     * The type-site applications the directive definition admits. Its location is the declaration's
+     * kind, which the collector keeps as the parent node, an extension node class being a subclass
+     * of the base's so the two share a location as they share a kind.
+     */
+    private static List<SdlEntries.Nested<Directive>> admittedOnTypes(
+        List<SdlEntries.Nested<Directive>> applications
+    ) {
+        var admitted = new ArrayList<SdlEntries.Nested<Directive>>();
+        for (SdlEntries.Nested<Directive> nested : applications) {
+            if (DirectiveLegality.admits(nested.node(), locationOf(nested.parent()))) {
+                admitted.add(nested);
+            }
+        }
+        return admitted;
+    }
+
+    /** The field-site applications the definition admits; one site, so one location. */
+    private static List<SdlEntries.Nested<Directive>> admittedOnFields(
+        List<SdlEntries.Nested<Directive>> applications
+    ) {
+        var admitted = new ArrayList<SdlEntries.Nested<Directive>>();
+        for (SdlEntries.Nested<Directive> nested : applications) {
+            if (DirectiveLegality.admits(nested.node(), "FIELD_DEFINITION")) {
+                admitted.add(nested);
+            }
+        }
+        return admitted;
+    }
+
+    /**
+     * The SDL directive location a declaration offers, spelled as a directive definition spells it.
+     * The six kinds are every kind the type site collects, so the fallback is unreachable and says
+     * so by declining to judge rather than by refusing.
+     */
+    private static String locationOf(Node<?> declaration) {
+        return switch (declaration) {
+            case ObjectTypeDefinition ignored -> "OBJECT";
+            case InterfaceTypeDefinition ignored -> "INTERFACE";
+            case UnionTypeDefinition ignored -> "UNION";
+            case EnumTypeDefinition ignored -> "ENUM";
+            case ScalarTypeDefinition ignored -> "SCALAR";
+            case InputObjectTypeDefinition ignored -> "INPUT_OBJECT";
+            default -> null;
+        };
     }
 
     /**
@@ -267,11 +322,24 @@ public final class GraphitronEntries {
     }
 
     /**
-     * The elements of an argument written as a list, or none where it was written as anything else.
-     * Wildcarded because graphql-java hands them back raw and nothing here needs the element type.
+     * The elements of a list argument, where a lone value is a list of one. Wildcarded because
+     * graphql-java hands them back raw and nothing here needs the element type.
+     *
+     * <p>The specification coerces a single value into a one-element list, so
+     * {@code fields: {name: "title"}} and {@code fields: [{name: "title"}]} are the same application
+     * written two ways and assembly accepts both. Reading only the bracketed spelling transcribed
+     * nothing for the other, which is a legal schema whose facts the store did not hold.
+     *
+     * <p>An explicit null is no elements rather than one null element: an author writing the literal
+     * has written an empty list, not a list containing nothing.
      */
     private static List<?> list(Directive application, String name) {
-        return argument(application, name) instanceof ArrayValue array ? array.getValues() : List.of();
+        return switch (argument(application, name)) {
+            case null -> List.of();
+            case NullValue ignored -> List.of();
+            case ArrayValue array -> array.getValues();
+            case Value<?> lone -> List.of(lone);
+        };
     }
 
     /** A written string, or null where the value is any other shape. */

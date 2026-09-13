@@ -2434,7 +2434,7 @@ CREATE TABLE graphitron_ast_default_order_field_entry (
   source_column INT     NOT NULL,
   position      INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  name_ref      VARCHAR,
+  name_ref      VARCHAR NOT NULL,
   collate       VARCHAR,
   direction     VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
@@ -2448,9 +2448,9 @@ COMMENT ON COLUMN graphitron_ast_default_order_field_entry.graph_name IS 'the ow
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_line IS 'source line of the at sign of the @defaultOrder this element was written inside, 1-based';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_column IS 'source column of the same. The four columns key the application''s own row in the relation beside this one, which is what this element hangs off';
-COMMENT ON COLUMN graphitron_ast_default_order_field_entry.position IS '0-based position in the list as written, which is the sort order the author wrote. An element of some other shape takes its index and contributes no row, so the indices of the ones after it are the ones the author would count';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.position IS '0-based position in the list as written, which is the sort order the author wrote. The indices are dense: FieldSort is the element type the directive definition declares, so an element of some other shape makes the whole application one the definition does not admit and none of it is transcribed';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_default_order_field_entry.name_ref IS 'the name field of the element as written, naming a column of the jOOQ table';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.name_ref IS 'the name field of the element as written, naming a column of the jOOQ table. NOT NULL because FieldSort declares name as String!, so an element without one is not a FieldSort and its application is not transcribed; the constraint is the directive definition, enforced';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.collate IS 'the collate field of the same, as written, or NULL where none was; a collation name is database-specific and resolves against nothing here';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.direction IS 'the direction field of the same, as the author spelled it, or NULL where none was. A NULL is what says the element takes the directive-level direction, so nothing is filled in for it here';
 

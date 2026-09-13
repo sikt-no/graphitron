@@ -557,42 +557,33 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The fields that ordering sorts by, in order, and this is the one place the two strata do not
-     * agree about a number. The entry numbers an element by where it was written, so an element of
-     * the wrong shape takes its index and contributes no row; the anchor numbers the rows it holds,
-     * densely from zero, which is what the walk this replaces did by counting as it wrote. So the
-     * position is ranked again here rather than copied, over the entry's own order.
+     * The fields that ordering sorts by, in order, with the order copied rather than recomputed.
      *
-     * <p>Which is right is a question about the relation rather than about this statement. Dense
-     * numbering loses where the author wrote the element, and nothing downstream reads the gap
-     * today. The anchor keeps what its readers have, and the entry keeps what the author wrote,
-     * which is the division of labour the two strata are for.
+     * <p>It used to be ranked again here. The entry numbers an element by where it was written, and
+     * an element the decode could not use took its index and contributed no row, so the anchor
+     * renumbered densely from zero to close the gap, which is what the walk this replaces did by
+     * counting as it wrote. Under the rule that an entry holds what the directive definition
+     * admits, that gap cannot open: an element of the wrong shape or missing its required name is
+     * not a {@code FieldSort}, so its whole application is refused and the elements of an admitted
+     * one are the elements the author wrote, numbered from zero without a hole.
      *
-     * <p>An element naming no field is dropped before the ranking, the anchor's name being NOT
-     * NULL, so the dense positions close over it exactly as the walk's counter did.
+     * <p>So the two strata agree about this number as they agree about the rows, and the statement
+     * says so by selecting {@code position} instead of ranking over it.
      */
     private static void defaultOrderFields(DSLContext dsl, String graph) {
         var c = claimedOnField(dsl, graph, "defaultOrder");
         var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
         var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-        var ranked = dsl
-            .select(c.field(TYPE_NAME), c.field(FIELD_NAME), e.NAME_REF, e.COLLATE, e.DIRECTION,
-                rowNumber().over(partitionBy(c.field(TYPE_NAME), c.field(FIELD_NAME))
-                    .orderBy(e.POSITION.asc())).minus(inline(1)).as(WRITTEN_AT))
-            .from(c)
-            .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                graph, c))
-            .where(c.field(RANK).eq(1))
-            .and(e.NAME_REF.isNotNull())
-            .asTable("ordered");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.NAME_REF, t.COLLATE,
                 t.DIRECTION)
             .select(dsl
-                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME), ranked.field(FIELD_NAME),
-                    ranked.field(WRITTEN_AT), ranked.field(e.NAME_REF), ranked.field(e.COLLATE),
-                    ranked.field(e.DIRECTION))
-                .from(ranked))
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
+                    e.POSITION, e.NAME_REF, e.COLLATE, e.DIRECTION)
+                .from(c)
+                .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
+                    graph, c))
+                .where(c.field(RANK).eq(1)))
             .execute();
     }
 

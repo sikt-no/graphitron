@@ -38,32 +38,38 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>What the cases are about is the same two things the type site's are, plus one the field site
  * adds. The choosing, which here has to reach through two declarations to find merge order. The
- * absence, where a join's polarity is the relation's own shape. And the renumbering, which is the
- * one place the two strata disagree about a value rather than about a row.
+ * absence, where a join's polarity is the relation's own shape. And the ordering, which is the one
+ * value the two strata have to agree about rather than a row one of them declines.
  */
 class GraphitronFieldAnchorsTest {
 
     private static final String GRAPH = "field-anchors";
 
     /**
-     * The renumbering, and it is the case worth having most. An element the decode refused keeps its
-     * written index in the entry and takes no row in the anchor, so the anchor's positions have to
-     * close over the gap: that is what the walk did by counting as it wrote, and a derivation that
-     * copied the entry's index would leave a hole no reader expects.
+     * The ordering, which is a value the two strata have to agree about rather than a row one of
+     * them declines. An element's position is the index the author wrote it at, and the anchor
+     * states the same index, so a reader sorting by it sorts the way the schema reads.
+     *
+     * <p>It used to be more than that. The entry admitted an element naming no field, the anchor
+     * dropped it, and the anchor renumbered what was left so the gap closed. Under the rule that an
+     * entry holds what the directive definition admits, a nameless element is not an element of a
+     * {@code FieldSort} list and its whole application is not transcribed, so no gap can open and
+     * the anchor copies the index rather than recomputing it. {@code EntryLegalityTest} holds the
+     * case this one used to.
      */
     @Test
-    @DisplayName("an unusable order element leaves no gap in the positions the anchor states")
-    void theAnchorsPositionsCloseOverARefusedElement(@TempDir Path tmp) {
+    @DisplayName("the anchor states the index the author wrote each order element at")
+    void theAnchorKeepsTheWrittenPositions(@TempDir Path tmp) {
         write(tmp, "corpus.graphqls", """
             type Query {
               films: [Film!]
                 @defaultOrder(fields: [
                   {name: "title"},
-                  {collate: "xdanish_ai"},
-                  {name: "released", direction: DESC}
+                  {name: "released", direction: DESC},
+                  {name: "rating", collate: "xdanish_ai"}
                 ])
             }
-            type Film { title: String, released: String }
+            type Film { title: String, released: String, rating: String }
             """);
 
         withSeededStore(GRAPH, dsl -> {
@@ -71,17 +77,17 @@ class GraphitronFieldAnchorsTest {
             var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
             assertThat(dsl.select(e.POSITION, e.NAME_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
                     .orderBy(e.POSITION).fetch().map(Record::intoList))
-                .as("the entry keeps every element where the author wrote it, the middle one "
-                    + "naming no field and still occupying index 1")
-                .containsExactly(List.of(0, "title"), Arrays.asList(1, null),
-                    List.of(2, "released"));
+                .as("the entry keeps every element where the author wrote it")
+                .containsExactly(List.of(0, "title"), List.of(1, "released"),
+                    List.of(2, "rating"));
 
             var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
             assertThat(dsl.select(t.POSITION, t.NAME_REF).from(t).where(t.GRAPH_NAME.eq(GRAPH))
                     .orderBy(t.POSITION).fetch().map(Record::intoList))
-                .as("and the anchor numbers the rows it holds, densely, so the second usable "
-                    + "element is at 1 rather than at 2")
-                .containsExactly(List.of(0, "title"), List.of(1, "released"));
+                .as("and the anchor states the same indices, the two strata agreeing about the "
+                    + "order as they agree about the rows")
+                .containsExactly(List.of(0, "title"), List.of(1, "released"),
+                    List.of(2, "rating"));
         });
     }
 
