@@ -18,12 +18,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -236,6 +239,60 @@ class GraphitronTypeEntriesTest {
                 .as("one application, at the position the other one had").isEqualTo(1);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_TABLE_ENTRY))
                 .as("and the binding it replaced is not a fact any more").isZero();
+        });
+    }
+
+
+    /**
+     * The directive documents an omitted {@code typeId} as meaning the type's own name. That
+     * substitution is a reading of the document and not a fact of it, so the column stays NULL: a
+     * reader wanting the effective value joins the declaration, and this is the only place that can
+     * still say the author did not choose one.
+     */
+    @Test
+    @DisplayName("an omitted typeId stays NULL rather than becoming the type's name")
+    void anOmittedTypeIdIsNotDefaulted(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", """
+            type Film @node(typeId: "F") { title: String }
+            type Actor @node { name: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var t = GRAPHITRON_AST_NODE_ENTRY;
+
+            assertThat(dsl.select(t.TYPE_ID).from(t).orderBy(t.SOURCE_LINE).fetch(t.TYPE_ID))
+                .as("what the author wrote, and the absence of a choice as an absence")
+                .containsExactly("F", null);
+        });
+    }
+
+    /**
+     * Both arguments are optional and the key-column list is the child relation, so a row is
+     * written per application: a bare application is the fact that the type is addressable, and an
+     * absent list is the author asking for the database's own key in the order the database has it,
+     * which is a different fact from naming that same key.
+     */
+    @Test
+    @DisplayName("the key columns keep the order they were written in, and absence is not emptiness")
+    void theKeyColumnsKeepTheirWrittenOrder(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", """
+            type Film @node(typeId: "F", keyColumns: ["film_id", "language_id"]) { title: String }
+            type Actor @node(typeId: "A") { name: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var t = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+
+            assertThat(dsl.select(writtenAt(t), t.COLUMN_REF).from(t).orderBy(writtenAt(t)).fetch())
+                .as("the columns in the order the id takes them")
+                .extracting(row -> row.value1(), row -> row.value2())
+                .containsExactly(tuple(0, "film_id"), tuple(1, "language_id"));
+
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_NODE_ENTRY))
+                .as("and both applications are rows, the second naming no columns at all")
+                .isEqualTo(2);
         });
     }
 

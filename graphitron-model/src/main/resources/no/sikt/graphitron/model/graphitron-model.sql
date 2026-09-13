@@ -2885,6 +2885,48 @@ COMMENT ON COLUMN graphitron_ast_link_import_entry.touched_at IS 'when the readi
 COMMENT ON COLUMN graphitron_ast_link_import_entry.name IS 'the name the element imports, taken from the element itself where it was written as a bare string and from its name field where it was written as an object. NOT NULL because it is the element''s whole identity: an element that named nothing imports nothing, and the applied-directive row already says the @link was applied';
 COMMENT ON COLUMN graphitron_ast_link_import_entry.alias IS 'the local name the element binds the import to, from an object element''s as field, NULL on a bare string and on an object that wrote none. NULL is the fact that the import keeps its own name rather than a default filled in here';
 
+CREATE TABLE graphitron_ast_node_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  type_id       VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_node_entry IS 'What a @node application says: that the type is addressable by an opaque id, and what it calls itself inside one, as written. For example type Film @node(typeId: "F") gives one row whose type_id is F.';
+COMMENT ON COLUMN graphitron_ast_node_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_node_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_node_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_node_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_node_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_entry.type_id IS 'the typeId argument decoded to the string the author wrote, or NULL where they wrote none or wrote something that is not a string. NULL is the fact that the author left it out, which the directive documents as meaning the type''s own name; substituting the name here would lose which of the two they wrote';
+
+CREATE TABLE graphitron_ast_node_keycolumn_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  column_ref    VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_node_keycolumn_entry IS 'One keyColumns element of a @node application, as written. For example keyColumns: ["film_id"] gives one row, keyed where film_id was written.';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_line IS 'source line the element was written at, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry; which application holds it, and where in the list it sits, are that row''s to say';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the columns together are a key, are questions for a resolution and not for this row';
+
 CREATE TABLE graphitron_deprecated_directive (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
@@ -13506,6 +13548,14 @@ INSERT INTO meta_relation VALUES
    'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
+  ('graphitron_ast_node_entry', 'sdl-declaration-site', 'document',
+   'What a @node application says: that the type is addressable by an opaque id, and what it calls itself inside one, as written.',
+   'For example type Film @node(typeId: "F") gives one row whose type_id is F.',
+   'A decode of one directive application, keyed by the application''s own position. A row is written for every application rather than only for those that wrote an argument, both arguments being optional and the key-column list being the child relation its elements hang off. The type id is kept as written and never defaulted: the directive documents an omitted typeId as meaning the type''s own name, and that substitution is a reading of the document rather than a fact of it, so a reader wanting the effective value joins the declaration and a reader wanting to know what the author chose asks this column.'),
+  ('graphitron_ast_node_keycolumn_entry', 'sdl-written-value', 'document',
+   'One keyColumns element of a @node application, as written.',
+   'For example keyColumns: ["film_id"] gives one row, keyed where film_id was written.',
+   'A list argument becomes rows rather than a column, and the row names the element it decodes rather than the application and an index into it. The order matters here as much as anywhere in the family, the directive stating that the positions are the order the columns take inside an id, and that is exactly why this relation does not restate it: the element''s own row carries its index already, and a second numbering would be a number a reader could only trust by reconstructing the list it came from. The list is optional, and its absence is the author asking for the database''s own primary key in the order the database has it, which is why an omitted list writes no row rather than a defaulted set. Every element is a string because the definition admits nothing else, an application writing anything else being refused before it reaches a decode at all.'),
   ('graphitron_ast_link_entry', 'sdl-declaration-site', 'document',
    'What a federation @link application says: the specification the schema opts in to, as written.',
    'For example a schema extension applying @link with federation v2.10 as its url argument gives one row carrying that string.',

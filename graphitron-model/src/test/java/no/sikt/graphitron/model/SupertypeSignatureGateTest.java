@@ -253,6 +253,11 @@ class SupertypeSignatureGateTest {
         // the position of the at sign the ordinal would sort by.
         Set.of("graphitron_ast_link_entry", "graphitron_link_entry"),
         Set.of("graphitron_ast_link_import_entry", "graphitron_link_import_entry"),
+        // @node's key columns, which pair the same way. Only the child does: the anchor above it
+        // carries the declaration site the application was written on as four columns of its own,
+        // where the entry carries that by being keyed at the position, so the two share no payload
+        // and this tranche has one row for @node rather than two.
+        Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
         // One decode and three resolutions of it, and the payload is one column because a
         // deprecation carries one thing: the replacement hint. What differs is what was deprecated
         // and how the author said it, which is the key and the relation, not the payload. So this
