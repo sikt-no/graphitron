@@ -39,11 +39,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * statement with the site as a predicate, which is what keeps a row from having to say which arm
  * could have produced it.
  *
- * <p><b>The position is ranked again rather than copied.</b> The entry numbers an element where the
- * author wrote it in the list. The walk numbers the elements it could decode, densely, having
- * incremented its counter only after writing a row. The two agree on every application whose
- * elements all decode and disagree on any that has a gap, so copying the entry's number would be
- * copying a different fact under the same name.
+ * <p><b>The position is copied, because the ranking was closing a gap that no longer occurs and
+ * could never close the one that does.</b> It was there because an element the decode could not
+ * read spent its index, leaving the entry numbering ahead of the walk's; an element like that is
+ * now refused with its whole application, so that gap is gone. Measured rather than assumed:
+ * replacing the ranking with the authored position leaves every case here green, where before the
+ * rule it turned the second one red.
+ *
+ * <p><b>One divergence is live and neither numbering reaches it.</b> A path element may be legal
+ * and still write no step row, {@code ReferenceElement} declaring every field optional, so
+ * {@code @reference(path: [{table: "a"}, {}, {table: "b"}])} assembles and the bare element names
+ * no table, no key and no condition. The walk writes three rows at 0, 1 and 2; the three step
+ * relations hold 0 and 2 between them and the element at 1 appears in none of them. A spine built
+ * from those relations therefore loses a row, which a rank turns into a renumbering and a copy
+ * turns into a hole, both wrong and neither recoverable from the relations being read. What closes
+ * it is a coordinate rather than arithmetic: the element is already a row of
+ * {@code graphql_ast_value_entry}, in authored order and unfiltered, and a decode keyed by that
+ * row can name an element that decoded to nothing. Until these relations carry that key the
+ * comparison holds only for paths whose every element states at least one fact, which is what the
+ * corpora here are.
  */
 class ReferenceStepRecombinationTest {
 
@@ -76,8 +90,7 @@ class ReferenceStepRecombinationTest {
     private static String arm(String claim, String prefix) {
         return """
             SELECT c.type_name, c.field_name, c.ordinal,
-                   ROW_NUMBER() OVER (PARTITION BY c.type_name, c.field_name, c.ordinal
-                                      ORDER BY p.position) - 1 AS position,
+                   p.position AS position,
                    t.table_ref, t.table_ref_namespace_part, t.table_ref_name_part,
                    k.key_ref, k.key_ref_namespace_part, k.key_ref_name_part,
                    d.class_name, d.method, d.argmapping
@@ -169,6 +182,11 @@ class ReferenceStepRecombinationTest {
             + " UNION ALL "
             + arm(CLAIMED_INPUT_FIELD, "graphitron_ast_input_value_reference");
 
+    /** The corpus assembled, which is the scope every comparison here is made in. */
+    private static final String PROBLEMS = """
+        SELECT stage, error_class FROM graphql_schema_problem WHERE graph_name = ?
+        """;
+
     private static List<String> rows(String sql, int binds) {
         return rows(store(), sql, binds);
     }
@@ -192,18 +210,18 @@ class ReferenceStepRecombinationTest {
      * while the walk increments only after writing a row. Every position in the shared fixture
      * decodes, so the two numberings coincide there and the ranking is never exercised by it.
      *
-     * <p>The gap is written on an input object's field, and it has to be. {@code DirectiveLegality}
-     * judges the type and field sites, so an application carrying an element of the wrong shape is
-     * refused there whole and opens no gap to rank over. It does not yet judge the input-value
-     * site, and an input object's field is an input value in the entry stratum while being a field
-     * to the walk, which is the one coordinate where the two strata still number the same
-     * application differently. If that site is judged too, this case stops being reachable and the
-     * ranking it justifies can go with it; until then both are live and the walk is the arm that
-     * has not adopted the rule.
+     * <p>It used to carry a third shape, a path element the decode could not read, because the two
+     * strata numbered around such an element differently. They cannot meet one now: an element the
+     * definition does not admit withdraws its whole application at every site, so no admitted
+     * application numbers around a hole. The walk still writes rows for one, being the thing this
+     * replaces and having never adopted the rule, so the two strata do disagree on a corpus
+     * carrying one. That corpus cannot assemble, and a differential that kept agreeing there would
+     * be pinning the walk's behaviour on input no schema can carry, which is why the case below
+     * asserts the corpus assembles before comparing anything.
      */
     @Test
-    @DisplayName("the ordinal separates repeated applications and the position closes over a gap")
-    void theRankingSurvivesARepeatedApplicationAndAnUndecodableElement(@TempDir Path tmp) {
+    @DisplayName("the ordinal separates repeated applications, at both of the sites that are fields")
+    void theOrdinalSeparatesRepeatedApplications(@TempDir Path tmp) {
         try (var edge = CapturedStore.of(tmp, """
                 type Query { films(filter: FilmFilter): [Film!] }
                 type Film {
@@ -213,16 +231,21 @@ class ReferenceStepRecombinationTest {
                     @reference(path: [{table: "actor", key: "film_actor_actor_id_fk"}])
                 }
                 input FilmFilter {
-                  gapped: ID @reference(path: [{table: "a"}, "oops", {table: "b"}])
+                  byAgency: ID
+                    @reference(path: [{table: "agency"}])
+                    @reference(path: [{table: "film"}, {table: "agency", key: "film_agency_fk"}])
                 }
                 type Actor { id: ID! }
                 """)) {
+            assertThat(rows(edge, PROBLEMS, 1))
+                .as("the corpus assembles, which is the scope this comparison holds in: the walk "
+                    + "transcribes an application the definition does not admit and the entry "
+                    + "stratum does not, so the two agree exactly where a schema can be built")
+                .isEmpty();
             assertThat(rows(edge, RECOMBINED, 14))
-                .as("a repeated application is two ordinals, and an element the walk could not "
-                    + "decode is a position the entry stratum has and the walk does not, so a "
-                    + "recombination that copied the entry's number would disagree here. The gap "
-                    + "sits on an input object's field because that is the one site the legality "
-                    + "judge does not reach yet")
+                .as("a repeated application is two ordinals, and it is two at an output field and "
+                    + "at an input object's field alike, which is the pair of arms the union is "
+                    + "for")
                 .containsExactlyElementsOf(rows(edge, WALKED, 1));
         }
     }

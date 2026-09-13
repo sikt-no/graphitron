@@ -142,13 +142,22 @@ class GraphitronEnumValueEntriesTest {
     }
 
     /**
-     * An element that is not an object literal takes its index and contributes no row, which is
-     * what keeps the elements after it at the positions the author would count. Filling the gap
-     * instead would silently renumber the sort.
+     * An element the definition does not admit withdraws the whole application, so no position of
+     * the list is written at all.
+     *
+     * <p>This case used to pin the opposite, that such an element spent its index and left the ones
+     * after it where the author would count them. That was the reading before the entry stratum
+     * judged an application against its definition, when a list could be part legal and part not
+     * and the numbering had to say which. It cannot be now: {@code FieldSort} declares
+     * {@code name} as {@code String!}, so a list carrying a bare string is not a list of
+     * {@code FieldSort} and the application is not one {@code @order} admits. Its twin at the field
+     * site went the same way in the commit that made it unreachable, and the corpus here is that
+     * corpus: assembly refuses it, so nothing that reaches a generator can carry the shape the old
+     * case was about.
      */
     @Test
-    @DisplayName("an element that decodes to nothing still spends its index")
-    void anUndecodableElementDoesNotRenumberTheOnesAfterIt(@TempDir Path tmp) {
+    @DisplayName("an element the definition does not admit withdraws the whole application")
+    void anElementTheDefinitionDoesNotAdmitWithdrawsTheApplication(@TempDir Path tmp) {
         write(tmp, "film.graphqls", """
             type Query { films: [Film!] }
             type Film { title: String }
@@ -162,9 +171,9 @@ class GraphitronEnumValueEntriesTest {
             var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 
             assertThat(dsl.select(t.POSITION, t.NAME_REF).from(t).fetch())
-                .as("the string at index 0 writes no row, and the object after it is still at 1")
-                .extracting(row -> row.value1(), row -> row.value2())
-                .containsExactly(tuple(1, "release_year"));
+                .as("the legal element is withheld with the illegal one, the application being the "
+                    + "unit the definition admits or does not")
+                .isEmpty();
         });
     }
 

@@ -3,19 +3,12 @@ package no.sikt.graphitron.model.capture.document;
 import graphql.language.ArrayValue;
 import graphql.language.BooleanValue;
 import graphql.language.Directive;
-import graphql.language.EnumTypeDefinition;
 import graphql.language.EnumValue;
-import graphql.language.InputObjectTypeDefinition;
-import graphql.language.InterfaceTypeDefinition;
 import graphql.language.IntValue;
 import graphql.language.NullValue;
-import graphql.language.Node;
 import graphql.language.ObjectField;
-import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectValue;
-import graphql.language.ScalarTypeDefinition;
 import graphql.language.StringValue;
-import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
@@ -65,62 +58,33 @@ public final class GraphitronEntries {
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
         GraphitronTypeEntries.write(dsl, graph, source,
-            admittedOnTypes(SdlEntries.directivesOnTypes(document)), touchedAt);
+            admitted(SdlEntries.locatedOnTypes(document)), touchedAt);
         GraphitronFieldEntries.write(dsl, graph, source,
-            admittedOnFields(SdlEntries.directivesOnFields(document)), touchedAt);
+            admitted(SdlEntries.locatedOnFields(document)), touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source,
-            SdlEntries.directivesOnInputValues(document), touchedAt);
+            admitted(SdlEntries.locatedOnInputValues(document)), touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source,
-            SdlEntries.directivesOnEnumValues(document), touchedAt);
+            admitted(SdlEntries.locatedOnEnumValues(document)), touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source,
-            SdlEntries.directivesOnSchemas(document), touchedAt);
+            admitted(SdlEntries.locatedOnSchemas(document)), touchedAt);
     }
 
     /**
-     * The type-site applications the directive definition admits. Its location is the declaration's
-     * kind, which the collector keeps as the parent node, an extension node class being a subclass
-     * of the base's so the two share a location as they share a kind.
+     * The applications the directive definition admits, whichever site they came from.
+     *
+     * <p>One helper and no per-site variant, because the site's only contribution to this question
+     * is its location and the collector already states that. What a site cannot do from here is
+     * name its location wrong and have the loop notice, so the five spellings are held against the
+     * vocabulary by {@code DirectiveLegalitySiteTest} rather than by anything here.
      */
-    private static List<SdlEntries.Nested<Directive>> admittedOnTypes(
-        List<SdlEntries.Nested<Directive>> applications
-    ) {
-        var admitted = new ArrayList<SdlEntries.Nested<Directive>>();
-        for (SdlEntries.Nested<Directive> nested : applications) {
-            if (DirectiveLegality.admits(nested.node(), locationOf(nested.parent()))) {
-                admitted.add(nested);
+    private static List<SdlEntries.Nested<Directive>> admitted(List<SdlEntries.Located> located) {
+        var kept = new ArrayList<SdlEntries.Nested<Directive>>();
+        for (SdlEntries.Located one : located) {
+            if (DirectiveLegality.admits(one.application().node(), one.location())) {
+                kept.add(one.application());
             }
         }
-        return admitted;
-    }
-
-    /** The field-site applications the definition admits; one site, so one location. */
-    private static List<SdlEntries.Nested<Directive>> admittedOnFields(
-        List<SdlEntries.Nested<Directive>> applications
-    ) {
-        var admitted = new ArrayList<SdlEntries.Nested<Directive>>();
-        for (SdlEntries.Nested<Directive> nested : applications) {
-            if (DirectiveLegality.admits(nested.node(), "FIELD_DEFINITION")) {
-                admitted.add(nested);
-            }
-        }
-        return admitted;
-    }
-
-    /**
-     * The SDL directive location a declaration offers, spelled as a directive definition spells it.
-     * The six kinds are every kind the type site collects, so the fallback is unreachable and says
-     * so by declining to judge rather than by refusing.
-     */
-    private static String locationOf(Node<?> declaration) {
-        return switch (declaration) {
-            case ObjectTypeDefinition ignored -> "OBJECT";
-            case InterfaceTypeDefinition ignored -> "INTERFACE";
-            case UnionTypeDefinition ignored -> "UNION";
-            case EnumTypeDefinition ignored -> "ENUM";
-            case ScalarTypeDefinition ignored -> "SCALAR";
-            case InputObjectTypeDefinition ignored -> "INPUT_OBJECT";
-            default -> null;
-        };
+        return kept;
     }
 
     /**

@@ -18,8 +18,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -186,6 +188,40 @@ class EntryLegalityTest {
                 .as("and both spellings of the list contribute their element")
                 .isEqualTo(2);
         });
+    }
+
+    /**
+     * The enum-value site, which the rule reached second and for no better reason than that its
+     * writer arrived from a session that did not have the rule. {@code @field} declares
+     * {@code name} as {@code String!}, so an application that writes no name is not one the
+     * definition admits, and the site is judged on the same terms as the four others.
+     */
+    @Test
+    @DisplayName("an enum-value binding with no name written withdraws the application")
+    void aBareBindingOnAnEnumValueWithdrawsTheApplication(@TempDir Path tmp) {
+        withSeededStore("bare-enum-binding", dsl -> {
+            read(dsl, corpus(tmp, "bare-enum-binding", """
+                type Query { films(order: FilmOrder): [Film!] }
+                type Film { title: String }
+                enum FilmOrder { TITLE @field }
+                """));
+            assertEnumValueApplicationWasWritten(dsl, "bare-enum-binding", "field");
+            assertRefusedByAssembly(dsl, "bare-enum-binding");
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY,
+                GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY.GRAPH_NAME.eq("bare-enum-binding")))
+                .as("the binding is withheld, the site judging its applications like every other")
+                .isZero();
+        });
+    }
+
+    /** The enum-value census, which is this site's control. */
+    private static void assertEnumValueApplicationWasWritten(DSLContext dsl, String graph,
+                                                            String name) {
+        var d = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+        assertThat(dsl.fetchCount(d, d.GRAPH_NAME.eq(graph).and(d.NAME.eq(name))))
+            .as("the generic census holds the application, so an empty decode above is the rule "
+                + "rather than a corpus that never arrived")
+            .isPositive();
     }
 
     /** The application was written and reached capture, whatever became of its decode. */

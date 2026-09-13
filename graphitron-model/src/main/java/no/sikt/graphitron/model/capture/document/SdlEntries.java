@@ -949,6 +949,90 @@ public final class SdlEntries {
         return nested;
     }
 
+    /**
+     * An application and the SDL directive location of the node it was written on, spelled as a
+     * directive definition spells it.
+     *
+     * <p>The location is stated where the walk stands rather than recovered from the application
+     * afterwards, which is the difference between naming a fact and reconstructing one. The
+     * input-value site is why it has to be: {@link #inputValues} knows which of three enclosures
+     * each value came from while it is collecting and then concatenates the distinction away, and
+     * two of those enclosures are {@code ARGUMENT_DEFINITION} while the third is
+     * {@code INPUT_FIELD_DEFINITION}. After the flattening no reader can tell them apart, and the
+     * vocabulary does: {@code @orderBy} is declared on the first and {@code @asFacet} on the
+     * second.
+     *
+     * @param application the application and the node it was written on
+     * @param location    that node's SDL directive location
+     */
+    record Located(Nested<Directive> application, String location) {}
+
+    private static void locate(List<Located> into, Node<?> node, List<Directive> applications,
+                               String location) {
+        applications.forEach(application ->
+            into.add(new Located(new Nested<>(node, application), location)));
+    }
+
+    /**
+     * Every type-site application with the location its declaration offers. The six kinds are every
+     * kind {@link #declarations} yields, so a declaration reaching the fallback is one this walk
+     * does not collect, and an unnamed location declines to judge rather than refusing.
+     */
+    static List<Located> locatedOnTypes(TypeDefinitionRegistry document) {
+        List<Located> located = new ArrayList<>();
+        declarations(document).forEach(parent ->
+            locate(located, parent, parent.getDirectives(), switch (parent) {
+                case ObjectTypeDefinition ignored -> "OBJECT";
+                case InterfaceTypeDefinition ignored -> "INTERFACE";
+                case UnionTypeDefinition ignored -> "UNION";
+                case EnumTypeDefinition ignored -> "ENUM";
+                case ScalarTypeDefinition ignored -> "SCALAR";
+                case InputObjectTypeDefinition ignored -> "INPUT_OBJECT";
+                default -> null;
+            }));
+        return located;
+    }
+
+    /** Every field-site application; one enclosure, so one location. */
+    static List<Located> locatedOnFields(TypeDefinitionRegistry document) {
+        List<Located> located = new ArrayList<>();
+        fields(document).forEach(field ->
+            locate(located, field.node(), field.node().getDirectives(), "FIELD_DEFINITION"));
+        return located;
+    }
+
+    /**
+     * Every input-value-site application with the location of the enclosure it was written in,
+     * in the order {@link #inputValues} yields them. A field's argument and a directive
+     * definition's argument are both {@code ARGUMENT_DEFINITION}; an input object's field is not.
+     */
+    static List<Located> locatedOnInputValues(TypeDefinitionRegistry document) {
+        List<Located> located = new ArrayList<>();
+        argumentsOfFields(document).forEach(argument ->
+            locate(located, argument.node(), argument.node().getDirectives(), "ARGUMENT_DEFINITION"));
+        fieldsOfInputObjects(document).forEach(value ->
+            locate(located, value.node(), value.node().getDirectives(), "INPUT_FIELD_DEFINITION"));
+        argumentsOfDirectiveDefinitions(document).forEach(value ->
+            locate(located, value.node(), value.node().getDirectives(), "ARGUMENT_DEFINITION"));
+        return located;
+    }
+
+    /** Every enum-value-site application; one enclosure, so one location. */
+    static List<Located> locatedOnEnumValues(TypeDefinitionRegistry document) {
+        List<Located> located = new ArrayList<>();
+        enumValues(document).forEach(value ->
+            locate(located, value.node(), value.node().getDirectives(), "ENUM_VALUE"));
+        return located;
+    }
+
+    /** Every schema-site application; one enclosure, so one location. */
+    static List<Located> locatedOnSchemas(TypeDefinitionRegistry document) {
+        List<Located> located = new ArrayList<>();
+        schemas(document).forEach(parent ->
+            locate(located, parent, parent.getDirectives(), "SCHEMA"));
+        return located;
+    }
+
     static List<Nested<Directive>> directivesOnTypes(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         declarations(document).forEach(parent -> nest(nested, parent, parent.getDirectives()));
