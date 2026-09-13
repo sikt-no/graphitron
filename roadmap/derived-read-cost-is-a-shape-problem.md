@@ -3521,3 +3521,58 @@ filter on the shape a decode wants rather than on what the definition admits, in
 job is transcription. `graphitron_ast_default_order_field_entry.name_ref` is nullable where the
 definition says non-null. And the anchor carries the filter and the renumbering that the rule makes
 dead. Bringing the existing entries to the rule is the next step of this arc.
+
+## The rule is every site, and the collector is what stood in the way (2026-09-13)
+
+The rule landed at two of the five sites. The type and field sites judge; the input-value,
+enum-value and schema sites transcribe whatever parses. A rule that holds at some sites is not the
+rule, it is a filter with a coverage table, and the gap is already doing damage: a differential
+written against the walk had to put its subject at an unjudged site to keep agreeing, which is the
+target design being shaped by the part that is dissolving rather than the other way round.
+
+**Why three sites were left.** Two of them for no reason at all. `GraphitronEnumValueEntries` and
+`GraphitronSchemaEntries` arrived from a session that did not have the rule, and their locations are
+constants: an enum value is `ENUM_VALUE` and a schema block is `SCHEMA`, with nothing to derive. The
+third had a reason, and the reason is a legacy shape rather than a difficulty.
+`SdlEntries.inputValues` assembles three lists that each know their enclosure, `argumentsOfFields`,
+`fieldsOfInputObjects` and `argumentsOfDirectiveDefinitions`, and then concatenates them into one
+list that does not. `directivesOnInputValues` reads that list and sets each application's parent to
+the input value itself, so by the time a judge could ask, two SDL locations have been merged into
+one and the enclosure that told them apart is three lines upstream.
+
+Nothing about that flattening is load-bearing. It is what a walk that never asked the question left
+behind, and the fix is to stop discarding what the collector already computed rather than to route
+around it. A field's argument and a directive definition's argument are both
+`ARGUMENT_DEFINITION`; an input object's field is `INPUT_FIELD_DEFINITION`. Three lists, two
+locations, no new traversal.
+
+**What that unblocks, and what it then costs.** With every site judging, an application carrying an
+element the definition does not admit is refused wherever it was written, so the one gap the
+ranking was built for is gone: `GraphitronEntries.elementsOf` increments past an element it does not
+transcribe, and no admitted application now contains one. A recombination can read the position
+instead of ranking it, which retires the second of the two clauses this arc set out to retire.
+
+It does not make the element set recoverable, and the first draft of this section said otherwise.
+An element can be entirely legal and still write no decode row, because a decode relation has its
+own NOT NULL columns and the definition need not require any of them. `ReferenceElement` declares
+every field optional, so `@reference(path: [{table: "a"}, {}, {table: "b"}])` assembles, and the
+bare element names no table, no key and no condition. Measured: the walk writes rows at 0, 1 and 2
+while the three step relations hold 0 and 2 between them. What is missing there is a row and not a
+number, so no numbering over those relations reaches it, a rank turning it into a renumbering and a
+copy into a hole. That is the case for keying a decode by the element's own coordinate rather than
+by an ordinal it recomputes, the element already being a row of `graphql_ast_value_entry` in
+authored order and unfiltered, and it is a separate change from the rule.
+
+The cost lands on the differential. `graphitron_field_reference_step_entry` is the walk's, the walk
+has not adopted the rule and will not, being the thing this replaces, so on a corpus carrying a
+refused application the two strata disagree by construction: the walk writes rows and the entry
+stratum writes none. A differential that keeps agreeing with the walk there is pinning the walk's
+behaviour on input no assembled schema can carry, which is the shape to refuse. The comparison is
+scoped to corpora that assemble, and says so, which is the same scope the rule itself is argued
+from.
+
+**Ownership, stated because it is the thing that keeps going wrong.** Both strata are ours. When the
+dissolving one disagrees with the target, the question is which is right and not how to keep them
+agreeing, and the cheapest-looking answer has twice now been to bend the new design to the old one.
+Rewriting the collector is a smaller change than the workaround it removes, and it is the second
+time on this arc that has been true.
