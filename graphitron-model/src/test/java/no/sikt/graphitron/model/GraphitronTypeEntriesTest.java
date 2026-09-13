@@ -17,6 +17,8 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
@@ -293,6 +295,89 @@ class GraphitronTypeEntriesTest {
             assertThat(dsl.fetchCount(GRAPHITRON_AST_NODE_ENTRY))
                 .as("and both applications are rows, the second naming no columns at all")
                 .isEqualTo(2);
+        });
+    }
+
+
+    /**
+     * One mechanism written at two ends, and two relations because the ends are two declarations:
+     * the interface names the column, each object names the value of it that means itself. Nothing
+     * joins them here, which is the claim: a decode states what one application wrote, and pairing
+     * the column with the values is a question about the corpus that the anchors and the detections
+     * ask of these rows afterwards.
+     */
+    @Test
+    @DisplayName("the discriminating column and the values that select it are separate decodes")
+    void theTwoEndsOfDiscriminationAreSeparateRelations(@TempDir Path tmp) {
+        write(tmp, "media.graphqls", """
+            interface Media @discriminate(on: "media_type") { title: String }
+            type Book implements Media @discriminator(value: "BOOK") { title: String }
+            type Film implements Media @discriminator(value: "FILM") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.fetch(GRAPHITRON_AST_DISCRIMINATE_ENTRY))
+                .as("one column, written once where the subtypes are declared to exist")
+                .extracting(row -> row.get(GRAPHITRON_AST_DISCRIMINATE_ENTRY.ON_COLUMN))
+                .containsExactly("media_type");
+
+            var d = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
+            assertThat(dsl.select(d.DISCRIMINATOR_VALUE).from(d).orderBy(d.SOURCE_LINE)
+                    .fetch(d.DISCRIMINATOR_VALUE))
+                .as("and one value per subtype, each written on its own declaration")
+                .containsExactly("BOOK", "FILM");
+        });
+    }
+
+    /**
+     * The value is a string whatever the SQL type of the column it will be compared against,
+     * because a string is what SDL lets an author write and this relation states what was written.
+     * Coercing it would need the catalog, which no decode reads.
+     */
+    @Test
+    @DisplayName("a numeric-looking discriminator stays the string the author wrote")
+    void theDiscriminatorValueIsNotCoerced(@TempDir Path tmp) {
+        write(tmp, "media.graphqls", """
+            interface Media @discriminate(on: "kind_id") { title: String }
+            type Book implements Media @discriminator(value: "1") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+
+            assertThat(dsl.fetch(GRAPHITRON_AST_DISCRIMINATOR_ENTRY))
+                .as("the digit the author typed, not a number the catalog would have implied")
+                .extracting(row -> row.get(GRAPHITRON_AST_DISCRIMINATOR_ENTRY.DISCRIMINATOR_VALUE))
+                .containsExactly("1");
+        });
+    }
+
+    /**
+     * An object may be a subtype of more than one discriminated interface, so the value is not
+     * assumed to be the object's only one: each application is its own row, told apart by where it
+     * was written and not by the type it sits on.
+     */
+    @Test
+    @DisplayName("an object discriminated twice writes a row per application")
+    void twoApplicationsOnOneTypeAreTwoRows(@TempDir Path tmp) {
+        write(tmp, "media.graphqls", """
+            interface Media @discriminate(on: "media_type") { title: String }
+            interface Stocked @discriminate(on: "stock_kind") { title: String }
+            type Book implements Media & Stocked
+              @discriminator(value: "BOOK")
+              @discriminator(value: "PAPER") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            var d = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
+
+            assertThat(dsl.select(d.DISCRIMINATOR_VALUE).from(d).orderBy(d.SOURCE_LINE, d.SOURCE_COLUMN)
+                    .fetch(d.DISCRIMINATOR_VALUE))
+                .as("both applications, neither displacing the other at one coordinate")
+                .containsExactly("BOOK", "PAPER");
         });
     }
 

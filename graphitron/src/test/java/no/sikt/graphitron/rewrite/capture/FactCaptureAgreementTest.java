@@ -490,6 +490,7 @@ class FactCaptureAgreementTest {
             "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
             "graphitron_ast_enum_entry", "graphitron_ast_record_entry",
             "graphitron_ast_node_entry", "graphitron_ast_node_keycolumn_entry",
+            "graphitron_ast_discriminate_entry", "graphitron_ast_discriminator_entry",
             "graphitron_ast_error_generic_handler_entry",
             "graphitron_ast_error_database_handler_entry",
             "graphitron_ast_error_validation_handler_entry",

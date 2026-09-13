@@ -2927,6 +2927,48 @@ COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_column IS 'source c
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the columns together are a key, are questions for a resolution and not for this row';
 
+CREATE TABLE graphitron_ast_discriminate_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  on_column     VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_discriminate_entry IS 'What a @discriminate application says: the column whose value decides which subtype a row is, as written. For example interface Media @discriminate(on: "media_type") gives one row whose on_column is media_type.';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_discriminate_entry.on_column IS 'the on argument decoded to the string the author wrote. NOT NULL because the definition requires the argument, so an application without it is refused before a decode sees it. Whether the database has a column of that name is a question for a resolution and not for this row';
+
+CREATE TABLE graphitron_ast_discriminator_entry (
+  graph_name          VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT     NOT NULL,
+  source_column       INT     NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  discriminator_value VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_discriminator_entry IS 'What a @discriminator application says: the value of the discriminating column that means a row is this subtype, as written. For example type Book implements Media @discriminator(value: "BOOK") gives one row whose discriminator_value is BOOK.';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_type_directive_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_discriminator_entry.discriminator_value IS 'the value argument decoded to the string the author wrote. NOT NULL because the definition requires the argument, so an application without it is refused before a decode sees it. Always a string here whatever the column''s SQL type, the comparison being the resolution''s to make';
+
 CREATE TABLE graphitron_deprecated_directive (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
@@ -13655,6 +13697,14 @@ INSERT INTO meta_relation VALUES
    'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
+  ('graphitron_ast_discriminate_entry', 'sdl-declaration-site', 'document',
+   'What a @discriminate application says: the column whose value decides which subtype a row is, as written.',
+   'For example interface Media @discriminate(on: "media_type") gives one row whose on_column is media_type.',
+   'A decode of one directive application, keyed by the application''s own position. One end of a two-directive mechanism, and the relations are apart because the ends are: this one is written on the interface or union that has subtypes, and its counterpart on each object that is one, so they sit at different declarations and a reader joining them is asking a question about the corpus rather than reading one row. The column name is kept as the author typed it and resolves against nothing here; that the named column exists, and that every subtype claims a distinct value of it, are questions a detection asks of these rows together.'),
+  ('graphitron_ast_discriminator_entry', 'sdl-declaration-site', 'document',
+   'What a @discriminator application says: the value of the discriminating column that means a row is this subtype, as written.',
+   'For example type Book implements Media @discriminator(value: "BOOK") gives one row whose discriminator_value is BOOK.',
+   'A decode of one directive application, keyed by the application''s own position, and the subtype end of the mechanism graphitron_ast_discriminate_entry opens. The value is a string whatever the SQL type of the column it will be compared against, because that is what an author can write in SDL and this relation states what was written; coercing it here would need the catalog, which no decode reads. An object implementing two discriminated interfaces writes one row per application, so the value is not assumed to be the object''s only one.'),
   ('graphitron_ast_node_entry', 'sdl-declaration-site', 'document',
    'What a @node application says: that the type is addressable by an opaque id, and what it calls itself inside one, as written.',
    'For example type Film @node(typeId: "F") gives one row whose type_id is F.',

@@ -10,6 +10,8 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
@@ -41,7 +43,8 @@ import static org.jooq.impl.DSL.val;
  * written on, and in which file, is one join away rather than a column.
  *
  * <p>The type-site directives this writes are {@code @table}, {@code @scalarType}, {@code @enum},
- * {@code @record}, {@code @error} and {@code @node}, and two of those six surprise. {@code @error} has no
+ * {@code @record}, {@code @error}, {@code @node}, {@code @discriminate} and {@code @discriminator},
+ * and two of those eight surprise. {@code @error} has no
  * relation, its only argument being the handler list, so a row carrying its key and nothing else
  * would say what the applied-directive row already says. Its handlers have one relation per kind,
  * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
@@ -72,6 +75,10 @@ final class GraphitronTypeEntries {
         var nodes = applied(applications, "node");
         nodes(dsl, graph, touchedAt, nodes);
         nodeKeyColumns(dsl, graph, touchedAt, nodes);
+
+        discriminates(dsl, graph, touchedAt, wrote(applied(applications, "discriminate"), "on"));
+        discriminators(dsl, graph, touchedAt,
+            wrote(applied(applications, "discriminator"), "value"));
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -88,7 +95,8 @@ final class GraphitronTypeEntries {
         GRAPHITRON_AST_RECORD_ENTRY, GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY,
-        GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY);
+        GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
+        GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY);
 
     private static void tables(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                List<Directive> applications) {
@@ -293,5 +301,51 @@ final class GraphitronTypeEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.COLUMN_REF, excluded(t.COLUMN_REF)));
+    }
+
+    /**
+     * The interface or union end of the discriminating pair: which column decides the subtype.
+     *
+     * <p>Filtered on the argument although the definition requires it, which costs nothing and says
+     * what the NOT NULL column needs: an application that wrote no {@code on} is refused as illegal
+     * before it reaches this writer, so the filter removes nothing a legal corpus contains.
+     */
+    private static void discriminates(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                      List<Directive> applications) {
+        var t = GRAPHITRON_AST_DISCRIMINATE_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> SdlEntries.sourceName(application),
+            application -> SdlEntries.sourceLine(application),
+            application -> SdlEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "on"), t.ON_COLUMN)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.ON_COLUMN)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.ON_COLUMN, excluded(t.ON_COLUMN)));
+    }
+
+    /** The subtype end: which value of that column means this object. */
+    private static void discriminators(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                       List<Directive> applications) {
+        var t = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> SdlEntries.sourceName(application),
+            application -> SdlEntries.sourceLine(application),
+            application -> SdlEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "value"), t.DISCRIMINATOR_VALUE)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.DISCRIMINATOR_VALUE)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.DISCRIMINATOR_VALUE, excluded(t.DISCRIMINATOR_VALUE)));
     }
 }
