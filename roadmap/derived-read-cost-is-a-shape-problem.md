@@ -3971,6 +3971,146 @@ fallback from one it could not have.
 
 It does not reorder the burn down's items four through six, rename the entry vocabulary, or re-argue
 the register.
+## The chain is the fact, and it is missing at all three grains (2026-09-13)
+
+`intent_node_id_decode_hop` is the most expensive thing a capture does: 6.2 seconds of an 8.8 second
+materialization pass, to produce 38 rows. The reason is not the rows and not the inputs. Every input
+reads fast alone, `intent_condition_method_route` in a millisecond for three rows and
+`intent_node_id_decode_endpoint` in none for 84. Composing them costs 529 milliseconds.
+
+**The mechanism, measured by swapping two names.** The view left-joins two reference-target views
+under a site predicate and reads their columns with `COALESCE` over the pair. Both are
+`WITH RECURSIVE`, so H2 re-runs a whole recursive walk once per driving row. Replacing only those two
+names with tables holding 11 and 5 rows, same SQL otherwise, takes it from 529 milliseconds to 8. The
+argument-site one alone accounts for nearly all of it, 529 to 20, and it is named twice more:
+`intent_node_id_instruction_live` falls from 168 milliseconds to 48 and
+`intent_argument_column_scope_live` from 11 to 2, both themselves registered sources.
+
+**The first answer was wrong and is recorded because the reasoning is the trap.** Registering the
+argument-site walk removes the measured cost, and the register exists for exactly the shape it has.
+It is also motion away from this item: `meta_materialize` is what the item's title says has no
+subject, and a twenty-second registration caches a closure that should not be recomputed at a read at
+all. Bending the target design to the dissolving one is the failure mode the previous section names,
+and this is the third time on this arc.
+
+### What the readers ask
+
+Stated as questions, the three readers of the argument-site walk are two questions, not one:
+
+| reader | grain | the fact |
+|---|---|---|
+| `intent_argument_column_scope` | the argument | which table a column name written here resolves against |
+| `intent_node_id_instruction` | the argument | which table the decode operates on |
+| `intent_node_id_decode_hop` | the hop | which foreign keys the decode traverses, in order |
+
+The first two are the same question at the same grain, asked for different reasons: one table per
+argument. The third is a different question at a different grain: one row per step.
+
+The model holds neither. It holds a per-element closure with candidate arities, and all three answers
+are taken by running it and discarding: the first two keep the last row, the third keeps them all and
+filters to the unambiguous ones. So the terminus, which is what two of the three want, is never
+stated and is re-derived three times in three different spellings of a `MAX(position)`.
+
+### The fact is a chain, and the manual already names its parts
+
+The user manual teaches this vocabulary already, and it is wider than `@reference`. The directives on
+a field, read left to right, describe the path the data travels, starting at the enclosing type's
+table and ending at the field's type, and `@routine` contributes a node to that same path: a routine
+can sit before, between or after the `@reference` hops. Filtering and ordering resolve against the
+*terminus*, the chain's last node, and the manual distinguishes a catalog terminus from a routine
+terminus because a function result has no primary key.
+
+So the subject is the chain, not the directive that contributed to it, and R333 has the design:
+`TABLE_EXPR` is a sealed `Catalog | RoutineCall`, and a `JOIN_STEP` carries a `stepIndex` and an `on`
+that is a sealed `ColumnPairs | Predicate | Lateral`. That design is preferred over anything
+reference-shaped for one reason: it is the only candidate in which `@routine` is not a special case.
+Every other spelling in the tree is reference-shaped, so a routine node has to be merged in
+afterwards, which is the merge the manual describes and the model does not hold.
+
+R877 has the other half of the diagnosis, with these relations as its worked example: the four
+reference-step relations are "four spellings of one thing", and ten views reconstruct a fact by
+unioning an argument-site relation with its field-site twin, "one fact written at two coordinates
+with no relation naming it once".
+
+### The shape
+
+The endpoints relation already exists at one of the three grains. `graphitron_field_table` is keyed
+by the field with the arrival in the key, carries the departure as three columns or none of them, and
+its `target_basis` already admits `ROUTINE_RESULT` beside the catalog arms. It is the chain's
+endpoints, and nothing about it needs to change.
+
+What is missing is the chain's interior, and the same pair at the other two grains.
+
+**The links are the spine.** A link relation keyed by its endpoints row plus an ordinal: the parent
+coordinate, the arrival that identifies which chain, and the position in it. Each link carries its
+own departure and arrival as foreign keys into `sql_table`. Ordinal zero's departure is the parent's
+departure and the last link's arrival is the parent's arrival, which is the denormalization this
+buys: the terminus is stated where the readers ask for it and again where a link states what it is,
+and the agreement is checkable rather than merely true.
+
+The spine has to be one relation and it has to be total. That is the lesson this arc paid for one
+level down: an element set taken as the union of the relations that carry its payloads is missing
+every element that wrote no payload, and no numbering over those relations reaches the gap.
+
+**How a link joins is a separate fact**, on the same discipline, three relations rather than three
+nullable column groups: the columns it joins on, the external condition for a `condition`-only hop,
+and the routine with its parameter bindings, which is what makes a join lateral.
+
+**A routine node needs no arm of its own in the spine.** jOOQ generates a table-valued function as a
+first-class catalog table and the store already records `table_type = 'FUNCTION'`, so a routine's
+result is an `sql_table` row and a link to one is a link. What differs is the join, which is where
+the difference belongs.
+
+**The column pairs are the fact and the constraint is provenance.** Today a hop carries
+`constraint_name` and `fk_on_from`, and `intent_node_id_decode_hop_column` exists only to turn that
+back into oriented pairs by joining the pair relation and swapping sides on the boolean. If the link
+states the oriented pairs, the generator reads what it emits, a name-matched join stops being a
+special case carrying a null constraint, `fk_on_from` goes, and that relation has nothing left to do.
+The constraint that justified the pairs is still worth naming for diagnostics and for the ambiguity
+rules, as a reference rather than as a mechanism a reader decodes.
+
+### Three grains, and they differ in two ways rather than one
+
+The same pair appears at the field, the argument and the input field, and what separates them is two
+independent things, neither of which is the site.
+
+**The node vocabulary is richer at the field.** `@routine` is declared `repeatable on
+FIELD_DEFINITION` and nowhere else, so only a field's chain can hold a routine node. An argument's
+chain and an input field's are catalog hops throughout. That costs the design nothing, because the
+routine is a payload relation hanging off a link rather than an arm of the spine: an argument's links
+never have a routine row. A population difference and not a shape difference, which is what keeps
+three grains from needing three shapes.
+
+**The key is wider at the input field.** A field's departure and an argument's departure are
+functions of their coordinates. An input field's is not: one reached under two arguments bound to
+different tables walks two chains from one authored path, so its departure belongs in the key rather
+than being a column it happens to carry. `intent_input_field_reference_step_target` already keys that
+way and its comment argues why.
+
+The site is not one of the two, and the relation names are the reason that needs saying. An output
+field and an input object's field are both `graphql_field` rows on one coordinate shape, 694 and 183
+of them on the sakila example, so the field and input-field grains are told apart by the departure
+rather than by which relation the coordinate came from. And `graphitron_field_table` holds no
+input-object field at all today, 364 object rows and one interface row and nothing else, so it is the
+output field's endpoints and the input-field grain has no endpoints relation rather than a sparse one.
+
+That is also why these anchors are site-named where the entry relations must not be. R877's complaint
+is about transcription, the same fact written four times because the site is in the name, with
+readers unioning the twins back together. An anchor is coordinate-keyed, and a field coordinate, an
+argument coordinate and an input-field-plus-departure coordinate are three different keys. One
+relation over all three carries the columns of the widest and leaves them empty for the other two,
+which is the nullable-column defect this item keeps finding.
+
+### What it replaces
+
+Five relations spell the hop and target rule today, split by a site axis the anchors do not have:
+`intent_field_reference_step_hop` and `intent_argument_reference_step_hop`, and `intent_field_`,
+`intent_argument_` and `intent_input_field_reference_step_target`. With the chain stated, the
+recursion moves to capture, `candidates` and `targets` stop being arity columns every reader must
+remember to filter on, `last_position` is not needed to find a terminus that is stated, and
+`intent_node_id_decode_hop_column` has no work. Whether the registration of
+`intent_node_id_decode_hop` survives is then a question with an answer rather than a lever: a relation
+that is rows costs nothing to read twice.
 
 ## The anchors are a decode filed under a crawler (2026-09-16)
 
