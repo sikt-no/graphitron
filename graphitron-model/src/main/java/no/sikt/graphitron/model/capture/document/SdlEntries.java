@@ -973,7 +973,7 @@ public final class SdlEntries {
         return nested;
     }
 
-    private static List<Nested<Directive>> directivesOnSchemas(TypeDefinitionRegistry document) {
+    static List<Nested<Directive>> directivesOnSchemas(TypeDefinitionRegistry document) {
         List<Nested<Directive>> nested = new ArrayList<>();
         schemas(document).forEach(parent -> nest(nested, parent, parent.getDirectives()));
         return nested;

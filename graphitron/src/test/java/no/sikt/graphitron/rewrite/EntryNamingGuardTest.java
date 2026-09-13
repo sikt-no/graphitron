@@ -76,7 +76,8 @@ class EntryNamingGuardTest {
         decodeWriter("GraphitronEntries.java"), decodeWriter("GraphitronTypeEntries.java"),
         decodeWriter("GraphitronFieldEntries.java"),
         decodeWriter("GraphitronInputValueEntries.java"),
-        decodeWriter("GraphitronEnumValueEntries.java"));
+        decodeWriter("GraphitronEnumValueEntries.java"),
+        decodeWriter("GraphitronSchemaEntries.java"));
 
     private static Path decodeWriter(String file) {
         return Path.of("graphitron-model", "src", "main", "java", "no", "sikt", "graphitron",

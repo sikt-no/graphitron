@@ -544,6 +544,12 @@ class FactCaptureAgreementTest {
             // elements do not all decode.
             "graphitron_ast_enum_value_binding_entry", "graphitron_ast_index_entry",
             "graphitron_ast_order_entry", "graphitron_ast_order_field_entry",
+            // And of a schema-site application, the one site whose subject is the corpus rather
+            // than an element of it. GraphitronSchema holds federation's opt-in as a parsed
+            // specification list where these hold what was written, so there is nothing to compare.
+            // GraphitronSchemaEntriesTest pins them, over a corpus writing both import spellings
+            // and repeating the directive on one schema.
+            "graphitron_ast_link_entry", "graphitron_ast_link_import_entry",
             // What went wrong making a schema out of the documents, as graphql-java stated it,
             // at whichever of the three reading stages said so. GraphitronSchema is only ever
             // built from a corpus that made a schema, so it has nothing to say about one that did

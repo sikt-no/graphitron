@@ -248,6 +248,11 @@ class SupertypeSignatureGateTest {
         // roster together on the day that derivation lands.
         Set.of("graphitron_ast_index_entry", "graphitron_index_entry"),
         Set.of("graphitron_ast_order_entry", "graphitron_order_entry"),
+        // And the schema site's, which pair on payload while differing on key in the way this whole
+        // tranche does: the anchors are keyed by an ordinal the old writer assigned, the entries by
+        // the position of the at sign the ordinal would sort by.
+        Set.of("graphitron_ast_link_entry", "graphitron_link_entry"),
+        Set.of("graphitron_ast_link_import_entry", "graphitron_link_import_entry"),
         // One decode and three resolutions of it, and the payload is one column because a
         // deprecation carries one thing: the replacement hint. What differs is what was deprecated
         // and how the author said it, which is the key and the relation, not the payload. So this
