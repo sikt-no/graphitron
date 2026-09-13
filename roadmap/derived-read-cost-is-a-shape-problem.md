@@ -3428,3 +3428,96 @@ its own rank exists for, which is a schema an author can write and which the wal
 The facts and the problems are two public entry points now and the rank's case uses the first, but
 capture must not throw on author input is one of the three findings this item already carries, and
 this is a live instance of it.
+
+## The entry stratum holds what the directive definition admits (2026-09-12)
+
+The rule this item works to from here: an entry is written for a directive application its own
+directive definition admits, and for no other. Input that does not match the definition is not
+transcribed at all. An entry is still a bag rather than a set, and what it is a bag of is legal
+input.
+
+The question became live during the `@defaultOrder` migration. The walk's arm quarantined a `fields`
+element it could not decode, writing the raw text to `graphitron_undecoded_argument_entry`; the
+derivation that replaced the arm does not. That looked like a regression worth repairing until the
+reachability was measured, and the measurement says the opposite.
+
+**The measurement.** Five corpora, each captured through the full `SdlCapture.capture` face, which
+parses, builds the registry, transcribes, derives, and then assembles to raise the problem rows.
+`FieldSort` declares `name: String!`, so the four malformed corpora are all SDL-invalid.
+
+- `fields: [{name: "title"}]` assembles. One entry row, one anchor row.
+- `fields: ["title"]` refused at ASSEMBLY, `DirectiveIllegalArgumentTypeError` at 1:14, "Argument
+  value is of type 'StringValue', expected an Object value." No entry row, no anchor row.
+- `fields: [{collate: "xdanish_ai"}]` refused at ASSEMBLY, same class, "Missing required field
+  'name'." One entry row with a null `name_ref`, no anchor row.
+- `@defaultOrder(bogus: 1)` refused at ASSEMBLY, `DirectiveUnknownArgumentError`. No rows.
+- `@defaultOrder` on an OBJECT refused at ASSEMBLY, `DirectiveIllegalLocationError` at 2:1. No rows.
+
+Two results there contradict reasonable assumptions and both matter. The registry admits every
+invalid form: `TypeDefinitionRegistry` type-checks no directive argument, so nothing is refused at
+PARSE or at REGISTRY. And every refusal is caught at ASSEMBLY, classified and positioned, inside the
+same capture pass that writes the entries.
+
+**Why the library cannot do better here, and why we can.** A `TypeDefinitionRegistry` is a partial
+view by construction: it holds what has parsed so far, and the definition of a directive an
+application names may sit in a document that has not arrived yet, or in one merged after it.
+Checking an application against a definition the registry might not hold would refuse legal input
+for an ordering reason, so graphql-java does not check, and assembly, where the corpus is whole, is
+the first place it can. We are not in that position. Every directive this stratum transcribes is
+graphitron's own and ships with it, so the definitions are in hand before the first user document is
+read and the check is available at a point the library has no way to reach. Knowing more, we can do
+better, and should.
+
+**So the quarantine was never buying anything.** An invalid application is already reported by a row
+naming the error class, the position, and what was expected, which is more than raw quarantined text
+says. No generator run completes on a corpus carrying one, because assembly refuses it first. For
+this family the population `graphitron_undecoded_argument_entry` exists to hold is one the store
+already describes better elsewhere, and it has no production reader today.
+
+**Three things follow, and they are why the rule is worth adopting rather than merely defensible.**
+
+A payload column takes its nullability from the directive definition. `FieldSort.name` is `String!`,
+so `graphitron_ast_default_order_field_entry.name_ref` should be NOT NULL, and the same reasoning
+runs across the stratum wherever a directive declares a non-null argument. Today it is nullable,
+which asserts that a nameless element is a thing capture holds. Under this rule it is not.
+
+An anchor stops filtering. `GraphitronAnchor.defaultOrderFields` carries a `name_ref IS NOT NULL`
+predicate and a dense renumbering to close the gap a refused element leaves. Both are unreachable in
+any corpus that assembles, and under this rule unreachable in any corpus that is transcribed, so the
+derivation becomes a straight projection.
+
+The entry-to-anchor anti-join gains a single meaning. Today a coordinate present as an entry and
+absent as an anchor means either that the input was malformed or that the claim was lost to an
+earlier declaration, and a conflict query cannot tell those apart. Under this rule only the second
+can occur, which is what makes the query readable.
+
+**Where the check comes from.** Ours, written out per application against the definition.
+graphql-java's `SchemaTypeDirectivesChecker` is package-private, and the public
+`SchemaTypeChecker.checkTypeRegistry` wants an `ImmutableTypeDefinitionRegistry` and throws
+`SchemaProblem`, which collides with the standing finding that capture must not throw on author
+input. The predicate is: the location is legal, no argument is unknown, and every value conforms to
+its declared input type through non-null, list, input object, scalar and enum.
+
+The definitions are already in reach. `SchemaLoader.parsePerSource` offers the bundled
+`directives.graphqls` first and builds a merged registry beside the per-source ones, so a
+per-document transcription can look up any directive's definition without assembling, and without a
+corpus-wide dependency the reading does not already have.
+
+**The safeguard, which is not optional.** The predicate has to agree with assembly in both
+directions, falsified by a test that captures a corpus and asserts the applications transcribed are
+exactly the applications assembly did not complain about. Looser than assembly and an invalid
+application becomes an entry carrying garbage. Stricter and entries vanish for valid schemas, which
+is the dangerous direction: `BindingUsages.boundTypeSites` reaches `graphitron_ast_table_entry` by
+inner join from `intent_bound_table`, so a missing entry row for a binding that did resolve deletes
+a find-references result and reports nothing anywhere.
+
+That same join is the evidence that the rule costs the editor nothing. It is the only entry read in
+either `graphitron-lsp` or `graphitron-mcp`, it reads position columns only, and it starts from a
+resolution view that invalid input never reaches.
+
+**What does not conform today.** `GraphitronEntries.elementsOf` and its sibling `writtenIn` drop an
+element that is not the expected literal shape, which lands near the rule for the wrong reason: they
+filter on the shape a decode wants rather than on what the definition admits, inside the layer whose
+job is transcription. `graphitron_ast_default_order_field_entry.name_ref` is nullable where the
+definition says non-null. And the anchor carries the filter and the renumbering that the rule makes
+dead. Bringing the existing entries to the rule is the next step of this arc.
