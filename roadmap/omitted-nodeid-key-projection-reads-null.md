@@ -363,3 +363,65 @@ column inside the resolution. What did move is the price of the nullability half
 relation, placed by a rule this item has to run, inside the gate above. A refusal that needs no new
 relation is now cheaper than it looked when the fourth decision was written. Which arm to take is
 still the author's.
+
+### Round 2 (2026-09-14, Spec -> Ready, reviewer session 01VDtRrZdq4JSLrTDbYED7Hk)
+
+Verdict: withhold. Round 1's finding stands, re-verified independently on this head. Question one
+passes, for the reasons round 1 gives; I reached the same reading of the goal without working back
+from the phase list, so nothing is owed there.
+
+The plan body is byte-identical to the revision round 1 reviewed: `git diff dac8e60 HEAD` on this
+file adds the `## Reviewer findings` section and nothing else, and trunk head is the round 1
+addendum itself, so no revision has been attempted yet. This round therefore re-states no findings
+the author has already answered; it records that I checked round 1's claims rather than inheriting
+them, and adds the one pointer it did not give.
+
+**Finding 1 (question two) is unaddressed and correct.** Re-checked, each against the tree as it
+stands:
+
+* `ProjectedKeyReads.read` formats `$L.get($T.$L.$L)` unconditionally off a `LinkedHashMap` keyed by
+  leaf path, and `declare` emits the record local. The emitter half of the plan describes the site
+  accurately.
+* `intent_argmapping_bound_parameter_type`'s view comment says verbatim that its
+  `jvm_declared_type_ref` arm "has no row where the position names no class, so a primitive parameter
+  resolves nothing here", and that the resulting "absence is therefore four facts and this relation
+  distinguishes none of them". The operand the primitive refusal needs is not on the relation the
+  fourth decision cites. `jvm_method_parameter.parameter_type` exists and is `NOT NULL`, so the fact
+  is reachable, but only by opening the reach that arm argued against.
+* `graphitron_argmapping_candidate` carries `parent_path`, `depth` and `is_list`, and carries **no**
+  `non_null`. `graphitron_argument_path_segment` is absent from the DDL, so the ancestry answer is a
+  recursive walk over `parent_path` or a new column, and either is a store-shape decision. No
+  relation today states "this projected path has a nullable segment".
+* `intent_resolved_node_key_projection`'s comment does argue that standing aside on "a column the
+  catalog cannot type" is deliberate, that requiring it "would additionally have contradicted the
+  key-column relation's own rule that a pinned name resolves without a table", and that the gate as
+  written "strictly adds rejections and removes no emission". Step 1 reverses that trade in a
+  subordinate clause and `## Retired vocabulary` names no SQL comment.
+* `ArgmappingProjectionDefects.READS` pins exactly `INTENT_ARGMAPPING_PROJECTION_DEFECT`,
+  `INTENT_RESOLVED_NODE_KEY_PROJECTION` and `GRAPHITRON_ARGMAPPING_ENTRY` through
+  `NodeIdMessages.readsWith`, and `DetectionReadReachGateTest` exists to hold it by equality. Either
+  new refusal grows that set and fails the build until the pin is edited, which is a cost the plan
+  does not price.
+* Round 1's offered narrowing holds: `sql_routine_parameter.binding_type` is documented as the type
+  "as the generated method takes it", the example being "a java.lang.Integer", so the routine arm
+  cannot present a primitive and the primitive refusal is the `@condition` half's alone.
+
+What would satisfy the finding is unchanged from round 1, so I do not restate it.
+
+**One pointer round 1 did not give, on the Tests section's half of the same gap.** `## Tests` places
+the two new rejection cases "at the same tier" as the emission cases. That tier is right, but the
+class is not: `ArgmappingKeyProjectionEmissionPipelineTest` holds twelve emission cases and no
+rejection case at all, while `ArgmappingProjectionRejectionPipelineTest` beside it is the existing
+home for exactly this family, already covering the unknown-key-column refusal at each of the five
+sites. Naming that class when the validate-time half gets written costs nothing and keeps the two
+kinds of case where the tier already sorts them.
+
+*Non-blocking, no reply needed.*
+
+* Round 1's first non-blocking note is confirmed: `ArgmappingProjectionDefects`'s `EMITTING_SITES`
+  javadoc reads "both reading their column off a decoded record through `ProjectedKeyReads`", which
+  survives the hoist unchanged, so listing it under `## Retired vocabulary` gives the sweep nothing
+  to find. Its second is confirmed too: `INPUT_FIELD_CONDITION` is a `Site` enum constant but is not
+  in `EMITTING_SITES`, which is `ROUTINE`, `FIELD_CONDITION` and `ARGUMENT_CONDITION`.
+* All three `TypeSpecAssertions` helpers `## Retired vocabulary` names resolve, as does the private
+  `declarationOf` the retirement reasoning leans on.
