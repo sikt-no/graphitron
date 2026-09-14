@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.derive.ViewReferences;
-import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +14,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -95,9 +95,7 @@ class ExpandedPopulationReaderGateTest {
     }
 
     private static void withStore(Consumer<DSLContext> body) {
-        try (var store = FactStores.inMemory()) {
-            body.accept(store.dsl());
-        }
+        withSeededStore(body);
     }
 
     /**

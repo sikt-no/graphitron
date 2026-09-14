@@ -121,8 +121,24 @@ final class ThreadConfinedStore {
      * and to 81 when the verdict migration did. One boot each time, which is what says neither is
      * the thing this guard is for: a path that boots per case moves the total by however many cases
      * it has, and a move of one is a class that opened one store.
+     *
+     * <p>Lowered to 60 on 2026-09-14, the first move downward, when twenty-six cases across five
+     * schema gates stopped booting a store each. Their subject is the schema rather than any fact
+     * row, and a clear leaves the {@code meta_} registry and {@code store_stamp} standing, which is
+     * the whole of what they read, so the funnel already served them and each was declining it
+     * through a private helper of its own. What stayed private stayed for a reason a pool cannot
+     * remove: {@code MetaDeclarationGateTest}'s seeded-declaration case restates a comment, and
+     * {@code MaterializationOrderTest} and {@code MaterializationProgressTest} create relations, and
+     * no clear takes a comment or a view back.
+     *
+     * <p>Sixty rather than the fifty-five the count came to, which is a change of policy worth
+     * naming. The number this check reads is an ordering rather than a total, as the paragraph
+     * above says, and it moves by one between runs of the same tree; a budget set at the count is
+     * therefore a coin flip, and when it loses it fails every funnelled case after it rather than
+     * one. It had been at the count, and that is what a clean run at eighty-two cost. Leave the
+     * headroom, and recount when it is gone.
      */
-    private static final int BOOT_BUDGET = 81;
+    private static final int BOOT_BUDGET = 60;
 
     private final GraphitronModelStore store;
 

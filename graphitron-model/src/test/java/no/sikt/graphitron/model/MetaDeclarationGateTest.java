@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.META_GRAIN;
 import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -180,7 +181,7 @@ class MetaDeclarationGateTest {
     @Test
     @DisplayName("the gates detect what they claim to, on seeded declarations")
     void theGatesDetectWhatTheyClaimTo() {
-        withStore(dsl -> {
+        withPrivateStore(dsl -> {
             dsl.deleteFrom(META_RELATION).execute();
             dsl.deleteFrom(META_GRAIN).execute();
             dsl.insertInto(META_GRAIN)
@@ -372,7 +373,18 @@ class MetaDeclarationGateTest {
 
     // ===== Reading the observed schema =====
 
+    /** The thread's store, which every case here reads and none but one writes. */
     private static void withStore(Consumer<DSLContext> body) {
+        withSeededStore(body);
+    }
+
+    /**
+     * A store of this case's own, for the one case that rewrites the registry and restates a
+     * comment to match. Both outlive a clear, the comment because it is DDL and no clear takes a
+     * comment back, so this case cannot run on the thread's store without changing what every gate
+     * after it censuses.
+     */
+    private static void withPrivateStore(Consumer<DSLContext> body) {
         try (var store = FactStores.inMemory()) {
             body.accept(store.dsl());
         }

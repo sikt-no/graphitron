@@ -2,7 +2,6 @@ package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import no.sikt.graphitron.model.derive.Materializations;
-import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.RefreshStages;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -498,9 +498,7 @@ class MaterializeRegistryGateTest {
     }
 
     private static void withStore(java.util.function.Consumer<DSLContext> body) {
-        try (var store = FactStores.inMemory()) {
-            body.accept(store.dsl());
-        }
+        withSeededStore(body);
     }
 
     private static String kindOf(DSLContext dsl, String relationName) {

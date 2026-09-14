@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.META_FAMILY;
 import static no.sikt.graphitron.model.Tables.META_FAMILY_BRIDGE;
 import static no.sikt.graphitron.model.Tables.META_FAMILY_HEADLINE;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
+import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -161,9 +161,7 @@ class FamilyRosterGateTest {
     // ===== Reading the observed schema =====
 
     private static void withStore(Consumer<DSLContext> body) {
-        try (var store = FactStores.inMemory()) {
-            body.accept(store.dsl());
-        }
+        withSeededStore(body);
     }
 
     private static List<String> headlineNames(DSLContext dsl) {
