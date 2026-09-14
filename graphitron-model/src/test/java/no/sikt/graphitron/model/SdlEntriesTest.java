@@ -137,9 +137,16 @@ class SdlEntriesTest {
      * Every declaration form, base and extension, in one relation saying which it is.
      *
      * <p>Also the one thing {@code scalars()} does that the other accessors do not: it hands back
-     * the built-in scalars alongside any the document declared. Those are the engine's, not a
-     * document's, so they carry no position and no file and must not become rows. {@code String} is
-     * absent for that reason, which the scoped count is what says.
+     * the five specification scalars alongside any the document declared, and the declared ones
+     * live in a map graphql-java keeps to itself, so there is no accessor that answers this
+     * question alone. Those five are the engine's rather than a document's and must not become
+     * rows.
+     *
+     * <p>Two assertions, because the first cannot say that on its own. The count is scoped to this
+     * file, so it excludes a built-in by construction rather than by finding none; the second is
+     * scoped to the graph and names the five, which is what fails if the gatherer stops removing
+     * them. The bundled vocabulary is read into the same graph and declares no scalar of its own,
+     * so the second covers both readings.
      */
     @Test
     @DisplayName("every declaration form is one row saying its kind, and the built-in scalars are no rows at all")
@@ -176,6 +183,13 @@ class SdlEntriesTest {
                     tuple("Obj", "OBJECT", true), tuple("Iface", "INTERFACE", true),
                     tuple("Both", "UNION", true), tuple("Colour", "ENUM", true),
                     tuple("Filter", "INPUT_OBJECT", true), tuple("Money", "SCALAR", true));
+
+            assertThat(dsl.select(t.NAME, t.SOURCE_NAME).from(t)
+                    .where(t.GRAPH_NAME.eq(GRAPH))
+                    .and(t.NAME.in("Int", "Float", "String", "Boolean", "ID")).fetch())
+                .as("no reading of this graph wrote a specification scalar; the accessor offers "
+                    + "the five to every source and the gatherer removes them by name")
+                .isEmpty();
 
             assertThat(dsl.select(t.DESCRIPTION).from(t)
                     .where(t.NAME.eq("Obj")).and(t.IS_EXTENSION.isFalse())

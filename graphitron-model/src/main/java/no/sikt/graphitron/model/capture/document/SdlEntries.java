@@ -29,7 +29,6 @@ import graphql.language.OperationTypeDefinition;
 import graphql.language.SDLExtensionDefinition;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.SchemaDefinition;
-import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeDefinition;
@@ -37,6 +36,7 @@ import graphql.language.TypeName;
 import graphql.language.UnionTypeDefinition;
 import graphql.language.Value;
 import graphql.language.VariableReference;
+import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
@@ -797,48 +797,60 @@ public final class SdlEntries {
         nodes.addAll(document.getTypes(InterfaceTypeDefinition.class));
         nodes.addAll(flat(document.objectTypeExtensions()));
         nodes.addAll(flat(document.interfaceTypeExtensions()));
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     private static Stream<UnionTypeDefinition> unions(TypeDefinitionRegistry document) {
         List<UnionTypeDefinition> nodes = new ArrayList<>(document.getTypes(UnionTypeDefinition.class));
         nodes.addAll(flat(document.unionTypeExtensions()));
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     private static Stream<EnumTypeDefinition> enums(TypeDefinitionRegistry document) {
         List<EnumTypeDefinition> nodes = new ArrayList<>(document.getTypes(EnumTypeDefinition.class));
         nodes.addAll(flat(document.enumTypeExtensions()));
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     private static Stream<InputObjectTypeDefinition> inputObjects(TypeDefinitionRegistry document) {
         List<InputObjectTypeDefinition> nodes =
             new ArrayList<>(document.getTypes(InputObjectTypeDefinition.class));
         nodes.addAll(flat(document.inputObjectTypeExtensions()));
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     /**
-     * The scalars the document declared. The accessor hands back the engine's built-ins alongside
-     * them, and the filter is what leaves those out: a built-in has no file and no position, so it
-     * has no row here, and that it exists at all is not a fact about any document.
+     * The scalars the document declared.
+     *
+     * <p>{@code scalars()} is the only accessor in this file that hands back a node no document
+     * wrote. It prepends the five specification scalars to what the document declared, and the
+     * declared ones live in a map graphql-java keeps to itself, so there is no accessor that answers
+     * this question alone. They are removed here, by the name that makes them built in, rather than
+     * by a property they happen to have: a built-in is a built-in because the specification names
+     * it, and testing instead for the absence of a position would reach the same conclusion from
+     * weaker evidence.
+     *
+     * <p>Measured rather than assumed. Across a corpus and the bundled vocabulary, every other
+     * declaration accessor and every value node reachable from one came back positioned; these five
+     * are the whole of what the engine contributes.
      */
     private static Stream<ScalarTypeDefinition> scalars(TypeDefinitionRegistry document) {
-        List<ScalarTypeDefinition> nodes = new ArrayList<>(document.scalars().values());
+        List<ScalarTypeDefinition> nodes = document.scalars().values().stream()
+            .filter(scalar -> !ScalarInfo.isGraphqlSpecifiedScalar(scalar.getName()))
+            .collect(Collectors.toCollection(ArrayList::new));
         nodes.addAll(flat(document.scalarTypeExtensions()));
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     private static Stream<DirectiveDefinition> directives(TypeDefinitionRegistry document) {
-        return document.getDirectiveDefinitions().values().stream().filter(SdlEntries::written);
+        return document.getDirectiveDefinitions().values().stream();
     }
 
     private static Stream<SchemaDefinition> schemas(TypeDefinitionRegistry document) {
         List<SchemaDefinition> nodes = new ArrayList<>();
         document.schemaDefinition().ifPresent(nodes::add);
         nodes.addAll(document.getSchemaExtensionDefinitions());
-        return nodes.stream().filter(SdlEntries::written);
+        return nodes.stream();
     }
 
     // ------------------------------------------------------- a node and the node it was written in
@@ -1105,8 +1117,10 @@ public final class SdlEntries {
      * Adds this value and everything written inside it, depth first, each row carrying how many
      * values enclose it so the caller can insert a level at a time.
      *
-     * <p>An unwritten node stops the walk, taking whatever it contains with it. That is a built-in
-     * the engine provided rather than an author, and none of it is a fact about any document.
+     * <p>Every value reached here was written. A value hangs off a declaration, the declarations
+     * this file collects are the ones a document wrote, and the five the engine contributes are
+     * scalars, which carry no arguments and no defaults and so reach no value at all. The guard
+     * that used to stop the walk at an unwritten node never stopped it.
      *
      * <p>An object's field gets no row of its own. A field is a name and a value; the value is the
      * row and the name is a column on it, which is one node fewer for a reader to walk through and
@@ -1114,7 +1128,7 @@ public final class SdlEntries {
      */
     private static void walk(List<WrittenValue> flat, Node<?> holder, Node<?> parent,
                              Integer position, String objectFieldName, int depth, Value<?> node) {
-        if (node == null || !written(node)) {
+        if (node == null) {
             return;
         }
         flat.add(new WrittenValue(holder, parent, position, objectFieldName, depth, node));
@@ -1222,15 +1236,6 @@ public final class SdlEntries {
      */
     private static String nameOf(Node<?> node) {
         return node instanceof NamedNode<?> named ? named.getName() : null;
-    }
-
-    /**
-     * Whether a document wrote this node. A built-in the engine provides has no file and no position,
-     * so it has no row here; that it exists at all is not a fact about any document.
-     */
-    private static boolean written(Node<?> node) {
-        SourceLocation at = node.getSourceLocation();
-        return at != null && at.getSourceName() != null;
     }
 
     /**
