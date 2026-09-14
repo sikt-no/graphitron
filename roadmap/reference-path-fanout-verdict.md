@@ -655,3 +655,77 @@ Non-blocking, and stated only so they do not survive into implementation:
 `org.jooq.UniqueKey`, with `org.jooq.Key`'s actual method list stated. The "only three-column
 key" claim is dropped. The R712 citation points at its `roadmap/changelog.md` entry. The corpus
 measurement is not re-run; argument-site paths stay out of scope, so its population is unchanged.
+
+### Round 2, Spec → Ready, session_01NMdpgoUnNPHP51NMZXKP49, 2026-09-14
+
+Revisions requested, on one finding. Question 1 passes. I could restate the outcome without the
+plan in hand: a consumer whose SDL declares a list field whose `@reference` path runs through a
+junction table carrying its own payload now gets a build warning at that field, naming the hop
+that multiplies and pointing at a DISTINCT view as the remedy, where today the generator emits
+the multiset silently and the duplicates arrive unannounced inside the child list; emitted SQL is
+unchanged, a pure join table such as `film_actor` stays quiet, and a filter-site path or a
+`@referenceFor` produces nothing. The outcome is reachable: every relation the predicate needs
+exists as named, `sql_constraint`'s type is closed exactly as the spec says, `sql_index` carries
+no uniqueness column, and `intent_foreign_key_column_pair` yields both sides per position, so
+`bound(T)` is the union of two joins on it and nothing is recomputed. The subset direction, the
+composite-constraint counterexample and the measurement's admission that the corpus cannot
+separate the two candidate predicates all still read as the document's strongest work, and the
+round-1 revisions landed: the filter-site exclusion now rests on the semantic reason and its
+named carriers exist (`ReachPath`, `ConditionGlueRenderer.reachExists`, `FilterBinding.Remote`
+into `BodyParam.RemoteColumnPredicate`), the derive package is named in the right module, the
+discriminating-fixture condition is stated and `film_actor_note` matches it, and the Cost
+section's quoted figure is verbatim in `intent_field_reference_step_hop`'s registration reason.
+
+**1 (question 2, blocking). The ordering hazard has been closed in trunk, and the placement it
+argues for is no longer forced.** "The ordering hazard" says `withLintFindings` runs *before*
+`captureAndRead`, so a store read placed there would see the previous run's rows, and the section
+makes that the reason the verdict has to be computed by a `StoreDetections` family inside the
+window and merged back out. In the current tree the opposite holds. `runPipeline` opens the
+window at `GraphQLRewriteGenerator.java:678` and calls `withLintFindings(schema, attributed,
+store)` at `:696`, inside the continuation `captureAndRead` hands its callback, with the live
+`StoreHandle`; the call site's own comment gives the spec's reason for it, that what feeds the
+error stream has to come after the rows it judges. That handle goes to
+`LintEngine.builtIn(...).run(attributed.registry(), attributed.injectedNames(), store)`, and the
+engine threads `StoreHandle` through every visit into `SinkContext`. A store-reading lint rule
+already ships: `DeprecationRecognizer` is three `store.dsl().select(...)` reads against
+`graphitron_deprecated_directive`, `graphitron_deprecated_directive_argument` and
+`graphitron_deprecated_input_field`, serving `NO_DEPRECATED_DIRECTIVE_USAGE`. This landed in
+`cddf62c`, "Deprecation is a captured fact, and lint reads rows", on 2026-09-11, the day after
+this file's last revision, so the hazard was real when it was written and is not a drafting
+error.
+
+This is blocking rather than a stale-prose note because the premise carries three of the five
+artefacts. With the lint channel already inside the window and already store-backed, there is a
+fork the spec does not know it has: the rule can be a lint visitor reading the new view through
+the channel that exists, which needs no fourth `LintRule.Source` arm, no `warnings()` accessor on
+`StoreDetections`, no fold-in and no filter move, since `disabledRuleIds` already runs last over
+the combined list inside `withLintFindings`; or it can be the `StoreDetections` family the spec
+prescribes. Three artefact-table rows and one of the four "things this spec decides rather than
+leaves open" are consequences of the second, chosen against a constraint that no longer binds.
+The argument for the fourth arm leans on the same drift from a second direction: it quotes
+`LintRule`'s javadoc that `ENGINE` rules are "re-derivable from the AST alone", and
+`NO_DEPRECATED_DIRECTIVE_USAGE` is an `ENGINE` rule that is no longer re-derivable from the AST.
+The line the spec wants, transcribed AST facts against catalog facts, may well still earn a new
+arm, but it has to be drawn on that distinction rather than on a sentence trunk has overtaken.
+
+What would satisfy it: pick one of the two shapes and argue it on what is in the tree now. If the
+family shape is still right, say why a set reduction over a derived view does not belong on the
+per-node traversal that already reads the store, and keep the artefact table as it stands. If the
+lint-engine shape is right, the artefact table shrinks, the `warnings()` and `Source`-arm
+decisions go, and "The ordering hazard" becomes a short note that the hazard existed and was
+closed, with the two-run pin kept as the guard against a later refactor moving the read back out.
+Either way the section's premise sentence and the `disabledRuleIds` instruction need restating
+against the current call site. I am not settling this in the review: which shape the rule takes is
+what the split exists to keep with the author.
+
+Non-blocking, and stated only so they do not survive into implementation:
+
+* "The thirty-member package" is thirty-one files today. Nothing turns on the count.
+* "Every family on the record today mints `ValidationError`s" overstates it. Two members,
+  `keyProjections` and `nodeIdDecodeCoverage`, are not detections and mint nothing, as
+  `StoreDetections`' own javadoc says. The decision the sentence supports is unaffected: there is
+  still no `warnings()` accessor, and `violations()` is still the one assembly point.
+* `intent_argument_reference_step_hop` is a plain view where its field-site counterpart is a
+  materialized table under a `meta_materialize` registration. Not load-bearing while argument-site
+  paths stay out of scope, but it would be if finding 1 of round 1 were ever revisited.
+* I did not re-run the corpus measurement, as in round 1. No finding here turns on the counts.
