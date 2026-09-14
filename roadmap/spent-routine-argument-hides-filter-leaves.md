@@ -462,3 +462,85 @@ Non-blocking, offered rather than required:
   `input.inventoryId.inventory_id`, which leaves `RentFilmInput.customerId` bound to nothing, and
   step 5 turns that into a build error on a fixture whose test asserts a successful emission. The
   plan is right about it; the test list does not account for it.
+
+### Round 3 (2026-09-14, Spec -> Ready, reviewer session 01FeaMG3A55bBy31tXiVQc1R)
+
+Verdict: revisions requested. One blocking finding on question two, which carries the second
+decision's reach on the write side with it.
+
+Round 2's blocking finding is settled, and verified rather than taken on trust: I classified the
+repaired Goal schema verbatim through `TestSchemaHelper.buildSchema` in a throwaway pipeline test.
+It lands `QueryField.QueryTableField`, no diagnostics, `filters=[]`. That is both halves at once,
+that the example builds and that the silence the item exists to remove is real on exactly the schema
+the item leads with: `title` is advertised in the SDL and reaches no WHERE clause. The gate analysis
+step 3 rests on holds as written (`InputFieldResolver.resolve` folds any
+`InputFieldResolution.Unresolved` into `Resolution.Rejected` and `FieldBuilder.classifyArgument`'s
+plain-input branch into `ArgumentRef.UnclassifiedArg`), and `ClassifyContext` is a four-component
+record with `UseSite.descending` already composing the `(containerTypeName, fieldName)` steps step 2
+wants, so threading a fifth component is the same shape as the `participant` beside it. Question one
+is well communicated: a consumer who today puts a routine key and a filter in one input object gets
+the filter dropped without a word and an over-return; afterwards the key is spent, the filter is a
+predicate on the function result, and a leaf naming nothing fails the build the way it would on a
+table-backed field. Every symbol, relation, fixture and manual sentence the plan names exists as
+named; the verification narrative is in this review commit's message.
+
+**Finding 1 (question two): `classifyMutationRoutineChain` is one of two live Mutation `@routine`
+classification seats, and step 5 names only that one, so the item ships its own failure class on the
+other with a green build.**
+
+The second decision states the mutation rule without qualification: on a Mutation `@routine` field a
+leaf `argMapping` does not bind reaches nothing, so it is a build error. Step 5 then locates the walk
+at `classifyMutationRoutineChain`, justified by that method resolving no input type at all. The
+justification is correct and it is equally true of a seat the plan never mentions.
+
+`FieldBuilder` classifies a Mutation `@routine` field at two places, reached by two different
+dispatches. `classifyField`'s chain interception routes the multi-node write chain to
+`classifyMutationRoutineChain`, landing `MutationField.MutationRoutineWriteField`. Separately,
+`classifyMutationField` routes every hop-less `@routine` Mutation field to
+`classifyMutationRoutineCarrier`, which admits a payload-carrier return through
+`classifyAdmittedRoutineCarrier` and lands `MutationField.MutationRoutineWriteRecordField`. That
+second seat is shipped, not deferred: `GraphitronSchemaBuilderTest`'s `RENT_FILM_CARRIER` fixture
+classifies through it, and the manual documents the carrier return on the routine page's "Writes on
+Mutation" section. It classifies no arguments either, for the same reason the plan gives for the
+first seat.
+
+I confirmed the silence is there and identical. `RENT_FILM_CARRIER` with its two flat arguments
+replaced by one input object (`input: RentFilmInput!` holding `inventoryId`, `customerId` and a
+`neverRead: String`, with `argMapping: "pInventoryId: input.inventoryId, pCustomerId:
+input.customerId"`) classifies to `MutationRoutineWriteRecordField` with an empty diagnostics list.
+`neverRead` is advertised, a client can send it, and nothing consumes it, which is the write-side
+spelling of the over-return in the Goal.
+
+This blocks rather than reading as a detail because of what the plan does and does not make fail. An
+implementer who builds step 5 as written puts the walk on one seat, `## Tests`'s single mutation case
+("a Mutation routine input with an unbound leaf lands the DML-worded rejection") passes against that
+seat, and the carrier seat keeps the silence with every test green. Nothing in the item would notice,
+and the retirement sweep would not either, the vocabulary there being about arguments rather than
+about this method. An item whose Goal is that no fourth outcome exists cannot leave a fourth outcome
+standing on a surface it did not look at.
+
+What would satisfy it: say in `## Implementation` where the mutation walk runs, across both seats
+rather than one, and how it is reached from two dispatches that share no seat (the two entry points
+are `FieldBuilder` line 3347 and line 5768 on the current head). Whether that is one helper called
+twice or something else is the author's call, and it is the author's rather than the implementer's
+because it decides whether the item has one mutation acceptance case or two. Then `## Tests` needs
+the carrier case beside the chain case: an unbound leaf inside a routine carrier mutation's input
+object lands the same rejection, asserted on a field that otherwise classifies to
+`MutationRoutineWriteRecordField` so the case cannot pass by the field having been rejected for some
+other reason.
+
+Scope note, offered rather than required: if the carrier seat is meant to be out of scope, that is a
+decision and belongs in `## Decisions` with its reason, not an omission, because the second decision
+as written covers it.
+
+Non-blocking, and unchanged from round 2. All four of round 2's notes are still open and all four
+are real; I checked each rather than carrying them forward on the previous reviewer's word.
+`ServiceCatalog.pathCoordinate` is the walk-side function whose null is load-bearing for step 7.
+`InputFieldResolution` is sealed over `Resolved` and `Unresolved` with three exhaustive switches
+over exactly those two, so step 3's precondition needs a carrier arm that does not exist yet; that
+is mechanical, and the three sites are `InputFieldResolver.resolve`, `TypeBuilder.resolveInputFields`
+and the nesting arm in `classifyInputFieldInternal`. The fourth home for the retired sentence is
+`LauncherCommandsPipelineTest` line 246. And `ArgmappingKeyProjectionEmissionPipelineTest`'s
+`SHARED_ID_SDL` does point both `rent_film` parameters at `input.inventoryId.inventory_id`, leaving
+`RentFilmInput.customerId` bound to nothing under a test that asserts a successful emission, so step
+5 turns that fixture red and `## Tests` does not say so.
