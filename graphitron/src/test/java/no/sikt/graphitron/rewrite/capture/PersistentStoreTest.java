@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.RunStore;
 import no.sikt.graphitron.model.run.SubjectConfig;
 
@@ -359,7 +360,7 @@ class PersistentStoreTest {
             long elapsed = millisSince(start);
 
             assertThat(thrown).as("the capture gave up on the anchor row").isNotNull();
-            assertThat(RunStore.timedOutOnALock(thrown))
+            assertThat(GraphitronStore.contendedLock(thrown))
                 .as("it gave up on a lock, which is what turns this into a message rather than "
                     + "the driver's own words")
                 .isTrue();
@@ -415,7 +416,7 @@ class PersistentStoreTest {
             release.join();
 
             assertThat(thrown).as("the held store-global row ended the capture").isNotNull();
-            assertThat(RunStore.timedOutOnALock(thrown))
+            assertThat(GraphitronStore.contendedLock(thrown))
                 .as("on a lock, past the anchor, where a budget used to make this one wait")
                 .isTrue();
             assertThat(elapsed)
@@ -471,16 +472,16 @@ class PersistentStoreTest {
     @Test
     @DisplayName("a lock timeout is told apart from every other write failure")
     void aLockTimeoutIsToldApart() {
-        assertThat(RunStore.timedOutOnALock(
+        assertThat(GraphitronStore.contendedLock(
             new DataAccessException("wrapped", new SQLTimeoutException("Timeout trying to lock table"))))
             .as("a lock budget that expired, however deeply wrapped").isTrue();
-        assertThat(RunStore.timedOutOnALock(new DataAccessException("wrapped",
+        assertThat(GraphitronStore.contendedLock(new DataAccessException("wrapped",
             new SQLException("outer", new SQLTimeoutException("Timeout trying to lock table")))))
             .as("H2 wraps its own store's failure, and jOOQ wraps that").isTrue();
-        assertThat(RunStore.timedOutOnALock(
+        assertThat(GraphitronStore.contendedLock(
             new DataAccessException("wrapped", new SQLTransactionRollbackException("Deadlock"))))
             .as("a deadlock is not lock contention, and is not described as it").isFalse();
-        assertThat(RunStore.timedOutOnALock(
+        assertThat(GraphitronStore.contendedLock(
             new DataAccessException("wrapped", new SQLException("Unique index violation"))))
             .as("a capture bug keeps the driver's own words, having nothing to advise").isFalse();
     }

@@ -4,12 +4,10 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.DSLContext;
-import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.sql.SQLTimeoutException;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -58,10 +56,12 @@ public sealed interface RunStore extends AutoCloseable {
      *
      * <p>Nothing is returned and nothing can be swapped underneath the caller. A store that has
      * served one capture serves the next, and a capture that fails propagates, there being no
-     * second store to try and nothing a cold retry would establish.
+     * second store to try and nothing a cold retry would establish. Through the same rule the
+     * first capture took, so a session's second round is told what its first would have been.
      */
     default void recapture(CaptureBody body) {
-        body.capture(store().dsl(), reconciles(store(), graph()));
+        GraphitronStore.capture(graph().name(),
+            () -> body.capture(store().dsl(), reconciles(store(), graph())));
     }
 
     /** The query surface the run's own readers ask through. */
@@ -203,50 +203,13 @@ public sealed interface RunStore extends AutoCloseable {
      */
     private static RunStore capture(RunStore run, CaptureBody body) {
         try {
-            body.capture(run.store().dsl(), reconciles(run.store(), run.graph()));
-        } catch (DataAccessException failure) {
-            run.close();
-            throw timedOutOnALock(failure)
-                ? new StoreUnavailableException(("graphitron: gave up waiting for a lock on the "
-                    + "fact store while capturing graph '%s'. Another graphitron process is "
-                    + "writing the same store; let it finish and run again.")
-                    .formatted(run.graph().name()), failure)
-                : failure;
+            GraphitronStore.capture(run.graph().name(),
+                () -> body.capture(run.store().dsl(), reconciles(run.store(), run.graph())));
         } catch (RuntimeException | Error failure) {
             run.close();
             throw failure;
         }
         return run;
-    }
-
-    /**
-     * Whether {@code failure} is a writer that ran out of lock budget, anywhere in its cause chain.
-     * jOOQ wraps the driver's exception and H2 wraps its own store's, so the shape that survives
-     * both is the JDBC contract: a lock timeout arrives as a {@link SQLTimeoutException} (H2 raises
-     * error 50200, SQL state {@code HYT00}). Keying on that rather than on a message or a vendor
-     * code also keeps a deadlock out, which arrives as a
-     * {@link java.sql.SQLTransactionRollbackException} and is a different thing to say.
-     *
-     * <p>It survives the retirement of the retry it was written for, because what it decides now is
-     * the message rather than a second attempt: a contended lock is the one write failure a person
-     * can act on, and saying so beats handing them the driver's own words. The message names no
-     * particular row, deliberately. The anchor row on its short budget is the common one, but the
-     * generous budget can expire too, on a store-global row or on a clear over a very large store,
-     * and a message that named the anchor would be a confident wrong answer there.
-     *
-     * <p>That the type is enough holds only while no writer session carries a statement budget. An
-     * expired {@link no.sikt.graphitron.model.boot.ReadBudget} raises the same
-     * {@link SQLTimeoutException} with vendor code 57014, and this predicate would read it as lock
-     * contention and blame a query that was merely too slow. The read side therefore keys on the
-     * vendor code rather than the type; whoever gives a writer a budget has to do the same here.
-     */
-    static boolean timedOutOnALock(Throwable failure) {
-        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof SQLTimeoutException) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

@@ -84,9 +84,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
  * ({@link ArgmappingProjectionDefects}). Every other relation is still populated beside the live
  * pipeline and read by nothing; consumers migrate onto it one at a time.
  *
- * <p>A run captures exactly one graph; the store may hold many. The persisted store is shared by
- * every module of a workspace, so a warm open reconciles only what this run owns; every way that
- * sharing can fail ends in a private store holding the same rows, which {@link RunStore} states.
+ * <p>A run captures exactly one graph; the store may hold many, though only a session's does. A
+ * one-shot goal's store is build output under its own module's target, so its partition has no
+ * siblings and the graph scoping a warm open applies is scoping nothing; the sharing this used to
+ * describe is the session store's alone. A run that cannot have the store it asked for fails and
+ * says what to do about it, which {@link RunStore} states.
  */
 public final class FactCapture {
 
