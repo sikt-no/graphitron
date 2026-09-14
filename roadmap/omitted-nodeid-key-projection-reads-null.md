@@ -81,17 +81,24 @@ Settled at filing, so the plan below does not reopen them:
   over expression tricks" rule is why: the argument list stays free of conditionals, the guard is one
   breakpointable line beside the decode it guards, and the local is effectively final so it survives
   inside a lambda when a list-shaped segment lifts the read into a stream.
-* **A primitive-typed consuming parameter under a nullable path is a build error.** The type check
-  the projection already performs stands aside where the consuming parameter is a primitive `int`
-  (the `intent_resolved_node_key_projection` view's comment says so), and the compiler backstop it
-  leans on does not catch `int p = <boxed null>`, which compiles and NPEs at the unboxing. Today no
-  null reaches that unboxing; after this change one can. So the projection's defect derivation grows
-  one arm beside `KEY_COLUMN_TYPE_MISMATCH`: a primitive-typed consuming parameter whose projected
-  path has a nullable segment (the leaf or any input object above it) is rejected, naming the
-  coordinate, the parameter and the boxed type that fixes it. A primitive under an all-non-null path
-  stays legal, since graphql-java guarantees the value is present there. This is a validate-time join
-  over facts the SDL strata already hold, not emit-time arithmetic, so it does not reopen the decision
-  above.
+* **A primitive-typed consuming parameter is a build error, whatever the path's nullability.** The
+  type check the projection already performs stands aside where the consuming parameter is a
+  primitive `int` (the `intent_resolved_node_key_projection` view's comment says so), and the
+  compiler backstop it leans on does not catch `int p = <boxed null>`, which compiles and NPEs at the
+  unboxing. Today no null reaches that unboxing; after this change one can. The refusal does not ask
+  whether the path is nullable, and that is the decision rather than an omission. By the decision
+  above the guard is emitted unconditionally, so the projected read is a boxed local at every path
+  shape; what a primitive parameter cannot take is that local, which is a fact about the parameter's
+  declared type and not about the path. Asking the narrower question would mean building the
+  per-segment nullability derivation the last bullet of `## Other solutions we've considered`
+  declines to pay for, to buy back a shape that is safe rather than useful: an author whose path
+  cannot be absent loses nothing by declaring `Integer`. The cost is the secondary reason, though.
+  The first is that a nullability-conditioned refusal would split one decision across two passes: the
+  emitter would guard unconditionally and the validator would refuse conditionally, and the two would
+  have to agree about "can this path be absent" with nothing binding them to. While the guard is
+  unconditional, a validator that mirrors it unconditionally is the correct mirror rather than a
+  coarse one. So the rule is flat, and it is the projection's existing type question finally being
+  asked where it used to stand aside, not a second question about nullability standing beside it.
 * **R948 stays narrow.** The follow-up comment's two adjacent observations, `@field` silently ignored
   on an input field of a spent routine argument and the hand-decode workaround's degraded error
   contract, are out of scope. The first has its own Backlog item; the second retires on its own once
@@ -107,13 +114,35 @@ The change:
 
 1. `read` registers a second declared local, one per projected column of a decoded record, typed by
    the column's Java type and initialised by the null check. The type is `ColumnRef.columnClass` on
-   the `KeyProjection` command's `column`, lifted through `CatalogRefs.columnType`, and that lift
-   returns `null` for a column the catalog cannot type: the store deliberately lets such a pair
-   project unchecked, which today costs nothing because `record.get(field)` needs no type name. The
-   hoisted local turns that optional fact into a required one, so `KeyProjection`'s compact
-   constructor, where the row's completeness law already lives, refuses a blank `columnClass`, and
-   the derivation that mints the row refuses the untyped column with a defect naming it rather than
-   leaving a `$T` to be fed `null` at emit time.
+   the `KeyProjection` command's `column`, lifted through `CatalogRefs.columnType` and boxed. The
+   boxing is not incidental: `CatalogRefs.decodeBindingType` maps the primitive spellings
+   `Class.getName()` produces, and its `PRIMITIVE_NAMES` javadoc says it must, so the lift can yield
+   a primitive `TypeName` and `int keyXCol = keyX == null ? null : ...` would not compile at a
+   consumer. Boxing it is one call, and it is what turns the fourth decision's premise, that the
+   projected read is a boxed local at every path shape, from an assumption into a property of the
+   emitted code.
+
+   That lift does return `null` for a ref carrying no real class name, and an earlier draft of this
+   item planned a build error for one. It is not needed, which is worth stating rather than silently
+   dropping. A resolved projection's `column` is assembled by `StoreNodeTables.columnOf` off
+   `sql_column.binding_type`, which is `NOT NULL` and is `Field.getType()`'s fully qualified name, so
+   it is always present and always a reference type; `CatalogRefs.columnType`'s own javadoc says its
+   null arm exists for fixture placeholders that are never emitted; and the two populations
+   `intent_resolved_node_key_projection`'s comment calls untypeable, a node type with no unambiguous
+   table binding and a pinned key column the bound table does not have, are already invariant throws
+   in `ResolvedKeyProjections.projectionOf`. So the hoist adds no refusal here and rewrites none of
+   that comment's argument. What it does add is one law, in the generator-bug register those two
+   throws already use rather than as an author-facing defect: `ProjectedKeyReads.declare` throws when
+   the lift yields no type, alongside the two "Graphitron generator bug (key projection)" throws
+   `leafOf` already makes. Not `KeyProjection`'s compact constructor, and the reason is worth stating
+   because the earlier draft put it there. That constructor holds cross-axis laws about the row as a
+   whole (`column` is one of `keyColumns`, none of the three is optional), while this is a law about
+   one component's string at `ColumnRef`'s own grain, and `ColumnRef` carries placeholders across the
+   walk-side tree by design. More to the point, the property that matters is "the lift yields a type",
+   which needs the emit library to state, and `command` may not see it; a blankness test is the
+   approximation reachable from there, and it is strictly weaker, since `decodeBindingType` also
+   returns null for a non-blank name `ClassName.bestGuess` rejects. The tier that reads the type is
+   the tier that can state the law.
 
    ```java
    CustomerRecord keyInputCustomerId = decodeCustomerRecord(argInputCustomerId(env.getArgument("input")));
@@ -142,9 +171,77 @@ The change:
    asserts that arm. The hoist leaves that path with an alias-only statement (`Integer keyXCol = …;
    Integer pActorId = keyXCol;`); the binding local may take the guarded initialiser directly at that
    site if the implementer prefers one decision per line, and either spelling satisfies the tests.
-4. The routine parameter type check the projection already performs (an `Integer` column into a
-   `String` parameter is a build error) is unchanged; the local's type is the column's, which is the
-   type that check already agreed with the parameter.
+4. The parameter type check the projection already performs (an `Integer` column into a `String`
+   parameter is a build error) keeps its predicate; the local's type is the column's, which is the
+   type that check already agreed with the parameter. What changes is one of the absences it used to
+   stand aside on, which is step 5.
+5. The primitive-parameter refusal, which is this item's one validate-time change. It is a fact in
+   the store and a verdict in the consumer, and both halves are placements this item argues rather
+   than picks.
+
+   **The fact.** `intent_argmapping_bound_parameter_type` resolves nothing for a primitive, and its
+   comment is explicit that the resulting absence is four facts it distinguishes none of: the
+   reference resolved no method, the method declares no parameter of that name, names were not
+   compiled in, or the parameter's type names no class. The fix is not to re-derive the split at
+   each reader. The view's classpath arm ends on a join to `jvm_declared_type_ref` at `type_path = ''`
+   and `owner_kind = 'METHOD_PARAMETER'`; that join becomes a `LEFT JOIN`, so the name-matched
+   `jvm_method_parameter` row is the membership condition and the type is a payload, and a parameter
+   whose type names no class becomes a row with `java_type` NULL instead of no row. Two precedents,
+   both load-bearing. The other operand of the very same equality already made this choice:
+   `intent_argmapping_key_column_candidate.column_java_type` is "NULL where the catalog cannot
+   answer", and its comment argues that absence "is a payload absence rather than a missing row", so
+   the two sides of one comparison use opposite membership rules today. And
+   `intent_node_id_decode_slot` has already reached this same `jvm_method_parameter` chain for this
+   same distinction, its comment stating that "both arms therefore reach the type by outer join and
+   an untypeable parameter is a row with a null type, which is what lets a consumer carry the decode
+   out on arity alone and ask for a type only when it is about to refuse". Re-spelling the chain
+   here would make it the third spelling of one resolution, in a family whose own comment records
+   collapsing seven spellings of it into one.
+
+   Blast radius, checked rather than assumed. `intent_resolved_node_key_projection` reaches the
+   parameter type by `LEFT JOIN` and keeps `p.java_type IS NULL`, so a pair that now draws a
+   null-typed row still resolves exactly as it did when it drew none. `KEY_COLUMN_TYPE_MISMATCH`
+   tests `pt.java_type <> ca.column_java_type`, which is NULL-false on the new rows, so that arm
+   neither gains nor loses a rejection. What the widening owes is a stated reading of `candidates`
+   for a row whose type is NULL, and one sentence of the view's comment: "absence is four facts"
+   becomes three absences plus a payload NULL, which is the relation getting more precise rather
+   than less.
+
+   **The predicate.** The NULL payload is not by itself the primitive test, and this is the one place
+   the earlier draft would have over-fired. `jvm_declared_type_ref` has no root row for an array or a
+   type variable either, which the tree states in as many words at
+   `intent_condition_param_extraction.java_type`: NULL there is "the type names no class, a
+   primitive, an array, or a type variable". An `int[]` or a generic `T` parameter would have drawn a
+   refusal telling its author to declare `Integer`, which names the wrong fact and offers a remedy
+   that does not apply. So the refusal tests `jvm_method_parameter.parameter_type`, the erased
+   source form, against the eight primitive spellings: a closed vocabulary, and the same spelling the
+   message needs to quote. That column is read to spell a message and compared across no census, so
+   the chain's documented reason for reaching `jvm_declared_type_ref` rather than reading it stands.
+   Arrays and type variables keep today's stand-aside, and the item states that as a silence it owns
+   rather than leaving it as a gap.
+
+   **The verdict.** Minted in `ArgmappingProjectionDefects`, not as a sixth arm of
+   `intent_argmapping_projection_defect`. The view's comment states the rule: an arm whose
+   justification is a fact about the generator's own code, rather than about the schema, lives "with
+   the consumer that knows the wired set rather than being asserted by a view that cannot see it".
+   This refusal exists because the emitter now produces a boxed local; reverse the guard decision
+   above and it evaporates, which is exactly not true of `KEY_COLUMN_TYPE_MISMATCH`, whose two
+   operands are captured facts and whose verdict is Java assignability. So the verdict vocabulary
+   stays closed at five and that view's comment is not rewritten. The consumer joins the widened
+   relation on the grain it already holds and mints an ordinary non-deferred defect beside the ones
+   it already mints.
+
+   Scope, cost and residue. The routine arm reads `sql_routine_parameter.binding_type`, the generated
+   method's own boxed type, so a `@routine` parameter cannot present a primitive and this refusal is
+   the `@condition` half's alone. No new relation stands up, so there is no owner to compute.
+   `ArgmappingProjectionDefects.READS` gains `INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE` as a named
+   root; `DetectionReadReachGateTest`'s pin does not move, that relation already sitting in this
+   component's reach and the widening adding no view to it, every other relation in the chain being a
+   base table the walk stops at. The three absences that remain are the residue this refusal owns the
+   boundary of and does not close: a reference resolving no method, a method declaring no parameter
+   of that name, and a consumer compiled without `-parameters` still project a boxed null into a
+   parameter nothing typed, so such a consumer declaring `int` keeps today's NPE with the compiler as
+   the backstop it already was.
 
 ## Tests
 
@@ -155,8 +252,10 @@ The change:
   of this emitter's output, so the new question lives there as a named helper ("is the column read
   hoisted out of the call?") rather than as a string match in the test; `invocationTakesProjectedRead`
   asserts exactly the shape this item removes and retires with it (see Retired vocabulary). The
-  primitive-parameter defect and the untyped-column defect each get a rejection case at the same
-  tier.
+  primitive-parameter refusal gets its rejection case one class over, in
+  `ArgmappingProjectionRejectionPipelineTest`: that is where this family's refusals already live,
+  covering the unknown-key-column verdict at each of the five sites, while this class holds emission
+  cases and no rejection. There is no untyped-column case, step 1 having dropped that refusal.
 * **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): a new
   NULL-tolerant table-valued function in `graphitron-sakila-db/src/main/resources/init.sql`,
   `films_for_actor_or_all(p_actor_id INTEGER, p_min_length INTEGER)`, whose body reads
@@ -170,8 +269,10 @@ The change:
   - nullable ancestor: `filter: FilmsFilter` nullable holding `actorId: ID!`; omitting `filter`
     returns rows rather than an error;
   - `@condition` consumer: a field-level `@condition` whose `argMapping` projects a nullable node id
-    on a table-backed field; the fixture method (beside `InputFieldConditionFixtures`) receives `null`
-    and returns no condition, and the query returns the unfiltered rows.
+    on a table-backed field; the fixture method receives `null` and returns no condition, and the
+    query returns the unfiltered rows. It goes in the conditions fixture package beside
+    `InputFieldConditionFixtures` and `MultiTableConditionFixtures`, on the field-level rail rather
+    than the input-field one the first of those names.
   Each case also asserts the negative that the issue observed: no error in the response, so the
   redacted internal error the `catch (Exception e)` produced is gone rather than merely reworded.
 
@@ -180,12 +281,26 @@ The change:
 The rule lands once, in the routine page's "Projecting a key column out of a node id" section
 (`docs/manual/reference/directives/routine.adoc`), beside the three build errors it already lists: an
 omitted or null `@nodeId` anywhere on the projected path projects `null`, and the routine parameter
-receives it, so a NULL-tolerant function is the way to express an optional filter. The condition page's
-projection bullet (`condition.adoc`) gets one clause: a field-level `@condition` bound to such a
-projection is called with `null` for that parameter, unlike the input-field `@condition` path where an
-absent value skips the call, since a field-level method is bound to the whole field and the author
-decides what absence means. The same section states the new build error: a primitive-typed parameter
-cannot take a projection whose path can be absent. The nodeId page keeps pointing at the routine
+receives it, so a NULL-tolerant function is the way to express an optional filter. The new build
+error does not go on this page, and that is the correction worth stating: a `@routine` parameter's
+type comes from the generated method and is boxed, so the refusal can never fire at a routine. What
+the page does owe is one clause off its third bullet, which today lists two ways the type check
+stands aside, "a routine whose call surface was not captured or a parameter declared `int` rather
+than `Integer`". The first stays true and is the routine rail's own. The second never described this
+rail and stops being true anywhere once step 5 lands, so it leaves the sentence and the bullet keeps
+its remaining stand-aside.
+
+The condition page's projection bullet (`condition.adoc`) gets one clause: a field-level `@condition`
+bound to such a projection is called with `null` for that parameter, and the author decides what
+absence means, since a field-level method is bound to the whole field. The contrast worth drawing
+there is with the FK-target `@nodeId` whole-slot rail, where an absent value skips the call; that is
+the rail `PresenceGuard.FieldPresent` is minted for, so the sentence should name the rail rather than
+the site. That bullet already ends on "its declared Java type must be that column's", which is the
+rule step 5 starts enforcing rather than a new one being introduced, so it gains the refusal as a
+consequence and not as a second rule: a primitive-typed parameter cannot take a projected key read,
+with no nullability qualifier, because the read is boxed at every path shape. The same bullet states
+the silence beside it, that an array or type-variable parameter and a consumer compiled without
+`-parameters` keep the compiler as their backstop. The nodeId page keeps pointing at the routine
 section.
 
 ## Retired vocabulary
@@ -194,9 +309,16 @@ section.
   read inside the invocation's argument list. Replaced by the hoisted-read helper above.
   `materialisationPrecedesFirstRead` and `projectedColumnReads` change meaning with it, the "first
   read" moving into the prelude, and are re-read rather than retired.
-* The narration of the old spelling in three prose sites: the `KeyProjection` javadoc, the
-  `ArgmappingProjectionDefects` javadoc, and the `read` javadoc in `ProjectedKeyReads`, each of which
-  describes the read as `<local>.get(Tables.<T>.<COL>)` at the call.
+* The narration of the old spelling in two prose sites: the `KeyProjection` javadoc and the `read`
+  javadoc in `ProjectedKeyReads`, each of which describes the read as `<local>.get(Tables.<T>.<COL>)`
+  at the call. `ArgmappingProjectionDefects`'s `EMITTING_SITES` javadoc is deliberately not on this
+  list: it says the two sites read "their column off a decoded record through `ProjectedKeyReads`",
+  which survives the hoist unchanged and would give the sweep nothing to find.
+* "Absence is therefore four facts and this relation distinguishes none of them" in
+  `intent_argmapping_bound_parameter_type`'s view comment, and the enumeration of four that follows
+  it. Three absences and a payload NULL after step 5.
+  `intent_argmapping_projection_defect`'s "closed verdict vocabulary of five" is deliberately not on
+  this list: the verdict lands in the consumer, so that vocabulary stays closed at five.
 
 ## Other solutions we've considered
 
@@ -210,7 +332,26 @@ section.
   registry and a trivially generic helper to every class that projects a key, for a one-line check
   the prelude can hold.
 * **Emit the guard only where the path is nullable.** Keeps `ID!` projections byte-identical, at the
-  cost of a store derivation over every segment's nullability; rejected in Decisions.
+  cost of a store derivation over every segment's nullability; rejected in Decisions. An earlier
+  draft of the fourth decision reintroduced that same cost on the validate-time side, which made this
+  rejection argue against the item's own plan. As revised it does not: no derivation over segment
+  nullability is built anywhere here.
+* **A build error for an untypeable projected column.** Planned in an earlier draft, on the premise
+  that the hoist turns the column's Java type from an optional fact into a required one. The premise
+  does not hold on the emit path, for the reasons step 1 gives, and the law that remains is an
+  invariant rather than a refusal. Taking it would have reversed an argued rule in
+  `intent_resolved_node_key_projection`'s comment to buy nothing.
+* **Re-spell the parameter chain as a second arm instead of widening the relation.** An earlier draft
+  of step 5 repeated `intent_argmapping_bound_parameter_type`'s classpath join and turned its last
+  leg into a `NOT EXISTS`, which needs no change to any existing relation. Rejected: it would be the
+  third spelling of one resolution, in a family whose own comment records collapsing seven spellings
+  of that join into one, and the two spellings would agree exactly until one of them changed. The
+  widening costs one `JOIN` to `LEFT JOIN` and one sentence of a comment.
+* **A sixth verdict in `intent_argmapping_projection_defect`.** Keeps the predicate in SQL beside
+  `KEY_COLUMN_TYPE_MISMATCH`, which it resembles. Rejected on that view's own placement rule: this
+  refusal exists because of how the generator emits, not because of what the schema says, and the
+  view states that such arms belong with the consumer. The tell was that taking it required rewriting
+  a comment that declares the vocabulary closed.
 
 ## Reviewer findings
 
