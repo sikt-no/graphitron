@@ -204,33 +204,81 @@ The change:
    here would make it the third spelling of one resolution, in a family whose own comment records
    collapsing seven spellings of it into one.
 
-   Blast radius, checked rather than assumed. `intent_resolved_node_key_projection` reaches the
-   parameter type by `LEFT JOIN` and keeps `p.java_type IS NULL`, so a pair that now draws a
-   null-typed row still resolves exactly as it did when it drew none. `KEY_COLUMN_TYPE_MISMATCH`
-   tests `pt.java_type <> ca.column_java_type`, which is NULL-false on the new rows, so that arm
-   neither gains nor loses a rejection. The third reader, `intent_node_id_decode_slot`, already
-   outer-joins this relation and names `bp.java_type` alone, so an ordinary primitive parameter
-   arrives there as the same one row carrying the same NULL it was null-extended into before. All
-   three name their columns, none selects `*`, so the new column reaches no reader that did not ask
-   for it.
+   Blast radius, checked rather than assumed, and each of the three readers gates on two things
+   rather than one. `intent_resolved_node_key_projection` reaches the parameter type by `LEFT JOIN`
+   and keeps `p.java_type IS NULL`, so a pair that now draws a null-typed row still resolves exactly
+   as it did when it drew none. `KEY_COLUMN_TYPE_MISMATCH` tests
+   `pt.java_type <> ca.column_java_type`, which is NULL-false on the new rows, so no new row is
+   itself a rejection. The third reader, `intent_node_id_decode_slot`, already outer-joins this
+   relation and names `bp.java_type` alone, so an ordinary primitive parameter arrives there as the
+   same one row carrying the same NULL it was null-extended into before. All three name their
+   columns, none selects `*`, so the new column reaches no reader that did not ask for it.
+
+   The second gate is the one the row count moves. Both of the first two readers carry
+   `candidates = 1` inside the join itself, so admitting a row at a grain that already has one takes
+   the count to two and stands both of them aside: the projection keeps the pair on its
+   `p.java_type IS NULL` arm with the type agreement unasked, and the mismatch arm drops it. What
+   could reach that grain is an overload set on the referenced method name with one untypeable arm
+   beside a typed one, and the reason this widening does not open a hole there is that the set is
+   already refused one tier up. `ServiceCatalog.admitConditionShape` judges every declaration of a
+   `@condition` method name before a slot is minted and admits the set only where arity, staticness,
+   return type, throws clause and, at every non-table position, the parameter's name and declared
+   type all agree; a set disagreeing in declared type at a bound position is
+   `Ambiguity.ParameterPosition`, a set disagreeing in arity is `Ambiguity.ParameterCount`, and
+   `reflectTableMethod` turns either into `ReflectionError.AmbiguousMethod`. `pickMethod` refuses a
+   second same-named declaration outright on the `@service` rail. So the author at such a grain
+   already has a build error naming both signatures, and an admitted set agrees on the bound
+   parameter's declared type across its declarations, which is one distinct row and `candidates = 1`
+   whether or not the type resolves. This is the family's own move rather than a new one:
+   `intent_node_id_decode_defect`'s comment states the same silence and locates the same refusal, an
+   overloaded producer being "a reference the schema walk rejects by name before any of this is
+   read, so declining to pick here leaves no silence".
+
+   One residue remains and it is narrower than the overload it is mistaken for. The view's comment
+   names two causes of `candidates` above one, and the walk's refusal covers only the first. The
+   second is a class declared by two classpath entries whose declarations disagree: the walk reflects
+   through the codegen loader and sees whichever class it resolved, while the census sees both source
+   entries, so nothing upstream refuses it. Where one of those declarations types the bound parameter
+   and the other does not, the count goes to two and both gates stand aside, leaving the projection
+   emitting with its type unchecked and the compiler as the backstop. That is the reading the
+   projection's comment already argues for an unresolved parameter type, reached by a second route,
+   and it is stated here rather than left to be discovered.
 
    The `candidates` reading the widening owes settles itself once the column is projected, which is
    why the two are one decision rather than two. `candidates` counts rows in the grain's partition
    and the arm is a `SELECT DISTINCT`, so a column that is selected is inside that DISTINCT by
-   construction: two primitive overloads at one position (`int` and `long`) stay two rows and report
+   construction: two untypeable overloads at one position (`int` and `long`) stay two rows and report
    `candidates = 2`, where a widening that projected only the NULL type would have collapsed them
    into one row claiming an unambiguous answer. Every reader requiring `candidates = 1` therefore
    stands aside on such a pair exactly as it does on an overload of two reference types, which is the
    discipline the view's comment already states and the one place a naive widening would have
-   silently broken it. `intent_node_id_decode_slot` is the one reader that deliberately does not
-   require one candidate, counting its own rows instead so that an ambiguity refuses rather than
-   resolves; such an overload becomes two rows there where it was one null-extended row, which is the
-   direction that relation's own comment asks for and is stated here rather than discovered.
+   silently broken it.
+
+   Two precisions on that count, because the population the `LEFT JOIN` admits is larger than the
+   population the refusal fires on and the paragraph reads as if they were the same. The join admits
+   a row for every name-matched parameter whose declared type names no class, which is primitives and
+   arrays and type variables alike, so an `int[]` or a `T` inflates the count on the same terms an
+   `int` does; only the predicate below narrows to the eight. And the count grows in that population
+   alone, which is the bound worth stating rather than leaving the effect open-ended:
+   `parameter_type` is the erased source spelling of the same declared type `java_type` names the
+   root of, so wherever the type resolves the spelling is determined by it and the projected column
+   splits no row that the `DISTINCT` collapses today.
+
+   `intent_node_id_decode_slot` is the one reader that deliberately does not require one candidate,
+   counting its own rows instead so that an ambiguity refuses rather than resolves; an untypeable
+   parameter becomes one row there where it was one null-extended row, and an overload set of two
+   becomes two where it was one, which is the direction that relation's own comment asks for and is
+   stated here rather than discovered.
 
    Two comment edits, and no more. "Absence is therefore four facts" becomes three absences plus a
-   payload NULL, which is the relation getting more precise rather than less. And
-   `candidates`'s own column comment, "how many distinct types resolved for this pair", becomes the
-   declared spellings it now counts, one clause.
+   payload NULL, which is the relation getting more precise rather than less. And `candidates`'s own
+   column comment, "how many distinct types resolved for this pair", is rewritten rather than
+   amended, because the widening changes both halves of what it says. What it counts is now the
+   distinct type-and-spelling answers, so two untypeable overloads stay two rows; and `candidates = 1`
+   stops implying that a type resolved, which is the load-bearing half. Every existing reader was
+   written when those two were the same fact, and `java_type` is what now says which of them a row
+   carries. Nothing about that is inferable from the one clause an amendment would have added, so the
+   comment states it.
 
    What the routine arm must not do is put `sql_routine_parameter.binding_type` in the new column.
    That type is fully qualified where `jvm_method_parameter.parameter_type` drops the package, and
@@ -239,8 +287,8 @@ The change:
    source spelling is a classpath fact, a routine parameter has no `jvm_method_parameter` row to read
    it from, and the refusal this column exists for cannot fire at a routine anyway.
 
-   **The predicate.** The NULL payload is not by itself the primitive test, and this is the one place
-   the earlier draft would have over-fired. `jvm_declared_type_ref` has no root row for an array or a
+   **The predicate.** The NULL payload is not by itself the primitive test, and this is the place the
+   refusal would most easily over-fire. `jvm_declared_type_ref` has no root row for an array or a
    type variable either, which the tree states in as many words at
    `intent_condition_param_extraction.java_type`: NULL there is "the type names no class, a
    primitive, an array, or a type variable". An `int[]` or a generic `T` parameter would have drawn a
@@ -278,24 +326,45 @@ The change:
    stays closed at five and that view's comment is not rewritten. The consumer joins the widened
    relation on the grain it already holds, reads both of its type columns off that one join, and
    mints an ordinary non-deferred defect beside the ones it already mints: a row whose `java_type` is
-   NULL and whose `parameter_type` is one of the eight. The message quotes the spelling the author
-   wrote and names the boxed type they want instead, since the remedy is one word at the parameter.
+   NULL, whose `parameter_type` is one of the eight, and whose `candidates` is 1. The message quotes
+   the spelling the author wrote and names the boxed type they want instead, since the remedy is one
+   word at the parameter.
+
+   That third conjunct is the one worth arguing, because it is a qualified refusal standing beside an
+   unconditional guard and so looks like the mirror the fourth decision refuses. It is not, and the
+   reason is that the two conditions sit on different axes. The fourth decision is about whether the
+   projected path can be absent, and the refusal asks nothing about that: it fires at every path
+   shape, which is what makes it the flat mirror of a guard emitted at every path shape.
+   `candidates` is about whether this pair resolved one answer or several, which is a question about
+   the resolution and not about the schema, and every gating reader of this relation already requires
+   one. Refusing on an ambiguous grain would mean quoting one spelling out of several and offering a
+   remedy against a declaration the author may not have meant, which is the same over-firing the
+   predicate above rejects for `int[]` and `T`. Standing aside there is what the two readers beside
+   it do, and the silence is the one the blast-radius paragraph above names and locates: the overload
+   is refused at `ServiceCatalog`, and the doubly-declared class is the residue this item owns the
+   boundary of.
 
    Scope, cost and residue. The routine arm reads `sql_routine_parameter.binding_type`, the generated
    method's own boxed type, so a `@routine` parameter cannot present a primitive and this refusal is
    the `@condition` half's alone. No new relation stands up, so there is no owner to compute, and
-   the whole store-side cost is one `JOIN` to `LEFT JOIN`, one projected column with its comment, two
-   comment clauses elsewhere on the same view, and nothing outside it.
+   the whole store-side cost is one `JOIN` to `LEFT JOIN`, one projected column added to the arm's
+   `SELECT DISTINCT`, to the `resolved` CTE's own column list and to the view's, with its comment,
+   two rewritten comments elsewhere on the same view, and nothing outside it. Nothing beyond the view
+   pays: `FactCaptureAgreementTest` and `DerivedReadCostTest` register this relation by name rather
+   than by column list, and `SupertypeSiteReferenceTest` narrates only its join key.
    `ArgmappingProjectionDefects.READS` gains `INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE` as its only new
    named root, which is what projecting the column buys: the consumer names one relation it did not
    name before rather than the four a re-resolution would have taken.
    `DetectionReadReachGateTest`'s pin does not move, that relation already sitting in this
    component's reach and the widening adding no view to it, every other relation in the chain being a
-   base table the walk stops at. The three absences that remain are the residue this refusal owns the
-   boundary of and does not close: a reference resolving no method, a method declaring no parameter
-   of that name, and a consumer compiled without `-parameters` still project a boxed null into a
-   parameter nothing typed, so such a consumer declaring `int` keeps today's NPE with the compiler as
-   the backstop it already was.
+   base table the walk stops at. Four absences remain as the residue this refusal owns the boundary
+   of and does not close. Three are the ones the relation folded together before: a reference
+   resolving no method, a method declaring no parameter of that name, and a consumer compiled without
+   `-parameters` still project a boxed null into a parameter nothing typed, so such a consumer
+   declaring `int` keeps today's NPE with the compiler as the backstop it already was. The fourth is
+   the doubly-declared class of the blast-radius paragraph, where the count reaches two and the
+   refusal stands aside with the two gates beside it. All four leave the pair exactly where it is
+   today, which is why the refusal strictly adds rejections at the grains it does reach.
 
 ## Tests
 
@@ -309,7 +378,13 @@ The change:
   primitive-parameter refusal gets its rejection case one class over, in
   `ArgmappingProjectionRejectionPipelineTest`: that is where this family's refusals already live,
   covering the unknown-key-column verdict at each of the five sites, while this class holds emission
-  cases and no rejection. There is no untyped-column case, step 1 having dropped that refusal.
+  cases and no rejection. There is no untyped-column case, step 1 having dropped that refusal. Nor is
+  there a case for the refusal's stand-aside on an ambiguous grain, and that is a deliberate absence
+  rather than a gap: reaching it through this tier would mean an SDL fixture whose `@condition`
+  method is an overload set, which `ServiceCatalog.admitConditionShape` refuses before the store is
+  read, so the case that arrived would pin that refusal and not this one. The residue that is
+  genuinely reachable, a class declared by two classpath entries, needs a second source entry on the
+  test classpath and is out of proportion to what it pins.
 * **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): a new
   NULL-tolerant table-valued function in `graphitron-sakila-db/src/main/resources/init.sql`,
   `films_for_actor_or_all(p_actor_id INTEGER, p_min_length INTEGER)`, whose body reads
@@ -408,6 +483,20 @@ section.
   from a second view arm: it is the same re-resolution wearing Java instead of SQL, it would name
   four relations where the projected column names one, and it would have to match on the parameter
   name a second time to get there.
+* **Keep the widening's new rows out of `candidates`.** Counting over typed rows only would leave
+  every `candidates = 1` reader seeing exactly what it sees today, which is the whole appeal.
+  Rejected, and it is the arm a later reader is most likely to re-propose. It relocates the defect
+  step 5 already argues against rather than removing it: two untypeable overloads at one position
+  (`int` and `long`) would report `candidates = 1` and every gating reader would act on an
+  unambiguous answer that does not exist, and that grain is precisely where the new refusal fires. It
+  also promotes one reader's predicate into the column, where `candidates` states rows at a grain and
+  each reader decides what to require of it.
+* **A second count column beside `candidates`.** Separating "typed answers" from "declared spellings"
+  resembles `intent_field_reference_step_target`, which carries `targets` beside `candidates`. It is
+  not that shape, and that relation's own column comment is why: the two are separate there "because
+  the two arities answer different questions and genuinely differ", a step reaching one table by
+  three routes. Here both counts answer one question under two definitions of an answer, and the
+  second definition exists only so one reader may ignore rows another reader must see.
 * **A sixth verdict in `intent_argmapping_projection_defect`.** Keeps the predicate in SQL beside
   `KEY_COLUMN_TYPE_MISMATCH`, which it resembles. Rejected on that view's own placement rule: this
   refusal exists because of how the generator emits, not because of what the schema says, and the
@@ -881,6 +970,29 @@ ambiguous grain gets instead if anything; and whether the mismatch arm standing 
 accepted as the same ambiguity discipline the item already invokes, or avoided. Either answer is
 defensible and either is a clause of SQL rather than a redesign. What is not tenable is the
 blast-radius paragraph as written, which asserts that neither reader changes.
+
+> **Author response (revision 4).** Taken, and the finding turned out to point one tier further than
+> it reached. The refusal now requires `candidates = 1`, and step 5 argues why that qualifier is not
+> the conditional mirror the fourth decision refuses: it sits on the resolution-ambiguity axis, not
+> on the path-nullability axis the decision is about. The blast-radius paragraph is rewritten to name
+> both gates rather than one, and to state what the count does. The consequence the finding draws
+> from it does not survive contact with `ServiceCatalog.admitConditionShape`, which admits a
+> `@condition` overload set only where every declaration agrees on arity, staticness, return type,
+> throws clause and, at each non-table position, the parameter's name and declared type; the finding's
+> worked shape is `Ambiguity.ParameterPosition` or `Ambiguity.ParameterCount` before the store is
+> read, and `pickMethod` refuses a second same-named declaration outright on the `@service` rail. So
+> the mismatch rejection is not exchanged for a compile error, and the misleading "declare `Integer`"
+> message cannot be the only error at that grain. What the paragraph now owes instead is the narrower
+> residue the walk cannot see: a class declared by two classpath entries whose declarations disagree,
+> which is stated and located rather than absorbed. The silence is spelled in the family's own words,
+> `intent_node_id_decode_defect`'s comment already making the same move for an overloaded producer.
+> Two further precisions came out of the same pass: the `LEFT JOIN` admits arrays and type variables
+> beside primitives, so the count paragraph under-described what inflates it; and a typed row's
+> spelling is determined by its type, which bounds the growth to the untypeable population. The
+> `candidates` column comment is rewritten rather than amended, because `candidates = 1` stops
+> implying a resolved type and no one clause carries that. Both non-blocking notes are taken, the CTE
+> column list into the cost sentence and the three unaffected tests into it as well. Arm B of the
+> finding and the two-count variant are written into `## Other solutions we've considered`.
 
 *Non-blocking, no reply needed.*
 
