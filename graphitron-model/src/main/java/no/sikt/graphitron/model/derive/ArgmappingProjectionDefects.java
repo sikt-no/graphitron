@@ -11,9 +11,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
+import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
@@ -52,6 +54,17 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * opened has no verdict of its own: nothing at its coordinate is spelled that way, so it draws no
  * match and is refused with every other unresolvable spelling.
  *
+ * <p>One more arm is the author's and is derived here all the same, for the reason the two below
+ * are: a {@code @condition} method parameter declared as a Java primitive cannot take a projected
+ * key read. The read is a boxed local at every shape of nullability along the projected path,
+ * because an omitted {@code @nodeId} anywhere on that path projects {@code null} rather than
+ * crashing the request, and the compiler is no backstop for {@code int p = <boxed null>}. That
+ * refusal exists because of how this generator emits and not because of what the schema says, which
+ * is the rule the defect view's own comment states for where such an arm lives; it is the type
+ * question the projection already asks finally being asked where it used to stand aside, rather
+ * than a second question about nullability standing beside it. A {@code @routine} parameter's type
+ * is the generated method's own and is boxed, so no routine binding can present one.
+ *
  * <p>Two further arms are the generator's rather than the author's, which is why they are derived
  * here and not in SQL: a projection that resolves at a site whose emitter does not read it yet, and
  * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
@@ -84,7 +97,7 @@ public final class ArgmappingProjectionDefects {
      */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
         Set.of(INTENT_ARGMAPPING_PROJECTION_DEFECT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
-            GRAPHITRON_ARGMAPPING_ENTRY));
+            INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE, GRAPHITRON_ARGMAPPING_ENTRY));
 
     /**
      * The {@code site} values whose emitters read a resolved key projection: a routine IN parameter and
@@ -231,15 +244,84 @@ public final class ArgmappingProjectionDefects {
 
     /**
      * Projects every {@code argMapping} node-id rejection over {@code graphName}'s partition: the
-     * five author defects from the detection view, then the deferrals for projections that resolve and
-     * cannot be emitted. Empty for a graph whose {@code argMapping} paths all bind ordinary values,
-     * and whose projections all resolve at sites that emit them in a shape those emitters build.
+     * five author defects from the detection view, then the projections a primitive parameter cannot
+     * take, then the deferrals for projections that resolve and cannot be emitted. Empty for a graph
+     * whose {@code argMapping} paths all bind ordinary values, and whose projections all resolve at
+     * sites that emit them in a shape those emitters build.
      */
     public static Detection detect(DSLContext dsl, String graphName) {
         var defects = new ArrayList<Defect>(authorDefects(dsl, graphName));
+        defects.addAll(primitiveParameters(dsl, graphName));
         defects.addAll(unemittableProjections(dsl, graphName));
         return new Detection(defects);
     }
+
+    /**
+     * The projections whose consuming parameter is declared as a Java primitive: a refusal that is
+     * this component's rather than the defect view's, because it exists for a fact about how the
+     * generator emits and not about what the schema says. The emitted read is a boxed local at every
+     * shape of nullability along the projected path, an omitted {@code @nodeId} anywhere on that path
+     * projecting {@code null}, and a primitive parameter cannot take one; the compiler does not catch
+     * it either, {@code int p = <boxed null>} compiling and failing at the unboxing. The remedy is
+     * one word at the parameter, so the message quotes the spelling the author wrote and names the
+     * boxed type beside it.
+     *
+     * <p>Flat in the path's nullability, which is the whole point: the guard is emitted
+     * unconditionally, so the refusal that mirrors it asks nothing about whether the path can be
+     * absent. What it does require is that the pair resolved one answer, the qualifier every gating
+     * reader of that relation carries: on an ambiguous grain there are several spellings and quoting
+     * one of them would offer a remedy against a declaration the author may not have meant. Such a
+     * {@code @condition} overload set is refused by {@code ServiceCatalog} before any of this is
+     * read; what is left is a class two classpath entries declare differently, and standing aside
+     * there leaves the pair exactly where it is today.
+     *
+     * <p>A {@code @routine} parameter cannot present a primitive, its type being the generated
+     * method's own boxed one, so the population this reaches is the authored-method sites.
+     */
+    private static List<Defect> primitiveParameters(DSLContext dsl, String graphName) {
+        var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
+        var bp = INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE;
+        var ap = GRAPHITRON_ARGMAPPING_ENTRY;
+        return dsl.selectDistinct(p.SITE, p.USE_SITE, p.TYPE_NAME, p.FIELD_NAME, p.POSITION,
+                p.WRITTEN_PATH, p.NODE_TYPE_NAME, p.COLUMN_NAME, bp.PARAMETER_TYPE, ap.PARAM_NAME,
+                ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+            .from(p)
+            .join(ap).on(ap.GRAPH_NAME.eq(p.GRAPH_NAME), ap.SITE.eq(p.SITE),
+                ap.USE_SITE.eq(p.USE_SITE), ap.POSITION.eq(p.POSITION))
+            .join(bp).on(bp.GRAPH_NAME.eq(p.GRAPH_NAME), bp.SITE.eq(p.SITE),
+                bp.USE_SITE.eq(p.USE_SITE), bp.POSITION.eq(p.POSITION), bp.CANDIDATES.eq(1))
+            .where(p.GRAPH_NAME.eq(graphName), bp.JAVA_TYPE.isNull(),
+                bp.PARAMETER_TYPE.in(BOXED_BY_PRIMITIVE.keySet()))
+            .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.USE_SITE, p.POSITION)
+            .fetch(row -> {
+                var site = Site.of(row.get(p.SITE));
+                var entry = entry(site, row.get(p.USE_SITE), row.get(p.TYPE_NAME),
+                    row.get(p.FIELD_NAME), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH));
+                String primitive = row.get(bp.PARAMETER_TYPE);
+                return new Defect(
+                    row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
+                    row.get(p.USE_SITE), row.get(ap.PARAM_NAME), row.get(p.WRITTEN_PATH), false,
+                    Rejection.structural(entry + " projects '" + row.get(p.COLUMN_NAME)
+                        + "' of '" + row.get(p.NODE_TYPE_NAME) + "', but the parameter it binds to"
+                        + " is declared " + primitive + "; an omitted or null @nodeId anywhere on"
+                        + " that path projects null, so the projected read is boxed at every path"
+                        + " shape and a primitive parameter cannot take it. Declare it "
+                        + BOXED_BY_PRIMITIVE.get(primitive)),
+                    location(row.get(ap.SOURCE_NAME), row.get(ap.SOURCE_LINE),
+                        row.get(ap.SOURCE_COLUMN)));
+            });
+    }
+
+    /**
+     * The eight primitive spellings a declared parameter type can carry, each beside the type an
+     * author declares instead. A closed vocabulary, and the erased source form is what it is tested
+     * against rather than the absent declared-type root: that absence is equally an array or a type
+     * variable, and refusing one of those with "declare Integer" would name the wrong fact and offer
+     * a remedy that does not apply. Those two keep the compiler as the backstop they already had.
+     */
+    private static final Map<String, String> BOXED_BY_PRIMITIVE = Map.of(
+        "boolean", "Boolean", "byte", "Byte", "char", "Character", "short", "Short",
+        "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
 
     /** The view's six author arms, decoded. */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {

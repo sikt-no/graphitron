@@ -268,12 +268,14 @@ class ChainTerminusTest {
             assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_HOP.FROM_TABLE))
                 .stream().map(ChainTerminusTest::lower).toList())
                 .as("every function result in the graph's sources exposing film_id is a candidate")
-                .containsExactly("films_for_actor");
-            var row = rows.getFirst();
-            assertThat(lower(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.TO_TABLE))).isEqualTo("film");
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)).isNull();
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM)).isNull();
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)).isNull();
+                .containsExactlyInAnyOrder("films_for_actor", "films_for_actor_or_all");
+            assertThat(rows).allSatisfy(row -> {
+                assertThat(lower(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.TO_TABLE)))
+                    .isEqualTo("film");
+                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)).isNull();
+                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM)).isNull();
+                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)).isNull();
+            });
         });
     }
 

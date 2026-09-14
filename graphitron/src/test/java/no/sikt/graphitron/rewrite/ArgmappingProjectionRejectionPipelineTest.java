@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -390,6 +391,79 @@ class ArgmappingProjectionRejectionPipelineTest {
     }
 
     /**
+     * The shape the two projected-key {@code @condition} cases below share: a {@code @nodeId} input
+     * field whose node type is FK-reachable from the consuming field's own table, so the pair
+     * resolves and the only thing left to decide is the consuming parameter's type. The route is
+     * named because {@code film} reaches {@code language} by two keys; which one is immaterial here,
+     * the projection being what the two cases are about.
+     */
+    private static final String LANGUAGE_NODE_PICK = """
+        interface Node { id: ID! }
+        type Film @table(name: "film") { title: String }
+        type LanguageNode implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
+            id: ID!
+        }
+        input FilmPick {
+            languageRef: ID @nodeId(typeName: "LanguageNode")
+                @reference(path: [{key: "film_language_id_fkey"}])
+        }
+        """;
+
+    /**
+     * A {@code @condition} method parameter declared as a Java primitive cannot take a projected key
+     * read, whatever the projected path's nullability. The read is a boxed local at every path
+     * shape, because an omitted {@code @nodeId} anywhere along the path projects {@code null} rather
+     * than crashing the request, and {@code int p = <boxed null>} compiles and then fails at the
+     * unboxing, so the compiler is no backstop. This is the type question the projection already
+     * asks finally being asked where it used to stand aside.
+     *
+     * <p>The {@code @condition} half's alone: a {@code @routine} parameter's type is the generated
+     * method's own and is boxed, so no routine binding can present one. The message quotes the
+     * spelling the author wrote and names the type to declare instead, the remedy being one word at
+     * the parameter.
+     */
+    @Test
+    void aPrimitiveConditionParameterCannotTakeAProjectedKeyRead(@TempDir Path tmp)
+            throws IOException {
+        assertThatThrownBy(() -> validate(tmp, LANGUAGE_NODE_PICK + """
+            type Query {
+                language: LanguageNode
+                films(in: FilmPick!): [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+                    method: "filmsOfOptionalLanguagePrimitive",
+                    argMapping: "languageId: in.languageRef.language_id"
+                })
+            }
+            """, conditionFixtureClasspath()))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("the primitive spelling is quoted and the boxed type is the remedy")
+                .anyMatch(m -> m.contains("the parameter it binds to is declared int")
+                    && m.contains("Declare it Integer")));
+    }
+
+    /**
+     * The same projection against a boxed parameter builds clean, which is what keeps the refusal
+     * above from passing because everything at this shape fails. The nullable leaf is the point:
+     * nothing about the path's nullability is asked on either side of the rule, so the shape the
+     * refusal fires on and the shape it does not differ in the parameter's type alone.
+     */
+    @Test
+    void aBoxedConditionParameterTakesAProjectedKeyRead(@TempDir Path tmp) throws IOException {
+        assertThatCode(() -> validate(tmp, LANGUAGE_NODE_PICK + """
+            type Query {
+                language: LanguageNode
+                films(in: FilmPick!): [Film!]! @condition(condition: {
+                    className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+                    method: "filmsOfOptionalLanguage",
+                    argMapping: "languageId: in.languageRef.language_id"
+                })
+            }
+            """, conditionFixtureClasspath())).doesNotThrowAnyException();
+    }
+
+    /**
      * That the unknown-key-column verdict reaches the build's own verdict, whatever the site. The
      * walk admits the path and cannot judge the spelling, so this is the store's answer arriving.
      */
@@ -404,6 +478,19 @@ class ArgmappingProjectionRejectionPipelineTest {
 
     /** Runs the build-time validate pass over one SDL fixture, capture and detections included. */
     private static void validate(Path tmp, String sdl) throws IOException {
+        validate(tmp, sdl, List.of());
+    }
+
+    /**
+     * The same with the classpath the census reads spelled out. Every fixture above manages without
+     * one, their verdicts resolving off the SDL and the jOOQ catalog alone; the two that refuse a
+     * {@code @condition} method parameter need the census, because the fact they turn on is the
+     * declared type of a parameter on a class the author named. With no root the census reads
+     * nothing and the parameter resolves no row at all, which is the reference-resolved-no-method
+     * absence rather than the refusal's population.
+     */
+    private static void validate(Path tmp, String sdl, List<Path> classpathRoots)
+            throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);
         new GraphQLRewriteGenerator(new RunContext(
@@ -411,7 +498,22 @@ class ArgmappingProjectionRejectionPipelineTest {
             tmp, "ArgmappingProjectionRejectionPipelineTest",
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE
+            DEFAULT_JOOQ_PACKAGE,
+            classpathRoots
         )).validate();
+    }
+
+    /**
+     * The classpath root carrying the {@code @condition} fixtures, read off the class itself rather
+     * than assembled from a module layout, so it holds whether the module arrives as a directory or
+     * as a jar.
+     */
+    private static List<Path> conditionFixtureClasspath() {
+        try {
+            return List.of(Path.of(ProjectedKeyConditionFixtures.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI()));
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException("the condition fixtures' own classpath entry", e);
+        }
     }
 }

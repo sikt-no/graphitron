@@ -18,7 +18,9 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.decodedKeyMaterialisations;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.descendsWireValue;
-import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.invocationTakesProjectedRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.declaresGuardedColumnRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.invocationHoldsAColumnRead;
+import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.invocationTakesHoistedRead;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesDescentTo;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesWireDescent;
 import static no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.materialisationDecodesWireSlot;
@@ -35,13 +37,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * and the named key column read off it. The claim the whole item turns on, at the tier that can see
  * the emitted shape.
  *
- * <p>Three properties are pinned rather than one, because each has its own way of going wrong. The
+ * <p>Four properties are pinned rather than one, because each has its own way of going wrong. The
  * decode is <b>named</b>, so a transposed composite-key projection is unconstructable. It happens
  * <b>once</b> per node id however many parameters read columns off it, so one bad id has one failure
- * point. And it happens <b>outside</b> the write transaction, because the entry point catches
+ * point. It happens <b>outside</b> the write transaction, because the entry point catches
  * everything inside that transaction and routes it through the field's error channel, where a
  * malformed node id has no business: it is a client error about an argument, not a database error
- * about a write.
+ * about a write. And the column read is <b>hoisted and guarded</b>, a declared local the consumer
+ * splices by name, which is what lets an omitted {@code @nodeId} anywhere along the projected path
+ * reach the routine or the condition as a plain null instead of crashing the request on a read off a
+ * record the decode returned as null.
  *
  * <p>The store side is handed in, as in {@code KeyProjectionRelationTest}: what the view resolves is
  * the model module's to pin, and the end-to-end path from an authored {@code argMapping} through
@@ -86,10 +91,13 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 "decodeInventoryRecord", "argInputInventoryId", "input"))
             .as("the wire value descends to the @nodeId leaf and the decode materialises the record")
             .isTrue();
-        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
                 "keyInputInventoryId", "INVENTORY", "INVENTORY_ID"))
-            .as("the column is named, not indexed: a transposed composite projection cannot be built")
+            .as("the column is named, not indexed, read in the prelude, and the call takes the local")
             .isTrue();
+        assertThat(invocationHoldsAColumnRead(fetchers, "rentFilm", "Routines.rentFilm"))
+            .as("no read survives inside the routine's argument list, so no conditional sits there")
+            .isFalse();
         assertThat(descendsWireValue(fetchers, "rentFilm", "argInputCustomerId", "input"))
             .as("the unprojected sibling parameter still reads its value straight off the wire map")
             .isTrue();
@@ -150,8 +158,12 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .as("one declaration")
             .isEqualTo(1);
         assertThat(projectedColumnReads(fetchers, "rentFilm", "keyInputInventoryId"))
-            .as("both parameters read off it")
-            .isEqualTo(2);
+            .as("and one guarded read of the one column both parameters want")
+            .isEqualTo(1);
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
+                "keyInputInventoryId", "INVENTORY", "INVENTORY_ID"))
+            .as("which both parameters take by name")
+            .isTrue();
     }
 
     /**
@@ -206,7 +218,7 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 "decodeInventoryRecord", "argInputInventoryId", "input"))
             .as("the decode's argument is the node id's own slot, not the input object above it")
             .isTrue();
-        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
                 "keyInputInventoryId", "INVENTORY", "INVENTORY_ID"))
             .as("the inferred column is read by name, as the spelled-out form's is")
             .isTrue();
@@ -239,7 +251,7 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 "decodeInventoryRecord", "inventoryId"))
             .as("the slot read is the decode's argument, with no descent to compose")
             .isTrue();
-        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
                 "keyInventoryId", "INVENTORY", "INVENTORY_ID"))
             .as("the routine gets the column, never the base64 string")
             .isTrue();
@@ -290,9 +302,9 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
                 "decodeCustomerRecord", "argInputCustomerId", "input"))
             .as("the inferred arm's leaf is its whole path")
             .isTrue();
-        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
                 "keyInputInventoryId", "INVENTORY", "INVENTORY_ID")).isTrue();
-        assertThat(invocationTakesProjectedRead(fetchers, "rentFilm", "Routines.rentFilm",
+        assertThat(invocationTakesHoistedRead(fetchers, "rentFilm", "Routines.rentFilm",
                 "keyInputCustomerId", "CUSTOMER", "CUSTOMER_ID")).isTrue();
     }
 
@@ -340,8 +352,11 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         assertThat(readsColumnByName(conditions, glue, "keyInFilmId", "FILM", "FILM_ID"))
             .as("the column is named, not indexed")
             .isTrue();
+        assertThat(declaresGuardedColumnRead(conditions, glue, "keyInFilmId", "FILM", "FILM_ID"))
+            .as("and the read is a guarded prelude local, so an absent node id binds null")
+            .isTrue();
         assertThat(materialisationPrecedesFirstRead(conditions, glue, "keyInFilmId"))
-            .as("the materialisation precedes the binding local that reads it")
+            .as("the materialisation precedes the guarded read that projects off it")
             .isTrue();
     }
 

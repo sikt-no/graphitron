@@ -159,11 +159,13 @@ public final class TypeSpecAssertions {
     // ------------------------------------------------------------------------------------------
     // Projected-key emission
     //
-    // The shapes these scan are ProjectedKeyReads' two emissions (the hoisted materialisation
-    // `<Record> <local> = <decodeHelper>(<wire read>);` and the column read
-    // `<local>.get(<Tables>.<TABLE>.<COLUMN>)`) plus where the hosts place them. Callers ask the
-    // typed question ("does this method materialise the decoded record once?", "is the column
-    // named rather than indexed?"); the rendered spelling lives only here.
+    // The shapes these scan are ProjectedKeyReads' two emissions, both hoisted into the prelude: the
+    // materialisation `<Record> <local> = <decodeHelper>(<wire read>);` and the guarded column read
+    // `<Boxed> <local><Column> = <local> == null ? null : <local>.get(<Tables>.<TABLE>.<COLUMN>);`,
+    // whose own name is what a consumer splices. Plus where the hosts place them. Callers ask the
+    // typed question ("does this method materialise the decoded record once?", "is the column named
+    // rather than indexed?", "is the read hoisted out of the call?"); the rendered spelling, the
+    // column local's derived name included, lives only here.
     // ------------------------------------------------------------------------------------------
 
     /**
@@ -217,7 +219,12 @@ public final class TypeSpecAssertions {
             + "\\([^;]*?\\.get\\(" + Pattern.quote("\"" + leafKey + "\"") + "\\)")) > 0;
     }
 
-    /** The number of column reads off {@code keyLocal} ({@code keyLocal.get(…)}) in the body. */
+    /**
+     * The number of column reads off {@code keyLocal} ({@code keyLocal.get(…)}) in the body. Each
+     * lives in the prelude, in the guarded local that projects it, so this counts the distinct
+     * columns projected off one decoded record rather than the consumers that take them: two
+     * parameters bound to one column share the local and read once.
+     */
     public static long projectedColumnReads(TypeSpec type, String methodName, String keyLocal) {
         return countIn(type, methodName,
             Pattern.compile(Pattern.quote(keyLocal) + "\\.get\\("));
@@ -235,15 +242,68 @@ public final class TypeSpecAssertions {
     }
 
     /**
-     * True when a named-column read off {@code keyLocal} appears inside {@code invoked}'s own
-     * argument list (within the same statement), i.e. the projected value is what the invocation is
-     * handed rather than merely computed somewhere in the body.
+     * True when the projected column is read in the prelude and {@code invoked} is handed the local
+     * that read it: the hoisted shape, asked as one question because either half alone would pass on
+     * a body that still reads at the call.
+     *
+     * <p>Three claims, and the third is the one the guard needs. The read is a declared local
+     * guarded on the decoded record being null, so an absent node id anywhere along the projected
+     * path reaches the invocation as {@code null} rather than crashing on the read. The local is
+     * what the argument list holds, so the conditional is nowhere near it. And no named-column read
+     * survives inside that argument list at all, which is what
+     * {@link #invocationHoldsAColumnRead} states separately for a caller that wants the negative on
+     * its own.
      */
-    public static boolean invocationTakesProjectedRead(TypeSpec type, String methodName,
+    public static boolean invocationTakesHoistedRead(TypeSpec type, String methodName,
             String invoked, String keyLocal, String tableConstant, String columnConstant) {
+        String column = columnLocal(keyLocal, columnConstant);
+        return declaresGuardedColumnRead(type, methodName, keyLocal, tableConstant, columnConstant)
+            && countIn(type, methodName, Pattern.compile(
+                "[\\w.$]*" + Pattern.quote(invoked) + "\\([^;]*?"
+                + Pattern.quote(column) + "(?![\\w$])")) > 0
+            && !invocationHoldsAColumnRead(type, methodName, invoked);
+    }
+
+    /**
+     * True when the method declares the guarded read of the named column off {@code keyLocal}:
+     * {@code <Boxed> <keyLocal><Column> = <keyLocal> == null ? null : <keyLocal>.get(…)}. The whole
+     * of what makes an omitted {@code @nodeId} project a null instead of failing the request, in the
+     * one statement a developer can breakpoint.
+     */
+    public static boolean declaresGuardedColumnRead(TypeSpec type, String methodName,
+            String keyLocal, String tableConstant, String columnConstant) {
         return countIn(type, methodName, Pattern.compile(
-            "[\\w.$]*" + Pattern.quote(invoked) + "\\([^;]*?"
+            "[\\w.$<>, ]+\\s+" + Pattern.quote(columnLocal(keyLocal, columnConstant))
+            + "\\s*=\\s*" + Pattern.quote(keyLocal) + "\\s*==\\s*null\\s*\\?\\s*null\\s*:\\s*"
             + namedColumnRead(keyLocal, tableConstant, columnConstant).pattern())) > 0;
+    }
+
+    /** True when any read off a decoded record survives inside {@code invoked}'s argument list. */
+    public static boolean invocationHoldsAColumnRead(TypeSpec type, String methodName,
+            String invoked) {
+        return countIn(type, methodName, Pattern.compile(
+            "[\\w.$]*" + Pattern.quote(invoked) + "\\([^;]*?\\.get\\([\\w.$]*Tables\\.")) > 0;
+    }
+
+    /**
+     * The local a projected column read declares: the record local's own name plus the column's
+     * jOOQ field name in camel case. The rendered spelling lives here with every other, so a test
+     * asking about the hoisted read names the record local and the column constant it already knows
+     * and never the derived name.
+     */
+    private static String columnLocal(String keyLocal, String columnConstant) {
+        var name = new StringBuilder(keyLocal);
+        boolean upper = true;
+        for (int i = 0; i < columnConstant.length(); i++) {
+            char c = columnConstant.charAt(i);
+            if (c == '_') {
+                upper = true;
+                continue;
+            }
+            name.append(upper ? Character.toUpperCase(c) : Character.toLowerCase(c));
+            upper = false;
+        }
+        return name.toString();
     }
 
     /**

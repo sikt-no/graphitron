@@ -4,6 +4,7 @@ import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.LinkedHashMap;
@@ -30,6 +31,13 @@ import java.util.function.Function;
  * about an argument, not a database error about a write, so it has to be raised before that
  * {@code try} opens; a caller emits {@link #declarations()} first and the guard follows for free.
  *
+ * <p><b>Read in the prelude, not at the call.</b> A projected column is a declared local too, so what
+ * a consumer splices is a name: the argument list of a routine call and the initialiser of a
+ * {@code @condition} binding hold no {@code get} and no conditional. That is what lets the read be
+ * null-safe, an absent node id anywhere along the projected path decoding to a null record and
+ * projecting a null column rather than crashing the request on the read, with the guard one
+ * breakpointable line beside the decode it guards.
+ *
  * <p>The decode helper arrives from the host rather than being computed here. One generated class's
  * private-static method namespace is the host's to allocate: a {@code <Type>Fetchers} class may already
  * host a {@code decode<TypeName>Record} body for a jOOQ-record-typed input-bean member, and the resolver that
@@ -49,10 +57,30 @@ public final class ProjectedKeyReads {
     /** How this host reaches a decode for one projection: the name to call. */
     private final Function<KeyProjection, String> decodeHelperFor;
 
-    /** Declared locals by the leaf path that produced them, in declaration order. */
-    private final Map<String, Declared> declared = new LinkedHashMap<>();
+    /** Declared locals by what produced them, in declaration order. */
+    private final Map<Key, Declared> declared = new LinkedHashMap<>();
 
     private record Declared(String local, CodeBlock declaration) {}
+
+    /**
+     * What a declared local stands for. Two populations on two axes, keyed by one sealed type so
+     * that insertion order is dependency order by construction: a column read is only ever asked for
+     * after the record it reads, so the sequence {@link #declarations()} drains never puts a read
+     * ahead of its own decode. A single map keyed by a string would have made that ordering hold by
+     * this class's arithmetic instead, which is the arrangement it exists to avoid.
+     */
+    private sealed interface Key {
+
+        /** The record one node id materialises into, keyed by the path that node id sits on. */
+        record RecordDecode(String leafPath) implements Key {}
+
+        /**
+         * One column read off that record, keyed by the record's path and the column's own jOOQ
+         * field name. Two projections of one column at one coordinate share the local, exactly as
+         * two reads of one record share the record local.
+         */
+        record ColumnRead(String leafPath, String columnJavaName) implements Key {}
+    }
 
     private ProjectedKeyReads(KeyProjectionRelation projections, FieldCoordinates coordinate,
             Function<KeyProjection, String> decodeHelperFor) {
@@ -142,8 +170,9 @@ public final class ProjectedKeyReads {
     }
 
     /**
-     * The decode declarations this method needs, in the order they were first asked for. Emitted
-     * ahead of every statement that reads one; empty when no binding projected.
+     * The declarations this method needs, in the order they were first asked for: each node id's
+     * decode and, after it, the guarded read of every column projected off that decode. Emitted
+     * ahead of every statement that names one; empty when no binding projected.
      */
     public CodeBlock declarations() {
         var b = CodeBlock.builder();
@@ -151,13 +180,67 @@ public final class ProjectedKeyReads {
         return b.build();
     }
 
-    /** {@code <local>.get(Tables.<T>.<COL>)}, declaring {@code local} on first use. */
+    /**
+     * The name of the local holding this projection's column value, declaring both that local and
+     * the record it reads on first use.
+     *
+     * <p>The read is a declared statement rather than an expression spliced into the consumer,
+     * which is what makes it null-safe without putting a conditional inside an argument list. The
+     * decode helper returns {@code null} for exactly one case, a wire value that is not a
+     * {@code String}, which is an omitted or explicitly-null slot anywhere along the projected path;
+     * every other failure it raises rather than returns, so a malformed id and one encoded for
+     * another node type still fail the request before the consumer runs. What absence means is the
+     * consumer's to decide, a routine's parameter or a {@code @condition} author's, and this guard
+     * is the one line that lets them decide it instead of the request dying on the read.
+     *
+     * <p>Unconditional, at every shape of nullability along the path. Asking whether the path can be
+     * absent would mean deriving the answer over every segment, one more place to get the segment
+     * arithmetic wrong, to spare a check graphql-java has already made dead.
+     */
     private CodeBlock read(KeyProjection projection, String leafPath,
             java.util.function.Supplier<CodeBlock> wireRead) {
-        String local = declared
-            .computeIfAbsent(leafPath, key -> declare(projection, key, wireRead)).local();
-        return CodeBlock.of("$L.get($T.$L.$L)", local, CatalogRefs.constantsClass(projection.nodeTable()),
-            projection.nodeTable().javaFieldName(), projection.column().javaName());
+        String record = declared.computeIfAbsent(new Key.RecordDecode(leafPath),
+            key -> declareRecord(projection, leafPath, wireRead)).local();
+        String column = declared.computeIfAbsent(
+            new Key.ColumnRead(leafPath, projection.column().javaName()),
+            key -> declareColumn(projection, record)).local();
+        return CodeBlock.of("$L", column);
+    }
+
+    /**
+     * {@code <ColumnType> <local> = <record> == null ? null : <record>.get(Tables.<T>.<COL>);} — the
+     * guarded read, in statement form beside the decode it guards.
+     *
+     * <p>Boxed, always. The lift can yield a primitive {@code TypeName}, the captured binding type
+     * being {@code Class.getName()}'s own spelling and that spelling including the primitive names;
+     * {@code int c = <record> == null ? null : …} would not compile, so the box is what makes the
+     * declared local able to hold the absence this read exists to project. It is also what a
+     * consuming parameter has to be able to take, which is the type rule the build enforces.
+     */
+    private Declared declareColumn(KeyProjection projection, String record) {
+        String local = record + camelCased(projection.column().javaName());
+        return new Declared(local, CodeBlock.of("$T $L = $L == null ? null : $L.get($T.$L.$L);\n",
+            columnType(projection), local, record, record,
+            CatalogRefs.constantsClass(projection.nodeTable()),
+            projection.nodeTable().javaFieldName(), projection.column().javaName()));
+    }
+
+    /**
+     * The projected column's Java type as the emitted local declares it, boxed. The lift's own null
+     * arm is a fixture placeholder that never reaches emission, so meeting one here is this
+     * generator having assembled a projection it cannot type rather than an author's defect.
+     */
+    private static TypeName columnType(KeyProjection projection) {
+        TypeName type = CatalogRefs.columnType(projection.column());
+        if (type == null) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (key projection): the projected column '"
+                + projection.column().sqlName() + "' of '" + projection.nodeTypeName() + "' at "
+                + projection.coordinate() + " carries '" + projection.column().columnClass()
+                + "' as its bound type, which names no class, so the read off the decoded record"
+                + " cannot be declared");
+        }
+        return type.box();
     }
 
     /**
@@ -165,7 +248,7 @@ public final class ProjectedKeyReads {
      * so a developer can breakpoint the decode and read a meaningful frame, which is the same reason
      * the descent helpers beside it are statements rather than a ternary chain.
      */
-    private Declared declare(KeyProjection projection, String leafPath,
+    private Declared declareRecord(KeyProjection projection, String leafPath,
             java.util.function.Supplier<CodeBlock> wireRead) {
         String local = localName(leafPath);
         return new Declared(local, CodeBlock.of("$T $L = $L($L);\n",
@@ -214,5 +297,25 @@ public final class ProjectedKeyReads {
             name.append(Character.toUpperCase(segment.charAt(0))).append(segment.substring(1));
         }
         return name.toString();
+    }
+
+    /**
+     * A jOOQ field name as a local's suffix: {@code CUSTOMER_ID} to {@code CustomerId}, so the column
+     * local reads as the record local's own name extended rather than as a constant shouted at the
+     * end of it.
+     */
+    private static String camelCased(String fieldName) {
+        var out = new StringBuilder();
+        boolean upper = true;
+        for (int i = 0; i < fieldName.length(); i++) {
+            char c = fieldName.charAt(i);
+            if (c == '_') {
+                upper = true;
+                continue;
+            }
+            out.append(upper ? Character.toUpperCase(c) : Character.toLowerCase(c));
+            upper = false;
+        }
+        return out.toString();
     }
 }

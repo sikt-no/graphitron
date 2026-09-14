@@ -852,6 +852,26 @@ AS $$
     ORDER BY f.film_id
 $$;
 
+-- The NULL-tolerant twin of films_for_actor, backing the optional-@nodeId-filter fixtures: a
+-- null p_actor_id means "every actor" rather than "no rows", which is the contract a routine
+-- parameter fed from an omitted @nodeId is handed. Deliberately a second function rather than a
+-- widening of films_for_actor: that one is bound at the correlated child position with p_actor_id
+-- fed from the parent row's actor_id column, and returning every film for a null parent column
+-- would give Actor.films a meaning it never asked for. The name states the NULL contract.
+CREATE OR REPLACE FUNCTION public.films_for_actor_or_all(
+    p_actor_id   INTEGER,
+    p_min_length INTEGER
+) RETURNS TABLE(film_id INTEGER, title TEXT)
+LANGUAGE sql STABLE
+AS $$
+    SELECT DISTINCT f.film_id, f.title
+    FROM film f
+    LEFT JOIN film_actor fa ON fa.film_id = f.film_id
+    WHERE (p_actor_id IS NULL OR fa.actor_id = p_actor_id)
+      AND f.length >= p_min_length
+    ORDER BY f.film_id
+$$;
+
 -- R451 routine fixture: the VOLATILE set-returning write function backing @routine on a
 -- Mutation field (the routine call IS the write and commits before the follow-up query).
 -- Inserts a rental row and returns its generated key as a one-row table, the shape the

@@ -92,6 +92,31 @@ input ActorFilmFilter {
     minLength: Int!
 }
 
+# An optional @nodeId filter, in its two shapes. A client may leave the filter out of the request
+# entirely, and the generated code projects null rather than failing: the decode of an absent slot
+# yields a null record, the guarded read off it yields a null column, and films_for_actor_or_all
+# reads that null as "every actor". Which of the two shapes carries the optionality is the point of
+# there being two. OptionalActorFilter puts it on the @nodeId leaf itself; RequiredActorFilter has a
+# non-null leaf and is reached through a nullable argument, so the descent yields null one level up.
+# Neither is asked about anywhere in the generator: the guard is emitted at every path shape.
+input OptionalActorFilter {
+    actorRef: ID @nodeId(typeName: "ActorNode")
+}
+
+input RequiredActorFilter {
+    actorRef: ID! @nodeId(typeName: "ActorNode")
+}
+
+# The @condition rail's own filter. A node type FK-reachable from `film` in one hop, because an
+# input field carrying @nodeId resolves a route to its node type's table whether or not an
+# argMapping spends it, and `actor` is two hops from `film`. `film` reaches `language` by two keys,
+# so the route is named rather than discovered; the consuming field's override: true then keeps the
+# route from contributing a predicate beside the method's own.
+input OptionalLanguageFilter {
+    languageRef: ID @nodeId(typeName: "LanguageNode")
+        @reference(path: [{key: "film_language_id_fkey"}])
+}
+
 # Routine-carrier RLS fixture (see init.sql's secure_note block): the write commits through a
 # SECURITY DEFINER routine while the caller's read policy hides the fresh row, so the payload's
 # data field legitimately resolves null with an empty errors channel.
@@ -277,6 +302,41 @@ type Query {
             argMapping: "pActorId: actorId, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
+    # An omitted @nodeId in a key projection reaches the routine as null, and the NULL-tolerant
+    # function decides what absence means. Three coordinates, one rule, differing only in where the
+    # optionality sits and which consumer reads the projected value.
+    #
+    # The nullable leaf: the filter is required, the @nodeId inside it is not. Omitting actorRef
+    # returns every film at or above minLength; supplying one narrows to that actor's films.
+    filmsForOptionalActor(filter: OptionalActorFilter!, minLength: Int!): [Film!]!
+        @routine(
+            name: "films_for_actor_or_all"
+            argMapping: "pActorId: filter.actorRef.actor_id, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film"}])
+    # The nullable ancestor: the @nodeId is non-null, the input object holding it is optional. The
+    # descent yields null one level above the node id, so the decode is handed nothing and the same
+    # null reaches the same parameter. Nothing in the generator asks which of the two shapes it is.
+    filmsForOptionalActorFilter(filter: RequiredActorFilter, minLength: Int!): [Film!]!
+        @routine(
+            name: "films_for_actor_or_all"
+            argMapping: "pActorId: filter.actorRef.actor_id, pMinLength: minLength"
+        )
+        @reference(path: [{table: "film"}])
+    # The @condition consumer of the same rule: a field-level method, so it is bound to the whole
+    # field and called once per statement whatever the client sent. An omitted languageRef arrives
+    # as a null Integer and the author's own method decides that absence is unconstrained. The
+    # contrast is the FK-target @nodeId whole-slot rail, where an absent value skips the call.
+    # override: true takes the implicit predicate off the input field, so the only thing narrowing
+    # this field is the method, which is what lets the execution tier read the method's own answer
+    # off the rows rather than a predicate that happens to agree with it.
+    filmsByOptionalLanguage(pick: OptionalLanguageFilter!): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "filmsOfOptionalLanguage",
+            argMapping: "languageId: pick.languageRef.language_id"
+        }, override: true)
+        @defaultOrder(primaryKey: true)
     # Relay Global Object Identification entry point — dispatches by typeId prefix
     # (extracted from the opaque base64 id) to the matching NodeType's table.
     # See plan-nodeid-directives.md "Query.node(id:) dispatch is core".
@@ -2534,6 +2594,15 @@ type ActorCondMember implements FilmCondRef @table(name: "actor") {
 }
 type InvCondMember implements FilmCondRef @table(name: "inventory") {
     rowId: Int @field(name: "inventory_id")
+}
+
+# The node type the optional-@nodeId filters open: a second type over `actor`, node-backed while
+# the plain Actor below is not, so an opaque id can be encoded for it without making Actor itself a
+# node. actor's key is one column, so a binding that stops on the node id infers it.
+type ActorNode implements Node @table(name: "actor") @node {
+    id:        ID!     @nodeId
+    firstName: String! @field(name: "FIRST_NAME")
+    lastName:  String! @field(name: "LAST_NAME")
 }
 
 type Actor implements Searchable @table(name: "actor") {

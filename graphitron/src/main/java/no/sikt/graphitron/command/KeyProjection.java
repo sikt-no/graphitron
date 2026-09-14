@@ -6,8 +6,8 @@ import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * One {@code argMapping} binding that decodes a node id and hands its consumer one column of the
- * decoded key: everything an emitter needs to render {@code <decode>(wire).get(Tables.X.COL)} and
- * nothing else.
+ * decoded key: everything an emitter needs to declare the decode of the wire id and the guarded read
+ * of one named column off it, and nothing else.
  *
  * <p>The column is named rather than indexed, which is the whole reason this carrier holds a
  * {@link ColumnRef} and not a key position. A composite key's decode returns values in the key's own
