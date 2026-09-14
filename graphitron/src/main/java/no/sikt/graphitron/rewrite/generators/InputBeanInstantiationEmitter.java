@@ -271,9 +271,10 @@ final class InputBeanInstantiationEmitter {
     }
 
     /**
-     * Routes a jOOQ-record member through its per-record-type {@code decode<RecordType>} helper
-     * (emitted by {@link #buildRecordDecodeHelper}), or, when the member is list-valued, through
-     * the {@code decode<RecordType>List} variant ({@link #buildRecordDecodeHelperList}). Keeps the
+     * Routes a jOOQ-record member through the {@code decode<TypeName>Record} helper of the node type
+     * its own {@code @nodeId(typeName:)} names (emitted by {@link #buildRecordDecodeHelper}), or,
+     * when the member is list-valued, through the {@code decode<TypeName>RecordList} variant
+     * ({@link #buildRecordDecodeHelperList}). Keeps the
      * bean-field assignment a one-liner; the decode-and-materialize logic lives in the readable
      * statement-form helper.
      */
@@ -490,7 +491,7 @@ final class InputBeanInstantiationEmitter {
     }
 
     /**
-     * Emits {@code private static <Record> decode<Record>(Object wire)}: decode the base64 NodeId to
+     * Emits {@code private static <Record> decode<TypeName>Record(Object wire)}: decode the base64 NodeId to
      * its raw key values and load them positionally into a fresh target record via
      * {@link org.jooq.Record#fromArray(Object[], org.jooq.Field...)}. Statement form (explicit types,
      * named locals, no {@code var}) per the "generated code is read and debugged" principle.
@@ -545,7 +546,7 @@ final class InputBeanInstantiationEmitter {
     }
 
     /**
-     * Emits {@code private static List<<Record>> decode<Record>List(Object wire)}: stream the wire
+     * Emits {@code private static List<<Record>> decode<TypeName>RecordList(Object wire)}: stream the wire
      * {@code List} of base64 NodeIds, materialise one record per element through the singular
      * {@link #buildRecordDecodeHelper} helper, and collect. A present-but-wrong-type element throws
      * (the singular helper already throws on mismatch), because an input-bean member is materialized

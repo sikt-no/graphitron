@@ -8,13 +8,13 @@ import java.util.function.Function;
 
 /**
  * What one generated class brings to a projected key read: the graph's projections, and the name that
- * class hosts each {@code decode<Record>} body under. Per class, where {@link ProjectedKeyReads} is
+ * class hosts each {@code decode<TypeName>Record} body under. Per class, where {@link ProjectedKeyReads} is
  * per method, and {@link #at} is the step between them.
  *
  * <p>Two things ride together here because both are the host's rather than the command's. The
  * relation is the plan's, handed down the same way a command row is. The decode helper's name is the
  * host's own allocation of its private-static method namespace: a {@code <Type>Fetchers} class may
- * already host a {@code decode<Record>} body for a jOOQ-record-typed input-bean member, and the
+ * already host a {@code decode<TypeName>Record} body for a jOOQ-record-typed input-bean member, and the
  * resolver keeping those names collision-free across schema packages lives with the shell that owns
  * the class. A renderer therefore receives one value and never asks either question.
  *

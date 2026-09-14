@@ -3302,7 +3302,7 @@ class BuildContext {
     /**
      * Outcome of resolving the NodeId-decode materialization data for a jOOQ-record-typed
      * {@code @service} input-bean member field carrying {@code @nodeId(typeName:)}. {@link Resolved}
-     * carries everything the {@code decode<Record>} helper materialises a {@link org.jooq.TableRecord}
+     * carries everything the {@code decode<TypeName>Record} helper materialises a {@link org.jooq.TableRecord}
      * from: the generated {@code NodeIdEncoder} {@code encoderClass} (to call {@code decodeValues}),
      * the wire-format {@code typeId} (its first argument), the target's key columns (the per-column
      * {@code set} loop), and the resolved {@link no.sikt.graphitron.model.jooq.TableRef} (the

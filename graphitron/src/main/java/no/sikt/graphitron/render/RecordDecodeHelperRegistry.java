@@ -43,7 +43,7 @@ public final class RecordDecodeHelperRegistry {
     /**
      * Brackets construct-register-drain so a registered helper can never be silently dropped:
      * constructs a fresh registry, hands it to {@code body}, then drains every collected helper onto
-     * {@code classBuilder}. A dropped drain would surface only as a dangling {@code decode<Record>(...)}
+     * {@code classBuilder}. A dropped drain would surface only as a dangling {@code decode<TypeName>Record(...)}
      * reference and a consumer compile error rather than a generator failure.
      */
     public static void collectInto(TypeSpec.Builder classBuilder, String outputPackage,

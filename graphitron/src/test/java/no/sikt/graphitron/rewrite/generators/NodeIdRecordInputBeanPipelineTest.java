@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pipeline tier: a {@code @service} input bean whose member is a jOOQ {@code *Record} backed by
  * an {@code ID! @nodeId(typeName:)} SDL field is decoded into the record via a generated
- * {@code decode<Record>} helper, never cast from the wire {@code String}. The rejection half pins
+ * {@code decode<TypeName>Record} helper, never cast from the wire {@code String}. The rejection half pins
  * that a record-typed member without a handled decode strategy fails the build with a named
  * {@code Rejection} rather than silently falling through to {@code Direct} (the
  * {@code ClassCastException}).
@@ -55,11 +55,11 @@ class NodeIdRecordInputBeanPipelineTest {
     void recordMember_withNodeId_emitsDecodeHelperOnFetchersClass() {
         // The decode helper's presence is the structural signal that the record member classified to
         // a NodeIdDecodeRecord leaf rather than a Direct (FilmRecord) raw.get(...) cast: Direct emits
-        // an inline cast and no helper, so a decode<Record> on the class means no CCE.
+        // an inline cast and no helper, so a decode<TypeName>Record on the class means no CCE.
         var fetchers = findSpec("QueryFetchers", HAPPY_SDL);
         assertThat(fetchers.methodSpecs())
             .extracting(MethodSpec::name)
-            .as("the create<Bean> helper and the per-record decode<Record> helper both land on the class")
+            .as("the create<Bean> helper and the per-node-type decode<TypeName>Record helper both land on the class")
             .contains("createTestNodeIdRecordBean", "decodeFilmRecord");
     }
 

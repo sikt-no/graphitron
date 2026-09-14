@@ -383,10 +383,10 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         """;
 
     /**
-     * The conditions-class half of the decode identity. {@code decode<Record>} used to be minted
-     * from the projected table's record class, so two node types over one table collapsed onto one
-     * body carrying one typeId: the same defect the fetchers host had, at the second host that mints
-     * these bodies. Named from the node type, the class hosts one per type.
+     * The conditions-class half of the decode identity. This class's record decode used to be keyed
+     * and named from the projected table's record class, so two node types over one table collapsed
+     * onto one body carrying one typeId: the same defect the fetchers host had, at the second host
+     * that mints these bodies. Keyed on the node type, the class hosts one per type.
      */
     @Test
     void siblingNodeTypesOverOneTable_eachConditionGetsItsOwnDecodeOnTheConditionsClass() {

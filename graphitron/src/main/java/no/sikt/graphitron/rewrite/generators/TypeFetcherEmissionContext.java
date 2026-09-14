@@ -55,7 +55,7 @@ final class TypeFetcherEmissionContext {
     // The graph's projected argMapping bindings, for the renderers that emit a decode-and-project
     // read. Empty by default so out-of-band and unit contexts behave as they did; TypeFetcherGenerator
     // installs the plan's relation up front, alongside the helper-name resolver the host allocates
-    // decode<Record> names from.
+    // decode<TypeName>Record names from.
     private no.sikt.graphitron.command.KeyProjectionRelation keyProjections =
         no.sikt.graphitron.command.KeyProjectionRelation.empty();
 
@@ -136,7 +136,7 @@ final class TypeFetcherEmissionContext {
 
     /**
      * What this {@code <Type>Fetchers} class brings to a projected key read: the graph's projections,
-     * and this class's own {@code decode<Record>} name for a decoded record. The name is resolved
+     * and this class's own {@code decode<TypeName>Record} name for a decoded record. The name is resolved
      * lazily through {@link #fetchersHelperNames()} because the resolver is installed after this
      * context is constructed, and it is the class's rather than a renderer's for the reason that
      * resolver exists: two schema packages can hold same-simple-named record classes, and the

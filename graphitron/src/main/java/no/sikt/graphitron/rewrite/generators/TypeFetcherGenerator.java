@@ -545,12 +545,12 @@ public class TypeFetcherGenerator {
         InputBeanInstantiationEmitter.collectRecordDecoders(beanHelpers.values(),
             scalarDecoders, listDecoders);
         // A projected argMapping binding decodes a node id into that node type's own record, which is
-        // the same decode<Record> body an input-bean member's @nodeId needs; both register here so one
+        // the same decode<TypeName>Record body an input-bean member's @nodeId needs; both register here so one
         // class hosts one body under one name however many sites call it. Registered before the
         // resolver is built, so the decode* namespace is sized over the union.
         collectProjectionDecoders(keyProjections, typeName, outputPackage, scalarDecoders);
         // A producer parameter typed as a node type's own record takes the whole decoded tuple, and
-        // the body that materialises it is the same decode<Record> an input-bean member's @nodeId
+        // the body that materialises it is the same decode<TypeName>Record an input-bean member's @nodeId
         // needs. Registered alongside those so one class hosts one body under one name, whichever
         // coordinate calls it.
         collectParamRecordDecoders(fields, scalarDecoders, listDecoders);

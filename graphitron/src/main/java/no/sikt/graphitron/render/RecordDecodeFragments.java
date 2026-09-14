@@ -11,7 +11,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The one body that turns a base64 node id into the target table's own {@code TableRecord}:
- * {@code private static <Record> decode<Record>(Object wire)}. Every host that decodes a node id into
+ * {@code private static <Record> decode<TypeName>Record(Object wire)}. Every host that decodes a node id into
  * a record emits this, and there are two families of them, which is why the derivation is here rather
  * than in either.
  *

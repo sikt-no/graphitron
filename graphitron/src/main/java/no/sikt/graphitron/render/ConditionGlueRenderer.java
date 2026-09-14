@@ -74,7 +74,7 @@ public final class ConditionGlueRenderer {
      * rather than off the args map. A parameter bound to the whole of such a slot is the install rail's
      * instead, and takes precedence where both resolve; see
      * {@link ProjectedKeyReads#installRailOwns}. The decode body is hosted on this class, which is the
-     * reason this site needs more than the routine site did: the {@code decode<Record>} bodies a
+     * reason this site needs more than the routine site did: the {@code decode<TypeName>Record} bodies a
      * {@code <Type>Fetchers} class hosts are unreachable from here, so a conditions class mints its own
      * through {@link RecordDecodeHelperRegistry}.
      */

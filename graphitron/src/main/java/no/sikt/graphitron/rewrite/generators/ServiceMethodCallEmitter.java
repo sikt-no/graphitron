@@ -284,7 +284,7 @@ public final class ServiceMethodCallEmitter {
             case CallSiteExtraction.JooqConvert jc -> CodeBlock.of("($T) $L", javaType, rawValue);
             // The @nodeId slot arms. Each hands the wire id to a per-class helper: the key arm to
             // the decode-and-project helper the collector lifts, whose arity-1 form returns the sole
-            // key column's own value, the record arm to the decode<Record> helper the same class
+            // key column's own value, the record arm to the decode<TypeName>Record helper the same class
             // hosts for an input-bean member decoding the same node type, and the container arm to
             // the decode<Container>Record helper that peeks the prefix and dispatches.
             case CallSiteExtraction.NodeIdDecodeKeys nid -> {
