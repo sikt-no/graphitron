@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: Ready
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
@@ -634,11 +634,15 @@ answering what the value may name and the defect rows answering what happened.
 
 Shipped at `ad09411`, with the round-4 rework at `50492f1` (three test cases, no production code: the
 two LSP diagnostic cases and the read-side refusal's pipeline case named under Tests). The round-5
-rework landed with the walk's one-member refusal removed, both candidate-count invariants relaxed to
-one, and the two cases that pin the admission. The round-6 rework rides in the commit carrying this
-revision, and it is comment text only: the declared retirement, two sentences on `COMMENT ON VIEW
+rework landed at `ed1b6db` with the walk's one-member refusal removed, both candidate-count
+invariants relaxed to one, and the two cases that pin the admission. The round-6 rework landed at
+`cd34f19` and was comment text only: the declared retirement, two sentences on `COMMENT ON VIEW
 intent_argument_filter_role` and the twin clause on `intent_input_field_filter_role`, with no relation
-body, no Java and no test touched. The file-by-file list below is what landed, and it stays rather
+body, no Java and no test touched. The round-7 rework rides in the commit carrying this revision and
+is one test case, no production code: the third of the three population-edge cases Tests names,
+`PolymorphicNodeIdDecodeTest.aContainerAtAReadSideFilterInputDrawsTheCoordinateVerdictAndNoFilterRole`,
+which is what pins the kind predicate on `intent_input_field_filter_role_live`'s `node_id_at_table`
+CTE. The file-by-file list below is what landed, and it stays rather
 than collapsing to the notes alone because the Done gate reads it against the Design section above.
 
 Symbol-anchored, no line numbers; re-find by search at pickup.
@@ -1682,6 +1686,26 @@ generated fetch field, asserting that it draws `CONTAINER_NOT_AT_A_SLOT` and dra
 control at its own coordinate the way the argument case seeds one, so the silence reads as the kind
 predicate and not as the relation drawing nothing at that shape. Nothing in the production tree has
 to change.
+
+Response: taken, and the case is
+`PolymorphicNodeIdDecodeTest.aContainerAtAReadSideFilterInputDrawsTheCoordinateVerdictAndNoFilterRole`.
+It seeds `OccupantFilter` under `Query.occupants(filter)` with two `ID` input fields, a container-naming
+one and a node-typed control at its own coordinate, and asserts both halves: the container draws
+`CONTAINER_NOT_AT_A_SLOT` at its occurrence path, and the filter-role relation carries the control's
+`NODE_ID` row and nothing for the container. The control is what makes the silence readable, since a
+fixture where the precedence-3 arm never fired at all would assert the same absence.
+
+The case is answerable for the predicate rather than merely adjacent to it, checked the way the
+finding checked its absence: with `AND i.resolved_type_kind = 'NODE_TYPE'` deleted from the
+`node_id_at_table` CTE it fails, and it fails on the right row, reporting
+`OccupantFilter.occupantId@customer NODE_ID`, which is the container-naming filter input carrying a
+role whose own comment says the predicate's columns come from a resolved node key. That is the flip
+the Fact store section describes, now a red test rather than a reading of the SQL. Production tree
+untouched; the assertion reads the materialized `intent_input_field_filter_role`, which is the
+relation a classifier spells, rather than the `_live` view the rule is stated on.
+
+The non-blocking sha note is taken: Implementation now names `ed1b6db` and `cd34f19` beside `ad09411`
+and says what each landing carried. The emitted-glue note is read and agreed; the shipped form stays.
 
 #### Non-blocking
 

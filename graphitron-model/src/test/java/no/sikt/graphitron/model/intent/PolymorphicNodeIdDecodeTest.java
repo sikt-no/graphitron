@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_FILTER_ROLE;
+import static no.sikt.graphitron.model.Tables.INTENT_INPUT_FIELD_FILTER_ROLE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_CONTAINER_MEMBER;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_CANDIDATE_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_DECODE;
@@ -20,16 +21,20 @@ import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_INSTRUCTION;
 import static no.sikt.graphitron.model.Tables.INTENT_NODE_ID_POLYMORPHIC_DECODE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_RECORD_SLOT_ASSIGNABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
+import static no.sikt.graphitron.model.test.SeededStore.OccurrenceStep;
+import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedInputField;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedNode;
 import static no.sikt.graphitron.model.test.SeededStore.seedNodeKeyColumnRef;
+import static no.sikt.graphitron.model.test.SeededStore.seedOccurrencePath;
 import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedRecordSupertypes;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
@@ -430,6 +435,38 @@ class PolymorphicNodeIdDecodeTest {
         });
     }
 
+    /**
+     * The filter-input rung of the same edge, and the one the widening reaches least obviously: a
+     * container-naming {@code @nodeId} on an input field under a generated fetch field. Before the
+     * widening the instruction drew no row at all, so the precedence-3 arm's join to
+     * {@code node_id_at_table} missed and the arm landed {@code NONE}. The widened population draws
+     * the row at every site, so that group would now hit wherever the root argument's scope table
+     * resolves, and the field would carry {@code NODE_ID} on a type that resolves no node key for
+     * the predicate's columns to come from. The kind predicate on the CTE is what keeps it at
+     * {@code NONE}, and this case is what says so: the node-typed sibling under the same argument is
+     * the control, so the container's silence reads as the predicate rather than as this relation
+     * drawing nothing at this shape.
+     */
+    @Test
+    void aContainerAtAReadSideFilterInputDrawsTheCoordinateVerdictAndNoFilterRole() {
+        withCatalog(dsl -> {
+            seedUnion(dsl);
+            seedArgument(dsl, GRAPH, "Query", "occupants", "filter", "OccupantFilter");
+            // The control, at its own coordinate under the same argument: a node-typed @nodeId does
+            // draw NODE_ID on the precedence-3 arm, so the container's absence below is the kind
+            // predicate and not the arm failing to fire for this fixture at all.
+            filterInput(dsl, "customerId", "Customer");
+            filterInput(dsl, "occupantId", "AddressOccupant");
+
+            assertThat(polymorphicDefects(dsl)).containsExactly(
+                "Query.occupants(filter)/occupantId AddressOccupant CONTAINER_NOT_AT_A_SLOT -");
+            assertThat(inputFieldFilterRoles(dsl))
+                .as("the container's field lands NONE and is dropped, while the node type beside it"
+                    + " still carries the role")
+                .containsExactly("OccupantFilter.customerId@customer NODE_ID");
+        });
+    }
+
     // ===== The disjointness the two defect views rest on =====
 
     /**
@@ -515,6 +552,19 @@ class PolymorphicNodeIdDecodeTest {
         seedMethod(dsl, CLASSES, SVC, "get", "()V");
         seedMethodParameter(dsl, CLASSES, SVC, "get", "()V", 0, paramName,
             Map.of("", paramClass));
+    }
+
+    /**
+     * One {@code ID} input field on {@code OccupantFilter} carrying {@code @nodeId(typeName:)}, with
+     * the occurrence path that reaches it from {@code Query.occupants(filter)}. The path is what
+     * hands the field its resolving table, so a case about the filter rung needs it rather than the
+     * bare field.
+     */
+    private static void filterInput(DSLContext dsl, String fieldName, String nodeTypeRef) {
+        seedInputField(dsl, GRAPH, "OccupantFilter", fieldName, "ID", 0, false, false, null);
+        seedOccurrencePath(dsl, GRAPH, "Query", "occupants", "filter", "OccupantFilter",
+            new OccurrenceStep("OccupantFilter", fieldName, "ID"));
+        seedFieldNodeId(dsl, GRAPH, "OccupantFilter", fieldName, nodeTypeRef);
     }
 
     /**
@@ -639,6 +689,22 @@ class PolymorphicNodeIdDecodeTest {
             .orderBy(e.USE_SITE)
             .fetch()
             .map(r -> r.get(e.USE_SITE) + " " + r.get(e.NODE_TYPE_NAME));
+    }
+
+    /**
+     * The input-field rung's roles, read off the materialized relation every consumer spells. The
+     * {@code _live} view is the rule; what a classifier sees is this table, so an arm that flipped
+     * to {@code NODE_ID} would be visible here.
+     */
+    private static List<String> inputFieldFilterRoles(DSLContext dsl) {
+        derive(dsl);
+        var r = INTENT_INPUT_FIELD_FILTER_ROLE;
+        return dsl.select(r.fields()).from(r)
+            .where(r.GRAPH_NAME.eq(GRAPH))
+            .orderBy(r.TYPE_NAME, r.FIELD_NAME, r.RESOLVING_TABLE)
+            .fetch()
+            .map(x -> x.get(r.TYPE_NAME) + "." + x.get(r.FIELD_NAME) + "@"
+                + x.get(r.RESOLVING_TABLE) + " " + x.get(r.ROLE));
     }
 
     private static List<String> nodeIdFilterRoles(DSLContext dsl) {
