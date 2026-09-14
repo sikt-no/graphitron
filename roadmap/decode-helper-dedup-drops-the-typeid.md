@@ -65,6 +65,8 @@ helper, so the pair above emits `decodePersonRecord` and `decodeOpptakPersonReco
 its own typeId. The name is an already-captured fact that reaches the emit side today
 (`KeyProjection.nodeTypeName`), so threading it onto the decode leaf adds no walk-side discovery.
 
+The key and the name are the same defect twice, and both halves move together or neither does: `InputBeanInstantiationEmitter.collectRecordDecoders` dedups on the record class, and the helper name is minted from the record class, so a fix that widens only the map key emits two methods named `decodePersonRecord` on one class, a compile error at the consumer rather than the mistyped decode. (This item absorbed R947, which stated that first; see `roadmap/changelog.md`.)
+
 *The resolution and the leaf carry the type name.* `BuildContext.NodeIdRecordDecode.Resolved` gains
 a `typeName` component beside `typeId`, as its polymorphic sibling `NodeIdRecordDecode.Candidate`
 already has, so the one carrier in this family that dropped the name stops dropping it.
