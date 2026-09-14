@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
@@ -1607,3 +1607,92 @@ four are the term used accurately elsewhere and the fourth was the retired sente
 
   Response: read and agreed. The three inline reasons stay where they are, and the
   `COMMENT ON` edits above touch only the two claims the widening falsified.
+
+### Round 7 (2026-09-14, In Review -> Done, reviewer session 01Gp4fULJV4znnMLBaNi4A5k)
+
+Verdict: rework; status moves back to `Ready`. Round 6's finding is answered and answered at the
+surface it named. The build is green (`mvn install -Plocal-db` on the rebased tree at `cd34f19`:
+BUILD SUCCESS, every module, 14:16 wall clock, no test failures and no errors). One blocking finding
+on question 2: the Tests section names three population-edge cases as the item's own evidence that
+the widening reaches no filter surface, and two of the three shipped.
+
+Round 6's retirement is complete, checked both ways over the DDL as that round's own sweep note asks.
+`rejection''s population` returns six occurrences and every one is the term used accurately somewhere
+else (the argument relation's absence reading and its multi-participant `NAME_MATCHED` clause, the
+input-field relation's `UNBOUND` pair, the carrier relation's `REMOTE` arm, the write relation's
+`UNCOVERED` arm); the keyless-type escape hatch is gone from `COMMENT ON VIEW
+intent_argument_filter_role`, replaced by a kind fork that says a container is excluded by what it is
+ahead of the three exits and that a node type is still read as the single-column shape. Both rungs'
+warrant clauses now name the `NODE_TYPE` rows as the population and the kind predicate as the
+relation's own, and neither the old phrasing nor a paraphrase of it survives anywhere in the tree.
+Both column renames hold: `intent_node_id_instruction` and `intent_node_id_decode_slot` each carry
+`resolved_type_name` and `resolved_type_kind`, and the five relations one rung out keep
+`node_type_name` as the seam says they should.
+
+Question 1 passes, checked at the symbol. `resolveNodeIdRecordDecode` asks nodehood before kind with
+the answer-preserving reasoning on the comment; `resolvePolymorphicRecordDecode` carries the three
+container refusals and no fourth, its javadoc carrying the member-count reason;
+`admitPolymorphicSlotType` answers assignability with `isAssignableFrom` against the catalog's live
+record classes and mints `AdmittedSlotType` at the admission and nowhere else; both slot kinds reach
+one leaf through `InputBeanResolver.polymorphicLeaf`, and the producer path refuses on a miss instead
+of falling through to `ThrowOnMismatch`. The emitted container helper is an `if` chain returning the
+admitted slot type, each arm calling the null-returning per-candidate helper
+`RecordDecodeFragments.decodeHelperOrNull` adds, with the multi-candidate message on
+`NodeIdDecodeFailure`. No delivered test asserts a code string against a generated method body: the
+pipeline tier's only `toString()` calls are on a `TypeName` or a `MethodSpec` return type.
+
+Question 2's core evidence is delivered and is the strongest part of the item. The seven
+execution-tier cases run the field report's own shape against PostgreSQL through one
+`UpdatableRecord<?>` slot, and `FilmReviewService.describeOccupant` dispatches on the record's
+runtime class, so what the tier demonstrates is the goal's own sentence rather than that a build
+stayed green.
+
+**Blocking (question 2): the third of the three population-edge cases the Tests section names was not
+delivered, and the predicate it was to pin is pinned by nothing.** The Tests section says "The
+population edge gets its own three, all at coordinates the walk refuses, so the widening's reach is a
+claim and not a discovery", and names them: the container-naming argument on a generated fetch field,
+the container-naming filter input under such a field, and the container at an output field. The first
+is `PolymorphicNodeIdDecodeTest.aContainerAtAReadSideArgumentDrawsTheCoordinateVerdictAndNoFilterRole`
+and the third is `aContainerAtAnOutputFieldDrawsTheCoordinateVerdictAndNoEncode`. The second does not
+exist. `intent_input_field_filter_role_live` is never queried from that test class, `POLY_CONTAINER`
+appears in no other test file in the tree, and no fixture anywhere seeds a container-naming
+instruction at an `INPUT_FIELD` site, so no test can reach the arm at all.
+
+The consequence is that one of the item's three `resolved_type_kind = 'NODE_TYPE'` predicates is
+unguarded. Deleting `AND i.resolved_type_kind = 'NODE_TYPE'` from the `node_id_at_table` CTE
+(`graphitron-model.sql:11473`) and running the whole `graphitron-model` test module gives BUILD
+SUCCESS: nothing anywhere notices. The other two predicates are not in that position, the endpoint
+one being pinned by `aContainerThatBindsATableIsRefusedAndDrawsNoEndpoint` and the argument one by
+the case above.
+
+That predicate is not decorative, which is why this is the finding rather than a coverage note. The
+Fact store section calls this rung "the same flip one step out, and it is why the edge is about reach
+rather than about the `@service` coordinate alone", and says the CTE "draws a group for it wherever
+the root argument's scope table resolves, so the role flips at a read-side filter input". The section
+then closes on the three cases: "With those three, a container contributes to no filter surface at
+any site, and the flip is a claim the Tests section pins rather than a discovery." Without the third
+case the claim is a reading of the SQL, which is exactly what the Tests section says it declines to
+leave it as, and it is the reading the item's own "Other solutions we've considered" rejects the
+alternative design over: a container-naming coordinate drawing `NODE_ID` hands the classifier a
+filter contribution with nothing behind it.
+
+Satisfied by: a fact-store case seeding a container-naming `@nodeId(typeName:)` filter input under a
+generated fetch field, asserting that it draws `CONTAINER_NOT_AT_A_SLOT` and draws no live
+`intent_input_field_filter_role_live` row (its precedence-3 arm landing `NONE`), with a node-typed
+control at its own coordinate the way the argument case seeds one, so the silence reads as the kind
+predicate and not as the relation drawing nothing at that shape. Nothing in the production tree has
+to change.
+
+#### Non-blocking
+
+* Implementation names `ad09411` and `50492f1` but not the round-5 landing, which is `ed1b6db`.
+  Round 5's own response set up the pattern ("the round-5 rework named as the commit carrying this
+  revision in the same sentence shape, so a later round can pin it the same way") and round 6 did not
+  pin it. Worth a word in the rework commit, or in the changelog entry at Done.
+
+* Emitted glue step 1 specifies `String wireString = wire instanceof String ? (String) wire : null;`
+  and what shipped is `if (!(wire instanceof String nodeId)) { return null; }` followed by the peek
+  on `nodeId`. The shipped form is documented on `polymorphicDecodeHelper`, matches the single-type
+  helper's own contract, and is what the plan's own Nullability sentence asks for (a nullable slot
+  leaves the member unset rather than raising), so this is noted only so it is not read as unnoticed
+  drift.
