@@ -203,3 +203,89 @@ carries the upgrade note from the fourth decision.
   and a warning about a filter that silently does nothing is still a release of the silent behaviour.
 * **Reads only, mutations unchanged.** Leaves an unread mutation input leaf silent while the DML
   mutation beside it rejects the same shape; the asymmetry has no reason behind it.
+
+## Reviewer findings
+
+### Round 1 (2026-09-14, Spec -> Ready, reviewer session 016uo6utLw18534uY1a6rVqD)
+
+Verdict: revisions requested. One blocking finding on question two, which takes question one's
+viability with it, plus one non-blocking note on the worked example. Question one is otherwise well
+communicated: a consumer who today writes one input object holding both the routine's key and a
+filter gets the filter silently dropped and an over-return; afterwards the key is spent, the filter
+is a WHERE clause on the function result, and a leaf naming nothing fails the build. Every symbol,
+relation and fixture the plan names exists as named; the verification narrative is in the review
+commit's message.
+
+**Finding 1 (question two, and with it question one's viability): the drop seat in step 3 sits
+downstream of the gate that refuses the spent leaf, so the Goal's own schema still fails the
+build.**
+
+The read surface reaches an input tree through `FieldBuilder.classifyArgument`'s plain-input branch,
+which calls `InputFieldResolver.resolve(typeName, rt, ...)` with `rt` the chain terminus
+(`routineChainComponents` hands it `walk.tb().returnType().table()`). Any field that comes back
+`InputFieldResolution.Unresolved` there folds the whole argument into `ArgumentRef.UnclassifiedArg`
+at the `Resolution.Rejected` arm, before `walkInputFieldConditions` runs at all. So "classify every
+leaf exactly as today, drop the spent ones at the walk" reaches only leaves whose miss is soft.
+
+A column miss is soft: it lifts to `InputField.UnboundField` and the verdict is minted at the walk,
+which is exactly what makes this item's bare-leaf and `@field` arms work. A `@nodeId` leaf is not
+soft. `BuildContext.classifyInputFieldInternal` routes it to `NodeIdLeafResolver.resolve` against
+that same `rt`, whose result must be `Resolved.SameTable` (the node type's table *is* the containing
+table) or a `Resolved.FkTarget` reached by a foreign key walk from the containing table; every other
+outcome is `Resolved.Rejected`, which the caller turns into `unresolved(field, name, ...)`.
+
+On a routine terminus the containing table is the function result table, which carries no foreign-key
+metadata. The tree states this positively:
+`GraphitronSchemaBuilderTest.tableChildOfARoutineResultParentNeedsNoReference` pins that a child of a
+`films_for_actor` parent keys by name-match, and its sibling
+`tableChildOfARoutineResultParentWithNoNameMatchPointsAtTheConditionElement` asserts the refusal
+there does not even reach "no foreign key" vocabulary.
+
+Put together on the Goal's own schema: `ActorFilmFilter.actorId: ID! @nodeId(typeName: "Actor")` is
+classified against `films_for_actor` (`film_id`, `title` per `init.sql`), `actor` is neither that
+table nor FK-reachable from it, the leaf is `Rejected`, the `filter` argument lands
+`UnclassifiedArg`, and the walk that was to drop that leaf never runs. The schema the Goal says
+"works" fails the build, with a message about a missing route to `actor` rather than anything about
+spending.
+
+This is not a corner of the design. `pActorId: filter.actorId.actor_id` is the canonical projection
+spelling (`ArgmappingProjectionRejectionPipelineTest` spells it `input.inventoryId.inventory_id`),
+and the third decision blesses precisely this leaf: "`@nodeId` on a spent leaf is exempt: the key
+projection consumes it". Under step 3 that exemption has no seat to be applied at.
+
+Step 7 inherits the same gap from the other side. A `@nodeId` sibling of a bound leaf that does not
+resolve against the result table is not merely "a refusal row in the decode ledger": `classifyInputField`
+records the refusal *because* the field came back `Unresolved`, so the same event rejects the whole
+argument. Step 7 reads as a ledger-only consequence ("that is the right direction"), and a pipeline
+case pinned to the ledger row would pass without noticing the build failure standing beside it.
+
+What would satisfy it: a settled statement in `## Implementation` of where spent-ness is applied
+relative to the classification gate. Two shapes that would read as settled, and the item has to pick
+one because they differ in what the implementer builds:
+
+* Withhold the spent leaves before the gate, by threading the spent coordinates into the plain-input
+  call site (`InputFieldResolver.resolve`) so a spent leaf is never classified against the result
+  table at all, leaving `BuildContext.classifyInputField`'s decision tree untouched, which is what
+  step 3's "the shared input classifier is not touched" actually protects. Step 3's other premise
+  would then need restating: the plain-input tree is already computed per call site rather than once
+  per input type, so it already varies by consumer in the sense that matters here.
+* Or keep the drop at the walk and say what makes a spent `@nodeId` leaf resolve cleanly against a
+  routine terminus in the first place.
+
+Either way `## Tests` needs a case that is the Goal's own schema asserted green: a spent `@nodeId`
+leaf beside a surviving filter leaf on a Query routine. The listed pipeline case "a bound leaf
+carrying `@nodeId` does not [land the conflict rejection]" passes whenever the argument is rejected
+for some other reason, so it does not pin this.
+
+**Finding 2 (question one, not blocking on its own): the worked example does not work as narrated
+even after the change.**
+
+With no `@reference` hop the terminus is the function result table, so `ActorFilm` is
+`@table(name: "films_for_actor")`, whose columns are `film_id` and `title`. `ratingCode: String
+@field(name: "rating")` therefore names no result column, and after this item it lands the
+no-binding rejection rather than the `WHERE rating = ?` the paragraph below the snippet promises;
+`rating` is a `film` column, reachable only through a hop the example does not carry. `## Tests`
+has this right ("filters the result by a function result column"), so this is the illustration
+drifting from the plan, not the plan being wrong. It is worth fixing in the same round because the
+snippet is the Goal's only worked example and the natural source for the pipeline and execution
+cases the item asks for.
