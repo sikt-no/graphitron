@@ -211,3 +211,111 @@ section.
   the prelude can hold.
 * **Emit the guard only where the path is nullable.** Keeps `ID!` projections byte-identical, at the
   cost of a store derivation over every segment's nullability; rejected in Decisions.
+
+## Reviewer findings
+
+### Round 1 (2026-09-14, Spec -> Ready, reviewer session 0179PrtvxY9DeKDUik4bbmM2)
+
+Verdict: withhold. One blocking finding on question two. Question one passes.
+
+The goal reads without reconstruction, and it is worth having. Today, if you declare an optional
+`@nodeId` filter (nullable on the leaf, or non-null under a nullable input object) and bind it to a
+routine parameter or a `@condition` method parameter with `argMapping`, omitting it costs the client
+a redacted internal error even though the emitted SDL says the field is optional. After this lands
+the routine or the condition method receives `null` and decides for itself what absence means, and a
+malformed or foreign node id still fails as a client error. The narrow scope is right and the
+"project null, do not refuse" decision is the right one: the alternative forecloses the reporter's
+whole use case.
+
+The claims about the tree check out, with one exception noted below. Verified: `ProjectedKeyReads`
+is the single emit site and its `read` does format `<local>.get($T.<T>.<COL>)` unconditionally off a
+`LinkedHashMap` keyed by leaf path; the three drains of `declarations()` are exactly
+`RootLauncherRenderer`, `RoutineWriteFetcherRenderer` and `ConditionGlueRenderer`, and the condition
+path does emit `declarations()` ahead of an alias-only binding statement, so the predicted
+`Integer pActorId = keyXCol;` shape is right; `RecordDecodeFragments.decodeHelper` returns `null` on
+exactly the non-`String` wire arm and routes every other failure through the mismatch throw, so the
+unconditional-guard justification holds and cannot swallow a foreign-type id; `CatalogRefs.columnType`
+does return `null` for a `ColumnRef` carrying no real class name, and `KeyProjection`'s compact
+constructor is where the completeness law lives; `PresenceGuard.always()` is what a same-table
+`ConditionFilter` gets, so the field-level `@condition` case really is called with `null`;
+`films_for_actor` really is bound at the correlated child position with `pActorId` fed by
+`columnMapping` from the parent row (`Actor.films`, `Actor.castFilms`, `Actor.castRecentFilms`), so
+declining to widen it is correct; `TypeSpecAssertions` holds all three named helpers, and
+`declarationOf` will not false-match the proposed `key<Path><Column>` local against the record local
+it extends; the routine page's "Projecting a key column out of a node id" section does list three
+build errors, its third bullet ending on the very sentence this item invalidates ("a parameter
+declared `int` rather than `Integer`, the build lets it through and your compiler is the backstop");
+and the WHERE-clause rail does already guard, in `ConditionGlueRenderer.appendGuardedAnd`, so "closes
+the gap between the two rails" is accurate.
+
+**Finding 1 (question two: architecture fit). The item introduces two new build errors and plans
+neither, and the operand the primitive-parameter one needs is not on the relation the spec cites.**
+
+The `## Implementation` section is four steps, all inside `ProjectedKeyReads`. Nothing in it covers
+the validate-time half, which is two new refusals:
+
+* the primitive-typed consuming parameter under a nullable path (fourth bullet of `## Decisions`), and
+* the untyped column, refused by "the derivation that mints the row" (step 1).
+
+Each needs work the plan does not allocate, and this repo's Ready specs do allocate it. The sibling
+`stated-key-column-match-states-its-arity.md` spells its store half down to the view name, its column
+list, its join predicate and which comments have to be rewritten; that is the granularity this item
+gives its emitter half and withholds from its store half.
+
+*a. The primitive fact is not where the spec looks for it.* The decision cites
+`intent_resolved_node_key_projection`'s comment as saying the type check stands aside for a primitive
+`int`, and it does. But the relation that holds the operand,
+`intent_argmapping_bound_parameter_type`, says in its own comment why: its classpath arm reaches the
+parameter's type through `jvm_declared_type_ref` at the root type path, and "that relation has no row
+where the position names no class, so a primitive parameter resolves nothing here rather than
+resolving `int`", with the further statement that the resulting absence "is four facts and this
+relation distinguishes none of them: the reference resolved no method, the method declares no
+parameter of that name, names were not compiled in, or the parameter's type names no class". So
+"reject where the parameter is primitive" cannot be a join over that operand. The fact does exist, on
+`jvm_method_parameter.parameter_type` (erased source-form, so `int` appears there), which is the
+column that arm deliberately declined to read because it drops the package. Opening that reach, and
+saying how the new refusal avoids firing on the other three absences, is a store-shape decision with
+an argued precedent against it. It is the author's to make, not something an implementer should
+settle mid-change.
+
+*b. No relation states "this projected path has a nullable segment".* The facts are there:
+`graphql_field.non_null` covers input fields (`graphql_field` carries `INPUT_OBJECT` parents),
+`graphql_argument.non_null` covers arguments, and `graphitron_argmapping_candidate` carries
+`parent_path` and `depth` for the ancestry. What does not exist is the derivation over them, and the
+plan names neither where it lives, nor its shape, nor its comment. This also turns the last bullet of
+`## Other solutions we've considered` on itself: "emit the guard only where the path is nullable" is
+rejected there "at the cost of a store derivation over every segment's nullability", and the
+primitive arm pays that cost anyway. The unconditional guard may well still be the right call, for
+the emit-time reasons the second decision gives, but the stated reason for rejecting the alternative
+does not survive the fourth decision and the item should say which reason it is standing on.
+
+*c. Refusing the untyped column contradicts an argued rule, and the plan does not say where the
+rewrite lands.* `intent_resolved_node_key_projection`'s comment argues at length that standing aside
+on a column the catalog cannot type is deliberate, that it "strictly adds rejections and removes no
+emission", and specifically that requiring the type "would additionally have contradicted the
+key-column relation's own rule that a pinned name resolves without a table". Making that pair a build
+error is a defensible trade for the hoisted local's type, and the plan states the trade. What it does
+not state is where the verdict is minted, what the message says, or that the SQL comment arguing the
+opposite has to be rewritten; `## Retired vocabulary` names three javadoc sites and no SQL comment.
+
+*What would satisfy this finding.* An implementation entry for the validate-time half at the
+granularity the emitter half already has: which relation answers "is this parameter primitive" and
+how the refusal is kept off the other absences that relation folds together, what shape the
+nullable-segment derivation takes and where it sits, where each new verdict enters
+`intent_argmapping_projection_defect` and `ArgmappingProjectionDefects`, and which existing SQL
+comments change. One narrowing that may shrink the work: the routine arm reads
+`sql_routine_parameter.binding_type`, which is the generated method's boxed type, so the primitive
+case can only arise at the authored-method sites, which is the `@condition` half alone.
+
+*Non-blocking, no reply needed.*
+
+* `## Retired vocabulary` lists the `ArgmappingProjectionDefects` javadoc among three prose sites that
+  "describe the read as `<local>.get(Tables.<T>.<COL>)` at the call". It does not; its `EMITTING_SITES`
+  javadoc says "both reading their column off a decoded record through `ProjectedKeyReads`", which
+  stays true after the hoist. The other two sites are as described. The retirement sweep will just
+  find nothing there.
+* `## User-facing docs` contrasts the new condition behaviour with "the input-field `@condition` path
+  where an absent value skips the call". The skip is the FK-target `@nodeId` + `@condition` whole-slot
+  rail specifically (`PresenceGuard.FieldPresent` is minted only for `FkTargetConditionFilter`), and
+  `INPUT_FIELD_CONDITION` is not even in `ArgmappingProjectionDefects.EMITTING_SITES`. Worth naming
+  the rail rather than the site when that sentence gets written.
