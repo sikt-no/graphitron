@@ -1,13 +1,13 @@
 ---
 id: R723
 title: "Warn when a @reference path traverses a 1:N hop into a further projection"
-status: Spec
+status: Ready
 bucket: validation
 priority: 4
 theme: diagnostics
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-09-10
+last-updated: 2026-09-14
 ---
 
 # Warn when a @reference path traverses a 1:N hop into a further projection
@@ -977,3 +977,95 @@ shape the seeded rows encode.
 explicit instruction, so the same session is now this file's last committer and is disqualified
 from the Spec → Ready gate. That gate needs a third session, disqualifying both
 `session_018X5xFp3fLA3Nt8PPHY6yxz` and `session_01NMdpgoUnNPHP51NMZXKP49`.
+
+### Round 3, Spec → Ready, session_018zHVNJtwc5ujitg7vcXGoX, 2026-09-14
+
+**Signed off.** Both questions pass, and the document is clean enough that inventing a third
+round would be the wrong service.
+
+Question 1. Restating the outcome without the plan in hand: a consumer whose SDL declares a list
+field whose `@reference` path routes through a junction table carrying its own payload gets a
+build warning at that field's coordinate naming which hop multiplies and pointing at a DISTINCT
+view as the remedy, where today the duplicates arrive unannounced inside the child list. Emitted
+SQL is unchanged, `film_actor` stays quiet because its primary key is exactly the pair the two
+hops bind, filter-site paths and `@referenceFor` produce nothing and the documentation says so in
+each case's own terms, and the finding is suppressible by rule id and honours `excludedTypes`.
+
+Viability checked rather than assumed, and every code, test and symbol the spec names exists as
+named. The substrate: `intent_field_reference_step_target`'s `via` is closed over exactly
+`KEY | TABLE | NAME_MATCH | CONDITION`, with `constraint_name` and `fk_on_from` documented NULL on
+the latter two, which is what makes the two undecidable arms necessary and decidable;
+`intent_foreign_key_column_pair` yields both sides per position, so `bound(T)` really is a union
+over two joins on it; `sql_constraint`'s `CHECK` closes `constraint_type` over the three values
+quoted, and `sql_index` carries no uniqueness column, while `JooqCatalog.IndexFacts` is
+`(String name, List<String> columns)` as stated. The channel: `withLintFindings` is called inside
+the continuation `captureAndRead` hands its callback with the live `StoreHandle`, folds in
+`SessionStateWarnings` and `DependencyVersionWarnings`, and applies `disabledRuleIds` last over
+the combined list, with the call site's own comment stating that a finding minted outside the
+walk still fires on an excluded type. The precedents: `DeprecationRecognizer` is three store reads
+in `no.sikt.graphitron.model.lint`; `UnlowerableOrderings` has both the drift-throwing `Verdict.of`
+and a total switch with no `default` whose `KEY_CAPTURE_SCATTER` arm returns `Optional.empty()`;
+`LintRule.Source` has the three arms, `CODEGEN`'s javadoc reads "a whole-build fact with no SDL
+coordinate" verbatim, and `LintRuleRegistryCoverageTest` carries all three assertions the spec
+keys the axis off. The quotations: `intent_field_reference_step_hop`'s `meta_materialize`
+registration reason says "intent_field_reference_step_target from around thirty milliseconds to
+three"; `fact-model.adoc:387` says "A relation whose absence is load-bearing owes that sentence"
+about this very walk, and `:339` carries the read-shape rule and its twenty-four-second
+measurement; `filmsByBridgedActorFirstName`'s schema comment is verbatim. The fixtures:
+`film_actor_note` is exactly the stated DDL, `referenceFilter_reverseDirectionFkHop_matchesEachParentOnce`
+exists, `postgres:18-alpine` already runs in two execution tests, `intent_field_reference_step_target`
+is registered `Arm.DERIVED`, and all eight cited roadmap paths resolve with R712 pointing at its
+changelog entry.
+
+Question 2. The shape extends what is in the tree at every point rather than standing anything
+beside it: view plus thin decode is `AuthoredClaimConflicts`, the verdict column with a total
+decode is `UnlowerableOrderings`, the store-reading lint producer is `DeprecationRecognizer` in
+the same package, and the fold-in sits beside two existing fold-ins inheriting the same filter at
+the same point. Both refusals hold on inspection. `StoreDetections` genuinely gates membership on
+a second consumer, and `violations()` is the one assembly point. The visitor refusal is the
+stronger of the two and is the right call: the target view is `WITH RECURSIVE` with window terms,
+so a `FIELD_DEFINITION`-grain visitor over the corpus's 850 fields is precisely the pathology
+`fact-model.adoc` priced, and a zero-finding corpus would not reveal it. I would hand this to an
+implementer as written. The artefact table names five artefacts with modules, the test list names
+a tier and a pinned property per entry, the acceptance criterion is a discriminating *pair* with
+the condition a fixture must meet stated and both failing completions named, and the gates are
+named both where they apply and where they deliberately do not.
+
+Non-blocking, stated only so they do not survive into implementation:
+
+* **The coordinate the verdict view is keyed on is not a key on the substrate.** "One row per
+  intermediate, keyed on the entering element's coordinate (`graph_name, type_name, field_name,
+  ordinal, position`)" holds only where the entering element resolved to one row.
+  `intent_field_reference_step_target.candidates` counts exactly the case where it resolved to
+  more (one table reached by three foreign keys is three rows at one position), and `bound(T)`
+  differs per route, so the stated key would not hold and a producer joining on it could see two
+  verdicts at one coordinate. The walk already requires `candidates = 1` for an expressible hop,
+  so the narrowing costs nothing, and the tree has the pattern: `intent_field_column_scope_live`
+  reads this same view under `WHERE tg.targets = 1`. A line in the view body, not a redesign, but
+  it is owed before the key sentence is true.
+* **The `sql_index` invariant's enforcer is weaker than the sentence claims.** `meta_relation`
+  gives `sql_constraint` and `sql_index` the same `catalog` owner, so
+  `MetaDeclarationGateTest.aDeclaredViewReadsOnlyWhatItsOwnerMay` would not reject a view that
+  widened from one to the other. Keeping the predicate in the view's SQL buys visibility, which is
+  real, but not the rejection "state it where something holds it" promises. The decision itself
+  stands on the Cost section's independent reason; only the enforcement claim overshoots, and the
+  honest repair is to call this half review-only.
+* **The shared glob matcher crosses a module boundary the artefact table does not.**
+  `LintEngine.globToPattern` is a private static in `graphitron`, and the producer is in
+  `graphitron-model`, which `graphitron` depends on rather than the reverse. So "a shared point"
+  means either lowering the matcher beside `LintConfig`, which is already in `graphitron-model`,
+  or applying the exclusion at the fold-in. The spec's own fence, that the glob rule must not be
+  stated twice, forces the choice and either lands, so this is a note and not a hole.
+* **The producer signature named is not the precedent's.** "Takes a `DSLContext` and a graph name"
+  where `DeprecationRecognizer` takes a `StoreHandle` and reads `store.graphName()` off it.
+  `StoreHandle` carries both, so nothing is blocked.
+* **The `CODEGEN` elimination is drawn on coordinate-ness, not on producer identity.** The
+  paragraph insists the axis partitions on producer and then rules `CODEGEN` out because it is "a
+  whole-build fact with no SDL coordinate, which this one has". That is `CODEGEN`'s own stated
+  criterion so the elimination is correct on the tree's terms, but it is a shape test sitting
+  beside an instruction not to splice a second axis. The arm still lands on the producer axis
+  proper: the new producer is neither of the two `CODEGEN` fold-ins, has no visitor and no
+  classifier emit site, and would own its own completeness assertion. Worth settling in the arm's
+  javadoc so it states the criterion the coverage test actually keys off.
+* I did not re-run the corpus measurement, as in rounds 1 and 2. No finding here turns on the
+  counts.
