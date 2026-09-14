@@ -167,11 +167,32 @@ input classifier's decision tree is not touched.
    them down through the nesting arm with `UseSite.descending`; that descent is what reaches a spent
    leaf at any depth, and depth is not hypothetical, since `graphitron_argmapping_candidate` expands
    the input tree as deep as it nests and an author may write `filter.inner.key`. A seat that sees
-   only the argument's top level is the wrong seat. The spent coordinates join those facts, and ahead
-   of its decision tree `BuildContext.classifyInputField` yields no `InputField` for a coordinate in
-   the set: the leaf is not on this read surface, so there is nothing here to classify. The decision
-   tree is untouched and learns no routine vocabulary; what is added is one precondition of the same
-   kind as the participant it already threads.
+   only the argument's top level is the wrong seat. The spent coordinates join those facts, so what
+   is added to `ClassifyContext` is one component of the same kind as the participant it already
+   threads.
+
+   Withholding is then done by the two places that enumerate input fields, not by the classifier they
+   call. Exactly two exist, and between them they are the descent: `InputFieldResolver.resolve` loops
+   `iot.getFieldDefinitions()` for an argument's own input type, and the nesting arm inside
+   `classifyInputFieldInternal` loops `nestedInputType.getFieldDefinitions()` for every level below
+   it. Each skips a field whose coordinate is in the set before calling `classifyInputField`, so the
+   leaf contributes neither a classified `InputField` nor a failure: it is not on this read surface,
+   so there is nothing here to classify. Neither skip needs new machinery to say where it stands.
+   `resolve` holds the `useSite` it was handed, so the coordinate is `useSite.at(typeName,
+   f.getName())`; the nesting arm has already built `nestedCtx`, so it is
+   `nestedCtx.coordinateOf(typeName, nested.getName())`. Both are existing methods.
+
+   The alternative was to put the precondition inside `BuildContext.classifyInputField` ahead of its
+   decision tree, yielding neither arm of `InputFieldResolution`. It is rejected because
+   `InputFieldResolution` is sealed over `Resolved` and `Unresolved` and a third arm reaches four
+   consumers to buy one skip. Three are exhaustive switches (`InputFieldResolver.resolve`,
+   `TypeBuilder.resolveInputFields`, the nesting arm), and `TypeBuilder`'s serves the definition-grain
+   tree built for a `@table` DML input, which no routine read reaches, so it would carry a
+   can't-happen arm for a case its own path cannot produce. The fourth, `FieldRegistry.classifyInput`,
+   is an `instanceof` chain rather than a switch, so a third arm would pass through it silently and
+   the classification trace would stop recording that leaf with nothing failing to compile. Skipping
+   at the enumerators leaves all four untouched: the carrier keeps its two arms, and the decision tree
+   is untouched and learns no routine vocabulary, which is what step 3 was protecting all along.
 
    Nothing comes to vary by consumer that does not already. The read surface derives an argument's
    `InputField` tree per call site against that call site's resolving table, every time:
@@ -268,7 +289,7 @@ input classifier's decision tree is not touched.
   predicate; a leftover bare leaf whose name matches a result column binds by name; a leftover leaf
   naming nothing lands the existing no-binding rejection with the routine field as the use site; a
   spent leaf nested one level below the argument (`argMapping: "p: filter.inner.key"`) is withheld
-  too, which pins that the coordinate descends rather than being read off the argument's top level; a
+  too, which pins the nesting enumerator's skip rather than only the argument's top level; a
   spent leaf carrying `@field` lands the conflict rejection; a spent leaf carrying `@nodeId` does not,
   asserted on a field that otherwise classifies so the case cannot pass by the argument having been
   rejected for some other reason; an *unspent* `@nodeId` leaf that keys against nothing on the result
@@ -700,13 +721,15 @@ the fourth home for the retired sentence is now listed. `## Tests` gained the ca
 write cases and states the `SHARED_ID_SDL` repair; `## Other solutions we've considered` records the
 one-seat walk as rejected, with its reason.
 
-One note is deliberately left open, being a fork rather than an omission: step 3 says the precondition
-sits inside `BuildContext.classifyInputField` ("yields no `InputField`"), which needs a third arm on
-an `InputFieldResolution` sealed over `Resolved` and `Unresolved`, with a can't-happen arm falling to
-`TypeBuilder.resolveInputFields` on a DML path no routine reaches. Step 3's own words ("a spent leaf
-must never be offered to it") equally describe skipping the leaf at the two enumerators that descend,
-which needs no new arm. Two one-line skips against a sealed case rippling into unrelated code; the
-author picks.
+The last open note is settled in the same way, at the user's direction: step 3 now withholds at the
+two places that enumerate input fields (`InputFieldResolver.resolve` and the nesting arm inside
+`classifyInputFieldInternal`) rather than inside `BuildContext.classifyInputField`, so
+`InputFieldResolution` keeps its two arms. The rejected alternative is recorded in step 3 with its
+reason: a third arm reaches four consumers to buy one skip, and the fourth of them
+(`FieldRegistry.classifyInput`) is an `instanceof` chain that would pass it through silently. Both
+skips read a coordinate from a method that already exists (`UseSite.at`, `ClassifyContext.coordinateOf`).
+All five non-blocking notes rounds 2 and 4 raised (round 3 re-checked round 2's
+four and added none) are now closed.
 
 Because this session wrote plan prose, it is disqualified from the Spec -> Ready sign-off on this
 item. The next gate needs a reviewer session that has committed neither the plan nor this revision.
