@@ -623,3 +623,118 @@ the author's.
   while describing a field-level `@condition`. Same-package placement is fine, but that class is the
   home of the rail round 1 and 2 both flagged as the contrasting one, so naming it as the neighbour
   reads as naming it as the site.
+
+### Round 4 (2026-09-14, Spec -> Ready, reviewer session 01N7auVMScKDoe3YEhRFDQZy)
+
+Verdict: withhold. One blocking finding on question two, and it is a narrower one than the three
+rounds before it: the revision answers rounds 1b and 1c outright and leaves 1a one step short of
+landing. Question one passes.
+
+This is the first round with a revised plan body in front of it, so what follows is new work rather
+than a re-check. Rounds 1c and 1b are closed and closed well. The untyped-column refusal is gone,
+and step 1 does not merely drop it: it argues from `sql_column.binding_type` being `NOT NULL` and
+`Field.getType()`'s own spelling, which I confirmed at the DDL and the column comment, so the
+premise that the hoist makes the column type a required fact genuinely does not hold on the emit
+path, no SQL comment needs rewriting, and what replaces the refusal is an invariant throw in the
+tier that reads the type. The nullable-segment derivation is gone with the blanket refusal, which
+also retires the round 1 addendum's whole constraint set: R876's owner computation, the `_live`
+pairing, the recursive `parent_path` walk and the `non_null` column question all only bit on a
+relation this revision no longer stands up. Round 2's test-class pointer and both of round 3's
+non-blocking notes are taken.
+
+Question one passes and I read it without working back from the phase list. Declare a `@nodeId`
+filter your clients may leave out, either nullable on the leaf or non-null under a nullable input
+object, bind it through `argMapping` to a `@routine` parameter or a `@condition` method parameter,
+and today omitting it costs the client a redacted internal error while the emitted SDL says the
+field was optional all along. After this lands the routine or the method is handed a plain `null`
+and decides what an absent filter means, and a malformed or foreign-type id still fails as a client
+error before either runs.
+
+Verified on this head, by FQN-aware grep and by reading the sites: `ProjectedKeyReads.read` formats
+`$L.get($T.$L.$L)` unconditionally off a `LinkedHashMap<String, Declared>` keyed by leaf path, and
+`declare` emits the record local, so the hoist lands where the item says; `leafOf` already makes
+exactly two "Graphitron generator bug (key projection)" throws, so the new law joins a register that
+exists; `CatalogRefs.columnType(ColumnRef)` is the lift, its null arm is javadoc'd as the fixture
+placeholder case, `decodeBindingType` does return a primitive `TypeName` out of `PRIMITIVE_NAMES`
+whose own javadoc says it must, and does return null for a non-blank name `ClassName.bestGuess`
+rejects, so the blankness test really is strictly weaker and `TypeName.box()` really is the one call
+the hoist needs; `KeyProjection`'s compact constructor holds cross-axis laws about the row, as the
+item's reason for not putting the new one there describes; `ResolvedKeyProjections.projectionOf`
+does carry the two untypeable populations as invariant throws; `PresenceGuard.Always` is what a
+field-level `@condition` gets and `FieldPresent` is the FK-target rail the docs section is told to
+name; `films_for_actor(p_actor_id INTEGER, p_min_length INTEGER)` is bound at the correlated child
+position with `p_actor_id` fed by `columnMapping` from the parent row, so the proposed twin is a
+twin and declining to widen the incumbent is right; `ArgmappingProjectionRejectionPipelineTest`
+holds 13 cases and `ArgmappingKeyProjectionEmissionPipelineTest` 12 with no rejection among them;
+and `routine.adoc`'s third projection bullet ends verbatim on "a routine whose call surface was not
+captured or a parameter declared `int` rather than `Integer`, the build lets it through and your
+compiler is the backstop", while `condition.adoc`'s projection bullet ends verbatim on "its declared
+Java type must be that column's". The docs plan is accurate down to the clause.
+
+Step 5's fact half checks out too, including the part that is easiest to get wrong. The classpath
+arm does end on `JOIN jvm_declared_type_ref tr ... AND tr.type_path = '' AND tr.owner_kind =
+'METHOD_PARAMETER'`, so the `LEFT JOIN` is the one-word change described. The blast radius is as
+stated: `intent_resolved_node_key_projection` keeps `p.java_type IS NULL` as the first arm of its
+`WHERE`, so a pair that now draws a NULL-typed row resolves on the same arm it used to reach by
+drawing none, and `KEY_COLUMN_TYPE_MISMATCH`'s `pt.java_type <> ca.column_java_type` is NULL-false
+on the new rows and neither gains nor loses a rejection. The predicate half's reasoning is right as
+well, and it is the part rounds 1 through 3 could not have written: `jvm_declared_type_ref` has no
+root row for an array or a type variable either, exactly as `intent_condition_param_extraction`'s
+`java_type` comment says in as many words, so the NULL payload alone would have fired on `int[]` and
+on `T` with a message naming the wrong fact. Testing the erased source spelling is the correct
+answer to that.
+
+**Finding 1 (question two: architecture fit). The widened relation carries the membership but not
+the operand the predicate names, and the item states no route from one to the other.**
+
+`intent_argmapping_bound_parameter_type`'s column list is `(graph_name, site, use_site, position,
+param_name, java_type, candidates)`. It does not project `jvm_method_parameter.parameter_type`, and
+the widening as step 5 states it does not add it: the sentence enumerating what the widening owes
+names a stated reading of `candidates` for a NULL-typed row and one sentence of the view's comment,
+and nothing else. So "the consumer joins the widened relation on the grain it already holds" leaves
+the consumer holding membership plus a NULL, with the column its own predicate tests one relation
+away and no stated way to reach it. Both available routes carry a consequence this item argues
+elsewhere and does not price here:
+
+* *Project the column onto the view.* One column, and not a free one. Three relations read this view
+  (`intent_resolved_node_key_projection`, `intent_argmapping_projection_defect` and
+  `intent_node_id_decode_slot`), the routine arm of the `UNION ALL` has to put something in that
+  position for a parameter that has no `jvm_method_parameter` row at all, and whether the column
+  joins that arm's `SELECT DISTINCT` decides what `candidates` counts. That last one is not a
+  separate question from the one the item already says the widening owes, which is why leaving it
+  open is what makes this blocking rather than editorial. Outside the `DISTINCT`, two primitive
+  overloads at one position (`int` and `long`) both project NULL, collapse to one row and report
+  `candidates = 1`, which is an ambiguity the view's own comment says it must not resolve and its
+  readers rely on `candidates` to see. Inside it, they stay two rows and the NULL-typed population
+  the widening adds is counted on a different rule than the paragraph implies. One decision, two
+  readings, and the item makes neither.
+* *Reach `jvm_method_parameter` from the consumer.* That means re-spelling the classpath resolution
+  the view already spells, `graphitron_method_reference_entry` to `store_graph_source` to
+  `jvm_method` to `jvm_method_parameter` matched on `parameter_name`, which is precisely the third
+  spelling `## Other solutions we've considered` rejects in its own words one section earlier. It
+  also adds roots to `ArgmappingProjectionDefects.READS` that step 5 does not name.
+
+The pin claim survives either route, so that part of the accounting is sound and I checked it rather
+than assuming: `DetectionReadReachGateTest`'s `REACH` already lists
+`intent_argmapping_bound_parameter_type` under `ArgmappingProjectionDefects`, and its walk stops at
+every table, so neither naming the view as a root nor reading base tables beneath it moves the
+number.
+
+*What would satisfy this finding.* One stated answer to where the consumer's predicate gets its
+operand. If it is a column on the view, say so where the widening's cost is stated, say what the
+routine arm puts in that position, and fold the `candidates` reading the item already owes into that
+same decision rather than leaving the two to be discovered as one. If it is the consumer's own
+reach, name the relations it joins and reconcile that with the third-spelling rejection, since a
+reader who meets the two paragraphs in order will read them as contradicting.
+
+*Non-blocking, no reply needed.*
+
+* `## User-facing docs` calls the routine page's section "Projecting a key column out of a node id".
+  That is the xref link text `condition.adoc`, `service.adoc` and `nodeId.adoc` all use, but the
+  heading itself (`routine.adoc:146`, anchor `node-id-key-projection`) reads "Binding a parameter to
+  a node id's key column". The anchor is unambiguous so nothing is owed; worth knowing when the edit
+  is written.
+* `routine.adoc:300`'s summary bullet carries the same stand-aside a second time, as "resolvable
+  only where the routine's call surface was captured and the parameter is a reference type". On the
+  routine page that clause stays true after step 5, a routine parameter always being boxed, so
+  naming only the projection section's third bullet is probably right; the second site just exists.
