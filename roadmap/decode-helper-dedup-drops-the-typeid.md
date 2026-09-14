@@ -1,7 +1,7 @@
 ---
 id: R949
 title: "Two @nodeId input fields over one table share a decoder that hardcodes one typeId"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: nodeid
