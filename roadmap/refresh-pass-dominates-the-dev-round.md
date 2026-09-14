@@ -484,3 +484,64 @@ Corrected in passing, being a symbol rather than a design question: the pickup s
 `AbstractRewriteMojo.resolveStoreDirectory` for the store that survives a clean. That method
 resolves the build directory, which `mvn clean` does remove; `DevMojo` overrides it with the
 per-user cache home the sentence describes, and the citation now names the override.
+
+### Round 2 (2026-09-14, Spec to Ready, reviewer session 0154yzCeETdvJk8d1MtsBKXb)
+
+Revisions requested. Independent pass rather than an inheritance of round 1: trunk head is the round
+1 addendum itself, `git diff 8792115 HEAD` on this file is empty, so the plan under review is the one
+round 1 withheld against and all four of its findings stand unanswered. Re-verified against this head
+rather than taken on the round: `report-inline-multiplicity` reproduces 230 for
+`intent_node_id_instruction_live` over 127 views with children 114/80/4, and 91, 61 and 55 for the
+decode hop, the filter role and `intent_resolved_node_type_id`; `meta_materialize` holds twenty-one
+registrations, which makes lever 4 a twenty-second; `instructed` is referenced eight times in
+registration 12's body and `table_node` twice, with one of the six namings of `intent_node_type`
+inside `table_node` and five in the union arms, so round 1's fourth finding is right as stated;
+`sql_column` carries `column_name_upper` and `jooq_name_upper` as generated columns and
+`NodeKeyColumns.folds` is the disjunction over them that round 1 offers lever 2 as its precedent;
+`intent_input_field_column_match` collapses on exactly the six columns `resolved_name` projects, so
+lever 3's arity claim holds. Lever 1 is ordering-safe, which the item does not say and is worth one
+line: `GraphitronFactCapture.capture` runs before `Materializations.refresh` inside the same
+transaction, so a view re-sourced onto `graphitron_node` is read after the stage that writes it, and
+no main-source Java reads `intent_node_type` at all.
+
+Two findings of this round, both on the same seam round 1 opened, which is that the item reasons
+carefully about one gate and not about the others.
+
+**The register's own structural gates are unnamed, and two levers move figures they pin by
+equality.** The Tests section works out that `MetaDeclarationGateTest` needs no roster edit by
+construction and asks the delivery to say so rather than discover it, which is the right instinct
+applied to one gate out of three. `MaterializeRegistryGateTest` pins `REGISTRATIONS = 21`, which
+lever 4 moves to 22 by definition, and `REFRESH_STAGES = 15`, which lever 4 moves by the mechanism
+that field's own javadoc documents twice: `intent_argument_reference_step_target` reads the
+registered `intent_argument_scope_table` and is read by the registered `intent_node_id_instruction`
+and `intent_node_id_decode_hop`, so it is exactly the unregistered intermediate the reachability walk
+currently sees straight through, and registering it turns a link into a stage. That gate also holds a
+`NO_INDEX` roster by equality in both directions, which the lever's committed index keeps it off.
+`DerivedReadCostTest` pins `READERS_IN_SCHEMA = 127`, `READERS_WITH_CELLS = 63` and `CELLS = 146`;
+lever 2 takes a view out of the fact schema and so moves the first, and lever 4 adds a registration
+and so moves the third. The 127 is the same population `report-inline-multiplicity` ranks over, so
+lever 2 also changes the denominator of the before-and-after ranking the Tests section leans on, and
+the criterion round 1 asked to be restated should be restated against that. None of this is a
+demand for new work, only for the same bullet the other three levers get: say which figure each
+lever moves and in which direction, so the delivery edits a number deliberately instead of meeting
+a red build and discovering the claim.
+
+**Lever 3's mechanism misreads its own site, in a way that changes what the rewrite is and how many
+sites it has.** The body says `resolved_name` is "referenced three times and each reference is
+correlated on a driving row", and the lever says "all three references are positive existence rather
+than anti-joins". Three references is right. Correlated is right for two of them, at the two `CASE
+WHEN EXISTS (SELECT 1 FROM resolved_name m WHERE m.graph_name = ... )` sites. The third is `FROM
+resolved_name m` as the entire source of the `NAME_MATCHED` union arm, uncorrelated and evaluated
+once per read: it is already the drive-from-the-view shape the lever proposes, so it is not a rewrite
+site at all, and the rewrite has two sites rather than three. The arithmetic that "closes" moves with
+it, from upwards of five thousand expansions to something nearer three and a half thousand, which
+still closes and should be restated at the figure it actually rests on. The second half matters more
+for the implementer. Both correlated references read `THEN 'NONE' ELSE '<role>' END` under an outer
+`WHERE rn = 1 AND role <> 'NONE'`, so a match suppresses the arm: they are positive in spelling and
+negative in effect, and the left-join form of one is `m.graph_name IS NULL`, the null-detecting
+anti-join shape rather than the positive-existence one the safety argument names. The conclusion
+survives, because arity safety comes from `intent_input_field_column_match` being one row per the
+partition `resolved_name` projects and correlates on, which it is; but the stated reason is not the
+operative one, and an implementer transcribing "positive existence" into a join with a non-null test
+inverts two verdicts. State the safety on the collapse rather than on the polarity, and name the two
+sites.
