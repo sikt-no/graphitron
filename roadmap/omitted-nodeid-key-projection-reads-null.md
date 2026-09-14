@@ -1,7 +1,7 @@
 ---
 id: R948
 title: "An omitted nullable @nodeId in a key projection reads as null, not as an NPE"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: nodeid
@@ -1005,3 +1005,79 @@ blast-radius paragraph as written, which asserts that neither reader changes.
   `DerivedReadCostTest` register this relation by name and not by column list, and
   `SupertypeSiteReferenceTest` only narrates its join key, so the widened column list reaches none of
   the three.
+
+### Round 6 (2026-09-14, Spec -> Ready, reviewer session 01DrXFeyVKjWReXFCugZZFKu)
+
+Verdict: sign off. Both questions pass. Revision 4 answers round 5, and the answer holds at the code
+rather than only on the page.
+
+Question one, read without working back from the phase list. Declare a `@nodeId` filter your clients
+may leave out, either nullable on the leaf or non-null under a nullable input object, and bind it
+through `argMapping` to a `@routine` parameter or a `@condition` method parameter. Today omitting it
+costs the client a redacted internal error while the emitted SDL advertised the field as optional.
+After this lands the routine or the method is handed a plain `null` and decides for itself what an
+absent filter means, and a malformed or foreign-type id still fails as a client error before either
+runs. One build error arrives with it: a `@condition` method parameter declared as a Java primitive
+can no longer take a projected key read, and the remedy is the boxed type.
+
+Question two. The emit change extends the sink that already exists rather than standing anything
+beside it: `ProjectedKeyReads` already declares locals in first-use order, and the two-arm sealed key
+makes "the column local follows the record local it reads" hold by construction instead of by the
+emission code's arithmetic. The store change widens a relation instead of re-spelling a resolution
+the family has already collapsed once, and the verdict lands in the consumer on the placement rule
+`intent_argmapping_projection_defect`'s own comment states.
+
+Verified at the tree, on top of what rounds 1 through 5 checked and re-checked after R949 landed in
+these files (its diff there is the `decode<TypeName>Record` rename and nothing structural). The
+widening's one-word change is real: the classpath arm ends on `JOIN jvm_declared_type_ref tr ... AND
+tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'`, and `jvm_method_parameter.parameter_type`
+is `NOT NULL` and documented as the erased source form with the package dropped, so `int` appears
+there literally and the eight-spelling test reads a closed vocabulary. Both gates are where revision 4
+says: `intent_resolved_node_key_projection` joins `AND p.candidates = 1` and null-extends to its
+`p.java_type IS NULL` arm, the `KEY_COLUMN_TYPE_MISMATCH` arm joins `AND pt.candidates = 1` and drops.
+`candidates` is `COUNT(*) OVER (PARTITION BY graph_name, site, use_site, position)` over a
+`SELECT DISTINCT`, so a projected column is inside the DISTINCT and two untypeable overloads stay two
+rows, where a NULL-only widening would have collapsed them into one.
+
+The refusal one tier up is the load-bearing new claim and it checks out exactly.
+`ServiceCatalog.admitConditionShape` folds arity, static-ness, return type and the `throws` clause,
+then at every non-table position demands `Objects.equals(qName, name)` and
+`q.getParameterizedType().equals(declaredType)`, refusing with `Ambiguity.ParameterCount` or
+`Ambiguity.ParameterPosition`; `reflectTableMethod` wraps either as `ReflectionError.AmbiguousMethod`,
+and `pickMethod` with a null seam filter refuses a second same-named declaration outright with
+`Ambiguity.NameShared`. So an admitted `@condition` set agrees on the bound parameter's declared type
+across its declarations, which is one DISTINCT row and `candidates = 1` whether or not the type
+resolves, and the mixed grain round 5 worked is a build error before the store is read. The residue
+the item names instead, a class declared by two classpath entries whose declarations disagree, is the
+one the walk cannot see, and it is stated rather than absorbed.
+
+Also verified: `CatalogRefs.columnType` returns null only for a blank or non-class name and
+`decodeBindingType` can yield a primitive `TypeName` out of `PRIMITIVE_NAMES`, so the boxing is load
+bearing and the blankness test really is strictly weaker; `sql_column.binding_type` is `NOT NULL` and
+`ResolvedKeyProjections.projectionOf` carries the two untypeable populations as invariant throws, so
+step 1's dropped refusal is right to drop; `ProjectedKeyReads.leafOf` makes the two "Graphitron
+generator bug (key projection)" throws the new law would join; the three drains of `declarations()`
+are exactly `ConditionGlueRenderer`, `RoutineWriteFetcherRenderer` and `RootLauncherRenderer`, and the
+glue emits `keys.declarations()` ahead of its `$T $L = $L` binding locals, so the predicted alias-only
+shape is right; `DetectionReadReachGateTest`'s `REACH` already lists the relation under
+`ArgmappingProjectionDefects`; `ArgmappingProjectionRejectionPipelineTest` already covers the
+unknown-key-column verdict at all five sites, so the new rejection case has a home; `films_for_actor`
+is bound at the correlated child position with `p_actor_id` fed by `columnMapping`, so declining to
+widen it is correct; and the routine page's third build-error bullet ends on the clause the item
+quotes, under the anchor and heading the item names.
+
+*Non-blocking, no reply needed.*
+
+* `EMITTING_SITES` is `{ROUTINE, FIELD_CONDITION, ARGUMENT_CONDITION}`, but `SERVICE` is also a
+  classpath-arm site at which a projection resolves; it is deferred today because no emitter is wired,
+  not because no row exists. The predicate as step 5 states it carries no site conjunct, so a
+  `@service` key projection into an `int` parameter draws the new refusal beside the deferral it
+  already draws. Both are build errors and the build fails either way, so "this refusal is the
+  `@condition` half's alone" reads as a statement about emitting sites rather than about the
+  predicate's population. The implementer meets this on the first rejection-test run.
+* `routine.adoc`'s `== Constraints` bullet carries the same stand-aside a second time, positively
+  spelled: a type mismatch is "resolvable only where the routine's call surface was captured and the
+  parameter is a reference type". On the routine rail that conjunct is vacuous rather than false, so
+  nothing breaks by leaving it, but it is the page's one remaining sentence implying a primitive
+  parameter gets a stand-aside, which is what the docs section removes from the third bullet. Cheap to
+  fold into the same edit.
