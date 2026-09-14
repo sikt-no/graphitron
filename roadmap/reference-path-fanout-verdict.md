@@ -1,7 +1,7 @@
 ---
 id: R723
 title: "Warn when a @reference path traverses a 1:N hop into a further projection"
-status: In Review
+status: Ready
 bucket: validation
 priority: 4
 theme: diagnostics
@@ -1144,3 +1144,77 @@ Non-blocking, stated only so they do not survive into implementation:
   javadoc so it states the criterion the coverage test actually keys off.
 * I did not re-run the corpus measurement, as in rounds 1 and 2. No finding here turns on the
   counts.
+
+### Round 4, In Review → Done, session_01WqywyT9a3JmmvuEHkou4me, 2026-09-14
+
+Rework requested, on question 1, and the finding is narrow: the rule's behaviour is right and the
+relation's contract is not. Everything else here holds up, so read the finding as one clause to fix
+rather than as a verdict on the delivery.
+
+`mvn install -Plocal-db` is green on the delivered tree rebased onto trunk at `692ab46`: 17m44s,
+BUILD SUCCESS, the four new suites among it (`ReferenceStepFanoutTest` 9,
+`ReferencePathFanoutTest` 5, `ReferencePathFanoutPipelineTest` 6). `TemporalKeyDoesNotCoverExecutionTest`
+runs 0 cases under the local-database profile and declines with its stated reason, exactly as the
+Implementation notes say; it still has not been observed passing, and CI is where that happens.
+
+**The finding: `covering_constraint_name` is not NULL under a declined verdict, and the relation
+says it is.** The column's `COMMENT ON` closes with "and NULL under every verdict but COVERED", and
+the `covering` CTE never looks at `via`, so any intermediate whose *readable* hop alone covers a
+constraint carries that constraint's name beside an undecidable verdict. Reproduced against the
+delivered view, on the existing test catalog, by swapping one key in the `NAME_MATCH` fixture's
+second element so the leaving hop is a reverse hop onto `film`'s own primary key:
+
+```
+seedPath(dsl, "Search", "casts",
+    new String[] {"film", null}, new String[] {null, "film_actor_film_id_fkey"});
+
+verdicts=[0 film UNDECIDABLE_NAME_MATCH_HOP] covering=[film_pkey]
+```
+
+This is not a phrasing quibble, for three reasons that compound. A `COMMENT ON` is this store's
+contract surface, required by `FactSchemaGateTest` and carried end to end onto the MCP projection,
+so the false clause is published rather than internal. The delivery already asserts the invariant
+and the assertion does not bind: `aConditionHopOutOfAnIntermediateIsDeclinedByName` says "a declined
+intermediate names no constraint, film_actor_pkey or otherwise" and passes because that fixture's
+readable hop binds `film_id` alone against a two-column key, which is an accident of the fixture and
+not the rule. And the shape is the one this spec spends its longest argument forbidding: a consumer
+reading a non-NULL name as "this hop is covered", which the comment licenses, reads a declined
+intermediate as a cleared one, and that is a false negative sitting inside a value, which is "the
+failure mode this rule cannot afford" applied to the column instead of to the absence. The two
+consumers the spec names for this view, the scalar sibling under "Out of scope" and the authoring-time
+counterpart under "Related", are exactly the readers who would meet it.
+
+What would satisfy it: make the column answer what the comment says, by gating `cov.constraint_name`
+on the verdict the same `CASE` already computes, so a declined or fanning intermediate names nothing;
+and bind the invariant with a fixture where the readable hop alone covers a constraint, since the
+existing assertion passes without it. Softening the comment instead is the weaker repair and leaves
+the value carrying two meanings, which is the thing the document argues against. Either way the fix
+is small and nothing else in the delivery moves.
+
+**Second, smaller, same edit.** The `pair` CTE filters `e.candidates = 1 AND l.candidates = 1`, so
+an element the walk reached but could not disambiguate yields no row. That is very likely the right
+call, the grain being one row per intermediate and a multi-route element otherwise crossing its
+routes into contradictory verdicts at one key; but it is a second meaning for absence, and both the
+verdict column's comment and the spec's "Absence then means exactly one thing" say there is only
+one. State it where the first is stated, either as the same silence ("the walk did not resolve the
+element") or as its own sentence.
+
+Neither point touches question 2, which the delivery answers well. The completeness evidence the
+spec named is present and discriminating: the pair that separates the correct subset direction from
+the inverted one is `aPureJoinTableIsCovered` against `aJunctionCarryingItsOwnKeyColumnFansOut` and
+`aOneColumnKeyAgainstATwoColumnUniqueFansOut` against `aUniqueConstraintOverTheBoundColumnCovers`,
+the undecidable arms are asserted as named rows, the unreached element is asserted as an absence, the
+drift throw has a test, and `aSecondRunAgainstOneStoreDescribesTheSecondSchema` is the ordering pin
+the spec asked for and does fail if the read leaves the capture window. The end-to-end coordinate
+arrives at the field with the position in it. The `@reference` page carries the property, the remedy
+and all five boundaries in the author's own terms, and the `mojo-configuration.adoc` correction that
+the widened exclusion owed. No code-string assertions on generated bodies anywhere in the new tests.
+The `DERIVED` arm is argued and asserted on the producer axis, which is what round 3 asked for.
+
+Not findings, recorded so the next pass does not re-litigate them: the four Implementation-notes
+deviations are all declared and all land (the `DerivedReadCostTest` domain move, the rewrite lever
+with its figures on the row it prices, the matcher lowered to `ExcludedTypes` rather than duplicated,
+`film -> inventory -> store` standing in for the `film_actor_note` walkthrough). The retirement sweep
+is clean: `LintEngine.globToPattern` survives nowhere in the tree outside `ExcludedTypes`. The
+lint-rule reference page still does not exist and the rule's row has nowhere to go, which is the
+other item's to deliver and not this one's.
