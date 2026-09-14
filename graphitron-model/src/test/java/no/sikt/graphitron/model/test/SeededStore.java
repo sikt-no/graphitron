@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.ElementAnchors;
+import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -198,6 +199,13 @@ public final class SeededStore {
      * did.
      */
     public static void derive(DSLContext dsl) {
+        // The catalog's own closure first, and outside the per-graph loop because it is not a
+        // graph's fact: whether a function result can be keyed to a table is a question about a
+        // catalog. By the production call, so a fixture cannot hold its own idea of which name
+        // matches are whole. It has to be here at all because the relation is derived where the
+        // view it replaced computed on read, and a harness that seeds the catalog by hand gets
+        // nothing from a derivation nobody ran.
+        NameMatchedKeys.derive(dsl);
         // The element anchors first, because every relation keyed at an emitted coordinate points
         // at them and the supertype transcription below is the first of those. By the production
         // call, so a fixture cannot hold its own idea of what the emitted population is.

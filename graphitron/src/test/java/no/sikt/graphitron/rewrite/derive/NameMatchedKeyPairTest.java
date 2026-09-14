@@ -15,13 +15,13 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_NAME_MATCHED_KEY_PAIR;
+import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.upper;
 
 /**
  * The anchor for the two relations behind a hop that leaves a table-valued function's result:
- * {@code intent_name_matched_key_pair}, which states how such a hop is keyed, and
+ * {@code sql_name_matched_key_column}, which states how such a hop is keyed, and
  * {@code intent_carrier_routine_hop}, the population that reaches that rule from a coordinate no
  * author wrote a path at.
  *
@@ -64,30 +64,33 @@ class NameMatchedKeyPairTest {
     @Test
     void aFunctionExposingTheWholeKeyPairsIt() {
         withCaptured(ANY_GRAPH, dsl -> assertThat(pairs(dsl, "films_for_actor", "film"))
-            .containsExactly("0 film_id=film_id unmatched=0"));
+            .containsExactly("0 film_id=film_id"));
     }
 
     /**
-     * A shortfall is a row, not an absence. The generator's diagnostic at either seat has to name
-     * the key column the function does not expose, and it reads that name off this row.
+     * A shortfall is an absence. A key one of whose columns the function does not expose is not a
+     * key, so the relation states none of it rather than stating it flagged, and no consumer has to
+     * remember to ask whether the rows it just joined were the whole key.
+     *
+     * <p>What an author wrote that needed this key is a fact at that author's coordinate, which is
+     * where the diagnostic that names the missing column belongs. A catalog cannot fail to connect
+     * two tables; it can only not connect them, and almost no two tables are connected this way.
      */
     @Test
-    void aFunctionMissingAKeyColumnStatesTheGapAsARow() {
+    void aFunctionMissingAKeyColumnPairsNothing() {
         withCaptured(ANY_GRAPH, dsl -> assertThat(pairs(dsl, "films_for_actor", "actor"))
-            .containsExactly("0 actor_id=<none> unmatched=1"));
+            .isEmpty());
     }
 
     /**
-     * A composite key is a row per column, in the key's own order, and a partial match is neither a
-     * pairing nor a nothing: one column pairs, the other does not, and the count says so on both
-     * rows so either one answers the totality question alone.
+     * A composite key half of which the function exposes is no key at all. One column pairs and the
+     * other does not, and under the whole-key rule that is an absence rather than two rows a
+     * consumer has to total up before it dares join them.
      */
     @Test
-    void aCompositeKeyIsARowPerColumnInTheKeysOrder() {
+    void aCompositeKeyMatchedInPartPairsNothing() {
         withCaptured(ANY_GRAPH, dsl -> assertThat(pairs(dsl, "films_for_actor", "film_actor"))
-            .containsExactly(
-                "0 actor_id=<none> unmatched=1",
-                "1 film_id=film_id unmatched=1"));
+            .isEmpty());
     }
 
     /** Only a function result departs: a stored table has foreign keys, and this is not its rule. */
@@ -131,7 +134,7 @@ class NameMatchedKeyPairTest {
             assertThat(carrierHops(dsl))
                 .containsExactly("RentFilmPayload.rental rent_film->rental candidates=1");
             assertThat(pairs(dsl, "rent_film", "rental"))
-                .containsExactly("0 rental_id=rental_id unmatched=0");
+                .containsExactly("0 rental_id=rental_id");
         });
     }
 
@@ -201,11 +204,14 @@ class NameMatchedKeyPairTest {
     }
 
     /**
-     * The hop is stated even where the pairing comes up short, which is where this relation parts
-     * company with the authored arm. That arm enumerates candidate departures out of every function
-     * in the graph's sources, so it has to demand a total pairing or it would enumerate all of them;
-     * here the departure is the one the producing field names, and a reader diagnosing the refusal
-     * needs the hop in hand to say which key column is missing from it.
+     * The hop is stated even where the pairing comes up short, which is where the carrier's rule
+     * parts company with the pairing's. The hop's departure is the one the producing field names,
+     * so the hop exists at a coordinate; the pairing exists only where the whole key is there.
+     *
+     * <p>That split is what puts the refusal where it can be reported. The pairing says nothing,
+     * because a catalog has nothing to say about two tables nobody asked to connect, and the hop
+     * carries the coordinate a diagnostic needs in order to say which key column is missing from
+     * a join this author asked for.
      */
     @Test
     void aDepartureThatCannotKeyTheArrivalIsStillTheHop() {
@@ -224,29 +230,28 @@ class NameMatchedKeyPairTest {
             assertThat(carrierHops(dsl))
                 .containsExactly("NotePayload.rental create_secure_note->rental candidates=1");
             assertThat(pairs(dsl, "create_secure_note", "rental"))
-                .containsExactly("0 rental_id=<none> unmatched=1");
+                .isEmpty();
         });
     }
 
     // ===== Helpers =====
 
     /**
-     * The pairing between one departure and one arrival, one string per key column: the position,
-     * the pair, and the partition's unmatched count. Named case-insensitively because the catalog's
-     * own spelling is the relation's, not the fixture's.
+     * The pairing between one departure and one arrival, one string per key column: the position
+     * and the pair. Nothing renders an absence, the relation stating only keys it has whole, and
+     * nothing renders a count, there being no partial partition left to count over. Named
+     * case-insensitively because the catalog's own spelling is the relation's, not the fixture's.
      */
     private static List<String> pairs(DSLContext dsl, String fromTable, String toTable) {
-        var p = INTENT_NAME_MATCHED_KEY_PAIR;
+        var p = SQL_NAME_MATCHED_KEY_COLUMN;
         return dsl.select(p.fields())
             .from(p)
-            .where(nameIs(p.FROM_TABLE, fromTable))
+            .where(nameIs(p.TABLE_NAME, fromTable))
             .and(nameIs(p.TO_TABLE, toTable))
             .orderBy(p.POSITION)
             .fetch()
             .map(row -> row.get(p.POSITION) + " "
-                + lower(row.get(p.TO_COLUMN)) + "="
-                + (row.get(p.FROM_COLUMN) == null ? "<none>" : lower(row.get(p.FROM_COLUMN)))
-                + " unmatched=" + row.get(p.UNMATCHED_COLUMNS));
+                + lower(row.get(p.TO_COLUMN)) + "=" + lower(row.get(p.COLUMN_NAME)));
     }
 
     /**

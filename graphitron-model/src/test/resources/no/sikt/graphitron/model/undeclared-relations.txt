@@ -155,7 +155,6 @@ intent_mutation_write_agreement
 intent_mutation_write_destination
 intent_mutation_write_payload
 intent_mutation_write_refusal
-intent_name_matched_key_pair
 intent_node_container_member
 intent_node_id_candidate_node_type
 intent_node_id_decode

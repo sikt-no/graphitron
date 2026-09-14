@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.ClassificationDomainCapture;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.derive.InputOccurrencePaths;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.NodeIdDecodeCoverageFacts;
 import no.sikt.graphitron.model.derive.NodeIdDecodeDefects;
 import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
@@ -365,6 +366,10 @@ public final class FactCapture {
             JooqFactCapture.capture(txDsl, graph.name(), jooq, readAt);
             CatalogFactCapture.capture(sink, extensions, sources);
             sink.flush();
+            // The catalog's own closure, over the rows the two crawlers above have just flushed.
+            // A stage of the catalog gatherer rather than a derivation: it reads no graph and no
+            // directive, so it is a function of the store's catalog and not of this run.
+            NameMatchedKeys.derive(txDsl);
             // The document gatherer's entries, which this pass has to write because the relations
             // moving off the walk are derived from them and from nothing else. It straddles the
             // walk rather than preceding it: nothing here meets a row the walk writes, the entry

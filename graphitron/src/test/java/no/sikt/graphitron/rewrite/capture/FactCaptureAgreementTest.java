@@ -246,7 +246,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       {@code @table} one, including the seat the derivation excludes and the arity the
  *       coalescing recount produces;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
- *       out of a table-valued function's result, {@code intent_name_matched_key_pair} stating how
+ *       out of a table-valued function's result, {@code sql_name_matched_key_column} stating how
  *       such a hop is keyed and {@code intent_carrier_routine_hop} the population that reaches that
  *       rule from a coordinate no author wrote a path at; the pairing half asserts against the test
  *       catalog's own functions without scoping by graph, the relation carrying no graph partition,
@@ -599,7 +599,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
-        registrations.put("intent_name_matched_key_pair", Arm.DERIVED);
+        registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("intent_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
         registrations.put("intent_java_enum_class", Arm.DERIVED);

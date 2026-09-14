@@ -126,7 +126,7 @@ class DetectionReadReachGateTest {
 
         // Twelve relations until intent_node_id_decode_hop was registered, and six of them were
         // reached only through it: the two argument-site reference-target relations, the
-        // input-field one, intent_condition_method_route and intent_name_matched_key_pair. The
+        // input-field one, intent_condition_method_route and sql_name_matched_key_column. The
         // walk stops at the target table now, so this reader evaluates none of their bodies. That
         // is the lever this gate was written for landing, and the delta is the diff a reviewer
         // reads the outcome off.
@@ -161,7 +161,6 @@ class DetectionReadReachGateTest {
             "intent_field_participant_scope_table",
             "intent_field_unlowerable_ordering",
             "intent_mutation_routine_seat",
-            "intent_name_matched_key_pair",
             "intent_poly_member"));
 
         // The decode-coverage rule's store operand. Its census side costs nothing here: every

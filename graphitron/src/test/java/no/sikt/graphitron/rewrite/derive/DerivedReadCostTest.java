@@ -166,8 +166,14 @@ class DerivedReadCostTest {
      * below moved with it, by one and by two, the two cells being the hop registration and the type
      * binding. The hop cell is a new pinned pair and the binding cell is monotonic; both carry
      * their figures where they sit.
+     *
+     * <p>Lowered to 126 by the retirement of {@code intent_name_matched_key_pair}, whose question a
+     * catalog gatherer now answers as {@code sql_name_matched_key_column}. A view that reads the
+     * catalog is a reader and a derived table is not, so the count loses the row the view held. The
+     * two moves are offsetting and are stated separately on purpose: a single net figure would hide
+     * that one relation arrived and another left.
      */
-    private static final int READERS_IN_SCHEMA = 127;
+    private static final int READERS_IN_SCHEMA = 126;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -261,6 +267,11 @@ class DerivedReadCostTest {
      * is one view out and one view in. {@link #READERS_WITH_CELLS} falls by two, those being the two
      * relations whose only reach into the register was through this target. Read that as the shape
      * of a retirement here, and note it is not the arithmetic of an arrival run backwards.
+     *
+     * <p>A third shape moved it again, and it is neither: 126 to 125 when the name-matched key rule
+     * left the intent layer for the catalog family it was always about. That is one view out and
+     * nothing in, a rule becoming a table derived at capture rather than a view a reader expands,
+     * so unlike a retirement there is no {@code _live} view to put the name back on.
      *
      * <p>Retiring {@code intent_errors_field}'s took it from 162 to 159, three cells against the
      * first retirement's nine, and the two figures together are the point: a registration's weight

@@ -31,7 +31,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
 import static no.sikt.graphitron.model.Tables.INTENT_FOREIGN_KEY_COLUMN_PAIR;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_ROUTINE_SEAT;
-import static no.sikt.graphitron.model.Tables.INTENT_NAME_MATCHED_KEY_PAIR;
+import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
@@ -418,7 +418,7 @@ public final class RoutineWriteFacts {
     private static Map<HopKey, List<KeyPair>> hopPairs(StoreHandle store) {
         var n = INTENT_FIELD_CHAIN_NODE;
         var fk = INTENT_FOREIGN_KEY_COLUMN_PAIR;
-        var nm = INTENT_NAME_MATCHED_KEY_PAIR;
+        var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");
         var tgt = SQL_COLUMN.as("target_column");
         var byKey = new LinkedHashMap<HopKey, List<KeyPair>>();
@@ -446,13 +446,13 @@ public final class RoutineWriteFacts {
                     src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
                     tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
                 .from(n)
-                .join(nm).on(nm.FROM_SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
-                    nm.FROM_SCHEMA.eq(n.FROM_SCHEMA), nm.FROM_TABLE.eq(n.FROM_TABLE),
+                .join(nm).on(nm.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
+                    nm.TABLE_SCHEMA.eq(n.FROM_SCHEMA), nm.TABLE_NAME.eq(n.FROM_TABLE),
                     nm.TO_SOURCE_NAME.eq(n.TO_SOURCE_NAME), nm.TO_SCHEMA.eq(n.TO_SCHEMA),
-                    nm.TO_TABLE.eq(n.TO_TABLE), nm.UNMATCHED_COLUMNS.eq(0))
+                    nm.TO_TABLE.eq(n.TO_TABLE))
                 .join(src).on(src.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
                     src.TABLE_SCHEMA.eq(n.FROM_SCHEMA), src.TABLE_NAME.eq(n.FROM_TABLE),
-                    src.COLUMN_NAME.eq(nm.FROM_COLUMN))
+                    src.COLUMN_NAME.eq(nm.COLUMN_NAME))
                 .join(tgt).on(tgt.SOURCE_NAME.eq(n.TO_SOURCE_NAME),
                     tgt.TABLE_SCHEMA.eq(n.TO_SCHEMA), tgt.TABLE_NAME.eq(n.TO_TABLE),
                     tgt.COLUMN_NAME.eq(nm.TO_COLUMN))
@@ -488,7 +488,8 @@ public final class RoutineWriteFacts {
      * The carrier seat's captured key pairing, at the pairing's own grain: the routine result's
      * column of each name beside the arriving table's primary-key column of that name, in key order.
      *
-     * <p>A total pairing is demanded ({@code unmatched_columns = 0}), which is the carrier's own rule
+     * <p>A total pairing is what the relation holds, so no demand is made here: a key one of whose
+     * columns the function does not expose is not a row of it. That is the carrier's own rule
      * rather than a narrowing made here: a capture missing one column of the key filters on a
      * partial key, and the re-read then returns a row the write did not commit.
      */
@@ -496,7 +497,7 @@ public final class RoutineWriteFacts {
         var s = INTENT_MUTATION_ROUTINE_SEAT;
         var cd = INTENT_CARRIER_DATA_FIELD;
         var ch = INTENT_CARRIER_ROUTINE_HOP;
-        var nm = INTENT_NAME_MATCHED_KEY_PAIR;
+        var nm = SQL_NAME_MATCHED_KEY_COLUMN;
         var src = SQL_COLUMN.as("source_column");
         var tgt = SQL_COLUMN.as("target_column");
         var byKey = new LinkedHashMap<Coordinate, List<KeyPair>>();
@@ -509,13 +510,13 @@ public final class RoutineWriteFacts {
                 cd.FAMILY.eq("ROUTINE"), cd.DATA_FIELDS.eq(1))
             .join(ch).on(ch.GRAPH_NAME.eq(cd.GRAPH_NAME), ch.TYPE_NAME.eq(cd.TYPE_NAME),
                 ch.FIELD_NAME.eq(cd.FIELD_NAME), ch.CANDIDATES.eq(1))
-            .join(nm).on(nm.FROM_SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
-                nm.FROM_SCHEMA.eq(ch.FROM_SCHEMA), nm.FROM_TABLE.eq(ch.FROM_TABLE),
+            .join(nm).on(nm.SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
+                nm.TABLE_SCHEMA.eq(ch.FROM_SCHEMA), nm.TABLE_NAME.eq(ch.FROM_TABLE),
                 nm.TO_SOURCE_NAME.eq(ch.TO_SOURCE_NAME), nm.TO_SCHEMA.eq(ch.TO_SCHEMA),
-                nm.TO_TABLE.eq(ch.TO_TABLE), nm.UNMATCHED_COLUMNS.eq(0))
+                nm.TO_TABLE.eq(ch.TO_TABLE))
             .join(src).on(src.SOURCE_NAME.eq(ch.FROM_SOURCE_NAME),
                 src.TABLE_SCHEMA.eq(ch.FROM_SCHEMA), src.TABLE_NAME.eq(ch.FROM_TABLE),
-                src.COLUMN_NAME.eq(nm.FROM_COLUMN))
+                src.COLUMN_NAME.eq(nm.COLUMN_NAME))
             .join(tgt).on(tgt.SOURCE_NAME.eq(ch.TO_SOURCE_NAME),
                 tgt.TABLE_SCHEMA.eq(ch.TO_SCHEMA), tgt.TABLE_NAME.eq(ch.TO_TABLE),
                 tgt.COLUMN_NAME.eq(nm.TO_COLUMN))
