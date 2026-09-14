@@ -32,32 +32,39 @@ third of three declarative routes to an optional filter on a routine-backed fiel
 being the NPE the sibling item on omitted node ids in key projections fixes.
 
 ```graphql
+type Actor implements Node @table(name: "actor") @node(keyColumns: ["actor_id"]) { id: ID! }
+
 type ActorFilm @table(name: "films_for_actor") {  # the chain terminus: the function's own result
   filmId: Int   @field(name: "film_id")
   title:  String
 }
 
 input ActorFilmFilter {
-  actorId: ID!  @nodeId(typeName: "Actor")        # spent: feeds pActorId
-  title:   String                                 # a filter on the result today? No: silently dropped
+  actorId:   ID! @nodeId(typeName: "Actor")       # spent: projects actor_id into pActorId
+  minLength: Int                                  # spent: feeds pMinLength
+  title:     String                               # a filter on the result today? No: silently dropped
 }
 
 type Query {
   actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pActorId: filter.actorId.actor_id, pMinLength: 60")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: filter.actorId.actor_id, pMinLength: filter.minLength")
     @defaultOrder(fields: [{name: "film_id"}])
 }
 ```
 
-After this item `title` is `WHERE title = ?` over the function result, exactly as it would be on a
-table-backed field: it binds by name, and a leaf named differently from its column carries
-`@field(name:)` here as everywhere else. What the leaves resolve against is the chain terminus, and
-with no `@reference` hop that is the function result itself, which is why `ActorFilm` carries the
-`@table` above and why `title` rather than some column of `film` is the filter the example can
-offer. The contrast that makes the point is a third leaf, `foo: String`, naming no result column: on
-a table-backed field that already fails the build with "input field 'foo' has no column binding and
-no @condition", and after this item it fails the same way inside a routine argument, where today it
-is silently dead.
+Two of that input's leaves are spent, and they are spent two different ways: `actorId` by the key
+projection that hands `pActorId` a decoded `actor_id`, `minLength` as an ordinary scalar read
+straight into `pMinLength`. Leaf grain is about both, not only about the projected one. The third
+leaf is the one the item is for: after this item `title` is `WHERE title = ?` over the function
+result, exactly as it would be on a table-backed field, binding by name, with a leaf named
+differently from its column carrying `@field(name:)` here as everywhere else. What the surviving
+leaves resolve against is the chain terminus, and with no `@reference` hop that is the function
+result itself, which is why `ActorFilm` carries the `@table` above and why `title` rather than some
+column of `film` is the filter the example can offer. The contrast that makes the point is a fourth
+leaf, `foo: String`, naming no result column: on a table-backed field that already fails the build
+with "input field 'foo' has no column binding and no @condition", and after this item it fails the
+same way inside a routine argument, where today it is silently dead.
 
 ## Decisions
 
@@ -199,11 +206,12 @@ decision tree is not touched.
 ## Tests
 
 * **Pipeline** (`graphitron` pipeline tier, beside `RoutineMutationWritePipelineTest`): one case per
-  verdict over the sakila routines. First the Goal's own schema, asserted green: a spent
-  `@nodeId(typeName: "Actor")` leaf beside a surviving `title` leaf over `films_for_actor` classifies
-  to a `QueryTableField` with no rejection on the field and the survivor's predicate in the emitted
-  query. That case is what the shape of step 3 exists for, and a plan that withholds the spent leaf
-  only after classification fails it, so it is written first and the rest hang off it. Then: a
+  verdict over the sakila routines. First the Goal's own schema verbatim, asserted green: a spent
+  `@nodeId(typeName: "Actor")` leaf and a spent plain scalar leaf beside a surviving `title` leaf
+  over `films_for_actor` classify to a `QueryTableField` with no rejection on the field and the
+  survivor's predicate, and only the survivor's, in the emitted query. That case is what the shape of
+  step 3 exists for, and a plan that withholds the spent leaves only after classification fails it,
+  so it is written first and the rest hang off it. Then: a
   leftover `@field` leaf inside a routine argument classifies as a column-bound filter and the
   emitted query carries its predicate; a leftover bare leaf whose name matches a result column binds
   by name; a leftover leaf naming nothing lands the existing no-binding rejection with the routine
@@ -219,8 +227,8 @@ decision tree is not touched.
   agrees with `graphitron_argmapping_match.bound_path` over the corpus (the shadow anchor of step 1),
   and a `@nodeId` sibling of a bound leaf now appears in the decode ledger with a disposition (step 7).
 * **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): one field over
-  `films_for_actor` taking a single input object whose `actorId` feeds the routine and whose second
-  leaf filters the result by a function result column; the case asserts the narrowed rows against the
+  `films_for_actor` taking a single input object whose `actorId` feeds the routine and whose
+  unbound leaf filters the result by a function result column; the case asserts the narrowed rows against the
   unfiltered call, so the predicate is shown to reach SQL rather than only to classify.
 * **Validator reach** (pipeline tier, over the classified model): the two new rejections arrive
   through `drainBuildDiagnostics` located at the leaf, in the build and in the LSP, with no second
@@ -385,18 +393,18 @@ would hand the implementation shape to an implementer as it stands.
 **Finding 1 (question one): the Goal's worked example does not build, and `## Tests` makes it the
 case everything else hangs off.**
 
-`argMapping`'s right-hand side is a path, never a literal. `ArgBindingMap.of` rejects an entry whose
-head is not one of the field's argument slots with `Result.UnknownArgRef`, and the routine manual's
-Constraints list states the same rule ("a path whose head is not an argument of the field ... is a
-build error listing the candidates"). `Query.actorFilms` declares exactly one argument, `filter`, so
-`pMinLength: 60` fails with `@routine argMapping entry 'pMinLength: 60' references GraphQL argument
-'60', but available arguments are (filter)`.
+`argMapping`'s right-hand side is a path, never a literal, and the rejection comes earlier than the
+path resolver: `ArgBindingMap.parseArgMapping` refuses the token outright. Classified and printed,
+the Goal's schema as written lands an `UnclassifiedField` reading `@routine argMapping syntax error
+- expected a value name after ':' for entry 'pMinLength' but got INT(60) (expected comma-separated
+'javaParam: graphqlArg' or 'javaParam: input.field' pairs)`.
 
 Deleting the entry does not rescue it. `films_for_actor(p_actor_id INTEGER, p_min_length INTEGER)`
-declares two IN parameters, and `RoutineDirectiveResolver` identity-binds an unmentioned parameter
-to an argument of the same name or else rejects: `@routine parameter 'pMinLength' has no binding: it
-is not a GraphQL argument of this field and no argMapping entry names it`. Nothing in the tree binds
-a routine parameter to a constant; no fixture anywhere spells a literal right-hand side.
+declares two IN parameters, and `RoutineDirectiveResolver` identity-binds an unmentioned parameter to
+an argument of the same name or else rejects, which on this field is `@routine parameter 'pMinLength'
+has no binding: it is not a GraphQL argument of this field and no argMapping entry names it;
+available arguments are ['filter']; did you mean: filter`. Nothing in the tree binds a routine
+parameter to a constant, and no fixture anywhere spells a literal right-hand side.
 
 This blocks rather than reading as a typo because the repair changes what the implementer builds.
 Binding `pMinLength` to a second leaf of `ActorFilmFilter` gives the example two spent leaves where
@@ -412,6 +420,17 @@ the spent `@nodeId` leaf, the surviving `title` leaf naming a real result column
 which is correct: the function returns `film_id` and `title`), and the `foo` contrast leaf the
 paragraph below the snippet already describes. Then `## Tests` naming that exact schema for its
 first case.
+
+*Applied in this same commit, at the user's explicit direction rather than by the author.* Both
+halves of the finding, and the repair, were confirmed by classifying all three schemas through
+`TestSchemaHelper.buildSchema` in a throwaway test: the old snippet lands the parse rejection quoted
+above, dropping the entry lands the unbound-parameter rejection quoted above, and the repaired
+snippet lands `QueryField.QueryTableField`. The repair binds `pMinLength` to a second input leaf (`minLength: Int`),
+declares the `Actor` node type the `@nodeId` needs, and leaves the field single-argument, so the
+single-input-object narrative is intact and the example now carries both ways a leaf is spent: a key
+projection and a plain scalar read. The paragraph below the snippet and the first pipeline case in
+`## Tests` were updated to match. Nothing else in the plan body was touched, and the four notes
+below are unaddressed.
 
 Non-blocking, offered rather than required:
 
