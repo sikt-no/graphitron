@@ -1,7 +1,7 @@
 ---
 id: R893
 title: "A decoding @nodeId instruction with no installed decode fails the build"
-status: In Progress
+status: In Review
 bucket: validation
 theme: nodeid
 depends-on: []
@@ -357,7 +357,11 @@ the manual already promises decoded values for, and `docs/manual/reference/direc
 now says so in the inference section, beside the two shapes that already leave nothing to inherit: a
 coordinate no lowering path reaches fails the build naming the slot, the node type and the consuming
 field, and the message points at the `argMapping` key projection where that is the remedy. No new
-directive, no new argument, no SDL change.
+directive, no new argument, no SDL change. The population boundary the Done gate found is stated
+there too, as the author-facing half of it: SDL makes every implementation redeclare an interface
+field's arguments and carries no directive with them, so the manual says to write the `@nodeId` on
+each implementation's own argument, and names the interface's coordinate as where the build reports
+the drop when none of them does.
 
 `intent_node_id_decode`'s comment has converged on `intent_node_id_encode`'s wording for its own
 half. It keeps its absence clause, which was never in doubt, and gains the presence clause it lacked:
