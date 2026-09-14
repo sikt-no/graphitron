@@ -160,12 +160,26 @@ public final class GraphitronModelStore implements AutoCloseable {
     private static final String UNVERSIONED = "dev";
 
     /**
-     * The lock budget a file-backed connection opens with, in milliseconds: how long a writer waits
-     * for a row another writer holds before giving up. Generous on purpose, for the reason
-     * {@link #fileUrl} states, and public because a writer that narrows it for one row has to be
-     * able to restore <em>this</em> number rather than a copy of it that can drift from it.
+     * The lock budget a file-backed connection opens with, in milliseconds. A writer that meets a
+     * row another writer holds gives up at once, and the person runs the build again.
+     *
+     * <p>It was 60 seconds, raised from H2's own default because "a writer that waits its turn
+     * beats one that falls back cold". Neither half of that survives. There is no falling back
+     * cold, a refused store now failing the run. And the concurrent writers it was raised for were
+     * every module of a workspace sharing one file, which stopped being the arrangement when the
+     * one-shot store became build output under the module's own target: two modules are two files
+     * now, and the session store has one writer. What is left for a budget to buy is a wait nobody
+     * is waiting out.
+     *
+     * <p><b>One and not zero, which is measured rather than assumed.</b> Zero reads as "no value
+     * given" and H2 falls back to its own default: against 2.4.240, a contended row blocks 2000 ms
+     * under {@code LOCK_TIMEOUT=0} and 2005 ms with the parameter absent, where {@code
+     * LOCK_TIMEOUT=1} blocks 1 ms. So the obvious spelling of "do not wait" is the one spelling
+     * that waits, and anybody tidying this to zero would restore the budget while appearing to
+     * remove it. {@code PersistentStoreTest} fails if that happens, its bound sitting below H2's
+     * default for exactly this reason.
      */
-    public static final long FILE_LOCK_MILLIS = 60_000;
+    static final long LOCK_TIMEOUT_MILLIS = 1;
 
     private final Connection connection;
     private final DSLContext dsl;
@@ -690,15 +704,14 @@ public final class GraphitronModelStore implements AutoCloseable {
      * <p>What that gives up is one file shared by two <em>processes</em>. Nothing inside a process
      * changes, which is where the sharing that matters lives: see {@link #openAt}.
      *
-     * <p>The lock timeout is raised from H2's one-second default because concurrent writers of one
-     * file serialize on rows a whole capture transaction holds, and a writer that waits its turn
-     * beats one that falls back cold. It is not the right budget for every row a capture takes; the
-     * capture narrows it where waiting buys nothing, which is why the value is named rather than
-     * spelled here alone.
+     * <p>The lock timeout is zero, so a writer meeting a held row fails rather than waiting. One
+     * budget and no narrowing: a capture used to carry two, a short one for the anchor row and a
+     * generous one for everything after it, and the difference between them was an argument about
+     * which rows are worth waiting out. None of them are.
      */
     private static String fileUrl(Path directory) {
         return "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
-            + ";LOCK_TIMEOUT=" + FILE_LOCK_MILLIS;
+            + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS;
     }
 
     /**

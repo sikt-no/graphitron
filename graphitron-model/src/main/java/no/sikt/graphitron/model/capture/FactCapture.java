@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
@@ -92,24 +91,6 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 public final class FactCapture {
 
     private static final Logger LOG = LoggerFactory.getLogger(FactCapture.class);
-
-    /**
-     * How long a capture waits for the {@code store_graph} anchor row, in milliseconds, before
-     * giving up the shared store and capturing in memory. Two seconds: long enough to absorb a
-     * commit already in flight, since a capture that has reached its own commit releases the row in
-     * milliseconds and there is no reason to lose warmth to a race that close; short enough that a
-     * human reads the pause as the build starting rather than as the build stopping.
-     *
-     * <p>Deliberately far below {@link GraphitronModelStore#FILE_LOCK_MILLIS}, which every other row
-     * a capture takes keeps, because this is the one row where waiting buys nothing. Blocking here
-     * means another writer is mid-capture of the same graph under the same base directory (the
-     * ownership check in {@link RunStore} having already refused the other case), so waiting buys
-     * the right to delete that capture and write it again identically. Waiting on the rows a
-     * capture takes <em>after</em> the anchor is a different bargain: those are the store-global families two
-     * different graphs' captures write concurrently, where the other writer is committing rows this
-     * one also needs and a writer that waits its turn beats one that falls back cold.
-     */
-    public static final long ANCHOR_LOCK_MILLIS = 2_000;
 
     private FactCapture() {}
 
@@ -266,8 +247,11 @@ public final class FactCapture {
      * serializes on the anchor row instead of interleaving deletes with inserts, and a run that
      * dies mid-load leaves the previous committed state instead of a half-written partition.
      *
-     * <p>Leading with the anchor also makes it the one row worth failing fast on, which is what
-     * {@link #ANCHOR_LOCK_MILLIS} is: every row after it is worth waiting for, and this one is not.
+     * <p>Every row a capture takes fails rather than waits, the connection carrying no lock budget
+     * at all. This used to be the one row that did: a short budget here and a generous one after
+     * it, because the rows after the anchor were the store-global families two graphs' captures
+     * write concurrently. Two modules are two files now, so there is no second capture to serialize
+     * against and nothing left for either budget to buy.
      *
      * <p><b>One exception, on the one store where the contract protects nothing.</b> A capture into a
      * store that holds no graph at all commits its facts and then refreshes the materialized targets
@@ -355,13 +339,7 @@ public final class FactCapture {
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
             var sink = new FactSink(txDsl, graph.name(), readAt);
-            // The budget is narrowed for the anchor row alone and restored the moment it is held;
-            // ANCHOR_LOCK_MILLIS carries why the two rows deserve different answers. Set per
-            // capture rather than once at open because SET LOCK_TIMEOUT is a session command and
-            // survives the transaction that failed, so the restore has to be reachable again.
-            txDsl.execute("SET LOCK_TIMEOUT " + ANCHOR_LOCK_MILLIS);
             writeGraph(txDsl, sources, graph, config);
-            txDsl.execute("SET LOCK_TIMEOUT " + GraphitronModelStore.FILE_LOCK_MILLIS);
             if (warm) {
                 StoreRefresh.prepare(sink, sources, extensions, graph.name());
             }
@@ -477,9 +455,9 @@ public final class FactCapture {
     /**
      * Upserts the graph's anchor row: its base directory, its build identity (the build file's
      * path and content hash, both null on a programmatic run), and a fresh {@code last_captured}.
-     * First write of the run on purpose: every SDL root's foreign key lands on this row, and a
-     * concurrent same-graph writer blocks on it here instead of colliding later, for the short
-     * budget {@link #ANCHOR_LOCK_MILLIS} allows it and no longer.
+     * First write of the run on purpose: every SDL root's foreign key lands on this row, so a
+     * concurrent same-graph writer meets it here rather than colliding later, and meeting it is
+     * the end of that run rather than a wait.
      */
     private static void writeGraph(DSLContext dsl, ClasspathSources sources, GraphIdentity graph,
                                    SubjectConfig config) {

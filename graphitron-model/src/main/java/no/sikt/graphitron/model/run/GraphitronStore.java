@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
+import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
@@ -36,19 +37,15 @@ public final class GraphitronStore {
     /**
      * A store on disk at {@code directory}, for a run whose product is the store itself.
      *
-     * @throws IllegalStateException if the directory cannot hold a store, which is a failure and
-     *         not something to work around: a caller that asked for a file and got memory would
-     *         report success and leave nothing behind
+     * <p>Nothing to check on the way out any more. This used to open and then ask whether the
+     * answer was a file, because the open would hand back a private in-memory store rather than
+     * refuse; a caller that asked for a file and got memory would report success and leave nothing
+     * behind, so this caught it. The open says so itself now.
+     *
+     * @throws StoreUnavailableException if the store cannot be opened
      */
     public static GraphitronModelStore at(Path directory) {
-        var store = GraphitronModelStore.openAt(directory);
-        if (store.location().isEmpty()) {
-            store.close();
-            throw new IllegalStateException(
-                "no store could be opened at " + directory + "; a run that asked for a store on "
-                    + "disk cannot answer with one in memory");
-        }
-        return store;
+        return GraphitronModelStore.openAt(directory);
     }
 
     /**

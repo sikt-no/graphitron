@@ -3787,6 +3787,23 @@ It names no row now. That item also carries the sharpest evidence against this w
 dated note now says so in its body: on that consumer the demotion bought a cold minute where the
 refusal buys a failed build.
 
+**And then the waiting went, which the refusal is what earned.** A capture carried two lock budgets,
+2 s for the anchor row and 60 s for everything after it, and the difference between them was an
+argument about which rows are worth waiting out. Both rest on "a writer that waits its turn beats one
+that falls back cold", which `fileUrl` says in as many words. Neither half survives: nothing falls
+back cold, and the concurrent writers of one file were every module of a workspace sharing one, which
+stopped being the arrangement on 2026-09-11 when the one-shot store became build output under the
+module's own target. Two modules are two files; the session store has one writer. So the connection
+carries no budget, `ANCHOR_LOCK_MILLIS` and the `SET LOCK_TIMEOUT` narrow-and-restore pair are gone,
+and a capture that meets a held row ends.
+
+**The obvious spelling of that is the one spelling that does not work, and it is measured.** Against
+H2 2.4.240, a contended row blocks 2000 ms under `LOCK_TIMEOUT=0` and 2005 ms with the parameter
+absent, where `LOCK_TIMEOUT=1` blocks 1 ms. Zero reads as no value given and H2 substitutes its own
+default, so anybody tidying the budget to zero would restore it while appearing to remove it. The
+value is 1, the reason is in the constant's own comment, and `PersistentStoreTest` bounds the elapsed
+below H2's default so the tidy-up fails rather than passing quietly.
+
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
 attempts at the catalog pair failed on a hand-picked list, and the two gaps that mattered were

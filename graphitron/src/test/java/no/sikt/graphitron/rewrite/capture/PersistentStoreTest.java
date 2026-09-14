@@ -207,9 +207,9 @@ class PersistentStoreTest {
                 .isInstanceOf(StoreUnavailableException.class)
                 .hasMessageContaining("another graphitron process holding it");
             assertThat(millisSince(start))
-                .as("the open is bounded by the file lock, not by a probe that reads a socket "
-                    + "with no timeout")
-                .isLessThan(GraphitronModelStore.FILE_LOCK_MILLIS);
+                .as("the open is bounded by H2's own refusal of a held file, not by a probe that "
+                    + "reads a socket with no timeout")
+                .isLessThan(30_000);
 
             // And the run on top of that open fails rather than stalling. Failing fast is the
             // half that was ever in question: the reported symptom was a build that hung in a
@@ -334,15 +334,14 @@ class PersistentStoreTest {
     }
 
     /**
-     * The anchor row is the one row a capture will not wait out. A second writer holding it
-     * uncommitted is another capture of the same graph mid-flight, and waiting for it buys the
-     * right to delete that capture and write it again identically, so the capture gives up on a
-     * short budget instead. What the elapsed bound pins is that the budget is a fraction of the
-     * generous one, which is what stops a contended store reading as a hang.
+     * A capture meets a held row and stops, on the anchor as anywhere else. The connection carries
+     * no lock budget at all now, so what the elapsed bound pins is that nothing was waited out:
+     * this row used to have a short budget of its own and everything after it a generous one, and
+     * the argument between them was about which rows are worth waiting for. None are.
      */
     @Test
-    @DisplayName("a held anchor row gives up fast rather than waiting out the generous budget")
-    void aHeldAnchorRowGivesUpFast(@TempDir Path tmp) throws Exception {
+    @DisplayName("a held anchor row stops the capture at once rather than waiting")
+    void aHeldAnchorRowStopsTheCaptureAtOnce(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
 
@@ -361,30 +360,32 @@ class PersistentStoreTest {
 
             assertThat(thrown).as("the capture gave up on the anchor row").isNotNull();
             assertThat(RunStore.timedOutOnALock(thrown))
-                .as("it gave up on a lock budget, which is what the retry must not re-enter")
+                .as("it gave up on a lock, which is what turns this into a message rather than "
+                    + "the driver's own words")
                 .isTrue();
             assertThat(elapsed)
-                .as("it waited its own budget out, and a fraction of the generous one")
-                .isBetween(FactCapture.ANCHOR_LOCK_MILLIS / 2,
-                    GraphitronModelStore.FILE_LOCK_MILLIS / 4);
+                .as("and it waited for none of it. The bound sits below H2's own 2000 ms default "
+                    + "on purpose: that default is what a connection gets when the lock budget is "
+                    + "absent or spelled as zero, so this is the case that fails if anybody tidies "
+                    + "the budget to the obvious wrong number")
+                .isLessThan(1_500);
         }
     }
 
     /**
-     * The generous budget survives the anchor, which is what keeps the row-scoped narrowing from
-     * quietly retiring the case the generous budget exists for. {@code store_source} rows are
-     * store-global, so two different graphs' captures write them concurrently and the other writer
-     * is committing rows this one also needs, within seconds: there a writer that waits its turn
-     * beats one that falls back cold. So a capture whose anchor is free waits past the anchor budget
-     * for a store-global row and lands, where lowering one number to the other would fail it.
+     * The rule holds past the anchor too, which is the half a row-scoped budget could have hidden.
+     * {@code store_source} rows are store-global, and this case used to pin a capture waiting six
+     * seconds for one and landing, on the argument that a writer who waits his turn beats one who
+     * falls back cold. There is no falling back cold, and two modules are two files, so the writer
+     * this waited for cannot arrive on the path that has a budget to spend. Same fixture, opposite
+     * rule: a held row anywhere ends the capture, and it does not sleep on the way out.
      */
     @Test
-    @DisplayName("a capture waits past the anchor budget for a store-global row")
-    void theGenerousBudgetSurvivesTheAnchor(@TempDir Path tmp) throws Exception {
+    @DisplayName("a held store-global row stops the capture too, and waits out none of the hold")
+    void aHeldStoreGlobalRowStopsTheCapture(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
-        // Comfortably past the anchor budget and comfortably short of the generous one, so the test
-        // distinguishes the two without waiting out either.
+        // Long enough that a capture which waited for the row would be caught doing it.
         long holdMillis = 6_000;
 
         try (var holder = GraphitronModelStore.openAt(directory);
@@ -406,18 +407,20 @@ class PersistentStoreTest {
 
             long start = System.nanoTime();
             release.start();
-            FactCapture.capture(writer.dsl(), true, graph(tmp), SubjectConfig.none(),
-                CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
-                List.of());
+            var thrown = catchThrowableOfType(DataAccessException.class, () ->
+                FactCapture.capture(writer.dsl(), true, graph(tmp), SubjectConfig.none(),
+                    CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
+                    List.of()));
             long elapsed = millisSince(start);
             release.join();
 
+            assertThat(thrown).as("the held store-global row ended the capture").isNotNull();
+            assertThat(RunStore.timedOutOnALock(thrown))
+                .as("on a lock, past the anchor, where a budget used to make this one wait")
+                .isTrue();
             assertThat(elapsed)
-                .as("the capture waited for the store-global row rather than giving up on the "
-                    + "anchor budget")
-                .isGreaterThan(holdMillis / 2);
-            assertThat(writer.dsl().fetchCount(GRAPHQL_TYPE))
-                .as("and landed once the other writer released it").isPositive();
+                .as("and none of the hold was waited out")
+                .isLessThan(holdMillis / 2);
         }
     }
 
@@ -451,9 +454,9 @@ class PersistentStoreTest {
         }
 
         assertThat(millisSince(start))
-            .as("the whole run stopped waiting well short of the generous budget, where it used to "
-                + "spend two of them in silence")
-            .isLessThan(GraphitronModelStore.FILE_LOCK_MILLIS / 4);
+            .as("the whole run stopped at once, where it used to spend two lock budgets in "
+                + "silence and then capture somewhere nobody asked")
+            .isLessThan(15_000);
         assertThat(typeNames(directory))
             .as("the refused run wrote nothing to the file").isEqualTo(before);
     }
