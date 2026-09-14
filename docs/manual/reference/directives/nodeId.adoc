@@ -189,6 +189,12 @@ consuming field it sits under. Where the remedy is to bind the id onto one key c
 node id] describes; where it is to move the directive, the message says which slots the generator
 already decodes.
 
+An interface declaration is not one of those paths. SDL makes every implementation redeclare the
+field and its arguments, and a directive written on the interface does not travel with them, so
+write the `@nodeId` on each implementation's own argument as well. Where none of them carries it,
+the interface's coordinate is where the build names the drop, that being the only place it is
+written.
+
 [#polymorphic-record-slot]
 === Decoding an id of any implementation into a record supertype
 
