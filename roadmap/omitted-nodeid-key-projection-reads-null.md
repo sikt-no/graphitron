@@ -22,7 +22,9 @@ returned as `null`, so omitting the field surfaces as a redacted internal error,
 of the projection: a `@routine` argument and a `@condition` method parameter. When this lands, an
 omitted or explicitly-null `@nodeId` in a key projection reaches the routine or condition as a plain
 `null`, letting the database function or the condition author define what an absent filter means,
-and no shape of nullability along the path ships a runtime NPE. Reported as
+and no shape of nullability along the path ships a runtime NPE. Only absence is affected: a
+malformed node id, or one encoded for another node type, still fails the request as a client error
+before the routine or condition runs. Reported as
 [issue 547](https://github.com/sikt-no/graphitron/issues/547); the WHERE-clause path for the same
 field shape already carries the guard, so this closes the gap between the two rails.
 
@@ -65,16 +67,31 @@ Settled at filing, so the plan below does not reopen them:
   bug. A routine whose parameter is not NULL-tolerant now fails inside the database rather than in
   Java, which is that routine's declared contract and not ours.
 * **Emit the guard unconditionally.** Every key-projection read becomes null-safe regardless of the
-  declared nullability of the leaf or its ancestors. Uniform output at a shared emit site is worth
-  more than sparing an `ID!` leaf under an all-non-null path a check graphql-java already makes dead;
-  the alternative needs a "path can be absent" derivation over every segment and is one more place to
-  get the arithmetic wrong.
+  declared nullability of the leaf or its ancestors. The justification is the decode helper's own
+  contract, stated in `RecordDecodeFragments`: the helper returns `null` for exactly one case, a wire
+  value that is not a `String` (absent or wrong-shaped), throws on a well-formed id of a foreign type,
+  and leaves it to the call site to decide what absence means, because only the call site knows what
+  the value was for. The guard is this call site answering that one question; it cannot swallow a
+  foreign-type id. Deriving "can this path be absent" over every segment would spare an `ID!` leaf
+  under an all-non-null path a check graphql-java already makes dead, at the cost of one more place
+  to get the segment arithmetic wrong.
 * **Hoist the guarded read into the prelude.** The emitter already declares the decoded record as a
   statement so a developer can breakpoint the decode. The column read joins it as a second declared
   local, and the consumer splices only the local's name. The development principles' "statement form
   over expression tricks" rule is why: the argument list stays free of conditionals, the guard is one
   breakpointable line beside the decode it guards, and the local is effectively final so it survives
   inside a lambda when a list-shaped segment lifts the read into a stream.
+* **A primitive-typed consuming parameter under a nullable path is a build error.** The type check
+  the projection already performs stands aside where the consuming parameter is a primitive `int`
+  (the `intent_resolved_node_key_projection` view's comment says so), and the compiler backstop it
+  leans on does not catch `int p = <boxed null>`, which compiles and NPEs at the unboxing. Today no
+  null reaches that unboxing; after this change one can. So the projection's defect derivation grows
+  one arm beside `KEY_COLUMN_TYPE_MISMATCH`: a primitive-typed consuming parameter whose projected
+  path has a nullable segment (the leaf or any input object above it) is rejected, naming the
+  coordinate, the parameter and the boxed type that fixes it. A primitive under an all-non-null path
+  stays legal, since graphql-java guarantees the value is present there. This is a validate-time join
+  over facts the SDL strata already hold, not emit-time arithmetic, so it does not reopen the decision
+  above.
 * **R948 stays narrow.** The follow-up comment's two adjacent observations, `@field` silently ignored
   on an input field of a spent routine argument and the hand-decode workaround's degraded error
   contract, are out of scope. The first has its own Backlog item; the second retires on its own once
@@ -88,9 +105,15 @@ and hands its consumer one column of the decoded key) into generated code. Its `
 `<local>.get(Tables.<T>.<COL>)` unconditionally and returns it as the expression the consumer splices.
 The change:
 
-1. `read` registers a second declared local, keyed by leaf path plus column so two columns projected
-   off one record get two locals, typed by the column's `CatalogColumn.javaTypeName` (already carried
-   on the `KeyProjection` command's `column`), and initialised by the null check:
+1. `read` registers a second declared local, one per projected column of a decoded record, typed by
+   the column's Java type and initialised by the null check. The type is `ColumnRef.columnClass` on
+   the `KeyProjection` command's `column`, lifted through `CatalogRefs.columnType`, and that lift
+   returns `null` for a column the catalog cannot type: the store deliberately lets such a pair
+   project unchecked, which today costs nothing because `record.get(field)` needs no type name. The
+   hoisted local turns that optional fact into a required one, so `KeyProjection`'s compact
+   constructor, where the row's completeness law already lives, refuses a blank `columnClass`, and
+   the derivation that mints the row refuses the untyped column with a defect naming it rather than
+   leaving a `$T` to be fed `null` at emit time.
 
    ```java
    CustomerRecord keyInputCustomerId = decodeCustomerRecord(argInputCustomerId(env.getArgument("input")));
@@ -99,13 +122,26 @@ The change:
 
    `read` then returns the bare local name. `declarations()` keeps emitting in first-use order, so
    the column local always follows the record local it reads.
-2. Local naming: the existing `key<Path>` record local plus the column's Java field name in camel
-   case, so the two locals read as a pair. Two projections of the same record column at one
-   coordinate share the local, exactly as two reads of one record share the record local today.
-3. No consumer changes. `RoutineCallEmitter` (routine reads and the Mutation write path through
-   `RoutineWriteFetcherRenderer`) and `ConditionGlueRenderer` already splice whatever `read` returns;
-   a bare name is a valid expression at every splice site a `get(...)` was. The nullability of the
-   leaf and of its ancestors is not consulted anywhere, by the second decision above.
+2. One ordered declaration sequence, not two maps. The existing `declared` map is keyed by leaf path
+   as a `String`; the column local is a second population on a second axis, and fusing the two into
+   one string key (or interleaving two maps by hand) would make "the column local follows the record
+   local it reads" hold by the emission code's arithmetic. Key the sequence by a small two-arm sealed
+   key instead, `RecordDecode(leafPath)` and `ColumnRead(leafPath, columnJavaName)`, so insertion
+   order is dependency order by construction and `declarations()` keeps its one-line body. Local
+   naming: the existing `key<Path>` record local plus the column's Java field name in camel case, so
+   the two read as a pair; two projections of the same record column at one coordinate share the
+   local, as two reads of one record share the record local today.
+3. No main-source consumer changes. Every drain of `declarations()` (`RootLauncherRenderer`,
+   `RoutineWriteFetcherRenderer`, `ConditionGlueRenderer`) emits into the same method body its splice
+   sites (`RoutineCallEmitter`, `ConditionGlueRenderer`) read from, and each renderer takes a fresh
+   sink per method, so a bare name is a valid expression at every splice site a `get(...)` was. The
+   nullability of the leaf and of its ancestors is not consulted at emit time, by the second decision
+   above. On the condition path the projected read lands in a binding local whose presence guard is
+   `PresenceGuard.Always` (a field-level method is bound to the whole field), which is the producer
+   decision behind the manual sentence below that the method is called with `null`; the pipeline test
+   asserts that arm. The hoist leaves that path with an alias-only statement (`Integer keyXCol = …;
+   Integer pActorId = keyXCol;`); the binding local may take the guarded initialiser directly at that
+   site if the implementer prefers one decision per line, and either spelling satisfies the tests.
 4. The routine parameter type check the projection already performs (an `Integer` column into a
    `String` parameter is a build error) is unchanged; the local's type is the column's, which is the
    type that check already agreed with the parameter.
@@ -114,14 +150,21 @@ The change:
 
 * **Emission** (`ArgmappingKeyProjectionEmissionPipelineTest`, `graphitron` pipeline tier): the
   existing routine and `@condition` cases assert the hoisted column local in the prelude and a bare
-  name at the splice, and assert that no `.get(Tables.` read remains inside a `Routines.<m>(...)`
-  argument list or a condition binding. This pins the shape so a later refactor cannot reintroduce
-  the inline read unnoticed.
+  name at the splice, and that no column read remains inside a `Routines.<m>(...)` argument list or
+  a condition binding. `TypeSpecAssertions` declares itself the single home of the rendered spelling
+  of this emitter's output, so the new question lives there as a named helper ("is the column read
+  hoisted out of the call?") rather than as a string match in the test; `invocationTakesProjectedRead`
+  asserts exactly the shape this item removes and retires with it (see Retired vocabulary). The
+  primitive-parameter defect and the untyped-column defect each get a rejection case at the same
+  tier.
 * **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): a new
   NULL-tolerant table-valued function in `graphitron-sakila-db/src/main/resources/init.sql`,
   `films_for_actor_or_all(p_actor_id INTEGER, p_min_length INTEGER)`, whose body reads
-  `(p_actor_id IS NULL OR fa.actor_id = p_actor_id)`; the name states the NULL contract so no
-  existing fixture changes meaning. Three example-schema fields over it, each with its own case:
+  `(p_actor_id IS NULL OR fa.actor_id = p_actor_id)`. It is a near-twin of `films_for_actor`, and
+  the reason not to widen the incumbent instead is where it is bound: `Actor.films` calls it at the
+  correlated child position with `p_actor_id` fed from the parent row's `actor_id` column, and a
+  fixture that returns every film for a null parent column would give that test a meaning it never
+  asked for. The new function's name states the NULL contract the tests here depend on. Three example-schema fields over it, each with its own case:
   - nullable leaf: `filter: FilmsFilter!` holding `actorId: ID @nodeId(typeName: "Actor")`; omitting
     `actorId` returns every film at or above `minLength`, and supplying it narrows to the actor;
   - nullable ancestor: `filter: FilmsFilter` nullable holding `actorId: ID!`; omitting `filter`
@@ -141,7 +184,19 @@ receives it, so a NULL-tolerant function is the way to express an optional filte
 projection bullet (`condition.adoc`) gets one clause: a field-level `@condition` bound to such a
 projection is called with `null` for that parameter, unlike the input-field `@condition` path where an
 absent value skips the call, since a field-level method is bound to the whole field and the author
-decides what absence means. The nodeId page keeps pointing at the routine section.
+decides what absence means. The same section states the new build error: a primitive-typed parameter
+cannot take a projection whose path can be absent. The nodeId page keeps pointing at the routine
+section.
+
+## Retired vocabulary
+
+* `invocationTakesProjectedRead` in `TypeSpecAssertions`, and the spelling it pinned: a named-column
+  read inside the invocation's argument list. Replaced by the hoisted-read helper above.
+  `materialisationPrecedesFirstRead` and `projectedColumnReads` change meaning with it, the "first
+  read" moving into the prelude, and are re-read rather than retired.
+* The narration of the old spelling in three prose sites: the `KeyProjection` javadoc, the
+  `ArgmappingProjectionDefects` javadoc, and the `read` javadoc in `ProjectedKeyReads`, each of which
+  describes the read as `<local>.get(Tables.<T>.<COL>)` at the call.
 
 ## Other solutions we've considered
 
