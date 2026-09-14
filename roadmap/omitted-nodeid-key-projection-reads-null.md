@@ -799,3 +799,97 @@ reader who meets the two paragraphs in order will read them as contradicting.
   only where the routine's call surface was captured and the parameter is a reference type". On the
   routine page that clause stays true after step 5, a routine parameter always being boxed, so
   naming only the projection section's third bullet is probably right; the second site just exists.
+
+### Round 5 (2026-09-14, Spec -> Ready, reviewer session 01139f1ob6dmqW6erUcXHm79)
+
+Verdict: withhold. One blocking finding on question two, narrower again than round 4's. Revision 3
+answers round 4 outright: the operand is on the relation now, and the route from membership to
+predicate is stated. What is left is one population the `candidates` argument does not reach, and it
+is the population where an existing reader changes behaviour. Question one passes.
+
+Read without working back from the phase list: declare a `@nodeId` filter your clients may leave
+out, either nullable on the leaf or non-null under a nullable input object, bind it through
+`argMapping` to a `@routine` parameter or a `@condition` method parameter, and today omitting it
+costs the client a redacted internal error while the emitted SDL advertised the field as optional.
+After this lands the routine or the method is handed a plain `null` and decides what an absent
+filter means, and a malformed or foreign-type id still fails as a client error before either runs.
+
+Revision 3's new material checks out, at the DDL and at the code. The classpath arm does end on
+`JOIN jvm_declared_type_ref tr ... AND tr.type_path = '' AND tr.owner_kind = 'METHOD_PARAMETER'`, so
+the `LEFT JOIN` is the one-word change. `jvm_method_parameter.parameter_type` is `NOT NULL` and is
+documented as the erased source form with the package dropped, so `int` appears there literally and
+the eight-spelling test reads a closed vocabulary; `jvm_declared_type_ref` equally has no root row
+for an array or a type variable, which `intent_condition_param_extraction.java_type`'s comment states
+in as many words, and an erased `int[]` or `Object` is not one of the eight, so the predicate stands
+aside on both exactly as the item claims. Both precedents are real and say what the item quotes:
+`intent_argmapping_key_column_candidate.column_java_type` argues its NULL is "a payload absence
+rather than a missing row", and `intent_node_id_decode_slot`'s comment carries the outer-join
+sentence verbatim. That relation's MAPPED_PARAMETER arm does outer-join this view and name
+`bp.java_type` alone, and its own `candidates` counts rows over `(graph_name, use_site)`, so an
+ordinary primitive parameter arrives as the same one row carrying the same NULL it was null-extended
+into, which is the item's claim exactly. The three readers all name their columns and none selects
+`*`. The pin claim holds: `DetectionReadReachGateTest`'s `REACH` already lists
+`intent_argmapping_bound_parameter_type` under `ArgmappingProjectionDefects`. Step 1 holds too:
+`sql_column.binding_type` is `NOT NULL` and is `Field.getType()`'s spelling, `CatalogRefs.columnType`
+does return a primitive `TypeName` out of `PRIMITIVE_NAMES` and also returns null for a non-blank
+name `ClassName.bestGuess` rejects (so the blankness test really is strictly weaker),
+`ResolvedKeyProjections.projectionOf` carries the two untypeable populations as invariant throws, and
+`ProjectedKeyReads.leafOf` already makes the two "Graphitron generator bug (key projection)" throws
+the new law would join. `declarationOf` still will not false-match the proposed
+`key<Path><Column>` local. `films_for_actor(p_actor_id INTEGER, p_min_length INTEGER)` is bound at
+the correlated child position with `p_actor_id` fed by `columnMapping`, and both doc clauses the item
+quotes are verbatim.
+
+**Finding 1 (question two: architecture fit). The widening admits a new row into a partition three
+readers count, and the item reasons about that count only where the new rows are alone in it.**
+
+Both gating readers carry `candidates = 1` inside the join itself, not only the `java_type` test the
+blast-radius paragraph examines: `intent_resolved_node_key_projection` joins
+`... AND p.position = n.position AND p.candidates = 1`, and the `KEY_COLUMN_TYPE_MISMATCH` arm joins
+`... AND pt.position = ca.position AND pt.candidates = 1`. Take a grain where the classpath resolves
+an overload set with one primitive arm and one reference arm sharing the parameter name, which the
+arm's join admits because it matches `jvm_method` on name alone and `jvm_method_parameter` on
+`parameter_name`. Today the primitive draws no row, `candidates = 1`, and both readers act. After the
+widening it draws its own row, `candidates = 2`, and both stand aside. Two consequences, neither
+stated:
+
+* *The mismatch arm loses a rejection it makes today.* The blast-radius sentence checks that
+  `pt.java_type <> ca.column_java_type` is NULL-false on the new rows, which is right and is not what
+  drops the row; `pt.candidates = 1` is. A projection whose types genuinely disagree at such a grain
+  goes from a build error naming both types to a compile error in code the author did not write,
+  which is the direction `intent_resolved_node_key_projection`'s comment says the gate does not move
+  in ("strictly adds rejections and removes no emission").
+* *The new refusal fires there, with the remedy that does not apply.* The predicate as step 5 states
+  it is a row whose `java_type` is NULL and whose `parameter_type` is one of the eight, with no
+  `candidates` qualifier, and such a row exists at that grain. The projection also survives, the
+  `p.java_type IS NULL` arm keeping it, so there is a projection to refuse. The author is told to
+  declare `Integer` when they have already declared an `Integer` overload. That is the same mistake
+  the predicate section is built to avoid, one population over: the item is careful that `int[]` and
+  `T` must not draw a refusal "telling its author to declare `Integer`, which names the wrong fact and
+  offers a remedy that does not apply", and an overload set with one primitive arm draws exactly that.
+
+The `candidates` paragraph reasons about the new population counting *itself*, and on that it is
+correct: two primitive overloads at one position do stay two rows under the `DISTINCT` once the
+column is projected, and every reader requiring one candidate stands aside on them exactly as it does
+on two reference types, where today it stands aside on their absence instead. What it does not reach
+is the new population being counted *beside a row that resolves today*, which is the only shape in
+which behaviour changes for a pair the tree already serves.
+
+*What would satisfy this finding.* One stated decision about the mixed grain, in the paragraph where
+the widening's cost is stated. Whether the new refusal requires `candidates = 1`, and what an
+ambiguous grain gets instead if anything; and whether the mismatch arm standing aside there is
+accepted as the same ambiguity discipline the item already invokes, or avoided. Either answer is
+defensible and either is a clause of SQL rather than a redesign. What is not tenable is the
+blast-radius paragraph as written, which asserts that neither reader changes.
+
+*Non-blocking, no reply needed.*
+
+* The `resolved` CTE carries its own explicit column list
+  `(graph_name, site, use_site, position, param_name, java_type)`. Step 5 names the view's column
+  list and the arm's `SELECT DISTINCT` and not that one; an implementer meets it on the first
+  compile, so nothing is owed, but the sentence enumerating the whole store-side cost is one item
+  short.
+* No cost outside the view, confirmed rather than assumed: `FactCaptureAgreementTest` and
+  `DerivedReadCostTest` register this relation by name and not by column list, and
+  `SupertypeSiteReferenceTest` only narrates its join key, so the widened column list reaches none of
+  the three.
