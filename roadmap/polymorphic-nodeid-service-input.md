@@ -1,13 +1,13 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-09-08
-last-updated: 2026-09-11
+last-updated: 2026-09-14
 ---
 
 # @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot
@@ -1485,3 +1485,87 @@ a schema the build accepts, which is what the finding said it did not.
   Response: taken. Implementation now names `50492f1` beside `ad09411` and says what each landing
   carried, with the round-5 rework named as the commit carrying this revision in the same sentence
   shape, so a later round can pin it the same way.
+
+### Round 6 (2026-09-14, In Review -> Done, reviewer session 01NMvjVkcgyHPUedW8k2EQuf)
+
+Verdict: rework; status moves back to `Ready`. Round 5's finding is answered and answered well,
+question 2 passes on evidence re-run rather than inherited, and the build is green (`mvn install
+-Plocal-db` on trunk at `16865ada6`: BUILD SUCCESS, every module, 14:03 wall clock, no test failures
+and no errors). One blocking finding, and it is the retirement sweep rather than the code: a
+retirement this item declares in its own `Retired vocabulary` section did not happen, and the
+sentence declared retired is still the contract a consumer reads.
+
+Round 5's fork is closed at all three surfaces, checked at the symbol rather than taken from the
+response. The one-member arm is gone from `BuildContext.resolvePolymorphicRecordDecode` and its
+javadoc carries the member-count reason; both compact constructors refuse only the empty list, and
+that shape is unreachable from the walk because the `tableBound.isEmpty()` refusal stands above the
+construction, so the relaxed invariant now guards a programming error rather than a schema an author
+can write. The third surface is the half worth verifying independently, because the response asserts
+it needs no change: `NodeTypeCompletions` and `DiagnosticFacts.nodeTypeBindingArm` both read
+`intent_node_container_member` asking only that some member be table-bound and a node type, with no
+count in either, so the completion the editor already offered now leads to a schema the build
+accepts. `PolymorphicNodeIdSlotPipelineTest.aContainerWithOneAdmissibleMemberDecodesThroughTheSameChain`
+pins the walk and the one-arm emitted chain down to the helper's return type, and
+`PolymorphicNodeIdDecodeTest.aContainerWithOneAdmissibleMemberDrawsItsOneRowAndNoVerdict` pins the one
+candidate row, the one destination row and the absent verdict. The pick is stated under Resolution
+with its reason, and the single-table container's exemption from that reason is stated with it.
+
+Question 2 holds on its own evidence. Every test the Tests section names exists as named, at every
+tier it names one: the two LSP completion cases and the two diagnostic cases sharing their fixture,
+the read-side coordinate refusal, the `recordImplements` closure case, the census stand-aside case,
+and the seven execution-tier cases over `AddressOccupant` (a `Customer` id, a `Staff` id, a `Film` id
+refused naming both candidates, a malformed id, a right-prefix-wrong-arity id, the list shape, and
+the producer-parameter twin). Each of the five verdicts in
+`intent_node_id_polymorphic_decode_defect` draws rows some case asserts. Both column renames are
+complete, `intent_node_id_instruction` and `intent_node_id_decode_slot` each carrying
+`resolved_type_name` and `resolved_type_kind` and neither carrying the old spelling. The three
+`resolved_type_kind = 'NODE_TYPE'` predicates are at the endpoint, the `argument_node_id` CTE and the
+`node_id_at_table` CTE, each with its reason written at the predicate. The user-facing-doc check is
+clean: no `R<n>`, phase, slug or TODO marker in either touched page, and no sentence in the manual
+claiming a member-count minimum that round 5's change would have falsified.
+
+**Blocking (question 1): the `Retired vocabulary` section declares a sentence retired from
+`intent_argument_filter_role`'s comment, and that sentence is still there.** Retired vocabulary says
+the comment "loses one sentence, the keyless-type escape hatch ('such a type is a rejection's
+population'), which the widening invalidates by making a keyless named type legal somewhere; it is
+replaced by the kind fork", and Implementation step 2 names the same edit. The predicate landed and
+is right: `i.resolved_type_kind = 'NODE_TYPE'` is in the `argument_node_id` CTE, and the inline
+comment above it carries the replacement text almost verbatim, down to "excluded by what the type is
+rather than read as the single-column shape a node has when nothing says otherwise". What did not
+happen is the other half. `COMMENT ON VIEW intent_argument_filter_role` still carries two sentences
+the change invalidated, and the relation's comment is what jOOQ generates into
+`IntentArgumentFilterRoleRecord`'s javadoc, which is the surface a reader of this relation actually
+meets:
+
+* the escape hatch itself, verbatim: "A node type whose key resolves to nothing at all is read here
+  as the single-column shape, which is the shape a node has when nothing says otherwise; such a type
+  is a rejection's population and no arity this relation could invent would change that."
+* the NODE_ID population sentence one clause earlier: "the whole population is read off
+  `intent_node_id_instruction` rather than off the directive: that relation already carries both
+  readings ... with the node-type resolution and every decline it makes already applied." That
+  clause is the stated warrant for taking the instruction relation wholesale and for reading a
+  missing key shape as the single-column default, and it is exactly what the widening removed. The
+  population is no longer the whole of that relation, and the resolution is no longer already
+  applied; the CTE now applies it.
+
+So the replacement text and the text it replaces both stand, in two places, saying different things
+about one predicate. This is not a behaviour finding and no test pins the old wording, which is why
+it is small: one `COMMENT ON VIEW` edit at `graphitron-model.sql:11314` and a rebuild. It is blocking
+because the retirement sweep is a Done-gate precondition and this is the one term the sweep is for,
+and because a comment that still offers the escape hatch is what a later reader would lean on when
+deciding whether that predicate is load-bearing. Satisfied by: replace both sentences with the kind
+fork the body comment already states, saying that the NODE_ID population is the instruction
+relation's `NODE_TYPE` rows and that a container is excluded by what it is.
+
+One sweep note for whoever runs the next one, because it is why this survived five rounds: the DDL
+escapes apostrophes as `''`, so a grep for `rejection's population` over `graphitron-model.sql`
+returns nothing while `rejection''s population` returns the row. A sweep whose terms contain an
+apostrophe has to be run both ways.
+
+#### Non-blocking
+
+* Implementation step 2 asks for the three predicates' reasons "each with its reason on its own
+  comment", and all three landed as inline comments at the predicate rather than in the relation's
+  `COMMENT ON`. Read as the better placement rather than a miss, and consistent across all three, so
+  it is noted only so the blocking finding above is not read as being about placement: that one is
+  about a retired sentence surviving, not about where the new reason went.
