@@ -148,7 +148,7 @@ figures the delivery reports, and it is the only thing that can refute the two r
 above take on faith, which is why the plan states it rather than leaving it to instinct. The store
 is already on disk: the dev round
 that produced the table above persisted one under the per-user cache home
-`AbstractRewriteMojo.resolveStoreDirectory` computes, `mvn clean` does not remove it, and it carries
+`DevMojo.resolveStoreDirectory` computes, `mvn clean` does not remove it, and it carries
 the consumer's own population including the classpath census a hand-built probe omits. Stop the
 build, copy the file, work on the copy, and drive it from a single-file JDBC program at the H2
 version the root pom pins.
@@ -414,3 +414,73 @@ evidence of cost on their own.
 paid, which would make a save cheap and leave the boot pass where it is. The boot pass is what a
 consumer meets first, and a fix that needs the other item to land is a fix neither item can be
 judged on.
+
+## Reviewer findings
+
+### Round 1 (2026-09-14, Spec to Ready, reviewer session 01LEFtas3tdQ4XEbZ9S3wmiJ)
+
+Revisions requested. The goal is stated in a consumer's terms and is judgeable on its own, the four
+levers are each a named rung of the fact-model page's own order rather than a mechanism stood up
+beside it, and every static figure in the body reproduces against the tree: the breadth table's
+seven rows, the 230 with its 114/80/4 children, the 55 and 24 the Tests section moves, `instructed`
+at eight references and `table_node` at two, the three positive references to `resolved_name`, the
+`KEY_COLUMN_UNRESOLVED` disjunction, and the twenty-one registrations that make lever 4 a
+twenty-second. What is holding the gate is the acceptance evidence rather than the plan, plus one
+lever stated to a lower standard than its three siblings.
+
+**The one check the reactor can read is passed by lever 1 alone, and the dearest registration moves
+nothing it can see.** Simulating lever 1 in the metric's own terms, `intent_node_type` re-sourced
+onto `graphitron_node_entry UNION graphitron_node`, and re-running `report-inline-multiplicity`
+puts the top of the ranking at `diagnostic` 145, `intent_argmapping_projection_defect` 141, then
+`intent_node_id_instruction_live` 134. So the node-id family is off the top after the cheapest
+lever, with registration 13 still at 2076 s and lever 3 not started. Lever 3 is invisible to that
+metric by construction, besides: it rewrites three correlated references to a common table
+expression, and the metric counts `intent_input_field_column_match` once in that body before and
+after. The Tests section's criterion, that the item is not complete while the node-id family holds
+the top of the ranking, therefore passes early and cannot fail late, which is the shape of evidence
+the Done gate's completeness question exists to refuse. The section already computes figures that
+would discriminate, 55 and 45 and 12 per registration; state those, or say plainly that breadth is
+a floor and that lever 3's acceptance is the consumer-side before-and-after plus the row-set
+equality. Two views the ranking leaves above the pass after lever 1, `diagnostic` and
+`intent_argmapping_projection_defect`, are read by no registration, so whatever the criterion
+becomes should say what it expects the top to be rather than which family is not on it.
+
+**Lever 2 is the only lever with no mechanism, and it carries the filing move the item makes
+non-optional for lever 1.** Lever 1 owes a population proof, a chosen interface spelling, and an
+explicit filing decision, of which the item says deferring silently is the one arm not available.
+Lever 4 owes an index in a named shape, a `reason` arithmetic and a `DerivedReadCostTest` pair.
+Lever 2 owes "once its owner stores it": no owner stage, no write, no table DDL, no clearing round,
+no name. By the ownership reading the item itself applies, a view reading one family is that
+family's, `intent_node_metadata_defect` reads only `sql_`, and the Other-solutions section already
+calls its present filing the fault lever 2 exists to fix. So lever 2 is a move into `sql_`, with a
+rename behind it that two Java importers (`Nodes.derive`, `NodeKeyColumns`) and two view bodies
+(`intent_inferred_node_type`, `intent_resolved_node_type_id`) spell. One ordering fact comes with
+it and constrains which owner can take the relation: `Nodes.derive` reads it, so the write has to
+land before the graphitron gatherer's nodes stage. State the lever to lever 4's standard, and give
+the Tests section the bullet the other three levers have.
+
+The stored fold that rides with it has a closer precedent than the item cites.
+`NodeKeyColumns.folds` is `COLUMN_NAME_UPPER.eq(upper(written)).or(JOOQ_NAME_UPPER.eq(upper(written)))`,
+resolving the same published key-column spellings against the same catalog columns as the arm being
+respelled. Citing it makes the respelling a transcription of the sibling rather than a judgment
+call, which is the argument the lever wants.
+
+**The stopping criterion is read against a band the item has not measured.** "Each lands inside the
+band the other eighteen registrations occupy, which today is 2.9 s at worst and about 6 s in total"
+takes as given a distribution over eighteen registrations, where the measurement section says
+registrations 15 to 21 were never reached and the table prices eleven. The plan already re-measures
+the pass whole after every lever, so the repair is small and the criterion survives it: say the band
+is the eleven measured today, and that it is re-read against the pass's own distribution once the
+pass completes. As it stands a delivery can meet a band that turns out not to be the band.
+
+**The bisection axis for registration 12 points at the wrong common table expression.** The counts
+are right, `instructed` at eight references and `table_node` at two. But of the six namings of
+`intent_node_type` in that body, one sits in `table_node` and five sit in the union arms directly,
+among them the correlated `NOT EXISTS` this item separately and correctly picks out as the excluded
+relation with no drivable side. An implementer bisecting `table_node` for the chain's cost prices a
+sixth of its reach and reads the chain as cheap.
+
+Corrected in passing, being a symbol rather than a design question: the pickup section named
+`AbstractRewriteMojo.resolveStoreDirectory` for the store that survives a clean. That method
+resolves the build directory, which `mvn clean` does remove; `DevMojo` overrides it with the
+per-user cache home the sentence describes, and the citation now names the override.
