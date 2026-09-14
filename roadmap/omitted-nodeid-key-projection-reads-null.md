@@ -425,3 +425,60 @@ kinds of case where the tier already sorts them.
   in `EMITTING_SITES`, which is `ROUTINE`, `FIELD_CONDITION` and `ARGUMENT_CONDITION`.
 * All three `TypeSpecAssertions` helpers `## Retired vocabulary` names resolve, as does the private
   `declarationOf` the retirement reasoning leans on.
+
+### Round 3 (2026-09-14, Spec -> Ready, reviewer session 01Xi4kaHzdoQh5HpYfNFTzKu)
+
+Verdict: withhold. Round 1's blocking finding on question two stands, re-verified independently on
+this head. Question one passes.
+
+The plan body is still unrevised. `git diff dac8e60 HEAD` on this file adds rounds 1 and 2 and
+nothing else, and trunk head is the round 2 review commit itself, so three rounds have now reviewed
+one text. I restate no finding the author has answered, because none has been answered; what follows
+is what I checked for myself plus two things the earlier rounds did not give.
+
+On question one I read the goal without working back from the phase list and landed where both
+earlier rounds did, so nothing is owed there. A `@nodeId` the emitted SDL advertises as optional,
+either nullable on the leaf or non-null under a nullable input object, bound through `argMapping` to
+a `@routine` parameter or a `@condition` method parameter, today costs the client a redacted internal
+error when they omit it. After this lands the routine or the method receives `null` and decides what
+absence means, and a malformed or foreign-type id still fails as a client error before either runs.
+
+Re-verified with FQN-aware grep rather than inherited: `ProjectedKeyReads.read` formats
+`$L.get($T.$L.$L)` unconditionally off a `LinkedHashMap<String, Declared>` keyed by leaf path, and
+`declare` emits the record local, so the emitter half describes the site accurately;
+`intent_argmapping_bound_parameter_type`'s comment still says verbatim that "a primitive parameter
+resolves nothing here rather than resolving int" and that the resulting "absence is therefore four
+facts and this relation distinguishes none of them"; `graphitron_argmapping_candidate` carries
+`parent_path`, `depth` and `is_list` and no `non_null`, and `graphitron_argument_path_segment` is
+absent from the whole tree, so no relation states "this projected path has a nullable segment";
+`intent_resolved_node_key_projection`'s comment does name "a column the catalog cannot type" among
+the pairs it deliberately lets project, and does claim the gate "strictly adds rejections and removes
+no emission"; `ArgmappingProjectionDefects.READS` pins exactly three relations and
+`DetectionReadReachGateTest` holds it by equality; `ArgmappingProjectionRejectionPipelineTest` holds
+thirteen cases including the unknown-key-column refusal at five sites, while
+`ArgmappingKeyProjectionEmissionPipelineTest` holds twelve cases and no rejection, confirming round
+2's pointer. The finding is unchanged and so is what would satisfy it, so I do not restate it.
+
+**One thing that shrinks the cost side, since the fourth decision's arm is still open.** The new
+primitive refusal would break nothing in the tree. The `@condition` fixtures are three classes,
+`InputFieldConditionFixtures`, `MultiTableConditionFixtures` and `ReferencePathConditionFixtures`,
+and none of them declares a primitive-typed parameter at all, so no existing case migrates and no
+existing SDL fixture has to be rewritten. Combined with round 1's narrowing (the routine arm reads
+`sql_routine_parameter.binding_type`, which is boxed, so the primitive case is the `@condition`
+half's alone) the whole price of that refusal is the store-shape decision and the `READS` pin, with
+no regression surface behind it. That is worth knowing before choosing between the nullable-segment
+arm and the cheaper blanket one the round 1 addendum raised; it does not decide which, which stays
+the author's.
+
+*Non-blocking, no reply needed.*
+
+* Step 1 puts the new completeness law on `KeyProjection`'s compact constructor, which today
+  validates `column` for null and then `keyColumns.contains(column)` by record equality. Because
+  `column` is required to be one of `keyColumns`, "refuses a blank `columnClass`" is ambiguous
+  between binding `column` alone and binding every entry of the list. Only `column`'s type is needed
+  at emit, so either is defensible; the revision should just say which, since the constructor is
+  where the spec chose to put the law.
+* The `@condition` execution case places its fixture method "beside `InputFieldConditionFixtures`"
+  while describing a field-level `@condition`. Same-package placement is fine, but that class is the
+  home of the rail round 1 and 2 both flagged as the contrasting one, so naming it as the neighbour
+  reads as naming it as the site.
