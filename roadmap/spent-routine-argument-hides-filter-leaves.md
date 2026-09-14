@@ -544,3 +544,77 @@ and the nesting arm in `classifyInputFieldInternal`. The fourth home for the ret
 `SHARED_ID_SDL` does point both `rent_film` parameters at `input.inventoryId.inventory_id`, leaving
 `RentFilmInput.customerId` bound to nothing under a test that asserts a successful emission, so step
 5 turns that fixture red and `## Tests` does not say so.
+
+### Round 4 (2026-09-14, Spec -> Ready, reviewer session 014juQQon3ZcfyDHjTzX7iuL)
+
+Verdict: revisions requested. Round 3's blocking finding on question two is still open, because the
+plan body has not changed since it was written: the most recent commit touching this file is the
+round 3 review itself. I re-derived the finding from the code rather than carrying it forward on the
+previous reviewer's word, and it holds as stated. One new non-blocking note, on the same seat.
+
+Question one is well communicated and I have nothing to add to rounds 2 and 3 on it. A consumer who
+today puts a routine key and a filter in one input object gets the filter dropped in silence and an
+over-return; afterwards the bound leaves are spent, the rest are ordinary filters against the chain
+terminus, and a leaf naming nothing fails the build as it would on a table-backed field. The Goal's
+repaired example is consistent with the catalog: `films_for_actor(p_actor_id INTEGER, p_min_length
+INTEGER) RETURNS TABLE(film_id INTEGER, title TEXT)` in `init.sql`, so both IN parameters are bound
+and `title` is a real result column. Every symbol, relation, fixture and manual sentence the plan
+names exists as named; the verification narrative is in this review commit's message.
+
+**Finding 1 (question two): unchanged from round 3. The Mutation `@routine` write surface has two
+classification seats and step 5 names one, so the item ships its own failure class on the other with
+a green build.**
+
+Re-confirmed from the current head. `FieldBuilder` reaches a Mutation `@routine` field at two
+classifiers: `classifyField`'s chain interception routes the multi-node chain to
+`classifyMutationRoutineChain`, landing `MutationField.MutationRoutineWriteField`, and
+`classifyMutationField` routes the hop-less shape to `classifyMutationRoutineCarrier`, whose
+admitted tail `classifyAdmittedRoutineCarrier` lands `MutationField.MutationRoutineWriteRecordField`.
+Neither body calls `classifyArguments`, `resolveTableFieldComponents` or `InputFieldResolver`
+anywhere: both run their verdicts off the walk and the carrier scan and construct their leaf
+directly. So step 5's justification, that the seat resolves no input type at all, is exactly as true
+of the carrier seat as of the chain seat, and step 5 puts the walk on one of them.
+
+One thing I can add that rounds 1 to 3 did not check, and that makes the omission easier to make
+rather than less real: the *read* side is genuinely single-seated, so the plan's one-seat framing is
+right there and only there. `routineBoundArgNames` has exactly one call site,
+`FieldBuilder.routineChainComponents`, and that helper is called from both `classifyRootRoutineChain`
+and `classifyChildRoutineChain`. Two dispatches, one seat, so step 3's precondition covers the root
+and child read positions without naming either. The write side is the mirror image: two dispatches,
+two seats, sharing no helper to hang a precondition on. That asymmetry is what the plan has to state,
+and it is the author's to state because it decides whether the item has one mutation acceptance case
+or two.
+
+What would satisfy it is unchanged from round 3: `## Implementation` says where the mutation walk
+runs across both seats and how it is reached from two dispatches that share none, and `## Tests`
+carries the carrier case beside the chain case, asserted on a field that otherwise classifies to
+`MutationRoutineWriteRecordField` so it cannot pass by the field having been rejected for another
+reason. Or, if the carrier seat is deliberately out of scope, that is a decision with a reason in
+`## Decisions`, since the second decision as written covers it.
+
+**Note (non-blocking, same seat, one grain up): an unread *flat* argument on a Mutation `@routine`
+field is silent today and stays silent under step 5.**
+
+The second decision's reason is about the seat, not about nesting: "the function is the write, its
+parameter list is the only thing that consumes input, and the post-commit re-read is keyed, not
+filtered". That reason reaches a flat argument the `argMapping` never names just as it reaches a leaf
+inside an input object. Nothing refuses one today: `RoutineDirectiveResolver` refuses an unbound
+*parameter* ("no argMapping entry names it", line 342) and there is no diagnostic in the other
+direction, and since neither mutation seat classifies arguments, an extra argument is accepted,
+advertised in the emitted SDL, and read by nothing. Step 5's mechanism is "one walk over the
+argument's input tree yielding leaf coordinates", which a flat scalar argument does not have, so it
+does not reach this.
+
+Non-blocking because the Goal frames the item at input fields inside an argument and a flat argument
+is outside that frame, so treating it as scope the item chose not to take is defensible. Worth a
+sentence either way while the mutation arm is being restated for finding 1, since a reader of the
+second decision will expect the rule to cover it; if it is out of scope, a fresh Backlog item is the
+place for it rather than this one.
+
+Round 2's four non-blocking notes are all still open and all still real; I spot-checked each rather
+than carrying them forward. `ServiceCatalog.pathCoordinate` is the single walk-side function whose
+null step 7 leans on. `InputFieldResolution` is still sealed over `Resolved` and `Unresolved` only.
+The fourth home for the retired sentence is still `LauncherCommandsPipelineTest` line 246, and
+`## Retired vocabulary` still lists three. And `ArgmappingKeyProjectionEmissionPipelineTest`'s
+`SHARED_ID_SDL` still leaves `RentFilmInput.customerId` bound to nothing under a test asserting a
+successful emission, which step 5 turns red without `## Tests` saying so.
