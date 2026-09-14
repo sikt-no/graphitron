@@ -7,7 +7,7 @@ priority: 3
 theme: testing
 depends-on: []
 created: 2026-08-22
-last-updated: 2026-09-05
+last-updated: 2026-09-14
 ---
 
 # A bridging-condition split-table execution case returns a second actor only in a full-module run
@@ -48,3 +48,12 @@ write.
 
 Found while holding the In Review gate on the inlay enforcer item, which is unrelated to this
 module; filed rather than folded into that verdict.
+
+A third case, on 2026-09-14: `GraphQLQueryTest.splitTableField_conditionJoin_returnsActorsPerFilm`,
+the unbridged sibling of the case this item opens with, failed one full `mvn install -Plocal-db` and
+passed the whole class, 419 tests, on the same commit minutes later. Same class, same exact-list
+assertion, same "passes alone, fails beside its neighbours" answer. What it adds is that the bridging
+predicate is not the variable: the bridged and unbridged forms of one split-table join both show it,
+which narrows the search further toward residual rows in the shared table over any one rule.
+Observed while verifying the node-type decode identity, which touches neither this module's fixtures
+nor the split-table path.
