@@ -1,12 +1,12 @@
 ---
 id: R893
 title: "A decoding @nodeId instruction with no installed decode fails the build"
-status: In Review
+status: Ready
 bucket: validation
 theme: nodeid
 depends-on: []
 created: 2026-08-31
-last-updated: 2026-09-10
+last-updated: 2026-09-14
 ---
 
 # A decoding @nodeId instruction with no installed decode fails the build
@@ -560,3 +560,102 @@ two probe harnesses; and both manual quotations, which are exact.
   ratchet rather than by the compiler, and its failure mode is a build that fails when it should
   pass, which is loud. That asymmetry looks right and needs no change; it is worth knowing when
   slice 2's enumeration runs.
+
+### Round 3 (2026-09-14, In Review -> Done, reviewer session 01Y6GMBLTpA7Chm8gJZa6VAa)
+
+Verdict: withhold. One blocking finding on gate question three; the fourth question passes as written.
+
+The implementation is the change the spec approved, in more than outline. Both operands are where the
+plan put them: `NodeIdDecodeCoverageFacts` reads the materialized census and the projection relation at
+its own `(site, use_site, position)` grain narrowed on `ArgmappingProjectionDefects.EMITTING_SITES`,
+which is now package-visible for exactly that one reader as round two predicted it would have to be;
+`NodeIdDecodeLedger` is one write path behind `putIfAbsent`; the subtraction is a plain
+`containsKey` with no disposition-by-disposition filtering, which is what the totality argument needs;
+and it defers rather than rejecting. `NodeIdDecodeCoordinate` carries components and never a rendered
+use site on either side of the join, and `ServiceCatalog.pathCoordinate` recovers the descent through
+the SDL walk `pathLeafDeclaration` already makes rather than by splitting the written path, so the
+keying rule the plan leans on hardest is honoured at both operands. The use site is threaded
+completely: `ClassifyContext.root()` and `withEnclosingOverride` have no production callers left, and
+all three `TypeBuilder.resolveInputFields` call sites pass a real `UseSite`, so a null use site is
+no longer a reachable way to skip a mint through those routes. The three declared divergences are
+each better than the plan's version, and the arm-coverage pin is the best of them: reflection over the
+seal computes the decode-arm set structurally and compares it with `DECODE_ARMS`, which catches the
+one mistake the exhaustive switch cannot see.
+
+The named evidence all runs and passes on this tree, re-run rather than taken on report:
+`NodeIdDecodeCoveragePipelineTest` (6), `NodeIdDecodeCoverageRatchetTest` (14),
+`NodeIdDecodeArmCoverageTest` (2), `HierarchyKindRegistryTest` (2) and `graphitron-model`'s
+`DetectionReadReachGateTest` (3). The gate case, the clean half, the use-site enforcer, the rail-two
+regression in both spellings, the granularity enforcer and the `NotReached` case all execute rather
+than skip, and the pipeline test's clean half is the right shape: a gate with an unstated clean half
+passes just as well when everything fails.
+
+**Finding 1 (question three: is the implementation correct). The obligation is not total, and the gap
+fails a build that passed before this item landed.**
+
+`NodeIdDecodeNotReached.sweep` skips every schema type that is not a `GraphQLObjectType`, so its
+population is object-declared fields. The argument census has no such scope. In
+`intent_node_id_instruction_live` the `OUTPUT_FIELD` arm joins `graphql_type` on `kind = 'OBJECT'` and
+the `INPUT_FIELD` arm on `kind = 'INPUT_OBJECT'`, but the `ARGUMENT` arm reads
+`graphitron_argument_node_id_entry` with no kind join at all, and `intent_type_domain` is "every named
+type, of every kind" by its own comment. An interface-declared field carrying a decoding `@nodeId` is
+therefore a census member that no mint site disposes of and no sweep reaches, and the residual reports
+it.
+
+Measured, on this tree, with the pipeline harness `NodeIdDecodeCoveragePipelineTest` uses. Three
+reproducers, each validating with exactly one error and that error the coverage report, so each is a
+schema that validated clean before this item:
+
+[cols="4,3"]
+|===
+| fixture | reported coordinate
+
+| an interface declaring `films(languageId: ID @nodeId(typeName: "Language") @reference(path: [{key: "film_language_id_fkey"}]))`, implemented by a `@table(name: "film")` object type repeating the argument verbatim | `Filterable.films`, argument site
+| the same pair with the instruction on an input field under the interface field's argument | `Filterable.films`, input-field site, spelled `Filterable.films(filter)/languageId`
+| a `@table` `@discriminate` interface declaring the same filter argument, with one `@discriminator` participant | `MediaItem.films`, argument site
+|===
+
+The control is the same object type on its own, with no interface above it: clean. So the discriminator
+is that the coordinate's use-site owning type is an interface, and the object-type half installs
+normally in every case, which is why the ratchet is silent. The corpus carries no interface field with
+arguments, so its population cannot reach this.
+
+This is the failure direction the design names as the dangerous one in four separate places
+(`NodeIdDecodeLedger`'s "reports a working shape as a dropped instruction",
+`NodeIdDecodeArmCoverageTest`'s "fails a build that should pass", and twice in
+`NodeIdDecodeCoverageFacts`), and the item's own goal is a ratchet with an empty day-one residual.
+Here the residual is not empty on a shape a consumer can write, and what it reports is wrong: the
+decode is installed, at the object coordinate the generator actually lowers.
+
+What would satisfy: close the population gap and pin the shape. Both remedies are one edit and I
+measured the sweep-side one, widening `sweep`'s type test from `GraphQLObjectType` to
+`GraphQLFieldsContainer`, which turns all three fixtures above clean and leaves
+`NodeIdDecodeCoveragePipelineTest` and `NodeIdDecodeCoverageRatchetTest` green. It may be the wrong
+half to edit, though, and the choice is worth a sentence in the plan rather than a reflex. `NotReached`
+means "the owning field's classification aborted above the coordinate", and an interface-declared
+coordinate is not a field the walk was ever going to stand on, which is a different fact wearing the
+same row; scoping the census to object-declared use sites instead, the way the relation's other two
+arms already scope themselves, states that directly and keeps `NotReached` meaning one thing. Whichever
+half moves, the fixture belongs in `NodeIdDecodeCoveragePipelineTest` beside the use-site enforcer: the
+ratchet cannot hold this, because its population is the corpus and the corpus has no such document.
+
+**Non-blocking.**
+
+* `NodeIdDecodeCoverageRatchetTest.MIN_DOCUMENTS` is 8 against 14 documents the filter actually
+  matches today. The floor exists so a filter that stops matching reads as a loud failure rather than
+  an empty sweep, and at 8 it lets the swept set fall by six documents silently. Raising it to the
+  current count costs nothing and is the only thing keeping the ratchet's population honest.
+* Nothing reads a `NodeIdDecodeDisposition`'s payload. `NodeIdDecodeCoverage` asks
+  `ledger.rows().containsKey(...)` and no other reader of `rows()` or `decodeLedger()` exists, so
+  `Installed`'s `Rail` and `Refused`'s `Rejection` are carried and never consulted, and a
+  `Set<NodeIdDecodeCoordinate>` would do today's work. The seal is what the Spec gate approved and the
+  drainage argument wants a rail named, so this is not a change to make now; it is worth knowing that
+  the arms are presently unfalsifiable, which is also why a mint that names the wrong rail would go
+  unnoticed.
+* `NodeIdDecodeCoverage.violations` mutates the ledger it is handed, folding the projected-key installs
+  in before subtracting. The javadoc says so and says why the fold belongs there rather than in the
+  walk, so nothing is hidden; a name that admits the write, or a fold that returns a new ledger, would
+  let the signature carry it instead of the prose.
+* The user-facing-doc check passes: the `nodeId.adoc` paragraph carries no `R<n>`, no phase or plan
+  reference, and its `xref` resolves to the `node-id-key-projection` anchor that exists in
+  `routine.adoc`. The retirement sweep does not apply, the item declaring no retired vocabulary.
