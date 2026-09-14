@@ -1,7 +1,7 @@
 ---
 id: R893
 title: "A decoding @nodeId instruction with no installed decode fails the build"
-status: Ready
+status: In Progress
 bucket: validation
 theme: nodeid
 depends-on: []
