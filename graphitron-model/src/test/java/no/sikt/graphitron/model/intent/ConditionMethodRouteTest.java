@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What {@code intent_condition_method_route} returns: the hop a condition method's own signature
- * declares, read off the classpath census and resolved against the catalog.
+ * declares, read off the condition arm of the code family and resolved against the catalog.
  *
  * <p>Every case here seeds census and catalog rows directly. A real capture would have walked a
  * classfile to get them, and what the rule reads is the walked result rather than the walk, so the
@@ -280,12 +280,18 @@ class ConditionMethodRouteTest {
     }
 
     /**
-     * No return-type guard, stated as a case because its absence is deliberate: the generator picks
-     * by name and never by return type, so a method the census records as returning something other
-     * than a condition routes here too. Filtering it out would refuse a chain the generator accepts.
+     * The return type is the admission, and it is the condition arm's to make: a method the census
+     * holds and the arm does not is not a candidate, so it routes nothing however its parameters
+     * are typed. Seeded through the census directly rather than through the condition-method
+     * helper, that helper writing the arm row this case is about the absence of.
+     *
+     * <p>This relation once asserted the opposite, on the argument that the generator resolves a
+     * name without consulting return types. What an author may name is a different question from
+     * how a named thing resolves, and keeping the first one here left every other reader of
+     * {@code @condition} to restate it.
      */
     @Test
-    void aMethodTheCensusSaysReturnsNoConditionRoutesAnyway() {
+    void aMethodTheArmDoesNotHoldRoutesNothing() {
         withCatalog(dsl -> {
             seedClass(dsl, JAR, CONDITIONS, "CLASS");
             seedMethod(dsl, JAR, CONDITIONS, "notACondition", "(LCustomer;LAddress;)Ljava/lang/Object;");
@@ -295,7 +301,7 @@ class ConditionMethodRouteTest {
                 "(LCustomer;LAddress;)Ljava/lang/Object;", 1, Map.of("", tableClass("address")));
             seedBareConditionArgument(dsl, "district", CONDITIONS, "notACondition");
 
-            assertThat(routes(dsl, GRAPH)).containsExactly("notACondition customer->address");
+            assertThat(routes(dsl, GRAPH)).isEmpty();
         });
     }
 

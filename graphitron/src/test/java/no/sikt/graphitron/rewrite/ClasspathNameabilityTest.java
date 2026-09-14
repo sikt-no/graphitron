@@ -55,6 +55,19 @@ class ClasspathNameabilityTest {
     }
 
     @Test
+    void declaredReactorModuleClassIsNameable(@TempDir Path tmp) throws IOException {
+        // The other half of the SIBLING rejection below: that message tells an author to declare
+        // the dependency, so once they have, the class has to be nameable. Were this arm to fall
+        // through to the rejection, the build would refuse the very thing it asked for.
+        Path module = classesDirWith(tmp, "com/example/svc/FilmService.class");
+        var check = new ClasspathNameability(List.of(
+            new ClasspathEntry(module, ClasspathEntry.Origin.REACTOR, "no.sikt:example-service")));
+
+        assertThat(check.verdictFor("com.example.svc.FilmService"))
+            .isInstanceOf(ClasspathNameability.Verdict.Nameable.class);
+    }
+
+    @Test
     void jdkClassIsNameable(@TempDir Path tmp) throws IOException {
         // JDK classes are on every consumer's classpath by construction and are not a census
         // question; the classified list is non-empty so the inert arm is not what answers.

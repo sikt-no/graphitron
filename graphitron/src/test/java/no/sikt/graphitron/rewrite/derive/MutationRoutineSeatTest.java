@@ -461,7 +461,11 @@ class MutationRoutineSeatTest {
     private void withCapturedStore(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
         try (var store = CapturedStore.ofCatalog(tmp, GRAPH, sdl,
-                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census())) {
+                new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), census(),
+                // The walk transcribes the classpath as a census and the code family states
+                // what @condition may name; a condition hop routes off the second, so the capture
+                // gets the class root as well, which is what a real run hands it.
+                testClassRoot())) {
             body.accept(store.dsl());
         }
     }

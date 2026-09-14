@@ -37,8 +37,20 @@ public record ClasspathEntry(Path path, Origin origin, String coordinate, String
     public enum Origin {
         /** This module's own build output. */
         PROJECT,
-        /** On the compile classpath with its coordinate declared in the module's own pom. */
+        /**
+         * Somebody else's artifact, with its coordinate declared in the module's own pom. A
+         * library: nameable, because declaring it is what makes naming it legitimate, but not
+         * the consumer's own code, which is the distinction {@code REACTOR} below carries.
+         */
         DECLARED,
+        /**
+         * A reactor module's output that this module declares a dependency on, which is the
+         * ordinary way one module of a build uses another. Nameable exactly as {@code DECLARED}
+         * is, and the consumer's own code exactly as {@code PROJECT} is, that second half being
+         * why it is not spelled {@code DECLARED}: a reader collecting what an author plausibly
+         * wrote cannot otherwise tell this module apart from a third-party jar.
+         */
+        REACTOR,
         /**
          * A reactor module's output that this module does not declare a dependency on. Kept in
          * the census (an author can name it and then declare the dependency, which is the dev

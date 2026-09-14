@@ -4,6 +4,7 @@ import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
@@ -16,6 +17,8 @@ import static no.sikt.graphitron.model.test.SeededStore.seedClass;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedMethod;
+import static no.sikt.graphitron.model.test.SeededStore.seedMethodParameter;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -53,6 +56,30 @@ class ConditionMethodRouteDefectTest {
 
             assertThat(defects(dsl))
                 .containsExactly("com.example.Conditions.customerToAddress METHOD_NOT_ON_CLASS");
+        });
+    }
+
+    /**
+     * The class declares the method and it is not a condition method, its return type being
+     * something other than a condition. Ahead of every parameter verdict: both slots here are
+     * perfectly good table classes, so any of those would have described a parameter list that is
+     * not what is wrong. Seeded through the census directly, the condition-method helper writing
+     * the arm row whose absence is the subject.
+     */
+    @Test
+    void aMethodReturningNoConditionIsNamedAsSuch() {
+        withCatalog(dsl -> {
+            seedClass(dsl, JAR, CONDITIONS, "CLASS");
+            seedMethod(dsl, JAR, CONDITIONS, "notACondition",
+                "(LCustomer;LAddress;)Ljava/lang/Object;");
+            seedMethodParameter(dsl, JAR, CONDITIONS, "notACondition",
+                "(LCustomer;LAddress;)Ljava/lang/Object;", 0, Map.of("", tableClass("customer")));
+            seedMethodParameter(dsl, JAR, CONDITIONS, "notACondition",
+                "(LCustomer;LAddress;)Ljava/lang/Object;", 1, Map.of("", tableClass("address")));
+            seedBareConditionArgument(dsl, "district", CONDITIONS, "notACondition");
+
+            assertThat(defects(dsl)).containsExactly(
+                "com.example.Conditions.notACondition METHOD_RETURNS_NO_CONDITION");
         });
     }
 

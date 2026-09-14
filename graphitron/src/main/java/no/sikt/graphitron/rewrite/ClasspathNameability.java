@@ -33,7 +33,8 @@ import no.sikt.graphitron.model.config.RunContext;
  * <p>The verdicts, per {@link ClasspathEntry.Origin} arm plus the two cases no entry accounts for:
  *
  * <ul>
- *   <li>{@code PROJECT} / {@code DECLARED} carries the name: nameable.</li>
+ *   <li>{@code PROJECT} / {@code DECLARED} / {@code REACTOR} carries the name:
+ *       nameable.</li>
  *   <li>{@code SIBLING} carries it: rejected, naming the module to declare.</li>
  *   <li>No kept entry carries it but the platform loader resolves it: nameable. JDK classes are
  *       on every consumer's classpath by construction and are not a census question.</li>
@@ -93,7 +94,8 @@ public final class ClasspathNameability {
         List<String> resources = resourceCandidates(className);
         for (ClasspathEntry entry : entries) {
             if (entry.origin() == ClasspathEntry.Origin.PROJECT
-                || entry.origin() == ClasspathEntry.Origin.DECLARED) {
+                || entry.origin() == ClasspathEntry.Origin.DECLARED
+                || entry.origin() == ClasspathEntry.Origin.REACTOR) {
                 if (carries(entry, resources)) {
                     return NAMEABLE;
                 }

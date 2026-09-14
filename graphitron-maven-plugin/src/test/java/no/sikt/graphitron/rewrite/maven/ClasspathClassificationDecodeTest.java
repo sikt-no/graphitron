@@ -84,6 +84,57 @@ class ClasspathClassificationDecodeTest {
     }
 
     @Test
+    void aDeclaredReactorModuleIsReactorRatherThanDeclared(@TempDir Path tmp) throws IOException {
+        // Reactor-ness outranks directness, because it is the fact no consumer can recover: a
+        // reader collecting the build's own code cannot otherwise tell this module from a jar.
+        // Declaring the dependency is the ordinary thing to do and must not cost the module its
+        // identity, which is what the arm below SIBLING used to do to it.
+        Path own = Files.createDirectories(tmp.resolve("own/target/classes")).toAbsolutePath().normalize();
+        Path moduleClasses = Files.createDirectories(tmp.resolve("service/target/classes"))
+            .toAbsolutePath().normalize();
+
+        String root = "no.sikt:consumer:jar:1.0";
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), moduleClasses.toString()),
+            own,
+            List.of(artifact("no.sikt", "service", moduleClasses,
+                List.of(root, "no.sikt:service:jar:1.0"))),
+            List.of(declared("no.sikt", "service")),
+            Map.of(moduleClasses, "no.sikt:service"));
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::path, ClasspathEntry::origin, ClasspathEntry::coordinate)
+            .containsExactly(
+                tuple(own, Origin.PROJECT, null),
+                tuple(moduleClasses, Origin.REACTOR, "no.sikt:service"));
+    }
+
+    @Test
+    void aPackagedReactorModuleIsMatchedByCoordinate(@TempDir Path tmp) throws IOException {
+        // Once the upstream module has been packaged, a downstream one resolves its jar rather
+        // than its output directory, and the reactor map is keyed by the directory. Being the
+        // build's own module is a fact about the module, not about which of its two forms this
+        // classpath carries, so the coordinate answers where the path cannot.
+        Path own = Files.createDirectories(tmp.resolve("own/target/classes")).toAbsolutePath().normalize();
+        Path moduleClasses = Files.createDirectories(tmp.resolve("service/target/classes"))
+            .toAbsolutePath().normalize();
+        Path moduleJar = touch(tmp.resolve("service/target"), "service-1.0.jar");
+
+        String root = "no.sikt:consumer:jar:1.0";
+        var entries = AbstractRewriteMojo.classifyCompileClasspath(
+            List.of(own.toString(), moduleJar.toString()),
+            own,
+            List.of(artifact("no.sikt", "service", moduleJar,
+                List.of(root, "no.sikt:service:jar:1.0"))),
+            List.of(declared("no.sikt", "service")),
+            Map.of(moduleClasses, "no.sikt:service"));
+
+        assertThat(entries)
+            .extracting(ClasspathEntry::origin, ClasspathEntry::coordinate)
+            .contains(tuple(Origin.REACTOR, "no.sikt:service"));
+    }
+
+    @Test
     void anUnpopulatedTrailFallsBackToTheDeclaredJoin(@TempDir Path tmp) throws IOException {
         Path own = Files.createDirectories(tmp.resolve("target/classes")).toAbsolutePath().normalize();
         Path declaredJar = touch(tmp.resolve("repo"), "declared.jar");

@@ -69,7 +69,8 @@ public final class CodeCapture {
      * are scoped away from.
      */
     private static final Set<String> REACTOR_ORIGINS =
-        Set.of(ClasspathEntry.Origin.PROJECT.name(), ClasspathEntry.Origin.SIBLING.name());
+        Set.of(ClasspathEntry.Origin.PROJECT.name(), ClasspathEntry.Origin.REACTOR.name(),
+            ClasspathEntry.Origin.SIBLING.name());
 
     private CodeCapture() {}
 

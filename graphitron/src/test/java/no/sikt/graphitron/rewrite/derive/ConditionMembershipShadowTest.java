@@ -79,7 +79,7 @@ class ConditionMembershipShadowTest {
         var examples = CorpusDocuments.documents();
         int comparedKeys = 0;
         try (var captured = CapturedStore.ofCatalog(tmp, examples.getFirst().id(),
-                fullSdl(examples.getFirst()), jooq, census())) {
+                fullSdl(examples.getFirst()), jooq, census(), testClassRoot())) {
             for (CorpusDocuments.Document example : examples.subList(1, examples.size())) {
                 captured.andCatalogGraph(example.id(), fullSdl(example), jooq, census());
             }
@@ -156,7 +156,11 @@ class ConditionMembershipShadowTest {
     private void withCatalogStore(String sdl, Consumer<DSLContext> body) {
         var ctx = testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var captured = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, sdl, jooq, census())) {
+        try (var captured = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, sdl, jooq, census(),
+                // The walk transcribes the classpath as a census and the code family states
+                // what @condition may name; a condition hop routes off the second, so the capture
+                // gets the class root as well, which is what a real run hands it.
+                testClassRoot())) {
             body.accept(captured.dsl());
         }
     }

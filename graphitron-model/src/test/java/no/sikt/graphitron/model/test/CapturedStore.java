@@ -278,6 +278,22 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * The same, with {@code classRoot} read as this build's own output, for a fixture whose
+     * assertions reach a relation the code family feeds: a condition hop routes off what
+     * {@code @condition} may name, which is the code family's statement and not the census's.
+     *
+     * <p>The census argument and this one describe the same directory and are not redundant: one is
+     * the walk's transcription of the classpath and the other is the reading {@link ModelCapture}
+     * performs over it, and a run does both.
+     */
+    public static CapturedStore ofCatalog(Path directory, String graphName, String sdl, JooqCatalog jooq,
+                                          List<CompletionData.ExternalReference> census,
+                                          Path classRoot) {
+        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"), census,
+            List.of(new ClasspathEntry(classRoot, ClasspathEntry.Origin.PROJECT, null, null)));
+    }
+
+    /**
      * A graph whose only source refused: {@code refusedSdl} is spelled so a stage objects to it, and
      * nothing else was read. The shape for a case about what an editor shows in the file the author
      * has just broken, where there is no surviving document to fall back on.
@@ -335,10 +351,17 @@ public final class CapturedStore implements AutoCloseable {
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
                                                 JooqCatalog jooq,
                                                 List<CompletionData.ExternalReference> census) {
+        return openAndCapture(directory, graphName, sdl, jooq, census, List.of());
+    }
+
+    private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
+                                                JooqCatalog jooq,
+                                                List<CompletionData.ExternalReference> census,
+                                                List<ClasspathEntry> classpath) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ThreadConfinedStore.borrow();
-        captureFile(store, file, directory, graphName, registry, jooq, census, false);
+        captureFile(store, file, directory, graphName, registry, jooq, census, false, classpath);
         return new CapturedStore(store, graphName, directory, file, registry);
     }
 
@@ -418,6 +441,14 @@ public final class CapturedStore implements AutoCloseable {
         captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm);
     }
 
+    private static void captureFile(GraphitronModelStore store, Path file, Path directory,
+                                    String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                    List<CompletionData.ExternalReference> census, boolean warm,
+                                    List<ClasspathEntry> classpath) {
+        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm,
+            classpath);
+    }
+
     /**
      * Both readings of the documents: the walk, and then {@link ModelCapture}, which is what a run
      * captures through.
@@ -454,8 +485,35 @@ public final class CapturedStore implements AutoCloseable {
     private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
+        captureFiles(dsl, files, directory, graphName, registry, jooq, census, warm, List.of());
+    }
+
+    /**
+     * The same capture with a classpath, for a fixture whose assertions reach a relation the code
+     * family feeds. The census parameter beside it is the walk's transcription of a classpath and
+     * this is the code family's reading of one, so a fixture supplying only the first gets a store
+     * where a class is in the census and no directive may name it, which is not a state a run
+     * produces.
+     *
+     * <p>The code family is written before the walk, which is the order a run has and the order
+     * that matters: {@code AbstractRewriteMojo.runGenerator} captures the model into the store and
+     * then invokes the generator, whose walk derives over what it finds there. The walk materialises
+     * as it goes, so a code row written after it is invisible to everything derived during it, and a
+     * fixture would read a resolved route beside a chain that never saw it.
+     */
+    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
+                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
+                                     List<CompletionData.ExternalReference> census, boolean warm,
+                                     List<ClasspathEntry> classpath) {
+        if (!classpath.isEmpty()) {
+            CodeCapture.capture(dsl, classpath, null,
+                jooq == null ? null : jooq.codegenLoader(), LocalDateTime.now());
+        }
         FactCapture.capture(dsl, warm, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), registry, attributionOfFiles(files), jooq, census);
+        // Null classpath and null catalog, as this call has always passed: the code family is
+        // captured above where a run captures it, and FactCapture wrote the jOOQ facts, so handing
+        // either over again would be a second writer of one family.
         ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), List.of(), null, LocalDateTime.now());
     }

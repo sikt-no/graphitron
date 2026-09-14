@@ -17,6 +17,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
@@ -2836,6 +2838,12 @@ public final class SeededStore {
      * through {@link #seedClass}, {@link #seedMethod} and {@link #seedMethodParameter} takes four
      * calls whose only content is the same three names repeated.
      *
+     * <p>Seeds the classpath census and the condition arm both, which is what a real capture
+     * writes: the census walks every method on the entry and the arm keeps the ones an author may
+     * name in {@code @condition}. A method returning a condition is therefore in both, and a case
+     * wanting one that is only in the census, which is what a method returning something else is,
+     * seeds the census directly instead of calling this.
+     *
      * <p>A {@code null} entry is a parameter whose declared type names no class at all, which is
      * what a primitive one is; a wildcard {@code Table<?>} is spelled as the bare interface
      * {@code org.jooq.Table}, because that is the class the census records at the root of it and
@@ -2866,6 +2874,31 @@ public final class SeededStore {
             String parameterClass = parameterClasses[position];
             seedMethodParameter(dsl, sourceName, className, methodName, descriptor.toString(),
                 position, parameterClass == null ? Map.of() : Map.of("", parameterClass));
+        }
+        dsl.insertInto(CODE_CONDITION_METHOD)
+            .set(CODE_CONDITION_METHOD.SOURCE_NAME, sourceName)
+            .set(CODE_CONDITION_METHOD.CLASS_NAME, className)
+            .set(CODE_CONDITION_METHOD.METHOD_NAME, methodName)
+            .set(CODE_CONDITION_METHOD.DESCRIPTOR, descriptor.toString())
+            .set(CODE_CONDITION_METHOD.IS_STATIC, true)
+            .set(CODE_CONDITION_METHOD.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
+            .execute();
+        for (int position = 0; position < parameterClasses.length; position++) {
+            String parameterClass = parameterClasses[position];
+            dsl.insertInto(CODE_CONDITION_METHOD_PARAMETER)
+                .set(CODE_CONDITION_METHOD_PARAMETER.SOURCE_NAME, sourceName)
+                .set(CODE_CONDITION_METHOD_PARAMETER.CLASS_NAME, className)
+                .set(CODE_CONDITION_METHOD_PARAMETER.METHOD_NAME, methodName)
+                .set(CODE_CONDITION_METHOD_PARAMETER.DESCRIPTOR, descriptor.toString())
+                .set(CODE_CONDITION_METHOD_PARAMETER.POSITION, position)
+                .set(CODE_CONDITION_METHOD_PARAMETER.PARAMETER_TYPE,
+                    // A primitive parameter names no class, and the arm records the type the
+                    // classfile states rather than an absence; int is what the descriptor's I is.
+                    parameterClass == null ? "int" : parameterClass)
+                .set(CODE_CONDITION_METHOD_PARAMETER.TOUCHED_AT, SEEDED_READING)
+                .onDuplicateKeyIgnore()
+                .execute();
         }
     }
 

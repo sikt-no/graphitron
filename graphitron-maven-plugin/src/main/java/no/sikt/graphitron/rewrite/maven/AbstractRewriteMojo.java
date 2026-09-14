@@ -631,9 +631,12 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      *
      * <ul>
      *   <li>this module's own output: {@code PROJECT};</li>
+     *   <li>another reactor module, matched by output directory or, once that module has been
+     *       packaged, by the coordinate of the jar the reactor resolved: {@code REACTOR} where
+     *       this module declares it and {@code SIBLING} where it does not, both carrying the
+     *       module name the build-side rejection message needs. Asked before directness, a
+     *       declared reactor module being otherwise indistinguishable from a third-party jar;</li>
      *   <li>a resolved artifact this module declares: {@code DECLARED};</li>
-     *   <li>a reactor project's output the module does not declare: {@code SIBLING}, carrying
-     *       the module name the build-side rejection message needs;</li>
      *   <li>a resolved artifact the module does not declare: {@code TRANSITIVE};</li>
      *   <li>a path no artifact and no reactor project accounts for: {@code DECLARED} with no
      *       coordinate, keeping the entry in the census, because dropping an unattributable
@@ -700,16 +703,29 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             return new ClasspathEntry(path, Origin.PROJECT, null, stamp);
         }
         Artifact artifact = artifactByPath.get(path);
-        if (artifact != null && isDirect(artifact, declaredKeys)) {
-            return new ClasspathEntry(path, Origin.DECLARED,
-                artifact.getGroupId() + ":" + artifact.getArtifactId(), stamp);
-        }
+        boolean direct = artifact != null && isDirect(artifact, declaredKeys);
+        String coordinate = artifact == null ? null
+            : artifact.getGroupId() + ":" + artifact.getArtifactId();
         String reactorCoordinate = reactorOutputs.get(path);
+        if (reactorCoordinate == null && coordinate != null
+            && reactorOutputs.containsValue(coordinate)) {
+            // The same module, reached as an installed jar rather than as its output directory,
+            // which is what a downstream module resolves once the upstream one has been packaged.
+            // Being the build's own module is a fact about the module, not about which of its two
+            // forms this classpath happens to carry.
+            reactorCoordinate = coordinate;
+        }
         if (reactorCoordinate != null) {
-            // A reactor module's output this module did not declare, whether it arrived through
-            // the reactor fold or transitively through another dependency: offerable in the
-            // census, rejected by the build naming the module, which is SIBLING's whole point.
-            return new ClasspathEntry(path, Origin.SIBLING, reactorCoordinate, stamp);
+            // Asked before directness, because being the build's own module is the more specific
+            // fact and the one no consumer can recover: a declared reactor module is otherwise
+            // spelled exactly like a third-party jar. Directness then only picks which reactor
+            // arm answers, REACTOR for the ordinary declared case and SIBLING for the module an
+            // author can name today and must declare before the build accepts it.
+            return new ClasspathEntry(path, direct ? Origin.REACTOR : Origin.SIBLING,
+                reactorCoordinate, stamp);
+        }
+        if (direct) {
+            return new ClasspathEntry(path, Origin.DECLARED, coordinate, stamp);
         }
         if (artifact != null) {
             return new ClasspathEntry(path, Origin.TRANSITIVE,
