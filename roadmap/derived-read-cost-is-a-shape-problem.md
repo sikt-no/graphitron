@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-12
+last-updated: 2026-09-13
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -2521,6 +2521,13 @@ through nine read as completeness, one more site and one more directive until th
 They are not: they are the remaining blockers on deleting both walks, and the walks are most of what
 this arc exists to remove.
 
+That reframing was the whole of the plan this item carried for a while, and a reason to keep going is
+not a plan. "The capture layer dissolves into one linear read" is, and it supersedes this list as the
+statement of what happens next: it names the end state, orders the moves toward it, and gives each a
+gate. Items one through nine keep their content and their relative order. What moved out of here is
+the sequencing argument and, with the three-anchor chapter, item seven, which turned out to be a
+precondition on every move rather than a slice waiting its turn.
+
 ## The port dissolution, folded in (2026-09-11)
 
 Two commits from the session working the capture port arrived as exploration marked not for trunk,
@@ -2897,10 +2904,16 @@ which is the one part needing care rather than mechanism: a claim that currently
 also stops the decode seeing it, so removing it changes what the decode is offered, and that has to
 be established before it is assumed.
 
-Two things this deliberately does not do. It does not strip the walk, which is the next commit and
-wants its own verification rather than riding on this one. And it does not leave the running order
-inverted: with the walk still writing last, the six defects fixed here stay invisible in production
-until the strip lands, and the case above is what will notice if they come back.
+Two things this deliberately does not do. It does not strip the walk, which wants its own
+verification rather than riding on this one. And it does not leave the running order inverted: with
+the walk still writing last, the six defects fixed here stay invisible in production until the strip
+lands, and the case above is what will notice if they come back.
+
+This chapter called the strip "the next commit" and left it at that, which is how it came to be the
+largest deletion on the arc with no item of its own. "The capture layer dissolves into one linear
+read" answers that: it is not a commit, it is what the last reader's move leaves behind, in that
+chapter's phase 2. The order flip this chapter owed goes with the second pass it was an ordering
+between; the duplicate-claim hazard above survives as a fixture that phase owes.
 
 ## The catalog family had two producers too (2026-09-12)
 
@@ -2951,7 +2964,10 @@ are two.
 
 What is left in the older gatherer is the classpath references, which it alone can produce; fifteen
 helpers went with the catalog half, 682 lines down to 222. The configuration pair is next, by the
-same method.
+same method. "The capture layer dissolves into one linear read" takes the method above as the gate
+every later collapse takes, and demotes the configuration pair from a project to a deletion: with one
+capture entry point the two gatherers are adjacent lines in one method, and one writes a superset of
+the other.
 
 ## The consumers, and the order the read side moves in (2026-09-12)
 
@@ -3576,3 +3592,262 @@ dissolving one disagrees with the target, the question is which is right and not
 agreeing, and the cheapest-looking answer has twice now been to bend the new design to the old one.
 Rewriting the collector is a smaller change than the workaround it removes, and it is the second
 time on this arc that has been true.
+
+
+## The capture layer dissolves into one linear read (2026-09-13)
+
+The dissolution work has been stated in fragments across this item, one aside per chapter, and never
+as a target with an order and a gate. This is that plan. It covers the capture layer and stops there.
+
+### The target
+
+```java
+// Every goal but dev. Which store this is gets decided when it opens, so the capture is a
+// call and not a callback handed to the thing that chooses.
+try (var store = GraphitronStore.forRun(ctx.storeDirectory(), graph)) {
+    var captured = ModelCapture.capture(store.dsl(), ctx, jooq, census);
+    call.invoke(new GraphQLRewriteGenerator(ctx, captured));
+}
+
+// Dev. The session store is opened at startup and closed at shutdown, which it already is;
+// each round captures into it, and the language server and MCP reader are on the same handle.
+```
+
+Two acceptance criteria, both countable, because "trivial to follow" otherwise means nothing.
+
+**Every call in `ModelCapture.capture` takes the run's own inputs and nothing another layer derived.**
+Four of its five lines qualify today. At the end of phase 1 there is one violation, the walk's
+registry argument, named in the method. At the end of phase 2 there are none. A person checks this by
+reading one method, which is the property being bought.
+
+**`CaptureMojo`'s body is opening a store, capturing, and closing it.** No generator, no pipeline, no
+projection constant. It is the goal whose whole job is capture, so it is the one that cannot be
+half-converted without showing it.
+
+### Scope
+
+The store ships 381 relations, 255 tables and 126 views. This plan is one of four pieces of the
+architecture and the smallest by line count. Stated here so it is judged for what it claims:
+
+1. **The capture layer.** Two entry points become one linear read. Below.
+2. **The read side**, which is this item's own subject and is larger. `intent_` is 142 relations, 27
+   tables and 115 views; the consumers reach 89 of 210 roots; the register is 21 registrations
+   refreshing in 4.7 s of a 28.2 s `graphitron:capture` on the sakila example. None of it moves
+   because the decode moved. It moves when ownership becomes total, which is item 8. What this plan
+   buys it is a precondition: a rule cannot be given to the gatherer whose corpus it reads while two
+   gatherers write that corpus.
+3. **The generator's second derivation of the model**, which no move here reaches. Six of
+   `EmitPlan`'s seven producers take `GraphitronSchema` rather than the store, and
+   `GraphitronSchemaBuilder` is 1430 lines inside the 65 files and 38163 lines directly under
+   `rewrite/`. `ConnectionPromoter` at 732 lines against `MacroCapture`'s 403 is one measured
+   instance and is burn down item 3.
+4. **The synthesis that belongs to neither side.** `KeyNodeSynthesiser` and `FederationLinkApplier`
+   inject declarations no document contains, which is what the walk's `SYNTHESISED_SOURCE_NAME`
+   carries. Phase 2 answers what reads those rows before it deletes the writer.
+
+### Why the schema load moves before anything else
+
+`GraphQLRewriteGenerator.assembleAndCaptureVerdicts` is forty lines with three arms, and all three
+capture before deciding anything. A stage refused the document: capture, then throw. Graphitron's own
+rewrite broke a document the author wrote correctly: capture, then fail. Nothing refused: capture, and
+go on. Its own comment states the rule as "capture first, fail second".
+
+That is the target shape, written inside the task because `loadAttributedRegistry` is in the same
+class. Nothing in either method belongs to a generator: they parse per source, apply four
+configuration-driven rewrites, assemble, and record verdicts. A validator wants that. A language
+server wants it. `CaptureMojo` runs an entire generator to get it.
+
+So the schema load is upstream of both capture and the task, and is currently filed under the task.
+Move it and the seam falls out. Leave it and no amount of relation migration reaches the target,
+because the fiftieth relation moving still leaves a mojo constructing a generator in order to
+capture.
+
+Migrating relations first also costs more than doing it after. Three things that look like projects
+today are not, once there is one entry point:
+
+- The configuration pair becomes two adjacent lines writing the same seven relations, one of which
+  writes two more. A deletion, not a migration.
+- The walk's `graphql_` half stops being an ordering property between two passes nobody controls
+  together and becomes two adjacent lines under one instant and one transaction.
+- The order flip the redundancy chapter owed goes with the second pass it was an ordering between.
+
+### Phase 1: one read, one capture, one store
+
+`loadAttributedRegistry`, `assembleAndCaptureVerdicts`, the jOOQ catalog load and the classpath census
+read move out of `GraphQLRewriteGenerator` into the capture layer, and `ModelCapture.capture` returns
+what it read: the store handle, the detections, the attributed registry with both its registries, the
+verdicts and the assembly. The mojo captures and hands that to the task. No relation moves and no
+gatherer changes what it writes.
+
+**Retires** `CapturePort`, 236 lines and two arms differing only in how long a store is held, with two
+callers who each know their own answer; `CaptureRequest`, which exists to carry a capture between a
+caller and a port; `FactCapture`'s entry points, whose body becomes `ModelCapture`'s; and
+`RunStore.recapture` and its `Borrowed` arm, which exist for the held port. The demotion stays.
+
+**Fixes, without migrating anything.** The corpus is parsed once instead of three times. Measured over
+`mvn graphitron:capture` on the sakila example, a 28.2 s goal, with a counter on
+`SchemaLoader.parsePerSource` printing its caller:
+
+1. `RunStore.captureWithRetry` to `ModelCapture.capture` to `SdlCapture.capture` to `captureFacts`
+   to `captureEntries`
+2. `AbstractRewriteMojo.runGenerator` to `GraphQLRewriteGenerator.runPipeline` to
+   `loadAttributedRegistry`
+3. `FactCapture.capture` to `SdlCapture.captureEntries`
+
+Parses 1 and 3 each call `SdlEntries.write` and `GraphitronEntries.write` per document, so the entry
+stratum is written twice per goal and one of the two writes is discarded by the other's sweep. Not a
+cost argument: `BindBatch` made that stratum cheap to write. It is an argument about what a reader can
+know, two writers filling one relation with nothing stating that they agree and call order deciding
+which rows survive. That was the catalog pair's situation exactly, where the symptom was forty four
+classes reading an empty view while three diagnoses blamed something else.
+
+**Predicted refusals**, since on this arc a prerequisite is found by something refusing.
+`store_graph.build_file_path` and `build_file_stamp` are written only by `FactCapture.writeGraph`, so
+a store captured by `ModelCapture` alone has never held them: either it takes them over or nothing
+reads them, and the second is the cheaper question. `ClassificationDomainCapture.derive` takes the
+assembled schema, the one non-store input in the pass; this phase carries it rather than hitting it,
+and it decides how much of the pass's non-gathering content phase 2 can move. And the anchor row's short
+budget is taken during the write today, so with the store's identity decided at the open a contended
+anchor row is a failure raised mid-capture rather than a store chosen differently. That is the one
+thing below that has not been checked against the code.
+
+**`RunStore` dissolves, and a refused store fails the build.** The policy is that a run which cannot
+have the store it asked for says so and stops, with a message naming the cause and the fix, and the
+person runs it again. Not a silent second-best. That decision removes the class rather than trimming
+it, because everything in it is machinery for continuing.
+
+`forRun` takes the capture as a `CaptureBody` for one reason, stated in its own class comment:
+whether the shared store can be had is only knowable once a write has been attempted. That is true
+of one arm, `CaptureFailedTwice`, and under this policy that arm is a build failure. The rest go with
+it: `attemptShared`, `captureWithRetry`, `inMemory`, `captureCold`, `recapture`, the `Demoted` and
+`Borrowed` arms and the four `Demotion` records. What survives is the ownership read, as a check that
+throws, and the store is then `GraphitronModelStore.openAt(dir)` or `open()` for a caller with no
+home. 534 lines to a function and an exception.
+
+The four arms, and what each becomes:
+
+- `NoHomeGiven` is not a failure and never was. The caller named no directory, so an in-memory store
+  is what it asked for. It is an arm of which store to open, filed under why the run was demoted, and
+  it is already logged at debug with a comment saying it is not a warning.
+- `GraphOwnedElsewhere` fails. It is a configuration error, its own message already prints the fix,
+  and it is a read of `store_graph` before the capture. A build that finds two modules claiming one
+  graph name and quietly captures to a throwaway will keep finding it forever.
+- `CaptureFailedTwice` fails, and it is the arm with a scalp already. The `StoreRefresh` exemption was
+  deleting a parent out from under an exempt child, the referential failure fired on every warm pass
+  on the vocabulary graphitron itself ships, and the chapter above records that the run was demoted
+  rather than failed. It went unseen, and systematically: the fallback capture is cold and the defect
+  was warm-only, so the arm succeeds precisely when the shared store's failure is real.
+- `Unavailable` fails too, and it is close to unreachable on the path that carries it. Its message
+  names a dev session in the same checkout as the common cause, and the two stores cannot collide:
+  `AbstractRewriteMojo.resolveStoreDirectory` is `<module>/target/graphitron-model` unconditionally,
+  `DevMojo` overrides it to the user cache root under a per-workspace segment, and that override's
+  own javadoc says a one-shot goal needs neither the survival across `mvn clean` nor the reach into
+  another module. So a one-shot store is single-writer by construction, its only contender being a
+  second build of the same module into the same target at the same time.
+
+**The sharing model the capture layer documents is the dev store's, and the one-shot path does not
+have it.** `RunStore` opens with "the persisted store is shared by every module of a workspace, so a
+warm open reconciles only what this run owns", and `FactCapture` repeats it. For the goals that run
+in a build it is not so: each module writes its own file under its own target and it holds the one
+graph that module captures. `GraphOwnedElsewhere` cannot fire there at all, the base class honouring
+no `<storeDirectory>` override, so no two modules can be pointed at one file. `StoreRefresh`'s
+graph-scoped clear is likewise scoping a partition that has no siblings. Both are written for the dev
+store, which is the one that really is per workspace and really does hold several graphs, and both
+are documented as if every store were that one. Worth knowing before phase 2 leans on either.
+
+**Two things the fallback was right about, recorded so the case for removing it is not overstated.**
+Its content claim holds: `WarmStartRefreshTest` pins that a warm run ends with the rows a cold run
+would have produced, and an in-memory store is a cold store, so "the generated output is identical"
+was true. And it is not slow. Measured on the sakila example, cold 29.5 s against warm 27.9 s, both
+refreshing 21 materializations in 3.9 s. The reason to remove it is that it is silent, not that it is
+expensive, and no consumer-size measurement exists to say otherwise.
+
+**And the policy reaches a second class.** `GraphitronModelStore.openAt` has three arms of its own
+that return an in-memory store without saying anything, which `RunStore` notes as "the one demotion
+no other layer reports": the stamped directory cannot be created, a file at the stamped path carries
+a mismatched stamp, or the connection throws, the last being where a file another process holds
+lands. Three causes with three different fixes, currently one silent outcome. They become three
+failures with three messages.
+
+**The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
+relation the schema declares counted under each, both directions. Not the intersection: three
+attempts at the catalog pair failed on a hand-picked list, and the two gaps that mattered were
+relations only one gatherer populated. One minute against a twenty minute reactor build. Run it, act,
+delete it, because a standing comparison between two producers is a standing acceptance that there
+are two.
+
+### Phase 2: empty the list
+
+Subtraction from one method everybody reads. The order is the consumers chapter's rather than the burn
+down's, because what moves is a reader and not a writer.
+
+**This is a slog and not a design, and the strata table is why.** `graphitron_ast_*_entry` is 59
+relations keyed by position, referencing the `graphql_` entries. The incumbent `graphitron_*_entry` is
+56 keyed by coordinate, referencing the anchors, which is an entry wearing the wrong key rather than
+an anchor wearing the wrong suffix. The anchors are 18. Seventeen facts are stated in both. The same
+site decoded both ways is 627 lines with 2 conditionals against 1359 with 149 branch points, because
+transcription has no decisions in it.
+
+**Two deletions and one fixture.** `ConfigurationFactCapture` and `StoredRecipe` go, `StoreEntries`
+already writing their seven relations plus `store_graph_schema_extension` and
+`store_graph_schema_input`. The `graphql_` half goes the same way, `SdlWalkIsRedundantTest` reporting
+its 27 relations redundant against every reader. One hazard survives and is a fixture rather than a
+reading: the claim and quarantine machinery is duplicate detection, and a claim that skips a duplicate
+also stops the decode seeing it, so removing it changes what the decode is offered. Build the corpus
+with the duplicate declaration, watch the decode's population change, then decide.
+
+**One query before the last of it.** `FederationLinkApplier` and `KeyNodeSynthesiser` inject
+declarations the walk records under `SYNTHESISED_SOURCE_NAME`, and the entry stratum is per document
+and has no row for them. Three outcomes: nothing reads them and they go with the walk; something does
+and the injection becomes a derivation over captured facts the way `MacroCapture` already made
+`@asConnection`'s expansion one; or the fact is genuinely absent from the store, which would be the
+first real capture gap this arc has found and is worth knowing early.
+
+**What the last relation deletes.** After the `graphql_` half goes, the traversal exists to compute
+directive ordinals and make five decode calls, and each relation that moves takes part of a call with
+it. The last one leaves `SdlFactCapture` with no caller: 1122 lines, on top of the 125 of
+`SdlCoordinates`, with the sink's record-binding arms and the overflow relation. Nothing is scheduled
+for that. A strip is what the last reader's move leaves behind, which is the correction to the chapter
+that called it the next commit. That chapter also said the walk and the decode are 2690 lines that
+leave together, and they are not any more: `GraphitronFactCapture` is 1270 lines of which the
+store-driven half is the target's own, nine stages that read the store, and what leaves with the walk
+is `decodingInto` and the five per-site callbacks.
+
+**Then `StoreRefresh`, which is not a thing to dissolve.** Its own class comment says it exists
+because the walk it prepares for cannot delete anything, and that every gatherer written since marks
+and sweeps instead. Both arms end by subtraction: the graph-scoped arm covers every graph-keyed base
+table whose declared owner is not self-sweeping, `SELF_SWEEPING` being `Set.of("code")` today and six
+relations; the classpath arm goes with the `jvm_` census the `code_` family is replacing. The 79
+relations owned by `document` are not exempt, because that gatherer runs inside the pass and the clear
+runs in front of it. With no pass and no clear, what the exemption bought is bought by there being
+nothing to be exempt from.
+
+### Declare before you move
+
+A relation whose owner is not declared in `meta_relation` is cleared by whatever clear still stands
+and, once its old writer is gone, is not written back. Found by refusing: the first relation moved off
+the walk was empty in every store captured through the walk alone, and 112 cases said so. So the
+declaration pass is not the burn down's item seven waiting its turn. It is a precondition on every
+move in phase 2, one relation at a time, and the roster is the ratchet. 226 relations carry no
+declaration today, 113 of them `intent_`, 50 `graphitron_`, 28 `graphql_`. The 134 declared, by owner:
+`document` 79, `catalog` 20, `graphitron` 14, `derivation` 8, `code` 6, `sdl` 2, `compile` 1. That
+last pair is the measure of phase 2: the walk owns two declared relations and writes 52.
+
+Names left behind go through the retirement sweep at the Done gate, under "Retired vocabulary" above.
+
+### What this does not do
+
+It does not settle the classpath pair. The `jvm_` census and the `code_` family are mid-migration on
+their own terms, and the only place that arc touches this one is `StoreRefresh`'s classpath arm.
+
+It does not promise the schema is parsed once for all purposes. Phase 1 removes two of three parses by
+removing two callers. Capture wants a per-document parse, two documents declaring one name being two
+rows where a merged registry can carry one; the generator wants a merged registry with synthesis
+applied. Whether those can be one read is a measurement nobody has taken.
+
+It does not keep an in-memory store for a caller that wants one. A run with no store directory
+configured still captures in memory, that being the store it asked for rather than a fallback from
+one it could not have.
+
+It does not reorder the burn down's items four through six, rename the entry vocabulary, or re-argue
+the register.
