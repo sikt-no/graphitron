@@ -733,3 +733,82 @@ four and added none) are now closed.
 
 Because this session wrote plan prose, it is disqualified from the Spec -> Ready sign-off on this
 item. The next gate needs a reviewer session that has committed neither the plan nor this revision.
+
+### Round 5 (2026-09-14, Spec -> Ready, reviewer session 01EuP3pJAA8Rzm5QGJZmUS3d)
+
+Verdict: revisions requested. One blocking finding on question two, and it is narrow: the design is
+settled and I would hand it to an implementer, but `## Tests` lost two bullets in the round 4
+revision and one of them is the acceptance case for the failure class the item exists to remove.
+Nothing else stands between this spec and Ready. Plus one non-blocking note.
+
+This is the first review pass over the post-round-4 body, both revisions having been written by the
+round 4 reviewer's session, so rounds 1 to 4 reviewed earlier plans. I checked the new seats rather
+than the old ones.
+
+Question one is well communicated. Today a `@routine`-backed Query field whose `argMapping` binds
+anything inside an input-object argument consumes the *whole* argument: every other field of that
+input object is advertised in the emitted SDL, accepted from a client, and silently dropped, so the
+client gets rows the filter should have excluded. Afterwards only the bound leaves are consumed, the
+rest are ordinary filters against the chain terminus binding by `@field(name:)` or by name, a leaf
+naming nothing fails the build with the message it already gets on a table-backed field, and on a
+Mutation `@routine` field, which has no filter surface at all, every unbound leaf and every unread
+flat argument becomes a build error. It is a hard switch at upgrade, which the fourth decision owns.
+
+Question two's design half is answered, and I verified the two seats the revisions moved to rather
+than taking them on trust. Both Mutation dispatches do reach one seat: `classifyMutationRoutineChain`
+(FieldBuilder line 3347) runs through `walkRoutineChain` to the resolver's sole `resolve` call site
+(line 3831), `classifyMutationRoutineCarrier` (line 5768) through `classifyAdmittedRoutineCarrier` to
+`resolveCarrierNode` (line 3621), and both land in `resolveNode`, whose javadoc names itself "the
+shared node resolution behind `resolve` and `resolveCarrierNode`" verbatim and whose only non-rejected
+arm is `bindArgs`. `bindArgs` holds `FieldBuilder.argSlotTypes(fieldDef)` at line 289 and
+`leafTypeGate` beside it reaches `ServiceCatalog.resolvePathLeafType` and, through
+`pathLeafDeclaresNodeId`, `pathLeafDeclaration`. Step 3's two enumerators are the two the descent is
+made of and each holds what the skip needs: `InputFieldResolver.resolve` loops
+`iot.getFieldDefinitions()` with the `useSite` in hand, and the nesting arm at `BuildContext` line
+2956 loops `nestedInputType.getFieldDefinitions()` with `nestedCtx` already built one line above.
+`UseSite.at`, `here` and `ClassifyContext.coordinateOf` all exist and compose the
+`(containerTypeName, fieldName)` steps a spent coordinate carries. The rejected alternative's four
+consumers are as described, `FieldRegistry.classifyInput` included, which is an `instanceof` chain at
+lines 115 and 118. Step 7's premise holds exactly: the argument-name skip is at `FieldBuilder` line
+1966 and `disposeRefusedNodeIdArgument` runs at line 1971, after it.
+
+One thing I checked that the plan does not claim and that holds it up: `useSite` is built
+unconditionally at `FieldBuilder` line 2035, so the coordinate the enumerators compare against is
+never the null `coordinateOf` returns at a context standing at no use site. And `argsBoundElsewhere`
+retypes cheaply, the six-argument `resolveTableFieldComponents` overload passing `Set.of()` for every
+caller but the routine seat.
+
+**Finding 1 (question two): the round 4 revision dropped the execution-tier case and truncated the
+validator-reach one, so `## Tests` no longer pins the failure class the Goal leads with.**
+
+`## Tests` ends mid-sentence. Line 313 reads "through `drainBuildDiagnostics` located at the leaf, in
+the build and in the LSP, with no second spelling of the rule in `GraphitronSchemaValidator`",
+following a full stop, with no subject. Comparing against the plan as filed shows what happened: that
+line is the tail of a **Validator reach** bullet (pipeline tier, over the classified model, the two
+new rejections arriving through that drain) whose head was deleted, and immediately above it a whole
+bullet went with it: **Execution**, in `graphitron-sakila-example` beside `RoutineFieldExecutionTest`,
+one field over `films_for_actor` taking a single input object whose `actorId` feeds the routine and
+whose other leaf filters the result, asserting the narrowed rows against the unfiltered call. The round 4
+revision's commit message lists what `## Tests` gained and says nothing about either, so this reads
+as collateral from the rewrite rather than a decision.
+
+It blocks because of which case it is. The item's failure class is a client receiving rows the filter
+should have excluded, and `docs/architecture/how-to/testing.adoc` puts "full GraphQL request -> SQL ->
+row round-trip" in the execution tier, in `graphitron-sakila-example`, where `RoutineFieldExecutionTest`
+already sits. The surviving pipeline case asserts "the survivor's predicate, and only the survivor's,
+in the emitted query", which is the emitted text, not the rows: a predicate that classifies and emits
+and still fails to narrow would pass every case now listed. An implementer handed this builds the
+pipeline tier, writes no execution case, and the over-return goes unpinned end to end. The truncated
+bullet is the smaller half of the same loss, but it is unreadable as written and an implementer would
+have to invent its subject.
+
+What would satisfy it: restore both bullets, or say in `## Tests` that the execution tier is
+deliberately out of scope and why. Either is a sentence; both are the author's, because restoring the
+execution case decides whether the item's acceptance reaches SQL and because the truncated bullet's
+subject is a claim about which verdicts reach the validator, not a typo a reviewer can repair.
+
+**Note (non-blocking): a fifth home for the retired sentence.** `## Retired vocabulary` lists four,
+and all four carry it as described. There is a fifth, in
+`GraphitronSchemaBuilderTest.orderByArgumentOnRoutineFieldResolvesAgainstTheTerminus`, reading "The
+routine's own IN-parameter arguments are spent on the call and never reach the read surface". The
+retirement sweep at the Done gate finds it; listing it costs a line.
