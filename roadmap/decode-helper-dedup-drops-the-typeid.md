@@ -231,3 +231,66 @@ exception the schema author has not opted into through an `@error` type (the use
 error-channel how-to, "Unmatched exceptions: redact and correlate"), and the lever to surface a
 typed message is the consumer's `@error` declaration, which exists. Out of scope here and not a
 graphitron gap.
+
+## Reviewer findings
+
+### Round 1 (2026-09-14, Spec -> Ready, reviewer session 01BqMRoYr82JwAqL5av8EdFy)
+
+Verdict: revisions requested. One blocking finding on question two. Question one passes cleanly and
+every code claim I checked holds as named; the verification narrative is in the review commit's
+message.
+
+**Finding 1 (question two): the plan repoints one of the two hosts that mint `decode<Record>` from
+the `KeyProjectionRelation`, and does not say whether the other is in scope.**
+
+`ProjectedKeyHost` has exactly two populated constructions in the tree, both handed the same
+`KeyProjection` rows:
+
+- `TypeFetcherEmissionContext.projectedKeyHost()`, which names the helper through
+  `FetchersHelperNames.decodeSingular(CatalogRefs.recordClass(projection.nodeTable()))`. The
+  call-sites paragraph repoints this one to `projection.nodeTypeName()`.
+- `ConditionGlueRenderer.render`, which names it through `RecordDecodeHelperRegistry.register(
+  NodeIdEncoderRef.of(outputPackage), projection.typeId(), projection.nodeTypeName(),
+  projection.keyColumns(), projection.nodeTable())`. The plan does not mention this host, the
+  registry, or the conditions class anywhere.
+
+`RecordDecodeHelperRegistry.register` carries this item's defect in both of the halves the plan says
+move together or neither does: `helpers.computeIfAbsent(CatalogRefs.recordClass(nodeTable), ...)` is
+the record-class dedup key, and `helperName(recordType)` returns `"decode" + recordType.simpleName()`.
+It already receives `nodeTypeName` and spends it only on the failure message. So two node types over
+one table, reaching a conditions class through projected `@nodeId` condition parameters, collapse
+onto one body with one hardcoded typeId, which is the Goal's bug at a second host. The policy
+paragraph's own argument reaches it: the sibling registry in the same package,
+`CompositeDecodeHelperRegistry`, already keys on `HelperRef.Decode.methodName()`, which is
+`decode<TypeName>`, leaving `RecordDecodeHelperRegistry` the one record-family holdout on a
+record-class key.
+
+Two consequences the implementer would otherwise have to settle alone, either of which changes what
+ships:
+
+- Left as is, the Goal holds at a `@service` input bean and not at a `@nodeId` condition parameter
+  over the same pair of types. The Goal does not scope itself that way.
+- The rename the plan accepts (a `Movie` over `film` becoming `decodeMovieRecord`) applies only to
+  the fetchers host, so one node type can afterwards be `decodeMovieRecord` on its `<Type>Fetchers`
+  class and `decodeFilmRecord` on a conditions class for the same decode. `## Retired vocabulary`
+  retires the record-class framing from `FetchersHelperNames` while
+  `RecordDecodeHelperRegistry.helperName(ClassName)` keeps it verbatim.
+
+What would satisfy it: a settled answer in `## Implementation`, either way.
+
+- In scope: name `RecordDecodeHelperRegistry.register` / `helperName` and `ConditionGlueRenderer`'s
+  host alongside the four call sites, say what the conditions-class dedup keys on afterwards, and
+  give `## Tests` a pin. `ConditionGluePipelineTest` already exercises the projected-condition
+  decode.
+- Out of scope: say so, say why the divergent emitted names are acceptable in the interim, and file
+  the follow-up as a Backlog item. `## Retired vocabulary` should then record that the record-class
+  framing survives in `RecordDecodeHelperRegistry`, so the Done-gate retirement sweep does not read
+  the surviving copy as a miss.
+
+**Non-blocking.** The execution-tier fixture makes `language` the first table in
+`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` to back two node types; today
+no table there backs more than one. The comment above `LanguageNode` states the opposite as the
+reason its `@referenceFor` fixture reads unambiguously ("the table backs exactly one node type and
+typeName: resolves unambiguously"), and goes stale the moment `LanguageAlias` lands beside it.
+Nothing breaks, since `LanguageStockFilter.languageId` names its type explicitly, but the sentence
+is worth rewriting in the same edit rather than leaving it to contradict the fixture below it.
