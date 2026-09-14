@@ -298,14 +298,14 @@ final class InputBeanInstantiationEmitter {
         return CodeBlock.of("$L($L.get($S))", helper, root, sdl);
     }
 
-    /** {@code decode<RecordType>}, e.g. {@code decodeFilmRecord}. Named from the target table's record class. */
+    /** {@code decode<TypeName>Record}, e.g. {@code decodeFilmRecord}. Named from the node type. */
     private static String recordDecodeHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        return names.decodeSingular(CatalogRefs.recordClass(rec.table()));
+        return names.decodeSingular(rec.typeName());
     }
 
-    /** {@code decode<RecordType>List}, e.g. {@code decodeFilmRecordList}. */
+    /** {@code decode<TypeName>RecordList}, e.g. {@code decodeFilmRecordList}. */
     private static String recordDecodeListHelperName(CallSiteExtraction.NodeIdDecodeRecord rec, FetchersHelperNames names) {
-        return names.decodeList(CatalogRefs.recordClass(rec.table()));
+        return names.decodeList(rec.typeName());
     }
 
     private static CodeBlock directExpr(CallSiteExtraction.FieldBinding fb, String sdl, String root) {
@@ -384,27 +384,31 @@ final class InputBeanInstantiationEmitter {
 
     /**
      * Collects the {@link CallSiteExtraction.NodeIdDecodeRecord} leaves across the given beans into
-     * two dedup maps keyed by jOOQ record type. The caller passes the already-transitively-collected
+     * two dedup maps keyed by node type name. The caller passes the already-transitively-collected
      * bean set (e.g. {@code collectTransitively}'s output), so this is a flat one-level field scan
      * per bean rather than a second tree walk.
      *
-     * <p>Every record type that appears (scalar- or list-valued) lands in {@code scalarOut}: the
-     * scalar {@code decode<RecordType>} helper is always emitted, because the list variant delegates
-     * to it per element. A record type that appears list-valued anywhere additionally lands in
-     * {@code listOut}, driving the {@code decode<RecordType>List} variant. List-ness is read off the
-     * enclosing {@link CallSiteExtraction.FieldBinding#list()}, not the leaf, so the two variants
+     * <p>The key is the node type and not the record class the type's table backs: the body is a
+     * function of the node type (its typeId, its key columns and its table all derive from one
+     * {@code @node} declaration), and two node types over one table are two bodies that differ in
+     * the typeId they check against. First-wins is therefore lossless.
+     *
+     * <p>Every node type that appears (scalar- or list-valued) lands in {@code scalarOut}: the
+     * scalar {@code decode<TypeName>Record} helper is always emitted, because the list variant
+     * delegates to it per element. A type that appears list-valued anywhere additionally lands in
+     * {@code listOut}, driving the {@code decode<TypeName>RecordList} variant. List-ness is read off
+     * the enclosing {@link CallSiteExtraction.FieldBinding#list()}, not the leaf, so the two variants
      * dedup independently and a type used both ways emits both helpers, each once.
      */
     static void collectRecordDecoders(java.util.Collection<CallSiteExtraction.InputBean> beans,
-            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
-            java.util.Map<ClassName, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> scalarOut,
+            java.util.Map<String, CallSiteExtraction.NodeIdDecodeRecord> listOut) {
         for (var ib : beans) {
             for (var fb : ib.fields()) {
                 if (fb.leaf() instanceof CallSiteExtraction.NodeIdDecodeRecord rec) {
-                    ClassName key = CatalogRefs.recordClass(rec.table());
-                    scalarOut.putIfAbsent(key, rec);
+                    scalarOut.putIfAbsent(rec.typeName(), rec);
                     if (fb.list()) {
-                        listOut.putIfAbsent(key, rec);
+                        listOut.putIfAbsent(rec.typeName(), rec);
                     }
                 }
             }

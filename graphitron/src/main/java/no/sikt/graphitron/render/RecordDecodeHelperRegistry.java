@@ -14,17 +14,18 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * package's construct-register-drain registries ({@link ArgPathHelperRegistry} for argument descents,
  * {@link CompositeDecodeHelperRegistry} for scalar and row-shaped decodes).
  *
- * <p>Deduplicated by record class, which is the grain that matters: two projections off two different
- * node types are two bodies, and two projections off one node type at two coordinates on the same class
- * share one. The name is derived from the record's simple name, which is safe here in a way it is not on
- * {@code <Type>Fetchers}: a conditions class hosts glue for one root and no other {@code decode*}
- * occupant, whereas the fetchers class shares its {@code decode*} namespace with the input-bean family
- * and resolves stems across the union. A host with that problem keeps its own resolver and passes the
- * name to {@link RecordDecodeFragments} directly.
+ * <p>Deduplicated by node type name, which is the grain that matters: the body is a function of the
+ * node type (its wire type id, its key columns and its table all derive from one {@code @node}
+ * declaration), so two projections off two node types are two bodies even when one table backs both,
+ * and two projections off one node type at two coordinates on the same class share one. The name is
+ * derived from the same fact, as the sibling {@link CompositeDecodeHelperRegistry} names its own
+ * family. A host that allocates the {@code decode*} namespace across more than this family, the
+ * {@code <Type>Fetchers} class, keeps its own resolver and passes the name to
+ * {@link RecordDecodeFragments} directly.
  */
 public final class RecordDecodeHelperRegistry {
 
-    private final Map<ClassName, MethodSpec> helpers = new LinkedHashMap<>();
+    private final Map<String, MethodSpec> helpers = new LinkedHashMap<>();
 
     /**
      * The run's output package, which is how the emitted body reaches the generated client-error
@@ -65,15 +66,14 @@ public final class RecordDecodeHelperRegistry {
     public String register(ClassName encoderClass, String typeId, String nodeTypeName,
             java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable) {
-        ClassName recordType = CatalogRefs.recordClass(nodeTable);
-        String name = helperName(recordType);
-        helpers.computeIfAbsent(recordType, k -> RecordDecodeFragments.decodeHelper(
+        String name = helperName(nodeTypeName);
+        helpers.computeIfAbsent(nodeTypeName, k -> RecordDecodeFragments.decodeHelper(
             name, encoderClass, typeId, nodeTypeName, keyColumns, nodeTable, outputPackage));
         return name;
     }
 
-    /** {@code decode<Record>}, e.g. {@code decodeFilmRecord}; the record class already carries its own suffix. */
-    private static String helperName(ClassName recordType) {
-        return "decode" + recordType.simpleName();
+    /** {@code decode<TypeName>Record}, e.g. {@code decodeFilmRecord}. */
+    private static String helperName(String nodeTypeName) {
+        return "decode" + nodeTypeName + "Record";
     }
 }

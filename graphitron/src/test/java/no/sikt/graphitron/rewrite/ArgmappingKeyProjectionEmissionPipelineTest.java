@@ -351,6 +351,59 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             filmProjection("Query", "films", "in.filmId.film_id"));
     }
 
+    /**
+     * Two {@code @node} types over {@code film}, one {@code @nodeId} input field naming each, both
+     * projected at a key column behind a {@code @condition} on the same condition class. The two
+     * coordinates land on one conditions class, so the class hosts both decodes.
+     */
+    private static final String SIBLING_CONDITION_SDL = """
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID!
+            title: String
+        }
+        type FilmAlias implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID!
+            title: String
+        }
+        input FilmPick { filmId: ID! @nodeId(typeName: "Film") }
+        input FilmAliasPick { filmId: ID! @nodeId(typeName: "FilmAlias") }
+        type Query {
+            film: Film
+            films(in: FilmPick!): [Film!]! @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "filmIdKeyEquals",
+                argMapping: "filmId: in.filmId.film_id"
+            })
+            aliasFilms(in: FilmAliasPick!): [Film!]! @condition(condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                method: "filmIdKeyEquals",
+                argMapping: "filmId: in.filmId.film_id"
+            })
+        }
+        """;
+
+    /**
+     * The conditions-class half of the decode identity. {@code decode<Record>} used to be minted
+     * from the projected table's record class, so two node types over one table collapsed onto one
+     * body carrying one typeId: the same defect the fetchers host had, at the second host that mints
+     * these bodies. Named from the node type, the class hosts one per type.
+     */
+    @Test
+    void siblingNodeTypesOverOneTable_eachConditionGetsItsOwnDecodeOnTheConditionsClass() {
+        var conditions = conditionsClass(SIBLING_CONDITION_SDL,
+            filmProjection("Query", "films", "in.filmId.film_id"),
+            filmAliasProjection("Query", "aliasFilms", "in.filmId.film_id"));
+
+        // The record family only: the class also hosts the key-grain decodes the install rail lifts
+        // (decode<TypeName>KeyOrThrow), which are type-name keyed already and are what the Record
+        // suffix keeps this family apart from.
+        assertThat(conditions.methodSpecs())
+            .extracting(MethodSpec::name)
+            .filteredOn(n -> n.startsWith("decode") && n.endsWith("Record"))
+            .as("one decode body per node type, each named after its own type")
+            .containsExactlyInAnyOrder("decodeFilmRecord", "decodeFilmAliasRecord");
+    }
+
     /** The same {@code @condition} fixture with the column left unspelled. */
     private static final String INFERRED_CONDITION_SDL =
         CONDITION_SDL.replace("filmId: in.filmId.film_id", "filmId: in.filmId");
@@ -524,6 +577,15 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             String typeName, String fieldName, String path) {
         return new ResolvedKeyProjections.Projection(typeName, fieldName, path,
             trailingSegmentOf(path, FILM_ID), "Film", "Film",
+            TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID)),
+            List.of(FILM_ID), FILM_ID);
+    }
+
+    /** {@link #filmProjection}'s sibling: the second node type over {@code film}. */
+    private static ResolvedKeyProjections.Projection filmAliasProjection(
+            String typeName, String fieldName, String path) {
+        return new ResolvedKeyProjections.Projection(typeName, fieldName, path,
+            trailingSegmentOf(path, FILM_ID), "FilmAlias", "FilmAlias",
             TestFixtures.tableRef("film", "FILM", "Film", List.of(FILM_ID)),
             List.of(FILM_ID), FILM_ID);
     }

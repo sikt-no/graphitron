@@ -15,10 +15,8 @@ import java.util.Set;
 
 /**
  * The single home for every private-static helper-method name emitted on one {@code <Type>Fetchers}
- * class. Two prefix namespaces write into that class's method namespace, each keyed on a Java class
- * whose <em>simple</em> name can collide across schema packages (jOOQ generates one record class per
- * {@code <schema>.<table>}, so two schemas with a same-named table produce two classes sharing a
- * simple name but not a package):
+ * class. Two prefix namespaces write into that class's method namespace, keyed on two different
+ * things:
  *
  * <ul>
  *   <li>the <b>{@code create*}</b> namespace, whose stem set spans the <em>union</em> of the
@@ -30,15 +28,16 @@ import java.util.Set;
  *       stem</em> comes from this resolver's {@code create*} stem map. Cross-class
  *       disambiguation ("which class") and within-class shape contention ("which binding shape")
  *       are orthogonal and compose as {@code create<stem><ordinal>}.</li>
- *   <li>the <b>{@code decode*}</b> namespace, whose stem set spans the {@code @nodeId} record-decode
- *       target classes ({@code decode<stem>} / {@code decode<stem>List}; scalar and list variants
- *       share one stem) <em>and</em> the polymorphic containers a {@code @nodeId(typeName:)} names at
- *       a slot, whose helper decodes into whichever member's record the wire id belongs to. A
- *       container is named by its GraphQL type name and not by a class, having no record class of its
- *       own; the two families share one namespace because they emit into one method namespace, and a
- *       container's stem is resolved against the names the record classes claimed so a container
- *       called {@code Foo} and a record class {@code FooRecord} cannot both claim
- *       {@code decodeFooRecord}.</li>
+ *   <li>the <b>{@code decode*}</b> namespace, which is <em>not</em> keyed on a Java class at all:
+ *       both its arms are GraphQL type names. The single-type arm names one {@code @node} type
+ *       ({@code decode<TypeName>Record} / {@code decode<TypeName>RecordList}; scalar and list
+ *       variants share one stem), because a record decode is a function of the node type and two
+ *       node types can sit over one table. The container arm names a polymorphic container a
+ *       {@code @nodeId(typeName:)} points at a slot, whose helper decodes into whichever member's
+ *       record the wire id belongs to. One schema cannot declare a node type and a container under
+ *       one name, so the two arms cannot collide by construction; {@link #of} checks the emitted
+ *       names anyway, for the day a producer feeds the namespace something that is not a schema
+ *       type name.</li>
  * </ul>
  *
  * <h3>Stem rule</h3>
@@ -55,6 +54,10 @@ import java.util.Set;
  * only: it never reaches back into raw jOOQ ({@code Table.getSchema()} stays behind the
  * {@code JooqCatalog} parse boundary).
  *
+ * <p>The rule governs the {@code create*} namespace alone. The {@code decode*} names are the
+ * schema's own type names, unique within a schema, so there is nothing there to disambiguate; what
+ * that namespace keeps instead is the claimed-name check in {@link #of}.
+ *
  * <h3>The populated / default split</h3>
  *
  * <p>{@link #of} builds a <em>populated</em> resolver from a class's collected carriers, beans, and
@@ -67,20 +70,20 @@ final class FetchersHelperNames {
     private final boolean populated;
     /** {@code create*}-namespace class → base stem (before jOOQ shape-contention ordinals). */
     private final Map<ClassName, String> createStems;
-    /** {@code decode*}-namespace class → base stem. */
-    private final Map<ClassName, String> decodeStems;
-    /** {@code decode*}-namespace polymorphic container (GraphQL type name) → base stem. */
-    private final Map<String, String> containerStems;
+    /** The node types whose {@code decode<TypeName>Record} helper this class hosts. */
+    private final Set<String> decodeTypeNames;
+    /** The polymorphic containers whose {@code decode<Container>Record} helper this class hosts. */
+    private final Set<String> decodeContainerNames;
     /** The jOOQ-record shape-contention arm, built with base stems drawn from {@link #createStems}. */
     private final JooqRecordHelperNames jooqRecord;
 
     private FetchersHelperNames(boolean populated, Map<ClassName, String> createStems,
-            Map<ClassName, String> decodeStems, Map<String, String> containerStems,
+            Set<String> decodeTypeNames, Set<String> decodeContainerNames,
             JooqRecordHelperNames jooqRecord) {
         this.populated = populated;
         this.createStems = createStems;
-        this.decodeStems = decodeStems;
-        this.containerStems = containerStems;
+        this.decodeTypeNames = decodeTypeNames;
+        this.decodeContainerNames = decodeContainerNames;
         this.jooqRecord = jooqRecord;
     }
 
@@ -90,34 +93,32 @@ final class FetchersHelperNames {
      * by construction carry at most one class per simple name.
      */
     static FetchersHelperNames bare() {
-        return new FetchersHelperNames(false, Map.of(), Map.of(), Map.of(),
+        return new FetchersHelperNames(false, Map.of(), Set.of(), Set.of(),
             JooqRecordHelperNames.bare());
     }
 
     /**
      * Build the populated resolver for one {@code <Type>Fetchers} class from every jOOQ-record
-     * carrier, every collected bean class, and every {@code @nodeId} record-decode target class on
-     * it. The {@code create*} stem set is computed over the union of the jOOQ-record carrier classes
-     * and the bean classes; the {@code decode*} stem set over the decode target classes. The jOOQ arm
-     * is then built with the {@code create*} base stems so its shape ordinals compose over the
-     * cross-class stem.
+     * carrier, every collected bean class, and every node type whose {@code @nodeId} record decode
+     * this class hosts. The {@code create*} stem set is computed over the union of the jOOQ-record
+     * carrier classes and the bean classes; the jOOQ arm is then built with the {@code create*} base
+     * stems so its shape ordinals compose over the cross-class stem.
      */
     static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
-            Collection<ClassName> beanClasses, Collection<ClassName> decodeRecordClasses) {
-        return of(jooqCarriers, beanClasses, decodeRecordClasses, List.of());
+            Collection<ClassName> beanClasses, Collection<String> decodeTypeNames) {
+        return of(jooqCarriers, beanClasses, decodeTypeNames, Map.of());
     }
 
     /**
      * The four-input form, adding the polymorphic containers a {@code @nodeId(typeName:)} names at a
-     * slot on this class. The container stems are resolved <em>after</em> the record-class stems and
-     * against the names those claimed, because the two families write into one method namespace and
-     * only the record classes have a package to disambiguate from: a container is a GraphQL type name,
-     * unique in its own schema, so the only collision it can have is with a claimed
-     * {@code decode<stem>} name, which an ordinal settles.
+     * slot on this class, each mapped to the member type names its helper dispatches over. The
+     * members are taken rather than inferred because they are a third claimant on the same
+     * namespace ({@link #decodeContainerMember}) and the check below is the only place all three
+     * meet.
      */
     static FetchersHelperNames of(Collection<CallSiteExtraction.JooqRecord> jooqCarriers,
-            Collection<ClassName> beanClasses, Collection<ClassName> decodeRecordClasses,
-            Collection<String> decodeContainerNames) {
+            Collection<ClassName> beanClasses, Collection<String> decodeTypeNames,
+            Map<String, ? extends Collection<String>> decodeContainers) {
         var createClasses = new LinkedHashSet<ClassName>();
         for (var jr : jooqCarriers) {
             createClasses.add(CatalogRefs.recordClass(jr.table()));
@@ -125,40 +126,45 @@ final class FetchersHelperNames {
         createClasses.addAll(beanClasses);
 
         var createStems = disambiguate("create", createClasses);
-        var decodeStems = disambiguate("decode", new LinkedHashSet<>(decodeRecordClasses));
-        var containerStems = containerStems(decodeStems.values(),
-            new LinkedHashSet<>(decodeContainerNames));
+        var types = new LinkedHashSet<>(decodeTypeNames);
+        checkDecodeNamespace(types, decodeContainers);
         var jooqRecord = JooqRecordHelperNames.of(jooqCarriers, createStems);
-        return new FetchersHelperNames(true, createStems, decodeStems, containerStems, jooqRecord);
+        return new FetchersHelperNames(true, createStems, types,
+            new LinkedHashSet<>(decodeContainers.keySet()), jooqRecord);
     }
 
     /**
-     * Base stem per polymorphic container: {@code <Container>Record}, or that name with a 1-based
-     * ordinal appended while either emitted form ({@code decode<stem>} or {@code decode<stem>List})
-     * is already claimed by a record class's stem or by an earlier container. Iteration is in the
-     * caller's order and each container's own stem is claimed as it is resolved, so the answer is a
-     * function of that order and not of a second pass.
+     * Refuses a duplicate claim on the {@code decode*} namespace. Both arms are GraphQL type names
+     * and one schema declares each name once, so this cannot fire on schema input; it fires the day
+     * a producer feeds the namespace a name that is not a schema type name, which is the fault the
+     * retired per-class stem resolution used to paper over with an ordinal. Same refusal shape as
+     * the routing-hole checks below, and for the same reason: a silently shared name is a decode
+     * body that answers for a type it was not built for.
      */
-    private static Map<String, String> containerStems(Collection<String> recordStems,
-            Set<String> containerNames) {
+    private static void checkDecodeNamespace(Set<String> typeNames,
+            Map<String, ? extends Collection<String>> containers) {
         var claimed = new LinkedHashSet<String>();
-        for (String stem : recordStems) {
-            claimed.add("decode" + stem);
-            claimed.add("decode" + stem + "List");
+        for (String typeName : typeNames) {
+            claim(claimed, decodeRecordName(typeName));
+            claim(claimed, decodeRecordName(typeName) + "List");
         }
-        var out = new LinkedHashMap<String, String>();
-        for (String container : containerNames) {
-            String base = container + "Record";
-            String stem = base;
-            int ordinal = 1;
-            while (claimed.contains("decode" + stem) || claimed.contains("decode" + stem + "List")) {
-                stem = base + ordinal++;
+        for (var container : containers.entrySet()) {
+            String stem = decodeRecordName(container.getKey());
+            claim(claimed, stem);
+            claim(claimed, stem + "List");
+            for (String member : container.getValue()) {
+                claim(claimed, stem + member);
             }
-            claimed.add("decode" + stem);
-            claimed.add("decode" + stem + "List");
-            out.put(container, stem);
         }
-        return out;
+    }
+
+    private static void claim(Set<String> claimed, String name) {
+        if (!claimed.add(name)) {
+            throw new IllegalStateException(
+                "Two decode* helpers on one <Type>Fetchers class claim the name '" + name + "'."
+                + " Every decode* name is a GraphQL type name, which a schema declares once, so a"
+                + " duplicate claim means a naming site fed the resolver something that is not one.");
+        }
     }
 
     /** The jOOQ-record shape-aware {@code create<Record>} resolver for this class. */
@@ -176,14 +182,21 @@ final class FetchersHelperNames {
         return createSingular(beanClass) + "List";
     }
 
-    /** {@code decode<Record>} scalar node-ID decode helper name. */
-    String decodeSingular(ClassName recordClass) {
-        return "decode" + decodeStem(recordClass);
+    /**
+     * {@code decode<TypeName>Record} scalar node-ID decode helper name, named from the node type the
+     * decode is a function of rather than from the record class of its table: two node types can
+     * back one table, and each checks the wire id against its own typeId.
+     */
+    String decodeSingular(String typeName) {
+        if (populated && !decodeTypeNames.contains(typeName)) {
+            throw uncollectedDecode("node type", typeName);
+        }
+        return decodeRecordName(typeName);
     }
 
-    /** {@code decode<Record>List} list node-ID decode helper name. */
-    String decodeList(ClassName recordClass) {
-        return decodeSingular(recordClass) + "List";
+    /** {@code decode<TypeName>RecordList} list node-ID decode helper name. */
+    String decodeList(String typeName) {
+        return decodeSingular(typeName) + "List";
     }
 
     /**
@@ -191,7 +204,10 @@ final class FetchersHelperNames {
      * reads the wire id's type prefix and decodes into whichever member's record it names.
      */
     String decodeContainerSingular(String containerName) {
-        return "decode" + containerStem(containerName);
+        if (populated && !decodeContainerNames.contains(containerName)) {
+            throw uncollectedDecode("polymorphic container", containerName);
+        }
+        return decodeRecordName(containerName);
     }
 
     /** {@code decode<Container>RecordList} list form of the container helper. */
@@ -201,10 +217,10 @@ final class FetchersHelperNames {
 
     /**
      * The null-returning per-member helper one container arm calls, named inside the container's own
-     * claimed stem rather than in the record-class namespace. Deliberately not
-     * {@link #decodeSingular} of the member's record class: that name is the <em>throwing</em>
-     * single-type helper's, and the same class can host both for the same record, so sharing the name
-     * would make one member's arm raise instead of standing aside.
+     * claimed stem rather than in the single-type namespace. Deliberately not
+     * {@link #decodeSingular} of the member's own type name: that name is the <em>throwing</em>
+     * single-type helper's, and the same class can host both for the same node type, so sharing the
+     * name would make one member's arm raise instead of standing aside.
      */
     String decodeContainerMember(String containerName, String memberTypeName) {
         return decodeContainerSingular(containerName) + memberTypeName;
@@ -217,28 +233,20 @@ final class FetchersHelperNames {
         return required(createStems, c, "create");
     }
 
-    private String decodeStem(ClassName c) {
-        if (!populated) {
-            return c.simpleName();
-        }
-        return required(decodeStems, c, "decode");
+    /** The one spelling of a {@code decode*} stem: both arms are GraphQL type names. */
+    private static String decodeRecordName(String graphqlTypeName) {
+        return "decode" + graphqlTypeName + "Record";
     }
 
-    private String containerStem(String containerName) {
-        if (!populated) {
-            return containerName + "Record";
-        }
-        String stem = containerStems.get(containerName);
-        if (stem == null) {
-            // Same routing hole the class-keyed namespaces refuse, for the same reason: a silent
-            // fallback would name a helper nothing emitted.
-            throw new IllegalStateException(
-                "FetchersHelperNames was asked to name a decode* helper for a polymorphic container"
-                + " it never collected: " + containerName + ". Every naming site must route through"
-                + " the resolver built from this <Type>Fetchers class's carriers, beans, decoders and"
-                + " containers.");
-        }
-        return stem;
+    /**
+     * The same routing hole {@link #required} refuses for the class-keyed namespace, for the same
+     * reason: a silent fallback would name a helper nothing emitted.
+     */
+    private static IllegalStateException uncollectedDecode(String what, String name) {
+        return new IllegalStateException(
+            "FetchersHelperNames was asked to name a decode* helper for a " + what
+            + " it never collected: " + name + ". Every naming site must route through the resolver"
+            + " built from this <Type>Fetchers class's carriers, beans, decoders and containers.");
     }
 
     private static String required(Map<ClassName, String> stems, ClassName c, String namespace) {

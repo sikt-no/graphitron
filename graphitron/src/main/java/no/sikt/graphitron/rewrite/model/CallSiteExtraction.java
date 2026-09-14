@@ -195,17 +195,23 @@ public sealed interface CallSiteExtraction
      * {@code Converter}, and the {@code Tables.<T>.<col>} field references must exist on the record
      * (the {@code graphitron-sakila-example} compile tier verifies this).
      *
-     * <p>The leaf carries no {@code decode<Type>} method name: {@code encoderClass} reaches
-     * {@code decodeValues}, {@code typeId} is its first argument, {@code keyColumns} names the
-     * {@code Tables.<T>.<col>} fields passed to {@code fromArray}, and {@code table} supplies the
-     * record class ({@code new <T>Record()}) and the {@code Tables} constants class.
-     * {@code keyColumns} is kept separate from {@code table.primaryKeyColumns()} because an
-     * {@code @node(keyColumns:)} key may differ from the PK.
+     * <p>The leaf carries no {@code decode<Type>} method name, only the node type {@code typeName}
+     * that name is minted from: {@code encoderClass} reaches {@code decodeValues}, {@code typeId} is
+     * its first argument, {@code keyColumns} names the {@code Tables.<T>.<col>} fields passed to
+     * {@code fromArray}, and {@code table} supplies the record class ({@code new <T>Record()}) and
+     * the {@code Tables} constants class. {@code keyColumns} is kept separate from
+     * {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may differ from
+     * the PK.
+     *
+     * <p>{@code typeName} is the decode's identity, as it is on {@link PolymorphicCandidate}: every
+     * other component is a function of the node type it names, and two node types can share one
+     * table (a rename that keeps the old name exposed is exactly that shape), so the table cannot
+     * tell two decodes apart. Collection and naming both key on it.
      *
      * <p>Produced only by {@code InputBeanResolver} when an input-bean field's loaded Java type is
      * assignable to {@code org.jooq.Record} and the SDL field carries {@code @nodeId(typeName:)};
-     * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-record-type
-     * {@code decode<RecordType>Record} helper (plus a {@code …RecordList} variant for list-valued
+     * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-node-type
+     * {@code decode<TypeName>Record} helper (plus a {@code …RecordList} variant for list-valued
      * members) on the enclosing {@code *Fetchers} class. Any other exhaustive
      * {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
      *
@@ -218,13 +224,16 @@ public sealed interface CallSiteExtraction
      * authored-input error and throws, while a {@code null}/absent wire value follows graphql-java's
      * non-null enforcement at the boundary, so a nullable field yields a {@code null} member.
      */
-    record NodeIdDecodeRecord(ClassName encoderClass, String typeId,
+    record NodeIdDecodeRecord(ClassName encoderClass, String typeName, String typeId,
                               List<ColumnRef> keyColumns, TableRef table,
                               boolean nonNull)
             implements CallSiteExtraction {
         public NodeIdDecodeRecord {
             if (encoderClass == null) {
                 throw new IllegalArgumentException("NodeIdDecodeRecord encoderClass must be non-null");
+            }
+            if (typeName == null || typeName.isEmpty()) {
+                throw new IllegalArgumentException("NodeIdDecodeRecord typeName must be non-empty");
             }
             if (typeId == null || typeId.isEmpty()) {
                 throw new IllegalArgumentException("NodeIdDecodeRecord typeId must be non-empty");

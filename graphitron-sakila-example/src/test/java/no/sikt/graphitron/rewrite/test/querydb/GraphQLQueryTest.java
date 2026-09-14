@@ -7063,6 +7063,64 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void assignLanguagePair_eachFieldDecodesItsOwnType() {
+        // Two @node types over `language`, one @nodeId input field naming each. Both members are
+        // LanguageRecords, so the decode cannot be identified by the record class; each field
+        // decodes through the helper of the type its own typeName names, and the two ids belong to
+        // two different types and two different rows.
+        String languageNode1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageNode", 1);
+        String languageAlias2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageAlias", 2);
+        Map<String, Object> data = execute(
+            "mutation { assignLanguagePair(in: {language: \"" + languageNode1
+            + "\", alias: \"" + languageAlias2 + "\"}) }");
+        assertThat(data).extractingByKey("assignLanguagePair").isEqualTo("language:1,alias:2");
+    }
+
+    @Test
+    void assignLanguagePair_nodeIdAtAliasField_refuses() {
+        // The silent half of the shared-helper defect: with one helper checking every id against
+        // "LanguageNode", a LanguageNode id handed to the `alias` field was accepted and the
+        // mutation succeeded, so a schema mid-rename looked migrated while the mutation was not.
+        // Each field checking its own type turns that into the refusal it always was, redacted per
+        // the privacy contract like every other decode mismatch.
+        String languageNode1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageNode", 1);
+        String languageNode2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageNode", 2);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { assignLanguagePair(in: {language: \"" + languageNode1
+            + "\", alias: \"" + languageNode2 + "\"}) }");
+        assertThat(result.getErrors())
+            .as("a LanguageNode id at a field declared @nodeId(typeName: \"LanguageAlias\") is refused")
+            .isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("An error occurred. Reference:")
+            .doesNotContain(languageNode2);
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("assignLanguagePair"))
+            .as("and the mutation does not succeed")
+            .isNull();
+    }
+
+    @Test
+    void assignLanguagePair_aliasIdAtLanguageField_refuses() {
+        // The mirror image, which the shared helper also refused but for the wrong reason: whichever
+        // type won the dedup was the one every id was checked against, so this refusal was an
+        // accident of iteration order. It survives now because the `language` field checks
+        // LanguageNode on its own account.
+        String languageAlias1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageAlias", 1);
+        String languageAlias2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("LanguageAlias", 2);
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { assignLanguagePair(in: {language: \"" + languageAlias1
+            + "\", alias: \"" + languageAlias2 + "\"}) }");
+        assertThat(result.getErrors())
+            .as("a LanguageAlias id at a field declared @nodeId(typeName: \"LanguageNode\") is refused")
+            .isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains("An error occurred. Reference:");
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("assignLanguagePair")).isNull();
+    }
+
+    @Test
     void assignFilmActorRecord_decodesCompositeNodeIdIntoBothKeyColumns() {
         // Composite key: a @service input bean whose member is a composite-PK FilmActorRecord
         // backed by `ID! @nodeId(typeName: "FilmActor")`. decodeFilmActorRecord materialises both

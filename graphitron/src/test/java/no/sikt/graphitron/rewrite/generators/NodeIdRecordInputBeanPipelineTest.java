@@ -203,6 +203,24 @@ class NodeIdRecordInputBeanPipelineTest {
         }
         """;
 
+    /**
+     * The same two {@code @node} types over one table, now with one input-bean member <em>each</em>.
+     * Both members are {@code FilmActorRecord}s, so a decode identity keyed on the record class
+     * collapses them onto one body carrying one type's typeId.
+     */
+    private static final String SIBLING_MEMBERS_SDL = """
+        type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+        type FilmActorFed implements Node @table(name: "film_actor") @node(typeId: "46") { id: ID! }
+        input AssignFilmActorSiblingsInput {
+            filmActor: ID! @nodeId(typeName: "FilmActor")
+            filmActorFed: ID! @nodeId(typeName: "FilmActorFed")
+        }
+        type Query {
+            assignFilmActorSiblings(in: AssignFilmActorSiblingsInput!): String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "assignFilmActorSiblings"})
+        }
+        """;
+
     @Test
     void compositeKeyRecordMember_emitsCompositeDecodeHelper() {
         var fetchers = findSpec("QueryFetchers", COMPOSITE_SDL);
@@ -284,6 +302,41 @@ class NodeIdRecordInputBeanPipelineTest {
             .isEqualTo(COMPOSITE_RECORD_TYPE_FQN);
     }
 
+    @Test
+    void siblingNodeTypesOverOneTable_eachMemberGetsItsOwnDecodeHelper() {
+        // The defect this item removes: two @nodeId input fields over one table used to share one
+        // decode helper, named from the record class and carrying whichever type's typeId won the
+        // first-wins dedup, so one field rejected its own valid ids and accepted the other's. The
+        // helper is a function of the node type, so the class hosts one per named type, named after
+        // the type rather than the record class, and neither is ordinal-suffixed.
+        var fetchers = findSpec("QueryFetchers", SIBLING_MEMBERS_SDL);
+        assertThat(fetchers.methodSpecs())
+            .extracting(MethodSpec::name)
+            .as("one decode helper per node type, each named after its own type")
+            .contains("decodeFilmActorRecord", "decodeFilmActorFedRecord");
+        assertThat(fetchers.methodSpecs())
+            .extracting(MethodSpec::name)
+            .filteredOn(n -> n.startsWith("decode"))
+            .as("the two names are the two type names; nothing is disambiguated with an ordinal")
+            .containsExactlyInAnyOrder("decodeFilmActorRecord", "decodeFilmActorFedRecord");
+
+        // SDL → model: the two leaves carry the two type names and the two typeIds, which is what
+        // makes the two bodies differ. Reading the names off the leaves rather than off the emitted
+        // helpers is the half that pins the identity rather than the spelling.
+        var leaves = decodeRecordLeaves(SIBLING_MEMBERS_SDL, "assignFilmActorSiblings");
+        assertThat(leaves)
+            .extracting(CallSiteExtraction.NodeIdDecodeRecord::typeName)
+            .containsExactly("FilmActor", "FilmActorFed");
+        assertThat(leaves)
+            .extracting(CallSiteExtraction.NodeIdDecodeRecord::typeId)
+            .as("each leaf checks the wire id against its own type's typeId")
+            .containsExactly("FilmActor", "46");
+        assertThat(leaves)
+            .extracting(l -> CatalogRefs.recordClass(l.table()).toString())
+            .as("and both still decode into the one record class their shared table backs")
+            .containsExactly(COMPOSITE_RECORD_TYPE_FQN, COMPOSITE_RECORD_TYPE_FQN);
+    }
+
     // ===== Helpers =====
 
     /**
@@ -304,6 +357,25 @@ class NodeIdRecordInputBeanPipelineTest {
         ValueShape memberShape = bean.fields().get(0).shape();
         ValueShape elementShape = list ? ((ValueShape.ListOf) memberShape).elementShape() : memberShape;
         return (CallSiteExtraction.NodeIdDecodeRecord) ((ValueShape.Scalar) elementShape).leafTransform();
+    }
+
+    /**
+     * Every {@link CallSiteExtraction.NodeIdDecodeRecord} leaf on a {@code @service} field's single
+     * input bean, in member order. The sibling of {@link #decodeRecordLeaf} for the multi-member
+     * bean, where the claim is about the members' relationship to each other.
+     */
+    private static java.util.List<CallSiteExtraction.NodeIdDecodeRecord> decodeRecordLeaves(
+            String sdl, String queryField) {
+        var field = TestSchemaHelper.buildSchema(sdl).field("Query", queryField);
+        var bean = ((ServiceField) field).serviceMethodCall().methodArgs().stream()
+            .filter(e -> e instanceof MappingEntry.FromArg fa && fa.shape() instanceof ValueShape.RecordInput)
+            .map(e -> (ValueShape.RecordInput) ((MappingEntry.FromArg) e).shape())
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no record-input bean arg on " + queryField));
+        return bean.fields().stream()
+            .map(f -> (CallSiteExtraction.NodeIdDecodeRecord)
+                ((ValueShape.Scalar) f.shape()).leafTransform())
+            .toList();
     }
 
     private static TypeSpec findSpec(String className, String sdl) {

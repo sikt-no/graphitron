@@ -28,9 +28,11 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * arrangement {@link FetcherResult} and {@link RecordSentinel} carry.
  *
  * <p>Naming is deliberately <em>not</em> here. One generated class's private-static method namespace is
- * that class's to allocate: {@code <Type>Fetchers} resolves {@code decode*} stems across the union of
- * every record class it hosts, so two schema packages holding same-simple-named records do not collide,
- * and a conditions class has its own namespace with its own occupants. The host passes the name in.
+ * that class's to allocate: {@code <Type>Fetchers} allocates its {@code decode*} names across the node
+ * types and the polymorphic containers it hosts together, and a conditions class has its own namespace
+ * with its own occupants. Both spell this family from the node type's own name, which is what a decode
+ * body is a function of, so one table backing two node types yields two bodies under two names. The
+ * host passes the name in.
  */
 public final class RecordDecodeFragments {
 

@@ -1519,7 +1519,8 @@ class ServiceCatalog {
         var resolved = (BuildContext.NodeIdRecordDecode.Resolved) recordDecode;
         if (takesTheNodeTablesRecord(slotType, CatalogRefs.recordClass(resolved.table()))) {
             return new ArgExtraction.Resolved(new CallSiteExtraction.NodeIdDecodeRecord(
-                resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(), resolved.table(),
+                resolved.encoderClass(), resolved.typeName(), resolved.typeId(),
+                resolved.keyColumns(), resolved.table(),
                 GraphQLTypeUtil.isNonNull(declaration.getType())));
         }
         String named = nodeTypeName;

@@ -96,6 +96,20 @@ public final class FilmReviewService {
     }
 
     /**
+     * Fixture for two {@code @nodeId} input fields over one table: takes a
+     * {@link LanguagePairAssignment} whose two members are {@code LanguageRecord}s decoded from ids
+     * of two different node types over {@code language}. Reading both key columns back is what
+     * proves each field decoded against its own type: a shared helper would have refused one of the
+     * two ids outright, or loaded the wrong type's id without complaint.
+     */
+    public static String assignLanguagePair(LanguagePairAssignment in) {
+        if (in == null || in.language() == null || in.alias() == null) {
+            return "none";
+        }
+        return "language:" + in.language().getLanguageId() + ",alias:" + in.alias().getLanguageId();
+    }
+
+    /**
      * Composite-key fixture: takes a {@link FilmActorRecordAssignment} whose member is a jOOQ
      * {@code FilmActorRecord} (composite PK {@code actor_id, film_id}) decoded from a single
      * {@code FilmActor} NodeId. The body reads both populated key columns back to prove the

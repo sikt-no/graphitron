@@ -1101,8 +1101,8 @@ final class InputBeanResolver {
                 + " @nodeId at the NodeType whose @table backs '" + recordTypeName + "'"));
         }
         return new RecordLeaf.Ok(new CallSiteExtraction.NodeIdDecodeRecord(
-            resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
-            resolved.table(), nonNull));
+            resolved.encoderClass(), resolved.typeName(), resolved.typeId(),
+            resolved.keyColumns(), resolved.table(), nonNull));
     }
 
     /**

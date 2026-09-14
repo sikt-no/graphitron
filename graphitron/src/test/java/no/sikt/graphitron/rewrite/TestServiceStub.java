@@ -736,6 +736,16 @@ class TestServiceStub {
     }
 
     /**
+     * Fixture: takes a {@link TestNodeIdSiblingRecordBean} whose two members are both
+     * {@link FilmActorRecord}s, backed by SDL fields naming two different {@code @node} types over
+     * {@code film_actor}. The class hosts one decode helper per named type, each checking the wire
+     * id against that type's own typeId.
+     */
+    public static String assignFilmActorSiblings(TestNodeIdSiblingRecordBean in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: takes a {@link TestNodeIdRecordListBean} whose member is a
      * {@code List<FilmRecord>} backed by a {@code [ID!] @nodeId(typeName: "Film")} SDL field. The
      * classifier decodes each wire-format id into a {@code FilmRecord} via the list helper variant.

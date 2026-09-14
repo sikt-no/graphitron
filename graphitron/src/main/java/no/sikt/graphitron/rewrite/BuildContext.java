@@ -3310,13 +3310,15 @@ class BuildContext {
      * {@code Tables.<T>.<col>}). {@link Rejected} carries a fully formatted reason ready for a
      * {@code Rejection}.
      *
-     * <p>No {@code decode<TypeName>} method name is resolved: the materialization calls
-     * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}, so there is no suffix to
-     * derive and the typeName-vs-table resolution question does not arise here at all.
+     * <p>No {@code decode<TypeName>} method name is resolved here: the materialization calls
+     * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}. What {@link Resolved} does
+     * carry beside the body's facts is the node type's own {@code typeName}, which is the decode's
+     * identity downstream, the emit side keying both its collection and its helper name on it. Two
+     * node types can back one table, so the table cannot stand in for the name.
      */
     sealed interface NodeIdRecordDecode {
-        record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeId,
-                        List<ColumnRef> keyColumns,
+        record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeName,
+                        String typeId, List<ColumnRef> keyColumns,
                         no.sikt.graphitron.model.jooq.TableRef table) implements NodeIdRecordDecode {}
 
         /**
@@ -3416,8 +3418,8 @@ class BuildContext {
         var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        return new NodeIdRecordDecode.Resolved(encoderClass, keys.typeId(), keys.keyColumns(),
-            tableEntry.get().toTableRef(targetTableName));
+        return new NodeIdRecordDecode.Resolved(encoderClass, typeName, keys.typeId(),
+            keys.keyColumns(), tableEntry.get().toTableRef(targetTableName));
     }
 
     /**
@@ -3497,7 +3499,7 @@ class BuildContext {
                 return rejected;
             }
             var resolved = (NodeIdRecordDecode.Resolved) one;
-            candidates.add(new NodeIdRecordDecode.Candidate(member.getName(),
+            candidates.add(new NodeIdRecordDecode.Candidate(resolved.typeName(),
                 resolved.encoderClass(), resolved.typeId(), resolved.keyColumns(),
                 resolved.table()));
         }

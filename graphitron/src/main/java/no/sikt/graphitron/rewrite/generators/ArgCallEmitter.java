@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.PathExpr;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -225,8 +224,8 @@ public final class ArgCallEmitter {
             }
             case CallSiteExtraction.NodeIdDecodeRecord rec -> CodeBlock.of("$L(env.getArgument($S))",
                 isListShaped(param)
-                    ? ctx.fetchersHelperNames().decodeList(CatalogRefs.recordClass(rec.table()))
-                    : ctx.fetchersHelperNames().decodeSingular(CatalogRefs.recordClass(rec.table())),
+                    ? ctx.fetchersHelperNames().decodeList(rec.typeName())
+                    : ctx.fetchersHelperNames().decodeSingular(rec.typeName()),
                 param.name());
             // The container form of the arm above: one helper per container rather than per record,
             // since which record the id decodes into is the wire value's own answer.

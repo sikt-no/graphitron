@@ -2838,10 +2838,27 @@ type Language @table(name: "language") {
 # that authors this schema.
 #
 # LanguageNode is a second type over the `language` table, node-backed while the plain Language
-# above is not, so the table backs exactly one node type and typeName: resolves unambiguously.
+# above is not. LanguageAlias below makes it the second of two node types over that table, so the
+# table alone no longer says which node type an id opens into; what keeps the @referenceFor fixture
+# here unambiguous is LanguageStockFilter.languageId naming its type explicitly.
 type LanguageNode implements Node @table(name: "language") @node {
     id:   ID!     @nodeId
     name: String! @field(name: "NAME")
+}
+
+# The node-type rename shape, at execution: a second @node type over `language`, which therefore
+# carries its own typeId (a node type's typeId defaults to its own name). A schema mid-rename looks
+# exactly like this, the old name and the new one both exposed while clients move over. The pair
+# feeds LanguagePairAssignmentInput below, where one input field names each; the decode helper is a
+# function of the node type, so each field checks the wire id against its own type and neither
+# accepts the other's ids.
+#
+# `language` is the table this can sit on: no @mutation names it and no typeName-less @nodeId
+# resolves through it by table, so the one-node-per-table refusals that guard those implicit
+# resolutions have nothing here to refuse.
+type LanguageAlias implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
+    id:   ID!     @nodeId
+    name: String @field(name: "NAME")
 }
 
 type StockFilm @table(name: "film") {
@@ -3064,6 +3081,16 @@ input FilmReviewSummaryInput {
 # generator decodes the wire id into a FilmRecord rather than casting the wire String to it.
 input FilmRecordAssignmentInput {
     film: ID! @nodeId(typeName: "Film")
+}
+
+# Two @nodeId input fields over one table, each naming a different node type over `language`. Both
+# members are LanguageRecords, so a decode identity keyed on the jOOQ record class collapses them
+# onto one helper carrying one hardcoded typeId: the field that loses rejects its own valid ids and
+# accepts the winner's silently. Keyed on the node type, the class hosts decodeLanguageNodeRecord
+# and decodeLanguageAliasRecord, and each field decodes against the type its own typeName names.
+input LanguagePairAssignmentInput {
+    language: ID! @nodeId(typeName: "LanguageNode")
+    alias:    ID! @nodeId(typeName: "LanguageAlias")
 }
 
 # R195 composite-key fixture: input bean whose member is a jOOQ FilmActorRecord (PK actor_id,
@@ -4543,6 +4570,15 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "assignFilmRecord"
+        })
+
+    # Two node types over one table, one @nodeId input field naming each. The two fields decode
+    # through two helpers, one per node type, so a LanguageAlias id at `language` and a LanguageNode
+    # id at `alias` are both refused while each field's own ids round-trip.
+    assignLanguagePair(in: LanguagePairAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignLanguagePair"
         })
 
     # R195 composite-key fixture: decodeFilmActorRecord materialises a composite-PK FilmActorRecord

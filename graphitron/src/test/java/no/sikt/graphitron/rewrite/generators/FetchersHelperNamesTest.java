@@ -5,15 +5,20 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tier for the {@link FetchersHelperNames} stem-disambiguation utility: given a set of Java
- * classes writing into one {@code *Fetchers} class's {@code create*} / {@code decode*} method
- * namespaces, the resolver must give each a collision-free helper name, keep the common
- * unique-simple-name case byte-for-byte on {@link ClassName#simpleName()}, and disambiguate a
- * cross-schema simple-name collision by a stable per-class package prefix.
+ * classes writing into one {@code *Fetchers} class's {@code create*} method namespace, the resolver
+ * must give each a collision-free helper name, keep the common unique-simple-name case
+ * byte-for-byte on {@link ClassName#simpleName()}, and disambiguate a cross-schema simple-name
+ * collision by a stable per-class package prefix.
+ *
+ * <p>The {@code decode*} namespace is keyed on GraphQL type names rather than classes and so has no
+ * disambiguation to exercise; what it keeps here is what the pipeline tier cannot reach, the
+ * uncollected-name refusal on both its arms and the duplicate-claim check.
  *
  * <p>The disambiguation input is the union of the jOOQ-record carrier classes and the bean classes,
  * both fed as plain {@link ClassName}s; the jOOQ-layout-versus-bean distinction is read off the
@@ -32,10 +37,6 @@ class FetchersHelperNamesTest {
         return FetchersHelperNames.of(List.of(), List.of(beans), List.of());
     }
 
-    private static FetchersHelperNames ofDecoders(ClassName... decoders) {
-        return FetchersHelperNames.of(List.of(), List.of(), List.of(decoders));
-    }
-
     @Test
     void uniqueSimpleName_keepsBareStem() {
         var event = ClassName.get(A_RECORDS, "EventRecord");
@@ -50,7 +51,7 @@ class FetchersHelperNamesTest {
         var bare = FetchersHelperNames.bare();
         var event = ClassName.get(A_RECORDS, "EventRecord");
         assertThat(bare.createSingular(event)).isEqualTo("createEventRecord");
-        assertThat(bare.decodeSingular(event)).isEqualTo("decodeEventRecord");
+        assertThat(bare.decodeSingular("Event")).isEqualTo("decodeEventRecord");
     }
 
     @Test
@@ -118,16 +119,6 @@ class FetchersHelperNamesTest {
     }
 
     @Test
-    void decodeNamespace_disambiguatesIndependently() {
-        var a = ClassName.get(A_RECORDS, "EventRecord");
-        var b = ClassName.get(B_RECORDS, "EventRecord");
-        var names = ofDecoders(a, b);
-        assertThat(names.decodeSingular(a)).isEqualTo("decodeMultischemaAEventRecord");
-        assertThat(names.decodeSingular(b)).isEqualTo("decodeMultischemaBEventRecord");
-        assertThat(names.decodeList(a)).isEqualTo("decodeMultischemaAEventRecordList");
-    }
-
-    @Test
     void resultIsOrderIndependent_forSameInputSet() {
         var a = ClassName.get(A_RECORDS, "EventRecord");
         var b = ClassName.get(B_RECORDS, "EventRecord");
@@ -145,7 +136,32 @@ class FetchersHelperNamesTest {
         var uncollected = ClassName.get(B_RECORDS, "NoteRecord");
         var names = ofBeans(collected);
         assertThatIllegalState(() -> names.createSingular(uncollected));
-        assertThatIllegalState(() -> names.decodeSingular(uncollected));
+    }
+
+    @Test
+    void populatedResolver_throwsForUncollectedDecodeName() {
+        // The same routing hole on the decode axis, both arms: a node type and a polymorphic
+        // container the resolver never collected each name a helper nothing emitted.
+        var names = FetchersHelperNames.of(List.of(), List.of(), List.of("Event"),
+            Map.of("Occupant", List.of("Customer", "Staff")));
+        assertThat(names.decodeSingular("Event")).isEqualTo("decodeEventRecord");
+        assertThat(names.decodeContainerSingular("Occupant")).isEqualTo("decodeOccupantRecord");
+        assertThatIllegalState(() -> names.decodeSingular("Note"));
+        assertThatIllegalState(() -> names.decodeContainerSingular("Tenant"));
+    }
+
+    @Test
+    void decodeNamespace_refusesADuplicateClaimAcrossTheTwoArms() {
+        // Both decode* arms are GraphQL type names and a schema declares each name once, so this is
+        // unreachable from schema input; it is the check that fires the day a naming site feeds the
+        // resolver something that is not a schema type name. All three claimants are covered: the
+        // single-type arm, the container arm, and the container's per-member helper.
+        assertThatIllegalState(() ->
+            FetchersHelperNames.of(List.of(), List.of(), List.of("Event"),
+                Map.of("Event", List.of("Customer"))));
+        assertThatIllegalState(() ->
+            FetchersHelperNames.of(List.of(), List.of(), List.of(),
+                Map.of("Occupant", List.of("Customer", "Customer"))));
     }
 
     private static void assertThatIllegalState(Runnable r) {
