@@ -119,6 +119,22 @@ class ask by type name instead: `InputBeanInstantiationEmitter` (the input-bean 
 two collected maps builds each helper from the leaf it holds, which already carries the typeId that
 body needs; only the name it asks for changes.
 
+*The conditions class is the second host, and it moves too.* `ProjectedKeyHost` has two populated
+constructions over one `KeyProjectionRelation`, and each mints a record decode onto the class it
+serves. The first is `TypeFetcherEmissionContext.projectedKeyHost` above. The second is
+`ConditionGlueRenderer.render`, whose host reaches `RecordDecodeHelperRegistry.register`, and that
+registry holds this item's defect in both of its halves: `helpers.computeIfAbsent` keys on
+`CatalogRefs.recordClass(nodeTable)`, and `helperName(ClassName)` mints
+`"decode" + recordType.simpleName()`. It already receives `nodeTypeName` and spends it only on the
+failure message, so both halves move by reading that component instead, leaving the `register`
+signature unchanged. A conditions class allocates its own method namespace rather than the fetchers
+class's, which is why it mints bodies here at all, and it needs no claimed-set check of its own: the
+other decode family it hosts, `CompositeDecodeHelperRegistry`, names
+`decode<TypeName>{Key,Keys,Row,Rows}` with an `OrThrow` suffix on the throwing mode, off
+`HelperRef.Decode.methodName()`, and the `Record` suffix this family ends in cannot collide with any
+of them. That sibling is already type-name keyed, which leaves `RecordDecodeHelperRegistry` the one
+record-family holdout on a record-class key and puts it under the same policy as every site above.
+
 Generated names are unchanged wherever a node type's name equals its table's record stem, which is
 every type in the sakila fixtures and the common case in consumer schemas: `Film` over `film` spells
 `decodeFilmRecord` under both keys. A type whose name differs from its table's record stem (a
@@ -149,6 +165,14 @@ What stays at the unit tier is what the pipeline tier cannot reach: the uncollec
 extended to the container arm, and one case that a duplicate claim across the two arms throws.
 `FetchersHelperNameCollisionPipelineTest` is re-read for any decode-side expectation and adjusted.
 
+The conditions-class host has its own pipeline pin, in `ArgmappingKeyProjectionEmissionPipelineTest`,
+which already holds that host's fixture: `CONDITION_SDL` puts a `@nodeId(typeName: "Film")` input
+field behind a `@condition` whose `argMapping` opens it at a key column, and
+`aConditionParameterReadsTheProjectedColumnOffADecodedRecord` asserts the conditions class hosts its
+own `decodeFilmRecord`. That expectation is unchanged, `Film` over `film` spelling one stem under
+both keys. A sibling case extends the fixture with a second `@node` type over `film` and a second
+member naming it, and asserts two helpers on the conditions class, named after the two types.
+
 *Execution tier (`graphitron-sakila-example`).* The second node type must sit over a table that
 backs no bare-`ID` `@mutation` return and no `typeName`-less `@nodeId`, because the one-node-per-table
 refusals above turn each such coordinate into an `UnclassifiedField` the moment a second `@node`
@@ -168,6 +192,12 @@ is seeded with three rows. The fixture is therefore:
   key columns;
 - `Mutation.assignLanguagePair(in: LanguagePairAssignmentInput!): String` as a `@service` field
   beside `assignFilmRecord`.
+
+`LanguageNode`'s SDL comment gives "the table backs exactly one node type and typeName: resolves
+unambiguously" as the reason its `@referenceFor` fixture reads unambiguously, and `LanguageAlias`
+makes that sentence false. It is rewritten in the same edit: what keeps the fixture below it
+unambiguous is `LanguageStockFilter.languageId` naming its type explicitly, not the table's node
+count.
 
 Three `GraphQLQueryTest` cases beside `assignFilmRecord_decodesNodeIdIntoJooqRecordMember`:
 
@@ -199,6 +229,10 @@ class the existing expectations do not enumerate, and the decode helpers land on
   "keyed on a Java class" and its bullet on container-versus-record-class stem resolution go with it.
 - The `Map<ClassName, NodeIdDecodeRecord>` decode dedup maps in `TypeFetcherGenerator` and
   `InputBeanInstantiationEmitter`, and the prose "keyed by jOOQ record type" in their javadoc.
+- `RecordDecodeHelperRegistry.helperName(ClassName)` and the record-class key of its `helpers` map:
+  the conditions class's own copy of the record-class identity, and the last one in the tree. Its
+  javadoc line "`decode<Record>`, e.g. `decodeFilmRecord`; the record class already carries its own
+  suffix" goes with it.
 
 ## Other solutions we've considered
 
@@ -287,6 +321,16 @@ What would satisfy it: a settled answer in `## Implementation`, either way.
   framing survives in `RecordDecodeHelperRegistry`, so the Done-gate retirement sweep does not read
   the surviving copy as a miss.
 
+*Response (2026-09-14).* Taken, on the in-scope arm: both hosts move in this item. `## Implementation`
+gains "The conditions class is the second host, and it moves too", which names
+`RecordDecodeHelperRegistry.register` and `helperName` alongside `ConditionGlueRenderer`'s host, says
+what the conditions-class dedup keys on afterwards, and records why that class needs no claimed-set
+check of its own (its other decode family names `decode<TypeName>Key`-shaped methods, which the
+`Record` suffix cannot collide with). `## Tests` gains the pin on
+`ArgmappingKeyProjectionEmissionPipelineTest`'s existing `CONDITION_SDL` fixture, whose current
+`decodeFilmRecord` expectation survives the rename unchanged. `## Retired vocabulary` gains the
+registry's record-class naming, so the sweep has a grep query for the last copy.
+
 **Non-blocking.** The execution-tier fixture makes `language` the first table in
 `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` to back two node types; today
 no table there backs more than one. The comment above `LanguageNode` states the opposite as the
@@ -294,3 +338,6 @@ reason its `@referenceFor` fixture reads unambiguously ("the table backs exactly
 typeName: resolves unambiguously"), and goes stale the moment `LanguageAlias` lands beside it.
 Nothing breaks, since `LanguageStockFilter.languageId` names its type explicitly, but the sentence
 is worth rewriting in the same edit rather than leaving it to contradict the fixture below it.
+
+*Response (2026-09-14).* Taken. `## Tests` now says the sentence is rewritten with the fixture, and
+what actually keeps the `@referenceFor` fixture unambiguous once the table backs two node types.
