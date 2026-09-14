@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.capture;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReaper;
+import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -34,6 +35,7 @@ import static no.sikt.graphitron.model.test.StoreAnswers.answered;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.RunStore;
@@ -93,8 +95,8 @@ class PersistentStoreTest {
     }
 
     @Test
-    @DisplayName("a stamp naming a different DDL falls back, and the file survives")
-    void aStaleStampFallsBackAndTheFileSurvives(@TempDir Path tmp) {
+    @DisplayName("a stamp naming a different DDL is refused, and the file survives")
+    void aStaleStampIsRefusedAndTheFileSurvives(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
 
@@ -104,12 +106,12 @@ class PersistentStoreTest {
             store.dsl().execute("UPDATE store_stamp SET ddl_hash = 'a schema this build never wrote'");
         }
 
-        try (var fallback = GraphitronModelStore.openAt(directory)) {
-            assertThat(fallback.warm()).as("a store stamped by another DDL is not this run's").isFalse();
-            assertThat(fallback.location())
-                .as("the run got the in-memory fallback, not the file").isEmpty();
-            assertThat(fallback.dsl().fetchCount(GRAPHQL_TYPE)).isZero();
-        }
+        assertThatThrownBy(() -> GraphitronModelStore.openAt(directory))
+            .as("a store stamped by another DDL is not this run's, and under the stamped path only "
+                + "a hand can have put it there, so the person is told to delete it")
+            .isInstanceOf(StoreUnavailableException.class)
+            .hasMessageContaining("moved or damaged by hand")
+            .hasMessageContaining("nothing is lost");
         assertThat(Files.isRegularFile(location.resolve("store.mv.db")))
             .as("the observable consequence of a failed open deleting nothing: the damaged file is "
                 + "still on disk, and the sweep spares the live stamp by name whatever state it is in")
@@ -117,8 +119,8 @@ class PersistentStoreTest {
     }
 
     @Test
-    @DisplayName("a file that is not a database falls back, and the file survives")
-    void anUnreadableFileFallsBackAndSurvives(@TempDir Path tmp) throws IOException {
+    @DisplayName("a file that is not a database is refused, and the file survives")
+    void anUnreadableFileIsRefusedAndSurvives(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path location;
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -127,11 +129,8 @@ class PersistentStoreTest {
         byte[] damage = "not a database".getBytes(StandardCharsets.UTF_8);
         Files.write(location.resolve("store.mv.db"), damage);
 
-        try (var fallback = GraphitronModelStore.openAt(directory)) {
-            assertThat(fallback.warm()).isFalse();
-            assertThat(fallback.location()).isEmpty();
-            assertThat(fallback.dsl().fetchCount(GRAPHQL_TYPE)).isZero();
-        }
+        assertThatThrownBy(() -> GraphitronModelStore.openAt(directory))
+            .isInstanceOf(StoreUnavailableException.class);
         assertThat(Files.readAllBytes(location.resolve("store.mv.db")))
             .as("the file is left byte-identical for whoever can repair it").isEqualTo(damage);
     }
@@ -181,8 +180,8 @@ class PersistentStoreTest {
      */
     @Test
     @Timeout(value = 120, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    @DisplayName("a store another process holds demotes this run rather than blocking its open")
-    void aHeldFileDemotesInsteadOfBlocking(@TempDir Path tmp) throws Exception {
+    @DisplayName("a store another process holds fails this run rather than blocking its open")
+    void aHeldFileFailsInsteadOfBlocking(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
 
@@ -203,23 +202,24 @@ class PersistentStoreTest {
             assertThat(line).as("the child holds the store; it said:\n" + preamble).isEqualTo("HELD");
 
             long start = System.nanoTime();
-            try (var mine = GraphitronModelStore.openAt(directory)) {
-                long elapsed = millisSince(start);
-                assertThat(mine.location())
-                    .as("a file another process holds is not this run's; it captures in memory")
-                    .isEmpty();
-                assertThat(mine.warm()).isFalse();
-                assertThat(elapsed)
-                    .as("the open is bounded by the file lock, not by a probe that reads a socket "
-                        + "with no timeout")
-                    .isLessThan(GraphitronModelStore.FILE_LOCK_MILLIS);
-            }
+            assertThatThrownBy(() -> GraphitronModelStore.openAt(directory))
+                .as("a file another process holds is not this run's, and it says so")
+                .isInstanceOf(StoreUnavailableException.class)
+                .hasMessageContaining("another graphitron process holding it");
+            assertThat(millisSince(start))
+                .as("the open is bounded by the file lock, not by a probe that reads a socket "
+                    + "with no timeout")
+                .isLessThan(GraphitronModelStore.FILE_LOCK_MILLIS);
 
-            // And the run on top of that open completes rather than stalling: this is the whole
-            // reported symptom, a build in a checkout where a dev session is running.
-            FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
+            // And the run on top of that open fails rather than stalling. Failing fast is the
+            // half that was ever in question: the reported symptom was a build that hung in a
+            // checkout where a dev session was running, and a bounded refusal answers it.
+            assertThatThrownBy(() -> FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
-                List.of());
+                List.of()))
+                .as("and the run on top of it refuses, rather than capturing somewhere the caller "
+                    + "did not ask for")
+                .isInstanceOf(StoreUnavailableException.class);
 
             holder.getOutputStream().write('\n');
             holder.getOutputStream().flush();
@@ -279,10 +279,14 @@ class PersistentStoreTest {
         List<String> before = typeNames(directory);
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
-        FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, impostor),
+        assertThatThrownBy(() -> FactCapture.run(directory, new GraphIdentity(GRAPH_NAME, impostor),
             SubjectConfig.none(),
             CapturedStore.registryOf(impostor, "type Query { other: Int }"),
-            CapturedStore.attributionOf(impostor), null, List.of());
+            CapturedStore.attributionOf(impostor), null, List.of()))
+            .as("the colliding run is refused, and told which setting separates the two")
+            .isInstanceOf(StoreUnavailableException.class)
+            .hasMessageContaining(GRAPH_NAME)
+            .hasMessageContaining("<graphName>");
 
         assertThat(typeNames(directory))
             .as("the recorded partition, byte-identical after the colliding run")
@@ -296,38 +300,37 @@ class PersistentStoreTest {
     }
 
     /**
-     * Every way a run can lose the shared store is a value it can be asked for rather than a log
-     * line it has to match against its own run, which is what lets a case state the reason instead
-     * of reading the build's output. Three arms have a fixture; the fourth, a write the shared file
-     * refuses twice, is a deterministic capture bug by construction and has no fixture that is not
-     * one.
+     * A run gets the store it asked for or it is told why not, and the second is an exception
+     * rather than a value hung off the store, because there is no store to hang it off any more.
+     * The one arm that is not trouble is a caller with no home to name: that caller asked for a
+     * private in-memory store, and asking for one is not losing one.
      */
     @Test
-    @DisplayName("a run says which store it got, and why when it is not the shared one")
-    void aRunSaysWhichStoreItGot(@TempDir Path tmp) throws IOException {
+    @DisplayName("a run gets the store it asked for, or is told what to do about it")
+    void aRunGetsTheStoreItAskedFor(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path original = Files.createDirectories(tmp.resolve("original"));
         try (RunStore store = forRun(directory, original)) {
-            assertThat(store).as("a fresh home nobody holds is the shared store")
-                .isInstanceOf(RunStore.Shared.class);
-            assertThat(store.demotion()).as("and it has nothing to explain").isEmpty();
+            assertThat(store).as("a fresh home nobody holds is the store under it")
+                .isInstanceOf(RunStore.Owned.class);
+            assertThat(store.store().location())
+                .as("and it is the file, not a private stand-in").isNotEmpty();
         }
 
         try (RunStore store = forRun(null, original)) {
-            assertThat(store.demotion())
-                .as("no home to give is a demotion, and the one the caller asked for")
-                .containsInstanceOf(RunStore.Demotion.NoHomeGiven.class);
+            assertThat(store.store().location())
+                .as("no home to name is a private in-memory store, which is what was asked for")
+                .isEmpty();
             assertThat(store.handle().dsl().fetchCount(GRAPHQL_TYPE))
-                .as("a demoted run captured the same facts a shared one would").isPositive();
+                .as("and it captured the same facts the file would have").isPositive();
         }
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
-        try (RunStore store = forRun(directory, impostor)) {
-            assertThat(store.demotion().orElseThrow())
-                .as("the one demotion a consumer can fix names the directory holding the name")
-                .isEqualTo(new RunStore.Demotion.GraphOwnedElsewhere(graph(impostor),
-                    original.toAbsolutePath().normalize().toString()));
-        }
+        assertThatThrownBy(() -> forRun(directory, impostor))
+            .as("a name another checkout recorded names both directories and the setting between")
+            .isInstanceOf(StoreUnavailableException.class)
+            .hasMessageContaining(original.toAbsolutePath().normalize().toString())
+            .hasMessageContaining(impostor.toAbsolutePath().normalize().toString());
     }
 
     /**
@@ -419,13 +422,14 @@ class PersistentStoreTest {
     }
 
     /**
-     * The demotion end to end, which is the behaviour a user meets: a build whose anchor row is
-     * held by a live session stops waiting, captures in memory, and returns. The file is what
-     * proves it went cold rather than winning the row, being byte-for-byte the other writer's.
+     * The refusal end to end, which is the behaviour a user meets: a build whose anchor row is held
+     * by a live session stops waiting and says which graph is contended, rather than spending the
+     * generous budget in silence or capturing where nobody asked. The file is what proves it never
+     * won the row, being byte-for-byte the other writer's.
      */
     @Test
-    @DisplayName("a run that meets a held anchor row completes cold and leaves the file alone")
-    void aRunThatMeetsAHeldAnchorCompletesCold(@TempDir Path tmp) throws Exception {
+    @DisplayName("a run that meets a held anchor row fails fast and leaves the file alone")
+    void aRunThatMeetsAHeldAnchorFailsFast(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
         List<String> before = typeNames(directory);
@@ -436,9 +440,14 @@ class PersistentStoreTest {
                 .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
                 .where(STORE_GRAPH.GRAPH_NAME.eq(GRAPH_NAME)).execute());
             start = System.nanoTime();
-            FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
+            assertThatThrownBy(() -> FactCapture.run(directory, graph(tmp), SubjectConfig.none(),
                 CapturedStore.registryOf(tmp, SDL), CapturedStore.attributionOf(tmp), null,
-                List.of());
+                List.of()))
+                .as("a contended lock is named as another process writing the store, not handed "
+                    + "over as the driver's own words")
+                .isInstanceOf(StoreUnavailableException.class)
+                .hasMessageContaining(GRAPH_NAME)
+                .hasMessageContaining("let it finish and run again");
         }
 
         assertThat(millisSince(start))
@@ -446,18 +455,19 @@ class PersistentStoreTest {
                 + "spend two of them in silence")
             .isLessThan(GraphitronModelStore.FILE_LOCK_MILLIS / 4);
         assertThat(typeNames(directory))
-            .as("the demoted run wrote nothing to the file").isEqualTo(before);
+            .as("the refused run wrote nothing to the file").isEqualTo(before);
     }
 
     /**
-     * The retry survives its original purpose. A lock timeout is the one cause that is not retried,
-     * because the wait it reports is the whole of what waiting had to offer; a deadlock is the
-     * transient casualty the retry was written for, and the driver spells that difference in the
-     * JDBC exception rather than in a message.
+     * The predicate outlived the retry it was written for, and now decides a message instead of a
+     * second attempt: a contended anchor row is the one write failure a person can act on, so it
+     * gets said in their words. Everything else is a capture bug and keeps the driver's, there
+     * being nothing to tell them to go and do. The driver spells the difference in the JDBC
+     * exception rather than in a message, which is what makes this checkable at all.
      */
     @Test
-    @DisplayName("a lock timeout is not retried; every other write failure still is")
-    void onlyALockTimeoutSkipsTheRetry() {
+    @DisplayName("a lock timeout is told apart from every other write failure")
+    void aLockTimeoutIsToldApart() {
         assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLTimeoutException("Timeout trying to lock table"))))
             .as("a lock budget that expired, however deeply wrapped").isTrue();
@@ -466,10 +476,10 @@ class PersistentStoreTest {
             .as("H2 wraps its own store's failure, and jOOQ wraps that").isTrue();
         assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLTransactionRollbackException("Deadlock"))))
-            .as("a deadlock is the transient casualty the retry exists for").isFalse();
+            .as("a deadlock is not lock contention, and is not described as it").isFalse();
         assertThat(RunStore.timedOutOnALock(
             new DataAccessException("wrapped", new SQLException("Unique index violation"))))
-            .as("a capture bug is retried once, so it fails the same way twice and says so").isFalse();
+            .as("a capture bug keeps the driver's own words, having nothing to advise").isFalse();
     }
 
     /**

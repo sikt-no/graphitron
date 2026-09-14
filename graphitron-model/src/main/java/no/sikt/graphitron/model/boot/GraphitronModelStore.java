@@ -42,10 +42,19 @@ import java.util.concurrent.ConcurrentHashMap;
  * which is what keeps migrations out: the DDL hash and generator version name the store's own
  * subdirectory under the home, so a generator upgrade or a DDL edit opens a different file
  * rather than meeting one it cannot read, and {@code store_stamp} re-records both inside the
- * file as the integrity check for a hand-moved or hand-damaged one. Any failure to open falls back
- * to {@link #open()} and leaves the file alone, so cache trouble costs warmth, never correctness,
- * and never fails a build. Deleting the store's cache directory by hand is always safe and never
- * loses anything.
+ * file as the integrity check for a hand-moved or hand-damaged one. Deleting the store's cache
+ * directory by hand is always safe and never loses anything, the store being rebuilt from the
+ * author's own sources.
+ *
+ * <p><b>A run that asked for a persisted store and cannot have it fails, and says what to do.</b>
+ * {@link #openAt} used to answer every trouble with {@link #open()} instead, on the reasoning that
+ * persistence is an optimisation over an in-memory store that was always correct on its own, so
+ * cache trouble should cost warmth and never a build. The content half of that is still true and
+ * still pinned: a cold store holds the rows a warm one would have. What made it the wrong bargain
+ * is that the arms are not all cache trouble, and it was the only layer that reported none of them.
+ * A directory that cannot be created, a file carrying another generation's stamp, and a file
+ * another process holds are three different things to go and do, and answering all three with a
+ * silent second-best is how a defect that fires on every run stays invisible.
  *
  * <p>This class deletes only what {@link StoreReaper} has proved nobody held at the instant it
  * asked, and never the directory it opened: the stamped path accumulates one directory per stamp a
@@ -231,22 +240,12 @@ public final class GraphitronModelStore implements AutoCloseable {
      *         which are build-time defects in this module rather than anything an author caused
      */
     public static GraphitronModelStore open() {
-        return open(Reaped.none());
-    }
-
-    /**
-     * {@link #open()} carrying a sweep report, for {@link #openAt}'s fallback arms: a run whose
-     * cache home was unusable still swept that home, and the report is the caller's to log whichever
-     * store it ended up with. Separate from {@link #open()} so the public entry point keeps its
-     * current meaning and the field stays final.
-     */
-    private static GraphitronModelStore open(Reaped reaped) {
         String url = "jdbc:h2:mem:graphitron-model-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
         Connection connection = connect(url);
         create(connection);
         stamp(connection);
         deriveDependencies(connection);
-        return new GraphitronModelStore(connection, false, null, true, url, reaped);
+        return new GraphitronModelStore(connection, false, null, true, url, Reaped.none());
     }
 
     /**
@@ -279,12 +278,15 @@ public final class GraphitronModelStore implements AutoCloseable {
      * whether previous rows were found, and it is the caller's cue that the store already holds
      * rows a refresh has to reconcile.
      *
-     * <p>It never fails. Persistence is an optimisation over an in-memory
-     * store that was always correct on its own, and one file is now every module's warmth, so
-     * any failure at all (no resolvable home, a read-only location, a file another process holds,
-     * a file H2 refuses for reasons it will not name) falls back to {@link #open()} and leaves the file
-     * for the run that can read it. Cache trouble costs warmth, never correctness, and never
-     * fails a build.
+     * <p>It fails rather than answering with a store the caller did not ask for, and each way it
+     * can fail names one thing to do: make the home writable, delete a directory a hand moved or
+     * damaged, or stop the process holding the file. A caller that wants an in-memory store asks
+     * {@link #open()} for one. The file is left alone on every failing arm, exactly as it was when
+     * they fell back instead.
+     *
+     * @throws StoreUnavailableException if the store's directory cannot be created, if a file at
+     *         the stamped path does not carry this generation's stamp, or if the file will not
+     *         open
      *
      * <p>It also sweeps: every arm hands the home to {@link StoreReaper}, once per home per JVM,
      * which releases the stamped directories under it that nothing holds and recency does not keep.
@@ -306,7 +308,9 @@ public final class GraphitronModelStore implements AutoCloseable {
         try {
             Files.createDirectories(directory);
         } catch (IOException e) {
-            return open(reaped);
+            throw new StoreUnavailableException(
+                "graphitron: could not create the fact store directory " + directory
+                    + ". Make that path writable, or point <storeDirectory> somewhere that is.", e);
         }
         boolean existing = Files.isRegularFile(directory.resolve(DATABASE + ".mv.db"));
         String url = fileUrl(directory);
@@ -320,36 +324,48 @@ public final class GraphitronModelStore implements AutoCloseable {
                 return new GraphitronModelStore(connection, true, directory, false, url, reaped);
             }
             if (existing) {
-                // A file at the stamped path whose stamp still mismatches was moved or damaged
-                // by hand. Not this run's to repair, and never its to delete: the sweep above
-                // spares the live segment by name, so this directory is not a candidate either.
+                // A file at the stamped path whose stamp still mismatches was moved or damaged by
+                // hand: the path names this DDL and this version, so nothing that got here
+                // honestly can fail this check. Not this run's to repair, and never its to
+                // delete, the sweep above sparing the live segment by name.
                 closeQuietly(connection);
                 release(directory);
-                return open(reaped);
+                throw new StoreUnavailableException(
+                    "graphitron: the fact store at " + directory + " does not carry this "
+                        + "generator's stamp, so it was moved or damaged by hand. Delete that "
+                        + "directory and run again; nothing is lost, the store being rebuilt from "
+                        + "your own sources.");
             }
             create(connection);
             stamp(connection);
             deriveDependencies(connection);
             markUsed(directory);
             return new GraphitronModelStore(connection, false, directory, false, url, reaped);
+        } catch (StoreUnavailableException e) {
+            throw e;
         } catch (RuntimeException e) {
             release(directory);
-            // Whatever went wrong is about the file, not the schema: a DDL this module cannot
-            // execute fails identically on the in-memory store below, carrying the same message.
-            // The ordinary case here is a file another process holds, which H2 refuses in well
-            // under a second. This also catches the cold-start race, two processes creating the
-            // store at once: whichever executes the DDL first completes and stamps it, the other
-            // fails fast on the first CREATE and takes the fallback, losing warmth for one build
-            // and nothing else.
-            return open(reaped);
+            // Whatever went wrong is about the file rather than the schema: a DDL this module
+            // cannot execute fails identically on an in-memory store and says so itself. The
+            // ordinary cause is a file another process holds, which H2 refuses in well under a
+            // second. This also catches the cold-start race, two processes creating the store at
+            // once, where whichever executes the DDL first stamps it and the other fails on the
+            // first CREATE. Running again is the answer to both, which is why neither is worth
+            // its own message.
+            throw new StoreUnavailableException(
+                "graphitron: could not open the fact store at " + directory + ". The usual cause "
+                    + "is another graphitron process holding it, a `mvn graphitron:dev` session in "
+                    + "the same checkout being the common one. Stop it or let it finish, then run "
+                    + "again.", e);
         }
     }
 
     /**
      * Sweeps {@code home} unless this JVM already has, per {@link #SWEPT_HOMES}.
      *
-     * <p>Swallows its own trouble for the same reason the reaper does: a home whose path cannot even
-     * be normalised is a home with nothing to sweep, and {@link #openAt} promises never to fail.
+     * <p>Swallows its own trouble for the reason the reaper does: a home whose path cannot even be
+     * normalised is a home with nothing to sweep. Releasing old stamps is housekeeping beside the
+     * open rather than part of it, so it has nothing to say about whether this run gets a store.
      */
     private static Reaped sweepOnce(Path home, String liveSegment) {
         Path normalised;

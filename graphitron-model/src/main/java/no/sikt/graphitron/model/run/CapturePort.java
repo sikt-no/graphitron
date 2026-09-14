@@ -16,9 +16,9 @@ import java.util.Objects;
 
 /**
  * A place to capture into and read back, handed to whoever runs a pass. The generator asks for a
- * capture and gets a {@link StoreHandle} to question; that there is a store behind it, where it
- * lives, whether it is shared with the rest of the workspace and what happens when it cannot be,
- * are all this type's business and none of the caller's.
+ * capture and gets a {@link StoreHandle} to question; that there is a store behind it and where it
+ * lives are this type's business and none of the caller's. What happens when it cannot be had is
+ * nobody's discretion any more: the run fails and says what to do about it.
  *
  * <p><b>Why a seam and not a call.</b> The generator used to name the entry point and reach the
  * store's home off its own context, which made "the generator reads facts and writes none" a
@@ -104,10 +104,10 @@ public sealed interface CapturePort extends AutoCloseable {
      * A port over one store, opened on the first capture and held until {@link #close}. What a
      * Maven goal builds and hands to every pass it runs.
      *
-     * <p>Opened lazily because the store cannot be opened without the capture that fills it: the
-     * shared file may refuse a write and demote the run, which is only knowable once the write has
-     * been attempted, and {@link RunStore#forRun} therefore takes the capture as its argument. So a
-     * goal owns the store's lifetime by owning this port, not by holding a store of its own.
+     * <p>Opened on the first capture rather than on construction, {@link RunStore#forRun} still
+     * taking the capture as its argument. That argument is residue from when a refused write could
+     * be answered with a different store, and it leaves with this port. Either way a goal owns the
+     * store's lifetime by owning this port, not by holding a store of its own.
      *
      * @param storeDirectory the workspace's store home, or {@code null} for a caller with none
      */
@@ -121,9 +121,9 @@ public sealed interface CapturePort extends AutoCloseable {
      * store, so a pass that captured anywhere else would leave them answering from rows no pass
      * wrote.
      *
-     * <p>A refusal still demotes, and then the port is on a private store of its own while the
-     * lent one stays exactly as its owner left it. That is the same outcome a session had when each
-     * pass opened its own store, and it is why the lender keeps closing what it opened.
+     * <p>A refused store now fails the pass rather than moving it to one of its own, so the lent
+     * store is the only store a pass through this arm can be on, and the lender keeps closing what
+     * it opened.
      */
     static CapturePort over(GraphitronModelStore lent) {
         Objects.requireNonNull(lent, "lent");
@@ -176,9 +176,9 @@ public sealed interface CapturePort extends AutoCloseable {
     }
 
     /**
-     * The one-store arm. The first capture decides which store this port ended on and a later one
-     * can still lose the shared file, so the field is reassigned from {@link RunStore#recapture}
-     * rather than fixed at the first call; {@link #close} gives back whichever store it ended on.
+     * The one-store arm. The first capture opens the store and every later one writes into it,
+     * a store being settled when it opens and never swapped underneath a caller; {@link #close}
+     * gives it back.
      *
      * <p>Synchronised because the store is one connection pool and this arm exists to be shared:
      * a dev session runs its passes off a debounce, and two passes that ever did overlap would
@@ -217,7 +217,7 @@ public sealed interface CapturePort extends AutoCloseable {
          */
         private void capture(GraphIdentity graph, RunStore.CaptureBody body) {
             if (store != null) {
-                store = store.recapture(body);
+                store.recapture(body);
             } else {
                 store = lent == null
                     ? RunStore.forRun(storeDirectory, graph, body)

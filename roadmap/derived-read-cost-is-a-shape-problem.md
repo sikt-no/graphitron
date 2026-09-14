@@ -3682,7 +3682,8 @@ gatherer changes what it writes.
 **Retires** `CapturePort`, 236 lines and two arms differing only in how long a store is held, with two
 callers who each know their own answer; `CaptureRequest`, which exists to carry a capture between a
 caller and a port; `FactCapture`'s entry points, whose body becomes `ModelCapture`'s; and
-`RunStore.recapture` and its `Borrowed` arm, which exist for the held port. The demotion stays.
+`RunStore.forRun`'s `CaptureBody` argument, along with `recapture` and the `Borrowed` arm that serve
+the held port. The demotion is already gone, below.
 
 **Fixes, without migrating anything.** The corpus is parsed once instead of three times. Measured over
 `mvn graphitron:capture` on the sakila example, a 28.2 s goal, with a counter on
@@ -3711,7 +3712,7 @@ budget is taken during the write today, so with the store's identity decided at 
 anchor row is a failure raised mid-capture rather than a store chosen differently. That is the one
 thing below that has not been checked against the code.
 
-**`RunStore` dissolves, and a refused store fails the build.** The policy is that a run which cannot
+**`RunStore` dissolves, and a refused store fails the build. Landed 2026-09-14.** The policy is that a run which cannot
 have the store it asked for says so and stops, with a message naming the cause and the fix, and the
 person runs it again. Not a silent second-best. That decision removes the class rather than trimming
 it, because everything in it is machinery for continuing.
@@ -3768,6 +3769,23 @@ no other layer reports": the stamped directory cannot be created, a file at the 
 a mismatched stamp, or the connection throws, the last being where a file another process holds
 lands. Three causes with three different fixes, currently one silent outcome. They become three
 failures with three messages.
+
+**What landed, and the one thing the reading missed.** 507 lines deleted against 310 added.
+`RunStore` is 534 lines down to 306: `attemptShared`, `captureWithRetry`, `inMemory`, `captureCold`,
+`report`, the `Demoted` arm and the four `Demotion` records are gone, `Shared` is `Owned`, and
+`recapture` returns nothing, a store never being swapped underneath a caller now.
+`GraphitronModelStore.openAt` raises `StoreUnavailableException` on its three arms instead of
+answering each with a private store. Six tests that pinned the fallback state the refusal instead,
+which is the same specification read the other way round; 14 modules and 7695 tests green.
+
+`timedOutOnALock` survives the retry it was written for, and decides a message rather than a second
+attempt: a contended lock is the one write failure a person can act on, so it is said in their words
+while a capture bug keeps the driver's. The first draft of that message named the anchor row, which
+`store-too-large-to-service` falsifies: its 21 GB consumer store times out on `JVM_METHOD` under the
+generous budget, nowhere near the anchor, and the message would have been a confident wrong answer.
+It names no row now. That item also carries the sharpest evidence against this whole decision, and a
+dated note now says so in its body: on that consumer the demotion bought a cold minute where the
+refusal buys a failed build.
 
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
@@ -3845,9 +3863,9 @@ removing two callers. Capture wants a per-document parse, two documents declarin
 rows where a merged registry can carry one; the generator wants a merged registry with synthesis
 applied. Whether those can be one read is a measurement nobody has taken.
 
-It does not keep an in-memory store for a caller that wants one. A run with no store directory
-configured still captures in memory, that being the store it asked for rather than a fallback from
-one it could not have.
+It does not take the in-memory store away from a caller that wants one. A run with no store
+directory configured still captures in memory, that being the store it asked for rather than a
+fallback from one it could not have.
 
 It does not reorder the burn down's items four through six, rename the entry vocabulary, or re-argue
 the register.

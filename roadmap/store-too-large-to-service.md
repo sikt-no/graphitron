@@ -35,7 +35,10 @@ mechanism that lets a file grow again.
 On the reporting consumer of [issue 544](https://github.com/sikt-no/graphitron/issues/544), a 21 GB
 store made `StoreRefresh.clear` spend 2 min 18 s of a 3 min 28 s run, end in `Timeout trying to lock
 table "JVM_METHOD"` at the 60 s `FILE_LOCK_MILLIS` budget, and demote the run to an in-memory capture
-that paid another minute capturing cold. Compaction cost also grows faster than the file does (829 ms
+that paid another minute capturing cold. (**2026-09-14**: the demotion is retired. That run now fails
+with a message saying another process is writing the store and to run again, which on this consumer
+is a worse outcome than the extra minute was and is the sharpest evidence anywhere that this item has
+a subject. The measurement above stands as taken.) Compaction cost also grows faster than the file does (829 ms
 for 443 MB, 4.1 s for 864 MB, both measured 2026-09-03 against real store copies on H2 2.4.240), so
 a large enough file is not something a run may compact its way out of either.
 

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.run;
 
+import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
@@ -17,6 +18,7 @@ import java.util.Map;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The arm of {@link CapturePort} that captures into a store its caller opened: what a dev session
@@ -79,14 +81,17 @@ class LentStoreTest {
     }
 
     /**
-     * The demotion arm reached the way only a lent store reaches it. A graph name recorded against
+     * The refusal reached the way only a lent store reaches it. A graph name recorded against
      * another checkout refuses this run, and the refusal has to leave the lent store exactly as its
-     * owner left it: this is the one case where the run captures somewhere the caller cannot see, so
-     * a fallback that wrote through the lent handle anyway would corrupt another checkout's
-     * partition on a store the lender is still reading.
+     * owner left it: a run that wrote through the lent handle anyway would corrupt another
+     * checkout's partition on a store the lender is still reading.
+     *
+     * <p>The run fails rather than capturing on a private store of the port's own. This was the one
+     * case where a demoted run wrote somewhere its caller could not see, which made "the partition
+     * is intact" the only thing a case could check and left the caller believing it had captured.
      */
     @Test
-    @DisplayName("a lent store recorded against another checkout is left alone, and the run goes on")
+    @DisplayName("a lent store recorded against another checkout is left alone, and the run fails")
     void aRefusedGraphLeavesTheLentStoreAlone(@TempDir Path tmp) {
         Path home = tmp.resolve("home");
         Path owner = tmp.resolve("owner");
@@ -101,12 +106,11 @@ class LentStoreTest {
             assertThat(lent.warm()).as("the second open meets the first run's rows").isTrue();
 
             try (var port = CapturePort.over(lent)) {
-                List<String> captured = port.captureAndRead(request(impostor, ACTOR_SDL),
-                    (store, detections) -> typeNames(store.dsl()));
-
-                assertThat(captured)
-                    .as("the run still captured, on a private store of the port's own")
-                    .contains("Actor");
+                assertThatThrownBy(() -> port.captureAndRead(request(impostor, ACTOR_SDL),
+                    (store, detections) -> typeNames(store.dsl())))
+                    .as("the run is refused rather than captured where its caller cannot see it")
+                    .isInstanceOf(StoreUnavailableException.class)
+                    .hasMessageContaining("<graphName>");
             }
 
             assertThat(typeNames(lent.dsl()))

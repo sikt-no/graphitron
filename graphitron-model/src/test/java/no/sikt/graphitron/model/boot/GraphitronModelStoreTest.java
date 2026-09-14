@@ -11,6 +11,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The sweep's call site, as opposed to the sweep itself: that {@link GraphitronModelStore#openAt}
@@ -54,16 +55,21 @@ class GraphitronModelStoreTest {
 
     /**
      * A home whose live stamp cannot be used is precisely a home whose older stamps nobody is
-     * looking at, so the fallback arms sweep too. The live segment is spared there by name rather
-     * than by the lock probe, this run holding no lock on it.
+     * looking at, so the sweep runs whether or not the open goes on to succeed: it happens before
+     * the open, which is what makes it independent of the outcome. The live segment is spared by
+     * name rather than by the lock probe, this run holding no lock on it.
+     *
+     * <p>Asserted on the filesystem rather than on the store's own report, because a failing open
+     * hands back no store to report through. That is the stronger reading anyway, the effect being
+     * what a person finds in their cache home.
      */
     @Test
-    @DisplayName("an openAt that falls back to memory still reaps, and still spares the live segment")
-    void aFallbackToMemoryStillReaps(@TempDir Path tmp) throws IOException {
+    @DisplayName("an openAt that fails still reaps, and still spares the live segment")
+    void anOpenThatFailsStillReaps(@TempDir Path tmp) throws IOException {
         String liveSegment = liveSegment(tmp.resolve("probe"));
         Path home = Files.createDirectories(tmp.resolve("home"));
         Path live = Files.createDirectories(home.resolve(liveSegment));
-        // A file at the stamped path that H2 cannot open at all: the arm that falls back and leaves
+        // A file at the stamped path that H2 cannot open at all: the arm that refuses and leaves
         // the file strictly alone, which a hand-moved or hand-damaged store is the real cause of.
         Files.write(live.resolve("store.mv.db"), new byte[] {1, 2, 3, 4, 5, 6, 7, 8});
         // Three surplus stamps, so the retention has one to give up: the live directory occupies a
@@ -72,12 +78,11 @@ class GraphitronModelStoreTest {
         surplusStoreDirectory(home, "b", Instant.now().minusSeconds(600));
         surplusStoreDirectory(home, "c", Instant.now().minusSeconds(900));
 
-        try (var store = GraphitronModelStore.openAt(home)) {
-            assertThat(store.location()).as("the damaged file was not this run's to use").isEmpty();
-            assertThat(store.reaped().directories())
-                .as("the surplus stamp past the retention went anyway").isEqualTo(1);
-        }
-        assertThat(home.resolve("c")).as("the oldest surplus stamp is the one released")
+        assertThatThrownBy(() -> GraphitronModelStore.openAt(home))
+            .as("the damaged file was not this run's to use, and it is told to say so")
+            .isInstanceOf(StoreUnavailableException.class);
+        assertThat(home.resolve("c"))
+            .as("the oldest surplus stamp went anyway, the sweep running ahead of the open")
             .doesNotExist();
         assertThat(live.resolve("store.mv.db"))
             .as("the live stamp is spared by name, damaged or not")
@@ -85,7 +90,7 @@ class GraphitronModelStoreTest {
     }
 
     @Test
-    @DisplayName("a successful open leaves a marker; an open that falls back leaves none")
+    @DisplayName("a successful open leaves a marker; an open that fails leaves none")
     void theMarkerIsWrittenAfterASuccessfulOpen(@TempDir Path tmp) throws IOException {
         Path good = Files.createDirectories(tmp.resolve("good"));
         try (var store = GraphitronModelStore.openAt(good)) {
@@ -103,9 +108,8 @@ class GraphitronModelStoreTest {
         Path live = Files.createDirectories(bad.resolve(liveSegment));
         Files.write(live.resolve("store.mv.db"), new byte[] {1, 2, 3, 4, 5, 6, 7, 8});
 
-        try (var store = GraphitronModelStore.openAt(bad)) {
-            assertThat(store.location()).isEmpty();
-        }
+        assertThatThrownBy(() -> GraphitronModelStore.openAt(bad))
+            .isInstanceOf(StoreUnavailableException.class);
         assertThat(live.resolve("store.last-used"))
             .as("the marker is written strictly after a successful open, which candidacy rests on")
             .doesNotExist();

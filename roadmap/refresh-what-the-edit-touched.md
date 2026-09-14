@@ -194,7 +194,14 @@ the store instead.
 First, the mojo cannot answer it. Capture demotes to a private in-memory store in two cases, an
 unopenable cache (`FactCapture` logs `DEMOTED_TO_MEMORY`) and a graph name already recorded against
 another base directory (`FactCapture.ownsGraph`), and neither is reported back through
-`GraphQLRewriteGenerator` to the mojo. A caller-side condition would therefore skip a refresh the
+`GraphQLRewriteGenerator` to the mojo.
+
+> **2026-09-14: this paragraph's premise no longer holds, and the note is left rather than the
+> paragraph rewritten, because whether the item still has a subject is for its own author to
+> decide.** Both symbols were already gone when this was written; the demotion they named is now
+> gone too. A run that cannot have the store it asked for raises `StoreUnavailableException` and
+> fails, so there is nothing to report back and no refresh to skip. What survives of the concern is
+> the opposite shape: the mojo now learns about a refused store whether it wanted to or not. A caller-side condition would therefore skip a refresh the
 session's capture never performed, unless a new return channel is threaded from capture up through
 the generator to the mojo purely to carry it.
 
