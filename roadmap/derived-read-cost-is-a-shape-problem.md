@@ -3804,6 +3804,16 @@ default, so anybody tidying the budget to zero would restore it while appearing 
 value is 1, the reason is in the constant's own comment, and `PersistentStoreTest` bounds the elapsed
 below H2's default so the tidy-up fails rather than passing quietly.
 
+**Phase 1's first step landed 2026-09-14, and it moved the read without moving the seam.**
+`AttributedRegistry` is in `no.sikt.graphitron.model.schema` with the load on it as
+`AttributedRegistry.load(ctx, jooq)`: the per-source parse, the four configuration-driven rewrites,
+the pre-synthesis handle and the `@key` synthesis. The delegate on the generator went rather than
+staying as a shim, so nothing there implements a read any more and three test call sites go direct.
+What has not moved is the call. `GraphQLRewriteGenerator.runPipeline` still opens by asking for the
+read, and `CaptureMojo` still constructs a generator to reach it, so the module boundary is where it
+should be and the seam is where it was. That is the next step rather than a defect in this one, and
+both acceptance criteria above are still unmet.
+
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
 attempts at the catalog pair failed on a hand-picked list, and the two gaps that mattered were
