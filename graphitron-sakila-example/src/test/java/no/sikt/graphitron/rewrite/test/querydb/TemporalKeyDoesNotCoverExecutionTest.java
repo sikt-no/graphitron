@@ -67,6 +67,11 @@ class TemporalKeyDoesNotCoverExecutionTest {
         }
         Assumptions.assumeTrue(serverVersionNum() >= 180_000,
             "WITHOUT OVERLAPS needs PostgreSQL 18; this server cannot express the fixture");
+        // A WITHOUT OVERLAPS primary key is a GiST exclusion constraint, and the scalar columns
+        // beside the range have no GiST operator class without this. Stock PostgreSQL 18 ships the
+        // extension and does not enable it, so a fresh container fails the CREATE TABLE below
+        // while a developer's own database, where something enabled it once, does not.
+        dsl.execute("CREATE EXTENSION IF NOT EXISTS btree_gist");
         dsl.execute("DROP TABLE IF EXISTS " + TABLE);
         dsl.execute("""
             CREATE TABLE %s (
