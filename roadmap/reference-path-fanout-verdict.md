@@ -109,8 +109,8 @@ data)": this predicate is that sentence made decidable.
 Two properties worth stating, because they are why this formulation is the one to build:
 
 * It subsumes the terminal-hop exemption without a special case. A path that ends on the many
-  side has no leaving hop, so there is no pair to cover and no verdict; that is a plain
-  to-many list, exactly as the reporter said.
+  side has no leaving hop, so that element is no intermediate and yields no row at all; that is a
+  plain to-many list, exactly as the reporter said.
 * It generalises past two hops. The predicate is per intermediate, so a five-hop path is five
   independent questions, and the finding can name the hop that multiplies rather than the path
   as a whole.
@@ -126,14 +126,47 @@ columns of `F` that sit on `T`'s side: the key's own columns where `T` declares 
 binds `{actor_id, film_id}` on `film_actor_note`, the declaring side, exactly as the join
 predicate equates them.
 
-**Which elements the predicate can judge.** `via` on the target view is closed over four arms,
-and only `KEY` and `TABLE` elements carry a `constraint_name`. A `CONDITION` element joins on an
-authored Java predicate whose columns the store cannot see, and a `NAME_MATCH` element departs a
-table-valued function's result, which declares no constraint at all. An intermediate entered or
-left by either of those gets **no verdict**: `bound(T)` is undefined on one side, and pronouncing
-either way would be a guess. The rule evaluates an intermediate only where both its entering and
-leaving elements carry a constraint, and the user documentation states that boundary, since a
-hand-written join is where an author most needs to know the rule is not looking.
+**Which elements the predicate can judge, and how it declines.** `via` on the target view is closed
+over four arms, and only `KEY` and `TABLE` elements carry a `constraint_name`. A `CONDITION`
+element joins on an authored Java predicate whose columns the store cannot see, and a `NAME_MATCH`
+element departs a table-valued function's result, which declares no constraint at all. An
+intermediate entered or left by either of those cannot be judged: `bound(T)` is undefined on one
+side, and pronouncing either way would be a guess.
+
+**That decline is a row, not a silence, and the distinction is the whole of it.** The view carries
+a `verdict` column over a closed vocabulary, and a declined intermediate is a row saying so:
+
+| `verdict` | what it says |
+|---|---|
+| `FANS_OUT` | no PRIMARY KEY or UNIQUE constraint on `T` has its columns inside `bound(T)`; this hop multiplies, and the row carries the intermediate and the position |
+| `COVERED` | some constraint does, and the row names which; the hop is 1:1 on the bound pair |
+| `UNDECIDABLE_CONDITION_HOP` | the entering or leaving element is a `CONDITION`, so one side of `bound(T)` is unreadable |
+| `UNDECIDABLE_NAME_MATCH_HOP` | the entering or leaving element is a `NAME_MATCH`, departing a table-valued function's result that declares no constraint |
+
+One row per intermediate, keyed on the entering element's coordinate
+(`graph_name, type_name, field_name, ordinal, position`), so the path
+`film -> film_actor -> film_actor_note -> actor` yields a row at position 0 for `film_actor` and
+one at position 1 for `film_actor_note`, and "position 1 multiplies" is a value rather than an
+inference. Absence then means exactly one thing, that the walk did not reach the element, which is
+the silence `intent_field_reference_step_target` already owns and the only one this view inherits.
+
+The alternative, a view that simply yields no row where it cannot judge, was the earlier draft and
+is wrong for a reason this spec states about itself elsewhere. Absence would carry four meanings:
+no `@reference` here, the element was not reached, the intermediate is undecidable, and the pair
+genuinely is covered. The last is what the author-facing documentation teaches a quiet build to
+mean, and the third is a false negative sitting inside it, which is "the failure mode this rule
+cannot afford" by this document's own subset argument. `fact-model.adoc` states the general move
+("a relation whose absence is load-bearing owes that sentence") using this very walk as its worked
+example, and `intent_field_reference_step_target` discharges it by handing its other silences to
+`intent_condition_method_route_defect` so that its own absence means one thing. A new view beside
+that one does not get to re-accumulate four.
+
+Three things follow, and this item wanted all three anyway. The consumer's decode is a total switch
+over the vocabulary with no `default` and a drift throw, exactly `UnlowerableOrderings.Verdict.of`,
+whose own switch likewise has an arm that deliberately mints nothing. The undecidable cases are
+tested by asserting a named row rather than an absence, which a test pinning a silence cannot do,
+being unable to tell "declined" from "not implemented". And the scalar-field sibling rule under
+"Out of scope" reads the column instead of re-deriving the predicate.
 
 ## Measured on the corpus
 
@@ -204,15 +237,27 @@ coordinate declaring `film -> film_actor -> film_actor_note -> actor` has two in
 the whole test in one path: `film_actor` is cleared (`bound = {film_id, actor_id}`, its primary
 key) and `film_actor_note` fires, naming position 1 as the multiplying hop. Pair it with the
 existing `Film.actors` shape as the negative case and the two coordinates pin the direction
-between them. Adding a foreign key to `init.sql` changes the jOOQ catalog every test in the
-reactor reads, so the implementation weighs that against an authored pipeline-tier fixture before
-choosing; the condition above is what either host has to satisfy, and a fixture that only fires
-is not enough.
+between them.
+
+**Where the discriminating pair lives is settled, and it is not `init.sql`.** What a view returns
+given rows is pinned in `graphitron-model` against a store seeded row by row, which is where the
+`intent_` view tests already sit; behaviour is pinned at the pipeline tier and above. The
+discriminating pair is a statement about what the view returns, so it is a seeded-store test:
+`bound(T)` strictly inside a composite key fires, `bound(T)` covering one clears, and the
+subset-direction case (an FK on `(a)` against a `UNIQUE (a, b)` on the arriving table) is the same
+kind of row. None of that needs a catalog, a `@reference` path, or an `init.sql` edit, and adding
+a foreign key there would change the jOOQ catalog every test in the reactor reads for no gain the
+seeded rows do not already give. The pipeline tier then pins one end-to-end coordinate: a warning
+arrives at the field, with the expected message, naming the multiplying position. The
+`film_actor_note` walkthrough above stays in this document as the worked shape the seeded rows
+encode, not as an instruction to edit the corpus. The acceptance criterion is unchanged and is met
+by the pair: a fixture that only fires would pass under the inverted reading too.
 
 One caveat on the population: 32 of the 94 authored path elements resolve to nothing the walk
 can reach, and absence on that view means "not reached" rather than "resolves to nothing in
-particular". Those coordinates get no verdict from this rule, which is right, since a path that
-does not walk fails elsewhere and a fan-out warning on top would be noise.
+particular". Those coordinates yield no row here either, and that inherited silence is the one
+this view owns, per the verdict vocabulary above: a path that does not walk fails elsewhere, and a
+fan-out warning on top would be noise.
 
 ## Which constraints may clear a hop
 
@@ -237,9 +282,12 @@ we ever do want unique indexes to clear a hop, jOOQ hands us the predicate along
 uniqueness flag, so the guarantee can be transferred honestly (a partial index clears nothing
 unless the join carries its predicate) rather than assumed.
 
-Until then, state it as an invariant in the implementation, because it is one an optimisation
-could destroy: the rule reads `sql_constraint` and must never widen to `sql_index` while
-`sql_index` says nothing about uniqueness.
+Until then the rule reads `sql_constraint` and must never widen to `sql_index` while `sql_index`
+says nothing about uniqueness. An invariant stated in an implementation comment has no enforcer,
+which this project treats as an invitation to file the meta-test rather than as a claim already
+kept, so state it where something holds it: the predicate lives wholly in the view's SQL, per
+"Cost", and a widening is then an edit to the view's declared reads inside the machinery
+`MetaDeclarationGateTest` walks, not a comment a later optimisation can quietly step over.
 
 **Temporal keys are a real hole, currently out of reach, and the safe side is the one we are
 on.** A `PRIMARY KEY (a, b, valid_at WITHOUT OVERLAPS)` guarantees one row per *instant*, not
@@ -283,28 +331,36 @@ measurement.
 ## Where it lives
 
 The pivotal question when this item was filed was whether a build-time rule can read the
-derived views at all. It can, and the pattern is established, in `graphitron-model` rather than
-in `graphitron`. The item straddles that module boundary, so each artefact below names its module.
+derived views at all. It can, and since then it has become easier than the earlier draft assumed:
+the lint channel itself now runs inside the capture window holding a live store handle. The item
+straddles the `graphitron-model` / `graphitron` boundary, so each artefact below names its module.
 
-* **The derivation.** `graphitron-model/src/main/java/no/sikt/graphitron/model/derive/` is the
-  thirty-member package whose members read `intent_` relations inside the capture window.
-  `AuthoredClaimConflicts` is the precedent for the division of labour: "the reduction itself
-  ... lives in the view's SQL; what remains here is the decode of its closed vocabulary" into the
-  values the report carries. `UnlowerableOrderings` is the precedent for the shape: a family on
-  the `StoreDetections` record with its own `READS` set and `Detection` product, run by
-  `FactCapture.captureAndRead` after the loads. So the pair-coverage reduction is a new view
-  beside `intent_field_reference_step_target`, and a new family decodes its rows.
+* **The derivation.** The reduction lives in the view's SQL, and what remains in Java is the decode
+  of its closed vocabulary into the values the report carries. `AuthoredClaimConflicts` is the
+  precedent for that division of labour and `UnlowerableOrderings` for the verdict decode, a total
+  switch over the view's arms with a drift throw. So the pair-coverage reduction is a new view
+  beside `intent_field_reference_step_target`, and a small producer decodes its rows.
+* **The producer.** `no.sikt.graphitron.model.lint` already holds `LintRule`, `LintFix`,
+  `LintConfig` and `DeprecationRecognizer`, which is a lint producer that answers from store rows
+  rather than from a parse tree. The fan-out producer belongs there, beside it: it takes a
+  `DSLContext` and a graph name and returns `List<BuildWarning.LintFinding>`. It is deliberately
+  **not** a member of the `model/derive/` package and does not join the `StoreDetections` record;
+  see "Why not a `StoreDetections` family" below.
 * **The substrate.** `intent_field_reference_step_target` already yields, per path element,
   `from_*` and `to_*` endpoints, `constraint_name`, `via` and `fk_on_from` ("TRUE when the
   departing table declares the foreign key; the element's direction"). `sql_constraint` is closed
   over `PRIMARY KEY | UNIQUE | FOREIGN KEY`, `sql_constraint_column` carries the column sets, and
   `intent_foreign_key_column_pair` pairs each foreign key's columns with the columns it
   references. Everything the predicate needs is a join away, with no new capture.
-* **The warning channel.** `GraphQLRewriteGenerator.withLintFindings` assembles the
-  classification advisories, the engine findings and the codegen advisories, and applies the
-  `disabledRuleIds` filter to the combined list. `BuildWarning.LintFinding` carries the message,
-  a `SourceLocation`, a `LintRule` and an optional `LintFix`. The store copy in `lint_finding` is
-  written by the dev loop (`DevMojo`, through `BuildWarningFacts`) off the pass's
+* **The warning channel, which is already where this belongs.**
+  `GraphQLRewriteGenerator.withLintFindings` assembles the classification advisories, the engine
+  findings and the codegen advisories, and applies the `disabledRuleIds` filter last, over the
+  combined list. It runs **inside** the capture window, taking the live `StoreHandle` that
+  `captureAndRead` hands its callback, and passes it to the lint engine. So a producer folded in
+  there beside `SessionStateWarnings` and `DependencyVersionWarnings` reads this run's rows and
+  inherits the suppression filter with nothing moved. `BuildWarning.LintFinding` carries the
+  message, a `SourceLocation`, a `LintRule` and an optional `LintFix`. The store copy in
+  `lint_finding` is written by the dev loop (`DevMojo`, through `BuildWarningFacts`) off the pass's
   suppression-filtered warnings, so a finding that joins that list reaches the report, the LSP
   replay, the MCP projection and the store with no new writer, and a suppressed one reaches none
   of them.
@@ -314,29 +370,65 @@ The five artefacts, each with its module:
 | Artefact | Module | Where |
 |---|---|---|
 | The view | `graphitron-model` | `graphitron-model.sql`, beside `intent_field_reference_step_target`; registered `Arm.DERIVED` in `FactCaptureAgreementTest` (in `graphitron`), whose registration map is exhaustive over the schema |
-| The decoding family | `graphitron-model` | a new member of the derive package, joining `StoreDetections` with a `READS` set; `DetectionReadReachGateTest` (in `graphitron-model`) pins what that set expands to, by equality |
+| The producer | `graphitron-model` | `no.sikt.graphitron.model.lint`, beside `DeprecationRecognizer`; one statement driven from the view, decoding `verdict` in a total switch |
 | The rule and its `Source` arm | `graphitron-model` | `LintRule`, which owns both the rule constants and the `Source` enum |
 | The coverage extension | `graphitron` | `LintRuleRegistryCoverageTest`, whose partition assertion keys off the `Source` arms |
-| The fold-in | `graphitron` | `GraphQLRewriteGenerator.runPipeline`, per "The ordering hazard" below |
+| The fold-in | `graphitron` | `GraphQLRewriteGenerator.withLintFindings`, above the `disabledRuleIds` filter |
+
+**Why not a `StoreDetections` family.** An earlier draft put the verdict on that record with a
+sibling `warnings()` accessor and a fold-in in `runPipeline`, because lint assembly then ran before
+the capture and could not read the store. It can now, so the reasons that remain all point the
+other way. Every path a warning takes to the report, the LSP replay, the MCP projection and
+`lint_finding` runs through `withLintFindings` today, and the suppression filter is the last thing
+that touches the combined list; a second producer elsewhere in `runPipeline` would be a second
+entry point into that channel, with the filter moved to compensate and nothing but prose keeping
+the two suppressible alike. And `UnlowerableOrderings` earns its place on the record by having two
+consumers, the build-error stream and the capture-cadence rejection-rows writer. This verdict has
+one. The durable shared artefact here is the **view**, which the authoring-time counterpart under
+"Related" would read as its second consumer; that is an argument for the view, not for a record
+member. `StoreDetections` is therefore untouched, and `violations()` stays the one assembly point
+for the families that mint errors.
+
+**Why not a lint visitor either.** The engine's own traversal is the other tempting home, and the
+read shape rules it out. `intent_field_reference_step_target` is a `WITH RECURSIVE` view carrying
+window functions, and `fact-model.adoc` states the measured rule that such a view is taken once
+per answer and paired on its key rather than correlated per driving row, since a window sees its
+whole partition whatever the outer correlation says. `DeprecationRecognizer` is the sanctioned
+opposite, keyed seeks into base relations that nest freely. A visitor asking this question at
+`FIELD_DEFINITION` grain would correlate the recursive view once per field, and the example schema
+yields zero findings today, so a green build would not reveal it. The producer therefore drives one
+statement from the view and attributes findings by the view's own coordinate and location columns,
+which is also why it is a producer rather than a visitor and why the `Source` question below has
+the answer it does.
 
 Four things this spec decides rather than leaves open.
 
-**The rule needs a new `LintRule.Source` arm.** The three existing arms are a declared
-partition that `LintRuleRegistryCoverageTest` keys its completeness assertion off, and none of
-them fits: `ENGINE` rules are "re-derivable from the AST alone" and this one needs catalog
-facts; `CLASSIFIER` rules are "advisories the classifier already computes" and tagged at its
-emit site, and this one is computed in the store instead; `CODEGEN` rules are "a whole-build
-fact with no SDL coordinate", and this one has a coordinate. Add a fourth arm for
-store-derived, coordinate-carrying findings and extend the coverage test's partition, rather
-than mislabelling this rule into an arm whose stated meaning it contradicts. The arm is
-reusable: every future verdict the derive package computes lands in it.
+**The rule needs a new `LintRule.Source` arm, and the axis it joins is producer identity.** Read
+`LintRuleRegistryCoverageTest` rather than the enum's prose and what `Source` partitions is
+unambiguous: `everyEngineRuleIsRegisteredToExactlyOneVisitor`,
+`classifierAdvisoriesAreNotRegisteredAsVisitors`, `codegenAdvisoriesAreNotRegisteredAsVisitors`.
+Every assertion is about which producer mints the finding, and therefore which completeness gate
+owns the rule. The axis has never partitioned on what a rule *reads*, which is why the enum needed
+no edit when `NO_DEPRECATED_DIRECTIVE_USAGE` moved its evidence from the parse tree to store rows.
+On that axis this rule is a fourth producer: it has no visitor, so it is not `ENGINE`; it is not
+tagged at a classifier emit site, so it is not `CLASSIFIER`; and `CODEGEN` is "a whole-build fact
+with no SDL coordinate", which this one has. Add the arm for **findings minted by a store-reading
+producer folded in at report assembly**, and extend the coverage test's partition. Do not argue it
+on catalog facts against AST facts: that would splice a second axis onto the producer identifier,
+and the next row-reading visitor would then belong to two arms at once. The arm is reusable, and
+`LintRule`'s `ENGINE` javadoc owes a restatement on the producer axis in the same commit, since
+its "re-derivable from the AST alone" is the sentence that sent an earlier draft of this spec down
+the wrong line.
 
-**The family yields warnings, and `StoreDetections` gains a `warnings()` accessor.** Every family
-on the record today mints `ValidationError`s, and `violations()` is their one assembly point.
-This family's product is a `List<BuildWarning>` instead, so it does not join `violations()`; a
-sibling `warnings()` accessor assembles it, and the fold-in reads that. A finding that rode the
-error stream would fail the build, which is the one thing the reporter's reformulation says it
-must not do.
+**The rule honours `excludedTypes`, through a shared matcher rather than a restated one.** The
+engine applies `excludedTypePatterns` before dispatch, and `withLintFindings` notes that a finding
+minted outside the walk still fires on an excluded type. That asymmetry is accepted for the
+classifier advisories, which carry no coordinate the author excluded by name; it is not acceptable
+here, where the finding lands at a coordinate on a type the consumer asked not to be linted, and
+would read as a bug. The producer applies the same exclusion, reusing the engine's glob matcher at
+a shared point rather than owning a second copy of the rule. Two fences: this changes nothing for
+the existing classifier advisories, and the glob matching must not end up stated twice, a
+population rule applied two ways with nothing binding them being the drift this project names.
 
 **The finding carries a fix, and the fix is the view pattern.** `lint_finding_fix` plus its
 ordered edits is "a suggestion an editor offers, never a rewrite the build performs", which is
@@ -366,31 +458,28 @@ it is a per-participant join on a multi-table child field and has no hop or targ
 authoring that substrate first. The documentation states both boundaries in their own terms: a
 filter path has nothing to warn about, and `@referenceFor` is not yet looked at.
 
-## The ordering hazard
+## The ordering hazard, and why it is closed
 
-This is the one thing that would silently produce wrong findings, so it is called out
-separately.
+This section used to be the item's sharpest risk, and it is worth keeping only as a note on why
+the placement is no longer free to go wrong.
 
-`runPipeline` is the single pipeline body; `validate()`, `capture()` and `buildOutput()` are
-projections through it, so there is one call site to get right. In that body `withLintFindings`
-runs **before** `captureAndRead`, and the store is open only inside the continuation
-`captureAndRead` hands its callback: the capture fills it, the store-backed detections run over
-it, and the plan reads it, all within that window. A store read placed in `withLintFindings` as
-it stands would therefore not read an empty store, which would be obvious. The store is a warm
-cache that survives across runs, so it would read **the previous run's rows** and report paths
-from the last build, which on an edited schema means findings at coordinates that no longer
-exist and silence at ones that do. The dev loop, which reruns the pass on every save, is where
-that would bite first.
+The store is a warm cache that survives across runs. A store read placed outside the capture
+window would therefore not read an empty store, which would be obvious, but **the previous run's
+rows**: findings at coordinates an edited schema no longer has, and silence at the ones it does.
+The dev loop, which reruns the pass on every save, is where that bites first.
 
-The placement that follows is not a reordering but the family shape above: the verdict is
-computed inside the window, by the `StoreDetections` family, over rows this pass just wrote, and
-comes back out through `Captured` beside the violations and the plan. The fold-in then merges the
-family's warnings into the pass's `warnings` list, and the `disabledRuleIds` filter moves to run
-over the merged list, since it applies to the combined list today and would otherwise miss the
-arm this item adds. Pin the ordering with a test that edits a path between two runs in one store
-and asserts the second run's findings describe the second schema; the shape makes the test pass
-by construction, and the test is what keeps a later refactor from moving the read back out of
-the window.
+`runPipeline` is the single pipeline body, with `validate()`, `capture()` and `buildOutput()` as
+projections through it, so there is one call site that decides this. When this item was filed,
+`withLintFindings` ran before `captureAndRead` and the hazard was live. It no longer does:
+`withLintFindings` is called inside the continuation `captureAndRead` hands its callback, takes
+the live `StoreHandle`, and passes it to the lint engine, whose own deprecation rule already reads
+rows through it. A producer folded in there is inside the window by construction, and there is no
+reordering to perform.
+
+What survives is the guard. Pin it with a test that edits a path between two runs against one
+store and asserts the second run's findings describe the second schema. The shape makes that test
+pass on the day it is written; its job is to fail on the day someone moves lint assembly back out
+of the window.
 
 ## Cost
 
@@ -407,44 +496,70 @@ The 70-second figure recorded in the measurement section was a cold recursive wa
 H2 shell and is not the number the rule would pay. `intent_field_reference_step_hop` is already a
 registered target, and its registration reason records the target view falling "from around
 thirty milliseconds to three" once the hop rows are stored, so the substrate this view reads is
-priced and cheap. What the implementation owes is the reach, not a wall clock: the family's
-`READS` set enters `DetectionReadReachGateTest`'s pinned expansion, and the commit that adds it
-states there what the set expands to and why that is acceptable at read cadence, per that gate's
-own instruction. `DerivedReadCostTest` is not touched, because it prices registrations and this
-item adds none; `MaterializeRegistryGateTest` likewise. If the pinned reach turns out to include
-the recursion over the hop table at every read and that proves material on a populated store,
-the `store-performance` skill is the method, and the first lever is expressing the predicate over
-the target view's rows rather than re-walking, which the view design above already does.
+priced and cheap. What the implementation owes is the reach, not a wall clock.
+
+Where that reach is pinned follows from the producer not being a `StoreDetections` family:
+`DetectionReadReachGateTest` pins the *detection pass's* per-component reach, and this producer is
+not in that roster, so it would not enter that gate. **The predicate therefore lives wholly in the
+view's SQL**, with the producer doing nothing but decode, which is the division of labour "Where
+it lives" already states for a second reason. The consequence is that the relations the rule reads
+are the view's own declared reads, inside the declaration machinery `MetaDeclarationGateTest`
+walks, rather than a set a Java class could name incompletely. That is also the cheapest honest
+closure of the `sql_index` invariant under "Which constraints may clear a hop": a widening from
+`sql_constraint` to `sql_index` would be an edit to the view's declared reads rather than a
+comment nobody enforces. `DerivedReadCostTest` is not touched, because it prices registrations and
+this item adds none; `MaterializeRegistryGateTest` likewise. If the read proves material on a
+populated store, the `store-performance` skill is the method, and the first lever is expressing
+the predicate over the target view's rows rather than re-walking, which the view design above
+already does.
 
 ## Tests
 
-* **Unit / pipeline.** The predicate over authored fixtures: a pure join table stays quiet, a
-  payload-carrying join table fires, a path terminating on the many side stays quiet, a path
-  with two intermediates fires once and names the multiplying hop.
-* **The discriminating pair the corpus lacks**, per the measurement section: an intermediate
-  whose bound columns sit strictly inside a composite key, one key column bound by neither hop
-  (fires), against the existing `Film.actors` shape (quiet). One test asserting both is what
-  pins the subset direction; a fixture that only fires would pass under the inverted reading
-  too, which is how that reading survived a measurement, and a leaving key outside the primary
-  key produces exactly such a fixture.
-* **No verdict where the predicate is undefined.** An intermediate entered or left by a
-  `CONDITION` or `NAME_MATCH` element yields no finding, and the test says so by name so the
-  silence reads as a decision rather than a gap.
+* **The view, seeded-store tier in `graphitron-model`.** The predicate over rows written one at a
+  time, per the tier split in the measurement section: a pure join table yields `COVERED`, a
+  payload-carrying one yields `FANS_OUT`, a path terminating on the many side yields no row for
+  that terminal element (no leaving hop, so no intermediate), and a path with two intermediates
+  yields two rows carrying different verdicts at their own positions.
+* **The discriminating pair**, per the measurement section: an intermediate whose bound columns
+  sit strictly inside a composite key with one key column bound by neither hop (`FANS_OUT`),
+  against the `film_actor` shape (`COVERED`). One test asserting both is what pins the subset
+  direction; a fixture that only fires would pass under the inverted reading too, which is how
+  that reading survived a measurement.
+* **The undecidable arms are rows, and the test asserts the row.** An intermediate entered or
+  left by a `CONDITION` element yields `UNDECIDABLE_CONDITION_HOP`, and by a `NAME_MATCH` element
+  `UNDECIDABLE_NAME_MATCH_HOP`, with no finding minted from either. Asserting the named verdict
+  rather than an absence is the point: a test that pins a silence cannot tell "declined" from
+  "not implemented".
+* **Absence means one thing.** An element the walk did not reach yields no row at all, asserted
+  as such, so the view's one silence stays the one `intent_field_reference_step_target` owns.
+* **The verdict decode is total.** The producer's switch over the vocabulary has no `default`,
+  and a value the enum does not know throws, per `UnlowerableOrderings.Verdict.of`. A test adds a
+  row with an unknown verdict and asserts the throw, so the view's arms and the enum move
+  together.
+* **`excludedTypes` reaches this rule.** A consumer pattern excluding the enclosing type removes
+  the finding, asserted beside the existing engine-side case so the shared matcher has one
+  meaning.
 * **A filter path stays silent.** An argument-site path through a payload-carrying intermediate
   produces no finding, asserted beside the execution-tier proof that the same path matches each
   parent once, so the scope decision and its reason sit in one place.
-* **The direction, asserted as such.** A unit-tier case with an FK on `(a)` and a `UNIQUE (a,
-  b)` on the arriving table, asserting the hop fires. This is the minimal counterexample to
+* **The direction, asserted as such.** A seeded-store case with an FK on `(a)` and a `UNIQUE (a,
+  b)` on the arriving table, asserting `FANS_OUT`. This is the minimal counterexample to
   `bound ⊆ columns(constraint)` and it belongs in the suite under that name, so the next reader
   who thinks the subset looks backwards finds the answer in a test rather than re-deriving it.
 * **The temporal key**, execution tier on PostgreSQL 18, per the constraints section: a key
   declared `WITHOUT OVERLAPS` does not clear a hop.
 * **Suppression.** The rule id in `disabledRuleIds` removes the finding from the report and from
   `lint_finding`.
-* **The ordering pin** described above.
+* **The ordering pin** described above, which passes on the day it is written and exists to fail
+  if lint assembly moves back out of the capture window.
+* **One end-to-end coordinate, pipeline tier.** The warning arrives at the field, with the
+  expected message, naming the multiplying position.
 * **Registry coverage and the store gates.** `LintRuleRegistryCoverageTest` extended to the new
-  `Source` arm, so the partition stays total; the view registered `Arm.DERIVED` in
-  `FactCaptureAgreementTest`; the family's reach pinned in `DetectionReadReachGateTest`.
+  `Source` arm, so the partition stays total, and the arm's own assertion stated on the producer
+  axis (no visitor, no classifier emit site) to match the three that exist; the view registered
+  `Arm.DERIVED` in `FactCaptureAgreementTest`. `DetectionReadReachGateTest` is **not** touched,
+  the producer not being a member of the detection pass; `DerivedReadCostTest` and
+  `MaterializeRegistryGateTest` likewise, no registration being added.
 
 ## User documentation
 
@@ -452,10 +567,12 @@ A `@reference` page note stating the property and the remedy, and a row in whate
 rules reference page becomes (`roadmap/lint-rule-reference-page.md`, R592, owns that page; this
 item should not invent a second home for rule documentation). The note has to say what the rule
 does *not* cover, each boundary in its own terms: a filter path on an argument or an input field
-is lowered to a semi-join and has no fan-out to warn about; a `@referenceFor` path and an
-intermediate reached through a `CONDITION` or `NAME_MATCH` element are not judged, so a quiet
-build is not a statement about them; and a scalar field over a fanning path is a different
-defect, per "Out of scope".
+is lowered to a semi-join and has no fan-out to warn about; a `@referenceFor` path is not judged,
+so a quiet build is not a statement about it; a hand-written join, meaning an intermediate reached
+through a `CONDITION` or `NAME_MATCH` element, is where the rule most needs to say it is not
+looking, since that is where an author is most likely to assume it did; a type excluded through
+`excludedTypes` is not linted by this rule either; and a scalar field over a fanning path is a
+different defect, per "Out of scope".
 
 State the semantics plainly, in the reporter's own framing: the multiset is the correct result
 of the declared path, the warning exists because the declaration is easy to misread as a set,
@@ -730,6 +847,28 @@ Non-blocking, and stated only so they do not survive into implementation:
   paths stay out of scope, but it would be if finding 1 of round 1 were ever revisited.
 * I did not re-run the corpus measurement, as in round 1. No finding here turns on the counts.
 
+**Response.** Both findings taken, and the shape question answered against the tree as it stands
+rather than as the earlier draft found it.
+
+The stale premise is withdrawn. "The ordering hazard" now says what is true: the hazard was live
+when this item was filed, `cddf62c` closed it by moving `withLintFindings` inside the capture
+continuation with the live `StoreHandle`, and the section keeps only the warm-cache reasoning and
+the two-run pin, whose job is now to fail if lint assembly ever moves back out. The
+`disabledRuleIds` instruction is gone, the filter staying exactly where it is.
+
+On the fork, neither of the two shapes the finding named. The verdict is computed by a producer in
+`no.sikt.graphitron.model.lint` beside `DeprecationRecognizer`, driving one statement from the
+view and folded into `withLintFindings` beside `SessionStateWarnings` and
+`DependencyVersionWarnings`. That keeps the single warning assembly point and the filter's current
+position, needs no `warnings()` accessor and no `runPipeline` fold-in, and still reads the
+recursive view once per answer rather than correlating it per node, which the lint engine's own
+per-node traversal would do. "Where it lives" carries both refusals with their reasons:
+`StoreDetections` is declined because that record's existing members earn their place by having a
+second consumer and this verdict has one, the durable shared artefact being the view; the visitor
+is declined on the read-shape rule in `fact-model.adoc`. The artefact table names the producer in
+place of the decoding family, and `StoreDetections` is untouched.
+
+
 #### Round 2 addendum, same session, after a `principles-architect` consult
 
 Two corrections to my own round above and one finding I missed. The consult is read-only and
@@ -802,3 +941,39 @@ Three more, non-blocking:
   pinned at the pipeline tier. The subset-direction case, an FK on `(a)` against a `UNIQUE (a, b)`,
   is a seeded-store test needing no catalog and no `init.sql` edit; the end-to-end coordinate and
   message is pipeline tier. Stating that split removes the catalog-churn risk entirely.
+
+**Response to the addendum.** All three taken.
+
+The `Source` arm is now argued on producer identity, citing the coverage test's three assertions
+rather than the enum's prose, and the spec says in as many words not to draw it on catalog facts
+against AST facts because that would splice a second axis onto the producer identifier. The
+restatement of `LintRule`'s `ENGINE` javadoc onto the producer axis is added to the same commit's
+scope, since that sentence is what sent the earlier draft wrong.
+
+The third shape is the one chosen; see the response above.
+
+Finding 6 changed the rule section, not just the tests. The view now carries a `verdict` column
+over a closed vocabulary, `FANS_OUT | COVERED | UNDECIDABLE_CONDITION_HOP |
+UNDECIDABLE_NAME_MATCH_HOP`, one row per intermediate keyed on the entering element's coordinate,
+so absence means only "the walk did not reach this element", the silence
+`intent_field_reference_step_target` already owns. The paragraph states why the four-meaning
+absence was wrong in this document's own terms, and the three consequences the finding predicted
+are taken: a total decode with a drift throw modelled on `UnlowerableOrderings.Verdict.of`, tests
+that assert a named row instead of an absence, and the scalar-field sibling reading the column.
+
+The three non-blocking notes are taken as decisions rather than noted. The rule honours
+`excludedTypes` through a shared matcher, with a fence saying this changes nothing for the
+existing classifier advisories and that the glob rule must not end up stated twice. The
+`sql_index` invariant is closed by keeping the predicate wholly in the view's SQL, so a widening
+is an edit to the view's declared reads rather than a comment with no enforcer; the Cost section
+carries the same decision from the other end, since the producer is not in
+`DetectionReadReachGateTest`'s roster and would otherwise have pinned nothing. The fixture tier is
+settled as seeded-store in `graphitron-model` for the discriminating pair and the
+subset-direction case, pipeline tier for one end-to-end coordinate, which removes the `init.sql`
+foreign key and the catalog churn with it; the `film_actor_note` walkthrough stays as the worked
+shape the seeded rows encode.
+
+**Authoring note.** These revisions were written by the round-2 reviewer's session at the user's
+explicit instruction, so the same session is now this file's last committer and is disqualified
+from the Spec → Ready gate. That gate needs a third session, disqualifying both
+`session_018X5xFp3fLA3Nt8PPHY6yxz` and `session_01NMdpgoUnNPHP51NMZXKP49`.
