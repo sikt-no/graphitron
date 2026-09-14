@@ -20,7 +20,7 @@ import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
  * <p>Tests use real tables from the {@code TestConfiguration} jOOQ catalog (e.g.
  * {@code customer}, {@code film}). They declare {@code @key} inline since
  * {@code TestSchemaHelper} does not run {@link KeyNodeSynthesiser} (that lives in
- * {@code GraphQLRewriteGenerator.loadAttributedRegistry}, which the helper bypasses).
+ * {@code AttributedRegistry.load}, which the helper bypasses).
  * The {@link EntityResolutionBuilder} also synthesises a {@link KeyAlternative.NodeId}
  * alternative for every NodeType regardless of {@code @link} presence, so {@code @node}
  * types in test SDLs still get an entity entry.

@@ -86,6 +86,7 @@ import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * Entry point for the rewrite code-generation pipeline.
@@ -362,54 +363,6 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Package-private so tests can exercise the attribution + load + apply
-     * pipeline without incurring the full emission stage. Production callers
-     * always go through {@link #generate()}.
-     *
-     * <p>Returns the loaded {@link AttributedRegistry} carrying both the
-     * {@link graphql.schema.idl.TypeDefinitionRegistry} and the federation
-     * {@code injectedNames} captured from {@link FederationLinkApplier#apply}'s
-     * return value (the {@code federationLink} flag is derived from it), so
-     * downstream stages read both without re-walking the registry.
-     */
-    AttributedRegistry loadAttributedRegistry() {
-        return loadAttributedRegistry(new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()));
-    }
-
-    /**
-     * {@link #loadAttributedRegistry()} over a jOOQ catalog the pass already loaded. The catalog is
-     * only reached when the federation {@code @link} injector produced names, {@code @key}
-     * synthesis resolving its node declarations against it; taking it as a parameter is what keeps
-     * a pass to one load of the generated classes rather than one per stage that wants them.
-     */
-    private AttributedRegistry loadAttributedRegistry(JooqCatalog jooq) {
-        var bySource = SchemaInputAttribution.build(ctx.schemaInputs());
-        // Read every source, refusing none of them on another's behalf, and carry the refusals
-        // rather than throwing on them. A source that will not parse costs its own declarations and
-        // nothing else, and a declaration the registry will not admit costs itself; the run's
-        // verdict on those refusals is pronounced downstream, after they have been recorded, so a
-        // freshly broken file cannot blank the facts about every file beside it.
-        var read = SchemaLoader.parsePerSource(loadableSources(ctx.schemaInputs()));
-        var registry = read.registry();
-        TagLinkSynthesiser.apply(registry, bySource);
-        var injectedNames = FederationLinkApplier.apply(registry);
-        TagApplier.apply(registry, bySource);
-        DescriptionNoteApplier.apply(registry, bySource);
-        // Everything above is a loading rewrite and everything below is synthesis, which is the
-        // line the capture handle is cut on. TagApplier and DescriptionNoteApplier sit above it
-        // deliberately: their @tag applications and appended notes are in the emitted schema, and
-        // the store owes a round trip, so capture has to see them. They used to sit below
-        // KeyNodeSynthesiser, which changed nothing about the registry either applier produces
-        // (neither touches the directive list KeyNodeSynthesiser rewrites) but did decide, by
-        // accident of ordering, what a capture cut here would see.
-        var preSynthesis = registry.readOnly();
-        if (!injectedNames.isEmpty()) {
-            KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));
-        }
-        return new AttributedRegistry(registry, preSynthesis, injectedNames, read);
-    }
-
-    /**
      * Runs the assembly stage and records every stage's verdict, then pronounces the run's own
      * verdict on them.
      *
@@ -480,24 +433,6 @@ public class GraphQLRewriteGenerator {
     private record ReadSchema(GraphQLSchema assembled, SdlVerdicts verdicts,
                               SchemaAssembly preSynthesisAssembly) {}
 
-    /**
-     * The run's inputs projected onto what the loader can open. The switch is checked for coverage
-     * rather than for absence: no context in the tree carries a label this far, so the named branch
-     * is a guard rather than a live path, and its value is that a new source kind cannot silently
-     * shorten the schema. A label reaching a pipeline run keeps the loader's own
-     * "Schema file not found", which is what it produced before the parameter narrowed.
-     */
-    private static List<SchemaSource.File> loadableSources(List<SchemaInput> inputs) {
-        var sources = new ArrayList<SchemaSource.File>(inputs.size());
-        for (SchemaInput input : inputs) {
-            switch (input.source()) {
-                case SchemaSource.File file -> sources.add(file);
-                case SchemaSource.Named named ->
-                    throw new RuntimeException("Schema file not found: " + named.label());
-            }
-        }
-        return sources;
-    }
 
     /**
      * Runs the capture loads into a fact store for this pass, runs the store-backed detections over
@@ -655,7 +590,7 @@ public class GraphQLRewriteGenerator {
         var census = reading.references();
         LOGGER.debug("{}", reading.round().report());
 
-        var attributed = loadAttributedRegistry(jooq);
+        var attributed = AttributedRegistry.load(ctx, jooq);
         var read = assembleAndCaptureVerdicts(attributed, jooq, reading);
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, read.assembled(), ctx);
         var schema = bundle.model();

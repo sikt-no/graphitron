@@ -25,6 +25,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * End-to-end coverage of federation {@code @tag} inheritance: the federation {@code @tag} on an {@code @asConnection} carrier
@@ -33,7 +34,7 @@ import no.sikt.graphitron.model.config.RunContext;
  *
  * <p>Exercises both tag sources. The explicit arm writes {@code @tag} directly in the SDL and
  * asserts on the assembled schema. The {@code <schemaInput tag>} arm drives the tag through
- * {@code TagApplier} via the {@code loadAttributedRegistry()} hook in the
+ * {@code TagApplier} via the {@code AttributedRegistry.load} hook in the
  * {@code TaggedInputsPipelineTest} shape; because that path also synthesises the federation
  * {@code @link}, its built schema is federation-shaped and feeds the emission round-trip
  * (the {@code FederationBuildSmokeTest} shape, through {@link SchemaSdlEmitter}).
@@ -98,7 +99,7 @@ class ConnectionFederationTagPipelineTest {
         var ctx = new RunContext(
             List.of(new SchemaInput(SchemaSource.file(src), Optional.of("catalog"), Optional.empty())),
             tmp, "ConnectionFederationTagPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-        var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
+        var registry = AttributedRegistry.load(ctx);
         return GraphitronSchemaBuilder.buildBundle(registry, ctx);
     }
 

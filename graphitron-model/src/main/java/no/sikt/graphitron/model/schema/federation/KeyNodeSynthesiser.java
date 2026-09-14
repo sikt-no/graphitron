@@ -29,7 +29,7 @@ import java.util.List;
  * before any type is classified, which is why the predicate is a shared SDL-plus-catalog function
  * rather than a read of the classified registry: there is nothing classified to read here.
  *
- * <p>Runs in the {@code loadAttributedRegistry} pipeline after {@link FederationLinkApplier}
+ * <p>Runs in the {@link no.sikt.graphitron.model.schema.AttributedRegistry#load} read after {@link FederationLinkApplier}
  * (so the {@code @key} directive declaration is in scope) and before {@code TagApplier}
  * (which iterates {@code @tag}s; ordering is independent but stable). The orchestrator only
  * invokes this when {@code federationLink} is true; calling it on a registry without

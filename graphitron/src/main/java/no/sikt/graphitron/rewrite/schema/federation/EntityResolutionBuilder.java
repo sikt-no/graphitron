@@ -184,7 +184,7 @@ public final class EntityResolutionBuilder {
             }
             // Synthesise a NODE_ID alternative when no explicit @key(fields: "id") is among the
             // user-declared keys (KeyNodeSynthesiser fills this in at the registry level; tests
-            // that bypass loadAttributedRegistry rely on this synthesis instead). Prepend so the
+            // that bypass the attributed read rely on this synthesis instead). Prepend so the
             // most-specific selection logic still finds the user's wider keys first.
             if (isNodeType && !hasNodeIdAlternative(alternatives)) {
                 NodeType nt = (NodeType) gType;

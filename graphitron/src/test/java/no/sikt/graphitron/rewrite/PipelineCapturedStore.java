@@ -19,12 +19,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * A fact store captured behind the attribution pipeline production runs, taking the handle
  * production captures. The two-tier arm of the capture harness, and the reason it is here rather
  * than beside the rest of {@link CapturedStore}: everything on that handle is a capture and lives
- * with capture, and this one runs {@link GraphQLRewriteGenerator#loadAttributedRegistry()} first, so
+ * with capture, and this one runs {@link no.sikt.graphitron.model.schema.AttributedRegistry#load} first, so
  * it can only exist where both tiers are visible.
  *
  * <p>The difference the pipeline makes is the whole point of the arm. A bare parse would let

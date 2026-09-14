@@ -18,6 +18,7 @@ import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * Shared test helper that builds a {@link GraphitronSchema} from inline SDL,
@@ -190,7 +191,7 @@ public final class TestSchemaHelper {
      * than the pipeline.
      */
     public static AttributedRegistry attributedRegistry(RunContext ctx) {
-        return new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
+        return AttributedRegistry.load(ctx);
     }
 
     /**

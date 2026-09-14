@@ -25,7 +25,7 @@ import java.util.stream.Stream;
  * When {@code <schemaInput tag>} is configured (i.e. any {@link SchemaInput} carries a
  * non-empty {@code tag}), this synthesiser ensures the registry has a federation
  * {@code @link} that imports {@code "@tag"}. It runs before {@link FederationLinkApplier} in the
- * {@code loadAttributedRegistry} pipeline so the synthesised extension is processed by the
+ * {@link no.sikt.graphitron.model.schema.AttributedRegistry#load} read so the synthesised extension is processed by the
  * same {@code LinkDirectiveProcessor} call as author-written {@code @link}s.
  *
  * <p>Three outcomes:

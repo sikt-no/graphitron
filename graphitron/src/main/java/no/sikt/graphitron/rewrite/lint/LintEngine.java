@@ -42,6 +42,7 @@ import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 
 /**
@@ -110,7 +111,7 @@ public final class LintEngine {
     /**
      * As {@link #run(TypeDefinitionRegistry, StoreHandle)}, but also excludes the federation {@code @link}
      * injector's definitions ({@code injectedNames}, from
-     * {@link no.sikt.graphitron.rewrite.AttributedRegistry#injectedNames()}). Both {@code injectedNames}
+     * {@link no.sikt.graphitron.model.schema.AttributedRegistry#injectedNames()}). Both {@code injectedNames}
      * and {@code BUNDLED_TYPE_NAMES} are generator-owned surface the author never wrote and cannot
      * rename or document, so linting them is pure noise; the exclusion widens the existing
      * name-set skip to a second contributor rather than adding a new skip mechanism.

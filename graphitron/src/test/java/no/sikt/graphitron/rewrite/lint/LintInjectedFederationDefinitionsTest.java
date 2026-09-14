@@ -28,7 +28,7 @@ import no.sikt.graphitron.model.lint.LintRule;
  * a non-compliant author {@code @node} type, run {@link FederationLinkApplier#apply} (which injects
  * the federation definitions and returns their names) and {@link KeyNodeSynthesiser#apply} (which
  * decorates the author {@code @node} type in place with {@code @key}, exactly as
- * {@code loadAttributedRegistry} does), then lint with the injected-name exclusion. The single
+ * {@code AttributedRegistry.load} does), then lint with the injected-name exclusion. The single
  * fixture pins both halves: injected names are silent, and the real author violation still fires
  * even on the {@code @node} type that synthesis decorated. Assertions are on the typed
  * {@link LintRule} and the minimum node-identity check, never on rendered diagnostic wording.
@@ -52,7 +52,7 @@ class LintInjectedFederationDefinitionsTest {
         assertThat(injectedNames)
             .as("federation @link injects namespaced definitions")
             .anyMatch(n -> n.startsWith("federation__") || n.startsWith("link__"));
-        // Mirror loadAttributedRegistry: synthesis decorates the author @node type in place.
+        // Mirror AttributedRegistry.load: synthesis decorates the author @node type in place.
         KeyNodeSynthesiser.apply(registry, TestSchemaHelper.nodeDeclaration());
 
         // An empty store: this case is about the name-set exclusion, and no rule it exercises asks

@@ -21,7 +21,7 @@ import no.sikt.graphitron.model.diagnostics.SchemaParseException;
  * Confirms a syntactically broken schema surfaces as the same {@link SchemaParseException}
  * out of the generator entry point as out of {@code SchemaLoader.load} directly:
  * the loader throws it, and it propagates unchanged through
- * {@code GraphQLRewriteGenerator.loadAttributedRegistry()} into {@link GraphQLRewriteGenerator#generate()}
+ * {@code AttributedRegistry.load} into {@link GraphQLRewriteGenerator#generate()}
  * with no translation step. The build-time pipeline therefore still fails on a broken schema,
  * carrying the attributed file:line:col message rather than a bare wrapper.
  *

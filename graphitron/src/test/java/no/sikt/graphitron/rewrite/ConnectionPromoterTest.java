@@ -27,6 +27,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * Resolver-tier coverage for {@link ConnectionPromoter}: asserts that promotion synthesises

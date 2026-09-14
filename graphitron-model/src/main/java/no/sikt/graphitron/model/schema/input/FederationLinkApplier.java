@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * Injects federation directive declarations into the registry when the schema contains an
@@ -28,7 +29,7 @@ import java.util.stream.Stream;
  * {@code federation-graphql-java-support}, which tracks the federation spec and gates each
  * directive on its minimum spec version.
  *
- * <p>Runs in the {@code loadAttributedRegistry} pipeline before {@link TagApplier}, so the
+ * <p>Runs in the {@link no.sikt.graphitron.model.schema.AttributedRegistry#load} read before {@link TagApplier}, so the
  * injected declarations are available when {@code SchemaGenerator.makeExecutableSchema} validates
  * directive uses. Must run after any schema-extension synthesiser (e.g. {@link TagLinkSynthesiser})
  * that injects a {@code @link} the author omitted.

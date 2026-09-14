@@ -18,6 +18,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * End-to-end coverage of the tagged-inputs pipeline driven through the new
@@ -26,7 +27,7 @@ import no.sikt.graphitron.model.config.RunContext;
  * caching the classifier might introduce between registry mutation and schema
  * build is covered by this test.
  *
- * <p>Uses the package-private {@code loadAttributedRegistry()} hook so we can
+ * <p>Reads through {@code AttributedRegistry.load} so we can
  * exercise the wiring that {@link GraphQLRewriteGenerator#run()} feeds into
  * the pipeline without paying the emission stage's configured-output-paths
  * tax. {@code run()} itself is a one-liner over this method, so the wiring is
@@ -70,7 +71,7 @@ class TaggedInputsPipelineTest {
             DEFAULT_JOOQ_PACKAGE
         );
 
-        var registry = new GraphQLRewriteGenerator(ctx).loadAttributedRegistry();
+        var registry = AttributedRegistry.load(ctx);
         GraphQLSchema assembled = GraphitronSchemaBuilder.buildBundle(registry, ctx).assembled();
 
         // Tagged-only: @tag present on fields, no description change.

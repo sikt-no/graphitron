@@ -68,6 +68,7 @@ import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
+import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
  * Builds a {@link GraphitronSchema} from a {@link TypeDefinitionRegistry} by classifying every
@@ -131,7 +132,7 @@ public class GraphitronSchemaBuilder {
 
     /**
      * Convenience overload for tests that hand-craft a {@link TypeDefinitionRegistry} without
-     * running {@link GraphQLRewriteGenerator#loadAttributedRegistry}. Wraps via
+     * running {@link no.sikt.graphitron.model.schema.AttributedRegistry#load}. Wraps via
      * {@link AttributedRegistry#from(TypeDefinitionRegistry)}; production code uses
      * {@link #build(AttributedRegistry, RunContext)} directly.
      */
