@@ -186,8 +186,14 @@ The change:
    each reader. The view's classpath arm ends on a join to `jvm_declared_type_ref` at `type_path = ''`
    and `owner_kind = 'METHOD_PARAMETER'`; that join becomes a `LEFT JOIN`, so the name-matched
    `jvm_method_parameter` row is the membership condition and the type is a payload, and a parameter
-   whose type names no class becomes a row with `java_type` NULL instead of no row. Two precedents,
-   both load-bearing. The other operand of the very same equality already made this choice:
+   whose type names no class becomes a row with `java_type` NULL instead of no row. The arm's
+   `SELECT DISTINCT` gains `mp.parameter_type` beside `tr.referenced_class`, and the view's column
+   list gains `parameter_type` at the end; the routine arm supplies `CAST(NULL AS VARCHAR)` there.
+   That second column is what the predicate below reads, and putting it here rather than reaching for
+   it downstream is the whole of why the widening is worth its cost: without it the relation would
+   carry the membership of a primitive parameter and not the one fact that distinguishes a primitive
+   from the array and the type variable beside it, and the consumer would have to re-resolve the
+   chain to find it. Two precedents, both load-bearing. The other operand of the very same equality already made this choice:
    `intent_argmapping_key_column_candidate.column_java_type` is "NULL where the catalog cannot
    answer", and its comment argues that absence "is a payload absence rather than a missing row", so
    the two sides of one comparison use opposite membership rules today. And
@@ -202,10 +208,36 @@ The change:
    parameter type by `LEFT JOIN` and keeps `p.java_type IS NULL`, so a pair that now draws a
    null-typed row still resolves exactly as it did when it drew none. `KEY_COLUMN_TYPE_MISMATCH`
    tests `pt.java_type <> ca.column_java_type`, which is NULL-false on the new rows, so that arm
-   neither gains nor loses a rejection. What the widening owes is a stated reading of `candidates`
-   for a row whose type is NULL, and one sentence of the view's comment: "absence is four facts"
-   becomes three absences plus a payload NULL, which is the relation getting more precise rather
-   than less.
+   neither gains nor loses a rejection. The third reader, `intent_node_id_decode_slot`, already
+   outer-joins this relation and names `bp.java_type` alone, so an ordinary primitive parameter
+   arrives there as the same one row carrying the same NULL it was null-extended into before. All
+   three name their columns, none selects `*`, so the new column reaches no reader that did not ask
+   for it.
+
+   The `candidates` reading the widening owes settles itself once the column is projected, which is
+   why the two are one decision rather than two. `candidates` counts rows in the grain's partition
+   and the arm is a `SELECT DISTINCT`, so a column that is selected is inside that DISTINCT by
+   construction: two primitive overloads at one position (`int` and `long`) stay two rows and report
+   `candidates = 2`, where a widening that projected only the NULL type would have collapsed them
+   into one row claiming an unambiguous answer. Every reader requiring `candidates = 1` therefore
+   stands aside on such a pair exactly as it does on an overload of two reference types, which is the
+   discipline the view's comment already states and the one place a naive widening would have
+   silently broken it. `intent_node_id_decode_slot` is the one reader that deliberately does not
+   require one candidate, counting its own rows instead so that an ambiguity refuses rather than
+   resolves; such an overload becomes two rows there where it was one null-extended row, which is the
+   direction that relation's own comment asks for and is stated here rather than discovered.
+
+   Two comment edits, and no more. "Absence is therefore four facts" becomes three absences plus a
+   payload NULL, which is the relation getting more precise rather than less. And
+   `candidates`'s own column comment, "how many distinct types resolved for this pair", becomes the
+   declared spellings it now counts, one clause.
+
+   What the routine arm must not do is put `sql_routine_parameter.binding_type` in the new column.
+   That type is fully qualified where `jvm_method_parameter.parameter_type` drops the package, and
+   one column spelled two ways across two arms is the exact confusion the view's comment says the
+   classpath arm reaches one relation further to avoid. NULL there is the honest answer: the erased
+   source spelling is a classpath fact, a routine parameter has no `jvm_method_parameter` row to read
+   it from, and the refusal this column exists for cannot fire at a routine anyway.
 
    **The predicate.** The NULL payload is not by itself the primitive test, and this is the one place
    the earlier draft would have over-fired. `jvm_declared_type_ref` has no root row for an array or a
@@ -213,12 +245,28 @@ The change:
    `intent_condition_param_extraction.java_type`: NULL there is "the type names no class, a
    primitive, an array, or a type variable". An `int[]` or a generic `T` parameter would have drawn a
    refusal telling its author to declare `Integer`, which names the wrong fact and offers a remedy
-   that does not apply. So the refusal tests `jvm_method_parameter.parameter_type`, the erased
-   source form, against the eight primitive spellings: a closed vocabulary, and the same spelling the
-   message needs to quote. That column is read to spell a message and compared across no census, so
-   the chain's documented reason for reaching `jvm_declared_type_ref` rather than reading it stands.
-   Arrays and type variables keep today's stand-aside, and the item states that as a silence it owns
-   rather than leaving it as a gap.
+   that does not apply. So the refusal tests the erased source form against the eight primitive
+   spellings: a closed vocabulary, and the same spelling the message needs to quote. It reads it off
+   the widened relation's new `parameter_type` column, which is the whole reason that column is
+   projected: the consumer already joins this relation on this grain, so the operand rides the join
+   it already makes and no second resolution is spelled anywhere. Reaching `jvm_method_parameter`
+   from the consumer instead would mean re-spelling the classpath chain
+   (`graphitron_method_reference_entry` to `store_graph_source` to `jvm_method` to the parameter row,
+   matched on the parameter name), which is the third spelling `## Other solutions we've considered`
+   rejects one section down, and it is rejected here for the same reason.
+
+   Carrying the column at all is safe on the view's own terms, which is worth stating because its
+   comment spends a paragraph on why the classpath arm does *not* read that column for the type.
+   The objection there is to comparing it: it drops the package, so an equality against the catalog
+   arm's qualified type would never match and the mismatch would read as a genuine disagreement. This
+   column is compared across no census and never against `java_type`. It is tested against a closed
+   vocabulary of eight literals and quoted in a message, and its own column comment says exactly that,
+   so the arm's documented reason for reaching `jvm_declared_type_ref` for the *type* stands
+   untouched. The precedent is one relation over: `intent_node_id_decode_slot`'s `NAMED_PARAMETER`
+   arm already holds `jvm_method_parameter` and outer-joins `jvm_declared_type_ref` off it at the
+   same root type path, so a parameter row in hand beside a nullable decomposition is a shape this
+   family already has. Arrays and type variables keep today's stand-aside, and the item states that
+   as a silence it owns rather than leaving it as a gap.
 
    **The verdict.** Minted in `ArgmappingProjectionDefects`, not as a sixth arm of
    `intent_argmapping_projection_defect`. The view's comment states the rule: an arm whose
@@ -228,14 +276,20 @@ The change:
    above and it evaporates, which is exactly not true of `KEY_COLUMN_TYPE_MISMATCH`, whose two
    operands are captured facts and whose verdict is Java assignability. So the verdict vocabulary
    stays closed at five and that view's comment is not rewritten. The consumer joins the widened
-   relation on the grain it already holds and mints an ordinary non-deferred defect beside the ones
-   it already mints.
+   relation on the grain it already holds, reads both of its type columns off that one join, and
+   mints an ordinary non-deferred defect beside the ones it already mints: a row whose `java_type` is
+   NULL and whose `parameter_type` is one of the eight. The message quotes the spelling the author
+   wrote and names the boxed type they want instead, since the remedy is one word at the parameter.
 
    Scope, cost and residue. The routine arm reads `sql_routine_parameter.binding_type`, the generated
    method's own boxed type, so a `@routine` parameter cannot present a primitive and this refusal is
-   the `@condition` half's alone. No new relation stands up, so there is no owner to compute.
-   `ArgmappingProjectionDefects.READS` gains `INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE` as a named
-   root; `DetectionReadReachGateTest`'s pin does not move, that relation already sitting in this
+   the `@condition` half's alone. No new relation stands up, so there is no owner to compute, and
+   the whole store-side cost is one `JOIN` to `LEFT JOIN`, one projected column with its comment, two
+   comment clauses elsewhere on the same view, and nothing outside it.
+   `ArgmappingProjectionDefects.READS` gains `INTENT_ARGMAPPING_BOUND_PARAMETER_TYPE` as its only new
+   named root, which is what projecting the column buys: the consumer names one relation it did not
+   name before rather than the four a re-resolution would have taken.
+   `DetectionReadReachGateTest`'s pin does not move, that relation already sitting in this
    component's reach and the widening adding no view to it, every other relation in the chain being a
    base table the walk stops at. The three absences that remain are the residue this refusal owns the
    boundary of and does not close: a reference resolving no method, a method declaring no parameter
@@ -278,8 +332,9 @@ The change:
 
 ## User-facing docs
 
-The rule lands once, in the routine page's "Projecting a key column out of a node id" section
-(`docs/manual/reference/directives/routine.adoc`), beside the three build errors it already lists: an
+The rule lands once, in the routine page's "Binding a parameter to a node id's key column" section
+(`docs/manual/reference/directives/routine.adoc`, anchor `node-id-key-projection`, which is the
+spelling every xref into it uses), beside the three build errors it already lists: an
 omitted or null `@nodeId` anywhere on the projected path projects `null`, and the routine parameter
 receives it, so a NULL-tolerant function is the way to express an optional filter. The new build
 error does not go on this page, and that is the correction worth stating: a `@routine` parameter's
@@ -316,7 +371,9 @@ section.
   which survives the hoist unchanged and would give the sweep nothing to find.
 * "Absence is therefore four facts and this relation distinguishes none of them" in
   `intent_argmapping_bound_parameter_type`'s view comment, and the enumeration of four that follows
-  it. Three absences and a payload NULL after step 5.
+  it. Three absences and a payload NULL after step 5. Beside it on the same view, "how many distinct
+  types resolved for this pair" in `candidates`'s own column comment: it counts distinct declared
+  spellings once step 5 projects one, which is what keeps two primitive overloads two rows.
   `intent_argmapping_projection_defect`'s "closed verdict vocabulary of five" is deliberately not on
   this list: the verdict lands in the consumer, so that vocabulary stays closed at five.
 
@@ -346,7 +403,11 @@ section.
   leg into a `NOT EXISTS`, which needs no change to any existing relation. Rejected: it would be the
   third spelling of one resolution, in a family whose own comment records collapsing seven spellings
   of that join into one, and the two spellings would agree exactly until one of them changed. The
-  widening costs one `JOIN` to `LEFT JOIN` and one sentence of a comment.
+  widening costs one `JOIN` to `LEFT JOIN`, one projected column, and two clauses of a comment. The
+  same rejection covers the variant that reaches `jvm_method_parameter` from the consumer rather than
+  from a second view arm: it is the same re-resolution wearing Java instead of SQL, it would name
+  four relations where the projected column names one, and it would have to match on the parameter
+  name a second time to get there.
 * **A sixth verdict in `intent_argmapping_projection_defect`.** Keeps the predicate in SQL beside
   `KEY_COLUMN_TYPE_MISMATCH`, which it resembles. Rejected on that view's own placement rule: this
   refusal exists because of how the generator emits, not because of what the schema says, and the
