@@ -1,7 +1,7 @@
 ---
 id: R949
 title: "Two @nodeId input fields over one table share a decoder that hardcodes one typeId"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: nodeid
@@ -341,3 +341,76 @@ is worth rewriting in the same edit rather than leaving it to contradict the fix
 
 *Response (2026-09-14).* Taken. `## Tests` now says the sentence is rewritten with the fixture, and
 what actually keeps the `@referenceFor` fixture unambiguous once the table backs two node types.
+
+### Round 2 (2026-09-14, Spec -> Ready, reviewer session 012JG1qADbz5qT3c8RCrrPCh)
+
+Verdict: sign off. Both gate questions pass, and round one's blocking finding is answered by taking
+an arm rather than by arguing the fork away.
+
+*Question one.* The goal reads without the phase list. A schema that declares two `@node` types over
+one table, which is the shape you are in for the whole of a node-type rename that keeps the old name
+exposed, gets one working `@nodeId` input field and one broken one: both fields collapse onto a
+single generated decode helper that checks every id against one hardcoded typeId, so the loser
+rejects its own valid ids as a redacted "An error occurred" and accepts the winner's ids silently.
+After this lands each field decodes against the type its own `typeName` names, two helpers with two
+typeIds, and the rename migration works through mutation inputs and not only through output fields.
+Consumers whose node type name differs from the backing table's jOOQ record stem also see the
+private helper renamed in emitted sources, which the plan states and which is invisible at their
+compile boundary.
+
+The outcome is reachable: the name is already in hand at every site the plan repoints. The three
+leaf mints are exactly `ServiceCatalog`, `InputBeanResolver` and
+`TypeFetcherGenerator.collectProjectionDecoders` (`new CallSiteExtraction.NodeIdDecodeRecord(` has
+three occurrences in main sources); `BuildContext.resolveOneRecordDecode` already takes `typeName`
+as a parameter and drops it on the floor when it mints `NodeIdRecordDecode.Resolved`;
+`KeyProjection.nodeTypeName()` is a declared component; and `RecordDecodeHelperRegistry.register`
+already receives `nodeTypeName` and forwards it only to
+`RecordDecodeFragments.decodeHelper`'s failure-message argument. Everything else the spec names
+checks out under the name it gives, FQN-aware: the two `ProjectedKeyHost` constructions, the four
+`decodeSingular` / `decodeList` call sites, `FetchersHelperNames`'s `decodeStems` / `containerStems`
+/ `required` / `containerStem` / the two `of` overloads, the `IdEncoderResolution.Ambiguous` and
+`ambiguousImplicitNodeError` and `inferNodeTypeAtSlot` policy sites,
+`CallSiteExtraction.PolymorphicCandidate`, `StoreNodeTables.NodeTable`, and every named test, fixture
+and sakila symbol. The `language` premises hold too: `Language` is a plain `@table` type with no `ID`
+field, no `table: "language"` mutation exists in the example schema, and `init.sql` seeds three rows.
+
+*Question two.* The plan extends a shape the tree already has rather than standing one beside it.
+Keying the decode on the node type is the policy every other node resolution already applies, and
+the sibling in the same package, `CompositeDecodeHelperRegistry`, is type-name keyed already: I
+confirmed its `helperName` builds `decode<TypeName>{Key,Keys,Row,Rows}` with an optional `OrThrow`,
+so the `Record` suffix this family ends in genuinely cannot collide with any of them and the
+conditions class needs no claimed-set check, as the new section says. Replacing the `decode*`
+`disambiguate` pass with one claimed set that throws is the shape `FetchersHelperNames` already uses
+for its routing-hole refusals, not a new mechanism, and the coverage argument for retiring
+`decodeNamespace_disambiguatesIndependently` holds: `jooqLayoutCollision_prefixesSchemaSegment`,
+`beanPackageCollision_prefixesLastSegment`, `samePrimarySegment_extendsRightToLeft` and
+`derivedListNameOverlap_isCaught` all exercise `disambiguate` on the surviving `create*` arm.
+
+Round one's finding is settled in the direction that keeps the Goal whole: both hosts move, so one
+node type cannot end up `decodeMovieRecord` on its fetchers class and `decodeFilmRecord` on a
+conditions class for the same decode. The conditions-host pin lands on a fixture that already exists
+and already asserts the thing the rename has to leave alone. The execution tier is the part I would
+have asked for if it were missing: `assignLanguagePair_nodeIdAtAliasField_refuses` fails on today's
+generator by succeeding, which is the silent half of the bug, and the mirror case pins that the
+refusal that works today keeps working for its own reason rather than by accident. I would hand this
+to an implementer as written.
+
+**Non-blocking, none of it bearing on either gate question.**
+
+* `of(...)` today receives container *names* (`scalarPolyDecoders.keySet()`), not their members, so
+  folding `decode<Container>Record<Member>` into the claimed set is one parameter change plus one
+  line at the `TypeFetcherGenerator` call site rather than free. Nothing about the design turns on
+  it; "at no extra cost" just undersells the plumbing by a line.
+* "which is every type in the sakila fixtures" is not literally true of the fixtures as they stand:
+  `LanguageNode` over `language` and `FilmEndorsementNode` over `film_endorsement` both have a type
+  name that differs from their table's record stem. The conclusion it supports survives anyway,
+  because neither reaches the record-decode family: both are spent at key grain through
+  `CompositeDecodeHelperRegistry`, which is type-name keyed already, so no emitted record-decode name
+  in the example module changes and `GeneratedSourcesSmokeTest` really does gain no expectation.
+* Three javadoc passages paraphrase the retired record-class identity without containing any term
+  `## Retired vocabulary` declares, so the Done-gate sweep's grep will not surface them:
+  `RecordDecodeHelperRegistry`'s class javadoc ("Deduplicated by record class, which is the grain
+  that matters"), `RecordDecodeFragments`'s ("resolves `decode*` stems across the union of every
+  record class it hosts"), and `BuildContext.NodeIdRecordDecode`'s ("the typeName-vs-table resolution
+  question does not arise here at all"). The sweep's prose-skim step is meant to catch exactly this,
+  so this is a note for the Done reviewer rather than a gap in the section.

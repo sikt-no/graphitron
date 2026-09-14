@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R948` | An omitted nullable @nodeId in a key projection reads as null, not as an NPE | Spec | 2026-09-14 | [plan](omitted-nodeid-key-projection-reads-null.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-09 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R949` | Two @nodeId input fields over one table share a decoder that hardcodes one typeId | Spec | 2026-09-14 | [plan](decode-helper-dedup-drops-the-typeid.md) |
+| `R949` | Two @nodeId input fields over one table share a decoder that hardcodes one typeId | Ready | 2026-09-14 | [plan](decode-helper-dedup-drops-the-typeid.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Spec | 2026-09-14 | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
@@ -485,7 +485,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R948` [**An omitted nullable @nodeId in a key projection reads as null, not as an NPE**](omitted-nodeid-key-projection-reads-null.md) — Spec, bug
-- `R949` [**Two @nodeId input fields over one table share a decoder that hardcodes one typeId**](decode-helper-dedup-drops-the-typeid.md) — Spec, bug
+- `R949` [**Two @nodeId input fields over one table share a decoder that hardcodes one typeId**](decode-helper-dedup-drops-the-typeid.md) — Ready, bug
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — Ready, feature
