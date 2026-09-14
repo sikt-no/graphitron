@@ -359,3 +359,87 @@ has this right ("filters the result by a function result column"), so this is th
 drifting from the plan, not the plan being wrong. It is worth fixing in the same round because the
 snippet is the Goal's only worked example and the natural source for the pipeline and execution
 cases the item asks for.
+
+### Round 2 (2026-09-14, Spec -> Ready, reviewer session 01WAhchXVefbFT3rEJ7VN5qy)
+
+Verdict: revisions requested. One blocking finding on question one, plus four non-blocking notes.
+
+Round 1's blocking finding is settled. I walked the gate myself rather than taking the revision's
+word for it: `FieldBuilder.classifyArgument`'s plain-input branch calls
+`InputFieldResolver.resolve`, which folds any `InputFieldResolution.Unresolved` into
+`Resolution.Rejected` and then into `ArgumentRef.UnclassifiedArg` for the whole argument, and
+`NodeIdLeafResolver.resolve` returns `Resolved.Rejected` on anything that is neither
+`Resolved.SameTable` nor `Resolved.FkTarget`, which a routine result table can never be. So
+withholding before classification is the shape the item needs, and the seat step 3 picks is a real
+one: `BuildContext.classifyInputField` already receives the `ClassifyContext` whose `useSite` names
+the coordinate, `ClassifyContext.UseSite.descending` already advances it through the nesting arm at
+`classifyInputFieldInternal`, and `coordinateOf` already composes the same
+`(containerTypeName, fieldName)` steps a spent coordinate would carry. Step 3 fits.
+
+Question two is otherwise answered. The plan extends shapes in the tree rather than standing a
+parallel mechanism beside them: one precondition threaded on a record that already threads three,
+one pass over a set the SDL can be read from directly, one new walk on the Mutation seat that is
+declared as new and justified by `classifyMutationRoutineChain` resolving no input type at all. I
+would hand the implementation shape to an implementer as it stands.
+
+**Finding 1 (question one): the Goal's worked example does not build, and `## Tests` makes it the
+case everything else hangs off.**
+
+`argMapping`'s right-hand side is a path, never a literal. `ArgBindingMap.of` rejects an entry whose
+head is not one of the field's argument slots with `Result.UnknownArgRef`, and the routine manual's
+Constraints list states the same rule ("a path whose head is not an argument of the field ... is a
+build error listing the candidates"). `Query.actorFilms` declares exactly one argument, `filter`, so
+`pMinLength: 60` fails with `@routine argMapping entry 'pMinLength: 60' references GraphQL argument
+'60', but available arguments are (filter)`.
+
+Deleting the entry does not rescue it. `films_for_actor(p_actor_id INTEGER, p_min_length INTEGER)`
+declares two IN parameters, and `RoutineDirectiveResolver` identity-binds an unmentioned parameter
+to an argument of the same name or else rejects: `@routine parameter 'pMinLength' has no binding: it
+is not a GraphQL argument of this field and no argMapping entry names it`. Nothing in the tree binds
+a routine parameter to a constant; no fixture anywhere spells a literal right-hand side.
+
+This blocks rather than reading as a typo because the repair changes what the implementer builds.
+Binding `pMinLength` to a second leaf of `ActorFilmFilter` gives the example two spent leaves where
+the prose describes one; giving the field a second flat argument named `pMinLength` concedes the
+two-argument spelling the first decision rejected, in the item's only illustration of the
+single-input-object schema it exists to make work. `## Tests` then names this schema as the case
+written first, asserted green, with "the rest hang off it", so whichever repair is chosen is the
+shape of the item's primary acceptance case, and that is the author's to settle rather than the
+implementer's to improvise at the keyboard.
+
+What would satisfy it: a worked example that builds. Every IN parameter of `films_for_actor` bound,
+the spent `@nodeId` leaf, the surviving `title` leaf naming a real result column (the round 1 repair,
+which is correct: the function returns `film_id` and `title`), and the `foo` contrast leaf the
+paragraph below the snippet already describes. Then `## Tests` naming that exact schema for its
+first case.
+
+Non-blocking, offered rather than required:
+
+* **Where the walk-side strip lives.** Step 1 says the spent set is derived from the same
+  `ArgBinding` rows as today and is the transitional twin of `bound_path`, which means it has to
+  implement `bound_path`'s *second* reading, the written path less its last name. The walk side has
+  a function that answers almost this question, `ServiceCatalog.pathCoordinate`, and it deliberately
+  answers only the first: it walks every segment as an input field and returns null when one is not,
+  which is exactly why a projected `@nodeId` binding gets no walk-side ledger row today. That null is
+  load-bearing for step 7's closing sentence. If the twin is grown inside `pathCoordinate`, the
+  coordinate a leaf is spent at and the coordinate the decode ledger keys on stop being
+  distinguishable by the same null. Worth one sentence saying they are two questions even if one
+  walk answers both, since "no third rule for which leaf this path opens" is a constraint the item
+  states and an implementer could satisfy in a way that quietly breaks step 7.
+* **The precondition needs an outcome the carrier does not have.** `InputFieldResolution` is sealed
+  over `Resolved` and `Unresolved`, and three switches are exhaustive over exactly those two:
+  `InputFieldResolver.resolve`, `TypeBuilder.resolveInputFields`, and the nesting arm inside
+  `classifyInputFieldInternal`. "Yields no `InputField`" is neither arm. Mechanical to add, and the
+  claim it does not disturb is the decision tree rather than the carrier, so nothing here is wrong;
+  it is just the one thing an implementer invents rather than reads.
+* **A fourth home for the retired sentence.** `## Retired vocabulary` names the manual paragraph, the
+  `Query.tilgangerAdmin` fixture comment, and the `classifyRootRoutineChain` javadoc. All three are
+  there as described. There is a fourth, a comment in `LauncherCommandsPipelineTest` reading "the
+  routine's own IN-parameter arguments are spent on the call and contribute neither". The retirement
+  sweep would find it; listing it costs nothing.
+* **One existing Mutation fixture changes verdict under step 5.** `## Tests` pins that the existing
+  routine *read* fixtures keep their verdicts, and they do. On the write side,
+  `ArgmappingKeyProjectionEmissionPipelineTest`'s `SHARED_ID_SDL` points both routine parameters at
+  `input.inventoryId.inventory_id`, which leaves `RentFilmInput.customerId` bound to nothing, and
+  step 5 turns that into a build error on a fixture whose test asserts a successful emission. The
+  plan is right about it; the test list does not account for it.
