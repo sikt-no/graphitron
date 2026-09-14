@@ -1,7 +1,7 @@
 ---
 id: R933
 title: "@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
@@ -634,10 +634,12 @@ answering what the value may name and the defect rows answering what happened.
 
 Shipped at `ad09411`, with the round-4 rework at `50492f1` (three test cases, no production code: the
 two LSP diagnostic cases and the read-side refusal's pipeline case named under Tests). The round-5
-rework rides in the commit carrying this revision: the walk's one-member refusal removed, both
-candidate-count invariants relaxed to one, and the two cases that pin the admission. The file-by-file
-list below is what landed, and it stays rather than collapsing to the notes alone because the Done
-gate reads it against the Design section above.
+rework landed with the walk's one-member refusal removed, both candidate-count invariants relaxed to
+one, and the two cases that pin the admission. The round-6 rework rides in the commit carrying this
+revision, and it is comment text only: the declared retirement, two sentences on `COMMENT ON VIEW
+intent_argument_filter_role` and the twin clause on `intent_input_field_filter_role`, with no relation
+body, no Java and no test touched. The file-by-file list below is what landed, and it stays rather
+than collapsing to the notes alone because the Done gate reads it against the Design section above.
 
 Symbol-anchored, no line numbers; re-find by search at pickup.
 
@@ -686,7 +688,8 @@ Symbol-anchored, no line numbers; re-find by search at pickup.
   2. `resolved_type_kind = 'NODE_TYPE'` on the three relations the population edge names,
      `intent_node_id_decode_endpoint`, `intent_argument_filter_role`'s `argument_node_id` CTE and
      `intent_input_field_filter_role_live`'s `node_id_at_table` CTE, each with its reason on its own
-     comment, and the filter-role comment's keyless-type escape hatch replaced by the kind fork;
+     comment, and the filter-role comment's keyless-type escape hatch replaced by the kind fork, at
+     both rungs;
   3. `sql_table_record_supertype` capture and DDL, the assignability view over it, and
      `intent_node_container_member`;
   4. the container arm on `intent_node_id_instruction_live` (kind `POLY_CONTAINER`, `basis` staying
@@ -947,6 +950,14 @@ and the destination relation's own column comment states it.
 No Java symbol is retired. `intent_argument_filter_role`'s comment loses one sentence, the
 keyless-type escape hatch ("such a type is a rejection's population"), which the widening
 invalidates by making a keyless named type legal somewhere; it is replaced by the kind fork.
+
+One claim on each of the two filter-role rungs goes with it, because both stated the same warrant the
+widening removed, that the instruction relation had already narrowed what these relations now narrow
+themselves: "the whole population is read off intent_node_id_instruction ... with the node-type
+resolution and every decline it makes already applied" on the argument rung, and "Both are read off
+intent_node_id_instruction, which has already applied the node-type resolution and every decline it
+makes" on `intent_input_field_filter_role`'s. Each is replaced by naming the `NODE_TYPE` rows as the
+population and the kind predicate as the relation's own.
 
 ## Reviewer findings
 
@@ -1562,6 +1573,30 @@ escapes apostrophes as `''`, so a grep for `rejection's population` over `graphi
 returns nothing while `rejection''s population` returns the row. A sweep whose terms contain an
 apostrophe has to be run both ways.
 
+Response: both sentences are gone and the comment states the kind fork the body comment states.
+`COMMENT ON VIEW intent_argument_filter_role` now reads the NODE_ID population as the `NODE_TYPE` rows
+of `intent_node_id_instruction` rather than as the whole of it, and says in the same breath that the
+kind predicate is this relation's own rather than something the instruction relation applied on its
+behalf, which is the clause the widening falsified. In place of the escape hatch, where a named type
+resolves to no key at all the comment forks on the kind: a container is excluded by what it is, ahead
+of the three exits, and a node type is still read as the single-column shape, which keeps the
+`COALESCE(ks.arity, 1)` default documented without the rejection claim the widening took away.
+
+One edit beyond what the finding names, disclosed here rather than left for a seventh round.
+`intent_input_field_filter_role`'s comment carried the identical warrant one relation over, "Both are
+read off intent_node_id_instruction, which has already applied the node-type resolution and every
+decline it makes", and the `node_id_at_table` CTE that now applies the kind predicate on that rung
+defers its reason in so many words to what "intent_argument_filter_role states one rung over". Fixing
+the comment it defers to and not the comment above it would have left the deferral pointing at a
+statement its own relation contradicts, which is the finding's own hazard with the two relations
+swapped. That clause now names the `NODE_TYPE` rows and the kind predicate the same way. Comment text
+only: no relation body, no Java, no test, and `Retired vocabulary` above declares both claims.
+
+The sweep note is taken and it is what found this. Run both ways over `graphitron-model.sql`,
+`rejection''s population` returns four rows where `rejection's population` returns none; three of the
+four are the term used accurately elsewhere and the fourth was the retired sentence.
+
+
 #### Non-blocking
 
 * Implementation step 2 asks for the three predicates' reasons "each with its reason on its own
@@ -1569,3 +1604,6 @@ apostrophe has to be run both ways.
   `COMMENT ON`. Read as the better placement rather than a miss, and consistent across all three, so
   it is noted only so the blocking finding above is not read as being about placement: that one is
   about a retired sentence surviving, not about where the new reason went.
+
+  Response: read and agreed. The three inline reasons stay where they are, and the
+  `COMMENT ON` edits above touch only the two claims the widening falsified.
