@@ -729,3 +729,76 @@ Non-blocking, and stated only so they do not survive into implementation:
   materialized table under a `meta_materialize` registration. Not load-bearing while argument-site
   paths stay out of scope, but it would be if finding 1 of round 1 were ever revisited.
 * I did not re-run the corpus measurement, as in round 1. No finding here turns on the counts.
+
+#### Round 2 addendum, same session, after a `principles-architect` consult
+
+Two corrections to my own round above and one finding I missed. The consult is read-only and
+pronounces no verdict; everything below I re-checked in the tree before restating it.
+
+**Correction to finding 1: the `Source` axis partitions on producer, not on evidence, so my
+suggested basis for a fourth arm was wrong.** I wrote that the line the spec wants is
+"transcribed AST facts against catalog facts". Read `LintRuleRegistryCoverageTest` rather than
+`LintRule`'s javadoc and the axis is unambiguous: `everyEngineRuleIsRegisteredToExactlyOneVisitor`,
+`classifierAdvisoriesAreNotRegisteredAsVisitors`, `codegenAdvisoriesAreNotRegisteredAsVisitors`.
+Every assertion is about which producer mints the finding and therefore which completeness gate
+owns the rule. It never partitioned on what a rule reads, which is why `cddf62c` left the enum
+untouched when `NO_DEPRECATED_DIRECTIVE_USAGE` moved its evidence to store rows. So the drifted
+javadoc sentence is a stale description of the ENGINE members, not a stale criterion. What follows
+is cleaner than what I wrote: a rule minted by a visitor is `ENGINE` and needs no new arm; a rule
+minted by a fourth producer the engine registry does not own earns one, and must be argued on
+*that*, since drawing it on evidence would splice a second axis onto the producer identifier and
+leave the next row-reading visitor ambiguous between two arms. `LintRule`'s ENGINE javadoc owes a
+restatement on the producer axis either way. It is the sentence that produced this spec's
+inference, and left alone it will produce the next one.
+
+**Correction to finding 1: there are three shapes, not two.** My two-way framing missed the one in
+between. A producer folded into `withLintFindings` beside `SessionStateWarnings` and
+`DependencyVersionWarnings` already has the live `StoreHandle` and already sits above the
+`disabledRuleIds` filter, so it needs no `warnings()` accessor, no fold-in in `runPipeline` and no
+filter move, while still driving one statement from the view rather than correlating it per node.
+That distinction is load-bearing rather than stylistic: `intent_field_reference_step_target` is
+`WITH RECURSIVE` carrying window functions, and `fact-model.adoc` states the measured rule that
+such a view is taken once per answer and paired on its key, never correlated per driving row (the
+24 s to 2 s case). `DeprecationRecognizer` is the sanctioned opposite, keyed seeks into base
+relations. A per-node visitor over 850 fields is the pathology, and the corpus currently yields
+zero findings, so a green build would not reveal it. The choice is still the author's; what
+changes is that the middle shape exists and the read-shape rule bears on it.
+
+**6 (question 2, blocking). The silence the rule pronounces carries four meanings, and one of them
+is the false negative the spec is otherwise strict about.** "Which elements the predicate can
+judge" makes a `CONDITION` or `NAME_MATCH` intermediate produce no row, and pays for the silence
+with a sentence in the user documentation. Absence on the new view would then mean: no
+`@reference` here; the element was not reached (32 of 94 by the spec's own measurement); the
+intermediate is undecidable because one side carries no constraint; and the pair genuinely is
+covered by a key. The last is what the author-facing documentation teaches a quiet build means,
+and the third is exactly what the spec calls "the failure mode this rule cannot afford: a warning
+that stays silent teaches the author the path is a set". The subset argument refuses that
+direction and the silence admits it back.
+
+This is blocking because the project has already settled the move, on this substrate.
+`fact-model.adoc` states it ("A relation whose absence is load-bearing owes that sentence") using
+this very walk as its worked example, and `intent_field_reference_step_target`'s own comment
+discharges it by deferring its other silences to `intent_condition_method_route_defect` so that
+its absence means exactly one thing. A new view beside it that re-accumulates four meanings walks
+that back. What would satisfy it: give the view a `verdict` column over a closed vocabulary, so
+"not reached" stays the one silence it owns. Three things follow, and the spec already wants all
+three: the consumer's decode becomes a total switch with the drift throw `UnlowerableOrderings`
+models, the "no verdict" test asserts a named row instead of an absence (a test pinning a silence
+cannot tell "declined" from "not implemented"), and the scalar-field sibling the Out of scope
+section anticipates reads a column instead of re-deriving the predicate.
+
+Three more, non-blocking:
+
+* **`excludedTypes` lands differently per shape, and it is user-visible.** The engine applies it
+  before dispatch; `withLintFindings`' own comment states that a finding minted outside the walk
+  still fires on an excluded type. A consumer who excluded a type would keep getting fan-out
+  warnings on it under every shape but the visitor one. Worth deciding rather than discovering.
+* **The `sql_index` invariant has no enforcer.** "State it as an invariant in the implementation"
+  is a comment, and the project's standing rule is that an invariant has an enforcer. Keeping the
+  predicate wholly in the view's SQL makes the relations it names its declared reads and buys the
+  gate; otherwise call it review-only rather than an invariant.
+* **The fixture tier is already decided, which dissolves the `init.sql` weighing.** What a view
+  returns given rows is pinned in `graphitron-model` against a seeded store, and behaviour is
+  pinned at the pipeline tier. The subset-direction case, an FK on `(a)` against a `UNIQUE (a, b)`,
+  is a seeded-store test needing no catalog and no `init.sql` edit; the end-to-end coordinate and
+  message is pipeline tier. Stating that split removes the catalog-churn risk entirely.
