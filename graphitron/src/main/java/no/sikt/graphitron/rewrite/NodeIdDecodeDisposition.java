@@ -53,9 +53,14 @@ public sealed interface NodeIdDecodeDisposition {
     record Refused(Rejection rejection) implements NodeIdDecodeDisposition {}
 
     /**
-     * The walk never got to the coordinate: the owning field's classification aborted above it. Its
-     * own diagnostic is the field's, and the coverage rule stays quiet here rather than growing a
-     * second, wrong-cause message on an already-failing build.
+     * The walk does not stand on the coordinate. Two shapes wear this arm, because what the rule
+     * reads off them is the same: the owning field's classification aborted above it, and then its
+     * own diagnostic is the field's; or the walk never classifies that field at all because its
+     * lowering belongs to another coordinate (a field an interface declares, carried out at each
+     * implementing object type; a directiveless nesting target or a structural connection arm,
+     * resolved through the field that embeds it), and then there is no diagnostic and nothing is
+     * wrong. Either way the coverage rule stays quiet, rather than growing a second, wrong-cause
+     * message on an already-failing build or a first one on a build that should pass.
      */
     record NotReached() implements NodeIdDecodeDisposition {}
 }

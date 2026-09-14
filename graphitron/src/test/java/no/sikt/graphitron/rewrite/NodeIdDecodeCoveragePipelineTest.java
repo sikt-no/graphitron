@@ -219,6 +219,113 @@ class NodeIdDecodeCoveragePipelineTest {
                     m.contains("neither the classification walk nor the projected-key rail")));
     }
 
+    /**
+     * The population boundary, at both decoding sites. A field an interface declares is a field
+     * the walk never stands on: it classifies the fields of object types alone, and an
+     * interface-declared field is lowered at each implementing object type. The argument census
+     * has no such scope, so before the sweep covered every fields container these coordinates were
+     * census members with no disposition anywhere and the residual named them, which is the
+     * failure direction this design calls the dangerous one: a build that passed before this rule
+     * landed, failing on a shape the generator carries out at the object coordinate beside it.
+     *
+     * <p>The control is the same object type with no interface above it, which is
+     * {@link #theSameInstructionOnAFilterArgumentBuildsClean} and
+     * {@link #aDottedArgmappingDescentToANodeIdInputFieldBuildsClean}: both spellings install
+     * there, so what these two add is only the declaration above them.
+     */
+    @Test
+    void anInterfaceDeclaredCoordinateIsNotReportedWhereTheObjectInstalls(@TempDir Path tmp)
+            throws IOException {
+        assertThatCode(() -> validate(tmp, NODE_AND_TABLES + """
+            interface Filterable {
+                films(languageId: ID @nodeId(typeName: "Language")
+                    @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+            }
+            type Query implements Filterable {
+                language: Language
+                films(languageId: ID @nodeId(typeName: "Language")
+                    @reference(path: [{key: "film_language_id_fkey"}])): [Film!]!
+            }
+            """))
+            .as("the argument site: the instruction is carried out at the implementing object's"
+                + " own coordinate")
+            .doesNotThrowAnyException();
+        assertThatCode(() -> validate(tmp, NODE_AND_TABLES + """
+            input FilmFilter {
+                languageId: ID @nodeId(typeName: "Language")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            interface Filterable { films(filter: FilmFilter): [Film!]! }
+            type Query implements Filterable {
+                language: Language
+                films(filter: FilmFilter): [Film!]!
+            }
+            """))
+            .as("the input-field site: the interface's own use site is a second occurrence path"
+                + " over the one instruction, and it is not a member either")
+            .doesNotThrowAnyException();
+    }
+
+    /**
+     * The other half of that boundary, which keeps it from being a blanket. The same instruction is
+     * declared on a discriminated interface and repeated on its participant, and no rail installs
+     * it at either: the participant's own coordinate is reported, the interface's declaration is
+     * not. Without this a sweep that covered interfaces by silencing the whole owning field would
+     * pass the case above just as well.
+     */
+    @Test
+    void aParticipantsOwnDropIsStillReportedUnderAnInterfaceDeclaration(@TempDir Path tmp)
+            throws IOException {
+        assertThatThrownBy(() -> validate(tmp, NODE_AND_TABLES + """
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+                contentId: Int! @field(name: "CONTENT_ID")
+                summary(languageId: ID @nodeId(typeName: "Language")): String @field(name: "TITLE")
+            }
+            type FilmContent implements Content @table(name: "content")
+                    @discriminator(value: "FILM") {
+                contentId: Int! @field(name: "CONTENT_ID")
+                summary(languageId: ID @nodeId(typeName: "Language")): String @field(name: "TITLE")
+            }
+            type Query { language: Language, contents: [Content!]! }
+            """))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("the coordinate the generator lowers is named, the declaration above it is not")
+                .anyMatch(m -> m.contains("argument 'languageId' on field 'FilmContent.summary'"))
+                .noneMatch(m -> m.contains("on field 'Content.summary'")));
+    }
+
+    /**
+     * The instruction an interface declares and no implementation repeats. SDL forces every
+     * implementation to redeclare the field and its arguments and forces none of them to repeat a
+     * directive, so this author's {@code @nodeId} reaches no lowering at all: the implementation's
+     * own argument classifies as the plain column filter it says it is, and the encoded id is
+     * compared against the key column, which is the failure this rule exists to name. The
+     * interface's coordinate is the only place it can be named, the implementation's argument
+     * carrying no instruction to report at, so the sweep covers an interface coordinate only where
+     * the implementations carry it rather than covering every interface coordinate outright.
+     */
+    @Test
+    void anInstructionNoImplementationRepeatsIsReportedAtTheInterface(@TempDir Path tmp)
+            throws IOException {
+        assertThatThrownBy(() -> validate(tmp, NODE_AND_TABLES + """
+            interface Filterable {
+                languages(language_id: ID @nodeId(typeName: "Language")): [Language!]!
+            }
+            type Query implements Filterable {
+                language: Language
+                languages(language_id: ID): [Language!]!
+            }
+            """))
+            .isInstanceOf(ValidationFailedException.class)
+            .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
+                .extracting(ValidationError::message)
+                .as("named where the author wrote it, the implementation having nothing to name")
+                .anyMatch(m -> m.contains("argument 'language_id' on field 'Filterable.languages'")
+                    && m.contains("neither the classification walk nor the projected-key rail")));
+    }
+
     private static void validate(Path tmp, String sdl) throws IOException {
         Path schema = tmp.resolve("schema.graphqls");
         Files.writeString(schema, sdl);

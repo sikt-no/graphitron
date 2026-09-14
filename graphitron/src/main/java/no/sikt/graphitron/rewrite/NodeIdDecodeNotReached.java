@@ -3,9 +3,10 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLFieldsContainer;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLNamedType;
-import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
@@ -35,6 +36,31 @@ import java.util.Set;
  * {@code ValidationError} at the coordinate would instead make it change whenever an unrelated
  * family re-words or re-grains its errors, with nothing failing to say so.
  *
+ * <p><b>Every fields container, not every object type, and an interface coordinate covered only
+ * where the implementations carry it.</b> The walk classifies the fields of object types alone, so
+ * a field an interface declares is one it never stands on: that field is lowered at each
+ * implementing object type, and the mint sites dispose of it there. The argument census has no such
+ * scope, its {@code ARGUMENT} arm reading the captured argument entries with no kind join at all,
+ * so an interface-declared coordinate left out of this sweep is a census member with no row
+ * anywhere and the residual reports a shape the generator carries out one declaration below.
+ *
+ * <p>What makes that coordinate covered is not its interface-ness but the instruction standing at
+ * the coordinates the generator does lower, which is the condition
+ * {@link #carriedByEveryImplementation} states. SDL forces every implementation to redeclare the
+ * field and its arguments and forces none of them to repeat a directive, so an instruction written
+ * on an interface argument alone reaches no lowering at all: the implementations' own arguments
+ * classify as whatever they say, a plain column filter included, and the encoded id is compared
+ * against the key column exactly as the unguarded rail always did. Covering every interface
+ * coordinate unconditionally would silence that, which is this rule's own failure class arriving
+ * through the sweep. The input-field site needs no exception: the instruction there is written on
+ * the input type, so each implementation's use site is one too, and the condition holds by
+ * construction.
+ *
+ * <p>The census-side alternative, scoping the census to object-declared use sites, states an
+ * exclusion one relation out that cannot see the difference between those two cases, and would keep
+ * stating it the day the walk does stand on an interface-declared field. Minting here instead, the
+ * sweep stops of its own accord as soon as the registry holds that field's entry.
+ *
  * <p>A field that classified is deliberately <em>not</em> swept. Its coordinates are the mint
  * sites' to dispose of, and one they left undisposed is the residual this whole mechanism exists to
  * surface; blanketing it here would empty the residual and make the rule vacuous.
@@ -54,20 +80,64 @@ final class NodeIdDecodeNotReached {
         }
         var entries = registry.entries();
         for (var type : schema.getAllTypesAsList()) {
-            if (!(type instanceof GraphQLObjectType objectType)) {
+            if (!(type instanceof GraphQLFieldsContainer container)) {
                 continue;
             }
-            for (var fieldDef : objectType.getFieldDefinitions()) {
+            for (var fieldDef : container.getFieldDefinitions()) {
                 var classified = entries.get(
-                    FieldCoordinates.coordinates(objectType.getName(), fieldDef.getName()));
+                    FieldCoordinates.coordinates(container.getName(), fieldDef.getName()));
                 if (classified != null && !(classified instanceof GraphitronField.UnclassifiedField)) {
                     continue;
                 }
-                for (var at : coordinatesUnder(objectType.getName(), fieldDef)) {
+                for (var at : coordinatesUnder(container.getName(), fieldDef)) {
+                    if (container instanceof GraphQLInterfaceType iface
+                            && !carriedByEveryImplementation(schema, iface, fieldDef, at)) {
+                        continue;
+                    }
                     ledger.recordNotReached(at);
                 }
             }
         }
+    }
+
+    /**
+     * Whether every object type implementing {@code iface} carries {@code at}'s own instruction at
+     * its copy of the slot, which is what makes the interface's coordinate one the generator
+     * lowers elsewhere rather than one it drops.
+     *
+     * <p>Decided off SDL and the same {@link #instructed} predicate the sweep enumerates with, so
+     * the two sides of the comparison cannot disagree about what an instruction is. The census is
+     * deliberately not consulted: a sweep that read the population it exists to leave alone could
+     * empty it.
+     *
+     * <p>Every implementation, not any: an implementation that does not repeat the instruction is
+     * one whose own coordinate carries no decode and draws no census row to be reported at, so the
+     * interface's row is the only place the drop can be named. An interface with no implementations
+     * satisfies this vacuously, which is the safe direction and not an oversight: there is no
+     * lowering coordinate to name, and no request can reach the field either, so a report would
+     * name a drop that cannot happen.
+     */
+    private static boolean carriedByEveryImplementation(
+            GraphQLSchema schema, GraphQLInterfaceType iface, GraphQLFieldDefinition fieldDef,
+            NodeIdDecodeCoordinate at) {
+        for (var implementation : schema.getImplementations(iface)) {
+            var implField = implementation.getFieldDefinition(fieldDef.getName());
+            if (implField == null || !coordinatesUnder(implementation.getName(), implField)
+                    .contains(rootedAt(implementation.getName(), at))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** {@code at} as the implementation would spell it: the same coordinate under its own type. */
+    private static NodeIdDecodeCoordinate rootedAt(String rootTypeName, NodeIdDecodeCoordinate at) {
+        return switch (at) {
+            case NodeIdDecodeCoordinate.Argument a -> new NodeIdDecodeCoordinate.Argument(
+                rootTypeName, a.rootFieldName(), a.rootArgumentName());
+            case NodeIdDecodeCoordinate.InputField f -> new NodeIdDecodeCoordinate.InputField(
+                rootTypeName, f.rootFieldName(), f.rootArgumentName(), f.descent());
+        };
     }
 
     /**

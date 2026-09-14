@@ -257,6 +257,39 @@ coordinate's owning field, or it holds an `UnclassifiedField`. One site rather t
 path, driven by SDL plus the registry rather than by the census, so it cannot empty the residual it
 exists to keep meaningful. A field that classified is deliberately not swept.
 
+Its population is every fields container, and an interface's coordinate is covered only where the
+implementations carry the instruction. Round one of the Done gate settled both halves. The walk
+classifies the fields of object types alone, so a field an interface declares is one it never stands
+on: that field is lowered at each implementing object type, and the mint sites dispose of it there.
+Swept over object types only, an interface-declared coordinate was a census member with no row
+anywhere, because the census has no such scope either (its `ARGUMENT` arm reads the captured argument
+entries with no kind join at all), and the residual named a coordinate the generator carries out one
+declaration below.
+
+What covers that coordinate is not its interface-ness, though, and the difference is measurable. SDL
+forces every implementation to redeclare the field and its arguments, and forces none of them to
+repeat a directive, so an instruction written on an interface argument alone reaches no lowering at
+all: each implementation's own argument classifies as whatever it says, a plain column filter
+included, and the encoded id is compared against the key column, which is this item's own failure
+class. `interface Filterable { languages(language_id: ID @nodeId(typeName: "Language")): [Language!]! }`
+with `type Query implements Filterable { languages(language_id: ID): [Language!]! }` validates clean
+with no condition on the sweep, and the implementation's argument carries no instruction to be
+reported at, so the interface's row is the only place the drop can be named. The sweep therefore
+covers an interface coordinate only where every implementation carries that same instruction at its
+own copy of the slot, decided off SDL and the sweep's own instructed predicate rather than off the
+census. The input-field site needs no exception: the instruction there is written on the input type,
+so each implementation's use site is one too and the condition holds by construction.
+
+The census-side remedy, scoping the census to object-declared use sites, cannot tell those two cases
+apart from one relation out, and would keep stating its exclusion the day the walk does stand on an
+interface-declared field; minting the disposition here instead, the sweep stops of its own accord as
+soon as the registry holds that field's entry. `NotReached` keeps one meaning under the widening,
+"the walk does not stand on this coordinate", which is what it already meant for the two shapes the
+sweep covered from the start: a directiveless nesting target and a structural connection arm are
+likewise fields the walk never classifies, lowered through the field that embeds them, with no
+diagnostic of their own. The arm's javadoc now says so rather than naming the aborting-field shape
+alone.
+
 **The check.** `NodeIdDecodeCoverage.violations` folds the projected-key rail's installs into the
 ledger and anti-joins the census against it, at the fold point beside `StoreDetections.violations()`
 in `GraphQLRewriteGenerator`. `Rejection.deferred`, as the plan requires, and no sub-population is
@@ -301,7 +334,14 @@ Landed as follows.
   instruction on a filter argument builds clean. Beside them: the rail-two regression (a dotted
   `argMapping` descent to a `@nodeId` input field, both spellings, clean), the use-site enforcer
   (one input field installed at one consumer and not at another, only the second reported), the
-  granularity enforcer, and the `NotReached` case.
+  granularity enforcer, and the `NotReached` case. Two more state the population boundary the Done
+  gate found: an interface-declared coordinate at both decoding sites, clean where the implementing
+  object installs, and its other half, a drop declared on a discriminated interface and repeated on
+  its participant, where the participant's own coordinate is reported and the declaration above it
+  is not. The second is what keeps the first from being satisfied by silencing the owning field. A
+  third states the condition on the coverage: an instruction an interface declares and no
+  implementation repeats is reported at the interface, which is the only coordinate that can name
+  it.
 * `NodeIdDecodeCoverageRatchetTest`, the totality claim over the corpus: every document carrying a
   node id validates with no coverage report, with a floor on the swept set.
 * `NodeIdDecodeArmCoverageTest`, the mint pin, plus the delegating arm's own case.
@@ -639,23 +679,53 @@ arms already scope themselves, states that directly and keeps `NotReached` meani
 half moves, the fixture belongs in `NodeIdDecodeCoveragePipelineTest` beside the use-site enforcer: the
 ratchet cannot hold this, because its population is the corpus and the corpus has no such document.
 
+*Author response.* The finding reproduces, and the sweep is the half that moved: `sweep` now walks
+every `GraphQLFieldsContainer`, covering an interface coordinate where every implementation carries
+that same instruction at its own copy of the slot. The condition is not decoration. The
+unconditional widening the finding measured also silences an instruction an interface declares and
+no implementation repeats, which SDL permits and which reaches no lowering at all, so the encoded id
+meets the key column exactly as it does in the shape this item exists to close; that fixture is in
+the pipeline test with the other two. The reason the sweep is the right half is that the other
+shapes it already covered are this one. A directiveless nesting target and a structural connection arm are also
+fields the walk never classifies, lowered through the field that embeds them, with no diagnostic of
+their own, and they have carried `NotReached` since the arm existed; the sweep's own javadoc named
+them that way while the record's javadoc named only the aborting-field shape, which is the drift the
+finding read. So the arm means, and has always meant, "the walk does not stand on this coordinate",
+and the record now says that. The census-side scope was rejected on what it would cost later rather
+than on grain: it states the exclusion one relation out and would go on stating it the day the walk
+does stand on an interface-declared field, where the sweep stops minting of its own accord as soon as
+the registry holds that field's entry, which is the failure direction this rule cares about. Pinned
+in `NodeIdDecodeCoveragePipelineTest` as the finding asks, with the boundary's other half beside it:
+a drop declared on a discriminated interface and repeated on its participant reports the
+participant's own coordinate and not the declaration above it, so the first fixture cannot be
+satisfied by a sweep that silences the whole owning field. The three reproducers were run against the
+unfixed tree first and each reported exactly the coordinate the finding names.
+
 **Non-blocking.**
 
 * `NodeIdDecodeCoverageRatchetTest.MIN_DOCUMENTS` is 8 against 14 documents the filter actually
   matches today. The floor exists so a filter that stops matching reads as a loud failure rather than
   an empty sweep, and at 8 it lets the swept set fall by six documents silently. Raising it to the
   current count costs nothing and is the only thing keeping the ratchet's population honest.
+  *Taken:* the floor is 14, with the reason for holding it at the measured count rather than under it
+  stated on the field.
 * Nothing reads a `NodeIdDecodeDisposition`'s payload. `NodeIdDecodeCoverage` asks
   `ledger.rows().containsKey(...)` and no other reader of `rows()` or `decodeLedger()` exists, so
   `Installed`'s `Rail` and `Refused`'s `Rejection` are carried and never consulted, and a
   `Set<NodeIdDecodeCoordinate>` would do today's work. The seal is what the Spec gate approved and the
   drainage argument wants a rail named, so this is not a change to make now; it is worth knowing that
   the arms are presently unfalsifiable, which is also why a mint that names the wrong rail would go
-  unnoticed.
+  unnoticed. *Left as is,* on the reviewer's own reasoning. Worth recording for whoever reads this
+  next: the falsifier is a reader, not a test, so the arms stop being unfalsifiable the day a second
+  one appears rather than the day someone writes an assertion about them.
 * `NodeIdDecodeCoverage.violations` mutates the ledger it is handed, folding the projected-key installs
   in before subtracting. The javadoc says so and says why the fold belongs there rather than in the
   walk, so nothing is hidden; a name that admits the write, or a fold that returns a new ledger, would
-  let the signature carry it instead of the prose.
+  let the signature carry it instead of the prose. *Left as is.* Both alternatives separate the fold
+  from the subtraction, and what the current shape buys is that they cannot be separated: a caller
+  that subtracted an unfolded ledger would report every coordinate rail two serves, which fails
+  builds that should pass. With one caller the coupling is worth more than the signature; the
+  returns-a-new-ledger form is the one to take the day there are two.
 * The user-facing-doc check passes: the `nodeId.adoc` paragraph carries no `R<n>`, no phase or plan
   reference, and its `xref` resolves to the `node-id-key-projection` anchor that exists in
   `routine.adoc`. The retirement sweep does not apply, the item declaring no retired vocabulary.

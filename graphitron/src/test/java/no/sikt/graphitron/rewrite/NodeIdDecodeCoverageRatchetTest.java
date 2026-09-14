@@ -42,9 +42,12 @@ class NodeIdDecodeCoverageRatchetTest {
 
     /**
      * The floor on the swept set. A filter that stops matching reads as an empty corpus and passes
-     * every sweep over it; this is what makes that failure loud instead.
+     * every sweep over it; this is what makes that failure loud instead. Held at the count the
+     * filter matches today rather than comfortably under it: a floor with slack lets the swept set
+     * fall by that much silently, which is the same silence in miniature. A document the corpus
+     * gains costs nothing here; one it loses is a deliberate edit, and this line moves with it.
      */
-    private static final int MIN_DOCUMENTS = 8;
+    private static final int MIN_DOCUMENTS = 14;
 
     /** The message fragment {@link NodeIdDecodeCoverage} alone produces. */
     private static final String COVERAGE_REPORT =
