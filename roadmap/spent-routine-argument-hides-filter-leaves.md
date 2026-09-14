@@ -83,10 +83,13 @@ Settled at filing, so the plan below does not reopen them:
   no filter surface: the function is the write, its parameter list is the only thing that consumes
   input, and the post-commit re-read is keyed, not filtered. A leaf `argMapping` does not bind there
   reaches nothing, so the only honest verdict is the one a DML `@mutation` input already gets from
-  `MutationInputResolver`: a build error naming the input type and the leaf. A deliberately unread
-  input leaf (the Relay `clientMutationId` pattern, an idempotency key) has no spelling on either
-  mutation kind today and nothing echoes such a value back into a payload; this item states that gap
-  in the manual rather than designing the escape hatch.
+  `MutationInputResolver`: a build error naming the input type and the leaf. The rule is about the
+  seat rather than about nesting, so it covers an argument slot the bindings never name as well as a
+  leaf inside one, and it covers every Mutation `@routine` field rather than one classifier's worth
+  of them; step 5 states the single seat that makes both true. A deliberately unread input leaf (the
+  Relay `clientMutationId` pattern, an idempotency key) has no spelling on either mutation kind today
+  and nothing echoes such a value back into a payload; this item states that gap in the manual rather
+  than designing the escape hatch.
 * **A spent leaf that also carries a filter directive is a directive conflict.** `@field` or
   `@condition` on a leaf `argMapping` binds asks for a WHERE clause the spent leaf will never get; it
   is the same silent class this item removes, one level down, and it fails the build naming the leaf
@@ -101,31 +104,50 @@ Settled at filing, so the plan below does not reopen them:
 
 ## Implementation
 
-The seam is `FieldBuilder.classifyArguments`, which takes `argsBoundElsewhere`, a `Set<String>` of
-argument *names*, and skips an argument outright when its name is in the set. The set is computed by
-`FieldBuilder.routineBoundArgNames` from the routine's `RoutineRef.ArgBinding` rows by taking each
-`ParamSource.Arg` binding's `path().headName()`. That head-name projection is the whole of
-argument-grain spending. The change is in where the fact comes from, what carries it, and where and
-*when* it is applied: ahead of classification rather than after it. The shared input classifier's
-decision tree is not touched.
+Spending is two questions with two seats, and the shape of this item follows from keeping them
+apart. *Which leaves does this field spend* is answered once, where the `argMapping` paths were
+resolved against the field's argument types in the first place: `RoutineDirectiveResolver.bindArgs`,
+inside the `resolveNode` every `@routine` field reaches. *What follows from a leaf being spent* is
+answered at the seats that consume that answer, which is classification on a read and nothing at all
+on a write. Today the first question is answered in the wrong place. `FieldBuilder.routineBoundArgNames`
+reads the resolved `RoutineRef.ArgBinding` rows and takes each `ParamSource.Arg` binding's
+`path().headName()`, and `FieldBuilder.classifyArguments` skips an argument whose name is in that
+`Set<String>`. The head-name projection is not a shortcut someone took: `ArgBinding` carries the
+written path and nothing else, and telling `filter.actorId` (two input fields) from
+`filter.actorId.actor_id` (two input fields and a key-column strip) needs the argument's input types,
+which that seat does not have and `bindArgs` does. Leaf grain is unreachable downstream of the
+resolver, which is why the derivation moves rather than being refined where it stands. The shared
+input classifier's decision tree is not touched.
 
-1. **The spent leaf is a fact the store already resolves.** `graphitron_argmapping_match`, at site
-   `ROUTINE`, carries `bound_path` ("the whole written path where all of it resolved, and that path
-   less its last name where one name is left over"), together with `bound_kind` (`ARGUMENT` or
-   `INPUT_FIELD`), `bound_type_name` and `bound_field_name`: the spent leaf's own coordinate, with the
-   projected key-column strip already applied by the store's rule. The classifier reads
-   `GatheredFacts` rather than the store, so the walk-side set is derived from the same
-   `ArgBinding` rows as today and is stated as the transitional twin of `bound_path`, pinned by a
-   shadow-agreement anchor in `rewrite/derive` beside the walk, the way `InputOccurrenceShadowTest`
-   pins the occurrence paths. No third rule for "which leaf does this path open" appears.
-2. **Carry coordinates, not dotted strings.** The set is not a `Set<String>` of paths. It carries the
-   spent leaves as typed coordinates, the `(containerTypeName, fieldName)` steps `ClassifyContext.UseSite`
-   already descends by, compared component-wise; that record's javadoc states why a serialized path
-   is the wrong key ("two spellings of one value agree until one changes, and here a disagreement
-   reads as a dropped instruction"). A flat argument bound directly (`pEnv: env`) is a one-step
-   coordinate and keeps being skipped whole in `classifyArguments`, which is leaf grain trivially.
-   One set with two readers: `classifyArguments` takes the one-step coordinates and the descent of
-   step 3 takes the deeper ones, so nothing decides twice which leaf a path opens.
+1. **The spent leaf is a fact the store already resolves, and one walk-side seat answers it.**
+   `graphitron_argmapping_match`, at site `ROUTINE`, carries `bound_path` ("the whole written path
+   where all of it resolved, and that path less its last name where one name is left over"), together
+   with `bound_kind` (`ARGUMENT` or `INPUT_FIELD`), `bound_type_name` and `bound_field_name`: the
+   spent leaf's own coordinate, with the projected key-column strip already applied by the store's
+   rule. The classifier reads `GatheredFacts` rather than the store, so the walk side answers the same
+   question itself, in `bindArgs`, and its answer is stated as the transitional twin of `bound_path`,
+   pinned by a shadow-agreement anchor in `rewrite/derive` beside the walk, the way
+   `InputOccurrenceShadowTest` pins the occurrence paths. `bindArgs` is where that twin is cheap and
+   correct: it already holds `FieldBuilder.argSlotTypes(fieldDef)`, and `leafTypeGate` beside it
+   already walks a `PathExpr`'s segments against those slot types through
+   `ServiceCatalog.resolvePathLeafType` and `ServiceCatalog.pathLeafDeclaration`. What `bound_path`'s
+   second reading adds is one retry: resolve the whole path as input fields, and where that fails,
+   resolve the path less its last name, the leftover name being the projected key column. That retry
+   is a new sibling of `pathLeafDeclaration`, never a growth inside `ServiceCatalog.pathCoordinate`
+   (step 7 says why). No third rule for "which leaf does this path open" appears.
+2. **Carry coordinates, not dotted strings, on the binding that resolved them.** What `bindArgs`
+   derives it hands forward on the `RoutineRef.ArgBinding` it is building, beside the path rather than
+   instead of it, so what the author wrote and what it resolved to stand together and a reader compares
+   them the way `bound_path`'s own comment says a reader of the store does. The carrier is
+   `NodeIdDecodeCoordinate`, already sealed over an `Argument` arm and an `InputField` arm carrying
+   the `(containerTypeName, fieldName)` steps, and already the general use-site coordinate rather than
+   a node-id-only type: `ClassifyContext.UseSite.at` and `here` return its `InputField` arm for every
+   use site. Its javadoc states why a serialized path is the wrong key ("two spellings of one value
+   agree until one changes, and here a disagreement reads as a dropped instruction"). A flat argument
+   bound directly (`pEnv: env`) lands the `Argument` arm and keeps being skipped whole in
+   `classifyArguments`, which is leaf grain trivially; a `columnMapping`-bound parameter claims no
+   argument and carries no coordinate at all. Every consumer then reads a resolved fact instead of
+   re-deriving one, and `routineBoundArgNames` is deleted rather than retyped.
 3. **Withhold the spent leaves before classification, not after it.** Classification is a gate, not
    a lookup, so a spent leaf must never be offered to it. A leaf the classifier cannot resolve comes
    back `InputFieldResolution.Unresolved`, `InputFieldResolver.resolve` folds that into
@@ -162,34 +184,56 @@ decision tree is not touched.
    `FieldBuilder.walkInputFieldConditions` then needs no predicate at all, which is the point: the
    tree it walks *is* the read surface, so an unbound survivor reaches the use-keyed no-binding
    verdict `mintCascadeVerdict` already mints on that seat, with nothing there changed.
-4. **The conflict verdict is a pass over the spent set, also before classification.** Where a spent
-   leaf carries `@field` or `@condition` it asks for a WHERE clause it will never get, and the
-   rejection is located and names the leaf, the directive, and the routine parameter that spends it,
-   in the family of the existing `@routine` + `@reference` directive conflict. A spent coordinate
-   names its `GraphQLInputObjectField` in the schema directly, so this reads directives off the SDL
-   and needs no traversal and no classified carrier; it *has* to run before classification anyway,
-   since the leaf it judges is one classification will now not produce. A spent leaf carrying
-   `@nodeId` is not a conflict; the projection is its consumer. Minting here rather than inside step
-   3's precondition is what leaves that precondition a pure omission, with no routine vocabulary
-   inside the shared classifier.
-5. **The mutation arm is a new walk, stated as such.** `classifyMutationRoutineChain` never resolves
-   an input type, and `InputFieldResolver` cannot be borrowed for it: it returns `Ok` with no fields
-   when the resolving table is null, which on a routine write seat is the premise. The Query arm
-   needs no traversal of its own, spending there being a membership test and the complement being
-   whatever classification goes on to produce; the Mutation arm has to enumerate that complement
-   itself, so it is one walk over the argument's input tree yielding leaf coordinates, and every leaf
-   not in the spent set is a located rejection, one per leaf, at the leaf. That walk is the only new
-   traversal the item adds. The wording is a shared typed rejection, not a copy of
-   `MutationInputResolver`'s sentence: that sentence's remedy ("or carry an override condition") is
-   false on a routine write seat, where
-   `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral` defers `@condition` outright. Ownership on
-   the mutation seat is stated so three verdicts do not claim one leaf: a spent leaf carrying `@field`
-   or `@condition` is the conflict (step 4); an unspent leaf is the unread rejection whatever directive
-   it carries, that rejection being the one that says what the leaf failed to do.
+4. **The conflict verdict is minted where the leaf is resolved.** Where a spent leaf carries `@field`
+   or `@condition` it asks for a WHERE clause it will never get, and the rejection is located and
+   names the leaf, the directive, and the routine parameter that spends it, in the family of the
+   existing `@routine` + `@reference` directive conflict. It needs no pass of its own, no traversal
+   and no classified carrier: step 1's retry returns the leaf's own `GraphQLInputValueDefinition`, so
+   the directives are in hand at the moment spending is decided, one `hasAppliedDirective` away. A
+   spent leaf carrying `@nodeId` is not a conflict; the projection is its consumer. Minting here
+   rather than inside step 3's precondition is what leaves that precondition a pure omission, with no
+   routine vocabulary inside the shared classifier.
+5. **The mutation rule is the complement of the same set, at the same seat.** A Mutation `@routine`
+   field classifies no arguments at all, so there is no classification seat to hang the rule on and
+   no read surface to subtract from: the mutation arm has to enumerate the input the field advertises.
+   `bindArgs` is where that enumeration is already possible and already scoped right.
+   `FieldBuilder.argSlotTypes(fieldDef)` is every argument slot with its input type, the bindings
+   under construction carry the spent coordinates of step 2, and the rule is their complement: walk
+   each argument slot to its leaves, and every leaf coordinate not spent is a located rejection, one
+   per leaf, at the leaf. A slot whose type is not an input object is its own leaf, so an unread flat
+   argument is the zero-depth case of that walk rather than a second rule. This is the only new
+   traversal the item adds.
+
+   The seat is what makes the rule reach the whole surface, and no smaller seat does. `FieldBuilder`
+   classifies a Mutation `@routine` field at two places, reached by two dispatches: `classifyField`'s
+   chain interception routes the multi-node write chain to `classifyMutationRoutineChain`, landing
+   `MutationField.MutationRoutineWriteField`, and `classifyMutationField` routes the hop-less shape to
+   `classifyMutationRoutineCarrier`, whose admitted tail `classifyAdmittedRoutineCarrier` lands
+   `MutationField.MutationRoutineWriteRecordField`. Both are shipped, both classify no arguments, and
+   they share no seat, so a walk written at either one leaves the other silent with every listed test
+   green. What they do share is `RoutineDirectiveResolver.resolveNode`, "the shared node resolution
+   behind `resolve` and `resolveCarrierNode`": the chain seat arrives through `walkRoutineChain` and
+   `resolve`, the carrier seat through `resolveCarrierNode`, and `bindArgs` runs inside it either way.
+   One rule there covers both, and leaves no third seat for the item to have missed.
+
+   `bindArgs` serves reads too, so the rule has to know which seat it stands at. That is one more
+   parameter of the kind `resolveNode` already takes beside `isRoot` and `previousNodeTableSqlName`,
+   threaded from `resolveCarrierNode` (always the write seat) and from `resolve`'s callers, where the
+   Query and Mutation chain classifiers already stand apart. A read-or-write discriminator and nothing
+   more; no classification vocabulary enters the resolver with it.
+
+   The wording is a shared typed rejection, not a copy of `MutationInputResolver`'s sentence: that
+   sentence's remedy ("or carry an override condition") is false on a routine write seat, where
+   `RoutineDirectiveResolver.writeSeatReadSurfaceDeferral` defers `@condition` outright. Ownership is
+   stated so two verdicts do not claim one leaf: a spent leaf carrying `@field` or `@condition` is the
+   conflict (step 4); an unspent leaf is the unread rejection whatever directive it carries, that
+   rejection being the one that says what the leaf failed to do.
 6. **Validator and LSP.** No re-authored message. The mirror mechanism already in the tree is the
    located mint drained by `GraphitronSchemaValidator.drainBuildDiagnostics`, which is how
-   `mintCascadeVerdict`'s verdicts reach the validator and the LSP at leaf grain today; the two new
-   verdicts mint the same way. Nothing in `GraphitronSchemaValidator` restates the rule.
+   `mintCascadeVerdict`'s verdicts reach the validator and the LSP at leaf grain today; the new
+   verdicts mint the same way, through the `BuildContext.addDiagnostic` the resolver already holds.
+   That is what lets a rejection minted at the resolver seat be located at a leaf rather than at the
+   field. Nothing in `GraphitronSchemaValidator` restates the rule.
 7. **The decode ledger sees the siblings, and an unresolvable sibling fails the build.** Today a
    spent argument is skipped before `disposeRefusedNodeIdArgument` runs, so a `@nodeId` leaf beside
    the bound one never gets a walk-side ledger row; its disposition comes only from the store's
@@ -203,6 +247,14 @@ decision tree is not touched.
    by pipeline cases rather than left to be noticed. The spent leaf itself still mints no walk-side
    row; the store's projected installs remain its only disposition.
 
+   Step 1's retry stays a sibling of `pathLeafDeclaration` rather than a growth inside
+   `ServiceCatalog.pathCoordinate` for exactly this reason. `pathCoordinate` walks every segment as an
+   input field and returns null where one is not, and that null is what keeps a projected binding out
+   of the decode ledger today. Teach it the second reading and the coordinate a leaf is spent at stops
+   being distinguishable from the coordinate the ledger keys on, which would break this step while
+   satisfying step 1's "no third rule" on paper. Two questions, two functions, even where one walk
+   shape answers both.
+
 ## Tests
 
 * **Pipeline** (`graphitron` pipeline tier, beside `RoutineMutationWritePipelineTest`): one case per
@@ -211,26 +263,32 @@ decision tree is not touched.
   over `films_for_actor` classify to a `QueryTableField` with no rejection on the field and the
   survivor's predicate, and only the survivor's, in the emitted query. That case is what the shape of
   step 3 exists for, and a plan that withholds the spent leaves only after classification fails it,
-  so it is written first and the rest hang off it. Then: a
-  leftover `@field` leaf inside a routine argument classifies as a column-bound filter and the
-  emitted query carries its predicate; a leftover bare leaf whose name matches a result column binds
-  by name; a leftover leaf naming nothing lands the existing no-binding rejection with the routine
-  field as the use site; a spent leaf nested one level below the argument
-  (`argMapping: "p: filter.inner.key"`) is withheld too, which pins that the set descends rather than
-  being read off the argument's top level; a spent leaf carrying `@field` lands the conflict
-  rejection; a spent leaf carrying `@nodeId` does not, asserted on a field that otherwise classifies
-  so the case cannot pass by the argument having been rejected for some other reason; an *unspent*
-  `@nodeId` leaf that keys against nothing on the result table rejects the argument (step 7); a
-  Mutation routine input with an unbound leaf lands the DML-worded rejection. The existing routine
-  read fixtures (`tilganger`, `Actor.films`, `recentFilmsForActorConnection`) keep their verdicts,
-  which pins that a flat bound argument and a fully bound input object are unchanged. Two more cases pin the mechanism: the walk-side spent set
-  agrees with `graphitron_argmapping_match.bound_path` over the corpus (the shadow anchor of step 1),
-  and a `@nodeId` sibling of a bound leaf now appears in the decode ledger with a disposition (step 7).
-* **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): one field over
-  `films_for_actor` taking a single input object whose `actorId` feeds the routine and whose
-  unbound leaf filters the result by a function result column; the case asserts the narrowed rows against the
-  unfiltered call, so the predicate is shown to reach SQL rather than only to classify.
-* **Validator reach** (pipeline tier, over the classified model): the two new rejections arrive
+  so it is written first and the rest hang off it. Then, on the read side: a leftover `@field` leaf
+  inside a routine argument classifies as a column-bound filter and the emitted query carries its
+  predicate; a leftover bare leaf whose name matches a result column binds by name; a leftover leaf
+  naming nothing lands the existing no-binding rejection with the routine field as the use site; a
+  spent leaf nested one level below the argument (`argMapping: "p: filter.inner.key"`) is withheld
+  too, which pins that the coordinate descends rather than being read off the argument's top level; a
+  spent leaf carrying `@field` lands the conflict rejection; a spent leaf carrying `@nodeId` does not,
+  asserted on a field that otherwise classifies so the case cannot pass by the argument having been
+  rejected for some other reason; an *unspent* `@nodeId` leaf that keys against nothing on the result
+  table rejects the argument (step 7).
+
+  Three cases on the write side, because step 5's seat is what makes the rule reach them and one case
+  cannot show that. An unbound leaf inside a Mutation routine *chain* field's input object lands the
+  unread rejection; an unbound leaf inside a routine *carrier* mutation's input object lands the same
+  rejection, asserted on a field that otherwise classifies to `MutationRoutineWriteRecordField` so it
+  cannot pass by the field having been rejected for another reason; and an unread *flat* argument on a
+  mutation routine lands it too, which pins the zero-depth arm. `ArgmappingKeyProjectionEmissionPipelineTest`'s
+  `SHARED_ID_SDL` points both `rent_film` parameters at `input.inventoryId.inventory_id`, leaving
+  `RentFilmInput.customerId` bound to nothing, so that fixture goes red under this rule and is repaired
+  in the same change by binding `customerId`; the emission it asserts is unrelated to the leftover leaf.
+
+  The existing routine read fixtures (`tilganger`, `Actor.films`, `recentFilmsForActorConnection`)
+  keep their verdicts, which pins that a flat bound argument and a fully bound input object are
+  unchanged. Two more cases pin the mechanism: the walk-side spent coordinates agree with
+  `graphitron_argmapping_match.bound_path` over the corpus (the shadow anchor of step 1), and a
+  `@nodeId` sibling of a bound leaf now appears in the decode ledger with a disposition (step 7).
   through `drainBuildDiagnostics` located at the leaf, in the build and in the LSP, with no second
   spelling of the rule in `GraphitronSchemaValidator`.
 
@@ -243,20 +301,23 @@ grain: a leaf `argMapping` binds is spent on the call; every other input field o
 filters the result like any input field on a table-backed field, binding by `@field` or by name; a
 leaf that binds to nothing is the same build error it is everywhere; and a spent leaf carrying
 `@field` or `@condition` is a directive conflict. The "Writes on Mutation" section gets the mutation
-sentence: every leaf of an input the routine opens must feed a parameter, an unread leaf is a build
-error as on a DML mutation, and a deliberately unread leaf has no spelling yet. The changelog entry
-carries the upgrade note from the fourth decision.
+sentence: every input the routine opens must feed a parameter, leaf by leaf and argument by argument,
+an unread one is a build error as on a DML mutation, and a deliberately unread leaf has no spelling
+yet. The changelog entry carries the upgrade note from the fourth decision.
 
 ## Retired vocabulary
 
 * "An argument bound to a routine IN parameter is spent on the call": the argument-grain sentence, in
   the routine manual's read-surface paragraph, the `Query.tilgangerAdmin` fixture comment in the
-  sakila example schema, and the `classifyRootRoutineChain` javadoc. Replaced by the leaf-grain
-  sentence above.
-* `routineBoundArgNames` and the `argsBoundElsewhere` parameter as sets of argument *names*. The
-  parameter survives at `classifyArguments` for the one-step coordinates and changes type; what is
-  retired is the reading of spending as an argument-name membership test, and whatever carries the
-  spent coordinates takes a name that says so.
+  sakila example schema, the `classifyRootRoutineChain` javadoc, and the comment at
+  `LauncherCommandsPipelineTest` line 246 ("the routine's own IN-parameter arguments are spent on the
+  call and contribute neither"). Replaced by the leaf-grain sentence above.
+* `routineBoundArgNames`, deleted rather than retyped: spending is no longer derived in
+  `FieldBuilder` at all, because the seat that derives it needs the argument input types
+  (`## Implementation`, preamble). The `argsBoundElsewhere` parameter survives at `classifyArguments`
+  and changes type from a set of argument *names* to the coordinates of step 2; what is retired is the
+  reading of spending as an argument-name membership test, and whatever carries the coordinates takes
+  a name that says so.
 
 ## Other solutions we've considered
 
@@ -281,6 +342,13 @@ carries the upgrade note from the fourth decision.
   and a warning about a filter that silently does nothing is still a release of the silent behaviour.
 * **Reads only, mutations unchanged.** Leaves an unread mutation input leaf silent while the DML
   mutation beside it rejects the same shape; the asymmetry has no reason behind it.
+* **The mutation walk inside the classifier, one seat at a time.** This item's third shape: the
+  unread-leaf walk written at `classifyMutationRoutineChain`, where the mutation verdicts already
+  live. Rejected because that is one of two live Mutation `@routine` classification seats and the
+  other, `classifyMutationRoutineCarrier`, is reached by a different dispatch and shares no code with
+  it, so the shape ships the item's own failure class on the carrier seat with every test green. It
+  also cannot see an unread flat argument, there being no input tree to walk at that grain. Both
+  fall out of moving the rule to the seat the two dispatches share (step 5).
 
 ## Reviewer findings
 
@@ -618,3 +686,27 @@ The fourth home for the retired sentence is still `LauncherCommandsPipelineTest`
 `## Retired vocabulary` still lists three. And `ArgmappingKeyProjectionEmissionPipelineTest`'s
 `SHARED_ID_SDL` still leaves `RentFilmInput.customerId` bound to nothing under a test asserting a
 successful emission, which step 5 turns red without `## Tests` saying so.
+
+*Revision applied in a later commit by this same reviewer session, at the user's explicit direction
+rather than by the author, following the precedent of the round 2 repair.* The blocking finding is
+settled by moving the derivation of spent-ness to `RoutineDirectiveResolver.bindArgs`, the seat
+inside `resolveNode` that both Mutation dispatches and both read dispatches already share, and
+carrying the resolved coordinate on the `ArgBinding` beside the path. `## Implementation`'s preamble
+and steps 1, 2, 4, 5, 6 and 7 were rewritten for it; step 3 stands as it was, the precondition it
+states being unchanged by where the set comes from. The same move settles three of the open notes:
+the walk-side strip is a new sibling of `ServiceCatalog.pathLeafDeclaration` and `pathCoordinate` is
+explicitly left alone (step 7), the unread flat argument is the zero-depth arm of step 5's walk, and
+the fourth home for the retired sentence is now listed. `## Tests` gained the carrier and flat-argument
+write cases and states the `SHARED_ID_SDL` repair; `## Other solutions we've considered` records the
+one-seat walk as rejected, with its reason.
+
+One note is deliberately left open, being a fork rather than an omission: step 3 says the precondition
+sits inside `BuildContext.classifyInputField` ("yields no `InputField`"), which needs a third arm on
+an `InputFieldResolution` sealed over `Resolved` and `Unresolved`, with a can't-happen arm falling to
+`TypeBuilder.resolveInputFields` on a DML path no routine reaches. Step 3's own words ("a spent leaf
+must never be offered to it") equally describe skipping the leaf at the two enumerators that descend,
+which needs no new arm. Two one-line skips against a sealed case rippling into unrelated code; the
+author picks.
+
+Because this session wrote plan prose, it is disqualified from the Spec -> Ready sign-off on this
+item. The next gate needs a reviewer session that has committed neither the plan nor this revision.
