@@ -159,8 +159,15 @@ class DerivedReadCostTest {
      * <p>Raised to 126 by {@code intent_external_field_contract_defect}, which reads the producer
      * resolution against the relation that admits an {@code @externalField} method. Both are
      * captured or derived without a registration between them, so it is another row and no cells.
+     *
+     * <p>Raised to 127 by {@code intent_field_reference_step_fanout}, the {@code @reference}
+     * pair-coverage rule. It drives from {@code intent_field_reference_step_target}, so it reaches
+     * everything that walk reaches and enters the domain as well as the schema: the two figures
+     * below moved with it, by one and by two, the two cells being the hop registration and the type
+     * binding. The hop cell is a new pinned pair and the binding cell is monotonic; both carry
+     * their figures where they sit.
      */
-    private static final int READERS_IN_SCHEMA = 126;
+    private static final int READERS_IN_SCHEMA = 127;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -200,8 +207,13 @@ class DerivedReadCostTest {
      * leg on a measurement took it out again. A relation's membership here is a fact about what it
      * reads and moves when that changes, which is the same thing the two capture entries above say
      * from the other direction.
+     *
+     * <p>Sixty-two to sixty-three with {@code intent_field_reference_step_fanout}, an ordinary
+     * arrival: it drives from the field-site reference walk, so it inherits that walk's reach whole
+     * and enters the domain on the day it is written rather than on a later change to what it
+     * reads.
      */
-    private static final int READERS_WITH_CELLS = 62;
+    private static final int READERS_WITH_CELLS = 63;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -298,8 +310,14 @@ class DerivedReadCostTest {
      * into the reference-target families and now stop at the target table. The
      * {@code @nodeId} landing verdict is the clearest of them, dropping the five rungs it reached
      * only through the hop and picking up one on the new registration.
+     *
+     * <p>Raised to 146 by {@code intent_field_reference_step_fanout}: two cells, the field-site hop
+     * and the resolved type binding, which are exactly the two the walk it drives from holds. The
+     * arithmetic the paragraph above states, read once more from a relation that adds nothing of
+     * its own to the walk's reach: it sits directly on the target view and so pays for that view's
+     * rungs and no others, however much catalog it joins beside them.
      */
-    private static final int CELLS = 144;
+    private static final int CELLS = 146;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -739,7 +757,25 @@ class DerivedReadCostTest {
         // and left when that target was keyed. The class note above carries their figures and what
         // their leaving means for the next pair that appears here.
         "intent_field_reference_step_hop|intent_field_reference_step_target",
-        "intent_field_reference_step_hop|intent_field_column_scope_live");
+        "intent_field_reference_step_hop|intent_field_column_scope_live",
+        // A third reader of the same rung, and it is the walk's own charge arriving one reader
+        // further out: the fan-out rule drives from intent_field_reference_step_target and pairs it
+        // with itself, so whatever the walk is charged for the namings the row above prices, this
+        // rule is charged for twice. Registered against unregistered, in scans: 20758 against
+        // 19342, where the walk's own row is 795 against 618. The clock is the half worth reading
+        // and it says the same thing here as it does two rows up, more emphatically: 53
+        // milliseconds against 368, so the registered side visits 1416 more rows and answers seven
+        // times faster.
+        //
+        // The absolute figure is this rule's own and is stated so the next reader does not have to
+        // re-take it: 20758 scans is twenty-six times the walk it drives from, and about two thirds
+        // of that is the catalog join the predicate is, a constraint and its columns per
+        // intermediate, rather than the walk. It was 31136 before the two hops' contributions to
+        // the bound column set were written as one union arm apiece instead of four, which is the
+        // rewrite lever taken before a registration is considered, in that order. It stays a plain
+        // view on those terms: no measurement on a populated store says otherwise yet, and this
+        // fixture prices a plan rather than a population.
+        "intent_field_reference_step_hop|intent_field_reference_step_fanout");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

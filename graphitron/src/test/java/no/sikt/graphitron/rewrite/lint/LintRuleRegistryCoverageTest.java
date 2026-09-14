@@ -88,6 +88,28 @@ class LintRuleRegistryCoverageTest {
     }
 
     @Test
+    void everyDerivedProducerRuleExists() {
+        // The derived-relation producers answer from the store's own derived views and are folded
+        // in at report assembly, beside the codegen advisories and told apart from them by being a
+        // different producer with its own completeness assertion. This pins the DERIVED set so a
+        // new one is a deliberate registry edit, mirroring the two assertions above it.
+        var derived = Arrays.stream(LintRule.values())
+            .filter(r -> r.source() == LintRule.Source.DERIVED)
+            .map(LintRule::id)
+            .toList();
+        assertThat(derived).containsExactlyInAnyOrder("reference-path-fans-out");
+    }
+
+    @Test
+    void derivedProducerRulesAreNotRegisteredAsVisitors() {
+        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
+        assertThat(registered)
+            .as("derived-relation producers drive one statement from a view at report assembly,"
+                + " never a per-node visitor")
+            .noneMatch(r -> r.source() == LintRule.Source.DERIVED);
+    }
+
+    @Test
     void codegenAdvisoriesAreNotRegisteredAsVisitors() {
         var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
         assertThat(registered)

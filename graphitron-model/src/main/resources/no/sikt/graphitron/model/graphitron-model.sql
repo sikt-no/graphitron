@@ -7154,6 +7154,110 @@ COMMENT ON COLUMN intent_field_reference_step_target.fk_on_from IS 'TRUE when th
 COMMENT ON COLUMN intent_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
 COMMENT ON COLUMN intent_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
 
+CREATE VIEW intent_field_reference_step_fanout
+  (graph_name, type_name, field_name, ordinal, position, verdict,
+   table_source_name, table_schema, table_name, covering_constraint_name,
+   source_name, source_line, source_column) AS
+WITH pair (graph_name, type_name, field_name, ordinal, position,
+           enter_via, enter_constraint_name, enter_fk_on_from,
+           enter_from_source_name, enter_from_schema, enter_from_table,
+           leave_via, leave_constraint_name, leave_fk_on_from,
+           leave_to_source_name, leave_to_schema, leave_to_table,
+           table_source_name, table_schema, table_name) AS (
+  SELECT e.graph_name, e.type_name, e.field_name, e.ordinal, e.position,
+         e.via, e.constraint_name, e.fk_on_from,
+         e.from_source_name, e.from_schema, e.from_table,
+         l.via, l.constraint_name, l.fk_on_from,
+         l.to_source_name, l.to_schema, l.to_table,
+         e.to_source_name, e.to_schema, e.to_table
+    FROM intent_field_reference_step_target e
+    JOIN intent_field_reference_step_target l
+      ON l.graph_name = e.graph_name AND l.type_name = e.type_name
+     AND l.field_name = e.field_name AND l.ordinal = e.ordinal
+     AND l.position = e.position + 1
+     AND l.from_source_name = e.to_source_name AND l.from_schema = e.to_schema
+     AND l.from_table = e.to_table
+   WHERE e.candidates = 1 AND l.candidates = 1
+),
+bound (graph_name, type_name, field_name, ordinal, position, column_name) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+         CASE WHEN p.enter_fk_on_from THEN fk.referenced_column_name ELSE fk.column_name END
+    FROM pair p
+    JOIN intent_foreign_key_column_pair fk
+      ON fk.constraint_name = p.enter_constraint_name
+     AND fk.source_name = CASE WHEN p.enter_fk_on_from
+                               THEN p.enter_from_source_name ELSE p.table_source_name END
+     AND fk.table_schema = CASE WHEN p.enter_fk_on_from
+                                THEN p.enter_from_schema ELSE p.table_schema END
+     AND fk.table_name = CASE WHEN p.enter_fk_on_from
+                              THEN p.enter_from_table ELSE p.table_name END
+  UNION
+  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+         CASE WHEN p.leave_fk_on_from THEN fk.column_name ELSE fk.referenced_column_name END
+    FROM pair p
+    JOIN intent_foreign_key_column_pair fk
+      ON fk.constraint_name = p.leave_constraint_name
+     AND fk.source_name = CASE WHEN p.leave_fk_on_from
+                               THEN p.table_source_name ELSE p.leave_to_source_name END
+     AND fk.table_schema = CASE WHEN p.leave_fk_on_from
+                                THEN p.table_schema ELSE p.leave_to_schema END
+     AND fk.table_name = CASE WHEN p.leave_fk_on_from
+                              THEN p.table_name ELSE p.leave_to_table END
+),
+covering (graph_name, type_name, field_name, ordinal, position, constraint_name) AS (
+  SELECT graph_name, type_name, field_name, ordinal, position, MIN(constraint_name)
+    FROM (SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+                 k.constraint_name,
+                 COUNT(*) AS key_columns, COUNT(b.column_name) AS bound_columns
+            FROM pair p
+            JOIN sql_constraint k
+              ON k.source_name = p.table_source_name AND k.table_schema = p.table_schema
+             AND k.table_name = p.table_name
+             AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+            JOIN sql_constraint_column kc
+              ON kc.source_name = k.source_name AND kc.table_schema = k.table_schema
+             AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
+            LEFT JOIN bound b
+              ON b.graph_name = p.graph_name AND b.type_name = p.type_name
+             AND b.field_name = p.field_name AND b.ordinal = p.ordinal
+             AND b.position = p.position AND b.column_name = kc.column_name
+           GROUP BY p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+                    k.constraint_name) counted
+   WHERE counted.key_columns = counted.bound_columns
+   GROUP BY graph_name, type_name, field_name, ordinal, position
+)
+SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+       CASE WHEN p.enter_via = 'CONDITION' OR p.leave_via = 'CONDITION'
+              THEN 'UNDECIDABLE_CONDITION_HOP'
+            WHEN p.enter_via = 'NAME_MATCH' OR p.leave_via = 'NAME_MATCH'
+              THEN 'UNDECIDABLE_NAME_MATCH_HOP'
+            WHEN cov.constraint_name IS NOT NULL THEN 'COVERED'
+            ELSE 'FANS_OUT' END,
+       p.table_source_name, p.table_schema, p.table_name, cov.constraint_name,
+       r.source_name, r.source_line, r.source_column
+  FROM pair p
+  LEFT JOIN graphitron_field_reference_entry r
+    ON r.graph_name = p.graph_name AND r.type_name = p.type_name
+   AND r.field_name = p.field_name AND r.ordinal = p.ordinal
+  LEFT JOIN covering cov
+    ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
+   AND cov.field_name = p.field_name AND cov.ordinal = p.ordinal
+   AND cov.position = p.position;
+COMMENT ON VIEW intent_field_reference_step_fanout IS 'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four. For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.';
+COMMENT ON COLUMN intent_field_reference_step_fanout.graph_name IS 'the owning graph''s partition, carried from the walk the two elements come off';
+COMMENT ON COLUMN intent_field_reference_step_fanout.type_name IS 'the type owning the field the @reference is applied to';
+COMMENT ON COLUMN intent_field_reference_step_fanout.field_name IS 'the field the @reference is applied to';
+COMMENT ON COLUMN intent_field_reference_step_fanout.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
+COMMENT ON COLUMN intent_field_reference_step_fanout.position IS 'the entering element''s 0-based position within its application''s path, completing the grain. The intermediate is the table that element arrives at and the element after it departs from, so a path''s last element is no intermediate and yields no row: that is the terminal-hop exemption falling out of the shape rather than being written as a case';
+COMMENT ON COLUMN intent_field_reference_step_fanout.verdict IS 'what the pair-coverage question answered at this intermediate, a closed vocabulary of four. FANS_OUT where no PRIMARY KEY or UNIQUE constraint on the intermediate has every one of its columns among the ones the two hops bind, so the table may hold several rows per bound pair and a list over the path repeats rows. COVERED where one does, named beside it; the hop is then one row in and one row out. UNDECIDABLE_CONDITION_HOP where the entering or the leaving element joins on an authored Java predicate, whose columns no catalog row names, so one side of the bound set is unreadable. UNDECIDABLE_NAME_MATCH_HOP where one of them departs a table-valued function''s result, which declares no constraint to read. The two undecidable arms are rows rather than silence, so absence on this relation means only that the walk did not reach the element; a condition arm on either side wins over a name-match arm on the other, the two being equally declined and the reader needing one value';
+COMMENT ON COLUMN intent_field_reference_step_fanout.table_source_name IS 'the intermediate table''s catalog partition, first column of its sql_table key';
+COMMENT ON COLUMN intent_field_reference_step_fanout.table_schema IS 'the intermediate table''s SQL schema';
+COMMENT ON COLUMN intent_field_reference_step_fanout.table_name IS 'the intermediate table''s SQL name: the table the entering element arrives at and the leaving element departs from';
+COMMENT ON COLUMN intent_field_reference_step_fanout.covering_constraint_name IS 'the PRIMARY KEY or UNIQUE constraint on the intermediate whose every column the two hops bind, which is what makes the hop 1:1 on that pair; the lowest such name where several answer, and NULL under every verdict but COVERED. The subset runs this way round and not the other: a constraint pins a row only when the join knows a value for each of its columns, so an FK on one column inside a two-column UNIQUE clears nothing';
+COMMENT ON COLUMN intent_field_reference_step_fanout.source_name IS 'the document the @reference application is written in, so a message underlines what the author wrote rather than the field';
+COMMENT ON COLUMN intent_field_reference_step_fanout.source_line IS 'source line of the @reference application, 1-based per the graphql-java convention';
+COMMENT ON COLUMN intent_field_reference_step_fanout.source_column IS 'source column of the @reference application, 1-based per the graphql-java convention';
+
 CREATE TABLE intent_field_column_scope (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -13180,6 +13284,9 @@ INSERT INTO meta_grain VALUES
   ('unlowerable-ordering-rejection',
    'one minted rejection of one unlowerable ordering, at its place in the graph''s mint order',
    'graph_name, ordinal', 'sdl'),
+  ('reference-path-intermediate',
+   'one intermediate table one field-site @reference path passes through, at the position of the element that enters it, in one graph',
+   'graph_name, type_name, field_name, ordinal, position', 'catalog'),
   ('element-field-site',
    'one schema element whose coordinate sits on a field, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -13832,6 +13939,10 @@ INSERT INTO meta_relation VALUES
    'The rejection each minting row of intent_field_unlowerable_ordering carries: one row per rejected coordinate and availability route, holding the sealed Rejection hierarchy''s verdict on it and the message a report would print.',
    'For example the multitable root carrying @defaultOrder draws a DEFERRED row whose message names the interface, its participants and both remedies, while a list-returning @routine write draws none, its rejection being held.',
    'A table because no view over this store can state the render: the message names the multitable container''s participants in a sentence and picks its remedy off the availability route, which is Java''s composition of facts held separately rather than a fact of any graph. Written by a capture-cadence writer that clears its graph partition and re-mints, sharing the one mint of the value with the build-error consumer so a violation cannot be worded two ways. Its cadence is one step later than its siblings'', and that is a dependency rather than a preference: the view it renders reads the materialized intent_field_scope_table, so a call beside the flush would render the previous capture''s rows. Not total over the view, and the gap is the population''s own: the KEY_CAPTURE_SCATTER verdict mints no rejection while its only live instance sits in graphitron''s own example schema, so those coordinates are counted by the view and worded nowhere until that write is given an order to deliver. The two route columns are here because the view is keyed per route and the diagnostics arm joins these rows to it; a rejection keyed on the coordinate alone would fan two locations onto one message.'),
+  ('intent_field_reference_step_fanout', 'reference-path-intermediate', 'derivation',
+   'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four.',
+   'For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.',
+   'A @reference path is mechanical foreign-key traversal and a SQL join yields a bag, so a list field over a path that fans out returns the same child row several times. That is the declared path''s correct result, and nothing said so: the generator emitted the multiset silently and a field reading as a set was indistinguishable from one that is. The decidable property is not the one the obvious formulation reaches for. A hop into the child side of a foreign key that the path does not terminate on fires on film to film_actor to actor, the most canonical shape there is, and film_actor returns each actor once; what separates it from a junction carrying its own payload is not the direction of one hop but whether the intermediate can hold more than one row per bound pair. So the grain is the intermediate rather than the path, which is what lets a five-hop path be five independent questions and a finding name the hop that multiplies. The subset runs as columns(constraint) inside bound and never the reverse, a constraint pinning a row only where the join knows every column of it; the inverted reading clears any composite key the path only partly binds, a silence teaching an author the path is a set. The undecidable arms are values for that same reason: an absence meaning no path here, not reached, undecidable and covered at once would hide that false negative inside it.'),
   ('intent_external_field_contract_defect', 'external-field-contract-defect', 'derivation',
    'One @externalField naming a method that exists and cannot do the job: one row per reference resolving to a class method the directive''s contract does not admit.',
    'For example a field whose reference names fromName, which takes a String and returns an org.jooq.Field, where the directive admits only a method taking the table.',

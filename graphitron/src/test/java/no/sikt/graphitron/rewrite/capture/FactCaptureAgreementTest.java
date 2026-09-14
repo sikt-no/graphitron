@@ -607,6 +607,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_fanout", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_target", Arm.DERIVED);
         registrations.put("intent_field_chain_start", Arm.DERIVED);

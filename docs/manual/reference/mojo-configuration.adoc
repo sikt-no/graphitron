@@ -267,7 +267,7 @@ Graphitron's schema linter reports style and convention warnings (naming, missin
 
 Rule ids are the kebab-case names shown in each warning and in the `graphitron:diagnostics` MCP tool. A misspelled rule id fails the build with the list of valid ids.
 
-`disabledRules` silences a rule everywhere it would fire: the build log, your editor's squiggles, and the MCP diagnostics tool. `excludedTypes` skips the schema linter's checks on the matching types (glob syntax: `*` matches any run of characters, `?` one character). A handful of advisories come from graphitron's schema classifier rather than the linter (for example `redundant-record-directive`); these are not tied to a single type name, so they are silenced by rule id in `disabledRules`, not by `excludedTypes`.
+`disabledRules` silences a rule everywhere it would fire: the build log, your editor's squiggles, and the MCP diagnostics tool. `excludedTypes` skips the matching types for every rule that has a type name to match against (glob syntax: `*` matches any run of characters, `?` one character), which is the schema linter's own checks and the rules derived from your database's keys, such as xref:directives/reference.adoc#duplicate-rows-through-a-junction[`reference-path-fans-out`]. A handful of advisories come from graphitron's schema classifier rather than the linter (for example `redundant-record-directive`); these are not tied to a single type name, so they are silenced by rule id in `disabledRules`, not by `excludedTypes`.
 
 The `<lint>` block carries two list children:
 
@@ -281,7 +281,7 @@ The `<lint>` block carries two list children:
 
 | `excludedTypes`
 | `List<String>` (`<type>` entries)
-| Type-name globs whose matching types the SDL lint engine skips. Engine-scoped: a classifier advisory on an excluded type still fires and must be silenced through `disabledRules`.
+| Type-name globs whose matching types are skipped by every rule that reports at a type or field coordinate. A classifier advisory carries no such coordinate, so one on an excluded type still fires and must be silenced through `disabledRules`.
 |===
 
 [#session-identity]

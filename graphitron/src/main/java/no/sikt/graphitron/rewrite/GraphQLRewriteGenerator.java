@@ -921,11 +921,19 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Classification advisories ({@code schema.warnings()}) plus the SDL lint engine's findings
-     * over the same parsed registry. Lint findings ride the {@link BuildWarning} channel here at
-     * the report-assembly surfaces rather than inside {@link GraphitronSchemaBuilder}, so the
-     * per-build classifier model stays advisory-only and only the user-facing report carries the
-     * lint surface.
+     * Classification advisories ({@code schema.warnings()}), the SDL lint engine's findings over
+     * the same parsed registry, and the producers that answer from this run's captured rows. Lint
+     * findings ride the {@link BuildWarning} channel here at the report-assembly surfaces rather
+     * than inside {@link GraphitronSchemaBuilder}, so the per-build classifier model stays
+     * advisory-only and only the user-facing report carries the lint surface.
+     *
+     * <p>This is the one assembly point, which is why every fold-in is here rather than spread
+     * along the pipeline: the suppression filter runs last over the combined list, so a producer
+     * added here is suppressible like every other and a producer added elsewhere would be a second
+     * entry into the channel with nothing keeping the two alike. It runs inside the capture window
+     * with the live handle, so a store-reading producer reads this run's rows rather than the
+     * previous run's, which on the warm store the dev loop keeps is the difference between a
+     * finding about the schema on screen and one about the schema before the last save.
      */
     private List<BuildWarning> withLintFindings(GraphitronSchema schema,
                                                 AttributedRegistry attributed,
@@ -944,11 +952,21 @@ public class GraphQLRewriteGenerator {
         // mojo decoded off both dependency graphs. Same channel and same reason: a whole-build fact
         // with no SDL coordinate, suppressible by rule id like every other finding.
         all.addAll(no.sikt.graphitron.rewrite.dependency.DependencyVersionWarnings.forVersions(ctx.dependencyVersions()));
+        // The @reference fan-out advisory, reduced from this run's rows by a store-reading
+        // producer. Folded in here rather than run as a lint visitor because it drives one
+        // statement from a recursive view; a per-node visitor would correlate that view once per
+        // field. It applies excludedTypes itself, through the engine's own matcher: the finding
+        // lands at an SDL coordinate the consumer may have asked not to be linted, so the
+        // asymmetry the comment below accepts for the classifier advisories would read as a bug.
+        all.addAll(no.sikt.graphitron.model.lint.ReferencePathFanout.findings(
+            store, no.sikt.graphitron.model.lint.ExcludedTypes.of(lintConfig)));
         // Disabled-rule filter over the *combined* list: keying on the typed rule id after the
         // classifier advisories (schema.warnings()) and engine findings are concatenated means it
         // covers both channels, so a classifier advisory is suppressible by rule id like any
-        // other. excludedTypes, in contrast, is applied inside the engine above and reaches only
-        // the AST walk; a classifier advisory on an excluded type still fires.
+        // other. excludedTypes, in contrast, is applied by each producer that has a type name to
+        // apply it to: the engine before its walk and the fan-out producer at its coordinate. A
+        // classifier advisory arrives with no structured owning type to match against, so one on
+        // an excluded type still fires and is suppressible by rule id alone.
         if (!lintConfig.disabledRuleIds().isEmpty()) {
             all.removeIf(w -> w instanceof BuildWarning.LintFinding lf
                 && lintConfig.disabledRuleIds().contains(lf.rule().id()));

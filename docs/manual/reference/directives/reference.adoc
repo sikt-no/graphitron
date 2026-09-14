@@ -111,6 +111,37 @@ On its own this form is a stylistic choice. It exists for composition with xref:
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
 
+[#duplicate-rows-through-a-junction]
+== Duplicate rows through a junction
+
+A `@reference` path is foreign-key traversal, and a SQL join produces a bag rather than a set. So a list field whose path passes *through* a table that can hold more than one row per pair of columns the hops either side of it join on returns the same child row once per such row. That is the correct result of the path you declared, and it is easy to misread: a field named for a set looks like one.
+
+The build says so. A list field over such a path draws a warning under the rule id `reference-path-fans-out`, naming the table that multiplies and which element of the path it is:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    # inventory is keyed on its own inventory_id, which neither hop binds, so a film
+    # stocked three times at one store yields that store three times.
+    stores: [Store!] @reference(path: [
+        {key: "inventory_film_id_fkey"}, {key: "inventory_store_id_fkey"}])
+}
+----
+
+A pure junction stays quiet. `film_actor`'s primary key is exactly `(actor_id, film_id)`, which is the pair the two hops bind, so `film -> film_actor -> actor` returns each actor once and draws nothing.
+
+The remedy is a relation with set semantics rather than a flag that changes what the join means: declare a view over the junction that selects the bound columns `DISTINCT`, give it a key for the path to join on, and point the hop at that. Graphitron will not add a `DISTINCT` for you; it changes what the field returns, and it interacts with ordering and pagination in ways only you can decide.
+
+Five boundaries, each for its own reason:
+
+* *A filter path is not judged, and has nothing to judge.* A `@reference` on an argument or an input field lowers to a correlated `EXISTS`, so each parent row matches once however far the path fans out. The property does not exist there.
+* *A `@referenceFor` path is not looked at.* A quiet build says nothing about one either way.
+* *A hand-written join stops the rule.* Where the element entering or leaving the table joins on a `condition` method, or departs a table-valued function's result, the columns it joins on are in no catalog and the rule declines rather than guessing. This is where an author is likeliest to assume it looked.
+* *An excluded type is not linted by this rule either.* A type matching an `excludedTypes` glob is skipped here as it is in the schema linter.
+* *A scalar field over the same path is a different defect.* It lowers to a capped subselect, so it picks an arbitrary row rather than repeating one, and the remedy is an ordering or a narrower path rather than a `DISTINCT` view. This rule does not word it.
+
+Silence it like any other rule, by putting `reference-path-fans-out` in the `<lint>` block's `disabledRules`.
+
 [#schema-qualified-keys]
 == Schema-qualified keys
 

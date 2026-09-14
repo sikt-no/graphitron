@@ -1,7 +1,7 @@
 ---
 id: R723
 title: "Warn when a @reference path traverses a 1:N hop into a further projection"
-status: Ready
+status: In Progress
 bucket: validation
 priority: 4
 theme: diagnostics
@@ -615,6 +615,81 @@ and the remedy is a view with set semantics rather than a flag that changes what
 
 Coverage for this issue was found missing by
 `roadmap/audits/2026-08-19-github-issue-roadmap-linkage.md`.
+
+## Implementation notes
+
+Every plan deviation, stated here rather than left in the diff.
+
+**`DerivedReadCostTest` is touched after all, and the plan said it would not be.** The Cost
+section reasoned that the gate prices registrations and this item adds none, which is true of the
+gate's pinned pairs and not of its domain-size assertions: `theDomainIsTheSizeThisTestStates`
+counts the views in the fact schema and the cells the registration matrix holds, and any new view
+that reaches a registration moves both. This one drives from
+`intent_field_reference_step_target`, so it inherits that walk's reach whole: 126 views to 127, 62
+readers with cells to 63, and 144 cells to 146, the two new cells being the field-site hop
+registration and the resolved type binding. The binding cell is monotonic. The hop cell is not,
+and it joins `KNOWN_NON_MONOTONIC` on exactly the mechanism the row above it records for the walk
+itself: 20758 scans registered against 19342, and 53 milliseconds against 368. Each figure sits
+on the row it prices. `DetectionReadReachGateTest` and `MaterializeRegistryGateTest` are untouched
+as planned, the producer not being a member of the detection pass and no registration being added.
+
+**The read's absolute cost was measured and one rewrite lever taken.** 20758 scans on the gate's
+twelve-unit fixture is twenty-six times the walk the rule drives from, and about two thirds of it
+is the catalog join the predicate is rather than the walk. The first shape measured 31136, with
+each hop's contribution to the bound column set written as two union arms selected on the key's
+direction; folding each pair into one arm with the direction inside the join predicate is what
+took off the third. It stays a plain view on the Cost section's own terms: the lever order is
+capture, index, rewrite, registration, the rewrite is taken, and no measurement on a populated
+store says to go further. The figure is recorded on the gate's new row so the next reader does not
+re-take it.
+
+**The glob matcher was lowered rather than duplicated, which the round-3 note anticipated.**
+`LintEngine.globToPattern` was private to a class in `graphitron`, and the producer sits in
+`graphitron-model`. The note named two ways out; this takes the first. `ExcludedTypes` in
+`no.sikt.graphitron.model.lint` compiles a `LintConfig`'s globs and answers by name, the engine
+delegates to it, and the producer applies it at the coordinate it is about to attach a finding to,
+so the population rule has one statement. The consumer-facing prose in
+`mojo-configuration.adoc` is corrected in the same commit, its "engine-scoped" sentence having
+become false: the exclusion now reaches every rule that has a type name to match against, and what
+still escapes it is a classifier advisory, which carries no coordinate.
+
+**The end-to-end fixture is `film -> inventory -> store`, not the `film_actor_note` walkthrough.**
+The spec settled that no `init.sql` edit was owed, and the catalog turned out to hold a genuine
+fan-out already: `inventory` is keyed on its own surrogate, which neither hop binds, so one film
+stocked several times at one store yields that store several times. The seeded-store tier encodes
+the `film_actor_note` shape as planned, the discriminating pair and the subset-direction case with
+it.
+
+**The lint-rule reference page does not exist yet, so the rule's row has nowhere to go.** The User
+documentation section asks for one and names the item that owns that page; nothing in `docs/`
+enumerates the rules today. The `@reference` page carries the property, the remedy and the five
+boundaries, and names the rule id twice so a reader arriving from a build log lands somewhere. No
+second home for rule documentation was invented, per the instruction.
+
+**The finding's message follows the engine's own wording, not the plan's prose.** Existing lint
+messages open with the coordinate, capitalised; this one does too, and the fix description is the
+imperative phrase an editor shows on a quick-fix rather than a sentence.
+
+**The `lint_finding` half of the suppression claim is asserted through the report.** The Tests
+section asks that a disabled rule id remove the finding from the report and from `lint_finding`.
+The filter runs last over the combined warnings and the store copy is written from what survives
+it, by `DevMojo` in another module, so the report assertion is the one that carries the claim;
+the pipeline case says so in as many words rather than implying a second assertion it does not
+make.
+
+**The temporal-key fixture declines rather than passing where it cannot run.** PostgreSQL 18 is
+what accepts `WITHOUT OVERLAPS`, and the local-database profile's server is 16, so the case asks
+the server its version and aborts with that reason instead of reporting a pass. It asserts the
+disjunction the spec bounds rather than picking an arm: every uniqueness constraint the catalog
+reports on the temporal table has a column outside the pair a path would bind, which a key
+reported with its period column and a key not reported at all both satisfy, and a key reported
+with the period column stripped does not.
+
+That case has therefore not been observed passing. This session's database is 16 and the sandbox
+has no container runtime, so what has been verified here is that it compiles and that it declines
+with its stated reason rather than reporting a pass; CI, which runs `postgres:18-alpine` for two
+execution tests already, is where it first executes. Whoever reviews this at the Done gate should
+read its first green run rather than take the assertion on the page.
 
 ## Reviewer findings
 

@@ -36,8 +36,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import no.sikt.graphitron.model.lint.DeprecationRecognizer;
+import no.sikt.graphitron.model.lint.ExcludedTypes;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
 
@@ -64,7 +64,7 @@ public final class LintEngine {
     private final List<LintVisitor> visitors;
     private final Map<LintNodeKind, List<LintVisitor>> byKind;
     /** Author-owned type names matching one of these globs are skipped alongside the bundled surface.*/
-    private final List<Pattern> excludedTypeMatchers;
+    private final ExcludedTypes excludedTypeMatchers;
 
     public LintEngine(List<LintVisitor> visitors) {
         this(visitors, List.of());
@@ -79,7 +79,7 @@ public final class LintEngine {
             }
         }
         this.byKind = map;
-        this.excludedTypeMatchers = excludedTypePatterns.stream().map(LintEngine::globToPattern).toList();
+        this.excludedTypeMatchers = ExcludedTypes.of(excludedTypePatterns);
     }
 
     /** The engine wired with the built-in rule set, linting every author-owned type. */
@@ -136,36 +136,14 @@ public final class LintEngine {
     }
 
     /**
- * Whether a type name matches a configured {@code excludedTypes} glob. This widens the same
+     * Whether a type name matches a configured {@code excludedTypes} glob. This widens the same
      * per-type skip boundary the bundled ({@code BUNDLED_TYPE_NAMES}) and federation-injected
-     * ({@code injectedNames}) name-set exclusions use, and stays scoped to the engine's AST walk;
-     * a classifier advisory on an excluded type still fires.
+     * ({@code injectedNames}) name-set exclusions use. The matching itself is
+     * {@link ExcludedTypes}', shared with the store-reading producers that apply the same
+     * exclusion to a coordinate they mint outside this walk, so the glob rule has one meaning.
      */
     private boolean matchesExcludedType(String typeName) {
-        for (Pattern matcher : excludedTypeMatchers) {
-            if (matcher.matcher(typeName).matches()) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Translates a type-name glob ({@code *} any run, {@code ?} one char) into an anchored regex,
-     * escaping every other regex metacharacter so a pattern like {@code Legacy*} matches literally.
-     */
-    private static Pattern globToPattern(String glob) {
-        var sb = new StringBuilder();
-        for (int i = 0; i < glob.length(); i++) {
-            char c = glob.charAt(i);
-            switch (c) {
-                case '*' -> sb.append(".*");
-                case '?' -> sb.append('.');
-                default -> {
-                    if ("\\.[]{}()+-^$|".indexOf(c) >= 0) sb.append('\\');
-                    sb.append(c);
-                }
-            }
-        }
-        return Pattern.compile(sb.toString());
+        return excludedTypeMatchers.matches(typeName);
     }
 
     private void visitTypeDefinition(

@@ -11,14 +11,19 @@ package no.sikt.graphitron.model.lint;
  * <p>Every rule is a warning in v1; the enum carries no per-rule severity field. Per-rule severity
  * and enable/disable are deferred to the configurability follow-on.
  *
- * <p>The {@link Source} axis is a typed partition, not decoration. {@link Source#ENGINE} rules are
- * the engine's own syntactic visitors, re-derivable from the AST alone; each is registered to
- * exactly one visitor in {@code LintRules} and the registry coverage test asserts that. They are
- * the rules a single shared traversal dispatches. {@link Source#CLASSIFIER} rules are advisories the
- * classifier already computes and emits from inside the type/field builders; the engine never
- * re-derives them, so they have no visitor and are tagged onto the existing classifier warning at
- * its emit site. Keying the coverage assertion off this axis is what lets the engine assert
- * completeness over a declared partition without a classifier advisory looking like an orphan rule.
+ * <p>The {@link Source} axis is a typed partition, not decoration, and what it partitions on is
+ * <em>which producer mints the finding</em>, never what the finding is derived from. Read the
+ * registry coverage test rather than this prose and the axis is unambiguous: every assertion it
+ * makes is about which completeness gate owns a rule. {@link Source#ENGINE} rules are the engine's
+ * own visitors, each registered to exactly one visitor in {@code LintRules}; they are the rules a
+ * single shared traversal dispatches, and what one of them reads is its own business (a visitor
+ * answering from store rows is an engine rule like any other). {@link Source#CLASSIFIER} rules are
+ * advisories the classifier already computes and emits from inside the type/field builders; the
+ * engine never re-derives them, so they have no visitor and are tagged onto the existing classifier
+ * warning at its emit site. {@link Source#CODEGEN} and {@link Source#DERIVED} are the two
+ * fold-in producers at report assembly, told apart by which producer they are rather than by
+ * their evidence. Keying the coverage assertion off this axis is what lets the engine assert
+ * completeness over a declared partition without a producer outside it looking like an orphan rule.
  */
 public enum LintRule {
     // Engine visitors (syntactic; one shared AST traversal; each registered to exactly one visitor).
@@ -45,7 +50,13 @@ public enum LintRule {
     // <sessionState> identity posture) and DependencyVersionWarnings (the resolved dependency graph).
     NO_SESSION_STATE("no-session-state", Source.CODEGEN),
     GRAPHQL_JAVA_VERSION_LAG("graphql-java-version-lag", Source.CODEGEN),
-    JOOQ_VERSION_LAG("jooq-version-lag", Source.CODEGEN);
+    JOOQ_VERSION_LAG("jooq-version-lag", Source.CODEGEN),
+
+    // Derived-relation producers: a set reduction over one derived view, folded in at report
+    // assembly beside the codegen advisories. Not an engine visitor, because the view is a
+    // recursive walk carrying window terms and a per-node traversal would correlate it once per
+    // field; not a classifier verdict, having no emit site in the builders.
+    REFERENCE_PATH_FANS_OUT("reference-path-fans-out", Source.DERIVED);
 
     /** Where a rule's findings originate, and therefore whether the engine registry owns it. */
     public enum Source {
@@ -54,7 +65,15 @@ public enum LintRule {
         /** A classifier verdict tagged at its existing emit site; never registered to a visitor. */
         CLASSIFIER,
         /** A whole-build fact with no SDL coordinate, folded in at report assembly; no visitor, no classifier site. */
-        CODEGEN
+        CODEGEN,
+        /**
+         * A set reduction over the store's derived relations, minted by a producer in
+         * {@code no.sikt.graphitron.model.lint} and folded in at report assembly. Its own arm
+         * rather than {@link #CODEGEN}'s because it is a different producer with its own
+         * completeness assertion, which is the axis this enum partitions on; that it attaches to
+         * an SDL coordinate where a codegen advisory does not is a consequence, not the criterion.
+         */
+        DERIVED
     }
 
     private final String id;
