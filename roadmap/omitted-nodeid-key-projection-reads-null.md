@@ -319,3 +319,47 @@ case can only arise at the authored-method sites, which is the `@condition` half
   rail specifically (`PresenceGuard.FieldPresent` is minted only for `FkTargetConditionFilter`), and
   `INPUT_FIELD_CONDITION` is not even in `ArgmappingProjectionDefects.EMITTING_SITES`. Worth naming
   the rail rather than the site when that sentence gets written.
+
+#### Addendum to round 1 (2026-09-14, same reviewer session)
+
+R876's capture commits reached trunk while this review was open, so the round above was written
+against the tree one step behind. Re-checked on the new head: all ten relations the round names still
+exist, and the three comments it quotes survive verbatim through that item's 485-line change to the
+model DDL. The finding stands unchanged.
+
+What R876 adds is the rule that decides where the missing half goes, which is why this is an addendum
+rather than a question back. Five consequences, all of them constraints on the revision rather than
+new findings:
+
+* **Placement is computed, not chosen.** R876's target architecture states it as a computation: a
+  view's owner is the latest, in gatherer dependency order, of the owners of what it reads, and
+  `meta_relation.owner_name` must equal the computed one. A nullable-segment derivation reading only
+  `graphitron_argmapping_candidate`, `graphql_field` and `graphql_argument` computes to `sdl`. Written
+  as another `intent_` view in the graphitron family it would be a tenth instance of the misplacement
+  R876 enumerates nine of and is in progress to remove. The revision should compute the owner and say
+  what it got, the same way that item does.
+* **No `_live` pairing.** That convention is retired: "a rule its owner decides to store is stored
+  under its own name."
+* **The ancestry walk is a recursive walk over `parent_path`.** R876 deleted
+  `graphitron_argument_path_segment` and the per-segment resolution with it, on the finding that the
+  candidate tree states once, with a parent link, what that relation denormalized. A plan written
+  against a flat segment relation would not compile on this head.
+* **Nullability is an entry-side fact, and the candidate relation already carries its sibling.**
+  `graphitron_argmapping_candidate.is_list` is there for a stated reason that applies word for word to
+  `non_null`: "a consumer binding a parameter to this candidate needs the arity as much as the type,
+  and reading it here is what keeps such a consumer from joining back to the SDL relation the writer
+  already read." Whether the column joins it or the fact stays a join is the author's call. The point
+  is that R876's rule is what decides it, and the item should decide it rather than leave it.
+* **There is a build gate on the answer.** `ArgmappingProjectionDefects.READS` and
+  `DetectionReadReachGateTest` pin the detection pass's read-cadence reach by equality, and that gate
+  caught its own subject the first time it ran. Any relation the two new refusals read enters that
+  reach and fails the build until the pin is edited in the commit that prices it. Naming the relation
+  and its cost is part of what this half of the plan owes.
+
+One note on the cost side, since it moved. R876's rule leaves the shape of the refusal itself
+untouched: a defect is the anti-join between what the author wrote and what resolved, which is what
+`intent_argmapping_projection_defect` already is, so both new refusals belong there rather than as a
+column inside the resolution. What did move is the price of the nullability half, upward: it is a new
+relation, placed by a rule this item has to run, inside the gate above. A refusal that needs no new
+relation is now cheaper than it looked when the fourth decision was written. Which arm to take is
+still the author's.
