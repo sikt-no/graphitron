@@ -1,7 +1,7 @@
 ---
 id: R948
 title: "An omitted nullable @nodeId in a key projection reads as null, not as an NPE"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: nodeid
