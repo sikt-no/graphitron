@@ -879,6 +879,7 @@ public final class SeededStore {
             .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF, tableRef)
             .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
             .set(GRAPHITRON_TABLE_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_TABLE_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -905,6 +906,7 @@ public final class SeededStore {
             .set(GRAPHITRON_SCALAR_TYPE_ENTRY.SCALAR_REF_FIELD_PART,
                 ConstantReferenceGrammar.split(scalarRef)
                     instanceof ConstantReferenceGrammar.Reference.Parsed p ? p.fieldName() : null)
+            .set(GRAPHITRON_SCALAR_TYPE_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1044,6 +1046,7 @@ public final class SeededStore {
             .set(GRAPHITRON_PIVOT_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_PIVOT_ENTRY.ON_COLUMN, onColumn)
             .set(GRAPHITRON_PIVOT_ENTRY.VALUE_COLUMN, valueColumn)
+            .set(GRAPHITRON_PIVOT_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1886,6 +1889,7 @@ public final class SeededStore {
             .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_MUTATION_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_MUTATION_ENTRY.OPERATION, operation)
+            .set(GRAPHITRON_MUTATION_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1906,6 +1910,7 @@ public final class SeededStore {
             .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF, tableRef)
             .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(tableRef))
             .set(GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAME_PART, QualifiedNameGrammar.namePart(tableRef))
+            .set(GRAPHITRON_MUTATION_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1997,6 +2002,7 @@ public final class SeededStore {
             .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_NAME, SEED_SOURCE)
             .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_CONNECTION_ENTRY.SOURCE_COLUMN, 3)
+            .set(GRAPHITRON_CONNECTION_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -2035,6 +2041,7 @@ public final class SeededStore {
             .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.SOURCE_LINE, 7)
             .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.SOURCE_COLUMN, 11)
             .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.PRIMARY_KEY, true)
+            .set(GRAPHITRON_DEFAULT_ORDER_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

@@ -79,12 +79,10 @@ public final class SdlCapture {
                                                            SubjectConfig config,
                                                            LocalDateTime readAt) {
         var parse = captureEntries(dsl, graph, config, readAt);
-        // Before the SDL anchors rather than with graphitron's own, because those anchors end their
-        // reading by sweeping the coordinates the corpus stopped declaring, and a graphitron row
-        // still pointing at one would refuse the sweep. GraphitronAnchor.clear carries the argument.
-        GraphitronAnchor.clear(dsl, graph.name());
         // After every document, because an anchor is what the corpus says: a coordinate one file
         // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
+        // Its sweep takes the graphitron rows hanging off a coordinate it drops, those references
+        // cascading, which is what lets this run before them rather than behind an emptying pass.
         SdlAnchor.write(dsl, graph.name(), readAt);
         captureGraphitronAnchors(dsl, graph, readAt);
         return parse;

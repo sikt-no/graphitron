@@ -157,8 +157,9 @@ final class FactWrites {
                          t.SOURCE_COLUMN,
                          t.TABLE_REF,
                          t.TABLE_REF_NAMESPACE_PART,
-                         t.TABLE_REF_NAME_PART)
-                .values(markers(10)));
+                         t.TABLE_REF_NAME_PART,
+                         t.TOUCHED_AT)
+                .values(markers(11)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -169,7 +170,8 @@ final class FactWrites {
                                row.get(t.SOURCE_COLUMN),
                                row.get(t.TABLE_REF),
                                row.get(t.TABLE_REF_NAMESPACE_PART),
-                               row.get(t.TABLE_REF_NAME_PART));
+                               row.get(t.TABLE_REF_NAME_PART),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }
@@ -387,8 +389,9 @@ final class FactWrites {
                          t.MULTI_ROW,
                          t.TABLE_REF,
                          t.TABLE_REF_NAMESPACE_PART,
-                         t.TABLE_REF_NAME_PART)
-                .values(markers(11)));
+                         t.TABLE_REF_NAME_PART,
+                         t.TOUCHED_AT)
+                .values(markers(12)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -400,7 +403,8 @@ final class FactWrites {
                                row.get(t.MULTI_ROW),
                                row.get(t.TABLE_REF),
                                row.get(t.TABLE_REF_NAMESPACE_PART),
-                               row.get(t.TABLE_REF_NAME_PART));
+                               row.get(t.TABLE_REF_NAME_PART),
+                               row.get(t.TOUCHED_AT));
         }
         batch.execute();
     }

@@ -101,70 +101,30 @@ public final class GraphitronAnchor {
      * telling readings apart by it.
      */
     public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        // Once, children before parents, rather than once per statement. A derivation that emptied
-        // only its own relation would meet its child's foreign key, and getting that order right
-        // per statement is the same order stated many times over.
-        clear(dsl, graph);
         deprecatedDirectives(dsl, graph, touchedAt);
         deprecatedDirectiveArguments(dsl, graph, touchedAt);
         deprecatedInputFields(dsl, graph, touchedAt);
-        sweep(dsl, graph, touchedAt);
-        tables(dsl, graph);
-        scalarTypes(dsl, graph);
-        records(dsl, graph);
-        connections(dsl, graph);
-        pivots(dsl, graph);
-        mutations(dsl, graph);
+        tables(dsl, graph, touchedAt);
+        scalarTypes(dsl, graph, touchedAt);
+        records(dsl, graph, touchedAt);
+        connections(dsl, graph, touchedAt);
+        pivots(dsl, graph, touchedAt);
+        mutations(dsl, graph, touchedAt);
         // The ordering before the fields it orders by, which reference it.
-        defaultOrders(dsl, graph);
-        defaultOrderFields(dsl, graph);
+        defaultOrders(dsl, graph, touchedAt);
+        defaultOrderFields(dsl, graph, touchedAt);
+        // Last, and children before parents within it, for the reason every delete here has that
+        // order: a sweep that took a parent first would meet its own child's foreign key.
+        sweep(dsl, graph, touchedAt);
     }
 
-    /** What the sweep deletes from, listed rather than found by prefix. */
+    /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED_DIRECTIVE, GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT,
-            GRAPHITRON_DEPRECATED_INPUT_FIELD);
-
-    /** Everything this writer owns, which is what {@link #clear} empties. Listed for the same reason. */
-    private static final List<Table<?>> OWNED =
         List.of(GRAPHITRON_DEPRECATED_DIRECTIVE, GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT,
             GRAPHITRON_DEPRECATED_INPUT_FIELD, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
-            // Children before parents, this being what the clear deletes in order.
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY);
-
-    /**
-     * Empties {@code graph}'s rows across everything this writer owns, ahead of the reading that
-     * states them again.
-     *
-     * <p>Separate from {@link #write} and called before the SDL anchors rather than with them,
-     * because of what those anchors do at the end of their own reading: they sweep, deleting the
-     * coordinates the corpus stopped declaring. Every relation here keys into one of them, so a row
-     * about a type an author has just deleted would refuse that sweep and take the whole reading
-     * down with it. Emptying first is what makes the two readings independent, and it costs nothing
-     * that is not paid anyway: these relations are rewritten whole every reading.
-     *
-     * <p>The relations carrying the reading's instant are emptied here too, although their own
-     * sweep would have found them. One discipline over the writer's whole population is a thing a
-     * reader can check; two, applied by which columns a relation happens to carry, is not.
-     *
-     * <p>Delete and insert rather than upsert and sweep, for the relations that moved off the walk,
-     * and the difference is a column rather than a preference: they carry no instant of their own,
-     * having been written until now by a walk whose whole partition was emptied before it ran. So
-     * this is that same discipline in the only form their columns admit, and it is why moving one
-     * of them owes no schema change.
-     *
-     * <p>Children before parents, and once rather than once per statement. A derivation that
-     * emptied only the relation it fills would meet its own child's foreign key, and getting that
-     * order right inside each statement is one order stated many times over.
-     */
-    public static void clear(DSLContext dsl, String graph) {
-        var named = GRAPHITRON_DEPRECATED_DIRECTIVE;
-        for (Table<?> table : OWNED) {
-            dsl.deleteFrom(table).where(table.field(named.GRAPH_NAME).eq(graph)).execute();
-        }
-    }
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -198,7 +158,7 @@ public final class GraphitronAnchor {
      * cares about being the absence of the row.
      */
     private static void deprecatedDirectiveArguments(DSLContext dsl, String graph,
-                                                     LocalDateTime touchedAt) {
+                                        LocalDateTime touchedAt) {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var a = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
@@ -243,7 +203,7 @@ public final class GraphitronAnchor {
      * for the text. One decode, three resolutions, and no consumer parses anything.
      */
     private static void deprecatedInputFields(DSLContext dsl, String graph,
-                                              LocalDateTime touchedAt) {
+                                        LocalDateTime touchedAt) {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
         var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
@@ -364,25 +324,36 @@ public final class GraphitronAnchor {
      * decode is its payload, and an absent payload is the deduction the author asked for by
      * leaving the argument out rather than the absence of the directive.
      */
-    private static void tables(DSLContext dsl, String graph) {
+    private static void tables(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimed(dsl, graph, "table");
         var e = GRAPHITRON_AST_TABLE_ENTRY;
         var t = GRAPHITRON_TABLE_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
                 t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TABLE_REF,
-                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
                     c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
                     c.field(SITE_COLUMN), e.TABLE_REF, e.TABLE_REF_NAMESPACE_PART,
-                    e.TABLE_REF_NAME_PART)
+                    e.TABLE_REF_NAME_PART, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .leftJoin(e).on(e.GRAPH_NAME.eq(graph))
                     .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
                     .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
                     .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
+            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TABLE_REF, excluded(t.TABLE_REF))
+            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
+            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -392,25 +363,36 @@ public final class GraphitronAnchor {
      * relation's one unkeyed column and it is NOT NULL, so an application naming nothing has
      * nothing to state and the walk this replaces returned without writing.
      */
-    private static void scalarTypes(DSLContext dsl, String graph) {
+    private static void scalarTypes(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimed(dsl, graph, "scalarType");
         var e = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
         var t = GRAPHITRON_SCALAR_TYPE_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
                 t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SCALAR_REF,
-                t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART)
+                t.SCALAR_REF_CLASS_PART, t.SCALAR_REF_FIELD_PART, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
                     c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
                     c.field(SITE_COLUMN), e.SCALAR_REF, e.SCALAR_REF_CLASS_PART,
-                    e.SCALAR_REF_FIELD_PART)
+                    e.SCALAR_REF_FIELD_PART, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .join(e).on(e.GRAPH_NAME.eq(graph))
                     .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
                     .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
                     .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
+            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
+            .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
+            .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -468,21 +450,29 @@ public final class GraphitronAnchor {
      * defaulting the page size and deriving the type name, so the row is the application and the
      * payload is whatever was written; an outer join for the reason {@link #tables} takes one.
      */
-    private static void connections(DSLContext dsl, String graph) {
+    private static void connections(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "asConnection");
         var e = GRAPHITRON_AST_CONNECTION_ENTRY;
         var t = GRAPHITRON_CONNECTION_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.DEFAULT_FIRST_VALUE, t.CONNECTION_NAME)
+                t.SOURCE_COLUMN, t.DEFAULT_FIRST_VALUE, t.CONNECTION_NAME, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
                     c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.DEFAULT_FIRST_VALUE, e.CONNECTION_NAME)
+                    e.DEFAULT_FIRST_VALUE, e.CONNECTION_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
                     graph, c))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.DEFAULT_FIRST_VALUE, excluded(t.DEFAULT_FIRST_VALUE))
+            .set(t.CONNECTION_NAME, excluded(t.CONNECTION_NAME))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -491,21 +481,30 @@ public final class GraphitronAnchor {
      * NOT NULL here and the walk this replaces returned without writing when either was unwritten,
      * so an application that named neither has no fact to state.
      */
-    private static void pivots(DSLContext dsl, String graph) {
+    private static void pivots(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "pivot");
         var e = GRAPHITRON_AST_PIVOT_ENTRY;
         var t = GRAPHITRON_PIVOT_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.ON_COLUMN, t.VALUE_COLUMN, t.VOCABULARY_REF)
+                t.SOURCE_COLUMN, t.ON_COLUMN, t.VALUE_COLUMN, t.VOCABULARY_REF, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
                     c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.ON_COLUMN, e.VALUE_COLUMN, e.VOCABULARY_REF)
+                    e.ON_COLUMN, e.VALUE_COLUMN, e.VOCABULARY_REF, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
                     graph, c))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.ON_COLUMN, excluded(t.ON_COLUMN))
+            .set(t.VALUE_COLUMN, excluded(t.VALUE_COLUMN))
+            .set(t.VOCABULARY_REF, excluded(t.VOCABULARY_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -515,23 +514,34 @@ public final class GraphitronAnchor {
      * row. That spelling is also a row of {@code graphitron_spelled_reference_entry}, which is
      * keyed by the value across every site that writes one and so moves with the last of them.
      */
-    private static void mutations(DSLContext dsl, String graph) {
+    private static void mutations(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "mutation");
         var e = GRAPHITRON_AST_MUTATION_ENTRY;
         var t = GRAPHITRON_MUTATION_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
                 t.SOURCE_COLUMN, t.OPERATION, t.MULTI_ROW, t.TABLE_REF,
-                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
+                t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
                     c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
                     e.OPERATION, e.MULTI_ROW, e.TABLE_REF, e.TABLE_REF_NAMESPACE_PART,
-                    e.TABLE_REF_NAME_PART)
+                    e.TABLE_REF_NAME_PART, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .join(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
                     graph, c))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.OPERATION, excluded(t.OPERATION))
+            .set(t.MULTI_ROW, excluded(t.MULTI_ROW))
+            .set(t.TABLE_REF, excluded(t.TABLE_REF))
+            .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
+            .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -540,21 +550,30 @@ public final class GraphitronAnchor {
      * may state its basis as an index, as the primary key, or as the field list below, so every
      * payload column here is optional and the row is the application.
      */
-    private static void defaultOrders(DSLContext dsl, String graph) {
+    private static void defaultOrders(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "defaultOrder");
         var e = GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
         var t = GRAPHITRON_DEFAULT_ORDER_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION)
+                t.SOURCE_COLUMN, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
                     c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.INDEX_REF, e.PRIMARY_KEY, e.DIRECTION)
+                    e.INDEX_REF, e.PRIMARY_KEY, e.DIRECTION, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
                     graph, c))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.INDEX_REF, excluded(t.INDEX_REF))
+            .set(t.PRIMARY_KEY, excluded(t.PRIMARY_KEY))
+            .set(t.DIRECTION, excluded(t.DIRECTION))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -585,7 +604,8 @@ public final class GraphitronAnchor {
      * Index zero is what the coercion says it is, and stating it here is cheaper than a second
      * relation for the one-element spelling.
      */
-    private static void defaultOrderFields(DSLContext dsl, String graph) {
+    private static void defaultOrderFields(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimedOnField(dsl, graph, "defaultOrder");
         var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
         var v = GRAPHQL_AST_VALUE_ENTRY;
@@ -593,10 +613,10 @@ public final class GraphitronAnchor {
         var t = GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.NAME_REF, t.COLLATE,
-                t.DIRECTION)
+                t.DIRECTION, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
-                    coalesce(v.POSITION, inline(0)), e.NAME_REF, e.COLLATE, e.DIRECTION)
+                    coalesce(v.POSITION, inline(0)), e.NAME_REF, e.COLLATE, e.DIRECTION, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .join(a).on(a.GRAPH_NAME.eq(graph))
                     .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
@@ -612,6 +632,11 @@ public final class GraphitronAnchor {
                     .and(e.SOURCE_LINE.eq(v.SOURCE_LINE))
                     .and(e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.NAME_REF, excluded(t.NAME_REF))
+            .set(t.COLLATE, excluded(t.COLLATE))
+            .set(t.DIRECTION, excluded(t.DIRECTION))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 
@@ -634,23 +659,32 @@ public final class GraphitronAnchor {
      * outer half costs nothing to state: {@code class_name} is the only payload column and it is
      * nullable, so an application the decode refused lands as the null row the walk wrote too.
      */
-    private static void records(DSLContext dsl, String graph) {
+    private static void records(DSLContext dsl, String graph,
+                                        LocalDateTime touchedAt) {
         var c = claimed(dsl, graph, "record");
         var e = GRAPHITRON_AST_RECORD_ENTRY;
         var t = GRAPHITRON_RECORD_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CLASS_NAME)
+                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CLASS_NAME, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
                     c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
-                    c.field(SITE_COLUMN), e.CLASS_NAME)
+                    c.field(SITE_COLUMN), e.CLASS_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
                 .leftJoin(e).on(e.GRAPH_NAME.eq(graph))
                     .and(e.SOURCE_NAME.eq(c.field(SITE_NAME)))
                     .and(e.SOURCE_LINE.eq(c.field(SITE_LINE)))
                     .and(e.SOURCE_COLUMN.eq(c.field(SITE_COLUMN)))
                 .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
+            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
 }

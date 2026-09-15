@@ -3103,13 +3103,16 @@ CREATE TABLE graphitron_table_entry (
   table_ref        VARCHAR,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   type_name_upper                VARCHAR GENERATED ALWAYS AS (UPPER(type_name)),
   table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
   table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_table_entry IS 'The table a type is bound to, as one row per type however many @table applications the corpus wrote on it. For example type Film @table(name: "film") gives the row Film reading film, and a bare @table on Actor gives a row carrying no name at all.';
 COMMENT ON COLUMN graphitron_table_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3125,6 +3128,7 @@ COMMENT ON COLUMN graphitron_table_entry.table_ref_name_part IS 'right of table_
 COMMENT ON COLUMN graphitron_table_entry.type_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table.table_name_upper where @table(name:) was omitted and the type name stands in as a table spelling. Generated, so nothing writes it and nothing can. A GraphQL type name is folded here for that crossing alone; nothing compares one to another case-insensitively';
 COMMENT ON COLUMN graphitron_table_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_table_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON COLUMN graphitron_table_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_field_binding_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3204,10 +3208,13 @@ CREATE TABLE graphitron_scalar_type_entry (
   scalar_ref       VARCHAR NOT NULL,
   scalar_ref_class_part VARCHAR,
   scalar_ref_field_part VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_scalar_type_entry IS 'The Java constant a scalar type is bound to, as one row per scalar however many @scalarType applications the corpus wrote on it. For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row, split into the class that declares the field and the field itself.';
 COMMENT ON COLUMN graphitron_scalar_type_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3220,6 +3227,7 @@ COMMENT ON COLUMN graphitron_scalar_type_entry.source_column IS 'source column, 
 COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref IS 'the fully-qualified Java constant reference as written';
 COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_class_part IS 'the class half of the reference, split on its last period by ConstantReferenceGrammar; NULL where the reference names no class at all, which is that grammar''s malformed arm rather than a missing class';
 COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_field_part IS 'the field half beside it, on the same split and null in the same case; the pair is stored rather than computed so a reader joining the census probes its key instead of comparing against a concatenation';
+COMMENT ON COLUMN graphitron_scalar_type_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_enum_entry (
   graph_name       VARCHAR NOT NULL,
@@ -3703,8 +3711,10 @@ CREATE TABLE graphitron_connection_entry (
   source_column       INT,
   default_first_value INT,
   connection_name     VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_connection_entry IS 'The connection an @asConnection application asks the macro to expand a field into, as one row per field however many applications the corpus wrote on it. For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row carrying that page size and no name, the type name being derived where the author wrote none.';
 COMMENT ON COLUMN graphitron_connection_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3715,6 +3725,7 @@ COMMENT ON COLUMN graphitron_connection_entry.source_line IS 'source line, 1-bas
 COMMENT ON COLUMN graphitron_connection_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_connection_entry.default_first_value IS 'as written; NULL when omitted';
 COMMENT ON COLUMN graphitron_connection_entry.connection_name IS 'the deprecated shared-type override, as written; honoured by the expansion, deprecation is a lint detection';
+COMMENT ON COLUMN graphitron_connection_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_facet_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3827,8 +3838,10 @@ CREATE TABLE graphitron_default_order_entry (
   index_ref     VARCHAR,
   primary_key   BOOLEAN,
   direction     VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_default_order_entry IS 'The ordering a field sorts by when the client asks for none, as one row per field however many @defaultOrder applications the corpus wrote on it. For example @defaultOrder(primaryKey: true, direction: DESC) gives one row stating the basis and the fallback direction, with the field list beside it.';
 COMMENT ON COLUMN graphitron_default_order_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3840,6 +3853,7 @@ COMMENT ON COLUMN graphitron_default_order_entry.source_column IS 'source column
 COMMENT ON COLUMN graphitron_default_order_entry.index_ref IS 'the database index name as written';
 COMMENT ON COLUMN graphitron_default_order_entry.primary_key IS 'as written; NULL when omitted';
 COMMENT ON COLUMN graphitron_default_order_entry.direction IS 'as written; open column, the ASC default is a derivation';
+COMMENT ON COLUMN graphitron_default_order_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_default_order_field_entry (
   graph_name VARCHAR NOT NULL,
@@ -3849,8 +3863,10 @@ CREATE TABLE graphitron_default_order_field_entry (
   name_ref   VARCHAR NOT NULL,
   collate    VARCHAR,
   direction  VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, position),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphitron_default_order_entry (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_default_order_field_entry IS 'One field a @defaultOrder sorts by, at its place in the order the rows are read in. For example @defaultOrder(fields: [{name: "title", collate: "xdanish_ai", direction: DESC}]) gives one row at position 0.';
 COMMENT ON COLUMN graphitron_default_order_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3860,6 +3876,7 @@ COMMENT ON COLUMN graphitron_default_order_field_entry.position IS '0-based posi
 COMMENT ON COLUMN graphitron_default_order_field_entry.name_ref IS 'the name argument as written';
 COMMENT ON COLUMN graphitron_default_order_field_entry.collate IS 'the collation as written, when declared';
 COMMENT ON COLUMN graphitron_default_order_field_entry.direction IS 'the sort direction as written; author-spelled enum literal, open column';
+COMMENT ON COLUMN graphitron_default_order_field_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_mutation_entry (
   graph_name    VARCHAR NOT NULL,
@@ -3873,10 +3890,12 @@ CREATE TABLE graphitron_mutation_entry (
   table_ref     VARCHAR,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
   table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_mutation_entry IS 'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it. For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.';
 COMMENT ON COLUMN graphitron_mutation_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -3892,6 +3911,7 @@ COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part IS 'left of
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part IS 'right of table_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON COLUMN graphitron_mutation_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_error_entry (
   graph_name       VARCHAR NOT NULL,
@@ -4105,8 +4125,10 @@ CREATE TABLE graphitron_pivot_entry (
   on_column      VARCHAR NOT NULL,
   value_column   VARCHAR NOT NULL,
   vocabulary_ref VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_pivot_entry IS 'The two columns a @pivot application projects an aggregate across, as one row per field however many applications the corpus wrote on it. For example @pivot(on: "category", value: "total") gives one row naming the column that spreads and the column that fills.';
 COMMENT ON COLUMN graphitron_pivot_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4118,6 +4140,7 @@ COMMENT ON COLUMN graphitron_pivot_entry.source_column IS 'source column, 1-base
 COMMENT ON COLUMN graphitron_pivot_entry.on_column IS 'the on: argument, the discriminator column as written';
 COMMENT ON COLUMN graphitron_pivot_entry.value_column IS 'the value: argument as written';
 COMMENT ON COLUMN graphitron_pivot_entry.vocabulary_ref IS 'names an enum type; author-spelled, no FK';
+COMMENT ON COLUMN graphitron_pivot_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_routine_entry (
   graph_name     VARCHAR NOT NULL,
@@ -4360,10 +4383,13 @@ CREATE TABLE graphitron_record_entry (
   source_line      INT,
   source_column    INT,
   class_name       VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_record_entry IS 'The class a type says it is backed by through @record, which is deprecated and read only to warn. For example type Film @record(record: {className: "com.example.FilmRecord"}) gives one row naming that class.';
 COMMENT ON COLUMN graphitron_record_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -4374,6 +4400,7 @@ COMMENT ON COLUMN graphitron_record_entry.declaration_column IS 'column of the c
 COMMENT ON COLUMN graphitron_record_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_record_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_record_entry.class_name IS 'record.className as written';
+COMMENT ON COLUMN graphitron_record_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_undecoded_argument_entry (
   graph_name              VARCHAR NOT NULL,

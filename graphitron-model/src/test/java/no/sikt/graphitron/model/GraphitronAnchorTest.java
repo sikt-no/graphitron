@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -181,6 +182,72 @@ class GraphitronAnchorTest {
                     + "to say it")
                 .contains("index", "record");
         });
+    }
+
+    /**
+     * The half of a withdrawal no cascade can reach. The type still stands, so its coordinate is
+     * still there and nothing is deleted out from under this row; what went is the application on
+     * it, which leaves a row an upsert cannot find because there is no incoming row to match. Only
+     * the sweep collects it, and until these relations carried an instant there was nothing to
+     * sweep by and a pass emptied the partition instead.
+     */
+    @Test
+    @DisplayName("a binding the author removed from a type that still stands is swept")
+    void aWithdrawnBindingIsSwept(@TempDir Path tmp) {
+        write(tmp, "schema.graphqls", """
+            type Query { film: Film }
+            type Film @table(name: "film") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            assertThat(bound(dsl, "Film")).as("before").isTrue();
+
+            write(tmp, "schema.graphqls", """
+                type Query { film: Film }
+                type Film { title: String }
+                """);
+            read(dsl, tmp);
+
+            assertThat(bound(dsl, "Film"))
+                .as("the coordinate still stands, so only a sweep can have taken this row")
+                .isFalse();
+        });
+    }
+
+    /**
+     * The other half, and the one the clear used to be there for. Removing the type takes its
+     * coordinate, and the anchors sweep that coordinate away at the end of their own reading; a
+     * binding row still pointing at it would have refused that delete. It does not, because the
+     * reference cascades, which is what lets this writer run without a pass emptying it first.
+     */
+    @Test
+    @DisplayName("a type the author removed takes its binding with it, through the cascade")
+    void aWithdrawnTypeCascadesToItsBinding(@TempDir Path tmp) {
+        write(tmp, "schema.graphqls", """
+            type Query { film: Film }
+            type Film @table(name: "film") { title: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp);
+            assertThat(bound(dsl, "Film")).as("before").isTrue();
+
+            write(tmp, "schema.graphqls", """
+                type Query { title: String }
+                """);
+            read(dsl, tmp);
+
+            assertThat(bound(dsl, "Film"))
+                .as("the coordinate went, and the row hanging off it went with it")
+                .isFalse();
+        });
+    }
+
+    /** Whether the corpus binds this type to a table. */
+    private static boolean bound(DSLContext dsl, String typeName) {
+        var t = GRAPHITRON_TABLE_ENTRY;
+        return dsl.fetchExists(dsl.selectOne().from(t).where(t.TYPE_NAME.eq(typeName)));
     }
 
     /** Whether the corpus marks this directive deprecated as a whole. */
