@@ -389,7 +389,7 @@ public final class FactCapture {
             // row to reference otherwise, this pass being the one its stages run in.
             SdlCapture.captureAstIndex(txDsl, graph, readAt);
             SdlCapture.captureGraphitronAnchors(txDsl, graph, readAt);
-            GraphitronFactCapture.capture(sink, txDsl, graph.name());
+            GraphitronFactCapture.capture(sink, txDsl, graph.name(), readAt);
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when

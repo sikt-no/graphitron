@@ -2,15 +2,19 @@ package no.sikt.graphitron.model.derive;
 
 import org.jooq.DSLContext;
 
+import java.time.LocalDateTime;
+
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.count;
+import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.partitionBy;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The capture-cadence writer of {@code graphitron_field_routine}: which catalog table each
@@ -31,6 +35,9 @@ import static org.jooq.impl.DSL.partitionBy;
  * with {@code @reference} into one chain in written order, so a function can stand anywhere in it;
  * a relation holding one application per field could answer only for chains that contain one.
  *
+ * <p>Marked and swept, on {@link FieldEndpoints}' terms: the statement upserts on the reading's
+ * instant and the delete after it takes the applications this reading no longer resolves.
+ *
  * <p>The match folds case on both sides, and a spelling with no namespace is admitted against any
  * schema the graph's sources carry, which is what an author writing an unqualified name means. A
  * spelling two schemas both answer resolves to two candidates and draws no row, on
@@ -42,14 +49,8 @@ public final class FieldRoutines {
 
     private FieldRoutines() {}
 
-    /** Clears and re-derives the graph's resolved routine applications; see the class javadoc. */
-    public static void derive(DSLContext dsl, String graphName) {
-        // Cleared first so the call is idempotent, on FieldEndpoints' terms: capture makes it once
-        // per graph, and a caller re-deriving in order to read the result makes it as often as it
-        // likes.
-        dsl.deleteFrom(GRAPHITRON_FIELD_ROUTINE)
-            .where(GRAPHITRON_FIELD_ROUTINE.GRAPH_NAME.eq(graphName)).execute();
-
+    /** Re-derives the graph's resolved routine applications; see the class javadoc. */
+    public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var ft = GRAPHITRON_FIELD_TABLE;
         var r = GRAPHITRON_ROUTINE_ENTRY;
         var gs = STORE_GRAPH_SOURCE;
@@ -82,16 +83,32 @@ public final class FieldRoutines {
                 GRAPHITRON_FIELD_ROUTINE.TO_SOURCE_NAME, GRAPHITRON_FIELD_ROUTINE.TO_SCHEMA,
                 GRAPHITRON_FIELD_ROUTINE.TO_TABLE, GRAPHITRON_FIELD_ROUTINE.ORDINAL,
                 GRAPHITRON_FIELD_ROUTINE.RESULT_SOURCE_NAME,
-                GRAPHITRON_FIELD_ROUTINE.RESULT_SCHEMA, GRAPHITRON_FIELD_ROUTINE.RESULT_TABLE)
+                GRAPHITRON_FIELD_ROUTINE.RESULT_SCHEMA, GRAPHITRON_FIELD_ROUTINE.RESULT_TABLE,
+                GRAPHITRON_FIELD_ROUTINE.TOUCHED_AT)
             .select(dsl.select(
                     resolved.field(ft.GRAPH_NAME), resolved.field(ft.TYPE_NAME),
                     resolved.field(ft.FIELD_NAME),
                     resolved.field(ft.TO_SOURCE_NAME), resolved.field(ft.TO_SCHEMA),
                     resolved.field(ft.TO_TABLE), resolved.field(r.ORDINAL),
                     resolved.field(st.SOURCE_NAME), resolved.field(st.TABLE_SCHEMA),
-                    resolved.field(st.TABLE_NAME))
+                    resolved.field(st.TABLE_NAME),
+                    val(touchedAt, GRAPHITRON_FIELD_ROUTINE.TOUCHED_AT))
                 .from(resolved)
                 .where(field(name("resolved", "candidates"), Integer.class).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_FIELD_ROUTINE.RESULT_SOURCE_NAME,
+                excluded(GRAPHITRON_FIELD_ROUTINE.RESULT_SOURCE_NAME))
+            .set(GRAPHITRON_FIELD_ROUTINE.RESULT_SCHEMA,
+                excluded(GRAPHITRON_FIELD_ROUTINE.RESULT_SCHEMA))
+            .set(GRAPHITRON_FIELD_ROUTINE.RESULT_TABLE,
+                excluded(GRAPHITRON_FIELD_ROUTINE.RESULT_TABLE))
+            .set(GRAPHITRON_FIELD_ROUTINE.TOUCHED_AT,
+                excluded(GRAPHITRON_FIELD_ROUTINE.TOUCHED_AT))
+            .execute();
+
+        dsl.deleteFrom(GRAPHITRON_FIELD_ROUTINE)
+            .where(GRAPHITRON_FIELD_ROUTINE.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_FIELD_ROUTINE.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 }

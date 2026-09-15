@@ -590,6 +590,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphitron_field_table", Arm.DERIVED);
         registrations.put("graphitron_field_routine", Arm.DERIVED);
         registrations.put("graphitron_field_chain_link", Arm.DERIVED);
+        registrations.put("graphitron_field_table_link", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);
         registrations.put("graphitron_type", Arm.DERIVED);
         registrations.put("graphitron_field", Arm.DERIVED);

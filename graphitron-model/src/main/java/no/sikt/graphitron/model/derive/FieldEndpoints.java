@@ -3,8 +3,10 @@ package no.sikt.graphitron.model.derive;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
-import org.jooq.Record10;
+import org.jooq.Record11;
 import org.jooq.Select;
+
+import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_NAVIGATION;
@@ -14,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.count;
+import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.name;
@@ -47,46 +50,68 @@ import static org.jooq.impl.DSL.val;
  * multi-table polymorphic container is one statement per participant, and two participants backed by
  * one table are one target rather than two, which is why the participant arm is distinct on the
  * table it arrives at rather than on the member it came from.
+ *
+ * <p>Marked and swept, on {@code SdlAnchor}'s terms and for {@link ElementAnchors}' reason. Each arm
+ * upserts on the reading's instant and the sweep at the end takes the targets this reading did not
+ * name. Clearing the partition first was the shape before, and it is a correctness point rather
+ * than a cost: relations key into this one with {@code ON DELETE CASCADE}, so emptying it takes
+ * their rows with it, and a stage below that then resolves against a relation nothing had refilled
+ * yet.
  */
 public final class FieldEndpoints {
 
     private FieldEndpoints() {}
 
-    /** Clears and re-derives the graph's field endpoints; see the class javadoc. */
-    public static void derive(DSLContext dsl, String graphName) {
-        // Cleared first so the call is idempotent: capture makes it once per graph, and a caller
-        // re-deriving in order to read the result makes it as often as it likes.
+    /** Re-derives the graph's field endpoints and sweeps what it no longer names. */
+    public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        insert(dsl, namedType(dsl, graphName, touchedAt));
+        insert(dsl, participants(dsl, graphName, touchedAt));
+        insert(dsl, routineResult(dsl, graphName, touchedAt));
+        // After all three arms, because a target one of them still names is a target this reading
+        // found however many of the others missed it.
         dsl.deleteFrom(GRAPHITRON_FIELD_TABLE)
-            .where(GRAPHITRON_FIELD_TABLE.GRAPH_NAME.eq(graphName)).execute();
-        insert(dsl, namedType(dsl, graphName));
-        insert(dsl, participants(dsl, graphName));
-        insert(dsl, routineResult(dsl, graphName));
+            .where(GRAPHITRON_FIELD_TABLE.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_FIELD_TABLE.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 
-    private static void insert(DSLContext dsl, Select<? extends Record10<
-            String, String, String, String, String, String, String, String, String, String>> rows) {
+    private static void insert(DSLContext dsl, Select<? extends Record11<
+            String, String, String, String, String, String, String, String, String, String,
+            LocalDateTime>> rows) {
         dsl.insertInto(GRAPHITRON_FIELD_TABLE)
             .columns(GRAPHITRON_FIELD_TABLE.GRAPH_NAME, GRAPHITRON_FIELD_TABLE.TYPE_NAME,
                 GRAPHITRON_FIELD_TABLE.FIELD_NAME,
                 GRAPHITRON_FIELD_TABLE.FROM_SOURCE_NAME, GRAPHITRON_FIELD_TABLE.FROM_SCHEMA,
                 GRAPHITRON_FIELD_TABLE.FROM_TABLE,
                 GRAPHITRON_FIELD_TABLE.TO_SOURCE_NAME, GRAPHITRON_FIELD_TABLE.TO_SCHEMA,
-                GRAPHITRON_FIELD_TABLE.TO_TABLE, GRAPHITRON_FIELD_TABLE.TARGET_BASIS)
+                GRAPHITRON_FIELD_TABLE.TO_TABLE, GRAPHITRON_FIELD_TABLE.TARGET_BASIS,
+                GRAPHITRON_FIELD_TABLE.TOUCHED_AT)
             .select(rows)
+            .onDuplicateKeyUpdate()
+            .set(GRAPHITRON_FIELD_TABLE.FROM_SOURCE_NAME,
+                excluded(GRAPHITRON_FIELD_TABLE.FROM_SOURCE_NAME))
+            .set(GRAPHITRON_FIELD_TABLE.FROM_SCHEMA,
+                excluded(GRAPHITRON_FIELD_TABLE.FROM_SCHEMA))
+            .set(GRAPHITRON_FIELD_TABLE.FROM_TABLE,
+                excluded(GRAPHITRON_FIELD_TABLE.FROM_TABLE))
+            .set(GRAPHITRON_FIELD_TABLE.TARGET_BASIS,
+                excluded(GRAPHITRON_FIELD_TABLE.TARGET_BASIS))
+            .set(GRAPHITRON_FIELD_TABLE.TOUCHED_AT, excluded(GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .execute();
     }
 
     /** The ordinary case: the field's navigated type binds a table and that is where its rows are. */
-    private static Select<? extends Record10<
-            String, String, String, String, String, String, String, String, String, String>>
-            namedType(DSLContext dsl, String graphName) {
+    private static Select<? extends Record11<
+            String, String, String, String, String, String, String, String, String, String,
+            LocalDateTime>>
+            namedType(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var nv = GRAPHITRON_FIELD_NAVIGATION;
         var tgt = GRAPHITRON_TABLETYPE.as("target");
         var src = GRAPHITRON_TABLETYPE.as("source");
         return dsl.select(nv.GRAPH_NAME, nv.TYPE_NAME, nv.FIELD_NAME,
                 src.TABLE_SOURCE_NAME, src.TABLE_SCHEMA, src.TABLE_NAME,
                 tgt.TABLE_SOURCE_NAME, tgt.TABLE_SCHEMA, tgt.TABLE_NAME,
-                val("NAMED_TYPE_TABLE"))
+                val("NAMED_TYPE_TABLE"), val(touchedAt, GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .from(nv)
             .join(tgt).on(tgt.GRAPH_NAME.eq(nv.GRAPH_NAME),
                 tgt.TYPE_NAME.eq(nv.NAVIGATED_TYPE_NAME))
@@ -99,9 +124,10 @@ public final class FieldEndpoints {
      * Distinct on the arriving table: two participants over one table are one target, and keeping
      * them apart would mean two rows the key cannot tell apart.
      */
-    private static Select<? extends Record10<
-            String, String, String, String, String, String, String, String, String, String>>
-            participants(DSLContext dsl, String graphName) {
+    private static Select<? extends Record11<
+            String, String, String, String, String, String, String, String, String, String,
+            LocalDateTime>>
+            participants(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var nv = GRAPHITRON_FIELD_NAVIGATION;
         var m = GRAPHQL_POLY_MEMBER;
         var tgt = GRAPHITRON_TABLETYPE.as("target");
@@ -109,7 +135,7 @@ public final class FieldEndpoints {
         return dsl.selectDistinct(nv.GRAPH_NAME, nv.TYPE_NAME, nv.FIELD_NAME,
                 src.TABLE_SOURCE_NAME, src.TABLE_SCHEMA, src.TABLE_NAME,
                 tgt.TABLE_SOURCE_NAME, tgt.TABLE_SCHEMA, tgt.TABLE_NAME,
-                val("PARTICIPANT_TABLE"))
+                val("PARTICIPANT_TABLE"), val(touchedAt, GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .from(nv)
             .join(m).on(m.GRAPH_NAME.eq(nv.GRAPH_NAME),
                 m.CONTAINER_NAME.eq(nv.NAVIGATED_TYPE_NAME))
@@ -130,9 +156,10 @@ public final class FieldEndpoints {
      * sources, the case folds capture stored beside the spelling, and exactly one candidate. A name
      * two schemas both declare resolves to two functions and to no row.
      */
-    private static Select<? extends Record10<
-            String, String, String, String, String, String, String, String, String, String>>
-            routineResult(DSLContext dsl, String graphName) {
+    private static Select<? extends Record11<
+            String, String, String, String, String, String, String, String, String, String,
+            LocalDateTime>>
+            routineResult(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var r = GRAPHITRON_ROUTINE_ENTRY;
         var later = GRAPHITRON_ROUTINE_ENTRY.as("later");
         var gs = STORE_GRAPH_SOURCE;
@@ -165,7 +192,7 @@ public final class FieldEndpoints {
                 src.TABLE_SOURCE_NAME, src.TABLE_SCHEMA, src.TABLE_NAME,
                 resolved.field(st.SOURCE_NAME), resolved.field(st.TABLE_SCHEMA),
                 resolved.field(st.TABLE_NAME),
-                val("ROUTINE_RESULT"))
+                val("ROUTINE_RESULT"), val(touchedAt, GRAPHITRON_FIELD_TABLE.TOUCHED_AT))
             .from(resolved)
             .join(nv).on(nv.GRAPH_NAME.eq(resolved.field(r.GRAPH_NAME)),
                 nv.TYPE_NAME.eq(resolved.field(r.TYPE_NAME)),

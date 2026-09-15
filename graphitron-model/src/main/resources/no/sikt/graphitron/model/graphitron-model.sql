@@ -2093,6 +2093,8 @@ CREATE TABLE graphitron_ast_field_reference_key_step_entry (
   key_ref                  VARCHAR NOT NULL,
   key_ref_namespace_part   VARCHAR,
   key_ref_name_part        VARCHAR NOT NULL,
+  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
+  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2108,6 +2110,8 @@ COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.touched_at IS 'w
 COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint. NOT NULL because a row exists exactly where the author named one';
 COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_namespace_part IS 'the schema half of the written name, which scopes the lookup to constraints held in that schema; NULL where none was written';
 COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_name_part IS 'the constraint half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
+COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_field_reference_condition_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2189,6 +2193,8 @@ CREATE TABLE graphitron_ast_field_reference_for_key_step_entry (
   key_ref                  VARCHAR NOT NULL,
   key_ref_namespace_part   VARCHAR,
   key_ref_name_part        VARCHAR NOT NULL,
+  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
+  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2204,6 +2210,8 @@ COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.touched_at I
 COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint. NOT NULL because a row exists exactly where the author named one';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_namespace_part IS 'the schema half of the written name, which scopes the lookup to constraints held in that schema; NULL where none was written';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_name_part IS 'the constraint half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_field_reference_for_condition_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2609,6 +2617,8 @@ CREATE TABLE graphitron_ast_input_value_reference_key_step_entry (
   key_ref                  VARCHAR NOT NULL,
   key_ref_namespace_part   VARCHAR,
   key_ref_name_part        VARCHAR NOT NULL,
+  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
+  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2624,6 +2634,8 @@ COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.touched_at
 COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref IS 'the key field of the element exactly as written, naming the foreign-key constraint the hop is drawn through';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_namespace_part IS 'the schema half of the written key name, or NULL where none was written; the qualifier binds the constraint holder''s schema';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_name_part IS 'the constraint half of the same, which is what sql_constraint is matched on';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_input_value_reference_table_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2684,6 +2696,8 @@ CREATE TABLE graphitron_ast_input_value_reference_for_key_step_entry (
   key_ref                  VARCHAR NOT NULL,
   key_ref_namespace_part   VARCHAR,
   key_ref_name_part        VARCHAR NOT NULL,
+  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
+  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2699,6 +2713,8 @@ COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.touche
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref IS 'the key field of the element exactly as written, naming the foreign-key constraint the hop is drawn through';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_namespace_part IS 'the schema half of the written key name, or NULL where none was written; the qualifier binds the constraint holder''s schema';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_name_part IS 'the constraint half of the same, which is what sql_constraint is matched on';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_input_value_reference_for_table_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -5396,6 +5412,7 @@ CREATE TABLE graphitron_field_table (
   to_schema        VARCHAR NOT NULL,
   to_table         VARCHAR NOT NULL,
   target_basis     VARCHAR NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table),
   -- graphitron_field and not graphql_field_element, which is the population's doing: a connection
   -- macro mints fields that have a target like any other and no transcribed coordinate, minting
@@ -5424,6 +5441,7 @@ COMMENT ON COLUMN graphitron_field_table.to_source_name IS 'the catalog partitio
 COMMENT ON COLUMN graphitron_field_table.to_schema IS 'the target table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_table.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
 COMMENT ON COLUMN graphitron_field_table.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
+COMMENT ON COLUMN graphitron_field_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. A target this reading no longer names leaves, and the links keyed into it leave with it; what does not happen is the whole partition emptying first, which is what the column is for';
 
 CREATE TABLE graphitron_field_chain_link (
   graph_name          VARCHAR NOT NULL,
@@ -5467,6 +5485,7 @@ CREATE TABLE graphitron_field_routine (
   result_source_name VARCHAR NOT NULL,
   result_schema      VARCHAR NOT NULL,
   result_table       VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name,
                to_source_name, to_schema, to_table, ordinal),
   -- The chain this application stands in, so the two cannot disagree about which target the path
@@ -5492,6 +5511,89 @@ COMMENT ON COLUMN graphitron_field_routine.ordinal IS 'the application''s positi
 COMMENT ON COLUMN graphitron_field_routine.result_source_name IS 'the catalog partition of the table the routine''s result is, the first of the three columns naming it. Carried rather than derived, on graphitron_tabletype''s terms: the reference is a foreign key the engine checks and cascades, so a recrawled source takes the resolutions that named it';
 COMMENT ON COLUMN graphitron_field_routine.result_schema IS 'the result table''s schema as the catalog spells it, which is the catalog''s spelling and not the author''s: the match folds case on both sides and neither authored spelling survives into the row';
 COMMENT ON COLUMN graphitron_field_routine.result_table IS 'the result table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table. A routine result is a catalog table of type FUNCTION, which is the whole of what makes this resolvable and is why the departure of a chain leaving a field with no table of its own can be named at all';
+COMMENT ON COLUMN graphitron_field_routine.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. An application this reading no longer resolves leaves and the rest stay';
+
+CREATE TABLE graphitron_field_table_link (
+  graph_name             VARCHAR NOT NULL,
+  type_name              VARCHAR NOT NULL,
+  field_name             VARCHAR NOT NULL,
+  target_source_name     VARCHAR NOT NULL,
+  target_schema          VARCHAR NOT NULL,
+  target_table           VARCHAR NOT NULL,
+  position               INT     NOT NULL,
+  via                    VARCHAR NOT NULL,
+  key_matched_by         VARCHAR,
+  constraint_source_name VARCHAR,
+  constraint_schema      VARCHAR,
+  constraint_table       VARCHAR,
+  constraint_name        VARCHAR,
+  fk_on_from             BOOLEAN,
+  from_source_name       VARCHAR,
+  from_schema            VARCHAR,
+  from_table             VARCHAR,
+  to_source_name         VARCHAR NOT NULL,
+  to_schema              VARCHAR NOT NULL,
+  to_table               VARCHAR NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name,
+               target_source_name, target_schema, target_table, position),
+  -- The chain this link belongs to, which is what makes the row per target rather than per field.
+  FOREIGN KEY (graph_name, type_name, field_name,
+               target_source_name, target_schema, target_table)
+    REFERENCES graphitron_field_table
+      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  -- The written link this resolves, so a resolution cannot outlive the writing it is about, and
+  -- the chain's own length is one join away: a chain with links this relation holds no row for is
+  -- one the resolution did not finish, and a reader can see that rather than having to trust it.
+  FOREIGN KEY (graph_name, type_name, field_name, position)
+    REFERENCES graphitron_field_chain_link (graph_name, type_name, field_name, position)
+      ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+      ON DELETE CASCADE,
+  FOREIGN KEY (from_source_name, from_schema, from_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (via IN ('ROUTINE', 'KEY', 'TABLE', 'NAME_MATCH', 'CONDITION')),
+  CHECK (key_matched_by IS NULL OR key_matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
+  -- The departure is three columns or none of them, on graphitron_field_table's terms.
+  CHECK ((from_source_name IS NULL) = (from_schema IS NULL)),
+  CHECK ((from_source_name IS NULL) = (from_table IS NULL)),
+  -- Only a routine departs from nowhere, its result being where the rows begin.
+  CHECK (from_source_name IS NOT NULL OR via = 'ROUTINE'),
+  -- The constraint is one whole key or none of it.
+  CHECK ((constraint_name IS NULL) = (constraint_source_name IS NULL)),
+  CHECK ((constraint_name IS NULL) = (constraint_schema IS NULL)),
+  CHECK ((constraint_name IS NULL) = (constraint_table IS NULL)),
+  -- A named key is the one arm that cannot join without a constraint, and the orientation travels
+  -- with whatever constraint answered rather than with the arm that found it.
+  CHECK (constraint_name IS NOT NULL OR via <> 'KEY'),
+  CHECK ((constraint_name IS NULL) = (fk_on_from IS NULL)),
+  CHECK (key_matched_by IS NULL OR via = 'KEY')
+);
+COMMENT ON TABLE graphitron_field_table_link IS 'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one. For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.';
+COMMENT ON COLUMN graphitron_field_table_link.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_table_link.type_name IS 'the type owning the field whose chain this link is part of';
+COMMENT ON COLUMN graphitron_field_table_link.field_name IS 'the field whose chain this link is part of';
+COMMENT ON COLUMN graphitron_field_table_link.target_source_name IS 'the catalog partition of the target this link''s chain leads to, the first column of the graphitron_field_table row this resolution belongs to';
+COMMENT ON COLUMN graphitron_field_table_link.target_schema IS 'the target''s SQL schema';
+COMMENT ON COLUMN graphitron_field_table_link.target_table IS 'the target''s SQL name. With the two columns above and the coordinate, graphitron_field_table''s whole key: the target is not this link''s arrival but the arrival of the chain it stands in, which is why a field with several targets resolves its links once per target rather than once';
+COMMENT ON COLUMN graphitron_field_table_link.position IS 'the link''s place in the chain, carried from graphitron_field_chain_link, where the order is stated and what makes it an order is argued. Numbered from zero without a hole there; a hole here is a link this resolution could not answer for';
+COMMENT ON COLUMN graphitron_field_table_link.via IS 'which authored arm moved the chain, in a closed vocabulary of five. ROUTINE: the link is a @routine application and its arrival is the function result. KEY: the element named a foreign key, and the constraint columns beside this one say which and which way round. TABLE: the element named a table and a foreign key between the departure and it is what joins them. NAME_MATCH: the element named a table and the departure is a function result, which declares no foreign key, so the join is the whole primary-key name match sql_name_matched_key_column states. CONDITION: the element named neither a key nor a table and carried a condition, whose method signature declares both ends. Provenance and fork at once: it says which relation holds the link''s join columns, so a reader never has to try each in turn';
+COMMENT ON COLUMN graphitron_field_table_link.key_matched_by IS 'which name the author''s key spelling matched, SQL_NAME for the constraint''s own name in the catalog and JOOQ_NAME for the generated constant''s, in that precedence. NULL off the KEY arm, no other arm matching a key name at all. The precedence is the generator''s resolver''s: a written qualifier binds against the schema of the table holding the constraint, an unqualified name matches the SQL name, and the generated name becomes eligible only where no SQL name in this graph''s sources answers';
+COMMENT ON COLUMN graphitron_field_table_link.constraint_source_name IS 'the catalog partition of the referential constraint this link joins through, the first of four columns naming it';
+COMMENT ON COLUMN graphitron_field_table_link.constraint_schema IS 'the schema of the table the constraint is declared on';
+COMMENT ON COLUMN graphitron_field_table_link.constraint_table IS 'that table''s name. A constraint has no schema of its own; these two columns name the table holding it, which is the referencing side of the foreign key and not necessarily this link''s departure';
+COMMENT ON COLUMN graphitron_field_table_link.constraint_name IS 'the constraint''s own name as the catalog spells it, whatever the author spelled. With the three columns above, a foreign key into sql_referential_constraint, so the link''s column pairs are one join away. Carried here rather than recovered from the endpoints because two foreign keys may join the same pair of tables, so the endpoints do not name the constraint and a reader recomputing it from them would be guessing. NULL where the arm joins through no constraint';
+COMMENT ON COLUMN graphitron_field_table_link.fk_on_from IS 'whether the departure is the side declaring the constraint, so the join runs along the foreign key rather than against it. Implied by which endpoint the constraint''s table matches, and carried anyway for the one case where that is no answer: a self-referential key declares both ends on one table, and this column is then the only thing saying which way the link runs. NULL exactly where no constraint answered';
+COMMENT ON COLUMN graphitron_field_table_link.from_source_name IS 'the catalog partition of the table this link departs from, the first of three columns naming it';
+COMMENT ON COLUMN graphitron_field_table_link.from_schema IS 'the departure''s SQL schema';
+COMMENT ON COLUMN graphitron_field_table_link.from_table IS 'the departure''s SQL name; with the two columns above a foreign key into sql_table. The previous link''s arrival, or at position zero the enclosing type''s binding, which graphitron_field_table holds beside the target. Three columns or none of them, and none only on the ROUTINE arm: a function result is where a chain''s rows begin, so that link departs from nothing and the absence is the fact rather than a gap';
+COMMENT ON COLUMN graphitron_field_table_link.to_source_name IS 'the catalog partition of the table this link arrives at, the first of three columns naming it';
+COMMENT ON COLUMN graphitron_field_table_link.to_schema IS 'the arrival''s SQL schema';
+COMMENT ON COLUMN graphitron_field_table_link.to_table IS 'the arrival''s SQL name; with the two columns above a foreign key into sql_table. The next link''s departure, and at the chain''s last link the target itself, which is the identity a reader can check and a mismatch is the chain not reaching what the field claims to return';
+COMMENT ON COLUMN graphitron_field_table_link.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. It is also what the walk reads: a link resolves from where the one before it arrived, and it matches that row on this reading''s instant so it departs from what this reading resolved rather than from a row the sweep is about to remove';
 
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
@@ -13746,6 +13848,10 @@ INSERT INTO meta_grain VALUES
   ('field-chain-link',
    'one link of the chain one field''s rows travel, in one graph',
    'graph_name, type_name, field_name, position', 'sdl'),
+  ('field-table-link',
+   'one link of one field''s chain toward one target, resolved, in one graph',
+   'graph_name, type_name, field_name, target_source_name, target_schema, target_table, position',
+   'sdl'),
   ('field-routine-result',
    'one @routine application of one field''s chain toward one target, in one graph',
    'graph_name, type_name, field_name, to_source_name, to_schema, to_table, ordinal', 'catalog'),
@@ -14270,6 +14376,10 @@ INSERT INTO meta_relation VALUES
    'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field.',
    'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.',
    'The chain between a field''s endpoints, which graphitron_field_table asks for by name and nothing held: readers wanting the endpoints outnumber readers wanting the hops, so the pair was stated first and the route left to be walked. The position is why this exists rather than a column elsewhere. A chain composes @routine and @reference applications in written order, and neither directive''s ordinal can express it: each numbers its own applications from zero, so a routine at ordinal 0 and a reference at ordinal 0 say nothing about which came first. That order survives only in the entry stratum, where a written position is the primary key, and it is ranked here rather than copied because the entry numbers a path element by its authored index and skips one it does not transcribe, where a chain wants its links counted. Keyed at the coordinate and not at the target: the order is the same for every table a field''s rows may come from, so keying by target would state one order once per participant. What varies by target is where each link departs and arrives, which is a resolution rather than a reading. What a link does is likewise not here; its facts are keyed by the written position this row points at, one relation per shape as the entry stratum states them, so this never grows a discriminator that would have to be single-valued where an element writing a table beside a condition is one link with two facts.'),
+  ('graphitron_field_table_link', 'field-table-link', 'graphitron',
+   'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one.',
+   'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.',
+   'Where every link of a chain departs and arrives, which graphitron_field_table asks for by name and no relation held: the whole chain''s endpoints were stated first because more readers want the pair than want the hops, and the route was left to be walked at read time. Two views walked it, one seeded from a type''s binding and one from a @routine result, and neither could answer for the other''s shape. Keyed per target because that is what varies: graphitron_field_chain_link states the order once at the coordinate, the order being the same whichever table a field''s rows come from, and where each link stands is a resolution that begins at the enclosing type''s binding and so belongs to one target. Resolved sequentially, each link departing where the one before it arrived, which is what collapses the candidacy the read-time rule carried: a named foreign key is a hop in either direction and which one an element means is only answerable where the chain stands, so both were rows and a walk narrowed them. Here the departure is known and the orientation follows. The constraint travels with the endpoints rather than being dropped, which is the complaint the read-time relation makes about itself: two foreign keys may join one pair of tables, so the endpoints do not name the constraint. via discriminates honestly, a link having one route however many facts the element states: a condition beside a key filters that hop rather than routing it.'),
   ('graphitron_field_routine', 'field-routine-result', 'graphitron',
    'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target.',
    'For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.',

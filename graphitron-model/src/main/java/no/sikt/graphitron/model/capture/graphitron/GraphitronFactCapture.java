@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldRoutines;
+import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -33,6 +34,7 @@ import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -167,7 +169,8 @@ public final class GraphitronFactCapture {
      * {@code graphitron_connection_entry} rows the walk produced, and the navigation rule is stated
      * over the population expansion completes.
      */
-    public static void capture(FactSink sink, DSLContext dsl, String graphName) {
+    public static void capture(FactSink sink, DSLContext dsl, String graphName,
+                               LocalDateTime readAt) {
         // First of the gatherer's own stages: it reads the transcription alone, and the written
         // order of a field's applications is what everything below that walks a chain wants.
         FieldChainApplications.derive(dsl, graphName);
@@ -182,9 +185,13 @@ public final class GraphitronFactCapture {
         navigation(dsl, graphName);
         // Last, because its target rule reads the navigation the line above writes and its
         // departure reads the bindings three lines up.
-        FieldEndpoints.derive(dsl, graphName);
+        FieldEndpoints.derive(dsl, graphName, readAt);
         // After it, the applications being keyed by the chain the line above establishes.
-        FieldRoutines.derive(dsl, graphName);
+        FieldRoutines.derive(dsl, graphName, readAt);
+        // Last of all, resolving the links of each chain in order against the two stages above it:
+        // a link's departure is the previous link's arrival, and a routine link's arrival is what
+        // the line above resolved.
+        FieldTableLinks.derive(dsl, graphName, readAt);
     }
 
 
