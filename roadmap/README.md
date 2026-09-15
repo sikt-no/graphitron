@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | In Review | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -464,7 +463,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### routine
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
-- `R950` [**A @routine spends the leaves its argMapping binds, not the arguments they sit in**](spent-routine-argument-hides-filter-leaves.md) — In Review, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
 - `R816` [**Refuse a routine write's first-hop condition instead of deferring it**](routine-write-reread-drops-first-hop-condition.md) — Spec, generator
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
