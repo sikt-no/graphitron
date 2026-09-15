@@ -1,13 +1,13 @@
 ---
 id: R948
 title: "An omitted nullable @nodeId in a key projection reads as null, not as an NPE"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: nodeid
 depends-on: []
 created: 2026-09-14
-last-updated: 2026-09-14
+last-updated: 2026-09-15
 ---
 
 # An omitted nullable @nodeId in a key projection reads as null, not as an NPE
@@ -105,6 +105,11 @@ Settled at filing, so the plan below does not reopen them:
   the declarative route works.
 
 ## Implementation
+
+**Shipped at `2adefeb`**, all five steps in one commit; the Ready -> In Progress flip is `c77e008`.
+The steps below are the contract as approved and are left intact for the Done gate to read against
+the delivered tree; `## Implementation notes` at the bottom records where delivery departed from
+them.
 
 `ProjectedKeyReads` in `graphitron/src/main/java/no/sikt/graphitron/render/` is the single site that
 turns a resolved key projection (a *key projection* is one `argMapping` binding that decodes a node id
@@ -502,6 +507,41 @@ section.
   refusal exists because of how the generator emits, not because of what the schema says, and the
   view states that such arms belong with the consumer. The tell was that taking it required rewriting
   a comment that declares the vocabulary closed.
+
+## Implementation notes
+
+Three departures from the plan as written, none of them a change to the rule, plus one build-fixture
+obligation the plan did not name.
+
+* **The two rejection cases pass a classpath root to `RunContext`.** `ArgmappingProjectionRejectionPipelineTest`'s
+  harness builds its `RunContext` from the six-arg overload, whose `basedir` is the test's `@TempDir`;
+  `CatalogBuilder.censusRoots` then falls back to `<basedir>/target/classes`, which does not exist, so
+  the classpath census is empty and `intent_argmapping_bound_parameter_type`'s classpath arm resolves
+  nothing at all. That is the reference-resolved-no-method absence rather than the refusal's
+  population, so both new cases would have passed vacuously (the primitive one by not throwing, which
+  it caught). They now build the seven-arg overload with the entry carrying
+  `ProjectedKeyConditionFixtures`, read off the class's own code source. The plan did not anticipate
+  this because it reasoned about the relation, not about which harness populates the census beneath it.
+* **The `@condition` fixtures are on `LanguageNode`, not an actor node type.** An input field carrying
+  `@nodeId` resolves a route to its node type's table whether or not an `argMapping` spends it, and
+  `actor` is two hops from `film`, so the shape the plan sketched does not build. `language` is one
+  hop, by two keys, so the route is named with `@reference(path: [{key: "film_language_id_fkey"}])`
+  and the consuming field carries `override: true` to keep that route from contributing a predicate
+  beside the method's own. That last part is what lets the execution case read the method's own answer
+  off the rows: omitting the filter returns every seeded film, supplying Italian returns none.
+* **The fixture class is a new `ProjectedKeyConditionFixtures`**, beside `InputFieldConditionFixtures`
+  and the two others rather than inside one of them, which is the reading of "beside" that also
+  answers round 3's note about naming the input-field class as the neighbour.
+* **`jooq.codegen.schema.version` is bumped to 2.29.** That property's own comment in
+  `graphitron-sakila-db/pom.xml` requires it whenever `init.sql` changes, and `films_for_actor_or_all`
+  is a change to `init.sql`.
+
+Two existing gates moved because the fixtures are new, not because behaviour changed.
+`ChainTerminusTest.aNameMatchedHopNamesNoForeignKey` enumerates every function result in the graph's
+sources exposing `film_id`, which is now two; its per-row assertions moved from `rows.getFirst()` to
+`allSatisfy`, which is stronger and order-independent. `FixtureWarningsGateTest` pins the schema line
+the `@asConnection` advisory attaches to, and its own comment says to update the expected line when
+fields are added above it; 518 became 578. The warning set itself is unchanged at two.
 
 ## Reviewer findings
 
