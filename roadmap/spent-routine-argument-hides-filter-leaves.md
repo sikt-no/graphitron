@@ -7,7 +7,7 @@ priority: 3
 theme: routine
 depends-on: []
 created: 2026-09-14
-last-updated: 2026-09-14
+last-updated: 2026-09-15
 ---
 
 # A @routine spends the leaves its argMapping binds, not the arguments they sit in
@@ -310,6 +310,17 @@ input classifier's decision tree is not touched.
   unchanged. Two more cases pin the mechanism: the walk-side spent coordinates agree with
   `graphitron_argmapping_match.bound_path` over the corpus (the shadow anchor of step 1), and a
   `@nodeId` sibling of a bound leaf now appears in the decode ledger with a disposition (step 7).
+* **Execution** (`graphitron-sakila-example`, beside `RoutineFieldExecutionTest`): one Query field
+  over `films_for_actor` taking a single input object whose `actorId` feeds `pActorId` through the
+  key projection and whose surviving `title` leaf filters the result, `title` being a column the
+  function itself returns. The case asserts the narrowed rows against the same call with the filter
+  omitted, so the predicate is shown to reach SQL and to exclude rows, not merely to classify and be
+  emitted. This is the acceptance case for the failure class the Goal leads with: a client supplying
+  a filter and receiving rows it should have excluded is a row-level fact, and the pipeline bullet's
+  "the survivor's predicate, and only the survivor's, in the emitted query" is a fact about emitted
+  text, which a predicate that emits without narrowing would satisfy.
+* **Validator reach** (pipeline tier, over the classified model): the two new rejections, the
+  no-binding one on a leftover leaf and the unread one on a Mutation routine input, arrive
   through `drainBuildDiagnostics` located at the leaf, in the build and in the LSP, with no second
   spelling of the rule in `GraphitronSchemaValidator`.
 
@@ -332,7 +343,10 @@ yet. The changelog entry carries the upgrade note from the fourth decision.
   the routine manual's read-surface paragraph, the `Query.tilgangerAdmin` fixture comment in the
   sakila example schema, the `classifyRootRoutineChain` javadoc, and the comment at
   `LauncherCommandsPipelineTest` line 246 ("the routine's own IN-parameter arguments are spent on the
-  call and contribute neither"). Replaced by the leaf-grain sentence above.
+  call and contribute neither"), and the comment on
+  `GraphitronSchemaBuilderTest.orderByArgumentOnRoutineFieldResolvesAgainstTheTerminus` ("the
+  routine's own IN-parameter arguments are spent on the call and never reach the read surface").
+  Replaced by the leaf-grain sentence above.
 * `routineBoundArgNames`, deleted rather than retyped: spending is no longer derived in
   `FieldBuilder` at all, because the seat that derives it needs the argument input types
   (`## Implementation`, preamble). The `argsBoundElsewhere` parameter survives at `classifyArguments`

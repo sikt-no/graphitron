@@ -22,7 +22,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-09 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R948` | An omitted nullable @nodeId in a key projection reads as null, not as an NPE | In Review | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](omitted-nodeid-key-projection-reads-null.md) |
-| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Spec | 2026-09-14 | [plan](spent-routine-argument-hides-filter-leaves.md) |
+| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Spec | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
