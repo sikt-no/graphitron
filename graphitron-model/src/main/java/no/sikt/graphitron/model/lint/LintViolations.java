@@ -10,10 +10,17 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
@@ -21,13 +28,18 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.length;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.replace;
 import static org.jooq.impl.DSL.substring;
 import static org.jooq.impl.DSL.trim;
 import static org.jooq.impl.DSL.upper;
+import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.position;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.when;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -64,6 +76,7 @@ public final class LintViolations {
         fieldNamesCamelCase(dsl, graph, touchedAt);
         noTypenamePrefix(dsl, graph, touchedAt);
         typesAndFieldsHaveDescriptions(dsl, graph, touchedAt);
+        deprecationsHaveAReason(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -213,6 +226,96 @@ public final class LintViolations {
                     .where(r.GRAPH_NAME.eq(graph), r.TYPE_NAME.eq(f.TYPE_NAME))))
                 .and(authored(f.SOURCE_NAME))
                 .and(notExcluded(dsl, graph, f.TYPE_NAME)));
+    }
+
+    /**
+     * Every directive application the rules may speak about: the four sites whose directives sit on
+     * a schema element, as one population of position and name.
+     *
+     * <p>Two sites are left out and the entry index leaves them out rather than a list here doing
+     * it. A directive on the schema block and a directive on a directive definition's own argument
+     * enclose no element, so their entry carries no coordinate, and the join below drops them. That
+     * is the same boundary the walk draws by having no arm for either, arrived at from the data
+     * rather than restated.
+     */
+    private static Table<?> appliedDirectives(String graph) {
+        var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var f = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var i = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var v = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+        return select(t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.NAME)
+            .from(t).where(t.GRAPH_NAME.eq(graph))
+            .unionAll(select(f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f.NAME)
+                .from(f).where(f.GRAPH_NAME.eq(graph)))
+            .unionAll(select(i.SOURCE_NAME, i.SOURCE_LINE, i.SOURCE_COLUMN, i.NAME)
+                .from(i).where(i.GRAPH_NAME.eq(graph)))
+            .unionAll(select(v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN, v.NAME)
+                .from(v).where(v.GRAPH_NAME.eq(graph)))
+            .asTable("application");
+    }
+
+    /**
+     * {@code deprecations-have-a-reason}: an applied {@code @deprecated} must say why.
+     *
+     * <p>What counts as saying why is a written string with something in it. An argument passed as
+     * anything other than a string says nothing a reader can act on, and neither does a string of
+     * spaces, so both draw a row exactly as an omitted argument does. The value is read off the
+     * decomposed expression rather than the rendered literal beside it, because that literal keeps
+     * the author's quotes and a blank reason would have to be recognised through them.
+     */
+    private static void deprecationsHaveAReason(DSLContext dsl, String graph,
+                                                LocalDateTime touchedAt) {
+        var app = appliedDirectives(graph);
+        Field<String> source = app.field(GRAPHQL_AST_ENTRY.SOURCE_NAME);
+        Field<Integer> line = app.field(GRAPHQL_AST_ENTRY.SOURCE_LINE);
+        Field<Integer> column = app.field(GRAPHQL_AST_ENTRY.SOURCE_COLUMN);
+        Field<String> directive = app.field(field(name("NAME"), String.class));
+        var e = GRAPHQL_AST_ENTRY.as("enclosing");
+        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var val = GRAPHQL_AST_VALUE_ENTRY;
+        var v = LINT_VIOLATION;
+
+        dsl.insertInto(v)
+            .columns(v.GRAPH_NAME, v.LINT_RULE, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
+                v.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, v.GRAPH_NAME), inline("deprecations-have-a-reason"),
+                    source, line, column, val(touchedAt, v.TOUCHED_AT))
+                .from(app)
+                .join(e).on(e.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)), e.SOURCE_NAME.eq(source),
+                    e.SOURCE_LINE.eq(line), e.SOURCE_COLUMN.eq(column))
+                .where(directive.eq(inline("deprecated")))
+                .and(e.ELEMENT_COORDINATE.isNotNull())
+                .and(authored(source))
+                .and(notExcluded(dsl, graph, typeOf(e.ELEMENT_COORDINATE)))
+                .andNotExists(selectOne()
+                    .from(a)
+                    .join(val).on(val.GRAPH_NAME.eq(a.GRAPH_NAME),
+                        val.SOURCE_NAME.eq(a.SOURCE_NAME),
+                        val.HOLDER_LINE.eq(a.SOURCE_LINE),
+                        val.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
+                    .where(a.GRAPH_NAME.eq(graph))
+                    .and(a.SOURCE_NAME.eq(source))
+                    .and(a.PARENT_LINE.eq(line))
+                    .and(a.PARENT_COLUMN.eq(column))
+                    .and(a.NAME.eq(inline("reason")))
+                    .and(val.KIND.eq(inline("STRING")))
+                    .and(trim(val.WRITTEN_TEXT).ne(inline("")))))
+            .onDuplicateKeyUpdate()
+            .set(v.TOUCHED_AT, excluded(v.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The type a coordinate names, which is its first part whatever kind of element it is: the
+     * whole spelling at a type, and everything before the dot at a field, an input field, an enum
+     * value or an argument. What the consumer's excludedTypes globs are matched against, a
+     * consumer asking for a type to be left alone meaning the things written inside it too.
+     */
+    private static Field<String> typeOf(Field<String> coordinate) {
+        return when(position(coordinate, inline(".")).gt(inline(0)),
+            substring(coordinate, inline(1), position(coordinate, inline(".")).minus(inline(1))))
+            .otherwise(coordinate);
     }
 
     /**

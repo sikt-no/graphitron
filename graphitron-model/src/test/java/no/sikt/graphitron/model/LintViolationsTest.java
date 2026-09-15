@@ -205,6 +205,53 @@ class LintViolationsTest {
         });
     }
 
+    /**
+     * The deprecation rule against the four things that are not a reason: an omitted argument, a
+     * blank one, one written as something other than a string, and, at the other end, a real one
+     * that must draw nothing.
+     */
+    @Test
+    @DisplayName("a deprecation says why, or draws a row")
+    void deprecationsNeedAWrittenReason() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                type Widget {
+                  bare: String @deprecated
+                  blank: String @deprecated(reason: "   ")
+                  numeric: String @deprecated(reason: 3)
+                  proper: String @deprecated(reason: "use name")
+                }
+                type Query { widgets: String }
+                """);
+
+            assertThat(rulesAt(dsl, "deprecations-have-a-reason"))
+                .as("the omitted, the blank and the non-string draw rows at their own @ tokens;"
+                    + " the one that says why does not")
+                .containsExactly(2, 3, 4);
+        });
+    }
+
+    /**
+     * The two sites the walk has no arm for, which the entry index excludes by their enclosing no
+     * element rather than by a list naming them.
+     */
+    @Test
+    @DisplayName("a deprecation on the schema block or a directive's own argument is not linted")
+    void applicationsOutsideAnElementAreNotLinted() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                directive @vintage(era: String @deprecated) on FIELD_DEFINITION
+                extend schema @deprecated
+                type Query { widgets: String }
+                """);
+
+            assertThat(rulesAt(dsl, "deprecations-have-a-reason"))
+                .as("neither encloses a schema element, so neither is the author's to be told about"
+                    + " by this rule")
+                .isEmpty();
+        });
+    }
+
     /** The lines one rule drew a row at, in source order. */
     private static List<Integer> rulesAt(DSLContext dsl, String rule) {
         return dsl.select(LINT_VIOLATION.SOURCE_LINE).from(LINT_VIOLATION)
