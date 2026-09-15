@@ -635,6 +635,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_field_reference_step_target", Arm.DERIVED);
         registrations.put("intent_input_field_column_scope", Arm.DERIVED);
         registrations.put("intent_input_field_column_match", Arm.DERIVED);
+        registrations.put("intent_input_field_column_match_live", Arm.DERIVED);
         registrations.put("intent_input_field_filter_role", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role", Arm.DERIVED);
         registrations.put("intent_condition_membership", Arm.DERIVED);

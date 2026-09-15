@@ -145,6 +145,15 @@ class RefreshPlanStatisticsTest {
      * same increment and only one of them joined: the decode column rule reads the hop column
      * target and plans identically either way.
      *
+     * <p>A ninth registration did not join the set so much as take a place in it: registering
+     * {@code intent_input_field_column_match} swapped {@code intent_input_field_filter_role_live}
+     * out and {@code intent_input_field_column_match_live} in. The filter role read that rule as a
+     * derived table three times, twice correlated, so its plan turned on statistics for the
+     * targets underneath it; the rule is a table now, the read stops there, and the statement
+     * plans the same either way. The new member is the same shape as every other in this set, a
+     * source view reading registered targets. The figures the paragraph above records for the
+     * filter role were taken on the older shape and are kept as what the mechanism did there.
+     *
      * <p>What the figures do <em>not</em> say is what this costs a schema of consumer size. Nothing
      * in this repo captures one, and the ratios above are taken over a twelve-unit fixture whose
      * whole point is that it understates: a per-driving-row cost is linear in driving rows, and the
@@ -154,7 +163,7 @@ class RefreshPlanStatisticsTest {
         "intent_field_column_scope_live",
         "intent_input_field_carrier_role_live",
         "intent_field_scope_table_live",
-        "intent_input_field_filter_role_live",
+        "intent_input_field_column_match_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
         "intent_node_id_decode_hop_live",

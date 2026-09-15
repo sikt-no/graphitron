@@ -317,7 +317,7 @@ class DerivedReadCostTest {
      * its own to the walk's reach: it sits directly on the target view and so pays for that view's
      * rungs and no others, however much catalog it joins beside them.
      */
-    private static final int CELLS = 146;
+    private static final int CELLS = 145;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -661,8 +661,16 @@ class DerivedReadCostTest {
         // The instrument's own floor, four scans apiece; measured above.
         "intent_field_reference_step_hop|intent_input_field_reference_step_target",
         "intent_field_reference_step_hop|intent_input_field_column_scope",
-        "intent_field_reference_step_hop|intent_input_field_column_match",
-        "intent_field_reference_step_hop|intent_input_field_filter_role_live",
+        // Named for the rule rather than the relation since the column match was registered, on
+        // the carrier's precedent below: the rule keeps its cell under the _live name and the
+        // canonical name is a table the walk stops at.
+        "intent_field_reference_step_hop|intent_input_field_column_match_live",
+        // The filter role stood beside the row above and left the stopped-reaching way: it
+        // reached this rung only by expanding the column-match view, which it named three times,
+        // and that relation is a table now, so the walk stops there and the cell does not exist
+        // to be non-monotonic in. The registration underneath it is what moved it, which is the
+        // direction this set exists to notice, and its own row in meta_materialize carries what
+        // the move was worth on a consumer population: 24.4 s to 0.13 s.
         // Named for the rule rather than the relation since the carrier was registered: the
         // rule keeps its cells under the _live name and the canonical name is a table the walk
         // stops at.
@@ -694,7 +702,24 @@ class DerivedReadCostTest {
         // reached this rung only through the carrier rule, so the walk now stops at the
         // carrier target and the cell does not exist to be non-monotonic in. The column
         // relation names the reference walk on a second path of its own and keeps its cell.
-        "intent_field_reference_step_hop|intent_mutation_payload_column_live",
+        // The payload column's cell against this rung left when intent_input_field_column_match
+        // was registered, the stopped-reaching way: that rule reached the reference walk by
+        // expanding the column-match view it joins, and the view is a table now, so the walk
+        // stops there. What the same move put in its place is the two rows below, which are the
+        // one thing this registration cost rather than saved.
+        //
+        // The payload column rule reads the column match as a table now, and the plan it gets
+        // under that shape visits more rows against two registrations it already reached: 438
+        // scans registered against 191 for the write payload and 175 for the decode column. Both
+        // are the counter-against-clock case this set records rather than a cost anybody pays:
+        // 11 milliseconds registered against 17 and 8, so the plan that visits more rows is the
+        // faster one against the write payload and within five milliseconds of the other, on
+        // hundreds of scans rather than the tens of thousands the rows above carry. Accepted
+        // rather than answered: the registration that produced them takes a consumer's dearest
+        // refresh from 24.4 s to 0.13 s, and these two cells are the instrument noticing that a
+        // plan moved, which is what it is for.
+        "intent_mutation_write_payload|intent_mutation_payload_column_live",
+        "intent_node_id_decode_column|intent_mutation_payload_column_live",
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the

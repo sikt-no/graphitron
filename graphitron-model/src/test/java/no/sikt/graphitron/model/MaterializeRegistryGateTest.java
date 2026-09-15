@@ -72,7 +72,7 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 21;
+    private static final int REGISTRATIONS = 22;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -96,6 +96,15 @@ class MaterializeRegistryGateTest {
      * above: the rule it stages was being expanded once per driving row by the {@code @nodeId}
      * landing verdict, whose own read went from not returning to milliseconds, and the register row
      * carries those figures.
+     *
+     * <p>Still fifteen after {@code intent_input_field_column_match} was registered, which is
+     * worth a line because the three registrations above moved this figure and the reasoning that
+     * moved them does not apply here. That rule is an unregistered intermediate under two
+     * registrations, so it looks like the same shape; what makes it not is that both of its readers
+     * already wait on {@code intent_input_field_resolving_table}, which is deeper, so the chain
+     * through the new registration is shorter than the one the depth is measured on and staging it
+     * displaces nothing. A registration lengthens the pass only when it stages the longest chain,
+     * and that is a property of the register rather than of the rule being registered.
      *
      * @see #REGISTRATIONS
      */
