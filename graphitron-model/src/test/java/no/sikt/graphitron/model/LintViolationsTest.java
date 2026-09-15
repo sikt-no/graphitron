@@ -52,13 +52,9 @@ class LintViolationsTest {
     void theRuleFiresAtTheWrittenPosition() {
         withSeededStore(GRAPH, dsl -> {
             var directory = read(dsl, OFFENDING);
-            assertThat(rules(dsl))
-                .as("the rule fired once, at the one offending declaration")
-                .containsExactly("input-object-name-suffix");
-            assertThat(dsl.select(LINT_VIOLATION.SOURCE_LINE).from(LINT_VIOLATION)
-                    .where(LINT_VIOLATION.GRAPH_NAME.eq(GRAPH)).fetchSingle().value1())
-                .as("at the line the declaration was written on")
-                .isEqualTo(1);
+            assertThat(rulesAt(dsl, "input-object-name-suffix"))
+                .as("the rule fired once, at the line the declaration was written on")
+                .containsExactly(1);
             assertThat(directory).isNotNull();
         });
     }
@@ -68,7 +64,7 @@ class LintViolationsTest {
     void theRuleIsSilentOnACompliantName() {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, COMPLIANT);
-            assertThat(rules(dsl)).isEmpty();
+            assertThat(rulesAt(dsl, "input-object-name-suffix")).isEmpty();
         });
     }
 
@@ -82,12 +78,13 @@ class LintViolationsTest {
     void theSweepRemovesAFixedViolation() {
         withSeededStore(GRAPH, dsl -> {
             Path directory = read(dsl, OFFENDING);
-            assertThat(rules(dsl)).as("the finding is there to begin with").isNotEmpty();
+            assertThat(rulesAt(dsl, "input-object-name-suffix"))
+                .as("the finding is there to begin with").isNotEmpty();
 
             write(directory, COMPLIANT);
             reread(dsl, directory);
 
-            assertThat(rules(dsl))
+            assertThat(rulesAt(dsl, "input-object-name-suffix"))
                 .as("the declaration still exists at the same position, and the finding does not")
                 .isEmpty();
         });
@@ -111,10 +108,49 @@ class LintViolationsTest {
 
             read(dsl, OFFENDING);
 
-            assertThat(rules(dsl))
+            assertThat(rulesAt(dsl, "input-object-name-suffix"))
                 .as("the glob covers the offending type, so the statement never drew it")
                 .isEmpty();
         });
+    }
+
+    /**
+     * The three name shapes at their own grains, in one reading, each offending name drawing one
+     * row at the line it was written on. Together they also pin what the shapes do not object to,
+     * the compliant siblings beside them in the same fixture drawing nothing.
+     */
+    @Test
+    @DisplayName("each name shape fires at its own grain and nowhere else")
+    void theNameShapesFireAtTheirOwnGrains() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                type widget {
+                  Name: String
+                  ok(Locale: String, fine: String): String
+                }
+                enum WidgetKind { small LARGE }
+                input WidgetFilterInput { Prefix: String, suffix: String }
+                type Query { widgets: String }
+                """);
+
+            assertThat(rulesAt(dsl, "type-names-pascal-case"))
+                .as("the lowercase type, and not the three compliant ones beside it")
+                .containsExactly(1);
+            assertThat(rulesAt(dsl, "enum-values-screaming-snake-case"))
+                .as("the lowercase enum value, not its compliant sibling")
+                .containsExactly(5);
+            assertThat(rulesAt(dsl, "input-and-argument-names-camel-case"))
+                .as("the capitalised argument and the capitalised input field, in written order")
+                .containsExactly(3, 6);
+        });
+    }
+
+    /** The lines one rule drew a row at, in source order. */
+    private static List<Integer> rulesAt(DSLContext dsl, String rule) {
+        return dsl.select(LINT_VIOLATION.SOURCE_LINE).from(LINT_VIOLATION)
+            .where(LINT_VIOLATION.GRAPH_NAME.eq(GRAPH), LINT_VIOLATION.LINT_RULE.eq(rule))
+            .orderBy(LINT_VIOLATION.SOURCE_LINE)
+            .fetch(LINT_VIOLATION.SOURCE_LINE);
     }
 
     private static List<String> rules(DSLContext dsl) {

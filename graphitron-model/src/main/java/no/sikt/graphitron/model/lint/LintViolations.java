@@ -10,9 +10,13 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
+import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.replace;
@@ -47,8 +51,23 @@ public final class LintViolations {
      */
     public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         inputObjectNameSuffix(dsl, graph, touchedAt);
+        typeNamesPascalCase(dsl, graph, touchedAt);
+        enumValuesScreamingSnakeCase(dsl, graph, touchedAt);
+        inputAndArgumentNamesCamelCase(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
+
+    /**
+     * The name shapes, anchored at both ends.
+     *
+     * <p>The anchors are the whole difference between these and the patterns the rules carry in
+     * Java, where {@code matches} anchors for you. {@code regexp_like} does not, so the unanchored
+     * camel-case pattern would hold of any name containing a lowercase run, which is nearly every
+     * name there is, and the rule would go quiet rather than loud.
+     */
+    private static final String PASCAL_CASE = "^[A-Z][A-Za-z0-9]*$";
+    private static final String CAMEL_CASE = "^[a-z][A-Za-z0-9]*$";
+    private static final String SCREAMING_SNAKE_CASE = "^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$";
 
     /**
      * {@code input-object-name-suffix}: an input object's name must end in {@code Input}.
@@ -66,6 +85,57 @@ public final class LintViolations {
                 .and(d.NAME.notLike("%Input"))
                 .and(authored(d.SOURCE_NAME))
                 .and(notExcluded(dsl, graph, d.NAME)));
+    }
+
+    /** {@code type-names-pascal-case}: every declared type, at every site that names one. */
+    private static void typeNamesPascalCase(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+        insert(dsl, graph, touchedAt, "type-names-pascal-case",
+            d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d,
+            d.GRAPH_NAME.eq(graph)
+                .and(mismatches(d.NAME, PASCAL_CASE))
+                .and(authored(d.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, d.NAME)));
+    }
+
+    /** {@code enum-values-screaming-snake-case}: the values one enum declares. */
+    private static void enumValuesScreamingSnakeCase(DSLContext dsl, String graph,
+                                                     LocalDateTime touchedAt) {
+        var v = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+        insert(dsl, graph, touchedAt, "enum-values-screaming-snake-case",
+            v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN, v,
+            v.GRAPH_NAME.eq(graph)
+                .and(mismatches(v.NAME, SCREAMING_SNAKE_CASE))
+                .and(authored(v.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, v.TYPE_NAME)));
+    }
+
+    /**
+     * {@code input-and-argument-names-camel-case}: the two input positions the rule treats alike,
+     * an input object's field and a field's argument, each from its own relation because the parse
+     * keeps them apart and nothing here needs them together beyond sharing a predicate.
+     */
+    private static void inputAndArgumentNamesCamelCase(DSLContext dsl, String graph,
+                                                       LocalDateTime touchedAt) {
+        var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        insert(dsl, graph, touchedAt, "input-and-argument-names-camel-case",
+            f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f,
+            f.GRAPH_NAME.eq(graph)
+                .and(mismatches(f.NAME, CAMEL_CASE))
+                .and(authored(f.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, f.TYPE_NAME)));
+        var a = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+        insert(dsl, graph, touchedAt, "input-and-argument-names-camel-case",
+            a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a,
+            a.GRAPH_NAME.eq(graph)
+                .and(mismatches(a.NAME, CAMEL_CASE))
+                .and(authored(a.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, a.TYPE_NAME)));
+    }
+
+    /** Whether a written name fails a shape, which is what each of these rules objects to. */
+    private static Condition mismatches(Field<String> name, String shape) {
+        return condition("regexp_like({0}, {1})", name, inline(shape)).not();
     }
 
     /**
