@@ -97,7 +97,7 @@ class FieldChainLinksTest {
     void everyLinkNamesItsElement() {
         withCaptured(dsl -> {
             var t = GRAPHITRON_FIELD_CHAIN_LINK;
-            assertThat(dsl.select(t.ELEMENT_SOURCE_NAME, t.ELEMENT_LINE, t.ELEMENT_COLUMN)
+            assertThat(dsl.select(t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
                     .from(t).where(t.GRAPH_NAME.eq(CapturedStore.GRAPH)).fetch())
                 .isNotEmpty()
                 .allSatisfy(row -> {

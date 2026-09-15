@@ -253,8 +253,8 @@ public final class GraphitronAnchor {
             .asTable("ranked");
 
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.ELEMENT_SOURCE_NAME,
-                t.ELEMENT_LINE, t.ELEMENT_COLUMN, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.SOURCE_NAME,
+                t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
                     ranked.field(FIELD_NAME),
@@ -265,9 +265,9 @@ public final class GraphitronAnchor {
                     val(touchedAt, t.TOUCHED_AT))
                 .from(ranked))
             .onDuplicateKeyUpdate()
-            .set(t.ELEMENT_SOURCE_NAME, excluded(t.ELEMENT_SOURCE_NAME))
-            .set(t.ELEMENT_LINE, excluded(t.ELEMENT_LINE))
-            .set(t.ELEMENT_COLUMN, excluded(t.ELEMENT_COLUMN))
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

@@ -5430,31 +5430,30 @@ CREATE TABLE graphitron_field_chain_link (
   type_name           VARCHAR NOT NULL,
   field_name          VARCHAR NOT NULL,
   position            INT     NOT NULL,
-  element_source_name VARCHAR NOT NULL,
-  element_line        INT     NOT NULL,
-  element_column      INT     NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT     NOT NULL,
+  source_column       INT     NOT NULL,
   touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, position),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
-  -- The written element this link is. One reference and not one per shape: the AST supertype is
-  -- what makes a @routine application and a path element the same kind of thing to point at.
-  FOREIGN KEY (graph_name, element_source_name, element_line, element_column)
+  -- Where the link was written. One reference and not one per shape: the AST supertype is what
+  -- makes a @routine application and a path element the same kind of thing to point at.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
       ON DELETE CASCADE,
-  -- One link per written element, which is what says the position numbers this chain's own
-  -- elements rather than being an index a reader has to hope is dense.
-  UNIQUE (graph_name, type_name, field_name,
-          element_source_name, element_line, element_column)
+  -- One link per written position, which is what says the position column numbers this chain's
+  -- own links rather than being an index a reader has to hope is dense.
+  UNIQUE (graph_name, type_name, field_name, source_name, source_line, source_column)
 );
 COMMENT ON TABLE graphitron_field_chain_link IS 'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field. For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.';
 COMMENT ON COLUMN graphitron_field_chain_link.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_chain_link.type_name IS 'the type owning the field whose chain this link is part of';
 COMMENT ON COLUMN graphitron_field_chain_link.field_name IS 'the field whose chain this link is part of; with the two columns above a reference into graphql_field_element, the authored population, a macro-minted field writing no chain of its own';
-COMMENT ON COLUMN graphitron_field_chain_link.position IS 'the link''s place in the chain, numbered from zero without a hole. Ranked over the written order rather than copied from any directive''s own numbering, for two reasons that both bite. @routine and @reference each number their applications from zero independently, so neither ordinal can say which of the two was written first; and the entry stratum numbers a path element by its authored index, which skips an element it does not transcribe, where a chain wants its links counted. The order ranked over is the declaration''s merge order, then the directive''s written position within it, then the element''s authored index inside the directive';
-COMMENT ON COLUMN graphitron_field_chain_link.element_source_name IS 'the file the element was written in, the first of the three columns naming it; a reference into graphql_ast_entry, which is where a routine application and a path element are one kind of thing';
-COMMENT ON COLUMN graphitron_field_chain_link.element_line IS 'the element''s source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_chain_link.element_column IS 'the element''s source column; with the two columns above, the written position the element''s own facts are keyed by. A @routine link points at the FIELD_DIRECTIVE entry and a path element at the VALUE entry, and what each link joins on is those facts rather than anything carried here: this states that the chain has a link here and where to read it, and never what the link does';
+COMMENT ON COLUMN graphitron_field_chain_link.position IS 'the link''s place in the chain, numbered from zero without a hole. Ranked over the written order rather than copied from any directive''s own numbering, for two reasons that both bite. @routine and @reference each number their applications from zero independently, so neither ordinal can say which of the two was written first; and the entry stratum numbers a path element by its authored index, which skips an element it does not transcribe, where a chain wants its links counted. The order ranked over is the directive''s written position, then the element''s authored index inside it, and a field coordinate being declared once is what makes two positions comparable: every directive of one field is written in one file';
+COMMENT ON COLUMN graphitron_field_chain_link.source_name IS 'the file the link was written in, the first of the three columns naming its written position; a reference into graphql_ast_entry, which is where a routine application and a path element are one kind of thing. Spelled the way every relation holding a written position spells one, graphql_ast_entry included; an element in this schema is a schema coordinate, which is what the first three columns of this row already carry';
+COMMENT ON COLUMN graphitron_field_chain_link.source_line IS 'the link''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_field_chain_link.source_column IS 'the link''s source column; with the two columns above, the written position the link''s own facts are keyed by. A @routine link points at the FIELD_DIRECTIVE entry and a path element at the VALUE entry, and what each link joins on is those facts rather than anything carried here: this states that the chain has a link here and where to read it, and never what the link does';
 COMMENT ON COLUMN graphitron_field_chain_link.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphitron_field_routine (
