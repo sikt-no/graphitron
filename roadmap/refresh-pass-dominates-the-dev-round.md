@@ -7,7 +7,7 @@ priority: 1
 theme: dev-loop
 depends-on: []
 created: 2026-09-11
-last-updated: 2026-09-14
+last-updated: 2026-09-15
 ---
 
 # A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds
@@ -19,6 +19,18 @@ not: the refresh pass is dominated by three of its twenty-one registrations, whi
 over an hour, while eleven of the others cost six seconds between them. The cost is concentrated
 rather than spread, so this item is the pricing and the fix of those three, not a broad campaign
 against the register.
+
+The dev round is where the cost was found and is not the only place it is paid, which is worth
+stating before the plan because it changes who the goal is for without changing the plan at all.
+The refresh pass is `FactCapture.capture`'s, not the dev mojo's: `GraphQLRewriteGenerator` opens a
+capture port like any other caller, so an ordinary `generate` goal on a consumer's subgraph module
+pays the same pass, and so does CI. A clean build is in fact the worse case rather than the milder
+one. The cadence control below was run to refute a hypothesis, and what it incidentally measured is
+the cold path, `Materializations.refreshAnalysing`, which a store holding no graph takes and which
+ran registration 12 in 470.1 s against the warm path's 386.1 s. Every consumer build starts cold, so
+the figures in this item are a floor for CI rather than a dev-loop inconvenience. The scope is
+unchanged by that: the same three registrations carry the pass on either cadence, and the four
+levers below fix the pass rather than either caller.
 
 Two terms, glossed once. The *fact store* is the H2 database each generator pass captures the schema,
 the jOOQ catalog and the classpath into. A *registration* is a row of `meta_materialize` that keeps a
@@ -124,11 +136,14 @@ the lever was a stored key and an index rather than a registration, since no reg
 an expression, and this item expects the same answer before it reaches for a twenty-second row of
 `meta_materialize`. And the static metric counts relation names, so it cannot see a common table
 expression referenced several times: registration 13 names only two views, but its `resolved_name`
-expression, which is `intent_input_field_column_match`, is referenced three times and each reference
-is correlated on a driving row, so one read of that rule expands three times per row rather than
-once per naming. At 1765 rows out that is upwards of five thousand expansions, which puts one
-expansion at four tenths of a second or less against the measured 2076 s. That arithmetic closes,
-which is what makes it a hypothesis worth a control rather than a story.
+expression, which is `intent_input_field_column_match`, is referenced three times, and two of those
+three are correlated on a driving row, so one read of that rule expands twice per row rather than
+once per naming. The third reference is `FROM resolved_name m` as the entire source of the
+`NAME_MATCHED` arm at precedence 8, uncorrelated and evaluated once per read, which matters to the
+lever below rather than here. At 1765 rows out the two correlated sites are upwards of three and a
+half thousand expansions, which puts one expansion at six tenths of a second or less against the
+measured 2076 s. That arithmetic closes, which is what makes it a hypothesis worth a control rather
+than a story.
 
 ## What is now settled
 
@@ -178,9 +193,14 @@ the shape R939 met on the same family and which names no line of SQL. Then bisec
 than reaching for a lever: the `WITH` blocks of each source view timed one at a time, then each
 top-level `UNION` arm wrapped in a count with the relation's own column list as the alias list, then
 one join dropped at a time where an arm is a flat join of derived tables. Registration 12's
-bisection axis is its three common table expressions, `instructed` being referenced eight times and
-`table_node`, which is where its naming of `intent_node_type` sits, twice; registration 13's is its
-ranked arms and the three references to `resolved_name`.
+bisection axis is its top-level union arms and not its common table expressions, which is worth
+stating because the arithmetic points the other way at first reading. `instructed` is referenced
+eight times and `table_node` twice, but of the six namings of `intent_node_type` in that body only
+one sits inside `table_node`; the other five sit in the union arms directly, among them the
+correlated `NOT EXISTS` this item separately picks out as the excluded relation with no drivable
+side. Bisecting `table_node` for the chain's cost therefore prices a sixth of its reach and reads
+the chain as cheap. Registration 13's axis is its ranked arms and the two correlated references to
+`resolved_name`.
 
 The refresh is its own instrument and no new harness is needed for the before-and-after.
 `RefreshProgress.lines` already renders a per-registration tier that reports the delete and the
@@ -232,27 +252,58 @@ Its four remaining correlated readers, `intent_resolved_node_key_column`'s `JOOQ
 `intent_resolved_node_type_id`, and the Java readers `Nodes.derive` and `NodeKeyColumns.published`,
 stop expanding ten union arms per driving row without any of them being edited.
 
+The mechanism, to the standard lever 4 is held to, because "its owner stores it" is not a plan. The
+relation becomes `sql_node_metadata_defect`, a table in the catalog family carrying the view's five
+columns unchanged. A `NodeMetadataDefects.derive` stage on `Nodes.derive`'s model clears its own
+partition and re-inserts the view's rows, and `CatalogFactCapture.capture` gains the one line that
+calls it, which is what makes the catalog gatherer the owner in `meta_relation` rather than in
+prose. One ordering fact constrains that placement and is not negotiable: `Nodes.derive` reads this
+relation, so the write has to land before the graphitron gatherer's nodes stage, which
+`CatalogFactCapture` already satisfies by running in the catalog block above it in
+`FactCapture.capture`. One detail the implementer settles rather than inherits, because the two
+stages do not agree on it: this relation is keyed on the catalog's own key with no graph partition,
+which its comment argues deliberately, so the clearing round is per catalog source and not the
+per-graph delete `Nodes.derive` performs. The rename is what the readers see, and it is four sites:
+the view bodies of `intent_inferred_node_type` and `intent_resolved_node_type_id`, and the Java
+importers in `Nodes` and `NodeKeyColumns`.
+
 The stored fold rides with this lever, because it is the same relation and the second rung of the
 same order. The `KEY_COLUMN_UNRESOLVED` arm probes `sql_column` with `UPPER(c.jooq_name) =
 UPPER(k.column_name) OR UPPER(c.column_name) = UPPER(k.column_name)`, folding the probed side per
 candidate row, where `sql_column` already carries `column_name_upper` and `jooq_name_upper` as
 generated columns. This schema names a stored folded column in eighty-two places, twenty-one of them
 on a column name or a jOOQ name, and `intent_input_field_column_match` two screens over compares
-against both stored columns in exactly this disjunction; this arm is the outlier. Respelling it is
+against both stored columns in exactly this disjunction; this arm is the outlier. The closest
+precedent is closer still and makes the respelling a transcription rather than a judgment call:
+`NodeKeyColumns.folds` is `COLUMN_NAME_UPPER.eq(upper(written)).or(JOOQ_NAME_UPPER.eq(upper(written)))`,
+resolving the same published key-column spellings against the same catalog columns as this arm.
+Respelling it is
 the join-key rule read as a lever rather than a rewrite in the page's sense, it adds no refresh, and
 it makes the comparison reachable by an index where the folded expression is not.
 
 **Lever 3: registration 13 is the page's named rewrite exception, not a registration.**
 `intent_input_field_column_match` collapses its matches with `ROW_NUMBER() OVER (PARTITION BY ...)`,
-and a window sees its whole partition whatever the outer correlation says, so the three correlated
-references to `resolved_name` each pay the entire view's evaluation once per driving row. That is the
+and a window sees its whole partition whatever the outer correlation says, so a correlated reference
+to `resolved_name` pays the entire view's evaluation once per driving row. That is the
 one shape the page says rewriting does fix, and it carries the measurement: the sibling relation
 `intent_column_match_claim`, with the identical `ROW_NUMBER` collapse, cost twenty-four seconds read
 as correlated subqueries and came under two seconds when the statement drove from the view with the
-witnesses joined in as arity-preserving left joins. Here all three references are positive existence
-rather than anti-joins, and the expression projects only the key columns of a view that is already
-one row per that key, so the left-join form is arity safe by construction and the rewrite is the
-lever rather than a guess. It also owes that view the cost warning its comment is missing, which the
+witnesses joined in as arity-preserving left joins.
+
+The rewrite has two sites, not three, and they are not the same shape as each other. The third
+reference is already the drive-from-the-view form and is left alone: the `NAME_MATCHED` arm at
+precedence 8 reads `FROM resolved_name m` uncorrelated, once per read. The two that are correlated
+carry opposite polarity, which is the whole of what an implementer needs and the one thing a uniform
+transcription gets wrong. The arm at precedence 4 reads `THEN 'NAME_MATCHED' ELSE 'NONE' END`, so a
+match produces the role and its left-join test is `IS NOT NULL`; the arm at precedence 6 reads
+`THEN 'NONE' ELSE 'NODE_ID' END`, so a match suppresses the arm under the outer `WHERE role <>
+'NONE'` and its test is `IS NULL`. Reading either as "positive existence" and transcribing both the
+same way inverts one of them, and the inverted verdict is a role the generator emits rather than a
+cost. What makes both safe is neither polarity but the collapse underneath:
+`intent_input_field_column_match` is already exactly one row per the six columns `resolved_name`
+projects, by the same `ROW_NUMBER` that makes it expensive, and those six columns are exactly what
+each site correlates on. At most one right-hand row per left-hand row, so the arity is preserved by
+construction and the rewrite is the lever rather than a guess. It also owes that view the cost warning its comment is missing, which the
 page says each such view owes at its own name because the cost is invisible at the call site.
 
 **Lever 4: `intent_argument_reference_step_target`, which is the one genuine register question.**
@@ -290,8 +341,12 @@ successor item with its own goal rather than a widening of this one.
 before this one was signed off Done with a 53 s pass on a different consumer and the reviewer had to
 decide that question at the gate rather than read it off the plan. The reading this item takes is
 relational rather than a number invented here: the pass is no longer dominated when none of the
-three is an outlier against the pass's own distribution, meaning each lands inside the band the
-other eighteen registrations occupy, which today is 2.9 s at worst and about 6 s in total. A lever
+three is an outlier against the pass's own distribution. The band that distribution is read against
+is the eleven registrations actually measured today, 2.9 s at worst and about 6 s in total, and not
+the other eighteen: registrations 15 to 21 have never been reached on this consumer, so a band over
+eighteen is a figure this item does not have. The plan already re-measures the pass whole after every
+lever, so the band is re-read against the pass's own distribution as soon as the pass completes, and
+a delivery states which band it was judged against. A lever
 that takes a registration from 2076 s to 30 s has moved it by two orders of magnitude and has not
 met that criterion, and the next lever is owed. A delivery that meets it on two of the three and
 leaves the third is one this item can be judged on, provided it says which one and why the next
@@ -325,14 +380,38 @@ The wall clock is consumer-side and is not a build gate, per the section below: 
 the per-registration `done in` figures and the pass total before and after, on the same consumer and
 the same store generation, and says which levers were taken and which were refused by a control.
 
-What answers the Done gate's completeness question inside this repository is the breadth metric,
-which is the one surface the levers move that a reactor build can read. It is checkable today and it
-moves in a stated direction: `report-inline-multiplicity` ranks `intent_node_id_instruction_live`
-first at 230 instantiations with 114 of them one relation, and lever 1 alone takes that view to 134
-and `intent_input_field_filter_role_live` to 45, lever 2 takes `intent_resolved_node_type_id` from
-55 to 11 and `intent_resolved_node_key_column` from 24 to 12, and lever 4 takes the instruction view
-to 55 and `intent_node_id_decode_hop_live` from 91 to 12. The delivery states the ranking before and
-after, and the item is not complete while the node-id family still holds the top of it.
+The breadth metric is the one surface the levers move that a reactor build can read, and it is a
+floor rather than the completeness answer. Stating it that way is the correction of an earlier
+draft that made it the criterion: `report-inline-multiplicity` after lever 1 alone puts the top of
+the ranking at `diagnostic` 145, `intent_argmapping_projection_defect` 141 and the instruction view
+134, so a criterion phrased as "the node-id family is off the top" passes on the cheapest lever
+with registration 13 still at 2076 s, and cannot fail afterwards. Lever 3 is invisible to the metric
+by construction besides, since it rewrites correlated references to a common table expression and
+the metric counts `intent_input_field_column_match` once in that body before and after.
+
+So the floor is stated per registration, in figures the section below already computes, and each is
+checkable today:
+
+[cols="3,1,1"]
+|===
+| relation | today | owed
+
+| `intent_node_id_instruction_live` | 230 | 55
+| `intent_input_field_filter_role_live` | 61 | 45
+| `intent_node_id_decode_hop_live` | 91 | 12
+| `intent_resolved_node_type_id` | 55 | 11
+| `intent_resolved_node_key_column` | 24 | 12
+|===
+
+Lever 1 alone takes the instruction view to 134 and the filter role to 45; lever 2 takes the last
+two rows; lever 4 takes the instruction view to 55 and the decode hop to 12. The delivery states the
+whole ranking before and after rather than these rows alone, because a registration changes what
+every other reader's plan looks like. What it must not do is read the two views the ranking leaves
+above the pass after lever 1, `diagnostic` and `intent_argmapping_projection_defect`, as a failure:
+no registration reads either, so they are outside this item's reach and a successor's if anyone's.
+
+Breadth passing does not close the gate. Lever 3's acceptance is the consumer-side before-and-after
+plus the row-set equality below, and the pass's own wall clock is what the goal is stated in.
 
 What the reactor owes alongside that, one build rather than one per gate:
 
@@ -341,19 +420,39 @@ What the reactor owes alongside that, one build rather than one per gate:
   arithmetic turns on: an `@node` type with no table binding stays a node type through the entry
   relation, and a table-bound type inferred through published metadata stays one through
   `graphitron_node`.
-- Lever 2's defect relation, once its owner stores it, keeps its rows by equality against the view
-  it replaces, and `NodeMetadataDefectTest` gains the stored-fold case: a fixture carrying both a
-  column whose SQL name folds onto the written spelling and one whose jOOQ name does, so the
-  respelling cannot silently drop an arm of the disjunction.
+- Lever 2's `sql_node_metadata_defect` keeps its rows by equality against the view it replaces, and
+  `NodeMetadataDefectTest` gains the stored-fold case: a fixture carrying both a column whose SQL
+  name folds onto the written spelling and one whose jOOQ name does, so the respelling cannot
+  silently drop an arm of the disjunction. Its owner declaration is what `MetaDeclarationGateTest`
+  reads, so the relation's `meta_relation` row moves to the `catalog` gatherer in the same commit,
+  and `FactCaptureAgreementTest`'s oracle-lifecycle gate is what holds the new stage to clearing
+  exactly its own partition and nothing else.
 - Lever 3's rewrite owes `intent_input_field_filter_role`'s row set by equality before and after,
   the `role` column included, since a left-join form that changed a verdict rather than its cost is
-  the failure mode, and the arity claim is the reason the rewrite is safe.
+  the failure mode, and the arity claim is the reason the rewrite is safe. The equality is what
+  catches the polarity inversion the lever names, so it is owed per arm and not only in aggregate:
+  a fixture whose input field name-matches a column and one whose implicit node-id arm fires,
+  since transcribing both sites the same way flips exactly one of them and an aggregate row count
+  can absorb that.
 - A new registration, which on this plan is lever 4 alone, owes the register's own two-line proof as
   a named test, its `_live` view in `FactCaptureAgreementTest`'s registration list, which fails a
   full build and not a scoped one, an index on the target in the shape the DDL already uses, and its
   `DerivedReadCostTest` pair. `MetaDeclarationGateTest` needs no roster edit by construction and the
   delivery should say so rather than discover it: the target keeps the canonical name, which already
   stands on the frozen roster, and the register subtraction exempts the new `_live` view.
+- The register's two structural gates pin figures by equality, and three levers move one or more of
+  them. Named here so the delivery edits a number deliberately rather than meeting a red build and
+  discovering the claim. `MaterializeRegistryGateTest.REGISTRATIONS` goes 21 to 22 on lever 4 by
+  definition, and `REFRESH_STAGES` moves with it by the mechanism that field's own javadoc records
+  twice: the target reads the registered `intent_argument_scope_table` and is read by the registered
+  `intent_node_id_instruction` and `intent_node_id_decode_hop`, so it is the unregistered
+  intermediate the reachability walk currently sees straight through, and registering one turns a
+  link into a stage. Its `NO_INDEX` roster is asserted in both directions, which this lever's
+  committed index keeps it off. `DerivedReadCostTest.READERS_IN_SCHEMA` goes 127 to 126 on lever 2,
+  a view leaving the fact schema, and `CELLS` grows on lever 4 by one per relation reaching the new
+  target. That 127 is also the view population `report-inline-multiplicity` ranks over, so the
+  before-and-after ranking above is read against a denominator lever 2 changes, and the delivery
+  says which.
 - `DetectionReadReachGateTest` pins each detection component's read reach by equality, so a Java
   component whose `READS` set moves fails until it is declared. Levers 1 and 2 both move reach.
 - Where lever 1's filing move is taken, the renamed relation is what every gate above reads, and
@@ -445,6 +544,13 @@ equality. Two views the ranking leaves above the pass after lever 1, `diagnostic
 `intent_argmapping_projection_defect`, are read by no registration, so whatever the criterion
 becomes should say what it expects the top to be rather than which family is not on it.
 
+> *Author, 2026-09-15.* Taken. The Tests section no longer carries a family criterion. Breadth is
+> stated as a floor, with a per-registration table of today's figure against the owed one, and the
+> section says plainly that lever 3 is invisible to the metric by construction and that its
+> acceptance is the consumer-side before-and-after plus a per-arm row-set equality. `diagnostic` and
+> `intent_argmapping_projection_defect` are named as outside this item's reach so a delivery does
+> not read them as a failure.
+
 **Lever 2 is the only lever with no mechanism, and it carries the filing move the item makes
 non-optional for lever 1.** Lever 1 owes a population proof, a chosen interface spelling, and an
 explicit filing decision, of which the item says deferring silently is the one arm not available.
@@ -465,6 +571,15 @@ resolving the same published key-column spellings against the same catalog colum
 respelled. Citing it makes the respelling a transcription of the sibling rather than a judgment
 call, which is the argument the lever wants.
 
+> *Author, 2026-09-15.* Taken, both halves. Lever 2 now carries the mechanism to lever 4's standard:
+> the `sql_node_metadata_defect` table, a `NodeMetadataDefects.derive` stage on `Nodes.derive`'s
+> model, the one line in `CatalogFactCapture.capture`, the ordering fact that the write must precede
+> the graphitron gatherer's nodes stage, and the four rename sites. One thing is stated as the
+> implementer's to settle rather than inherited: the relation is keyed on the catalog key with no
+> graph partition, so the clearing round is per catalog source and not the per-graph delete the
+> sibling stage performs. The Tests section gains its bullet, including the `meta_relation` owner
+> move and the oracle-lifecycle gate. `NodeKeyColumns.folds` is now cited as the precedent.
+
 **The stopping criterion is read against a band the item has not measured.** "Each lands inside the
 band the other eighteen registrations occupy, which today is 2.9 s at worst and about 6 s in total"
 takes as given a distribution over eighteen registrations, where the measurement section says
@@ -473,12 +588,20 @@ the pass whole after every lever, so the repair is small and the criterion survi
 is the eleven measured today, and that it is re-read against the pass's own distribution once the
 pass completes. As it stands a delivery can meet a band that turns out not to be the band.
 
+> *Author, 2026-09-15.* Taken as proposed. The band is the eleven measured today, named as such, and
+> re-read against the pass's own distribution once the pass completes; a delivery states which band
+> it was judged against.
+
 **The bisection axis for registration 12 points at the wrong common table expression.** The counts
 are right, `instructed` at eight references and `table_node` at two. But of the six namings of
 `intent_node_type` in that body, one sits in `table_node` and five sit in the union arms directly,
 among them the correlated `NOT EXISTS` this item separately and correctly picks out as the excluded
 relation with no drivable side. An implementer bisecting `table_node` for the chain's cost prices a
 sixth of its reach and reads the chain as cheap.
+
+> *Author, 2026-09-15.* Taken. The axis is now the top-level union arms, with the five-against-one
+> split stated so the correction survives a skim, and the correlated `NOT EXISTS` named as one of
+> the five.
 
 Corrected in passing, being a symbol rather than a design question: the pickup section named
 `AbstractRewriteMojo.resolveStoreDirectory` for the store that survives a clean. That method
@@ -526,6 +649,10 @@ demand for new work, only for the same bullet the other three levers get: say wh
 lever moves and in which direction, so the delivery edits a number deliberately instead of meeting
 a red build and discovering the claim.
 
+> *Author, 2026-09-15.* Taken as proposed. The Tests section gains a bullet naming both gates,
+> every pinned figure, which lever moves it and in which direction, and the `NO_INDEX` roster. The
+> note that 127 is also the ranking's denominator is folded into the breadth paragraph above it.
+
 **Lever 3's mechanism misreads its own site, in a way that changes what the rewrite is and how many
 sites it has.** The body says `resolved_name` is "referenced three times and each reference is
 correlated on a driving row", and the lever says "all three references are positive existence rather
@@ -545,3 +672,14 @@ partition `resolved_name` projects and correlates on, which it is; but the state
 operative one, and an implementer transcribing "positive existence" into a join with a non-null test
 inverts two verdicts. State the safety on the collapse rather than on the polarity, and name the two
 sites.
+
+> *Author, 2026-09-15.* Taken, and the round's own reading of the first site was wrong in a way that
+> matters more than the finding as filed. The two correlated sites do not share a polarity: the arm
+> at precedence 4 reads `THEN 'NAME_MATCHED' ELSE 'NONE' END`, so a match produces the role and its
+> left-join test is `IS NOT NULL`, while the arm at precedence 6 reads `THEN 'NONE' ELSE 'NODE_ID'
+> END` and tests `IS NULL`. The finding's conclusion holds and sharpens, since a uniform
+> transcription now inverts one site whichever way it is written. Lever 3 states two sites, each
+> polarity, the uncorrelated third reference left alone, and rests arity safety on the collapse
+> rather than on polarity. The diagnosis paragraph's arithmetic is restated at two correlated
+> references and about three and a half thousand expansions. The Tests section asks for the row-set
+> equality per arm, since an aggregate can absorb a single flipped verdict.
