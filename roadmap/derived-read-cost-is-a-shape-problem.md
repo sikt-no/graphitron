@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-13
+last-updated: 2026-09-15
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -3813,6 +3813,81 @@ What has not moved is the call. `GraphQLRewriteGenerator.runPipeline` still open
 read, and `CaptureMojo` still constructs a generator to reach it, so the module boundary is where it
 should be and the seam is where it was. That is the next step rather than a defect in this one, and
 both acceptance criteria above are still unmet.
+
+**The seam needs the expansion to move first, and the first piece of that landed 2026-09-15.**
+Phase 1 has capture returning the assembly, and the sharper version of that is worth stating: not
+the assembly capture happened to make alongside the store, but *the assembly that corresponds to the
+store*. Correspondence by construction rather than by gate, which is the whole reason to put it
+here.
+
+Reading the code for it found the ordering wrong. The thing that builds the final schema is not in
+the generator's emission half at all: `ConnectionPromoter.synthesiseForField` runs per field
+*inside* the classification walk and `ConnectionPromoter.rebuildAssembledForConnections` runs after
+it, consuming the walk's own output. So capture cannot hand back a final schema until the expansion
+it depends on is somewhere capture can run, which makes the expansion's move the prerequisite of the
+seam rather than a later tidy-up.
+
+What the delta actually is turns out to be small, and `AttributedRegistry.load` already marks it in
+its own body: everything above `preSynthesis` is a loading rewrite capture sees, everything below is
+synthesis it does not. Two things live below that line and the store states both as rows. So the
+emitted registry is the transcribed one with those rows applied, and that is
+`EmittedRegistry.of(transcribed, store)`, new in `no.sikt.graphitron.model.schema` beside
+`SchemaAssembly`. It is inert: nothing calls it in production, the existing path is untouched, and
+the build behaves exactly as it did.
+
+Three decisions inside it are worth the author's eye, because each could reasonably have gone the
+other way:
+
+- **It reads the anchors, not the minted relations.** `graphitron_type`, `graphitron_field` and
+  `graphitron_argument` are the minted rows already reconciled against the transcription with
+  `precedence` applied. Reading `graphitron_minted_*` and re-applying precedence here would put that
+  rule in two places, which is the defect being removed rather than one to reproduce. A contested
+  coordinate reaches the patch as an absence, `graphitron_minted_conflict` holding it and the anchor
+  deliberately holding no row, so it needs no arm.
+- **Additive and type-replacing, never wholesale.** The anchors carry what rendering needs and not
+  what only the transcription can assert, applied directives among them, so a field rebuilt from its
+  anchor row would silently lose every directive its author wrote. An existing field therefore keeps
+  its node and gets its type expression replaced where the anchor disagrees, and gains only the
+  arguments it lacks. Only a type the registry does not have at all is built from rows, where there
+  is no authored detail to lose. Nothing is removed: the store holding no row for something the
+  registry declares is a capture defect, and stating it as a difference is the gate's job.
+- **Synthesised keys are read from the relation that derives them**, not filtered out of the
+  composition. The first draft read `intent_federation_key` and kept the rows whose `ordinal` was
+  null, which is a discrimination on a statement about document position that happens to coincide
+  with provenance, and it was wrong on review. `intent_synthesized_federation_key` says what to do
+  instead in its own last sentence: *this relation is its own provenance*, which is what lets a
+  synthesized application leave the transcription families entirely. So the patch names that
+  relation and the question disappears. Two things fall out rather than being coded: the rows are
+  disjoint from the authored applications by the relation's third condition, so nothing re-checks
+  whether the type already carries the key, and both argument values come off the row, the
+  relation's comment saying its constants live in it rather than in a comment each composing
+  reader re-mints from.
+
+`EmittedRegistryTest` drives a real capture rather than seeding rows, since seeding the expansion's
+own output would assume the thing under test, and it carries a control case requiring an
+unmacro'd schema to emit exactly the population it declared. The three connection guards were made
+to fail before being trusted: neutering the patch fails the minted types, the retyped carrier and the
+appended pagination arguments, and leaves the control and the input-untouched case green. The
+assembly case is disclosed in its own javadoc as not failing on an unpatched registry; what it
+catches is a patch producing a schema the specification refuses.
+
+**One correctness gain and one cost, both deliberate.** `ConnectionPromoter` mints
+`GraphQLObjectType` values downstream of `SchemaAssembly.of`, so everything the expansion produces
+today bypasses what that class's own javadoc calls "the only place the specification's structural
+rules get checked at all". Patching before assembly puts the minted types through it. The cost is
+that `assemblyForPipeline`'s second `makeExecutableSchema` stops being federation-only and becomes
+near-universal, which is close to neutral against the rebuild it replaces.
+
+**What is still owed**, and none of it is in this step: prove the new registry and the incumbent
+`rebuiltAssembled` agree, by coordinate-set equality against `graphitron_element` in both directions
+and a printed-schema diff over a corpus; then flip `ModelCapture.capture` to return the store, the
+final schema and the verdicts; then retire `ConnectionPromoter`. Note that the flip contradicts the
+return listed above: with the transition private, neither registry is exposed, and
+`AttributedRegistry`'s two-registry shape then has no consumer, its own javadoc saying
+`preSynthesisRegistry` exists only because `KeyNodeSynthesiser` rewrites in place. The retirement is
+also not clean, `ConnectionPromoter` hanging forms on the classified variants through
+`CarriesObjectForm` and running a scalar-demand sweep, which is classification-side residue that
+goes with the form resolution rather than with this.
 
 **The gate**, which every collapse in phase 2 takes too. One corpus captured before and after, every
 relation the schema declares counted under each, both directions. Not the intersection: three
