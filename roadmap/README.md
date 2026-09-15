@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | In Review | 2026-09-14 <sub>created 2026-09-08</sub> | [plan](polymorphic-nodeid-service-input.md) |
 | `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | In Review | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -482,7 +481,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
-- `R933` [**@nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot**](polymorphic-nodeid-service-input.md) — In Review, feature
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
