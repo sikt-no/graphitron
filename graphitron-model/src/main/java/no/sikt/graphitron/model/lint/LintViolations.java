@@ -22,6 +22,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
@@ -77,6 +81,7 @@ public final class LintViolations {
         noTypenamePrefix(dsl, graph, touchedAt);
         typesAndFieldsHaveDescriptions(dsl, graph, touchedAt);
         deprecationsHaveAReason(dsl, graph, touchedAt);
+        noDeprecatedDirectiveUsage(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -304,6 +309,107 @@ public final class LintViolations {
             .onDuplicateKeyUpdate()
             .set(v.TOUCHED_AT, excluded(v.TOUCHED_AT))
             .execute();
+    }
+
+    /**
+     * {@code no-deprecated-directive-usage}: an author writing something the vocabulary has
+     * retired.
+     *
+     * <p>Three arms, because three different things can be deprecated and each is written at its
+     * own place: the directive, one of its arguments, and an input field named inside an argument's
+     * value. Each arm draws its row at the thing the author would edit, so a retired input field
+     * puts the row on the value that names it rather than on the whole application, and an editor
+     * asked to jump lands on the words that have to change.
+     *
+     * <p>Which markers say deprecated is not asked here. GraphQL puts the two forms apart, native
+     * {@code @deprecated} being illegal on a directive definition so that a retired directive says
+     * so in its description instead, and capture has already unified them into three relations. A
+     * rule reading them does not have to know which marker was used, and does not.
+     *
+     * <p>{@code @record} is passed over, as the walk passes over it: its redundancy is a classifier
+     * advisory with its own rule id, and two rules reporting one application would be two findings
+     * for one edit.
+     */
+    private static void noDeprecatedDirectiveUsage(DSLContext dsl, String graph,
+                                                   LocalDateTime touchedAt) {
+        var app = appliedDirectives(graph);
+        Field<String> source = app.field(GRAPHQL_AST_ENTRY.SOURCE_NAME);
+        Field<Integer> line = app.field(GRAPHQL_AST_ENTRY.SOURCE_LINE);
+        Field<Integer> column = app.field(GRAPHQL_AST_ENTRY.SOURCE_COLUMN);
+        Field<String> directive = app.field(field(name("NAME"), String.class));
+        var e = GRAPHQL_AST_ENTRY.as("enclosing");
+        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var val = GRAPHQL_AST_VALUE_ENTRY;
+        var v = LINT_VIOLATION;
+        var dd = GRAPHITRON_DEPRECATED_DIRECTIVE;
+        var da = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+        var di = GRAPHITRON_DEPRECATED_INPUT_FIELD;
+        var formal = GRAPHQL_DIRECTIVE_ARGUMENT;
+        Condition linted = e.ELEMENT_COORDINATE.isNotNull()
+            .and(directive.ne(inline("record")))
+            .and(authored(source))
+            .and(notExcluded(dsl, graph, typeOf(e.ELEMENT_COORDINATE)));
+
+        // The directive itself. The row goes at the application, which is the whole of what the
+        // author writes and the whole of what they would remove.
+        dsl.insertInto(v)
+            .columns(v.GRAPH_NAME, v.LINT_RULE, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
+                v.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, v.GRAPH_NAME), inline("no-deprecated-directive-usage"),
+                    source, line, column, val(touchedAt, v.TOUCHED_AT))
+                .from(app)
+                .join(e).on(e.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)), e.SOURCE_NAME.eq(source),
+                    e.SOURCE_LINE.eq(line), e.SOURCE_COLUMN.eq(column))
+                .join(dd).on(dd.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)),
+                    dd.DIRECTIVE_NAME.eq(directive))
+                .where(linted))
+            .onDuplicateKeyUpdate().set(v.TOUCHED_AT, excluded(v.TOUCHED_AT)).execute();
+
+        // An argument of it. The row goes at the argument the author passed, not at the application
+        // carrying it, the rest of which may be perfectly current.
+        dsl.insertInto(v)
+            .columns(v.GRAPH_NAME, v.LINT_RULE, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
+                v.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, v.GRAPH_NAME), inline("no-deprecated-directive-usage"),
+                    a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, val(touchedAt, v.TOUCHED_AT))
+                .from(a)
+                .join(app).on(source.eq(a.SOURCE_NAME), line.eq(a.PARENT_LINE),
+                    column.eq(a.PARENT_COLUMN))
+                .join(e).on(e.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)), e.SOURCE_NAME.eq(source),
+                    e.SOURCE_LINE.eq(line), e.SOURCE_COLUMN.eq(column))
+                .join(da).on(da.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)),
+                    da.DIRECTIVE_NAME.eq(directive), da.ARGUMENT_NAME.eq(a.NAME))
+                .where(a.GRAPH_NAME.eq(graph)).and(linted))
+            .onDuplicateKeyUpdate().set(v.TOUCHED_AT, excluded(v.TOUCHED_AT)).execute();
+
+        // An input field named inside the value. Every name written anywhere in the expression is
+        // checked against the argument's own declared type, at any depth, because a deprecated
+        // field is deprecated wherever it appears and none of this vocabulary's nesting changes
+        // which type owns one.
+        dsl.insertInto(v)
+            .columns(v.GRAPH_NAME, v.LINT_RULE, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
+                v.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, v.GRAPH_NAME), inline("no-deprecated-directive-usage"),
+                    val.SOURCE_NAME, val.SOURCE_LINE, val.SOURCE_COLUMN,
+                    val(touchedAt, v.TOUCHED_AT))
+                .from(val)
+                .join(a).on(a.GRAPH_NAME.eq(val.GRAPH_NAME), a.SOURCE_NAME.eq(val.SOURCE_NAME),
+                    a.SOURCE_LINE.eq(val.HOLDER_LINE), a.SOURCE_COLUMN.eq(val.HOLDER_COLUMN))
+                .join(app).on(source.eq(a.SOURCE_NAME), line.eq(a.PARENT_LINE),
+                    column.eq(a.PARENT_COLUMN))
+                .join(e).on(e.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)), e.SOURCE_NAME.eq(source),
+                    e.SOURCE_LINE.eq(line), e.SOURCE_COLUMN.eq(column))
+                .join(formal).on(formal.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)),
+                    formal.DIRECTIVE_NAME.eq(directive), formal.ARGUMENT_NAME.eq(a.NAME))
+                .join(di).on(di.GRAPH_NAME.eq(val(graph, v.GRAPH_NAME)),
+                    di.TYPE_NAME.eq(formal.NAMED_TYPE), di.FIELD_NAME.eq(val.OBJECT_FIELD_NAME))
+                .where(val.GRAPH_NAME.eq(graph))
+                .and(val.OBJECT_FIELD_NAME.isNotNull())
+                .and(linted))
+            .onDuplicateKeyUpdate().set(v.TOUCHED_AT, excluded(v.TOUCHED_AT)).execute();
     }
 
     /**

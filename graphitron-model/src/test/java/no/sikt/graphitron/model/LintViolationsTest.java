@@ -252,6 +252,38 @@ class LintViolationsTest {
         });
     }
 
+    /**
+     * The three things that can be deprecated, each drawing its row where the author would edit.
+     * Two of the markers are the bundled vocabulary's own and are the real ones rather than a
+     * fixture's invention: a directive retired by a token in its description, and an argument
+     * retired by the native marker GraphQL will not let a directive definition carry.
+     */
+    @Test
+    @DisplayName("each deprecated thing draws its row at the words that have to change")
+    void deprecatedUsageFiresAtEachOfItsThreeGrains() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                input LegacyFilterInput {
+                  old: String @deprecated(reason: "gone")
+                  fresh: String
+                }
+                directive @sift(filter: LegacyFilterInput) on FIELD_DEFINITION
+                enum Kind { FIRST @index(name: "i") }
+                type Query {
+                  widgets: String @asConnection(connectionName: "WidgetConnection")
+                  sifted: String @sift(filter: {old: "x", fresh: "y"})
+                }
+                """);
+
+            assertThat(rulesAt(dsl, "no-deprecated-directive-usage"))
+                .as("the retired directive at its application on line 6, the retired argument at"
+                    + " the argument on line 8, and the retired input field at the value naming it"
+                    + " on line 9. Three grains, three lines: a row landing on the application"
+                    + " instead of the argument or the value would be a jump to the wrong words")
+                .containsExactly(6, 8, 9);
+        });
+    }
+
     /** The lines one rule drew a row at, in source order. */
     private static List<Integer> rulesAt(DSLContext dsl, String rule) {
         return dsl.select(LINT_VIOLATION.SOURCE_LINE).from(LINT_VIOLATION)
