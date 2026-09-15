@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_INFERRED_NODE_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_inferred_node_type} and {@code intent_node_type} return: which of a graph's
+ * What {@code intent_inferred_node_type} and {@code graphitron_node_type} return: which of a graph's
  * types are node types, from the authored population and the inferred one. The generator answers the
  * same question live in {@code NodeDeclaration.isNodeType}, so what these cases pin is that the
  * relations agree with that predicate arm for arm, over rows a real capture can produce and a few it
@@ -40,6 +40,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ranking, so a type both arms answer for is one row and precedence never arises; and it takes
  * {@code @node} at its word, a declared node with no {@code implements Node} still reading as a node
  * because that is what the live predicate answers and rejecting the shape is a detection's job.
+ *
+ * <p>The reduction stands on two captured tables rather than on the inferred derivation beside it,
+ * and the population equality that licensed that is what two of these cases hold. {@link
+ * no.sikt.graphitron.model.derive.Nodes#derive} computes the inferred conjunction at capture and
+ * lands it in {@code graphitron_node}, whose declared arm is the entry relation intersected with
+ * the table binding, so the union with the entry relation absorbs that arm and what remains is the
+ * inference. {@link #anAuthoredNodeNeedsNoCatalog} holds the entry side, a {@code @node} on a type
+ * with no binding reaching no {@code graphitron_node} row and staying a node type anyway; {@link
+ * #aTableBoundNodeImplementorOverWellFormedMetadataIsInferred} holds the other, a type nobody wrote
+ * the directive on reaching membership through the captured table alone. Either failing is the
+ * re-sourcing having changed the population rather than only what it costs to read.
  */
 class NodeTypeTest {
 
@@ -313,10 +324,10 @@ class NodeTypeTest {
 
     private static List<String> nodeTypes(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_NODE_TYPE.TYPE_NAME)
-            .from(INTENT_NODE_TYPE)
-            .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_NODE_TYPE.TYPE_NAME)
-            .fetch(INTENT_NODE_TYPE.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE_TYPE.TYPE_NAME)
+            .from(GRAPHITRON_NODE_TYPE)
+            .where(GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_NODE_TYPE.TYPE_NAME)
+            .fetch(GRAPHITRON_NODE_TYPE.TYPE_NAME);
     }
 }

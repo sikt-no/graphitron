@@ -5270,6 +5270,14 @@ COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The for
 COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers to, resolved rather than as written: what the author declared where they declared one, what the backing class publishes where they did not, and the type''s own name where neither says. Never null, the last of those three always answering, so a reader encoding an id needs no fallback of its own';
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
 
+CREATE VIEW graphitron_node_type (graph_name, type_name) AS
+SELECT graph_name, type_name FROM graphitron_node_entry
+ UNION
+SELECT graph_name, type_name FROM graphitron_node;
+COMMENT ON VIEW graphitron_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the resolved one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Both arms are captured relations, which is this view''s whole cost argument: graphitron_node''s published arm computes the inferred conjunction at capture, so reading the derivation that restates it would re-evaluate a nodehood chain once per naming of this relation, where a captured table counts once and truncates the tree for every rule above it. Its declared arm is the entry relation intersected with the table binding, so the union absorbs it and the entry arm above is what remains.';
+COMMENT ON COLUMN graphitron_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON COLUMN graphitron_node_type.type_name IS 'the node type; keyed with the graph, one row per node type however many arms answered for it';
+
 CREATE TABLE graphitron_node_keycolumn (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -6200,18 +6208,10 @@ COMMENT ON COLUMN intent_inferred_node_type.table_source_name IS 'the metadata-p
 COMMENT ON COLUMN intent_inferred_node_type.table_schema IS 'the metadata-publishing table''s SQL schema';
 COMMENT ON COLUMN intent_inferred_node_type.table_name IS 'the metadata-publishing table''s SQL name. With the two columns above this is sql_table''s full key, and the sql_node_metadata row this inference read sits on that same key';
 
-CREATE VIEW intent_node_type (graph_name, type_name) AS
-SELECT graph_name, type_name FROM graphitron_node_entry
- UNION
-SELECT graph_name, type_name FROM intent_inferred_node_type;
-COMMENT ON VIEW intent_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the inferred one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Inference is a cross-corpus join and lands in the arm that performs it, which is what keeps the SDL crawlers writing rows about the SDL alone.';
-COMMENT ON COLUMN intent_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
-COMMENT ON COLUMN intent_node_type.type_name IS 'the node type; keyed with the graph, one row per node type however many arms answered for it';
-
 CREATE VIEW intent_synthesized_federation_key
   (graph_name, type_name, fields_sdl, resolvable) AS
 SELECT n.graph_name, n.type_name, 'id', TRUE
-  FROM intent_node_type n
+  FROM graphitron_node_type n
  WHERE EXISTS (SELECT 1 FROM graphitron_link_entry l
                 WHERE l.graph_name = n.graph_name
                   AND l.url LIKE 'https://specs.apollo.dev/federation/%')
@@ -6227,7 +6227,7 @@ SELECT n.graph_name, n.type_name, 'id', TRUE
                                    WHERE s.graph_name = k.graph_name
                                      AND s.type_name = k.type_name AND s.ordinal = k.ordinal
                                      AND s.segment_name = 'id'));
-COMMENT ON VIEW intent_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, because federation needs the entity declaration visible in the emitted SDL and a node carries a globally-unique id by definition. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts, which is what puts it in this stratum rather than in the walk that used to run it. The three conditions are the live rule''s. The graph is federation-linked, which is a predicate over graphitron_link_entry.url as graphitron_link_entry''s own comment says, and the decode rather than the verbatim twin: reading the argument value out of graphql_schema_directive_arg would mean compensating for AST quoting, which is exactly the string surgery a decoded relation exists to retire. A url the author omitted is a null and matches nothing, which is the live predicate''s null guard falling out of the join. The type is a node, by intent_node_type. And no authored key already states the id contract, meaning no @key application on the type whose decode is exactly the single path id: one field row, one segment, and that segment named id. Positions are dense from zero in both children, so the two counts pin the shape without naming a position. That transcribes the live rule including its deliberate asymmetry, a malformed fields: argument decoding to no field rows and therefore not counting as the id key, so the misuse reaches its detection instead of suppressing synthesis on the strength of a parse failure; compound and other-field keys likewise do not count, being additional alternatives rather than the id contract. The rule''s constants appear here, in SQL, rather than in a comment each composing reader re-mints from: fields_sdl is the field-set literal the rule would have written and resolvable is true. The federation-spec prefix is a third spelling beside the two Java readers that share the constant, and is pinned to it by a named test rather than by a shared literal, a view being unable to bind a query parameter. This relation is its own provenance, which is what lets the synthesized application leave the transcription families entirely: nothing marks a synthesized row in graphql_type_directive because no synthesized row lands there.';
+COMMENT ON VIEW intent_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, because federation needs the entity declaration visible in the emitted SDL and a node carries a globally-unique id by definition. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts, which is what puts it in this stratum rather than in the walk that used to run it. The three conditions are the live rule''s. The graph is federation-linked, which is a predicate over graphitron_link_entry.url as graphitron_link_entry''s own comment says, and the decode rather than the verbatim twin: reading the argument value out of graphql_schema_directive_arg would mean compensating for AST quoting, which is exactly the string surgery a decoded relation exists to retire. A url the author omitted is a null and matches nothing, which is the live predicate''s null guard falling out of the join. The type is a node, by graphitron_node_type. And no authored key already states the id contract, meaning no @key application on the type whose decode is exactly the single path id: one field row, one segment, and that segment named id. Positions are dense from zero in both children, so the two counts pin the shape without naming a position. That transcribes the live rule including its deliberate asymmetry, a malformed fields: argument decoding to no field rows and therefore not counting as the id key, so the misuse reaches its detection instead of suppressing synthesis on the strength of a parse failure; compound and other-field keys likewise do not count, being additional alternatives rather than the id contract. The rule''s constants appear here, in SQL, rather than in a comment each composing reader re-mints from: fields_sdl is the field-set literal the rule would have written and resolvable is true. The federation-spec prefix is a third spelling beside the two Java readers that share the constant, and is pinned to it by a named test rather than by a shared literal, a view being unable to bind a query parameter. This relation is its own provenance, which is what lets the synthesized application leave the transcription families entirely: nothing marks a synthesized row in graphql_type_directive because no synthesized row lands there.';
 COMMENT ON COLUMN intent_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
 COMMENT ON COLUMN intent_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
 COMMENT ON COLUMN intent_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
@@ -7174,7 +7174,7 @@ COMMENT ON COLUMN intent_resolved_node_key_column.graph_name IS 'the owning grap
 COMMENT ON COLUMN intent_resolved_node_key_column.type_name IS 'the graph type whose node key this row is one column of';
 COMMENT ON COLUMN intent_resolved_node_key_column.position IS '0-based position within the key, dense from zero, in the order the winning tier states; the order the encoded identity depends on, which is why the pick keeps a tier''s list whole';
 COMMENT ON COLUMN intent_resolved_node_key_column.column_name IS 'the key column''s name as the winning tier spells it: as written on the pinned tier, as the generated class stated it on the metadata tier, and the catalog''s own name on the primary-key tier. Matching against a table''s columns is case-insensitive wherever a reader does it, which is settled convention rather than this relation''s rule. No fold is exposed beside it, and the reason is not that the tiers are three: intent_spelled_table is a union across as many arms with no single owning relation either, and it reads each arm''s stored fold internally without trouble. What it does not do is expose one, because no view in this schema does; forwarding a fold through a derived view is what the folded columns'' own comments forbid, a fold being minted on the base relation a comparison joins. What this relation hands out is a spelling rather than a resolved column, which is what makes the question of whether handing out a spelling is the right payload here a live one rather than a closed door, and it is asked on the roadmap rather than settled by this comment. A reader matching an authored spelling against this column therefore folds this side at the crossing and joins the authored side''s own generated column, which is where the schema mints one';
-COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under a node type, read off intent_node_type rather than the authored @node arm alone because that view is the one relation a reader of nodehood joins. Widening it there is inert today and stated as such rather than as a fix: the inferred arm requires well-formed node metadata, well-formedness requires a declared key-columns list, and that list is what the JOOQ_METADATA tier above answers with, so an inferred node type always resolves on the higher tier and this one only ever fires under an authored @node. It is the union anyway, so the tier stops being wrong rather than starting to be right if inference ever loosens. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
+COMMENT ON COLUMN intent_resolved_node_key_column.tier IS 'which population answered, in a closed vocabulary of three: SDL_PINNED from an @node(keyColumns:) list, JOOQ_METADATA from the well-formed node metadata the bound table''s generated class states, CATALOG_PRIMARY_KEY from the bound table''s primary key under a node type, read off graphitron_node_type rather than the authored @node arm alone because that view is the one relation a reader of nodehood joins. Widening it there is inert today and stated as such rather than as a fix: the inferred arm requires well-formed node metadata, well-formedness requires a declared key-columns list, and that list is what the JOOQ_METADATA tier above answers with, so an inferred node type always resolves on the higher tier and this one only ever fires under an authored @node. It is the union anyway, so the tier stops being wrong rather than starting to be right if inference ever loosens. The order is the resolution''s own precedence, and the column is what lets a test pin which tier fired rather than only that the columns came out right';
 
 CREATE VIEW intent_resolved_node_key_shape
   (graph_name, type_name, arity, record_class, sole_column_name, sole_column_java_type) AS
@@ -7213,7 +7213,7 @@ SELECT graph_name, type_name, type_id, origin
                  WHERE n.type_id IS NOT NULL
                 UNION ALL
                 SELECT n.graph_name, n.type_name, m.type_id, 'JOOQ_METADATA', 1
-                  FROM intent_node_type n
+                  FROM graphitron_node_type n
                   JOIN graphitron_tabletype b
                     ON b.graph_name = n.graph_name AND b.type_name = n.type_name
                   JOIN sql_node_metadata m
@@ -7226,9 +7226,9 @@ SELECT graph_name, type_name, type_id, origin
                                       AND d.table_name = m.table_name)
                 UNION ALL
                 SELECT n.graph_name, n.type_name, n.type_name, 'TYPE_NAME', 2
-                  FROM intent_node_type n) arms) picked
+                  FROM graphitron_node_type n) arms) picked
  WHERE tier_rank = 1;
-COMMENT ON VIEW intent_resolved_node_type_id IS 'The wire type id a graph''s node type encodes its ids under: the prefix a node id carries and a decode matches against. A first-tier-wins reduction over the three populations that can answer, in the precedence TypeBuilder applies with a live catalog in hand, and naming it as a relation is what lets a store-sourced reader take the same answer rather than re-deriving it. The sibling of intent_resolved_node_key_column, which resolves the other half of a node''s identity over its own three tiers; the two are read together wherever a decode is emitted, and they are separate relations because their tiers are different populations and neither precedence implies the other. The order is the author''s contract first: @node(typeId:) is a published wire format decoupled from whatever the jOOQ generator emits, so it wins outright wherever it is declared. Below it the generated model''s own stated type id, read through the well-formedness derivation rather than off the raw metadata relation, because a malformed constant is not an answer and the classifier rejects the type outright rather than falling through. Below that the type''s own name, which is the documented default and the reason this relation is total over node types: every node type resolves a type id, so absence here means the type is not a node rather than that its identity is unknown. Total by construction is the property a consumer relies on, and it is why the lowest tier is an unconditional arm over intent_node_type rather than a COALESCE at each reader. DENSE_RANK over the tiers rather than ROW_NUMBER, matching the key-column sibling: the pick is by type and a tier answers with one value, so the two window functions agree here, and the shared spelling is what keeps the pair readable as one precedence idiom. An ambiguous table binding costs only the metadata tier, that arm being the one that needs a table; the SDL tier answers without one and the type-name tier needs nothing at all.';
+COMMENT ON VIEW intent_resolved_node_type_id IS 'The wire type id a graph''s node type encodes its ids under: the prefix a node id carries and a decode matches against. A first-tier-wins reduction over the three populations that can answer, in the precedence TypeBuilder applies with a live catalog in hand, and naming it as a relation is what lets a store-sourced reader take the same answer rather than re-deriving it. The sibling of intent_resolved_node_key_column, which resolves the other half of a node''s identity over its own three tiers; the two are read together wherever a decode is emitted, and they are separate relations because their tiers are different populations and neither precedence implies the other. The order is the author''s contract first: @node(typeId:) is a published wire format decoupled from whatever the jOOQ generator emits, so it wins outright wherever it is declared. Below it the generated model''s own stated type id, read through the well-formedness derivation rather than off the raw metadata relation, because a malformed constant is not an answer and the classifier rejects the type outright rather than falling through. Below that the type''s own name, which is the documented default and the reason this relation is total over node types: every node type resolves a type id, so absence here means the type is not a node rather than that its identity is unknown. Total by construction is the property a consumer relies on, and it is why the lowest tier is an unconditional arm over graphitron_node_type rather than a COALESCE at each reader. DENSE_RANK over the tiers rather than ROW_NUMBER, matching the key-column sibling: the pick is by type and a tier answers with one value, so the two window functions agree here, and the shared spelling is what keeps the pair readable as one precedence idiom. An ambiguous table binding costs only the metadata tier, that arm being the one that needs a table; the SDL tier answers without one and the type-name tier needs nothing at all.';
 COMMENT ON COLUMN intent_resolved_node_type_id.graph_name IS 'the owning graph''s partition, carried from whichever tier answered';
 COMMENT ON COLUMN intent_resolved_node_type_id.type_name IS 'the node type whose wire identity this row states';
 COMMENT ON COLUMN intent_resolved_node_type_id.type_id IS 'the type id as the winning tier states it: the authored string on the SDL tier, the generated class''s stated constant on the metadata tier, and the type''s own name on the last. Compared verbatim by a decode, so no fold is exposed beside it and none is wanted: a wire format is case-sensitive';
@@ -10238,20 +10238,20 @@ table_node (graph_name, table_source_name, table_schema, table_name, type_name, 
          CAST(COUNT(*) OVER (PARTITION BY bt.graph_name, bt.table_source_name,
                                           bt.table_schema, bt.table_name) AS INT)
     FROM graphitron_tabletype bt
-    JOIN intent_node_type nt
+    JOIN graphitron_node_type nt
       ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
 )
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
        'EXPLICIT_TYPE_NAME', nt.type_name, 'NODE_TYPE', i.has_reference,
        i.source_name, i.source_line, i.source_column
   FROM instructed i
-  JOIN intent_node_type nt
+  JOIN graphitron_node_type nt
     ON nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref
  UNION ALL
 -- The second EXPLICIT_TYPE_NAME arm: a written typeName: naming a polymorphic container. One
 -- authored rule, two resolved kinds, which is why basis does not move and the kind is a column.
 -- Disjoint from the arm above by construction rather than by precedence: this one demands the
--- written name be an INTERFACE or a UNION and not be in intent_node_type, so a container carrying
+-- written name be an INTERFACE or a UNION and not be in graphitron_node_type, so a container carrying
 -- @node resolves NODE_TYPE above (the store's spelling of the walk's ordering rule) and no
 -- instruction draws both rows.
 --
@@ -10271,14 +10271,14 @@ SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
   JOIN graphql_type ct
     ON ct.graph_name = i.graph_name AND ct.type_name = i.node_type_ref
    AND ct.kind IN ('INTERFACE', 'UNION')
- WHERE NOT EXISTS (SELECT 1 FROM intent_node_type nt
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_node_type nt
                     WHERE nt.graph_name = i.graph_name AND nt.type_name = i.node_type_ref)
  UNION ALL
 SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path, i.use_site,
        'CONTAINING_NODE_TYPE', nt.type_name, 'NODE_TYPE', i.has_reference,
        i.source_name, i.source_line, i.source_column
   FROM instructed i
-  JOIN intent_node_type nt
+  JOIN graphitron_node_type nt
     ON nt.graph_name = i.graph_name AND nt.type_name = i.type_name
  WHERE i.node_type_ref IS NULL AND i.site = 'OUTPUT_FIELD' AND NOT i.has_reference
  UNION ALL
@@ -10306,7 +10306,7 @@ SELECT f.graph_name, 'OUTPUT_FIELD', f.type_name, f.field_name, NULL, NULL,
             THEN TRUE ELSE FALSE END,
        f.source_name, f.source_line, f.source_column
   FROM graphql_field f
-  JOIN intent_node_type nt
+  JOIN graphitron_node_type nt
     ON nt.graph_name = f.graph_name AND nt.type_name = f.type_name
  WHERE f.field_name = 'id' AND f.named_type = 'ID'
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_node_id_entry n
@@ -10326,7 +10326,7 @@ SELECT a.graph_name, 'ARGUMENT', a.type_name, a.field_name, a.argument_name, NUL
   JOIN graphql_field f
     ON f.graph_name = a.graph_name AND f.type_name = a.type_name
    AND f.field_name = a.field_name
-  JOIN intent_node_type nt
+  JOIN graphitron_node_type nt
     ON nt.graph_name = a.graph_name AND nt.type_name = f.named_type
  WHERE a.argument_name = 'id' AND a.named_type = 'ID'
    AND NOT EXISTS (SELECT 1 FROM graphitron_argument_node_id_entry n
@@ -10401,7 +10401,7 @@ COMMENT ON COLUMN intent_node_id_instruction.path IS 'the occurrence path this r
 COMMENT ON COLUMN intent_node_id_instruction.use_site IS 'the consuming coordinate serialized, in graphitron_argmapping_entry''s vocabulary: Type.field for an output field, Type.field(argument) for an argument, and the occurrence path itself for an input field, that path already being this serialization. Carried because a message needs one string and the components differ by site; those components are columns beside it, so nothing parses this';
 COMMENT ON COLUMN intent_node_id_instruction.basis IS 'which rule stated the instruction and resolved its target, in a closed vocabulary of five disjoint rules. EXPLICIT_TYPE_NAME: @nodeId(typeName: T). CONTAINING_NODE_TYPE: bare @nodeId on a non-@reference object field whose containing type is itself a node, the manual''s inference rule (a). TARGET_TABLE_NODE_TYPE: bare @nodeId whose target comes from a table, the manual''s inference rule (b), demanding exactly one node type over that table. OWN_ID_FIELD: a node type''s own id field with no directive, which is a node ID by construction. TARGET_ID_NAME: a slot named for the target''s own id with no directive, an argument of a node-returning field or an input field consumed against a node-backed table. Provenance and shape at once, which is why it is one column and not two: typeName: is rejected outright on a node type''s own id field, so the forms are not interchangeable and a rejection has to be able to say which one the author wrote';
 COMMENT ON COLUMN intent_node_id_instruction.resolved_type_name IS 'the type the instruction''s basis resolved, written or inferred; never NULL, the population being instructions whose target resolved to something. A name and never a binding, on graphitron_field_navigation.navigated_type_name''s terms: what sort of type it is, and therefore which relation answers for it, is the kind column beside it. Where the kind is NODE_TYPE this is the node type itself and the opaque format''s other end is one join away, intent_resolved_node_key_column on this name and the graph giving the key columns in order and intent_resolved_node_type_id the typeId. Where the kind is POLY_CONTAINER it is a multitable interface or union that resolves no key of its own, and intent_node_id_candidate_node_type on this name is the node types an id at this slot may belong to. Renamed from node_type_name when the container population landed, rather than widening that name''s promise: a container is not a node type, and a column that meant one thing at two kinds would have every reader restating which';
-COMMENT ON COLUMN intent_node_id_instruction.resolved_type_kind IS 'which sort of type the name beside it is, in a closed vocabulary of two. NODE_TYPE: a node type, whose key the decode yields directly. POLY_CONTAINER: a multitable interface or union whose @table members are node types, where the wire id''s own type prefix decides which member''s key the decode yields. A column rather than a predicate each reader re-evaluates, on carries_reference_path''s own justification in this relation: three relations fork on it and several more take it as a filter, and re-deriving it would mean each of them joining intent_node_type or graphql_type to answer a question this view has already answered. Deliberately not a sixth basis: basis states which authored rule stood the instruction up, and a written typeName: is one rule whatever it resolves to, so splitting it would split one authored predicate on a resolution fact';
+COMMENT ON COLUMN intent_node_id_instruction.resolved_type_kind IS 'which sort of type the name beside it is, in a closed vocabulary of two. NODE_TYPE: a node type, whose key the decode yields directly. POLY_CONTAINER: a multitable interface or union whose @table members are node types, where the wire id''s own type prefix decides which member''s key the decode yields. A column rather than a predicate each reader re-evaluates, on carries_reference_path''s own justification in this relation: three relations fork on it and several more take it as a filter, and re-deriving it would mean each of them joining graphitron_node_type or graphql_type to answer a question this view has already answered. Deliberately not a sixth basis: basis states which authored rule stood the instruction up, and a written typeName: is one rule whatever it resolves to, so splitting it would split one authored predicate on a resolution fact';
 COMMENT ON COLUMN intent_node_id_instruction.carries_reference_path IS 'whether the slot carries an @reference path of its own, read on the captured relation the slot''s site keys: the argument-site steps on ARGUMENT, the field-site steps on the two field sites. Carried because it decides how the instruction navigates to the node type''s table and because two of the bases above are already disjoint on it, so a reader resolving the navigation would otherwise re-derive a predicate this view has already evaluated. It says a path is written and nothing about whether one resolves; where the path resolves to is the reference-target views'' answer and a slot whose path reaches nothing is TRUE here all the same';
 COMMENT ON COLUMN intent_node_id_instruction.source_name IS 'the SDL file the instruction was captured from; the directive application''s own position on the three directive bases, and the slot declaration''s on the two name-carried ones, there being no application to locate';
 COMMENT ON COLUMN intent_node_id_instruction.source_line IS 'source line, 1-based per the graphql-java convention';
@@ -10859,7 +10859,7 @@ SELECT m.graph_name, m.container_name, m.container_kind, m.member_type_name,
                           WHERE bt.graph_name = m.graph_name
                             AND bt.type_name = m.member_type_name)
             THEN TRUE ELSE FALSE END,
-       CASE WHEN EXISTS (SELECT 1 FROM intent_node_type nt
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_node_type nt
                           WHERE nt.graph_name = m.graph_name
                             AND nt.type_name = m.member_type_name)
             THEN TRUE ELSE FALSE END
@@ -10870,12 +10870,12 @@ COMMENT ON COLUMN intent_node_container_member.container_name IS 'the polymorphi
 COMMENT ON COLUMN intent_node_container_member.container_kind IS 'UNION or INTERFACE, carried from intent_poly_member.container_kind. Provenance, and carried rather than dropped because a refusal about a container names what sort of type it is when it offers the author a remedy';
 COMMENT ON COLUMN intent_node_container_member.member_type_name IS 'the object type the container resolves to; completing the key. Source order is deliberately not carried: a reader that needs the members in order reads intent_poly_member.position, and this relation''s readers ask about the set rather than about the sequence';
 COMMENT ON COLUMN intent_node_container_member.is_table_bound IS 'whether the member binds a table, read off graphitron_tabletype at the member''s own name. What separates a member a polymorphic node id could decode into from one it could not: a member with no table has no record and no key. TRUE alone is not admissibility, the column beside it being the other half';
-COMMENT ON COLUMN intent_node_container_member.is_node_type IS 'whether the member is a node type, read off intent_node_type at the member''s own name. With the column beside it, admissibility: a polymorphic decode needs every table-bound member to be a node type of its own, because a candidate set with a hole in it would reject one member''s ids at runtime with nothing in the build saying so. A member that is a node type and binds no table is not a contradiction to be resolved here; nodehood is a declaration-level answer, on intent_node_type''s own terms, and this relation reports both readings rather than reconciling them';
+COMMENT ON COLUMN intent_node_container_member.is_node_type IS 'whether the member is a node type, read off graphitron_node_type at the member''s own name. With the column beside it, admissibility: a polymorphic decode needs every table-bound member to be a node type of its own, because a candidate set with a hole in it would reject one member''s ids at runtime with nothing in the build saying so. A member that is a node type and binds no table is not a contradiction to be resolved here; nodehood is a declaration-level answer, on graphitron_node_type''s own terms, and this relation reports both readings rather than reconciling them';
 
 CREATE VIEW intent_node_id_candidate_node_type
   (graph_name, resolved_type_name, node_type_name) AS
 SELECT graph_name, type_name, type_name
-  FROM intent_node_type
+  FROM graphitron_node_type
  UNION
 SELECT m.graph_name, m.container_name, m.member_type_name
   FROM intent_node_container_member m
@@ -10883,7 +10883,7 @@ SELECT m.graph_name, m.container_name, m.member_type_name
    -- Disjoint from the identity arm by construction, the same predicate the instruction relation's
    -- container arm carries: a container that is itself a node type resolves NODE_TYPE there, so its
    -- candidates are itself and the members below it are not read.
-   AND NOT EXISTS (SELECT 1 FROM intent_node_type nt
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_type nt
                     WHERE nt.graph_name = m.graph_name AND nt.type_name = m.container_name);
 COMMENT ON VIEW intent_node_id_candidate_node_type IS 'The node types an id arriving at a @nodeId instruction may belong to: one identity row for a resolved type that is a node type, one row per admissible member for one that is a polymorphic container. The resolution axis of the node-id family, keyed on the resolved type rather than on a use site, so a container''s member set is stored once however many coordinates name it. What it buys is that the polymorphic destination is a branch inside the decode relation''s existing slot arm rather than a second arm over the same driving relation: that arm joins this on the slot''s resolved type and the key shape on the node type this yields, so a node-typed instruction yields the one row it always yielded and a container yields one row per member with that member''s own key. Two readers ask it on day one, that destination and the sibling polymorphic defect view, which is the threshold this schema sets for a derivation to get a name of its own. The two arms are disjoint by construction and not by precedence, which is what lets this be a plain union: the identity arm is every node type, and the member arm excludes a container that is itself one, the same predicate intent_node_id_instruction_live''s container arm carries. The identity arm is total over the node population rather than restricted to types some instruction names, because keying on the resolved type means the relation answers a question about a type and a population trimmed to today''s readers would be a filter one of them made for itself.';
 COMMENT ON COLUMN intent_node_id_candidate_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row; the leading key dimension';
@@ -11640,7 +11640,7 @@ table_node (graph_name, table_source_name, table_schema, table_name, candidates)
   SELECT bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name,
          CAST(COUNT(*) AS INT)
     FROM intent_resolved_type_binding bt
-    JOIN intent_node_type nt
+    JOIN graphitron_node_type nt
       ON nt.graph_name = bt.graph_name AND nt.type_name = bt.type_name
    GROUP BY bt.graph_name, bt.table_source_name, bt.table_schema, bt.table_name
 )
@@ -13139,13 +13139,14 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
   ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_site', 2),
   ('graphitron_table_entry', 0), ('graphitron_field_reference_entry', 1), ('graphitron_undecoded_argument_entry', 2),
+  ('graphitron_node_type', 3),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
   ('jvm_class', 0), ('jvm_method', 1), ('jvm_record_component', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
   ('code_scalar_constant', 0), ('code_throwable', 1), ('code_condition_method', 2),
   ('code_external_field_method', 3),
-  ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2), ('intent_node_type', 3),
+  ('intent_spelled_table', 0), ('intent_bound_table', 1), ('intent_resolved_field_claim', 2),
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
   ('build_warning_no_rule', 0),

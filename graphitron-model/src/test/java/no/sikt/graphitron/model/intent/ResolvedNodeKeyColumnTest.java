@@ -138,7 +138,7 @@ class ResolvedNodeKeyColumnTest {
 
     /**
      * An inferred node type resolves on the metadata tier and never on the primary-key one, which is
-     * what makes the primary-key arm's read of {@code intent_node_type} rather than the authored
+     * what makes the primary-key arm's read of {@code graphitron_node_type} rather than the authored
      * {@code @node} arm alone inert rather than a widening. Inference needs well-formed node
      * metadata, well-formedness needs a declared key-columns list, and that list is the higher
      * tier's own answer, so the two conditions cannot come apart. Pinned because the arm reads the

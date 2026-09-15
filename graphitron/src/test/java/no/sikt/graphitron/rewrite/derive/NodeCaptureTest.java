@@ -13,7 +13,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -73,9 +73,9 @@ class NodeCaptureTest {
     }
 
     private static List<String> membership(DSLContext dsl) {
-        return dsl.select(INTENT_NODE_TYPE.TYPE_NAME).from(INTENT_NODE_TYPE)
-            .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
-            .fetch(INTENT_NODE_TYPE.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE_TYPE.TYPE_NAME).from(GRAPHITRON_NODE_TYPE)
+            .where(GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
+            .fetch(GRAPHITRON_NODE_TYPE.TYPE_NAME);
     }
 
     private static JooqCatalog jooq() {

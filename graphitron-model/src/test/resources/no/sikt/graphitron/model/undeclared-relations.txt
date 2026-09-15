@@ -37,6 +37,7 @@ graphitron_method_reference_entry
 graphitron_multitable_reference_entry
 graphitron_node_entry
 graphitron_node_keycolumn_entry
+graphitron_node_type
 graphitron_order_by_entry
 graphitron_order_entry
 graphitron_order_field_entry
@@ -168,7 +169,6 @@ intent_node_id_encode
 intent_node_id_instruction
 intent_node_id_polymorphic_decode_defect
 intent_node_metadata_defect
-intent_node_type
 intent_poly_member
 intent_producer_cardinality_conflict
 intent_record_slot_assignable

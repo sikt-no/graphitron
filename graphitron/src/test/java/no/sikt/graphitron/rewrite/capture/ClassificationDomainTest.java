@@ -15,7 +15,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,8 +102,8 @@ class ClassificationDomainTest {
             assertThat(domain(dsl, CapturedStore.GRAPH))
                 .as("the declaration alone seeds; nothing reaches Detached by a field")
                 .contains("Detached", "Node");
-            assertThat(dsl.fetchCount(INTENT_NODE_TYPE,
-                INTENT_NODE_TYPE.GRAPH_NAME.eq(CapturedStore.GRAPH)))
+            assertThat(dsl.fetchCount(GRAPHITRON_NODE_TYPE,
+                GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(CapturedStore.GRAPH)))
                 .as("and nodehood itself is not claimed: the seed over-approximates on purpose")
                 .isZero();
         });
@@ -120,8 +120,8 @@ class ClassificationDomainTest {
             assertThat(domain(store.dsl(), CapturedStore.GRAPH))
                 .as("a bound table publishing no node metadata does not unseed the declaration")
                 .contains("Hollow");
-            assertThat(store.dsl().select(INTENT_NODE_TYPE.TYPE_NAME).from(INTENT_NODE_TYPE)
-                .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            assertThat(store.dsl().select(GRAPHITRON_NODE_TYPE.TYPE_NAME).from(GRAPHITRON_NODE_TYPE)
+                .where(GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .fetchSet(0, String.class))
                 .as("inference declines it, which is what the member now gets diagnostics about")
                 .doesNotContain("Hollow");

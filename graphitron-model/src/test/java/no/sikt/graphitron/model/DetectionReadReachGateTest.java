@@ -109,15 +109,15 @@ class DetectionReadReachGateTest {
             "intent_field_producer_method",
             "intent_field_producer_reference",
             "intent_field_routine_method",
-            // Also refreshed through intent_input_field_filter_role_live and
-            // intent_node_id_instruction_live.
-            "intent_inferred_node_type",
             // Expanded here once per container by memberNames.
             "intent_node_container_member",
             "intent_node_id_decode_slot",
             "intent_node_id_polymorphic_decode_defect",
-            "intent_node_metadata_defect",
-            "intent_node_type",
+            // The nodehood membership view, now sourced on two captured tables. The inferred
+            // derivation and the defect rule under it were reached only through it and are gone
+            // from this component's reach: a captured relation counts once and truncates the tree
+            // for every rule above it, where the derivation re-evaluated the chain per naming.
+            "graphitron_node_type",
             // Also refreshed through intent_carrier_data_field_live and
             // intent_field_scope_table_live; expanded here once per container by memberNames.
             "intent_poly_member",
@@ -189,9 +189,10 @@ class DetectionReadReachGateTest {
             "intent_argmapping_bound_parameter_type",
             "intent_argmapping_key_column_candidate",
             "intent_field_routine_method",
-            "intent_inferred_node_type",
+            // Reached through intent_resolved_node_type_id's own metadata tier, not through the
+            // membership view beside it, which no longer reads the inferred derivation at all.
             "intent_node_metadata_defect",
-            "intent_node_type",
+            "graphitron_node_type",
             "intent_resolved_node_key_projection",
             "intent_resolved_node_key_shape",
             // Reached through StoreNodeTables, which read calls unconditionally rather than through

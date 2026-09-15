@@ -15,12 +15,12 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The binder for the two live spellings of nodehood. {@link NodeDeclaration#isNodeType} answers it in
- * Java for four walk consumers, and {@code intent_node_type} answers it in the store; this compares
+ * Java for four walk consumers, and {@code graphitron_node_type} answers it in the store; this compares
  * them over the same schema against the same catalog and requires the same set.
  *
  * <p>It is here because nothing else binds the pair. The {@code intent_type_domain} shadow is not a
@@ -130,9 +130,9 @@ class NodeTypeShadowTest {
     /** The store's answer: the membership relation's rows for the captured graph. */
     private static Set<String> derivedNodeTypes(CapturedStore store) {
         return new LinkedHashSet<>(store.dsl()
-            .select(INTENT_NODE_TYPE.TYPE_NAME)
-            .from(INTENT_NODE_TYPE)
-            .fetch(INTENT_NODE_TYPE.TYPE_NAME));
+            .select(GRAPHITRON_NODE_TYPE.TYPE_NAME)
+            .from(GRAPHITRON_NODE_TYPE)
+            .fetch(GRAPHITRON_NODE_TYPE.TYPE_NAME));
     }
 
     /**

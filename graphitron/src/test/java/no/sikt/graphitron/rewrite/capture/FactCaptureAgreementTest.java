@@ -607,7 +607,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
         registrations.put("intent_inferred_node_type", Arm.DERIVED);
-        registrations.put("intent_node_type", Arm.DERIVED);
+        registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
         registrations.put("intent_field_reference_step_target", Arm.DERIVED);

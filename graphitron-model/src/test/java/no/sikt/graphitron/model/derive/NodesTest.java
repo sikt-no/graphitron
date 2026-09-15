@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.INTENT_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * pinned here, the population and the id, and they are pinned separately because they come from
  * different rules over different populations.
  *
- * <p>The population differs from {@code intent_node_type} in one deliberate way and the case that
+ * <p>The population differs from {@code graphitron_node_type} in one deliberate way and the case that
  * covers it asserts the difference rather than the new answer alone. A {@code @node} on a type with
  * no {@code @table} is a row in the membership view, which takes the directive at its word; it is
  * not a row here, because the directive only takes effect on a type that also carries
@@ -201,11 +201,11 @@ class NodesTest {
 
     private static List<String> membership(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_NODE_TYPE.TYPE_NAME)
-            .from(INTENT_NODE_TYPE)
-            .where(INTENT_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_NODE_TYPE.TYPE_NAME)
-            .fetch(INTENT_NODE_TYPE.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE_TYPE.TYPE_NAME)
+            .from(GRAPHITRON_NODE_TYPE)
+            .where(GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_NODE_TYPE.TYPE_NAME)
+            .fetch(GRAPHITRON_NODE_TYPE.TYPE_NAME);
     }
 
     /** The id and the tier that answered, as a pair, since neither is worth asserting alone. */

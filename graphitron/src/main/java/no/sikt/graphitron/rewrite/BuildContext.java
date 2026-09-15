@@ -3424,7 +3424,7 @@ class BuildContext {
 
     /**
      * Whether {@code typeName} names a node type, on the declaration-level terms the store's
-     * {@code intent_node_type} states: {@code @node} written on the declaration, whatever kind it is
+     * {@code graphitron_node_type} states: {@code @node} written on the declaration, whatever kind it is
      * declared as, or a type the classified {@link NodeIndex} holds, which is where an inferred node
      * lands. Read here to order the two arms of {@link #resolveNodeIdRecordDecode} and nowhere else;
      * the single-type path resolves its own key metadata through {@link #resolveTargetKeys}, which
