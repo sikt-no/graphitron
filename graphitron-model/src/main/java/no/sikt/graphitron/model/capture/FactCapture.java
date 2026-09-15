@@ -381,9 +381,13 @@ public final class FactCapture {
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
-            // Between the walk and the stages, which is the only place it can go. It keys into the
-            // graphql_ anchors, so it cannot precede the walk that writes them; the stages below
-            // read the relations it derives, so it cannot follow them.
+            // Between the walk and the stages, which is the only place either can go. Both key into
+            // the graphql_ anchors, so neither can precede the walk that writes them; the stages
+            // below read what they derive, so neither can follow them. The index is written here
+            // and not by the anchor writer this pass skips, because a reading has to write what its
+            // own stages read: a graphitron anchor referencing a written position finds no index
+            // row to reference otherwise, this pass being the one its stages run in.
+            SdlCapture.captureAstIndex(txDsl, graph, readAt);
             SdlCapture.captureGraphitronAnchors(txDsl, graph, readAt);
             GraphitronFactCapture.capture(sink, txDsl, graph.name());
             sink.flush();

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -13,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
@@ -30,6 +32,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.noCondition;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
@@ -49,6 +54,10 @@ import static org.jooq.impl.DSL.val;
  * it buys a reader. It buys the schema nothing: those parent columns still carry a position with no
  * foreign key, and cannot gain one here, because this is derived from the arms and written after
  * them, so the constraint would have to hold before the row it names existed.
+ *
+ * <p>Scoped to the elements the corpus anchors, which is the foreign key every row carries stated
+ * as a predicate; {@link #anchored} argues it, and the reason it is a predicate rather than a
+ * constraint waiting to fire is that the two readings of a corpus derive those anchors differently.
  *
  * <p>Values are the one arm that nests inside itself to no fixed depth, so it runs as a fixpoint:
  * each pass inserts the values whose parent this relation already holds, and the pass that inserts
@@ -123,6 +132,26 @@ final class AstEntries {
         values(dsl, graph, touchedAt);
     }
 
+    /**
+     * The scope every arm naming a coordinate of its own is held to: the elements the corpus
+     * anchors. Not a filter this relation chose, but the foreign key it carries, read as a
+     * predicate so an arm draws no row rather than meeting the constraint.
+     *
+     * <p>It bites because the two readings of a corpus derive the element anchors differently. One
+     * selects them out of the entries, so the two populations are equal by construction; the other
+     * walks a registry it was handed, and a corpus on disk wider than that registry leaves an entry
+     * whose element nothing anchored. An arm that inherits its parent's coordinate needs no
+     * predicate, the parent join already being the same scope one rung up.
+     */
+    private static Condition anchored(String graph, Field<String> coordinate) {
+        if (coordinate == null) {
+            return noCondition();
+        }
+        var el = GRAPHQL_ELEMENT;
+        return coordinate.isNull().or(exists(selectOne().from(el)
+            .where(el.GRAPH_NAME.eq(graph), el.COORDINATE.eq(coordinate))));
+    }
+
     /** An entry written inside nothing: its own coordinate where it declares one, else none. */
     private static void root(DSLContext dsl, String graph, LocalDateTime touchedAt,
                              Table<?> entry, EntryKind kind, Field<String> coordinate) {
@@ -138,7 +167,8 @@ final class AstEntries {
                     inline((Integer) null), inline((Integer) null), coordinate,
                     val(touchedAt, e.TOUCHED_AT))
                 .from(entry)
-                .where(entry.field(GRAPHQL_AST_ENTRY.GRAPH_NAME).eq(graph)))
+                .where(entry.field(GRAPHQL_AST_ENTRY.GRAPH_NAME).eq(graph))
+                .and(anchored(graph, coordinate)))
             .onDuplicateKeyUpdate()
             .set(e.ENTRY_KIND, excluded(e.ENTRY_KIND))
             .set(e.PARENT_LINE, excluded(e.PARENT_LINE))
@@ -190,7 +220,8 @@ final class AstEntries {
             .join(p).on(p.GRAPH_NAME.eq(val(graph, e.GRAPH_NAME)),
                 p.SOURCE_NAME.eq(source), p.SOURCE_LINE.eq(parentLine),
                 p.SOURCE_COLUMN.eq(parentColumn), p.TOUCHED_AT.eq(val(touchedAt, e.TOUCHED_AT)))
-            .where(entry.field(GRAPHQL_AST_ENTRY.GRAPH_NAME).eq(graph));
+            .where(entry.field(GRAPHQL_AST_ENTRY.GRAPH_NAME).eq(graph))
+            .and(anchored(graph, coordinate));
         dsl.insertInto(e)
             .columns(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, e.ENTRY_KIND,
                 e.PARENT_LINE, e.PARENT_COLUMN, e.ELEMENT_COORDINATE, e.TOUCHED_AT)

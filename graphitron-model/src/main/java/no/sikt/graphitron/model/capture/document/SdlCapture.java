@@ -16,6 +16,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
@@ -84,6 +85,7 @@ public final class SdlCapture {
         // Its sweep takes the graphitron rows hanging off a coordinate it drops, those references
         // cascading, which is what lets this run before them rather than behind an emptying pass.
         SdlAnchor.write(dsl, graph.name(), readAt);
+        captureAstIndex(dsl, graph, readAt);
         captureGraphitronAnchors(dsl, graph, readAt);
         return parse;
     }
@@ -115,6 +117,33 @@ public final class SdlCapture {
             writeSource(dsl, failure.sourceName(), readAt);
         }
         return parse;
+    }
+
+    /**
+     * The entry stratum's own index alone: every written position it holds, with the element that
+     * encloses each.
+     *
+     * <p>Its own step rather than a line inside the anchor writer, and public for the same reason
+     * {@link #captureGraphitronAnchors} is: two passes read this relation and only one of them
+     * writes the SDL anchors. The walk's pass writes those itself and therefore skips that writer
+     * whole, so an index written inside it was written by one pass of the two, and the stages below
+     * the walk that reference the index found no row to reference. A reading has to write what its
+     * own stages read.
+     *
+     * <p>After the element anchors in whichever pass, because every row carries a foreign key into
+     * one. It needs them present and reads none of them: an entry's enclosing element comes from
+     * the coordinate its own relation generates, or from the index row its parent already has.
+     *
+     * <p>Sweeps what this reading did not write, which travels with the write for the reason every
+     * sweep here does: a reading that wrote the rows is the only one that can say which rows are
+     * stale. Its own parent edge and the graphitron rows keyed into it cascade.
+     */
+    public static void captureAstIndex(DSLContext dsl, GraphIdentity graph, LocalDateTime readAt) {
+        AstEntries.write(dsl, graph.name(), readAt);
+        dsl.deleteFrom(GRAPHQL_AST_ENTRY)
+            .where(GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(graph.name()))
+            .and(GRAPHQL_AST_ENTRY.TOUCHED_AT.ne(readAt))
+            .execute();
     }
 
     /**

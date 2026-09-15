@@ -1,10 +1,14 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.sink.FactSink;
+import no.sikt.graphitron.model.sources.ClasspathSources;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
@@ -151,6 +157,41 @@ class AstEntryIndexTest {
         });
     }
 
+    /**
+     * The other reading of the same documents, and the reason the index is written by a step of its
+     * own rather than by the anchor writer. A pass that walks the registry writes the element
+     * anchors itself and therefore skips that writer whole, so an index written inside it was
+     * written by one reading of the two; the reader that surfaced this was a graphitron anchor
+     * referencing a written position, which found no index row to reference in the only pass its
+     * own stages run in.
+     */
+    @Test
+    @DisplayName("the walk's pass indexes the stratum too, not only the derivation's")
+    void theWalksPassWritesTheIndex() {
+        withSeededStore(GRAPH, dsl -> {
+            Path directory = temporaryDirectory();
+            write(directory, "schema.graphqls", SDL);
+            var graph = new GraphIdentity(GRAPH, directory);
+            LocalDateTime readAt = LocalDateTime.now().withNano(0);
+            var parse = SdlCapture.captureEntries(dsl, graph, corpus(directory), readAt);
+            // The walk, which is this pass's producer of the element anchors the index keys into.
+            var sink = new FactSink(dsl, GRAPH, readAt);
+            SdlFactCapture.capture(sink, parse.registry(), new ClasspathSources(),
+                Map.of(directory.resolve("schema.graphqls").toString(),
+                    SchemaInput.file(directory.resolve("schema.graphqls"))),
+                Set.of());
+            sink.flush();
+            SdlCapture.captureAstIndex(dsl, graph, readAt);
+
+            assertThat(dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)))
+                .as("the pass that writes the anchors reading this index also fills it")
+                .isPositive();
+            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DIRECTIVE))
+                .as("and resolves each position the same way, a directive naming its field")
+                .contains("Widget.name");
+        });
+    }
+
     /** The coordinates the index resolved for one entry kind. */
     private static List<String> kindsAndCoordinates(DSLContext dsl, EntryKind entryKind) {
         var e = GRAPHQL_AST_ENTRY;
@@ -182,10 +223,14 @@ class AstEntryIndexTest {
 
     /** One reading of everything the directory holds, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir) {
-        SdlCapture.captureFacts(dsl, new GraphIdentity(GRAPH, baseDir),
-            SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
-                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
+        SdlCapture.captureFacts(dsl, new GraphIdentity(GRAPH, baseDir), corpus(baseDir),
             LocalDateTime.now());
+    }
+
+    /** The corpus a reading is of, stated as the configuration a run would have had. */
+    private static SubjectConfig corpus(Path baseDir) {
+        return SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
     }
 
     private static void write(Path directory, String name, String sdl) {
