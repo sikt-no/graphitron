@@ -8,6 +8,10 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
@@ -113,9 +117,159 @@ public final class GraphitronAnchor {
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
+        chainLinks(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
+    }
+
+    /**
+     * The chain a field's rows travel, one row per written element in written order.
+     *
+     * <p>Here and not with the endpoint relations, because the order is only in this stratum. A
+     * chain composes {@code @routine} and {@code @reference} applications in the order they were
+     * written, and capture numbers applications per directive name, so a routine at ordinal 0 and a
+     * reference at ordinal 0 are two different writings whose numbers do not compare. A written
+     * position is this stratum's primary key, and every directive of one field shares a parent, so
+     * the order is a read rather than a reconstruction.
+     *
+     * <p>Ranked over three keys and not one: the declaration's merge order, a field declared across
+     * several files having its directives spread over them; the directive's own position within a
+     * declaration; and the element's authored index inside the directive, which orders the elements
+     * of one {@code path:} against each other.
+     *
+     * <p>Ranked and not copied, which {@code GraphitronEntries.elementsOf} is the reason for: it
+     * increments past an element it does not transcribe, so an authored index can skip. A chain
+     * wants its links counted, so position 1 is the second link and never the second thing typed.
+     *
+     * <p>{@code graphql_ast_entry} is this relation's element reference and not one of its inputs:
+     * what the supertype buys is one checked foreign key reaching either shape, where the statement
+     * below reads each shape's own relation.
+     *
+     * <p>An element is one written thing, whatever it says. A {@code @routine} application is the
+     * directive itself, and its decode is what admits it: an application this stratum refused
+     * states no routine and composes no chain. A path element is the object written in the
+     * {@code path:} list, either a member of it or the whole expression where GraphQL coerced a
+     * lone value into the list of one; an object written inside an element, which is what a
+     * condition's own shape is, has a parent and no position and is not an element.
+     *
+     * <p>Nothing here says what a link does. Those facts are keyed by the written position the row
+     * points at, one relation per shape as this stratum already states them, so an element writing
+     * a table beside a condition is one link with two facts and no column here has to choose.
+     */
+    private static void chainLinks(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var e = GRAPHQL_AST_ENTRY;
+        var ef = GRAPHQL_ELEMENT_FIELD;
+        var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
+        var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var v = GRAPHQL_AST_VALUE_ENTRY;
+        var t = GRAPHITRON_FIELD_CHAIN_LINK;
+
+        // The coordinate is read off the key the supertype forwards, not climbed to through the
+        // field definition and the type declaration. Those two joins were here and one of them was
+        // wrong: the declaration was joined for its merge order, to order the directives of a field
+        // declared across several files, and a field coordinate is declared once, two declarations
+        // of one field being a duplicate-field error rather than an order to settle. So all of a
+        // field's directives sit in one definition in one file, the merge order answers a question
+        // that cannot arise, and joining a type's declarations matched every declaration of that
+        // type and multiplied each application by their number.
+        var applications = dsl
+            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
+                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
+                fd.SOURCE_COLUMN.as(SITE_COLUMN), fd.NAME.as("name"))
+            .from(fd)
+            .join(e).on(e.GRAPH_NAME.eq(fd.GRAPH_NAME), e.SOURCE_NAME.eq(fd.SOURCE_NAME),
+                e.SOURCE_LINE.eq(fd.SOURCE_LINE), e.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(e.ELEMENT_COORDINATE))
+            .where(fd.GRAPH_NAME.eq(graph))
+            .and(ef.ARGUMENT_NAME.isNull())
+            .asTable("applications");
+
+        var routines = dsl
+            .select(applications.field(TYPE_NAME),
+                applications.field(FIELD_NAME),
+                applications.field(SITE_LINE),
+                applications.field(SITE_COLUMN),
+                inline(0).as("authored"),
+                applications.field(SITE_NAME).as("el_source"),
+                applications.field(SITE_LINE).as("el_line"),
+                applications.field(SITE_COLUMN).as("el_column"))
+            .from(applications)
+            .join(ra).on(ra.GRAPH_NAME.eq(graph),
+                ra.SOURCE_NAME.eq(applications.field(SITE_NAME)),
+                ra.SOURCE_LINE.eq(applications.field(SITE_LINE)),
+                ra.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN)));
+
+        var steps = dsl
+            .select(applications.field(TYPE_NAME),
+                applications.field(FIELD_NAME),
+                applications.field(SITE_LINE),
+                applications.field(SITE_COLUMN),
+                // A lone value coerced into the list of one holds no position in an enclosing list,
+                // and index zero is what the coercion says it is.
+                coalesce(v.POSITION, inline(0)).as("authored"),
+                v.SOURCE_NAME.as("el_source"), v.SOURCE_LINE.as("el_line"),
+                v.SOURCE_COLUMN.as("el_column"))
+            .from(applications)
+            .join(aa).on(aa.GRAPH_NAME.eq(graph),
+                aa.SOURCE_NAME.eq(applications.field(SITE_NAME)),
+                aa.PARENT_LINE.eq(applications.field(SITE_LINE)),
+                aa.PARENT_COLUMN.eq(applications.field(SITE_COLUMN)),
+                aa.NAME.eq("path"))
+            // One join and not a walk down the value tree: the holder is repeated on every node of
+            // an expression, so every element of the list names the applied argument directly.
+            .join(v).on(v.GRAPH_NAME.eq(aa.GRAPH_NAME), v.SOURCE_NAME.eq(aa.SOURCE_NAME),
+                v.HOLDER_LINE.eq(aa.SOURCE_LINE), v.HOLDER_COLUMN.eq(aa.SOURCE_COLUMN),
+                v.KIND.eq("OBJECT"))
+            .and(v.POSITION.isNotNull().or(v.PARENT_LINE.isNull()))
+            .where(applications.field("name", String.class).in("reference", "referenceFor"));
+
+        var elements = routines.unionAll(steps).asTable("elements");
+        var d = GRAPHQL_AST_ENTRY;
+        var ranked = dsl
+            .select(elements.field(TYPE_NAME),
+                elements.field(FIELD_NAME),
+                elements.field("el_source", String.class),
+                elements.field("el_line", Integer.class),
+                elements.field("el_column", Integer.class),
+                rowNumber().over(partitionBy(elements.field(TYPE_NAME),
+                        elements.field(FIELD_NAME))
+                    .orderBy(elements.field(SITE_LINE).asc(),
+                        elements.field(SITE_COLUMN).asc(),
+                        elements.field("authored", Integer.class).asc()))
+                    .minus(inline(1)).as("position"))
+            .from(elements)
+            // The relation the element reference points at, joined because it is referenced: a row
+            // naming a position the supertype does not hold would be a dangling reference, so the
+            // join is what makes integrity hold by construction rather than by the order two
+            // readings happen to run in. It is also the filter that makes a link a link, an element
+            // this stratum never transcribed being nothing to travel through. Joined before the
+            // rank, so the numbering counts the links that survive it.
+            .join(d).on(d.GRAPH_NAME.eq(graph),
+                d.SOURCE_NAME.eq(elements.field("el_source", String.class)),
+                d.SOURCE_LINE.eq(elements.field("el_line", Integer.class)),
+                d.SOURCE_COLUMN.eq(elements.field("el_column", Integer.class)))
+            .asTable("ranked");
+
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.ELEMENT_SOURCE_NAME,
+                t.ELEMENT_LINE, t.ELEMENT_COLUMN, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
+                    ranked.field(FIELD_NAME),
+                    ranked.field("position", Integer.class),
+                    ranked.field("el_source", String.class),
+                    ranked.field("el_line", Integer.class),
+                    ranked.field("el_column", Integer.class),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(ranked))
+            .onDuplicateKeyUpdate()
+            .set(t.ELEMENT_SOURCE_NAME, excluded(t.ELEMENT_SOURCE_NAME))
+            .set(t.ELEMENT_LINE, excluded(t.ELEMENT_LINE))
+            .set(t.ELEMENT_COLUMN, excluded(t.ELEMENT_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
     }
 
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
@@ -124,7 +278,8 @@ public final class GraphitronAnchor {
             GRAPHITRON_DEPRECATED_INPUT_FIELD, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
-            GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY);
+            GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
+            GRAPHITRON_FIELD_CHAIN_LINK);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather

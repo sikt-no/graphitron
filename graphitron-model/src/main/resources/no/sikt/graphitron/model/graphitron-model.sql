@@ -5425,6 +5425,38 @@ COMMENT ON COLUMN graphitron_field_table.to_schema IS 'the target table''s SQL s
 COMMENT ON COLUMN graphitron_field_table.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
 COMMENT ON COLUMN graphitron_field_table.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
 
+CREATE TABLE graphitron_field_chain_link (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  position            INT     NOT NULL,
+  element_source_name VARCHAR NOT NULL,
+  element_line        INT     NOT NULL,
+  element_column      INT     NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, position),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
+  -- The written element this link is. One reference and not one per shape: the AST supertype is
+  -- what makes a @routine application and a path element the same kind of thing to point at.
+  FOREIGN KEY (graph_name, element_source_name, element_line, element_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+      ON DELETE CASCADE,
+  -- One link per written element, which is what says the position numbers this chain's own
+  -- elements rather than being an index a reader has to hope is dense.
+  UNIQUE (graph_name, type_name, field_name,
+          element_source_name, element_line, element_column)
+);
+COMMENT ON TABLE graphitron_field_chain_link IS 'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field. For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.';
+COMMENT ON COLUMN graphitron_field_chain_link.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_chain_link.type_name IS 'the type owning the field whose chain this link is part of';
+COMMENT ON COLUMN graphitron_field_chain_link.field_name IS 'the field whose chain this link is part of; with the two columns above a reference into graphql_field_element, the authored population, a macro-minted field writing no chain of its own';
+COMMENT ON COLUMN graphitron_field_chain_link.position IS 'the link''s place in the chain, numbered from zero without a hole. Ranked over the written order rather than copied from any directive''s own numbering, for two reasons that both bite. @routine and @reference each number their applications from zero independently, so neither ordinal can say which of the two was written first; and the entry stratum numbers a path element by its authored index, which skips an element it does not transcribe, where a chain wants its links counted. The order ranked over is the declaration''s merge order, then the directive''s written position within it, then the element''s authored index inside the directive';
+COMMENT ON COLUMN graphitron_field_chain_link.element_source_name IS 'the file the element was written in, the first of the three columns naming it; a reference into graphql_ast_entry, which is where a routine application and a path element are one kind of thing';
+COMMENT ON COLUMN graphitron_field_chain_link.element_line IS 'the element''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_field_chain_link.element_column IS 'the element''s source column; with the two columns above, the written position the element''s own facts are keyed by. A @routine link points at the FIELD_DIRECTIVE entry and a path element at the VALUE entry, and what each link joins on is those facts rather than anything carried here: this states that the chain has a link here and where to read it, and never what the link does';
+COMMENT ON COLUMN graphitron_field_chain_link.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+
 CREATE TABLE graphitron_field_routine (
   graph_name         VARCHAR NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -13712,6 +13744,9 @@ INSERT INTO meta_grain VALUES
   ('field-target-table',
    'one table a field''s rows come from, at one field, in one graph',
    'graph_name, type_name, field_name, to_source_name, to_schema, to_table', 'catalog'),
+  ('field-chain-link',
+   'one link of the chain one field''s rows travel, in one graph',
+   'graph_name, type_name, field_name, position', 'sdl'),
   ('field-routine-result',
    'one @routine application of one field''s chain toward one target, in one graph',
    'graph_name, type_name, field_name, to_source_name, to_schema, to_table, ordinal', 'catalog'),
@@ -14232,6 +14267,10 @@ INSERT INTO meta_relation VALUES
    'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field.',
    'For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.',
    'Where a field''s rows come from and where they depart from, said once and without the route between. Readers wanting the endpoints outnumber readers wanting the hops, and until now both had to walk: the departure lived in one derivation keyed on the parent type, the arrival in another keyed on the field, and neither said the pair. A field with several targets is several rows, which is the whole reason the target is in the key: a polymorphic container binding no table of its own is one statement per participant, and a relation with one row per field would have to pick a branch. Departure is nullable and target is not, and the asymmetry is the domain''s: every row a field returns comes from somewhere, while a root field has no enclosing row to depart from. The route between the two endpoints is a relation of its own, keyed by this one''s key so the two cannot disagree about which target a path leads to. Every table reference is the full sql_table key including the catalog partition; that partition follows from the graph, a capture reading one jOOQ package, and is carried anyway so the reference is a foreign key the engine checks and cascades rather than a convention readers keep. Written as a stage of the graphitron gatherer after the navigation it stands on, every rule it applies reading a captured relation: the bindings, the polymorphic membership, and the routine whose own spelling it resolves.'),
+  ('graphitron_field_chain_link', 'field-chain-link', 'graphitron',
+   'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field.',
+   'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.',
+   'The chain between a field''s endpoints, which graphitron_field_table asks for by name and nothing held: readers wanting the endpoints outnumber readers wanting the hops, so the pair was stated first and the route left to be walked. The position is why this exists rather than a column elsewhere. A chain composes @routine and @reference applications in written order, and neither directive''s ordinal can express it: each numbers its own applications from zero, so a routine at ordinal 0 and a reference at ordinal 0 say nothing about which came first. That order survives only in the entry stratum, where a written position is the primary key, and it is ranked here rather than copied because the entry numbers a path element by its authored index and skips one it does not transcribe, where a chain wants its links counted. Keyed at the coordinate and not at the target: the order is the same for every table a field''s rows may come from, so keying by target would state one order once per participant. What varies by target is where each link departs and arrives, which is a resolution rather than a reading. What a link does is likewise not here; its facts are keyed by the written position this row points at, one relation per shape as the entry stratum states them, so this never grows a discriminator that would have to be single-valued where an element writing a table beside a condition is one link with two facts.'),
   ('graphitron_field_routine', 'field-routine-result', 'graphitron',
    'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target.',
    'For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.',
