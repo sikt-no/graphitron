@@ -1,7 +1,7 @@
 ---
 id: R948
 title: "An omitted nullable @nodeId in a key projection reads as null, not as an NPE"
-status: Ready
+status: In Review
 bucket: bug
 priority: 2
 theme: nodeid
@@ -456,6 +456,15 @@ section.
   spellings once step 5 projects one, which is what keeps two primitive overloads two rows.
   `intent_argmapping_projection_defect`'s "closed verdict vocabulary of five" is deliberately not on
   this list: the verdict lands in the consumer, so that vocabulary stays closed at five.
+* "a primitive int" in `intent_resolved_node_key_projection`'s view comment, where it sits in the
+  list of parameters whose name the classpath census cannot report, and the sentence beside it that
+  leaves every stand-aside with "the compiler's own error as the backstop it always was". Step 5
+  falsifies both for that one member of the list: the widening makes the name-matched
+  `jvm_method_parameter` row the membership condition, so the name is reported and only the type is
+  NULL, and `ArgmappingProjectionDefects` then refuses the parameter by name. The stand-aside that
+  remains there is an array, a type variable, and the absences that draw no row at all, which is what
+  the rewritten comment says. Added at the Done gate's round 7; the three entries above were the
+  item's own, and the Spec rounds read this comment only for the column half of the same enumeration.
 
 ## Other solutions we've considered
 
@@ -535,6 +544,16 @@ obligation the plan did not name.
 * **`jooq.codegen.schema.version` is bumped to 2.29.** That property's own comment in
   `graphitron-sakila-db/pom.xml` requires it whenever `init.sql` changes, and `films_for_actor_or_all`
   is a change to `init.sql`.
+
+**Round 7's finding, addressed.** The Done gate found the retired stand-aside surviving in
+`intent_resolved_node_key_projection`'s view comment, which named a primitive `int` among the
+parameters the classpath census cannot report and left every stand-aside with the compiler as its
+backstop. Both clauses are rewritten: the absences are now split into the ones that draw no row at
+all and the declared type naming no class that draws a row with a NULL type, and the afterwards is
+split too, a primitive being refused by `ArgmappingProjectionDefects` before emission while an array,
+a type variable and the no-row absences keep the compiler. The view body is untouched, so this is
+comment text only and no relation changed. `## Retired vocabulary` gains the entry the item's own
+three missed.
 
 Two existing gates moved because the fixtures are new, not because behaviour changed.
 `ChainTerminusTest.aNameMatchedHopNamesNoForeignKey` enumerates every function result in the graph's
