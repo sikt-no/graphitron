@@ -7289,6 +7289,11 @@ WITH pair (graph_name, type_name, field_name, ordinal, position,
      AND l.position = e.position + 1
      AND l.from_source_name = e.to_source_name AND l.from_schema = e.to_schema
      AND l.from_table = e.to_table
+    -- Both elements resolved to exactly one route. An element the walk reached by several
+    -- candidate routes draws no row: the grain is one row per intermediate and the routes
+    -- would bind different columns, crossing into contradictory verdicts at one key. That
+    -- ambiguity is the walk's own "which foreign key did you mean" rejection to report, and
+    -- it is the same silence an unreached element leaves, which the verdict column says.
    WHERE e.candidates = 1 AND l.candidates = 1
 ),
 bound (graph_name, type_name, field_name, ordinal, position, column_name) AS (
@@ -7337,31 +7342,45 @@ covering (graph_name, type_name, field_name, ordinal, position, constraint_name)
                     k.constraint_name) counted
    WHERE counted.key_columns = counted.bound_columns
    GROUP BY graph_name, type_name, field_name, ordinal, position
+),
+judged (graph_name, type_name, field_name, ordinal, position, verdict,
+        table_source_name, table_schema, table_name, covering_constraint_name,
+        source_name, source_line, source_column) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
+         CASE WHEN p.enter_via = 'CONDITION' OR p.leave_via = 'CONDITION'
+                THEN 'UNDECIDABLE_CONDITION_HOP'
+              WHEN p.enter_via = 'NAME_MATCH' OR p.leave_via = 'NAME_MATCH'
+                THEN 'UNDECIDABLE_NAME_MATCH_HOP'
+              WHEN cov.constraint_name IS NOT NULL THEN 'COVERED'
+              ELSE 'FANS_OUT' END,
+         p.table_source_name, p.table_schema, p.table_name, cov.constraint_name,
+         r.source_name, r.source_line, r.source_column
+    FROM pair p
+    LEFT JOIN graphitron_field_reference_entry r
+      ON r.graph_name = p.graph_name AND r.type_name = p.type_name
+     AND r.field_name = p.field_name AND r.ordinal = p.ordinal
+    LEFT JOIN covering cov
+      ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
+     AND cov.field_name = p.field_name AND cov.ordinal = p.ordinal
+     AND cov.position = p.position
 )
-SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-       CASE WHEN p.enter_via = 'CONDITION' OR p.leave_via = 'CONDITION'
-              THEN 'UNDECIDABLE_CONDITION_HOP'
-            WHEN p.enter_via = 'NAME_MATCH' OR p.leave_via = 'NAME_MATCH'
-              THEN 'UNDECIDABLE_NAME_MATCH_HOP'
-            WHEN cov.constraint_name IS NOT NULL THEN 'COVERED'
-            ELSE 'FANS_OUT' END,
-       p.table_source_name, p.table_schema, p.table_name, cov.constraint_name,
-       r.source_name, r.source_line, r.source_column
-  FROM pair p
-  LEFT JOIN graphitron_field_reference_entry r
-    ON r.graph_name = p.graph_name AND r.type_name = p.type_name
-   AND r.field_name = p.field_name AND r.ordinal = p.ordinal
-  LEFT JOIN covering cov
-    ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
-   AND cov.field_name = p.field_name AND cov.ordinal = p.ordinal
-   AND cov.position = p.position;
+-- The covering name is gated on the verdict rather than carried out of the join, because the
+-- two are computed from different amounts of evidence: covering reads whatever columns the
+-- readable hops bind, and a declined intermediate has one readable hop, which can cover a
+-- constraint on its own. Publishing that name beside a verdict that declined to judge would
+-- read as a cleared hop, which is the false negative this relation exists to not produce.
+SELECT graph_name, type_name, field_name, ordinal, position, verdict,
+       table_source_name, table_schema, table_name,
+       CASE WHEN verdict = 'COVERED' THEN covering_constraint_name END,
+       source_name, source_line, source_column
+  FROM judged;
 COMMENT ON VIEW intent_field_reference_step_fanout IS 'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four. For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.';
 COMMENT ON COLUMN intent_field_reference_step_fanout.graph_name IS 'the owning graph''s partition, carried from the walk the two elements come off';
 COMMENT ON COLUMN intent_field_reference_step_fanout.type_name IS 'the type owning the field the @reference is applied to';
 COMMENT ON COLUMN intent_field_reference_step_fanout.field_name IS 'the field the @reference is applied to';
 COMMENT ON COLUMN intent_field_reference_step_fanout.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
 COMMENT ON COLUMN intent_field_reference_step_fanout.position IS 'the entering element''s 0-based position within its application''s path, completing the grain. The intermediate is the table that element arrives at and the element after it departs from, so a path''s last element is no intermediate and yields no row: that is the terminal-hop exemption falling out of the shape rather than being written as a case';
-COMMENT ON COLUMN intent_field_reference_step_fanout.verdict IS 'what the pair-coverage question answered at this intermediate, a closed vocabulary of four. FANS_OUT where no PRIMARY KEY or UNIQUE constraint on the intermediate has every one of its columns among the ones the two hops bind, so the table may hold several rows per bound pair and a list over the path repeats rows. COVERED where one does, named beside it; the hop is then one row in and one row out. UNDECIDABLE_CONDITION_HOP where the entering or the leaving element joins on an authored Java predicate, whose columns no catalog row names, so one side of the bound set is unreadable. UNDECIDABLE_NAME_MATCH_HOP where one of them departs a table-valued function''s result, which declares no constraint to read. The two undecidable arms are rows rather than silence, so absence on this relation means only that the walk did not reach the element; a condition arm on either side wins over a name-match arm on the other, the two being equally declined and the reader needing one value';
+COMMENT ON COLUMN intent_field_reference_step_fanout.verdict IS 'what the pair-coverage question answered at this intermediate, a closed vocabulary of four. FANS_OUT where no PRIMARY KEY or UNIQUE constraint on the intermediate has every one of its columns among the ones the two hops bind, so the table may hold several rows per bound pair and a list over the path repeats rows. COVERED where one does, named beside it; the hop is then one row in and one row out. UNDECIDABLE_CONDITION_HOP where the entering or the leaving element joins on an authored Java predicate, whose columns no catalog row names, so one side of the bound set is unreadable. UNDECIDABLE_NAME_MATCH_HOP where one of them departs a table-valued function''s result, which declares no constraint to read. The two undecidable arms are rows rather than silence, so absence on this relation means only that the walk did not resolve the element to one hop: either it reached nothing there, or it reached several candidate routes, which is the ambiguity the walk itself rejects and not a verdict this relation owes; a condition arm on either side wins over a name-match arm on the other, the two being equally declined and the reader needing one value';
 COMMENT ON COLUMN intent_field_reference_step_fanout.table_source_name IS 'the intermediate table''s catalog partition, first column of its sql_table key';
 COMMENT ON COLUMN intent_field_reference_step_fanout.table_schema IS 'the intermediate table''s SQL schema';
 COMMENT ON COLUMN intent_field_reference_step_fanout.table_name IS 'the intermediate table''s SQL name: the table the entering element arrives at and the leaving element departs from';

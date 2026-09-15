@@ -38,7 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | Ready | 2026-09-14 <sub>created 2026-08-19</sub> | [plan](reference-path-fanout-verdict.md) |
+| `R723` | Warn when a @reference path traverses a 1:N hop into a further projection | In Progress | 2026-09-15 <sub>created 2026-08-19</sub> | [plan](reference-path-fanout-verdict.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -446,7 +446,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R654` [**Coordinate-level verdicts masked by reflection and binding rejections outside the @service seat**](resolver-coordinate-verdict-precedence-sweep.md) — Backlog, bug
 - `R602` [**Decide the INPUT_OBJECT locations of @record and @table: narrow or retired-location convention**](input-object-directive-locations.md) — Backlog, cleanup
 - `R931` [**Reject a synthesised Connection or Edge name that exactly collides with another registered type**](synthesised-type-exact-name-collision.md) — Backlog, bug
-- `R723` [**Warn when a @reference path traverses a 1:N hop into a further projection**](reference-path-fanout-verdict.md) — Ready, validation
+- `R723` [**Warn when a @reference path traverses a 1:N hop into a further projection**](reference-path-fanout-verdict.md) — In Progress, validation
 - `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R557` [**Completeness sweep for @splitQuery applications: every marker consumed, inert-by-construction, or rejected**](split-query-marker-sweep.md) — Backlog, validation
 - `R655` [**Residue from the @service phase split: unpinned Scalar trigger, dropped Table filter, stale catalog test names**](service-phase-split-residue.md) — Backlog, cleanup

@@ -1,13 +1,13 @@
 ---
 id: R723
 title: "Warn when a @reference path traverses a 1:N hop into a further projection"
-status: Ready
+status: In Progress
 bucket: validation
 priority: 4
 theme: diagnostics
 depends-on: []
 created: 2026-08-19
-last-updated: 2026-09-14
+last-updated: 2026-09-15
 ---
 
 # Warn when a @reference path traverses a 1:N hop into a further projection
@@ -690,6 +690,25 @@ has no container runtime, so what has been verified here is that it compiles and
 with its stated reason rather than reporting a pass; CI, which runs `postgres:18-alpine` for two
 execution tests already, is where it first executes. Whoever reviews this at the Done gate should
 read its first green run rather than take the assertion on the page.
+
+**Round 4's finding, and the second meaning for absence it turned up.** `covering_constraint_name`
+is now gated on the verdict in the view's outer select, so it answers under `COVERED` and is NULL
+under every other arm. The two are computed from different amounts of evidence and that is the whole
+of it: `covering` reads whatever columns the readable hops bind, and a declined intermediate has one
+readable hop, which can cover a constraint on its own. `ReferenceStepFanoutTest`'s
+`aDeclinedIntermediateNamesNothingWhereItsReadableHopCoversOnItsOwn` is the fixture that binds it,
+carrying both declined arms over an intermediate whose entering hop binds `film_id`, which is
+`film_pkey` whole; without the gate both rows name `film_pkey` and the case fails, which the existing
+assertion could not do.
+
+The smaller point is a correction to this plan rather than to the code. "Absence then means exactly
+one thing" is one meaning short: the `pair` CTE requires both elements to have resolved to a single
+route, so an element the walk reached by several candidate routes draws no row either. Keeping it
+that way is right, the grain being one row per intermediate and the routes binding different columns,
+so the repair is to say so where the first meaning is said. The verdict column's `COMMENT ON` now
+reads "did not resolve the element to one hop" and names both cases, the filter carries the reason
+beside it, and the walk's own "which foreign key did you mean" rejection is what reports the
+ambiguity.
 
 ## Reviewer findings
 

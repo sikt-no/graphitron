@@ -39,8 +39,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The two undecidable arms are asserted as named rows rather than as absences, which is the
  * point of their existing: a test pinning a silence cannot tell a declined intermediate from an
- * unimplemented one, and the silence this relation owns is exactly the one
- * {@code intent_field_reference_step_target} owns, that the walk did not reach the element.
+ * unimplemented one, and the silence this relation owns is the one
+ * {@code intent_field_reference_step_target} owns, that the walk did not resolve the element to a
+ * single hop. What a declined row must not do is name a covering constraint, since coverage is
+ * computed from the columns the readable hops bind and one hop can cover on its own; that is
+ * asserted where the readable hop does cover, not where the fixture happens not to.
  */
 class ReferenceStepFanoutTest {
 
@@ -185,6 +188,45 @@ class ReferenceStepFanoutTest {
 
             assertThat(fanout(dsl).map(ReferenceStepFanoutTest::verdictAt))
                 .containsExactly("0 film UNDECIDABLE_NAME_MATCH_HOP");
+        });
+    }
+
+    /**
+     * The invariant the covering column's contract states, bound by a fixture that can break it
+     * rather than by one that happens not to. Coverage reads whatever columns the readable hops
+     * bind, so an intermediate whose one readable hop binds a whole primary key has a constraint to
+     * name while the other side stays unreadable. Naming it beside a declined verdict would say the
+     * hop is cleared, which is the false negative the two undecidable arms exist to avoid, so the
+     * name answers under {@code COVERED} and nowhere else. Both arms carry the shape: the entering
+     * hop into {@code film} binds {@code film_id}, which is {@code film_pkey} whole.
+     */
+    @Test
+    void aDeclinedIntermediateNamesNothingWhereItsReadableHopCoversOnItsOwn() {
+        withCatalog(dsl -> {
+            seedConditionMethod(dsl, JAR, CONDITIONS, "filmToActor",
+                tableClass("film"), tableClass("actor"));
+            seedTableBinding(dsl, GRAPH, "Cast", "film_actor");
+            seedField(dsl, GRAPH, "Cast", "players");
+            seedFieldReference(dsl, GRAPH, "Cast", "players", 0);
+            seedFieldReferenceStep(dsl, GRAPH, "Cast", "players", 0, 0,
+                null, "film_actor_film_id_fkey");
+            seedFieldReferenceCall(dsl, GRAPH, "Cast", "players", 0, 1,
+                CONDITIONS, "filmToActor");
+
+            seedTable(dsl, PKG, PUBLIC, "film_search", "FUNCTION");
+            seedColumn(dsl, PKG, PUBLIC, "film_search", "film_id", 0, "FILM_ID");
+            seedTableBinding(dsl, GRAPH, "Search", "film_search");
+            seedPath(dsl, "Search", "casts",
+                new String[] {"film", null}, new String[] {null, "film_actor_film_id_fkey"});
+
+            var rows = fanout(dsl);
+            assertThat(rows.map(ReferenceStepFanoutTest::verdictAt))
+                .containsExactly("0 film UNDECIDABLE_CONDITION_HOP",
+                    "0 film UNDECIDABLE_NAME_MATCH_HOP");
+            assertThat(rows.map(row ->
+                row.get(INTENT_FIELD_REFERENCE_STEP_FANOUT.COVERING_CONSTRAINT_NAME)))
+                .as("film_pkey is covered by the readable hop of each, and named by neither")
+                .containsOnlyNulls();
         });
     }
 
