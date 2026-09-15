@@ -1,7 +1,7 @@
 ---
 id: R943
 title: "A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds"
-status: Spec
+status: Ready
 bucket: dx
 priority: 1
 theme: dev-loop
@@ -683,3 +683,71 @@ sites.
 > rather than on polarity. The diagnosis paragraph's arithmetic is restated at two correlated
 > references and about three and a half thousand expansions. The Tests section asks for the row-set
 > equality per arm, since an aggregate can absorb a single flipped verdict.
+
+### Round 3 (2026-09-15, Spec to Ready, reviewer session ce70c2f1-ed36-4b7b-940d-ebfc4dab0c66)
+
+Verdict: sign off. Both questions pass. The revision answers all six findings of rounds 1 and 2 at
+the code rather than only on the page, and round 2's own misreading of the first correlated site is
+corrected rather than inherited.
+
+Question one, stated without working back from the levers. A consumer with a schema the size of
+`sis` pays over an hour inside the fact store's refresh pass before graphitron emits anything, and
+three of twenty-one registrations are the whole of it. After this lands that pass costs seconds, so
+an author editing a `.graphqls` file gets diagnostics and regenerated resolvers back promptly
+instead of waiting out a refill of relations their edit did not touch. The Goal's second paragraph
+is what makes the item judgeable beyond the dev loop: the pass is `FactCapture.capture`'s, so a
+plain `generate` on a subgraph module and every CI build pay it too, and the cold path a clean build
+takes measured slower rather than faster, which makes these figures a floor for CI.
+
+Question two. Nothing is stood up beside an existing mechanism; the item's organising move is to
+read the fact-model page's lever order and find that two of the three expensive registrations are
+asking for something other than a registration. Lever 1 is the top rung, a rule reconstructing what
+capture already wrote, re-sourced onto the captured relation. Lever 2 is the ownership rule applied
+literally, a single-family view moving to that family's gatherer, with the second rung's stored fold
+riding along on the same relation. Lever 3 is the third rung under the one exception the page names
+and measures. Lever 4 is the fourth rung, one row in the register that already exists, owing the
+index, the `reason` arithmetic and the `DerivedReadCostTest` pair every registration owes. I would
+hand this to an implementer as written. The three things left to the implementer's judgment, lever
+1's filing move, which interface spelling to keep, and lever 2's clearing round, are each stated as
+a decision with its constraint and an explicit refusal of the silent-deferral arm, not as gaps.
+
+Verified at this head rather than taken from the earlier rounds. Every relation, table, index, Java
+symbol and test the item names exists as named, and the static figures reproduce: 127 views, the
+instruction view at 230 with children 114, 80 and 4, the decode hop at 91, the filter role at 61 and
+`intent_resolved_node_type_id` at 55. Lever 1's population claim holds predicate by predicate,
+`Nodes.derive`'s published arm being `graphitron_tabletype` joined to `sql_node_metadata` under an
+`EXISTS` on `graphql_poly_member` at `INTERFACE`/`Node` and a `NOT EXISTS` on the defect relation,
+against `intent_inferred_node_type`'s same three terms spelled through `graphql_implements_interface`,
+whose rows are that view's `INTERFACE` arm verbatim; its declared arm is the entry relation
+intersected with the binding, so the union absorbs it as the item says. Lever 2's ordering holds at
+the call site: `JooqFactCapture` writes the catalog family immediately before `CatalogFactCapture`
+runs, and `GraphitronFactCapture` with its nodes stage runs two flushes later. Lever 3's site reads
+exactly as the revision now states it, three references to `resolved_name` of which the precedence 8
+arm is `FROM resolved_name m` uncorrelated, the precedence 4 arm produces the role on a match and the
+precedence 6 arm suppresses on one, and the collapse the arity rests on partitions on exactly the six
+columns `resolved_name` projects. The 24 s to under 2 s precedent is on the fact-model page verbatim,
+including the cost warning each such view owes its own comment. Lever 4's stage claim holds:
+`intent_argument_reference_step_target` reads the registered `intent_argument_scope_table`, is named
+by three views of which two are the registered instruction and decode-hop rules, and names the
+recursive hop twice. Round 1's bisection correction reproduces, one of the six namings of
+`intent_node_type` inside `table_node` and five in the union arms, the correlated `NOT EXISTS` among
+them. The pinned figures are where the Tests section says: 21 registrations, 15 refresh stages, a
+`NO_INDEX` roster asserted in both directions, 127 readers, 63 with cells and 146 cells.
+
+Four non-blocking notes, none of them bearing on either question.
+
+- `intent_resolved_node_key_column` reaches the defect relation through `intent_inferred_node_type`
+  rather than naming it, so it is a reader of it transitively; the two relations that name it
+  directly are `intent_inferred_node_type` and `intent_resolved_node_type_id`, which is also why the
+  rename is the four sites the lever counts.
+- `CatalogFactCapture.capture` takes a `FactSink` and no `DSLContext`. `FactSink.dsl()` is public, so
+  the one line the lever adds is `sink.dsl()` rather than a signature change, but the implementer
+  should expect to write it that way.
+- `intent_column_match_claim` collapses on three columns where `intent_input_field_column_match`
+  collapses on six, so "identical collapse" is the shape rather than the partition, which is what
+  the precedent needs.
+- The ranking's current top also holds `intent_node_id_decode` at 224 and
+  `intent_node_id_polymorphic_decode_defect` at 179, neither of them a registration. The Tests
+  section names `diagnostic` and `intent_argmapping_projection_defect` as outside this item's reach;
+  these two are outside it for the same reason and a delivery should not read them as a failure
+  either.
