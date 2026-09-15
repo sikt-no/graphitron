@@ -27,10 +27,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Ready | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Ready | 2026-09-08 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
+| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | In Progress | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | In Progress | 2026-09-05 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R933` | @nodeId(typeName:) may name an interface at a @service input, decoding into a record-supertype slot | In Review | 2026-09-14 <sub>created 2026-09-08</sub> | [plan](polymorphic-nodeid-service-input.md) |
@@ -466,7 +466,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### routine
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
-- `R950` [**A @routine spends the leaves its argMapping binds, not the arguments they sit in**](spent-routine-argument-hides-filter-leaves.md) — Ready, bug
+- `R950` [**A @routine spends the leaves its argMapping binds, not the arguments they sit in**](spent-routine-argument-hides-filter-leaves.md) — In Progress, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
 - `R816` [**Refuse a routine write's first-hop condition instead of deferring it**](routine-write-reread-drops-first-hop-condition.md) — Spec, generator
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
