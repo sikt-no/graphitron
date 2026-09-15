@@ -514,6 +514,162 @@ paid, which would make a save cheap and leave the boot pass where it is. The boo
 consumer meets first, and a fix that needs the other item to land is a fix neither item can be
 judged on.
 
+## Delivery (2026-09-15)
+
+Three levers landed and one did not. The pass on the `sis` consumer's own population falls from
+50.4 s to 16.9 s, its dearest registration from 24.8 s to 110 ms, and the registration the item
+planned a rewrite for turned out to want a register row instead, which the measurement decided
+rather than the plan.
+
+### The instrument, and what it does not reproduce
+
+The pickup precondition is met in one half and blocked in the other, and the delivery is stated in
+those terms rather than around them. The store the 2026-09-14 figures came from is on disk under
+the per-user cache home, so its population is available; a fresh `mvn graphitron:dev` round on the
+consumer is not, and the reason is worth a successor rather than a workaround. The consumer's pom
+adds `sis-service` to the plugin's `<dependencies>`, which puts `org.jooq.pro:jooq:3.19.18` in the
+plugin realm beside graphitron's own `org.jooq:jooq:3.20.11`. Two artifacts under different group
+ids share the package names, so no version mediation applies and whichever loads first wins; the
+older parser cannot read H2's rendering of `intent_field_scope_table_live`, whose derived table
+carries parenthesised `UNION ALL` arms, so `ViewReferences` throws at store creation and the round
+never starts. That is graphitron's defect rather than the consumer's, the plugin having no business
+letting a project-supplied dependency shadow the jOOQ it parses with, and it is filed separately.
+
+What was used instead: a copy of that store, driven through `Materializations.refresh` in one
+transaction by a single-file program at the H2 version the root pom pins, which is the cadence the
+item asks for and the one the register's own gates assume. It reproduces the pass exactly in shape,
+same registration order and same row counts at every one of the twenty-one, and it under-reproduces
+the wall clock by about seventy-fold: registration 12 costs 6.5 s here where the round measured
+386.1 s. The committed store is not the state a round pays in, the capture having just rewritten
+every base relation inside the transaction the refresh then runs in. So every absolute figure below
+is a floor, and every before-and-after is a controlled A/B on one store with one relation changed.
+The ratios are what the delivery rests on, and the two that decide a lever are 185-fold and
+6-fold rather than marginal.
+
+One thing the instrument settled that nothing else could: **the tail of the pass holds no
+surprise.** Registrations 15 to 21 had never been reached on this consumer, and the ranking the item
+worked from was a prefix rather than the pass. Driven whole they cost between 105 ms and 3.3 s, so
+the three the item priced were the pass, and no successor is owed for a cost of a different shape
+past registration 14.
+
+### What landed
+
+**Lever 1, as written.** `intent_node_type` re-sourced onto `graphitron_node_entry UNION
+graphitron_node`. The population equality is proved rather than argued: `EXCEPT` in both directions
+over the consumer store, 250 rows each side and empty both ways. The filing move is taken, the
+relation reading one family now, and it is renamed `graphitron_node_type` with its DDL moved beside
+the relations it reads. One thing is stated rather than deferred silently: it stays on the
+undeclared roster under the new name rather than being declared. It is the same relation renamed and
+not one arriving, and declaring it would mint a second `node-type`-grain declaration whose population
+differs from `graphitron_node`'s in exactly the way the successor this item already names, the one
+that reconciles the two nodehood spellings, has to settle.
+
+**Lever 3 refuted, and a registration in its place.** The rewrite was written, proved
+verdict-preserving against the consumer population per arm (1765 rows, `EXCEPT` empty both ways,
+`NAME_MATCHED` 856 and `NODE_ID` 398 unchanged), and then measured. It buys nothing. Ablating the
+filter role's own refresh statement on the store, in transaction:
+
+[cols="4,1"]
+|===
+| variant | cost
+
+| shipped, the column-match rule a view | 24.4 s
+| the two correlated sites as left joins, the rule a view | 22.2 s
+| left joins and the correlated authored-condition probe dropped too | 20.6 s
+| shipped, the rule a table | 0.13 s
+| left joins, the rule a table | 0.17 s
+|===
+
+So the correlation was never the cost, and the rewrite is marginally the worse shape once the rule
+is a table. What costs is the rule being re-expanded as an unindexable derived table per probe,
+which is what the register exists for. The rewrite is reverted and
+`intent_input_field_column_match` is registered instead, with an index over the six columns its two
+readers probe, which are the six its own `ROW_NUMBER` partitions by. Both refuted candidates and
+their figures live in that registration's `reason` column, where the next reader meets the
+hypothesis. The lever the item named as the page's one measured exception turns out to have wanted
+the rung below it, and the page's general warning about rewrites is what held.
+
+**Lever 4, as written.** `intent_argument_reference_step_target` registered, the hop below it left
+a view deliberately. Measured after the column-match registration so the two are not counted twice:
+the pass 22.7 s to 16.9 s, the instruction rule 5.8 s to 3.8 s, the decode hop 5.1 s to 3.5 s, for
+a refresh of its own of 25 ms over two rows.
+
+### What did not land, and why
+
+**Lever 2 is deferred, on evidence lever 1 produced.** After lever 1 no registered rule reaches
+`intent_node_metadata_defect` at all: its only readers are `intent_inferred_node_type`,
+`intent_resolved_node_type_id` and `intent_resolved_node_key_column`, and none of the three is in
+any registration's tree. So lever 2 no longer moves the refresh pass, which is this item's unit of
+account; it moves the detection pass, where `DetectionReadReachGateTest` records its reach. That is
+still worth doing and it is no longer this item's.
+
+Two further facts a successor needs, both found while building it. The relation cannot become a
+declared base table carrying the view's five columns unchanged, which is what the lever says:
+`MetaDeclarationGateTest.aDeclaredTableKeyMatchesItsGrain` requires a primary key equal to the
+grain's key shape, `position` is NULL for eight of the ten defect values, and the frozen roster only
+shrinks so a relation arriving under a new name cannot stand on it undeclared. The relation mixes
+two grains, eight defects about a whole constant at `sql_node_metadata`'s grain and two about one
+entry at `sql_node_key_column`'s, which is a modelling defect the `intent_` filing was hiding and
+which the key gate is exactly the enforcer for. The shape that follows is a split into
+`sql_node_metadata_defect` and `sql_node_key_column_defect`, each with a key and a foreign key it
+can actually declare; no declared relation in this schema mixes two grains, and the one family that
+carries sentinels in a key transcribes javac's own rather than minting any.
+
+And the stored fold that rides with the lever should not be taken as written. The fact-model page
+already rules on this exact comparison, in the case-fold paragraph: the defect view matches a
+generated class's stated key-column name against the catalog's own column names, both values the
+crawler produced, so "it is a fold nothing owes anything to, and it goes away by becoming exact
+rather than by being stored". Storing it is the opposite rung, and the Tests section's fixture for
+it would pin the fold as a semantic and make the page's stated end-state a test to delete. Becoming
+exact is a behaviour change rather than a performance lever, so it belongs with the successor too.
+
+### The numbers, and where they went
+
+Wall clock on the consumer population, the instrument above, whole pass:
+
+[cols="3,1,1"]
+|===
+| | before | after
+
+| whole pass | 50.4 s | 16.9 s
+| `intent_input_field_filter_role` | 24.8 s | 110 ms
+| `intent_node_id_instruction` | 6.5 s | 3.8 s
+| `intent_node_id_decode_hop` | 5.9 s | 3.5 s
+| the two new registrations' own refreshes | | 276 ms and 25 ms
+|===
+
+Breadth, the reactor-readable floor, against the table the Tests section states:
+
+[cols="3,1,1,1"]
+|===
+| relation | today | owed | delivered
+
+| `intent_node_id_instruction_live` | 230 | 55 | 55
+| `intent_input_field_filter_role_live` | 61 | 45 | 31
+| `intent_node_id_decode_hop_live` | 91 | 12 | 12
+| `intent_resolved_node_type_id` | 55 | 11 | 23
+| `intent_resolved_node_key_column` | 24 | 12 | 24
+|===
+
+Three rows are met and two are not, and the two are lever 2's alone; lever 1 took the type-id row
+from 55 to 23 on its own. The ranking's top is now `diagnostic` 145,
+`intent_argmapping_projection_defect` 141, `intent_node_id_polymorphic_decode_defect` 131 and
+`intent_node_id_decode` 128, none of them read by a registration and all four outside this item's
+reach, which the Tests section says a delivery must not read as a failure. The denominator is
+unchanged at 127 views, lever 2 not having been taken.
+
+### Judged against the band
+
+The band is the eleven registrations measured on the in-transaction cadence, 2.9 s at worst and
+about 6 s in total, and the pass now completes so it can be re-read against its own distribution.
+On this instrument the pass's twenty-three registrations run from 4 ms to 3.8 s, with the three
+dearest at 3.8 s, 3.5 s and 2.7 s against a median of about 90 ms. None of the three the item was
+about is an outlier against that distribution any more: the two that were 24.8 s and 5.9 s are now
+110 ms and 3.5 s, and the third sits with them. The goal's operational reading is met on the
+instrument available. What it is not is a reading on the round's own cadence, and the delivery does
+not claim one: the consumer round is blocked by the realm defect above, and re-taking these figures
+on it is the first thing to do once that is fixed.
+
 ## Reviewer findings
 
 ### Round 1 (2026-09-14, Spec to Ready, reviewer session 01LEFtas3tdQ4XEbZ9S3wmiJ)
