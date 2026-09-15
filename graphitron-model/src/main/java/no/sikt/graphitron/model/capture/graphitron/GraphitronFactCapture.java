@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
+import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -182,6 +183,8 @@ public final class GraphitronFactCapture {
         // Last, because its target rule reads the navigation the line above writes and its
         // departure reads the bindings three lines up.
         FieldEndpoints.derive(dsl, graphName);
+        // After it, the applications being keyed by the chain the line above establishes.
+        FieldRoutines.derive(dsl, graphName);
     }
 
 

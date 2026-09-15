@@ -5425,6 +5425,43 @@ COMMENT ON COLUMN graphitron_field_table.to_schema IS 'the target table''s SQL s
 COMMENT ON COLUMN graphitron_field_table.to_table IS 'the target table''s SQL name; with the two columns above this is sql_table''s full key, so the target''s columns and constraints are one join away';
 COMMENT ON COLUMN graphitron_field_table.target_basis IS 'which rule named this target, in a closed vocabulary of three. NAMED_TYPE_TABLE: the field''s navigated type binds a table, the ordinary case, and the one a connection field reaches through the element it paginates rather than through its edge wrapper. PARTICIPANT_TABLE: the navigated type is a polymorphic container binding no table of its own, so each table-bound participant is a target and the field has several. ROUTINE_RESULT: the field''s chain ends on a @routine and the result table binds the return, which is why such a return needs no @table of its own. Provenance and fork at once, PARTICIPANT_TABLE being exactly where a reader holding one row holds one branch of several. Two rules that look like they belong here do not, and the boundary is what this relation is about rather than a gap in it: a DML mutation returning a carrier payload, and a @mutation(table:) on a return that names no table, each say where the mutation writes and not where the field''s rows come from. The carrier''s rows are fetched by its own data field, which has a coordinate and a row of its own here, and a delete returning a scalar has no rows at all. Both exist to give a mutation''s arguments a table to bind against, which is the argument scope''s question and answered where that is stated';
 
+CREATE TABLE graphitron_field_routine (
+  graph_name         VARCHAR NOT NULL,
+  type_name          VARCHAR NOT NULL,
+  field_name         VARCHAR NOT NULL,
+  to_source_name     VARCHAR NOT NULL,
+  to_schema          VARCHAR NOT NULL,
+  to_table           VARCHAR NOT NULL,
+  ordinal            INT     NOT NULL,
+  result_source_name VARCHAR NOT NULL,
+  result_schema      VARCHAR NOT NULL,
+  result_table       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name,
+               to_source_name, to_schema, to_table, ordinal),
+  -- The chain this application stands in, so the two cannot disagree about which target the path
+  -- it belongs to leads to. graphitron_field_table's own rationale names this relation.
+  FOREIGN KEY (graph_name, type_name, field_name, to_source_name, to_schema, to_table)
+    REFERENCES graphitron_field_table
+      (graph_name, type_name, field_name, to_source_name, to_schema, to_table) ON DELETE CASCADE,
+  -- The application whose spelling resolved, so a row cannot outlive the writing it is about.
+  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
+    REFERENCES graphitron_routine_entry (graph_name, type_name, field_name, ordinal)
+      ON DELETE CASCADE,
+  FOREIGN KEY (result_source_name, result_schema, result_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_routine IS 'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target. For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.';
+COMMENT ON COLUMN graphitron_field_routine.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_field_routine.type_name IS 'the type owning the field the application was written on';
+COMMENT ON COLUMN graphitron_field_routine.field_name IS 'the field the application was written on';
+COMMENT ON COLUMN graphitron_field_routine.to_source_name IS 'the target table''s catalog partition, carried from graphitron_field_table; the first of the three columns naming which of a field''s chains this application stands in';
+COMMENT ON COLUMN graphitron_field_routine.to_schema IS 'the target table''s SQL schema, carried from graphitron_field_table';
+COMMENT ON COLUMN graphitron_field_routine.to_table IS 'the target table''s SQL name, carried from graphitron_field_table. A field returning a multi-table interface has a chain per participant, so one application draws a row per participant and each is that participant''s own chain, which is why the target is in the key rather than beside it';
+COMMENT ON COLUMN graphitron_field_routine.ordinal IS 'the application''s position in document order, carried from graphitron_routine_entry, and what tells two applications on one field apart. @routine is repeatable and composes with @reference into one chain in written order, so a field can carry several and each resolves on its own terms; the ordinal is the chain''s order and not a count, the reference applications being numbered in the same sequence';
+COMMENT ON COLUMN graphitron_field_routine.result_source_name IS 'the catalog partition of the table the routine''s result is, the first of the three columns naming it. Carried rather than derived, on graphitron_tabletype''s terms: the reference is a foreign key the engine checks and cascades, so a recrawled source takes the resolutions that named it';
+COMMENT ON COLUMN graphitron_field_routine.result_schema IS 'the result table''s schema as the catalog spells it, which is the catalog''s spelling and not the author''s: the match folds case on both sides and neither authored spelling survives into the row';
+COMMENT ON COLUMN graphitron_field_routine.result_table IS 'the result table''s own name as the catalog spells it; with the two columns above, a foreign key into sql_table. A routine result is a catalog table of type FUNCTION, which is the whole of what makes this resolvable and is why the departure of a chain leaving a field with no table of its own can be named at all';
+
 CREATE TABLE jvm_class (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -13675,6 +13712,9 @@ INSERT INTO meta_grain VALUES
   ('field-target-table',
    'one table a field''s rows come from, at one field, in one graph',
    'graph_name, type_name, field_name, to_source_name, to_schema, to_table', 'catalog'),
+  ('field-routine-result',
+   'one @routine application of one field''s chain toward one target, in one graph',
+   'graph_name, type_name, field_name, to_source_name, to_schema, to_table, ordinal', 'catalog'),
   ('argmapping-candidate',
    'one right-hand side an argMapping may write at a coordinate, named by the path that reaches it',
    'graph_name, coordinate, path', 'sdl'),
@@ -14192,6 +14232,10 @@ INSERT INTO meta_relation VALUES
    'A table a field''s rows come from, paired with the table the field departs from: one row per target table of one field.',
    'For example Actor.films draws a row departing from actor and arriving at film, and a field returning a multi-table interface draws one row per participant, each arriving at that participant''s own table.',
    'Where a field''s rows come from and where they depart from, said once and without the route between. Readers wanting the endpoints outnumber readers wanting the hops, and until now both had to walk: the departure lived in one derivation keyed on the parent type, the arrival in another keyed on the field, and neither said the pair. A field with several targets is several rows, which is the whole reason the target is in the key: a polymorphic container binding no table of its own is one statement per participant, and a relation with one row per field would have to pick a branch. Departure is nullable and target is not, and the asymmetry is the domain''s: every row a field returns comes from somewhere, while a root field has no enclosing row to depart from. The route between the two endpoints is a relation of its own, keyed by this one''s key so the two cannot disagree about which target a path leads to. Every table reference is the full sql_table key including the catalog partition; that partition follows from the graph, a capture reading one jOOQ package, and is carried anyway so the reference is a foreign key the engine checks and cascades rather than a convention readers keep. Written as a stage of the graphitron gatherer after the navigation it stands on, every rule it applies reading a captured relation: the bindings, the polymorphic membership, and the routine whose own spelling it resolves.'),
+  ('graphitron_field_routine', 'field-routine-result', 'graphitron',
+   'The catalog table one @routine application resolved to, at the chain it stands in: one row per application of one field''s chain toward one target.',
+   'For example Mutation.rentFilm over @routine(name: "rent_film") draws a row naming the rent_film function result, which is what the chain leaving that field departs from.',
+   'The resolution of a @routine spelling, anchored where it is used rather than performed again by every reader that needs it. A routine result is a catalog table of type FUNCTION, so the authored name resolves against sql_table the way @table(name:) does, and until now nothing held the answer: one derivation folded the spelling to name a field''s target and kept only the last application, and a second reader folded the same spelling a different way, whole rather than in parts, so one question had two implementations that can disagree on a qualified name. Keyed by graphitron_field_table''s key plus the ordinal, which is the same key the route between the endpoints takes, so an application and the links around it agree about which chain they are in without joining through the field. Every application resolves and not only the last: @routine is repeatable and composes with @reference into one chain in written order, so a function can stand anywhere in it and a relation keeping one of them can only answer for chains of length one. Matching folds case on both sides and admits an unqualified spelling against any schema the graph''s sources carry. A spelling two schemas both answer resolves to two candidates and to no row, on graphitron_tabletype''s terms, and is found by anti-join against the entry the author wrote; that absence is all this says about failure, what an author must change being a fact at the coordinate.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',
