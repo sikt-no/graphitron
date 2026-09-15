@@ -786,6 +786,11 @@ class FactCaptureAgreementTest {
         // is no gatherer whose reading could be compared against anything. What pins it is
         // LintRuleCatalogueTest, against the enum the rows state.
         registrations.put("lint_rule", Arm.DERIVED);
+        // The findings, derived from the transcription and the decode beside it. Nothing of
+        // GraphitronSchema's to agree with: the walk produced a list per run and kept no row,
+        // so there is no second population to compare against. What pins it is
+        // LintViolationsTest, over a corpus edited between two readings.
+        registrations.put("lint_violation", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
         registrations.put("rejection_validation_error_directive", Arm.ORACLE);

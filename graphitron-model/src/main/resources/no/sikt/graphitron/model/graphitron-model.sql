@@ -13114,6 +13114,28 @@ INSERT INTO lint_rule VALUES
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
+CREATE TABLE lint_violation (
+  graph_name    VARCHAR NOT NULL,
+  lint_rule     VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, lint_rule, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (lint_rule) REFERENCES lint_rule (rule_id),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE lint_violation IS 'One rule broken at one written position: this rule has something to say about what this file wrote here. For example an input object named WidgetFilter draws a row of input-object-name-suffix at the position its declaration was written at.';
+COMMENT ON COLUMN lint_violation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN lint_violation.lint_rule IS 'which rule this row is a violation of, keyed into lint_rule so a finding cannot name a rule nothing declares. Severity is not repeated here: it is a column of the rule, and a copy could disagree';
+COMMENT ON COLUMN lint_violation.source_name IS 'the file the offending thing was written in, the first part of the position that is this row''s subject';
+COMMENT ON COLUMN lint_violation.source_line IS 'line of the offending entry, 1-based per the convention the entry stratum records';
+COMMENT ON COLUMN lint_violation.source_column IS 'column of the same. Keyed on the position rather than on the coordinate the position sits in, because a lint finding is something an author goes to and fixes, and a coordinate assembled from several declaration sites names no single place to go. One consequence is deliberate: a name spelled wrongly at a base declaration and again at two extensions is three rows, which is three places the author has to edit';
+COMMENT ON COLUMN lint_violation.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep and the cascade answer different halves of going away: an author who deletes the declaration takes the entry with it and the cascade carries this row along, while an author who fixes what the rule objected to leaves the entry exactly where it was, and only the sweep can tell that this reading no longer draws the row';
+
 CREATE TABLE lint_finding (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -13610,6 +13632,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-entry-position',
    'one position in one SDL document, whatever the parse read there',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('lint-violation',
+   'one rule broken at one written position, in one graph',
+   'graph_name, lint_rule, source_name, source_line, source_column', 'sdl'),
   ('sdl-parsed-selection',
    'one leaf selection of one field set, at its index in the list the grammar reads it as, under the application that wrote it',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
@@ -13854,6 +13879,10 @@ INSERT INTO meta_relation VALUES
    'Every written position the entry stratum holds, in one relation: which kind of entry sits there, what it was written inside, and which schema element encloses it.',
    'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field''s declaration and naming the element Widget.name.',
    'Nineteen entry relations share a primary key and nothing else, so a reader holding a position has to know which of them to look in before it can ask anything, and a relation naming a position has nothing to reference. Derived rather than a supertype, which is the difference between this and graphql_element: the entry relations neither reference it nor wait for it, so the stratum keeps the per-file cadence its whole design rests on. The enclosing element is the nearest ancestor along the parent edge that declares one, a rule applied once here rather than nineteen times in nineteen shapes that could each drift, which is why a directive on a field, an argument passed to it and a string nested inside that argument all name the field: that is the element an author reading the line is looking at. Three of the nineteen carry a parent position with no foreign key, their parent being one of several relations, and this gives a reader the join they lack but cannot give them a constraint, being derived from those same relations and written after them. A null coordinate is the schema block and what is written inside it, and today a directive definition and its parts, directives being schema elements this store holds no anchor for yet; the check beside the column names those kinds, so a gap in the resolution fails the write instead of reading as an entry that encloses nothing.'),
+  ('lint_violation', 'lint-violation', 'derivation',
+   'One rule broken at one written position: this rule has something to say about what this file wrote here.',
+   'For example an input object named WidgetFilter draws a row of input-object-name-suffix at the position its declaration was written at.',
+   'Keyed on the position rather than on the coordinate, because a lint finding is something an author goes to and fixes and a coordinate assembled from several declaration sites names no single place to go. That decides more than the key: a name spelled wrongly at a base declaration and at two extensions is three rows, one per place the author has to edit, where a coordinate-keyed relation would have said it once and pointed at whichever site capture met first. A row asserts a defect, so a rule''s population is the positions where the author could have written it otherwise and not every position of the right kind: a type extension carries no description slot at all, so an undescribed one is not an undocumented type but a place where documenting is not a thing that can be done, and a row there would be a false fact rather than a noisy one. Owned by the gatherer that runs last, on the rule the derived family already states: every rule here reads more than one family, the schema''s transcription for what was written and the decode beside it for what a directive meant, so none of them belongs to a single corpus''s own gatherer.'),
   ('graphql_element', 'schema-element', 'sdl',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
