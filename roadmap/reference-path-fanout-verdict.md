@@ -1,7 +1,7 @@
 ---
 id: R723
 title: "Warn when a @reference path traverses a 1:N hop into a further projection"
-status: In Progress
+status: In Review
 bucket: validation
 priority: 4
 theme: diagnostics
