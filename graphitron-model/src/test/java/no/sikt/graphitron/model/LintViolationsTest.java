@@ -145,6 +145,66 @@ class LintViolationsTest {
         });
     }
 
+    /**
+     * The prefix rule against the name it must not mistake for one: Userland repeats User and is
+     * not a prefixed field, the character after the repeat continuing a word rather than starting
+     * one.
+     */
+    @Test
+    @DisplayName("a field repeating its type's name fires, and a longer word that merely starts with it does not")
+    void thePrefixRuleNeedsAWordBoundary() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                type User {
+                  userName: String
+                  userland: String
+                  Username: String
+                  UserName: String
+                  name: String
+                }
+                type Query { users: String }
+                """);
+
+            assertThat(rulesAt(dsl, "no-typename-prefix"))
+                .as("userName and UserName repeat the type and then start a word; userland"
+                    + " continues one, and Username's own boundary is lower case, so neither is a"
+                    + " prefixed field however much of the type name it happens to spell")
+                .containsExactly(2, 5);
+        });
+    }
+
+    /**
+     * The description rule's two populations. An extension has no description slot at all, so a
+     * row against one would assert a defect the author cannot fix; a field declared inside that
+     * same extension can be documented perfectly well and is linted like any other.
+     */
+    @Test
+    @DisplayName("a type extension is not an undocumented type, though its fields are ordinary fields")
+    void theDescriptionRuleSkipsExtensionsAndNotTheirFields() {
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, """
+                "A query."
+                type Query {
+                  "Documented."
+                  documented: String
+                  bare: String
+                }
+                extend type Query {
+                  "Also documented."
+                  more: String
+                  alsoBare: String
+                }
+                """);
+
+            assertThat(rulesAt(dsl, "types-and-fields-have-descriptions"))
+                .as("the two undocumented root fields, one of them declared inside the extension."
+                    + " Neither the documented type nor the extension itself draws a row: the type"
+                    + " because it is documented, the extension because a description is not a"
+                    + " thing it could carry")
+                .containsExactly(5, 10);
+        });
+    }
+
     /** The lines one rule drew a row at, in source order. */
     private static List<Integer> rulesAt(DSLContext dsl, String rule) {
         return dsl.select(LINT_VIOLATION.SOURCE_LINE).from(LINT_VIOLATION)

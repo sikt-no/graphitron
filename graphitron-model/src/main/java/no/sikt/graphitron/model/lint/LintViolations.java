@@ -11,15 +11,22 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.length;
+import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.replace;
+import static org.jooq.impl.DSL.substring;
+import static org.jooq.impl.DSL.trim;
+import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
@@ -54,6 +61,9 @@ public final class LintViolations {
         typeNamesPascalCase(dsl, graph, touchedAt);
         enumValuesScreamingSnakeCase(dsl, graph, touchedAt);
         inputAndArgumentNamesCamelCase(dsl, graph, touchedAt);
+        fieldNamesCamelCase(dsl, graph, touchedAt);
+        noTypenamePrefix(dsl, graph, touchedAt);
+        typesAndFieldsHaveDescriptions(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -131,6 +141,87 @@ public final class LintViolations {
                 .and(mismatches(a.NAME, CAMEL_CASE))
                 .and(authored(a.SOURCE_NAME))
                 .and(notExcluded(dsl, graph, a.TYPE_NAME)));
+    }
+
+    /**
+     * {@code field-names-camel-case}: the fields of an object or an interface. An input object's
+     * fields are a different relation and a different rule, the two having been kept apart by the
+     * parse rather than by a filter here.
+     */
+    private static void fieldNamesCamelCase(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        insert(dsl, graph, touchedAt, "field-names-camel-case",
+            f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f,
+            f.GRAPH_NAME.eq(graph)
+                .and(mismatches(f.NAME, CAMEL_CASE))
+                .and(authored(f.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, f.TYPE_NAME)));
+    }
+
+    /**
+     * {@code no-typename-prefix}: a field must not repeat its own type's name, so {@code User.name}
+     * rather than {@code User.userName}.
+     *
+     * <p>Three clauses, and the third is what keeps {@code Userland} from reading as {@code User}
+     * plus a prefix: the character after the repeated name has to start a new word. Upper-case is
+     * tested as a character that changes under lower-casing and not under upper-casing, which is
+     * what the walk's {@code Character.isUpperCase} means and what a range of {@code A} to {@code Z}
+     * would narrow to the Latin alphabet.
+     */
+    private static void noTypenamePrefix(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        Field<String> boundary = substring(f.NAME, length(f.TYPE_NAME).plus(inline(1)), inline(1));
+        insert(dsl, graph, touchedAt, "no-typename-prefix",
+            f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f,
+            f.GRAPH_NAME.eq(graph)
+                .and(length(f.NAME).gt(length(f.TYPE_NAME)))
+                .and(upper(substring(f.NAME, inline(1), length(f.TYPE_NAME))).eq(upper(f.TYPE_NAME)))
+                .and(boundary.ne(lower(boundary)))
+                .and(boundary.eq(upper(boundary)))
+                .and(authored(f.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, f.TYPE_NAME)));
+    }
+
+    /**
+     * {@code types-and-fields-have-descriptions}: every type, and the fields of a root operation
+     * type, which are the schema's front door.
+     *
+     * <p>Two populations rather than one, because the question the rule asks is whether the author
+     * documented something they could have documented. A type extension carries no description slot
+     * at all, so an undescribed one is not an undocumented type, it is a position where documenting
+     * is not a thing that can be done, and a row there would assert a defect nobody can fix. A field
+     * declared inside an extension has no such problem and is linted like any other.
+     */
+    private static void typesAndFieldsHaveDescriptions(DSLContext dsl, String graph,
+                                                       LocalDateTime touchedAt) {
+        var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+        insert(dsl, graph, touchedAt, "types-and-fields-have-descriptions",
+            d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d,
+            d.GRAPH_NAME.eq(graph)
+                .and(d.IS_EXTENSION.isFalse())
+                .and(undocumented(d.DESCRIPTION))
+                .and(authored(d.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, d.NAME)));
+
+        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        var r = GRAPHQL_ROOT_OPERATION;
+        insert(dsl, graph, touchedAt, "types-and-fields-have-descriptions",
+            f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f,
+            f.GRAPH_NAME.eq(graph)
+                .and(undocumented(f.DESCRIPTION))
+                .and(org.jooq.impl.DSL.exists(selectOne().from(r)
+                    .where(r.GRAPH_NAME.eq(graph), r.TYPE_NAME.eq(f.TYPE_NAME))))
+                .and(authored(f.SOURCE_NAME))
+                .and(notExcluded(dsl, graph, f.TYPE_NAME)));
+    }
+
+    /**
+     * Whether the author documented this. A description of nothing but whitespace documents
+     * nothing, which is a different question from whether a description token occupies the source,
+     * and this is the first one.
+     */
+    private static Condition undocumented(Field<String> description) {
+        return description.isNull().or(trim(description).eq(inline("")));
     }
 
     /** Whether a written name fails a shape, which is what each of these rules objects to. */
