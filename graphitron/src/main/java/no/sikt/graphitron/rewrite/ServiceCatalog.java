@@ -1738,6 +1738,50 @@ class ServiceCatalog {
             : null;
     }
 
+    /**
+     * One SDL input element: its use-site coordinate and its declaration, paired because the two
+     * are read off one walk and a second walk for the second of them could disagree with the
+     * first. An argument or an input field, the two things a value can be declared as.
+     */
+    record InputElement(NodeIdDecodeCoordinate coordinate, GraphQLInputValueDefinition declaration) {}
+
+    /**
+     * Where an {@code argMapping} path spends its input element, or {@code null} where the path
+     * resolves nothing. The walk-side twin of {@code graphitron_argmapping_match.bound_path}, and
+     * it takes that column's two readings in that column's order: the whole written path where all
+     * of it resolves as input elements, and that path less its last name where one name is left
+     * over, the leftover being the key column a {@code @nodeId} element projects.
+     *
+     * <p>A sibling of {@link #pathLeafDeclaration} and {@link #pathCoordinate} rather than a second
+     * reading grown inside either, because {@link #pathCoordinate}'s {@code null} is load-bearing
+     * elsewhere: it is what keeps a projected binding out of the decode ledger. A
+     * {@link #pathCoordinate} taught the retry would stop telling the coordinate an element is
+     * spent at from the coordinate the ledger keys on. Two questions, two functions, even where one
+     * walk shape answers both.
+     */
+    static InputElement spentInput(PathExpr path, String parentTypeName,
+                                 GraphQLFieldDefinition fieldDef,
+                                 Map<String, GraphQLInputType> slotTypes) {
+        var whole = landed(path, parentTypeName, fieldDef, slotTypes);
+        if (whole != null) {
+            return whole;
+        }
+        return path instanceof PathExpr.Step step
+            ? landed(step.parent(), parentTypeName, fieldDef, slotTypes)
+            : null;
+    }
+
+    /** One reading of {@link #spentInput}: the whole of {@code path} resolved, or {@code null}. */
+    private static InputElement landed(PathExpr path, String parentTypeName,
+                                     GraphQLFieldDefinition fieldDef,
+                                     Map<String, GraphQLInputType> slotTypes) {
+        var coordinate = pathCoordinate(path, parentTypeName, fieldDef, slotTypes);
+        var declaration = pathLeafDeclaration(path, fieldDef, slotTypes);
+        return coordinate == null || declaration == null
+            ? null
+            : new InputElement(coordinate, declaration);
+    }
+
     /** One path step's input object, past a non-null and one list wrapper, or {@code null}. */
     private static GraphQLInputObjectType asInputObject(GraphQLInputType type) {
         GraphQLType t = type;

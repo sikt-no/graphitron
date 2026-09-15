@@ -59,7 +59,36 @@ Writing `@table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` on `Tilga
 [[read-surface]]
 == The read surface: filtering, ordering and pagination
 
-A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the table the field's element type is bound to). The field's remaining arguments are unaffected: an argument bound to a routine IN parameter is spent on the call and is never read as a filter.
+A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the table the field's element type is bound to).
+
+=== What the call spends, and what filters its result
+
+An `argMapping` entry spends the input it names, and only that input. A leaf it binds feeds the routine parameter and never reaches the WHERE clause; every other input field of the same argument filters the result exactly as it would on a table-backed field, binding through `@field(name:)` or, absent that, by a case-insensitive match on its own name. So one input object can carry both halves, which is usually how an author wants to spell it:
+
+[source,graphql]
+----
+input ActorFilmFilter {
+    actorRef:  ID! @nodeId(typeName: "Actor")   # spent: projects actor_id into pActorId
+    minLength: Int!                             # spent: feeds pMinLength
+    title:     String                           # filters the result: WHERE title = ?
+}
+
+type Query {
+    actorFilms(filter: ActorFilmFilter!): [ActorFilm!]
+        @routine(
+            name:       "films_for_actor"
+            argMapping: "pActorId: filter.actorRef.actor_id, pMinLength: filter.minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
+}
+----
+
+The two spent leaves above are spent in two different ways: `actorRef` through the key projection, which hands `pActorId` a decoded `actor_id`, and `minLength` as a plain scalar read. `title` is left over, and what it resolves against is the chain terminus, here the function result itself.
+
+Two consequences follow, and both are build errors rather than silence:
+
+* *A surviving leaf that binds nothing fails the build*, with the message it already gets on a table-backed field: it names no column of the terminus and carries no `@condition`. Nothing about being inside a routine argument exempts it.
+* *A spent leaf carrying `@field` or `@condition` is a directive conflict.* It asks for a predicate it will never get, the routine parameter having consumed it first. `@nodeId` on a spent leaf is not a conflict: there the directive is a decode instruction the key projection carries out, not a filter.
 
 One rule governs the ordering, and it is the rule every list field already lives under:
 
@@ -217,6 +246,12 @@ type, still fail the request as client errors before the routine runs.
 == Writes on Mutation
 
 On a `Mutation` field, the routine call *is* the write, and it commits before the follow-up query runs. `@routine` names a `VOLATILE` set-returning function, and two return shapes are admitted: with `@reference`, the field returns the table the chain reaches; without it, the field returns a payload whose data field declares its own path.
+
+=== Every input the field advertises must feed a parameter
+
+A `Mutation` `@routine` field resolves no filter surface at all. The call is the write, and the post-commit re-read below is keyed by the captured columns rather than filtered, so nothing on a write seat reads input except the routine's own parameter list. An input the `argMapping` does not bind therefore reaches nothing, and that is a build error naming the input, leaf by leaf and argument by argument: a field of an input object the bindings never name, and an argument slot the bindings never name, fail alike. It is the same verdict a DML mutation's unbound input field already gets, and the remedy is the same: bind it, or take it off the schema.
+
+There is no spelling yet for an input deliberately left unread, the Relay `clientMutationId` pattern or an idempotency key among them. Neither mutation kind has one, and nothing echoes such a value back into a payload.
 
 === The chain form
 

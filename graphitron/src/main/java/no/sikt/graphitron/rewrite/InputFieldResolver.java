@@ -4,10 +4,12 @@ import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -69,22 +71,34 @@ final class InputFieldResolver {
      * {@code @nodeId} leaf under it can name itself at use-site grain rather than at the input
      * type's own definition grain; see {@link ClassifyContext.UseSite}.
      *
+     * <p>{@code spentInputs} are the coordinates a {@code @routine} binding already consumes.
+     * Withheld here rather than dropped after classification, because classification is a gate: a
+     * {@code @nodeId} leaf that cannot key against {@code rt} comes back
+     * {@link InputFieldResolution.Unresolved} and rejects the whole argument, and a routine
+     * result table is neither a node type's table nor foreign-key-reachable from one. A leaf a
+     * routine parameter spends is not on this read surface at all, so there is nothing here to
+     * classify and nothing to fail.
+     *
      * <p>Returns {@link Resolution.Ok} with an empty list when {@code rt} is {@code null} or the
      * schema type is not an input object (no work to do). Returns {@link Resolution.Rejected}
      * when at least one field fails column resolution or any {@code @condition} reflection fails.
      */
     Resolution resolve(String typeName, TableRef rt, boolean enclosingOverride,
-                       ParticipantRef.TableBound participant, ClassifyContext.UseSite useSite) {
+                       ParticipantRef.TableBound participant, ClassifyContext.UseSite useSite,
+                       Set<NodeIdDecodeCoordinate> spentInputs) {
         if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
         var conditionFailures = new ArrayList<InputFieldConditionFailure>();
         var classified = new ArrayList<InputField>();
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
+        var ctxAt = ClassifyContext.forParticipant(enclosingOverride, participant, useSite,
+            spentInputs);
         for (var f : iot.getFieldDefinitions()) {
-            var res = ctx.classifyInputField(f, typeName, rt,
-                ClassifyContext.forParticipant(enclosingOverride, participant, useSite),
-                conditionFailures);
+            if (useSite != null && ctxAt.isSpent(useSite.at(typeName, f.getName()))) {
+                continue;
+            }
+            var res = ctx.classifyInputField(f, typeName, rt, ctxAt, conditionFailures);
             switch (res) {
                 case InputFieldResolution.Resolved r -> classified.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

@@ -1,6 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLFieldDefinition;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputType;
+import graphql.schema.GraphQLInputValueDefinition;
+import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
+import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -10,8 +16,10 @@ import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -19,6 +27,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARGMAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLUMN_MAPPING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ORDER_BY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
@@ -79,6 +88,17 @@ final class RoutineDirectiveResolver {
         record Rejected(Rejection rejection) implements NodeResolved {}
     }
 
+    /**
+     * Which seat a resolution stands at. A read field's surviving input leaves filter the chain
+     * terminus, so an input the bindings do not name has a consumer; a Mutation write field
+     * resolves no filter surface at all, the routine call being the write and the post-commit
+     * re-read being keyed rather than filtered, so an input the bindings do not name reaches
+     * nothing and is a build error. The one fact {@link #bindArgs} needs that the field definition
+     * does not state, and the whole of what the discriminator carries: no classification
+     * vocabulary enters this resolver with it.
+     */
+    enum Seat { READ, WRITE }
+
     private final BuildContext ctx;
     private final FieldBuilder fb;
 
@@ -101,8 +121,8 @@ final class RoutineDirectiveResolver {
      * target for a routine deeper in ({@code columnMapping} binds against it).
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot,
-            String previousNodeTableSqlName) {
-        return switch (resolveNode(parentTypeName, fieldDef, isRoot, previousNodeTableSqlName)) {
+            String previousNodeTableSqlName, Seat seat) {
+        return switch (resolveNode(parentTypeName, fieldDef, isRoot, previousNodeTableSqlName, seat)) {
             case NodeResolved.Rejected r -> new Resolved.Rejected(r.rejection());
             case NodeResolved.Node n -> bindReturn(fieldDef, n);
         };
@@ -153,7 +173,7 @@ final class RoutineDirectiveResolver {
      * conflict is.
      */
     NodeResolved resolveCarrierNode(String parentTypeName, GraphQLFieldDefinition fieldDef) {
-        return resolveNode(parentTypeName, fieldDef, /*isRoot=*/true, null);
+        return resolveNode(parentTypeName, fieldDef, /*isRoot=*/true, null, Seat.WRITE);
     }
 
     /**
@@ -187,7 +207,7 @@ final class RoutineDirectiveResolver {
      * Knows nothing about the field's return shape.
      */
     private NodeResolved resolveNode(String parentTypeName, GraphQLFieldDefinition fieldDef,
-            boolean isRoot, String previousNodeTableSqlName) {
+            boolean isRoot, String previousNodeTableSqlName, Seat seat) {
         var dir = fieldDef.getAppliedDirective(DIR_ROUTINE);
         if (dir == null) {
             // Caller pre-checked hasAppliedDirective; reaching here is a classifier bug.
@@ -245,7 +265,8 @@ final class RoutineDirectiveResolver {
             case JooqCatalog.RoutineResolution.NoConvenienceMethod nc -> new NodeResolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — " + nc.detail()));
             case JooqCatalog.RoutineResolution.Resolved fn ->
-                bindArgs(fieldDef, fn, overrides, columnOverrides, previousNodeTableSqlName);
+                bindArgs(parentTypeName, fieldDef, fn, overrides, columnOverrides,
+                    previousNodeTableSqlName, seat);
         };
     }
 
@@ -257,9 +278,9 @@ final class RoutineDirectiveResolver {
      * {@code columnMapping} and {@code ServiceCatalog.checkOverrideTargets} already do: an entry
      * naming a non-parameter, and a parameter left with no binding.
      */
-    private NodeResolved bindArgs(GraphQLFieldDefinition fieldDef,
+    private NodeResolved bindArgs(String parentTypeName, GraphQLFieldDefinition fieldDef,
             JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides,
-            Map<String, List<String>> columnOverrides, String previousNodeTableSqlName) {
+            Map<String, List<String>> columnOverrides, String previousNodeTableSqlName, Seat seat) {
         for (var claimed : columnOverrides.keySet()) {
             if (fn.params().stream().noneMatch(p -> p.name().equals(claimed))) {
                 return new NodeResolved.Rejected(Rejection.structural(
@@ -328,7 +349,7 @@ final class RoutineDirectiveResolver {
                         + ") — the column's Java type must match the routine parameter's"));
                 }
                 bindings.add(new RoutineRef.ArgBinding(param.name(), CatalogRefs.typeName(param.typeName()),
-                    new ParamSource.SourceColumn(column.get())));
+                    new ParamSource.SourceColumn(column.get()), /*spentAt=*/null));
                 continue;
             }
             PathExpr path;
@@ -347,11 +368,136 @@ final class RoutineDirectiveResolver {
             if (leafGate != null) {
                 return new NodeResolved.Rejected(leafGate);
             }
+            // Which input element this parameter spends, decided here because this is the only
+            // seat holding both the written path and the argument types it walks against. Every
+            // consumer downstream reads the resolved coordinate instead of re-deriving one from
+            // the path, which at argument grain is all a downstream seat could recover.
+            var spent = ServiceCatalog.spentInput(path, parentTypeName, fieldDef, slotTypes);
+            if (spent != null) {
+                var conflict = spentInputDirectiveConflict(param, spent, path);
+                if (conflict != null) {
+                    ctx.addDiagnostic(new ValidationError(
+                        spent.coordinate().errorCoordinate(), conflict,
+                        BuildContext.locationOf(spent.declaration())));
+                    return new NodeResolved.Rejected(conflict);
+                }
+            }
             bindings.add(new RoutineRef.ArgBinding(param.name(), CatalogRefs.typeName(param.typeName()),
-                new ParamSource.Arg(new CallSiteExtraction.Direct(), path)));
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), path),
+                spent == null ? null : spent.coordinate()));
+        }
+        if (seat == Seat.WRITE) {
+            var unread = unreadWriteInput(parentTypeName, fieldDef, bindings);
+            if (unread != null) {
+                return new NodeResolved.Rejected(unread);
+            }
         }
         return new NodeResolved.Node(
             new RoutineRef(CatalogRefs.className(fn.routinesClassName()), fn.methodName(), bindings), fn.resultTable());
+    }
+
+    /**
+     * The directive conflict on a spent input element, or {@code null} where there is none.
+     * {@code @field} or {@code @condition} there asks for a WHERE clause the element will never
+     * get: the routine parameter consumes it before any read surface is reached, so the filter
+     * would silently do nothing, which is the class of failure leaf-grain spending exists to
+     * remove, one level down.
+     *
+     * <p>{@code @nodeId} is deliberately not in the list, and the difference is what the directive
+     * asks for. On a spent element it is a decode instruction the key projection carries out, not
+     * a filter asked for and dropped.
+     */
+    private static Rejection spentInputDirectiveConflict(JooqCatalog.RoutineParam param,
+            ServiceCatalog.InputElement spent, PathExpr path) {
+        String directive = spent.declaration().hasAppliedDirective(DIR_FIELD) ? DIR_FIELD
+            : spent.declaration().hasAppliedDirective(DIR_CONDITION) ? DIR_CONDITION
+            : null;
+        if (directive == null) {
+            return null;
+        }
+        return Rejection.directiveConflict(List.of(DIR_ROUTINE, directive),
+            "@" + directive + " on '" + spent.coordinate().describe()
+            + "', which @routine spends on IN parameter '" + param.name() + "' (argMapping '"
+            + path.asString() + "') — a spent input feeds the routine call and never reaches the "
+            + "read surface, so the filter this asks for would silently do nothing; drop the "
+            + "directive, or bind the parameter to a different input and leave this one to filter");
+    }
+
+    /**
+     * The write seat's rule: every input the field advertises must feed a routine parameter. A
+     * Mutation {@code @routine} field resolves no filter surface at all, so the complement of the
+     * spent set reaches nothing, and the only honest verdict is the build error a DML mutation's
+     * unbound input field already gets. Returns the consuming field's consequence rejection, with
+     * one located verdict minted per unread input, or {@code null} when every input is spent.
+     *
+     * <p>The walk is over argument slots rather than over one input tree, so an argument the
+     * bindings never name is the zero-depth case rather than a second rule: a slot whose type is
+     * not an input object is its own leaf.
+     */
+    private Rejection unreadWriteInput(String parentTypeName, GraphQLFieldDefinition fieldDef,
+            List<RoutineRef.ArgBinding> bindings) {
+        var spent = bindings.stream().map(RoutineRef.ArgBinding::spentAt)
+            .filter(Objects::nonNull).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        var unread = new ArrayList<ServiceCatalog.InputElement>();
+        for (var arg : fieldDef.getArguments()) {
+            collectUnread(new NodeIdDecodeCoordinate.Argument(parentTypeName, fieldDef.getName(),
+                    arg.getName()), arg, arg.getType(),
+                ClassifyContext.UseSite.of(parentTypeName, fieldDef.getName(), arg.getName()),
+                new LinkedHashSet<>(), spent, unread);
+        }
+        if (unread.isEmpty()) {
+            return null;
+        }
+        for (var leaf : unread) {
+            ctx.addDiagnostic(new ValidationError(leaf.coordinate().errorCoordinate(),
+                unreadInputRejection(leaf.coordinate()),
+                BuildContext.locationOf(leaf.declaration())));
+        }
+        return Rejection.structural(
+            "@routine Mutation field '" + fieldDef.getName() + "' advertises " + unread.size()
+            + " input" + (unread.size() == 1 ? "" : "s") + " no routine parameter reads");
+    }
+
+    /** The located verdict on one unread write-seat input. */
+    private static Rejection unreadInputRejection(NodeIdDecodeCoordinate at) {
+        return Rejection.structural(
+            "'" + at.describe() + "' is read by nothing: on a @routine Mutation field the routine's "
+            + "IN parameters are the only consumer of input — the call is the write and the "
+            + "post-commit re-read is keyed rather than filtered, so there is no read surface for "
+            + "this to filter. Bind it with an argMapping entry, or remove it from the schema");
+    }
+
+    /**
+     * Collects the unspent leaves under one input element. An element whose type is an input
+     * object is not a leaf and contributes its own fields instead; anything else is a leaf, and a
+     * leaf whose coordinate is not in {@code spent} is unread. An element that is itself spent
+     * stops the descent: the parameter consumes it whole.
+     *
+     * <p>{@code expanding} is the circularity guard a recursive input type needs, the same one the
+     * shared classifier's descent carries.
+     */
+    private void collectUnread(NodeIdDecodeCoordinate at, GraphQLInputValueDefinition declaration,
+            GraphQLInputType type, ClassifyContext.UseSite useSite, Set<String> expanding,
+            Set<NodeIdDecodeCoordinate> spent, List<ServiceCatalog.InputElement> unread) {
+        if (spent.contains(at)) {
+            return;
+        }
+        var named = GraphQLTypeUtil.unwrapAll(type);
+        if (named instanceof GraphQLInputObjectType iot && !expanding.contains(iot.getName())) {
+            var deeper = new LinkedHashSet<>(expanding);
+            deeper.add(iot.getName());
+            // The step into this element is the element's own last step, which names the type
+            // *declaring* it; iot below is the type it opens onto, which names the next step.
+            var descended = at instanceof NodeIdDecodeCoordinate.InputField f
+                ? useSite.descending(f.leaf().containerTypeName(), f.leaf().fieldName())
+                : useSite;
+            for (var nested : iot.getFieldDefinitions()) {
+                collectUnread(descended.at(iot.getName(), nested.getName()), nested,
+                    nested.getType(), descended, deeper, spent, unread);
+            }
+            return;
+        }
+        unread.add(new ServiceCatalog.InputElement(at, declaration));
     }
 
     /**

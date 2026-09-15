@@ -243,7 +243,8 @@ class LauncherCommandsPipelineTest {
         // The two slots the chain-sourced row used to hand as literal nulls. @condition on the
         // field resolves against the terminus and mints the coordinate's condition row, whose
         // glue the launcher copies; an @orderBy argument resolves to the helper arm. The
-        // routine's own IN-parameter arguments are spent on the call and contribute neither.
+        // input elements the routine's argMapping binds are spent on the call and contribute
+        // neither.
         var schema = TestSchemaHelper.buildSchema("""
             enum FilmOrderField { TITLE @order(fields: [{name: "title"}]) }
             enum Direction { ASC DESC }

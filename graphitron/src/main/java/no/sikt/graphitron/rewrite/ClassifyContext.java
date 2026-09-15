@@ -36,13 +36,23 @@ import java.util.Set;
  * asking, which is the difference between covering one use site's install and covering all of
  * them. Null where the caller genuinely stands at no use site.
  *
+ * <p>{@link #spentInputs} is the set of input coordinates a {@code @routine} binding consumes
+ * before this descent begins. It is a use-site fact of exactly the kind the components beside it
+ * carry: an input field's own view cannot say whether some routine parameter reads it, and the
+ * answer differs per consuming field. The two enumerators of the descent
+ * ({@code InputFieldResolver.resolve} and the nesting arm of
+ * {@link BuildContext#classifyInputField}) withhold a member of this set rather than classifying
+ * it, so a spent leaf is never offered to a gate it has no business meeting; the decision tree
+ * itself never reads it and learns no routine vocabulary. Empty at every other consumer.
+ *
  * <p>Use {@link #root()} for the top-level entry and {@link #expanding(String)} for the
  * recursive descent through {@code NestingField}, pairing it with {@link #descending} so the use
  * site grows the step the descent just took. The {@code with*}-style helpers return a
  * new context so the record stays effectively immutable.
  */
 public record ClassifyContext(Set<String> expandingTypes, boolean enclosingOverride,
-                              ParticipantRef.TableBound participant, UseSite useSite) {
+                              ParticipantRef.TableBound participant, UseSite useSite,
+                              Set<NodeIdDecodeCoordinate> spentInputs) {
 
     /**
      * The consuming coordinate an input-surface descent hangs under, and how far down it has got.
@@ -94,32 +104,42 @@ public record ClassifyContext(Set<String> expandingTypes, boolean enclosingOverr
 
     public ClassifyContext {
         expandingTypes = Set.copyOf(expandingTypes);
+        spentInputs = Set.copyOf(spentInputs);
     }
 
     public static ClassifyContext root() {
-        return new ClassifyContext(Set.of(), false, null, null);
+        return new ClassifyContext(Set.of(), false, null, null, Set.of());
     }
 
     /** {@link #root()} standing at {@code useSite}. */
     public static ClassifyContext under(UseSite useSite) {
-        return new ClassifyContext(Set.of(), false, null, useSite);
+        return new ClassifyContext(Set.of(), false, null, useSite, Set.of());
     }
 
     public static ClassifyContext withEnclosingOverride(boolean enclosingOverride) {
-        return new ClassifyContext(Set.of(), enclosingOverride, null, null);
+        return new ClassifyContext(Set.of(), enclosingOverride, null, null, Set.of());
     }
 
-    /** Root context for one participant of a multi-table interface / union consumer. */
+    /**
+     * Root context for one participant of a multi-table interface / union consumer, standing at
+     * {@code useSite} with {@code spentInputs} already claimed by a routine's parameter list.
+     */
     public static ClassifyContext forParticipant(boolean enclosingOverride,
                                                  ParticipantRef.TableBound participant,
-                                                 UseSite useSite) {
-        return new ClassifyContext(Set.of(), enclosingOverride, participant, useSite);
+                                                 UseSite useSite,
+                                                 Set<NodeIdDecodeCoordinate> spentInputs) {
+        return new ClassifyContext(Set.of(), enclosingOverride, participant, useSite, spentInputs);
     }
 
     public ClassifyContext expanding(String typeName) {
         var s = new LinkedHashSet<>(expandingTypes);
         s.add(typeName);
-        return new ClassifyContext(s, enclosingOverride, participant, useSite);
+        return new ClassifyContext(s, enclosingOverride, participant, useSite, spentInputs);
+    }
+
+    /** Whether {@code coordinate} is spent by a routine parameter and so not on this read surface. */
+    public boolean isSpent(NodeIdDecodeCoordinate coordinate) {
+        return coordinate != null && spentInputs.contains(coordinate);
     }
 
     /**
@@ -131,7 +151,7 @@ public record ClassifyContext(Set<String> expandingTypes, boolean enclosingOverr
         return useSite == null
             ? this
             : new ClassifyContext(expandingTypes, enclosingOverride, participant,
-                useSite.descending(containerTypeName, fieldName));
+                useSite.descending(containerTypeName, fieldName), spentInputs);
     }
 
     /**
@@ -143,7 +163,8 @@ public record ClassifyContext(Set<String> expandingTypes, boolean enclosingOverr
     }
 
     public ClassifyContext withOverride(boolean enclosingOverride) {
-        return new ClassifyContext(expandingTypes, enclosingOverride, participant, useSite);
+        return new ClassifyContext(expandingTypes, enclosingOverride, participant, useSite,
+            spentInputs);
     }
 
     public boolean isExpanding(String typeName) {

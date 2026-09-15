@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
@@ -211,6 +212,42 @@ class RoutineFieldExecutionTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("tilgangerAdmin");
         assertThat(rows).extracting(r -> r.get("rollekode")).containsExactly("admin");
+    }
+
+    /**
+     * The acceptance case for leaf-grain spending: one input object holds what the call spends and
+     * what filters what the call returns, and the surviving leaf narrows the rows.
+     *
+     * <p>Asserted as the same call with and without the filter, because the failure this closes is
+     * a row-level one. A client supplying a filter and receiving rows it named is not visible in
+     * emitted text: a predicate that classifies and renders and still fails to reach the statement
+     * satisfies every pipeline-tier assertion about it. Only the row count says whether it
+     * excluded anything.
+     */
+    @Test
+    void aSurvivingInputLeafNarrowsTheRoutineResult() {
+        String unfiltered = """
+            { actorFilmsFiltered(filter: {actorRef: "%s", minLength: 1}) { filmId title } }
+            """.formatted(NodeIdEncoder.encode("ActorNode", 1));
+        String filtered = """
+            { actorFilmsFiltered(filter: {actorRef: "%s", minLength: 1, title: "ADAPTATION HOLES"}) {
+                filmId title
+              } }
+            """.formatted(NodeIdEncoder.encode("ActorNode", 1));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> all =
+            (List<Map<String, Object>>) execute(unfiltered).get("actorFilmsFiltered");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> narrowed =
+            (List<Map<String, Object>>) execute(filtered).get("actorFilmsFiltered");
+
+        assertThat(all).extracting(f -> f.get("title"))
+            .as("the spent leaves alone bound the call: every film of actor 1")
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES");
+        assertThat(narrowed).extracting(f -> f.get("title"))
+            .as("and the surviving leaf reaches the WHERE clause, excluding the other two")
+            .containsExactly("ADAPTATION HOLES");
     }
 
     @Test

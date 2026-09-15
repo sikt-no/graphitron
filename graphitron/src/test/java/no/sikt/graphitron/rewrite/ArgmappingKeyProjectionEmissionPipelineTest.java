@@ -79,9 +79,16 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
         }
         """;
 
-    /** Two routine parameters bound to one node id, which is what "materialise once" is about. */
-    private static final String SHARED_ID_SDL = SDL.replace(
-        "pCustomerId: input.customerId", "pCustomerId: input.inventoryId.inventory_id");
+    /**
+     * Two routine parameters bound to one node id, which is what "materialise once" is about.
+     * {@code customerId} leaves the input type with the binding that used to read it: on a write
+     * seat every input the field advertises must feed a parameter, and {@code rent_film} has only
+     * the two both bindings here already point at. Repointing one instead would destroy what this
+     * fixture exists to show.
+     */
+    private static final String SHARED_ID_SDL = SDL
+        .replace("pCustomerId: input.customerId", "pCustomerId: input.inventoryId.inventory_id")
+        .replace("\n    customerId: Int!", "");
 
     @Test
     void aProjectedParameterReadsTheNamedColumnOffADecodedRecord() {
@@ -103,10 +110,16 @@ class ArgmappingKeyProjectionEmissionPipelineTest {
             .isTrue();
     }
 
-    /** A fixture whose unprojected sibling binds a bare slot rather than a dotted path. */
+    /**
+     * A fixture whose unprojected sibling binds a bare slot rather than a dotted path. The input
+     * type's own {@code customerId} moves out to the argument list rather than being duplicated
+     * there: the binding now reads the flat argument, which would leave the input field read by
+     * nothing, and a write seat rejects that.
+     */
     private static final String BARE_SIBLING_SDL = SDL
         .replace("input: RentFilmInput!", "input: RentFilmInput!, customerId: Int!")
-        .replace("pCustomerId: input.customerId", "pCustomerId: customerId");
+        .replace("pCustomerId: input.customerId", "pCustomerId: customerId")
+        .replace("\n    customerId: Int!\n", "\n");
 
     /**
      * A bare-slot binding beside a projected one renders the ordinary typed read. The case exists

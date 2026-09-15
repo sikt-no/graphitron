@@ -4,10 +4,12 @@ import graphql.schema.GraphQLType;
 import graphql.language.BooleanValue;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
+import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputValueDefinition;
 import graphql.schema.GraphQLInterfaceType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
@@ -537,6 +539,21 @@ class BuildContext {
     static SourceLocation locationOf(GraphQLInputObjectField field) {
         var def = field.getDefinition();
         return def != null ? def.getSourceLocation() : null;
+    }
+
+    /**
+     * The declaration site of an SDL input value: an argument or an input field, the two things a
+     * value can be declared as. Dispatches to the typed overload where one exists, so a caller
+     * holding only the shared interface (an {@code argMapping} path's resolved landing, which may
+     * be either) does not switch on the arm itself.
+     */
+    static SourceLocation locationOf(GraphQLInputValueDefinition declaration) {
+        return switch (declaration) {
+            case GraphQLArgument a -> a.getDefinition() != null
+                ? a.getDefinition().getSourceLocation() : null;
+            case GraphQLInputObjectField f -> locationOf(f);
+            default -> null;
+        };
     }
 
     static SourceLocation locationOf(GraphQLInputObjectType type) {
@@ -2954,6 +2971,13 @@ class BuildContext {
             var failures = new ArrayList<InputFieldResolution.Unresolved>();
             var resolvedFields = new ArrayList<InputField>();
             for (var nested : nestedInputType.getFieldDefinitions()) {
+                // A leaf a @routine parameter spends is not on this read surface, at any depth:
+                // the descent is what reaches one an author wrote as 'filter.inner.key'. Withheld
+                // rather than classified and dropped, for the reason InputFieldResolver.resolve
+                // states at the level above.
+                if (nestedCtx.isSpent(nestedCtx.coordinateOf(typeName, nested.getName()))) {
+                    continue;
+                }
                 var res = classifyInputField(nested, typeName, resolvedTable, nestedCtx, conditionFailures);
                 switch (res) {
                     case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());

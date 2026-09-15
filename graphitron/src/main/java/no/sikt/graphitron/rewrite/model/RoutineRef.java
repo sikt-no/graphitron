@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
 import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
@@ -44,7 +45,17 @@ public record RoutineRef(ClassName routinesClass, String methodName, List<ArgBin
      * argument supplies the value ({@code argMapping}), {@link ParamSource.SourceColumn} when a
      * column of the chain's previous node does ({@code columnMapping}). The narrowing is carried
      * by the type rather than by prose, so the emitter's switch has no unreachable arms.
+     *
+     * <p>{@code spentAt} is the input element this binding consumes: the argument or the input
+     * field the {@code argMapping} path resolved to, with a projected key column's trailing name
+     * already stripped. It rides beside {@link ParamSource.Arg}'s path rather than instead of it,
+     * so what the author wrote and what it resolved to stand together and a reader compares them.
+     * A coordinate rather than a serialized path for the reason
+     * {@link NodeIdDecodeCoordinate} states: two spellings of one value agree until one changes,
+     * and here a disagreement reads as a dropped instruction. {@code null} on a
+     * {@code columnMapping} binding, which claims no input element at all, and on an
+     * {@code argMapping} path that resolved nothing.
      */
     public record ArgBinding(String routineParamName, TypeName paramType,
-            ParamSource.RoutineParamSource source) {}
+            ParamSource.RoutineParamSource source, NodeIdDecodeCoordinate spentAt) {}
 }

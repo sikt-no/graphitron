@@ -73,6 +73,7 @@ import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;
+import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
 import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.rewrite.model.PivotSpec;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -787,21 +788,25 @@ class FieldBuilder {
     }
 
     /**
-     * @param argsBoundElsewhere argument names the field spends on something other than its read
-     *        surface, skipped by the argument classification so they cannot also be read as
-     *        filters, ordering or lookup keys. Non-empty only for a {@code @routine} chain, whose
-     *        arguments supply the routine's IN parameters; every other caller passes the empty set
-     *        and reads the whole argument list.
+     * @param spentInputs the coordinates the field spends on something other than its read
+     *        surface, withheld from the argument classification so they cannot also be read as
+     *        filters, ordering or lookup keys. Coordinates rather than argument names, because a
+     *        {@code @routine} spends the input elements its {@code argMapping} binds and not the
+     *        arguments they sit in: an argument bound whole is one coordinate here and an input
+     *        leaf inside one is another, leaving the argument's remaining leaves to filter like
+     *        any other. Non-empty only for a {@code @routine} chain, whose bindings supply the
+     *        routine's IN parameters; every other caller passes the empty set and reads the whole
+     *        argument list.
      */
     private TableFieldComponents resolveTableFieldComponents(
             String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
-            boolean emitAsConnectionAdvisory, Set<String> argsBoundElsewhere) {
+            boolean emitAsConnectionAdvisory, Set<NodeIdDecodeCoordinate> spentInputs) {
         if (emitAsConnectionAdvisory) {
             warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
         var refs = classifyArguments(parentTypeName, fieldDef, table, returnTypeName, plan,
-            argsBoundElsewhere, classifyErrors);
+            spentInputs, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
         return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, rejections);
@@ -1947,27 +1952,33 @@ class FieldBuilder {
     List<ArgumentRef> classifyArguments(String parentTypeName, GraphQLFieldDefinition fieldDef,
                                         TableRef rt, String targetTypeName,
                                         NodeIdArgPlan plan, List<String> errors) {
-        return classifyArguments(parentTypeName, fieldDef, rt, targetTypeName, plan, Set.of(), errors);
+        return classifyArguments(parentTypeName, fieldDef, rt, targetTypeName, plan,
+            Set.<NodeIdDecodeCoordinate>of(), errors);
     }
 
     /**
-     * @param argsBoundElsewhere argument names the field spends outside its read surface (a
-     *        {@code @routine} chain's IN-parameter bindings), skipped entirely so they neither
-     *        yield a ref nor an unbound-argument error.
+     * @param spentInputs the coordinates the field spends outside its read surface (a
+     *        {@code @routine} chain's IN-parameter bindings), withheld entirely so they neither
+     *        yield a ref nor an unbound-argument error. A whole argument is withheld only where
+     *        the binding names the argument itself; an argument holding a spent leaf is
+     *        classified as usual and the leaf is withheld inside the input descent, which is
+     *        where {@link InputFieldResolver#resolve} and the nesting arm of
+     *        {@link BuildContext#classifyInputField} read the same set.
      */
     List<ArgumentRef> classifyArguments(String parentTypeName, GraphQLFieldDefinition fieldDef,
                                         TableRef rt, String targetTypeName,
-                                        NodeIdArgPlan plan, Set<String> argsBoundElsewhere,
+                                        NodeIdArgPlan plan, Set<NodeIdDecodeCoordinate> spentInputs,
                                         List<String> errors) {
         var fieldCondition = ctx.readConditionDirective(fieldDef);
         boolean fieldOverride = fieldCondition != null && fieldCondition.override();
         var refs = new ArrayList<ArgumentRef>();
         for (var arg : fieldDef.getArguments()) {
-            if (argsBoundElsewhere.contains(arg.getName())) {
+            if (spentInputs.contains(new NodeIdDecodeCoordinate.Argument(
+                    parentTypeName, fieldDef.getName(), arg.getName()))) {
                 continue;
             }
             var ref = classifyArgument(parentTypeName, fieldDef, arg, rt, targetTypeName,
-                fieldOverride, plan, errors);
+                fieldOverride, plan, spentInputs, errors);
             disposeRefusedNodeIdArgument(parentTypeName, fieldDef, arg, ref);
             refs.add(ref);
         }
@@ -2028,7 +2039,8 @@ class FieldBuilder {
     private ArgumentRef classifyArgument(String parentTypeName, GraphQLFieldDefinition fieldDef,
                                          GraphQLArgument arg,
                                          TableRef rt, String targetTypeName, boolean fieldOverride,
-                                         NodeIdArgPlan plan, List<String> errors) {
+                                         NodeIdArgPlan plan, Set<NodeIdDecodeCoordinate> spentInputs,
+                                         List<String> errors) {
         String name = arg.getName();
         // The use site every input surface under this argument hangs from, and the coordinate an
         // argument-carried @nodeId instruction is itself at.
@@ -2139,7 +2151,7 @@ class FieldBuilder {
             boolean enclosingOverride = fieldOverride
                 || argCondition.map(c -> c.override()).orElse(false);
             return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride,
-                    plan.participant(), useSite)) {
+                    plan.participant(), useSite, spentInputs)) {
                 case InputFieldResolver.Resolution.Ok ok -> new ArgumentRef.InputTypeArg.PlainInputArg(
                     name, typeName, nonNull, list, argCondition, ok.fields());
                 case InputFieldResolver.Resolution.Rejected r -> new ArgumentRef.UnclassifiedArg(
@@ -3388,7 +3400,9 @@ class FieldBuilder {
      *
      * <p>Read surface: the chain resolves filters and ordering against its terminus through
      * {@link #resolveTableFieldComponents}, the same call the ordinary root table arm makes, with
-     * the routine's own IN-parameter arguments excluded ({@link #routineBoundArgNames}). A
+     * the input elements the routine spends withheld ({@link #routineSpentInputs}). Spending is at
+     * leaf grain: an argument bound whole is withheld whole, and a leaf inside an argument is
+     * withheld alone, leaving its siblings to filter the terminus like any other input. A
      * catalog terminus therefore falls back to that table's primary key; a routine terminus has
      * none, so a list-shaped field there must carry {@code @defaultOrder(fields:)} and the
      * deterministic-order validator says so. Filtering is terminus-only: {@code @condition}
@@ -3397,7 +3411,8 @@ class FieldBuilder {
      */
     private GraphitronField classifyRootRoutineChain(GraphQLFieldDefinition fieldDef,
             String parentTypeName, String name, SourceLocation location) {
-        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null,
+                RoutineDirectiveResolver.Seat.READ)) {
             case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, r.rejection());
             case ChainWalk.Ok walk -> {
@@ -3436,20 +3451,21 @@ class FieldBuilder {
         var terminus = walk.tb().returnType().table();
         return resolveTableFieldComponents(parentTypeName, fieldDef, terminus,
             walk.tb().returnType().returnTypeName(), buildNodeIdArgPlan(fieldDef, terminus, null),
-            /*emitAsConnectionAdvisory=*/true, routineBoundArgNames(walk.tb().routine()));
+            /*emitAsConnectionAdvisory=*/true, routineSpentInputs(walk.tb().routine()));
     }
 
     /**
-     * The field arguments a routine node spends on its IN parameters. Read off the resolved
-     * bindings rather than off the directive text, so an {@code argMapping} entry and an
-     * identity-bound parameter are excluded by one rule. A {@code columnMapping}-bound parameter
-     * reads a column of the previous chain node and claims no argument, so it contributes none.
+     * The input elements a routine node spends on its IN parameters. Read off the resolved
+     * bindings, which is the only place the question can be answered: telling
+     * {@code filter.actorId} from {@code filter.actorId.actor_id} needs the argument's input
+     * types, and the binding carries the coordinate the resolver walked them to. A
+     * {@code columnMapping}-bound parameter reads a column of the previous chain node and claims
+     * no input element, so it carries none and contributes none.
      */
-    private static Set<String> routineBoundArgNames(RoutineRef routine) {
+    private static Set<NodeIdDecodeCoordinate> routineSpentInputs(RoutineRef routine) {
         return routine.argBindings().stream()
-            .map(RoutineRef.ArgBinding::source)
-            .filter(source -> source instanceof ParamSource.Arg)
-            .map(source -> ((ParamSource.Arg) source).path().headName())
+            .map(RoutineRef.ArgBinding::spentAt)
+            .filter(java.util.Objects::nonNull)
             .collect(Collectors.toUnmodifiableSet());
     }
 
@@ -3502,7 +3518,8 @@ class FieldBuilder {
         if (writeSurface != null) {
             return new UnclassifiedField(parentTypeName, name, location, writeSurface);
         }
-        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null)) {
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, /*headTable=*/null,
+                RoutineDirectiveResolver.Seat.WRITE)) {
             case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, r.rejection());
             case ChainWalk.Ok walk -> {
@@ -3704,7 +3721,8 @@ class FieldBuilder {
                 "a child-positioned @routine under a non-table-backed parent classifies "
                 + "but does not emit yet"));
         }
-        return switch (walkRoutineChain(fieldDef, parentTypeName, name, tbt.table())) {
+        return switch (walkRoutineChain(fieldDef, parentTypeName, name, tbt.table(),
+                RoutineDirectiveResolver.Seat.READ)) {
             case ChainWalk.Rejected r ->
                 new UnclassifiedField(parentTypeName, name, location, r.rejection());
             case ChainWalk.Ok walk -> {
@@ -3755,8 +3773,8 @@ class FieldBuilder {
                             + "parent column via columnMapping"));
                 }
                 // Read surface: filters and ordering resolve against the chain's terminus, the
-                // same call the ordinary child table arm makes, with the routine's own
-                // IN-parameter arguments excluded. A routine terminus carries no primary key, so
+                // same call the ordinary child table arm makes, with the input elements the
+                // routine spends withheld at leaf grain. A routine terminus carries no primary key, so
                 // the PK fallback lands None there and a list-shaped field needs an authored
                 // @defaultOrder; a catalog terminus orders like any table.
                 var components = routineChainComponents(parentTypeName, fieldDef, walk);
@@ -3816,7 +3834,7 @@ class FieldBuilder {
      * (multi-routine chains land typed {@code Deferred} upstream).
      */
     private ChainWalk walkRoutineChain(GraphQLFieldDefinition fieldDef, String parentTypeName,
-            String name, TableRef headTable) {
+            String name, TableRef headTable, RoutineDirectiveResolver.Seat seat) {
         var applications = fieldDef.getAppliedDirectives().stream()
             .filter(d -> DIR_ROUTINE.equals(d.getName()) || DIR_REFERENCE.equals(d.getName()))
             .toList();
@@ -3830,7 +3848,7 @@ class FieldBuilder {
             if (DIR_ROUTINE.equals(application.getName())) {
                 var resolved = routineResolver.resolve(parentTypeName, fieldDef,
                     /*isRoot=*/headTable == null,
-                    runningSource == null ? null : runningSource.tableName());
+                    runningSource == null ? null : runningSource.tableName(), seat);
                 if (resolved instanceof RoutineDirectiveResolver.Resolved.Rejected r) {
                     return new ChainWalk.Rejected(r.rejection());
                 }

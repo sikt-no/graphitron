@@ -8075,8 +8075,8 @@ class GraphitronSchemaBuilderTest {
     void orderByArgumentOnRoutineFieldResolvesAgainstTheTerminus() {
         // An @orderBy argument on a routine-backed field is an ordinary argument order over the
         // chain's terminus: the sort enum's columns resolve against the routine result table,
-        // which is what the field projects. The routine's own IN-parameter arguments are spent
-        // on the call and never reach the read surface.
+        // which is what the field projects. The input elements the routine's argMapping binds are
+        // spent on the call and never reach the read surface; every other input leaf does.
         var schema = build(TILGANG_TYPE + """
             enum TilgangOrderField { ROLLE @order(fields: [{name: "rollekode"}]) }
             enum Direction { ASC DESC }

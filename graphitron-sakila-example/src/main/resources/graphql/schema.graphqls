@@ -107,6 +107,18 @@ input RequiredActorFilter {
     actorRef: ID! @nodeId(typeName: "ActorNode")
 }
 
+# One input object carrying both halves of a routine-backed field's input: what the call spends and
+# what filters what the call returns. actorRef and minLength feed the two IN parameters of
+# films_for_actor, actorRef through the key projection; title is spent by nothing, so it filters the
+# function's own result column. Leaf-grain spending is what makes the third leaf a WHERE clause: at
+# argument grain one binding into this object consumed all of it and title was advertised, accepted
+# and silently dropped.
+input ActorFilmLeafFilter {
+    actorRef:  ID! @nodeId(typeName: "ActorNode")
+    minLength: Int!
+    title:     String
+}
+
 # The @condition rail's own filter. A node type FK-reachable from `film` in one hop, because an
 # input field carrying @nodeId resolves a route to its node type's table whether or not an
 # argMapping spends it, and `actor` is two hops from `film`. `film` reaches `language` by two keys,
@@ -247,8 +259,8 @@ type Query {
     # R704 execution fixtures: the read surface over a routine terminus. WHERE and ORDER BY are
     # different clauses of the same statement the function call sits in, so a routine-backed
     # field filters and sorts like any other read; both resolve against the chain's terminus,
-    # which here is the function result itself. The routine's own IN parameters are spent on the
-    # call and are never read as filters.
+    # which here is the function result itself. The input elements the argMapping binds are spent
+    # on the call and are never read as filters; every other input leaf is an ordinary filter.
     tilgangerAdmin(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
         @routine(
             name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr"
@@ -308,6 +320,16 @@ type Query {
     #
     # The nullable leaf: the filter is required, the @nodeId inside it is not. Omitting actorRef
     # returns every film at or above minLength; supplying one narrows to that actor's films.
+    # The surviving-leaf execution fixture: one input object whose bound leaves feed the routine
+    # and whose unbound leaf filters its result. The terminus is the function's own result (no
+    # @reference hop), so title is a column films_for_actor itself returns and the ordering is the
+    # authored @defaultOrder, a routine result having no primary key to fall back on.
+    actorFilmsFiltered(filter: ActorFilmLeafFilter!): [ActorFilm!]!
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: filter.actorRef.actor_id, pMinLength: filter.minLength"
+        )
+        @defaultOrder(fields: [{name: "film_id"}])
     filmsForOptionalActor(filter: OptionalActorFilter!, minLength: Int!): [Film!]!
         @routine(
             name: "films_for_actor_or_all"
