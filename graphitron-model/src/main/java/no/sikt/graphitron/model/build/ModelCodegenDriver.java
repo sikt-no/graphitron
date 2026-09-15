@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import org.jooq.codegen.GenerationTool;
 import org.jooq.meta.jaxb.Configuration;
 import org.jooq.meta.jaxb.Database;
+import org.jooq.meta.jaxb.ForcedType;
 import org.jooq.meta.jaxb.Generate;
 import org.jooq.meta.jaxb.Generator;
 import org.jooq.meta.jaxb.Target;
@@ -58,7 +59,19 @@ public final class ModelCodegenDriver {
                 .withIncludeRoutines(false)
                 .withIncludeIndexes(false)
                 .withIncludeSequences(false)
-                .withIncludeUDTs(false))
+                .withIncludeUDTs(false)
+                // The schema states its closed vocabularies as VARCHAR with a CHECK, thirty-nine
+                // times, and a writer spelling one of those values gets no help from the compiler.
+                // A forced type binds the column to the enum that names the same set, so a writer
+                // names a constant and a misspelling stops compiling rather than reaching the
+                // CHECK at runtime, on a store, in whichever statement happened to run first. The
+                // constraint stays where it is: it is what a reader at a SQL prompt sees and what
+                // defends a row written by anything other than this code.
+                .withForcedTypes(new ForcedType()
+                    .withUserType("no.sikt.graphitron.model.capture.document.EntryKind")
+                    .withEnumConverter(true)
+                    .withIncludeExpression("PUBLIC\\.GRAPHQL_AST_ENTRY\\.ENTRY_KIND")
+                    .withIncludeTypes(".*")))
             .withGenerate(new Generate()
                 // The DDL's COMMENT ON clauses are the schema's documentation; carrying them into
                 // the generated Javadoc is what makes the model self-describing at the call site

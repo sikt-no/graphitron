@@ -68,63 +68,63 @@ final class AstEntries {
     static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         // Roots: written inside nothing, and their own element or none.
         var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        root(dsl, graph, touchedAt, d, "TYPE_DECLARATION", d.COORDINATE);
+        root(dsl, graph, touchedAt, d, EntryKind.TYPE_DECLARATION, d.COORDINATE);
         var dd = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
-        root(dsl, graph, touchedAt, dd, "DIRECTIVE_DEFINITION", inline((String) null));
+        root(dsl, graph, touchedAt, dd, EntryKind.DIRECTIVE_DEFINITION, inline((String) null));
         var sd = GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
-        root(dsl, graph, touchedAt, sd, "SCHEMA_DEFINITION", inline((String) null));
+        root(dsl, graph, touchedAt, sd, EntryKind.SCHEMA_DEFINITION, inline((String) null));
 
         // Written inside a type declaration. The three that declare an element carry their own.
         var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-        child(dsl, graph, touchedAt, f, "FIELD_DEFINITION", f.PARENT_LINE, f.PARENT_COLUMN, f.COORDINATE);
+        child(dsl, graph, touchedAt, f, EntryKind.FIELD_DEFINITION, f.PARENT_LINE, f.PARENT_COLUMN, f.COORDINATE);
         var ev = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
-        child(dsl, graph, touchedAt, ev, "ENUM_VALUE_DEFINITION", ev.PARENT_LINE, ev.PARENT_COLUMN,
+        child(dsl, graph, touchedAt, ev, EntryKind.ENUM_VALUE_DEFINITION, ev.PARENT_LINE, ev.PARENT_COLUMN,
             ev.COORDINATE);
         var inf = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-        child(dsl, graph, touchedAt, inf, "INPUT_FIELD", inf.PARENT_LINE, inf.PARENT_COLUMN,
+        child(dsl, graph, touchedAt, inf, EntryKind.INPUT_FIELD, inf.PARENT_LINE, inf.PARENT_COLUMN,
             inf.COORDINATE);
         var im = GRAPHQL_AST_IMPLEMENTS_ENTRY;
-        inherited(dsl, graph, touchedAt, im, "IMPLEMENTS", im.PARENT_LINE, im.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, im, EntryKind.IMPLEMENTS, im.PARENT_LINE, im.PARENT_COLUMN);
         var um = GRAPHQL_AST_UNION_MEMBER_ENTRY;
-        inherited(dsl, graph, touchedAt, um, "UNION_MEMBER", um.PARENT_LINE, um.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, um, EntryKind.UNION_MEMBER, um.PARENT_LINE, um.PARENT_COLUMN);
         var td = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
-        inherited(dsl, graph, touchedAt, td, "TYPE_DIRECTIVE", td.PARENT_LINE, td.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, td, EntryKind.TYPE_DIRECTIVE, td.PARENT_LINE, td.PARENT_COLUMN);
 
         // Written inside a directive definition or the schema block, neither of which is an element.
         var dl = GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
-        inherited(dsl, graph, touchedAt, dl, "DIRECTIVE_LOCATION", dl.PARENT_LINE, dl.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, dl, EntryKind.DIRECTIVE_LOCATION, dl.PARENT_LINE, dl.PARENT_COLUMN);
         var da = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
-        inherited(dsl, graph, touchedAt, da, "DIRECTIVE_ARGUMENT", da.PARENT_LINE, da.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, da, EntryKind.DIRECTIVE_ARGUMENT, da.PARENT_LINE, da.PARENT_COLUMN);
         var op = GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
-        inherited(dsl, graph, touchedAt, op, "OPERATION_TYPE_DEFINITION", op.PARENT_LINE,
+        inherited(dsl, graph, touchedAt, op, EntryKind.OPERATION_TYPE_DEFINITION, op.PARENT_LINE,
             op.PARENT_COLUMN);
         var sdir = GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
-        inherited(dsl, graph, touchedAt, sdir, "SCHEMA_DIRECTIVE", sdir.PARENT_LINE,
+        inherited(dsl, graph, touchedAt, sdir, EntryKind.SCHEMA_DIRECTIVE, sdir.PARENT_LINE,
             sdir.PARENT_COLUMN);
 
         // Written inside a field or an enum value.
         var fa = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
-        child(dsl, graph, touchedAt, fa, "FIELD_ARGUMENT", fa.PARENT_LINE, fa.PARENT_COLUMN,
+        child(dsl, graph, touchedAt, fa, EntryKind.FIELD_ARGUMENT, fa.PARENT_LINE, fa.PARENT_COLUMN,
             fa.COORDINATE);
         var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-        inherited(dsl, graph, touchedAt, fd, "FIELD_DIRECTIVE", fd.PARENT_LINE, fd.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, fd, EntryKind.FIELD_DIRECTIVE, fd.PARENT_LINE, fd.PARENT_COLUMN);
         var evd = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
-        inherited(dsl, graph, touchedAt, evd, "ENUM_VALUE_DIRECTIVE", evd.PARENT_LINE,
+        inherited(dsl, graph, touchedAt, evd, EntryKind.ENUM_VALUE_DIRECTIVE, evd.PARENT_LINE,
             evd.PARENT_COLUMN);
 
         // The two arms whose parent relation is not fixed, resolved against what is already here.
         var ivd = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-        inherited(dsl, graph, touchedAt, ivd, "INPUT_VALUE_DIRECTIVE", ivd.PARENT_LINE,
+        inherited(dsl, graph, touchedAt, ivd, EntryKind.INPUT_VALUE_DIRECTIVE, ivd.PARENT_LINE,
             ivd.PARENT_COLUMN);
         var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-        inherited(dsl, graph, touchedAt, aa, "APPLIED_ARGUMENT", aa.PARENT_LINE, aa.PARENT_COLUMN);
+        inherited(dsl, graph, touchedAt, aa, EntryKind.APPLIED_ARGUMENT, aa.PARENT_LINE, aa.PARENT_COLUMN);
 
         values(dsl, graph, touchedAt);
     }
 
     /** An entry written inside nothing: its own coordinate where it declares one, else none. */
     private static void root(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                             Table<?> entry, String kind, Field<String> coordinate) {
+                             Table<?> entry, EntryKind kind, Field<String> coordinate) {
         var e = GRAPHQL_AST_ENTRY;
         var source = entry.field(GRAPHQL_AST_ENTRY.SOURCE_NAME);
         var line = entry.field(GRAPHQL_AST_ENTRY.SOURCE_LINE);
@@ -133,7 +133,7 @@ final class AstEntries {
             .columns(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN, e.ENTRY_KIND,
                 e.PARENT_LINE, e.PARENT_COLUMN, e.ELEMENT_COORDINATE, e.TOUCHED_AT)
             .select(dsl
-                .select(val(graph, e.GRAPH_NAME), source, line, column, inline(kind),
+                .select(val(graph, e.GRAPH_NAME), source, line, column, inline(kind, e.ENTRY_KIND),
                     inline((Integer) null), inline((Integer) null), coordinate,
                     val(touchedAt, e.TOUCHED_AT))
                 .from(entry)
@@ -149,7 +149,7 @@ final class AstEntries {
 
     /** An entry that declares an element of its own, written inside another entry. */
     private static void child(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                              Table<?> entry, String kind, TableField<?, Integer> parentLine,
+                              Table<?> entry, EntryKind kind, TableField<?, Integer> parentLine,
                               TableField<?, Integer> parentColumn, Field<String> coordinate) {
         insert(dsl, graph, touchedAt, entry, kind, parentLine, parentColumn, coordinate);
     }
@@ -159,7 +159,7 @@ final class AstEntries {
      * has none, which is what the schema block and the directive definitions leave behind.
      */
     private static void inherited(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                  Table<?> entry, String kind, TableField<?, Integer> parentLine,
+                                  Table<?> entry, EntryKind kind, TableField<?, Integer> parentLine,
                                   TableField<?, Integer> parentColumn) {
         insert(dsl, graph, touchedAt, entry, kind, parentLine, parentColumn, null);
     }
@@ -173,7 +173,7 @@ final class AstEntries {
      * against what this reading wrote rather than against a row the sweep is about to remove.
      */
     private static void insert(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                               Table<?> entry, String kind, TableField<?, Integer> parentLine,
+                               Table<?> entry, EntryKind kind, TableField<?, Integer> parentLine,
                                TableField<?, Integer> parentColumn, Field<String> coordinate) {
         var e = GRAPHQL_AST_ENTRY;
         var p = GRAPHQL_AST_ENTRY.as("parent");
@@ -181,7 +181,7 @@ final class AstEntries {
         var line = entry.field(GRAPHQL_AST_ENTRY.SOURCE_LINE);
         var column = entry.field(GRAPHQL_AST_ENTRY.SOURCE_COLUMN);
         var step = dsl
-            .select(val(graph, e.GRAPH_NAME), source, line, column, inline(kind),
+            .select(val(graph, e.GRAPH_NAME), source, line, column, inline(kind, e.ENTRY_KIND),
                 parentLine, parentColumn,
                 coordinate == null ? p.ELEMENT_COORDINATE : coordinate,
                 val(touchedAt, e.TOUCHED_AT))
@@ -222,7 +222,7 @@ final class AstEntries {
                     e.PARENT_LINE, e.PARENT_COLUMN, e.ELEMENT_COORDINATE, e.TOUCHED_AT)
                 .select(dsl
                     .select(val(graph, e.GRAPH_NAME), v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN,
-                        inline("VALUE"), parentLine, parentColumn, p.ELEMENT_COORDINATE,
+                        inline(EntryKind.VALUE, e.ENTRY_KIND), parentLine, parentColumn, p.ELEMENT_COORDINATE,
                         val(touchedAt, e.TOUCHED_AT))
                     .from(v)
                     .join(p).on(p.GRAPH_NAME.eq(val(graph, e.GRAPH_NAME)),

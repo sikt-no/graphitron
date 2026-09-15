@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.capture.document.EntryKind;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -79,19 +80,19 @@ class AstEntryIndexTest {
     @DisplayName("a declaration names its own element and an application names the one it sits on")
     void resolutionFollowsTheEnclosingElement() {
         withCapture(dsl -> {
-            assertThat(kindsAndCoordinates(dsl, "FIELD_DEFINITION"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DEFINITION))
                 .as("a field declares its own coordinate")
                 .contains("Widget.name");
-            assertThat(kindsAndCoordinates(dsl, "FIELD_DIRECTIVE"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DIRECTIVE))
                 .as("a directive on a field names the field, not itself")
                 .contains("Widget.name");
-            assertThat(kindsAndCoordinates(dsl, "FIELD_ARGUMENT"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_ARGUMENT))
                 .as("an argument declares its own coordinate")
                 .contains("Widget.name(locale:)");
-            assertThat(kindsAndCoordinates(dsl, "TYPE_DIRECTIVE"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.TYPE_DIRECTIVE))
                 .as("a directive on a type names the type")
                 .contains("Widget");
-            assertThat(kindsAndCoordinates(dsl, "ENUM_VALUE_DIRECTIVE"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.ENUM_VALUE_DIRECTIVE))
                 .as("a directive on an enum value names the value")
                 .contains("WidgetKind.SMALL");
         });
@@ -101,10 +102,10 @@ class AstEntryIndexTest {
     @DisplayName("a value names the element the expression it sits in was written on")
     void valuesResolveThroughTheirHolder() {
         withCapture(dsl -> {
-            assertThat(kindsAndCoordinates(dsl, "APPLIED_ARGUMENT"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.APPLIED_ARGUMENT))
                 .as("an argument passed to a directive names the element the directive is on")
                 .contains("Widget", "Widget.name", "WidgetKind.SMALL");
-            assertThat(kindsAndCoordinates(dsl, "VALUE"))
+            assertThat(kindsAndCoordinates(dsl, EntryKind.VALUE))
                 .as("and so does every value written inside it")
                 .contains("Widget", "Widget.name", "WidgetKind.SMALL");
         });
@@ -118,7 +119,7 @@ class AstEntryIndexTest {
                 GRAPHQL_AST_VALUE_ENTRY.GRAPH_NAME.eq(GRAPH));
             var indexed = dsl.fetchCount(GRAPHQL_AST_ENTRY,
                 GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)
-                    .and(GRAPHQL_AST_ENTRY.ENTRY_KIND.eq("VALUE")));
+                    .and(GRAPHQL_AST_ENTRY.ENTRY_KIND.eq(EntryKind.VALUE)));
             assertThat(indexed).as("indexed values against written ones").isEqualTo(values);
             assertThat(values).as("the fixture writes values at all").isPositive();
         });
@@ -151,7 +152,7 @@ class AstEntryIndexTest {
     }
 
     /** The coordinates the index resolved for one entry kind. */
-    private static List<String> kindsAndCoordinates(DSLContext dsl, String entryKind) {
+    private static List<String> kindsAndCoordinates(DSLContext dsl, EntryKind entryKind) {
         var e = GRAPHQL_AST_ENTRY;
         return dsl.select(e.ELEMENT_COORDINATE).from(e)
             .where(e.GRAPH_NAME.eq(GRAPH), e.ENTRY_KIND.eq(entryKind))
