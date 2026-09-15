@@ -539,8 +539,8 @@ What was used instead: a copy of that store, driven through `Materializations.re
 transaction by a single-file program at the H2 version the root pom pins, which is the cadence the
 item asks for and the one the register's own gates assume. It reproduces the pass exactly in shape,
 same registration order and same row counts at every one of the twenty-one, and it under-reproduces
-the wall clock by about seventy-fold: registration 12 costs 6.5 s here where the round measured
-386.1 s. The committed store is not the state a round pays in, the capture having just rewritten
+the wall clock by sixty to eighty-fold: registration 12 costs 6.5 s here where the round measured
+386.1 s, and registration 13 costs 24.8 s where the round measured 2076.0 s. The committed store is not the state a round pays in, the capture having just rewritten
 every base relation inside the transaction the refresh then runs in. So every absolute figure below
 is a floor, and every before-and-after is a controlled A/B on one store with one relation changed.
 The ratios are what the delivery rests on, and the two that decide a lever are 185-fold and
@@ -580,8 +580,10 @@ filter role's own refresh statement on the store, in transaction:
 | left joins, the rule a table | 0.17 s
 |===
 
-So the correlation was never the cost, and the rewrite is marginally the worse shape once the rule
-is a table. What costs is the rule being re-expanded as an unindexable derived table per probe,
+The two middle rows are inside the run-to-run spread rather than a gain: the same two forms driven
+through the whole pass, which is the less sensitive instrument and the one a round actually pays,
+come out at 23.9 s and 23.8 s. So the correlation was never the cost, and the rewrite is marginally
+the worse shape once the rule is a table. What costs is the rule being re-expanded as an unindexable derived table per probe,
 which is what the register exists for. The rewrite is reverted and
 `intent_input_field_column_match` is registered instead, with an index over the six columns its two
 readers probe, which are the six its own `ROW_NUMBER` partitions by. Both refuted candidates and
