@@ -159,7 +159,8 @@ class FactSchemaGateTest {
           filmCategories(
             updatedSince: String @field(name: "last_update"),
             inCategory: ID @nodeId(typeName: "Category"),
-            filter: FilmCategoryFilter
+            filter: FilmCategoryFilter,
+            byFilmTitle: String @reference(path: [{table: "film"}]) @field(name: "title")
           ): [FilmCategory!]!
           categories: [Category!]!
           filmsForActor(actorId: ID!, minLength: Int): [Film!]!
@@ -897,7 +898,10 @@ class FactSchemaGateTest {
      * on {@code films} because {@code Film} is bound twice here, by its own {@code @table} and by
      * being what a {@code @routine} field returns, so the argument scope declines at every argument
      * of a {@code Film}-returning field; and the {@code @reference} whose element names a table a
-     * foreign key reaches is what puts one in {@code intent_field_reference_step_hop}. Without any
+     * foreign key reaches is what puts one in {@code intent_field_reference_step_hop}; and the
+     * {@code byFilmTitle} argument, whose own {@code @reference} walks the same foreign key from
+     * the argument's side, is what puts one in {@code intent_argument_reference_step_target}, the
+     * field-site reference above reaching only the field-site walk. Without any
      * of them the case above passes over an empty
      * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.
      */

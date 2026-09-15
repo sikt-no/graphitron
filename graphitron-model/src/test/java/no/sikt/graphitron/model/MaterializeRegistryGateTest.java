@@ -72,7 +72,7 @@ class MaterializeRegistryGateTest {
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
      */
-    private static final int REGISTRATIONS = 22;
+    private static final int REGISTRATIONS = 23;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -106,9 +106,19 @@ class MaterializeRegistryGateTest {
      * displaces nothing. A registration lengthens the pass only when it stages the longest chain,
      * and that is a property of the register rather than of the rule being registered.
      *
+     * <p>Sixteen since {@code intent_argument_reference_step_target} was registered, and by that
+     * mechanism a fourth time: it sat between the registered {@code intent_argument_scope_table}
+     * it reads and the registered {@code intent_node_id_instruction} and
+     * {@code intent_node_id_decode_hop} that read it, so it is exactly the unregistered
+     * intermediate the reachability walk was seeing straight through. Depth bought the same kind
+     * of fall as the pairs above: on a consumer store the pass fell 22.7 s to 16.9 s for a refresh
+     * of its own of 25 milliseconds, and the register row carries the figures. The registration
+     * beside it in the same increment, {@code intent_input_field_column_match}, moved this figure
+     * by nothing, for the reason the paragraph above gives.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 15;
+    private static final int REFRESH_STAGES = 16;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
