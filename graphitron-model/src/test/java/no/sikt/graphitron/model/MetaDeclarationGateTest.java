@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.META_GRAIN;
 import static no.sikt.graphitron.model.Tables.META_MATERIALIZE;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
+import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
@@ -58,6 +59,8 @@ import static org.jooq.impl.DSL.table;
  */
 class MetaDeclarationGateTest {
 
+    private static final no.sikt.graphitron.model.tables.MetaStatedRelation STATED = META_STATED_RELATION;
+
     @Test
     @DisplayName("every declaration names an observed relation, and the undeclared roster only shrinks")
     void theUndeclaredRosterOnlyShrinks() {
@@ -68,15 +71,20 @@ class MetaDeclarationGateTest {
                 .from(META_RELATION).fetch(0, String.class));
             var registered = new HashSet<>(dsl.select(META_MATERIALIZE.SOURCE_VIEW_NAME)
                 .from(META_MATERIALIZE).fetch(0, String.class));
+            var stated = statedRelations(dsl);
 
             assertThat(declared)
                 .as("declarations naming relations the schema does not declare")
                 .isSubsetOf(observed);
+            assertThat(stated)
+                .as("stated relations the schema does not declare")
+                .isSubsetOf(observed);
 
-            var undeclared = undeclared(observed, declared, registered);
+            var undeclared = undeclared(observed, declared, registered, stated);
             assertThat(undeclared)
                 .as("the observed relations with no meta_relation row and no meta_materialize row"
-                    + " naming them as a rule's source view, against the frozen roster; a missing"
+                    + " naming them as a rule's source view and no meta_stated_relation row,"
+                    + " against the frozen roster; a missing"
                     + " entry is a new relation that must be declared rather than added to the"
                     + " roster, an extra entry is a declared, registered or retired relation whose"
                     + " line must be removed")
@@ -106,7 +114,7 @@ class MetaDeclarationGateTest {
             var sources = new HashSet<>(register.getValues(META_MATERIALIZE.SOURCE_VIEW_NAME));
             var targets = register.getValues(META_MATERIALIZE.TARGET_TABLE_NAME);
 
-            var undeclared = undeclared(observed, declared, sources);
+            var undeclared = undeclared(observed, declared, sources, statedRelations(dsl));
 
             assertThat(sources)
                 .as("every registered source view is an observed relation, so the subtraction"
@@ -282,9 +290,14 @@ class MetaDeclarationGateTest {
     private static List<String> echoOffenders(DSLContext dsl) {
         var comments = relationComments(dsl);
         var offenders = new ArrayList<String>();
+        var rows = new ArrayList<org.jooq.Record3<String, String, String>>();
         dsl.select(META_RELATION.RELATION_NAME, META_RELATION.GRAIN_TEXT, META_RELATION.EXAMPLE)
-            .from(META_RELATION)
-            .fetch()
+            .from(META_RELATION).fetch().forEach(rows::add);
+        // A stated relation owes the same echo: its rows come from this file rather than a
+        // gatherer, which changes who fills it and nothing about how it describes itself.
+        dsl.select(STATED.RELATION_NAME, STATED.GRAIN_TEXT, STATED.EXAMPLE)
+            .from(STATED).fetch().forEach(rows::add);
+        rows
             .forEach(row -> {
                 String expected = row.value2() + " " + row.value3();
                 String actual = comments.get(row.value1());
@@ -396,10 +409,12 @@ class MetaDeclarationGateTest {
      * disagree about what the exemption is.
      */
     private static Set<String> undeclared(Set<String> observed, Set<String> declared,
-                                          Set<String> registeredSourceViews) {
+                                          Set<String> registeredSourceViews,
+                                          Set<String> stated) {
         return observed.stream()
             .filter(relation -> !declared.contains(relation))
             .filter(relation -> !registeredSourceViews.contains(relation))
+            .filter(relation -> !stated.contains(relation))
             .collect(Collectors.toSet());
     }
 
@@ -414,6 +429,11 @@ class MetaDeclarationGateTest {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The relations this file supplies the rows of, which declare themselves without a gatherer. */
+    private static Set<String> statedRelations(DSLContext dsl) {
+        return new HashSet<>(dsl.select(STATED.RELATION_NAME).from(STATED).fetch(0, String.class));
     }
 
     /** Every relation's comment, views included, lowercased names, from the engine's catalog. */

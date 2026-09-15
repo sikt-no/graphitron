@@ -781,6 +781,11 @@ class FactCaptureAgreementTest {
         registrations.put("meta_gatherer_dependency", Arm.DERIVED);
         registrations.put("meta_grain", Arm.DERIVED);
         registrations.put("meta_relation", Arm.DERIVED);
+        registrations.put("meta_stated_relation", Arm.DERIVED);
+        // The lint vocabulary, on the meta_ rosters' terms: rows this file supplies, so there
+        // is no gatherer whose reading could be compared against anything. What pins it is
+        // LintRuleCatalogueTest, against the enum the rows state.
+        registrations.put("lint_rule", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
         registrations.put("rejection_validation_error_directive", Arm.ORACLE);

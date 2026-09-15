@@ -637,11 +637,23 @@ class FactSchemaGateTest {
     void everyRelationLeadsWithItsPartitionDimension() {
         try (var store = GraphitronModelStore.open()) {
             var leading = leadingPrimaryKeyColumns(store);
+            var stated = statedRelations(store);
             var offenders = new java.util.ArrayList<String>();
             for (var entry : leading.entrySet()) {
                 String table = entry.getKey();
                 String column = entry.getValue();
                 String expected;
+                // A stated relation holds rows this file supplies, so there is no graph to keep
+                // apart and its key is its own vocabulary's: which one that is varies by relation
+                // and is not this gate's to know. The claim inverts rather than lapsing, because
+                // leading with the partition dimension here would mean a relation partitioned by
+                // something its rows cannot vary by.
+                if (stated.contains(table)) {
+                    if ("graph_name".equals(column)) {
+                        offenders.add(table + " states its own rows yet leads with graph_name");
+                    }
+                    continue;
+                }
                 if (table.startsWith("sql_") || table.startsWith("jvm_")
                     || table.startsWith("code_")) {
                     expected = "source_name";
@@ -674,6 +686,14 @@ class FactSchemaGateTest {
             }
             assertThat(offenders).as("relations keyed without their partition dimension").isEmpty();
         }
+    }
+
+    /** The relations the schema supplies the rows of, which carry no graph partition. */
+    private static java.util.Set<String> statedRelations(GraphitronModelStore store) {
+        return new java.util.HashSet<>(store.dsl()
+            .select(no.sikt.graphitron.model.Tables.META_STATED_RELATION.RELATION_NAME)
+            .from(no.sikt.graphitron.model.Tables.META_STATED_RELATION)
+            .fetch(0, String.class));
     }
 
     /**

@@ -10,9 +10,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+
+import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
 
 /**
  * One store per test thread, kept for the thread's lifetime, with its rows cleared between bodies.
@@ -241,7 +244,9 @@ final class ThreadConfinedStore {
         GraphitronModelStore store = FactStores.inMemory();
         DSLContext dsl = store.dsl();
         List<String> baseTables = baseTables(dsl);
-        List<String> cleared = baseTables.stream().filter(ThreadConfinedStore::clearable).toList();
+        Set<String> stated = statedRelations(dsl);
+        List<String> cleared = baseTables.stream()
+            .filter(relation -> clearable(relation, stated)).toList();
         String census = census(baseTables);
         Map<String, Integer> bootState = counts(dsl, census);
         verifyBootState(cleared, bootState);
@@ -253,9 +258,26 @@ final class ThreadConfinedStore {
     /**
      * Whether a clear empties {@code relation}. The registry family and the compatibility stamp are
      * the store's own rows rather than a case's, and a boot is what puts them there.
+     *
+     * <p>So is every relation the schema states the rows of, and those are read rather than spelled:
+     * {@code meta_stated_relation} names exactly them, so a stated relation added later is excluded
+     * by having been declared rather than by someone remembering this method. The two exclusions
+     * beside it stay spelled because neither is a stated relation: the compatibility stamp is
+     * written at boot, and the registry family holds one resident whose rows a boot-time routine
+     * derives.
      */
-    private static boolean clearable(String relation) {
-        return !relation.startsWith("META_") && !relation.equals("STORE_STAMP");
+    private static boolean clearable(String relation, Set<String> stated) {
+        return !relation.startsWith("META_") && !relation.equals("STORE_STAMP")
+            && !stated.contains(relation);
+    }
+
+    /** The relations this schema supplies the rows of, upper-cased as the catalog names them. */
+    private static Set<String> statedRelations(DSLContext dsl) {
+        return dsl.select(META_STATED_RELATION.RELATION_NAME)
+            .from(META_STATED_RELATION)
+            .fetch(0, String.class).stream()
+            .map(name -> name.toUpperCase(Locale.ROOT))
+            .collect(Collectors.toSet());
     }
 
     /**
