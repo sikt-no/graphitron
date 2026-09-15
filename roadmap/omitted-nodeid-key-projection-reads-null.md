@@ -1,7 +1,7 @@
 ---
 id: R948
 title: "An omitted nullable @nodeId in a key projection reads as null, not as an NPE"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: nodeid
@@ -1121,3 +1121,92 @@ quotes, under the anchor and heading the item names.
   nothing breaks by leaving it, but it is the page's one remaining sentence implying a primitive
   parameter gets a stand-aside, which is what the docs section removes from the third bullet. Cheap to
   fold into the same edit.
+
+### Round 7 (2026-09-15, In Review -> Done, reviewer session 01VTwVnbDo8RRkXQ19rabLJR)
+
+Verdict: withhold. One finding, and it is narrow: the code is correct, the goal is delivered, and the
+remedy is one sentence in one comment on a view this commit already rewrites.
+
+Question two passes outright, so it is worth stating first, because the rework below should not be
+read as doubt about the delivery. The evidence is the execution tier rather than the build.
+`OptionalNodeIdProjectionExecutionTest` runs six cases against PostgreSQL and each asserts two halves,
+the rows the consumer decided absence means and an empty error channel, which is what says the
+redacted internal error is gone rather than reworded. The three coordinates the item named are all
+there and all distinguish: the nullable leaf, the non-null leaf under an omitted input object, and the
+`@condition` method that reads the projected null itself, the last carrying `override: true` so the
+rows report the method's own answer and not an implicit predicate agreeing with it. Omitting the
+filter returns every seeded film and asking for Italian returns none, so neither arm is vacuous. The
+two negatives ride beside them: a malformed id and one encoded for another node type still fail the
+request. Without the guard every one of these NPEs, so they are evidence and not decoration. The
+emission tier pins the hoist through named `TypeSpecAssertions` helpers, `invocationTakesHoistedRead`
+asking all three claims at once and `invocationHoldsAColumnRead` stating the negative separately, and
+no delivered test carries a code string of its own.
+
+Question one is where the finding sits, and everything about the implementation checks out first. All
+five steps landed as approved. The sealed two-arm `Key` makes the column local follow its record local
+by construction; the invariant throw is in `ProjectedKeyReads.columnType`, the tier that reads the
+type, rather than in `KeyProjection`'s constructor; the box is applied unconditionally, so the local
+holds the absence at every path shape. No main-source consumer changed, and `RootLauncherRenderer.
+routineBody` still calls `RoutineCallEmitter.emitCall` before it drains `declarations()`, which is
+what keeps the ordering sound. The store half is the one-word `JOIN` to `LEFT JOIN` with
+`parameter_type` projected inside the arm's own `DISTINCT`, and all three readers behave as the
+blast-radius paragraph predicts: the projection resolves on its `p.java_type IS NULL` arm,
+`KEY_COLUMN_TYPE_MISMATCH` is NULL-false on the new rows, and the decode slot sees the same row it was
+null-extended into. The refusal reads `java_type IS NULL`, the eight spellings, and `candidates = 1`,
+exactly the approved predicate. Round 6's second non-blocking note was taken: `routine.adoc`'s
+`== Constraints` bullet lost "and the parameter is a reference type" alongside the third bullet's
+"a parameter declared `int` rather than `Integer`".
+
+*The finding. The retired stand-aside survives in `intent_resolved_node_key_projection`'s view
+comment.* That comment still reads, of the gate it describes:
+
+> A parameter whose name the classpath census cannot report (a consumer compiled without
+> `-parameters`, a primitive int, a reference resolving no method) ... both leave the pair projecting
+> exactly as it did before this predicate existed. ... Standing aside leaves those where they were,
+> projections whose types nothing checked, with the compiler's own error as the backstop it always
+> was.
+
+Two clauses are false for the primitive member of that list once step 5 lands, and they are false in
+different ways. The census does now report a primitive parameter's name: the widening makes the
+name-matched `jvm_method_parameter` row the membership condition and leaves only the type NULL, which
+is the whole point of the `LEFT JOIN`, so "whose name the classpath census cannot report" no longer
+describes it. And its type is no longer unchecked: `ArgmappingProjectionDefects.primitiveParameters`
+refuses it by name with the spelling quoted and the boxed type named, so the compiler is not the
+backstop and there is no stand-aside left to leave it where it was. A contributor reading that
+sentence learns that declaring `int` builds clean and fails later at their own compiler, which is the
+behaviour this item removed.
+
+What makes it a finding rather than a note is that the item identified this exact claim as falsified
+and acted on it twice, in `routine.adoc`'s third build-error bullet and again in the `== Constraints`
+bullet round 6 flagged, while the same claim in the view comment was never considered. The Spec rounds
+did look at this comment, repeatedly, but only at its column half: round 3 asked where the rewrite
+lands for "a column the catalog cannot type", step 1 answered by dropping that refusal, and the
+parameter half of the same enumeration went with it unexamined. So `## Retired vocabulary` names three
+sites, all three delivered, and misses a fourth. Under `roadmap/workflow.adoc`'s Retirement sweep this
+gate owes a skim for "prose paraphrasing the retired mechanism, which a token grep cannot catch", and
+this is that prose, on the relation the emitter reads, in a file this commit edits.
+
+*What would satisfy it.* Rewrite the two clauses so the primitive leaves the stand-aside list and the
+backstop sentence covers only what still stands aside there, an array, a type variable, and a consumer
+compiled without `-parameters`; the item's own step 5 prose and `ArgmappingProjectionDefects`'s
+`BOXED_BY_PRIMITIVE` javadoc already draw that line correctly and can be followed. Add the entry to
+`## Retired vocabulary` so the record says what moved. Nothing else is owed: the code, the tests and
+the user-facing docs are right as delivered, and the next pass is that edit plus a verification build.
+
+*Checked and clean, so the next gate need not redo them.* Full reactor `mvn install -Plocal-db`,
+`BUILD SUCCESS`, fifteen modules, zero failures and zero errors, with every test this item names
+confirmed run rather than skipped: `ArgmappingKeyProjectionEmissionPipelineTest` 13,
+`ArgmappingProjectionRejectionPipelineTest` 15, `OptionalNodeIdProjectionExecutionTest` 6,
+`ArgmappingProjectionDefectsTest` 11, and the two moved gates, `ChainTerminusTest` 12 and
+`FixtureWarningsGateTest` at its repinned line 578. The generated sources compile at `release 17`, so
+the boxed local costs a consumer nothing. User-facing-doc check passes: the two `.adoc` edits carry no
+roadmap marker, no phase vocabulary and no plan reference. The rest of the Retirement sweep passes:
+`invocationTakesProjectedRead`, "Absence is therefore four facts" and "how many distinct types
+resolved for this pair" are all absent from the tree, and the surviving `get(Tables.` narrations
+elsewhere describe unrelated mechanisms. No code-string assertions on generated method bodies in any
+delivered test.
+
+*Non-blocking, no reply needed.* Round 6's first note stands as delivered: `primitiveParameters`
+carries no site conjunct, so a `@service` key projection into a primitive draws this refusal beside
+the deferral it already draws. Both are build errors and the predicate is the approved one, so this is
+a statement about emitting sites rather than about the population, exactly as round 6 said.
