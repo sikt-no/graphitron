@@ -1,7 +1,7 @@
 ---
 id: R950
 title: "A @routine spends the leaves its argMapping binds, not the arguments they sit in"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: routine
@@ -826,3 +826,60 @@ and all four carry it as described. There is a fifth, in
 `GraphitronSchemaBuilderTest.orderByArgumentOnRoutineFieldResolvesAgainstTheTerminus`, reading "The
 routine's own IN-parameter arguments are spent on the call and never reach the read surface". The
 retirement sweep at the Done gate finds it; listing it costs a line.
+
+### Round 6 (2026-09-15, Spec -> Ready, reviewer session 01Kni5Q3bNsqnEPhfpd3Kki3)
+
+Verdict: sign off, status moves to `Ready`. Both gate questions pass. Round 5's blocking finding is
+settled and the revision that settled it is narrow: the `## Tests` execution bullet and the
+validator-reach bullet are back, the section no longer ends mid-sentence, and nothing else in the
+plan body moved. One non-blocking note, plus one addition to the retirement list.
+
+Question one. A `@routine`-backed field whose `argMapping` reaches into an input-object argument
+today consumes the whole argument: `argMapping: "pActorId: filter.actorId.actor_id"` spends all of
+`filter`, so every other field of that input object is published in the emitted SDL, accepted from a
+client, and discarded, with no verdict and a green build. The client filters and gets rows back that
+the filter named. Afterwards only the leaves the `argMapping` names are spent; every other leaf is an
+ordinary filter against the chain terminus, binding by `@field(name:)` or by name; a leaf naming no
+result column fails the build with the message a table-backed field already gives it; and on a
+Mutation `@routine`, which has no filter surface at all, an unspent leaf or an unnamed flat argument
+is a build error instead. A hard switch at upgrade, owned by the fourth decision.
+
+Viable, and the restored execution case is buildable rather than aspirational.
+`RoutineFieldExecutionTest` is `@ExecutionTier` in `graphitron-sakila-example` and already asserts
+narrowed rows over a routine result (`developerConditionFiltersTheRoutineResult`); `films_for_actor`
+already backs fields in that schema; and key projection into a routine parameter already has fixtures
+there (`Query.filmsForOptionalActor`, `argMapping: "pActorId: filter.actorRef.actor_id"`). The
+catalog agrees with the Goal: `films_for_actor(p_actor_id INTEGER, p_min_length INTEGER) RETURNS
+TABLE(film_id INTEGER, title TEXT)`, so both IN parameters are bound and `title` is a real result
+column that the function itself returns.
+
+Question two. I checked the seats rather than carrying rounds 4 and 5 forward, and the design holds
+where it stands. The verification narrative is in this review commit's message; the three things that
+most decide it: `resolveNode` is the resolver's only shared seat and its javadoc says so verbatim,
+its only non-rejected arm being `bindArgs`, which holds `FieldBuilder.argSlotTypes(fieldDef)`; the
+read/write discriminator has somewhere to come from, `walkRoutineChain` having exactly three callers
+that already stand apart by seat, with a seat-gating precedent in the tree at that same boundary; and
+step 3's "exactly two enumerators" survives the one thing that could break it, `@lookupKey` on a
+routine-backed field yielding a deferred rejection before `routineChainComponents` runs, so
+`classifyPlainLookupKeyArg` and `TypeBuilder.resolveInputFields` are not a third enumerator on this
+descent. The blast radius is as stated: every Mutation `@routine` field in the sakila example schema
+binds every leaf and every argument, and `RoutineMutationWritePipelineTest`'s fixtures do too, so
+`ArgmappingKeyProjectionEmissionPipelineTest`'s `SHARED_ID_SDL` is the one fixture that changes
+verdict. I would hand this to an implementer as it stands.
+
+**Note (non-blocking): the `SHARED_ID_SDL` repair cannot be a binding.** `## Tests` says the fixture
+"goes red under this rule and is repaired in the same change by binding `customerId`". Binding is not
+available there. `rent_film` has two IN parameters and the fixture exists precisely because
+`SHARED_ID_SDL` points both of them at `input.inventoryId.inventory_id`, so there is no parameter
+left for `RentFilmInput.customerId` to bind to, and repointing one would destroy what the test
+asserts ("one declaration", "one guarded read of the one column both parameters want"). The
+achievable repair is to take the leaf off the input type for that variant, a second `.replace` beside
+the one that derives `SHARED_ID_SDL` from `SDL`, which leaves the assertion intact. Non-blocking
+because both repairs preserve the same assertion and neither touches the item's seats, verdicts or
+acceptance cases; the implementer settles it locally in a line.
+
+**Note (non-blocking): a sixth home for the retired sentence.** `## Retired vocabulary` lists five
+and all five carry it as described. The argument-grain reading also sits in the read-surface comment
+inside `FieldBuilder.classifyChildRoutineChain` ("with the routine's own IN-parameter arguments
+excluded"), the child-position twin of the `classifyRootRoutineChain` javadoc the list already names.
+The retirement sweep at the Done gate finds it; listing it costs a line.

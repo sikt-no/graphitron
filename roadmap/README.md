@@ -22,13 +22,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-09 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R948` | An omitted nullable @nodeId in a key projection reads as null, not as an NPE | In Review | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](omitted-nodeid-key-projection-reads-null.md) |
-| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Spec | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R950` | A @routine spends the leaves its argMapping binds, not the arguments they sit in | Ready | 2026-09-15 <sub>created 2026-09-14</sub> | [plan](spent-routine-argument-hides-filter-leaves.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Ready | 2026-09-08 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
@@ -465,7 +465,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### routine
 
 - `R627` [**@routine binds a list-shaped argument leaf to a scalar IN parameter without rejection**](routine-arg-leaf-cardinality-gate.md) — Backlog, bug
-- `R950` [**A @routine spends the leaves its argMapping binds, not the arguments they sit in**](spent-routine-argument-hides-filter-leaves.md) — Spec, bug
+- `R950` [**A @routine spends the leaves its argMapping binds, not the arguments they sit in**](spent-routine-argument-hides-filter-leaves.md) — Ready, bug
 - `R719` [**A mutation @routine carrier is decided by the payload shape, not by whether @reference was written**](routine-carrier-discriminator-from-payload-shape.md) — Backlog, architecture
 - `R816` [**Refuse a routine write's first-hop condition instead of deferring it**](routine-write-reread-drops-first-hop-condition.md) — Spec, generator
 - `R454` [**Routine write result shapes: procedures, scalar/void routines, single-node Mutation @routine**](routine-write-result-shapes.md) — Backlog, feature
