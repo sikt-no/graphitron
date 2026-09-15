@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R943` | A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds | Ready | 2026-09-15 <sub>created 2026-09-11</sub> | [plan](refresh-pass-dominates-the-dev-round.md) |
+| `R943` | A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds | In Progress | 2026-09-15 <sub>created 2026-09-11</sub> | [plan](refresh-pass-dominates-the-dev-round.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-13 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -600,7 +600,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### dev-loop
 
-- `R943` [**A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds**](refresh-pass-dominates-the-dev-round.md) — Ready, dx
+- `R943` [**A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds**](refresh-pass-dominates-the-dev-round.md) — In Progress, dx
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
 - `R925` [**A java_file row's stamp and its declarations come from one read of the file**](one-read-behind-a-java-file-row.md) — Backlog, correctness
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt

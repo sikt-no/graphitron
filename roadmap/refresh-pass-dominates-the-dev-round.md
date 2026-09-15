@@ -1,7 +1,7 @@
 ---
 id: R943
 title: "A dev round on a consumer schema answers in seconds: three registrations are over an hour of the refresh pass and eleven others are six seconds"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 1
 theme: dev-loop
