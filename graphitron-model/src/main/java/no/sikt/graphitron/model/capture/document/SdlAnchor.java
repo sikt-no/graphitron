@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_E
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
@@ -147,6 +148,10 @@ public final class SdlAnchor {
         argumentDirectiveArguments(dsl, graph, touchedAt);
         enumValueDirectiveArguments(dsl, graph, touchedAt);
         schemaDirectiveArguments(dsl, graph, touchedAt);
+        // Last of the writers, and after the element anchors on purpose: every row it writes carries
+        // a foreign key into one, and it resolves each entry's enclosing element from the rows the
+        // arms before it left.
+        AstEntries.write(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
 
@@ -1416,7 +1421,7 @@ public final class SdlAnchor {
         GRAPHQL_TYPE_DIRECTIVE, GRAPHQL_FIELD_DIRECTIVE, GRAPHQL_ARGUMENT_DIRECTIVE,
         GRAPHQL_ENUM_VALUE_DIRECTIVE, GRAPHQL_SCHEMA_DIRECTIVE, GRAPHQL_TYPE_DIRECTIVE_ARG,
         GRAPHQL_FIELD_DIRECTIVE_ARG, GRAPHQL_ARGUMENT_DIRECTIVE_ARG,
-        GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG, GRAPHQL_SCHEMA_DIRECTIVE_ARG);
+        GRAPHQL_ENUM_VALUE_DIRECTIVE_ARG, GRAPHQL_SCHEMA_DIRECTIVE_ARG, GRAPHQL_AST_ENTRY);
 
     /**
      * Deletes this graph's anchor rows that this reading did not derive.

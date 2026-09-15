@@ -1111,6 +1111,47 @@ COMMENT ON COLUMN graphql_ast_value_entry.object_field_name IS 'the object field
 COMMENT ON COLUMN graphql_ast_value_entry.kind IS 'which of the nine forms the parser read here. An attribute of the value and not a different fact, which is why one relation holds all nine: every row says the same thing, that this slot was written with this literal';
 COMMENT ON COLUMN graphql_ast_value_entry.written_text IS 'the leaf''s text as the author wrote it, with a string''s quotes removed and nothing else interpreted: an int stays the digits, an enum stays the name, a boolean stays true or false. Null exactly for a list, an object and the null literal, which carry no text of their own. Not coerced to a type, because what a number means is a question for whoever anchors it against the argument''s declared type';
 
+CREATE TABLE graphql_ast_entry (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  entry_kind         VARCHAR NOT NULL,
+  parent_line        INT,
+  parent_column      INT,
+  element_coordinate VARCHAR,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, element_coordinate)
+    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK ((parent_line IS NULL) = (parent_column IS NULL)),
+  CHECK (entry_kind IN ('TYPE_DECLARATION', 'DIRECTIVE_DEFINITION', 'SCHEMA_DEFINITION',
+                        'FIELD_DEFINITION', 'ENUM_VALUE_DEFINITION', 'IMPLEMENTS',
+                        'UNION_MEMBER', 'DIRECTIVE_LOCATION', 'OPERATION_TYPE_DEFINITION',
+                        'FIELD_ARGUMENT', 'INPUT_FIELD', 'DIRECTIVE_ARGUMENT',
+                        'TYPE_DIRECTIVE', 'FIELD_DIRECTIVE', 'INPUT_VALUE_DIRECTIVE',
+                        'ENUM_VALUE_DIRECTIVE', 'SCHEMA_DIRECTIVE', 'APPLIED_ARGUMENT',
+                        'VALUE')),
+  CHECK (element_coordinate IS NOT NULL OR entry_kind IN
+    ('SCHEMA_DEFINITION', 'OPERATION_TYPE_DEFINITION', 'SCHEMA_DIRECTIVE',
+     'DIRECTIVE_DEFINITION', 'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT',
+     'INPUT_VALUE_DIRECTIVE', 'APPLIED_ARGUMENT', 'VALUE'))
+);
+COMMENT ON TABLE graphql_ast_entry IS 'Every written position the entry stratum holds, in one relation: which kind of entry sits there, what it was written inside, and which schema element encloses it. For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field''s declaration and naming the element Widget.name.';
+COMMENT ON COLUMN graphql_ast_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_entry.source_name IS 'the file the entry was written in, carried from the arm''s own column; half of the position that is this relation''s whole key';
+COMMENT ON COLUMN graphql_ast_entry.source_line IS 'line of the entry, 1-based per the graphql-java convention every entry relation follows';
+COMMENT ON COLUMN graphql_ast_entry.source_column IS 'column of the entry, on the same convention. A position identifies a written thing, which is what lets this relation hold nineteen populations without a discriminator in its key';
+COMMENT ON COLUMN graphql_ast_entry.entry_kind IS 'which entry relation this row came from, named for the relation rather than for the grammar so the union is checkable against the schema. It tells a reader where the parts are: a reader wanting more than the position, the shape and the enclosing element joins the named relation on this same key';
+COMMENT ON COLUMN graphql_ast_entry.parent_line IS 'line of the entry this one was written inside, null at a root (a type declaration, a directive definition, the schema definition). Carried from the arm''s own parent columns, which three of the nineteen hold with no foreign key because their parent may be one of several relations. This resolves them for a reader and not for the schema: a derived relation cannot be the referent of the rows it is derived from';
+COMMENT ON COLUMN graphql_ast_entry.parent_column IS 'column of the same, null with its sibling exactly at a root';
+COMMENT ON COLUMN graphql_ast_entry.element_coordinate IS 'the schema element this entry declares, or where it declares none, the nearest one enclosing it: the nearest ancestor along parent_line that declares an element, which is one rule rather than nineteen. So a directive applied to a field, an argument passed to that directive, and a string nested three deep inside that argument''s value all name the field, because the field is the element an author is looking at when any of them is on screen. Null where no element encloses the entry at all, which is the schema block and what is written inside it, and today also a directive definition and its parts, directives being schema elements this store holds no anchor for yet. The CHECK beside it names those kinds: a kind not on that list may never be null, so a gap in the union''s resolution fails the write instead of reading as an entry that happens to enclose nothing';
+COMMENT ON COLUMN graphql_ast_entry.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. A relation keyed on this one cascades rather than sweeping alongside it, a finding at a position the corpus no longer holds being no finding at all';
+
 CREATE TABLE graphql_field (
   graph_name          VARCHAR NOT NULL,
   type_name           VARCHAR NOT NULL,
@@ -13508,6 +13549,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-written-value',
    'one value node written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-entry-position',
+   'one position in one SDL document, whatever the parse read there',
+   'graph_name, source_name, source_line, source_column', 'sdl'),
   ('sdl-parsed-selection',
    'one leaf selection of one field set, at its index in the list the grammar reads it as, under the application that wrote it',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
@@ -13748,6 +13792,10 @@ INSERT INTO meta_relation VALUES
    'A value as one document wrote it: this position in this file wrote a value of this kind, inside the value that encloses it where one does, for the node that holds the whole expression.',
    'For example @reference(path: [{table: "film_actor"}]) writes three rows, the list, the object at index 0, and the string at the object field table, under the applied argument that holds them.',
    'One relation for a recursive thing, because a value is one kind of node however deep it sits: a string written at the top of an argument and a string written inside an object two levels down state the same fact, that this slot was written with this literal, and splitting them by depth or by kind would be splitting on an attribute. The nine kinds are a column for that reason, with a check naming them, and the leaf text is one column rather than one per type because coercing a written literal is the work of whoever anchors it against the declared type. The parent reference is a key back into this relation and the holder reference is not: an enclosing value is always a value, while a holder is an applied argument or one of three kinds of declaration carrying a default, and picking which relation holds it is a resolution. Keyed by the position the node was written at, like everything else in this family, so two documents writing one expression are two trees. The holder is repeated on every node rather than held at the root because the alternative is a recursive read on a family whose whole argument is that readers should not be doing recursive work; the same choice graphitron_argmapping_candidate already made. This is the decomposition graphql_ast_applied_argument_entry.value_sdl and the three default_value_sdl columns hold as one string, and those columns are owed a removal once nothing reads them.'),
+  ('graphql_ast_entry', 'sdl-entry-position', 'sdl',
+   'Every written position the entry stratum holds, in one relation: which kind of entry sits there, what it was written inside, and which schema element encloses it.',
+   'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field''s declaration and naming the element Widget.name.',
+   'Nineteen entry relations share a primary key and nothing else, so a reader holding a position has to know which of them to look in before it can ask anything, and a relation naming a position has nothing to reference. Derived rather than a supertype, which is the difference between this and graphql_element: the entry relations neither reference it nor wait for it, so the stratum keeps the per-file cadence its whole design rests on. The enclosing element is the nearest ancestor along the parent edge that declares one, a rule applied once here rather than nineteen times in nineteen shapes that could each drift, which is why a directive on a field, an argument passed to it and a string nested inside that argument all name the field: that is the element an author reading the line is looking at. Three of the nineteen carry a parent position with no foreign key, their parent being one of several relations, and this gives a reader the join they lack but cannot give them a constraint, being derived from those same relations and written after them. A null coordinate is the schema block and what is written inside it, and today a directive definition and its parts, directives being schema elements this store holds no anchor for yet; the check beside the column names those kinds, so a gap in the resolution fails the write instead of reading as an entry that encloses nothing.'),
   ('graphql_element', 'schema-element', 'sdl',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
