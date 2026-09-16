@@ -171,7 +171,7 @@ final class StoreFixture implements AutoCloseable {
      * temp directory: the graph name is what keeps their stores apart.
      */
     static StoreFixture ofCatalog(Path directory, String graphName, String sdl) {
-        return new StoreFixture(CapturedStore.ofCatalog(directory, graphName, sdl,
+        return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, graphName, sdl,
             new JooqCatalog(JOOQ_PACKAGE)), directory);
     }
 
@@ -187,7 +187,7 @@ final class StoreFixture implements AutoCloseable {
     private static StoreFixture ofJooqPackage(Path directory, String sdl,
                                               List<CompletionData.ExternalReference> classpath,
                                               String jooqPackage) {
-        return new StoreFixture(CapturedStore.ofCatalog(directory, GRAPH, sdl,
+        return new StoreFixture(CapturedStore.ownStoreOfCatalog(directory, GRAPH, sdl,
             new JooqCatalog(jooqPackage), classpath), directory);
     }
 
@@ -199,12 +199,12 @@ final class StoreFixture implements AutoCloseable {
     static StoreFixture ofFiles(Path directory, String firstName, String firstSdl,
                                 String secondName, String secondSdl) {
         return new StoreFixture(
-            CapturedStore.ofFiles(directory, firstName, firstSdl, secondName, secondSdl), directory);
+            CapturedStore.ownStoreOfFiles(directory, firstName, firstSdl, secondName, secondSdl), directory);
     }
 
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<CompletionData.ExternalReference> classpath) {
-        return new StoreFixture(CapturedStore.of(directory, graphName, sdl, classpath), directory);
+        return new StoreFixture(CapturedStore.ownStore(directory, graphName, sdl, classpath), directory);
     }
 
     /**

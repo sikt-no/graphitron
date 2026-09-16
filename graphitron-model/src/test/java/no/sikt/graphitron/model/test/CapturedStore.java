@@ -91,6 +91,9 @@ public final class CapturedStore implements AutoCloseable {
      */
     private final boolean owned;
 
+    /** The borrow this fixture took, or -1 when it owns its store. See {@link #mine()}. */
+    private final long generation;
+
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
                           TypeDefinitionRegistry registry) {
         this(store, graphName, directory, file, registry, false);
@@ -99,6 +102,7 @@ public final class CapturedStore implements AutoCloseable {
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
                           TypeDefinitionRegistry registry, boolean owned) {
         this.owned = owned;
+        this.generation = owned ? -1 : ThreadConfinedStore.generation();
         this.store = store;
         this.graphName = graphName;
         this.directory = directory;
@@ -160,6 +164,40 @@ public final class CapturedStore implements AutoCloseable {
         var store = FactStores.inMemory();
         captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, file, registry, true);
+    }
+
+    /** {@link #ofCatalog(Path, String, String, JooqCatalog, List)} on a store of its own. */
+    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
+                                                  JooqCatalog jooq,
+                                                  List<CompletionData.ExternalReference> census) {
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = FactStores.inMemory();
+        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, false);
+        return new CapturedStore(store, graphName, directory, file, registry, true);
+    }
+
+    /** {@link #ofCatalog(Path, String, String, JooqCatalog)} on a store of its own. */
+    public static CapturedStore ownStoreOfCatalog(Path directory, String graphName, String sdl,
+                                                  JooqCatalog jooq) {
+        return ownStoreOfCatalog(directory, graphName, sdl, jooq, List.of());
+    }
+
+    /** {@link #of(Path, String, String, List)} on a store of its own. */
+    public static CapturedStore ownStore(Path directory, String graphName, String sdl,
+                                         List<CompletionData.ExternalReference> census) {
+        return ownStoreOfCatalog(directory, graphName, sdl, null, census);
+    }
+
+    /** {@link #ofFiles(Path, String, String, String, String)} on a store of its own. */
+    public static CapturedStore ownStoreOfFiles(Path directory, String firstName, String firstSdl,
+                                                String secondName, String secondSdl) {
+        List<Path> files = List.of(write(directory, firstName, firstSdl),
+            write(directory, secondName, secondSdl));
+        var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
+        var store = FactStores.inMemory();
+        captureFiles(store.dsl(), files, directory, GRAPH, registry, null, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry, true);
     }
 
     /** {@link #ownStore(Path, String, String)} under the default graph. */
@@ -582,7 +620,26 @@ public final class CapturedStore implements AutoCloseable {
     // Reads.
     // ---------------------------------------------------------------------------------------
 
+    /**
+     * Fails if the thread has lent this fixture's store to somebody else since.
+     *
+     * <p>A borrow belongs to the case that took it, and the next one reclaims rather than refuses,
+     * which is what stops a missed close failing unrelated cases. The cost of that is a fixture
+     * outliving its case would find its rows cleared and read an empty store as an answer. This is
+     * what makes that a failure instead: a class holding one fixture across its cases hears about
+     * it here rather than in an assertion about something else.
+     */
+    private void mine() {
+        if (!owned && generation != ThreadConfinedStore.generation()) {
+            throw new IllegalStateException("this CapturedStore borrowed the thread's store and"
+                + " another case has since borrowed it, which cleared the rows this one captured."
+                + " A fixture a class holds across its cases wants CapturedStore.ownStore, which"
+                + " boots one of its own; a fixture built per case wants building inside the case");
+        }
+    }
+
     public DSLContext dsl() {
+        mine();
         return store.dsl();
     }
 
@@ -613,6 +670,7 @@ public final class CapturedStore implements AutoCloseable {
 
     /** A reader under a stated budget, for the cases whose subject <em>is</em> the budget. */
     public StoreReader reader(ReadBudget budget) {
+        mine();
         return store.reader(budget);
     }
 

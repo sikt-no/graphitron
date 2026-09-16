@@ -141,7 +141,7 @@ final class ThreadConfinedStore {
      * one. It had been at the count, and that is what a clean run at eighty-two cost. Leave the
      * headroom, and recount when it is gone.
      *
-     * <p><b>A hundred and fifty, and the number is a debt rather than a budget.</b> This guard
+     * <p><b>Two hundred and fifty, and the number is a debt rather than a budget.</b> This guard
      * only runs when a funnel case runs, so for as long as {@code graphitron} had exactly one such
      * case it never fired there and the module's boot count went unread. Routing
      * {@code CapturedStore}'s scoped form through the funnel switched it on, and the first thing it
@@ -157,6 +157,12 @@ final class ThreadConfinedStore {
      * describes but a total over however many threads the pool happened to use, so headroom here is
      * not slack, it is the difference between a guard and a coin flip.
      *
+     * <p>And measure the worst case rather than the quiet one, which is the third time this was got
+     * wrong and the only one with a general lesson in it. 150 was set against 105 observed from
+     * {@code mvn test -pl graphitron} on an idle machine, and the full reactor reached 151: more
+     * threads boot when the build is loaded, so the count a module run reports is its floor and not
+     * its ceiling. A number for this guard comes from a whole build.
+     *
      * <p>What is left under it is the cases that own a store deliberately, which is the ones that
      * change the schema: a clear puts rows back and cannot put a relation back, so a case that
      * demotes a registered target to a view leaves the thread's store a different shape for every
@@ -168,7 +174,7 @@ final class ThreadConfinedStore {
      * boot is around 390 ms, so 398 of them is most of a CPU-minute per fork, which is what the
      * ratchet is for.
      */
-    private static final int BOOT_BUDGET = 150;
+    private static final int BOOT_BUDGET = 250;
 
     private final GraphitronModelStore store;
 
@@ -182,6 +188,14 @@ final class ThreadConfinedStore {
     private final String census;
 
     private boolean inUse;
+
+    /**
+     * Bumped every time this store is cleared, so a fixture can tell whether the borrow it is
+     * holding is still its own. Reclaiming a leaked borrow is what keeps one missed close from
+     * failing unrelated cases, but it would silently empty a store a fixture still believes in;
+     * this is what turns that into a fixture saying so.
+     */
+    private long generation;
 
     private ThreadConfinedStore(GraphitronModelStore store, List<String> cleared,
                                 Map<String, Integer> bootState, String census) {
@@ -255,6 +269,11 @@ final class ThreadConfinedStore {
         verifyBootBudget();
         held.clear();
         return held.store;
+    }
+
+    /** Which borrow the calling thread is on, for a fixture checking that its own is still live. */
+    static long generation() {
+        return HOLDER.get().generation;
     }
 
     /**
@@ -364,6 +383,7 @@ final class ThreadConfinedStore {
      * here rather than there.
      */
     private void clear() {
+        generation++;
         DSLContext dsl = store.dsl();
         try {
             dsl.execute("SET REFERENTIAL_INTEGRITY FALSE");
