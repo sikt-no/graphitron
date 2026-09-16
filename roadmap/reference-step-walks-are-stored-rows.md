@@ -444,3 +444,163 @@ directory, which is the failure mode R899 names, so its figures are recorded abo
 be re-derived. Two of its conclusions were overturned before filing and are recorded in this body
 rather than dropped: that statistics were not the lever, and that the window function was what blocked
 the graph predicate from pruning.
+
+## Reviewer findings
+
+### Round 1 (2026-09-16, Spec -> Ready, reviewer session 01Un87ZyPLmwD9kLBuTdSFKx)
+
+Verdict: withhold. Two blocking findings on question two, both inside slice one, both about which
+gatherer owns the new relation and on what lifecycle. Five non-blocking findings follow them.
+
+Nearly everything else checks out against the tree, and the checks were not cheap ones. The three
+walks are as described: `intent_field_reference_step_target` and
+`intent_input_field_reference_step_target` are views, `intent_argument_reference_step_target` is a
+table carrying `ix_argument_reference_step_target_coordinate`. The field walk is named by exactly
+three view bodies and by `intent_field_reference_step_fanout` twice, and `SchemaQueries` and
+`ClaimFacts` both read it through `Tables.INTENT_FIELD_REFERENCE_STEP_TARGET`.
+`intent_node_id_decode_hop_live` names the input-field walk on the inner side of a `LEFT JOIN` and
+inlines an anonymous derived table over `sql_referential_constraint` counting foreign keys per
+ordered pair through a `COUNT(*) OVER (PARTITION BY ...)`, exactly as the body says.
+`MaterializeRegistryGateTest.REGISTRATIONS` is 23, `HAND_WRITTEN` holds six `intent_` tables under
+the impossibility javadoc quoted, `GraphitronFactCapture`'s stages are eight,
+`noOrderingNeedCrossesTheHandWrittenBoundary` discloses the asymmetry claimed, and both verbatim
+quotations (the `intent_node_id_decode_column_live` reason and `intent_node_id_decode_hop`'s "would
+dominate the read") are in the DDL word for word. `sql_table_reference` is a free name. R953's 592 s
+figure for `intent_node_id_instruction_live` is its own. Every named class, gate method and test
+exists. The goal paragraph answers question one on its own reading: a consumer of graphitron gets a
+`graphitron:dev` round whose cost grows with the schema rather than its square, and the three terms
+it needs are glossed where they first appear.
+
+**Finding 1 (question two: architecture fit). Slice one puts the stage in a class that writes a
+different family, and the ownership fork it walks into is not seen.**
+
+The slice says the new relation "is a stage of the catalog gatherer, which today has none,
+`CatalogFactCapture.capture` being a transcription into a `FactSink`", and its Lifecycle paragraph
+says the stage writes "the same scope `CatalogFactCapture.capture` writes". `CatalogFactCapture`
+writes no `sql_` row at all. Its own class javadoc says so: it is "the `jvm_` family", and "It used
+to fill the `sql_` family too, and that half is gone: `JooqFactCapture` was writing the same fourteen
+relations from the other capture entry point". Its `capture` method calls one thing,
+`captureExtensions`, which writes `jvm_class` and its children; its `SQL_REFERENTIAL_CONSTRAINT`
+import is unused residue. What transcribes the relation slice one reads is
+`JooqFactCapture.capture`, whose javadoc is "The `sql_` family and nothing else: one source of one
+shape behind one entry point", and whose `referentialConstraints` stage writes the rows.
+
+By the ownership rule the slice invokes, the latest owner of anything it reads, `sql_table_reference`
+therefore belongs to the jooq gatherer. That is not a rename of the paragraph: it decides which class
+the implementer edits and which lifecycle applies, and it is the input to the second finding.
+
+There is a live fork underneath it that the slice does not see, and it is the author's to settle
+rather than the implementer's. The new relation needs a `meta_relation` row, because
+`MetaDeclarationGateTest`'s frozen roster only shrinks and "a new relation is on no frozen roster, so
+it cannot arrive undeclared". That row carries `owner_name`, a `meta_gatherer` key. All fourteen
+declared `sql_` relations today name `catalog` as their owner while `JooqFactCapture` is what writes
+them, and the jooq gatherer owns no declared relation at all. So the tree's declared ownership and
+its actual writer already disagree for this family, and slice one has to pick one: declaring
+`catalog` entrenches a mismatch the gate does not currently catch, declaring `jooq` makes the new row
+the first correct one and leaves fourteen beside it that are not. The slice's "Check the choice
+against `MetaDeclarationGateTest`'s corpus gate before landing and say which way it went in the
+commit" reads as a gate formality; it is a modelling question with a wrong answer available, and the
+spec should answer it.
+
+**Finding 2 (question two: architecture fit). The `sql_` family's lifecycle is stamp-and-sweep, and
+the proposed table carries neither the stamp nor a stated reason to be the exception.**
+
+The Lifecycle paragraph says "The stage clears and refills the sources the capture touched". That is
+a third discipline, neither of the two the family actually uses. Fourteen of the fifteen `sql_`
+tables carry a `touched_at TIMESTAMP`, and `sql_referential_constraint.touched_at`'s own comment
+states the rule: "The reading finishes by deleting this source's rows carrying a different instant,
+which are the tables, columns and keys the consumer's database no longer has and which an upsert
+alone cannot find." `JooqFactCapture.capture` closes with `sweep(dsl, sourceNames(tables),
+touchedAt)` and takes the instant as a parameter. The fifteenth, `sql_table_record_supertype`, has no
+`touched_at` and its writer is the one stage called without one, so there is a precedent for the
+other arm.
+
+The proposed DDL has no `touched_at`, and the body does not say which arm it takes or why. This is
+load-bearing beyond tidiness: a derived pair relation that is not swept the same way its source is
+outlives the foreign key it counted, and the surviving row says `constraints = 1` about a pair with
+no constraints, which is precisely the arm the decode rule's `LEFT JOIN` reads. Name the discipline
+and the reason.
+
+Smaller, in the same slice and not blocking on its own: after the change the `DISCOVERED_KEY` arm
+joins `sql_referential_constraint` on six columns to reach the constraint name, of which only the
+first three are a prefix of its primary key `(source_name, table_schema, table_name,
+constraint_name)`, and the relation carries no other index. Slice two states an index discipline and
+a `COMMENT ON INDEX` obligation for its own tables; slice one should say whether this join wants
+anything, even if the answer is that a three-column prefix seek on a small relation does not.
+
+**Finding 3 (question two, non-blocking). The `FieldEndpoints` precedent comes from the one gatherer
+the crawler invariant does not bind.**
+
+"A gatherer writing a computed relation into its own family is `FieldEndpoints` exactly" is true as
+far as it goes: it is a stage of the graphitron gatherer and writes `graphitron_field_table`. But
+`meta_gatherer_corpus`'s comment defines a crawler as a gatherer carrying a corpus row, "a
+transcription pass whose rows about its own corpus may not vary with any other corpus's contents",
+and says in the same breath that the graphitron gatherer carries none and "is thereby free to cross
+corpora". Both jooq and catalog carry a `catalog` corpus row, so both are crawlers and both are bound
+by that invariant. The precedent cited is the one place it does not apply.
+
+The argument slice one actually needs is available and stronger: `sql_table_reference` reads
+`sql_referential_constraint` and nothing else, so its rows vary with the catalog corpus alone and the
+crawler invariant holds by construction. Make that argument rather than the precedent one.
+
+**Finding 4 (question two, non-blocking). Slice two's edit list points the "would dominate the read"
+correction at the wrong surface.**
+
+The bullet reads "`intent_node_id_decode_hop_live`'s reason, whose argument is built on the two
+walks' per-driving-row cost, and whose claim that a second naming of the endpoint subtree 'would
+dominate the read' the measurements above refute". The first half is right, the reason row is built
+on that cost. The second half is not: the refuted sentence is on `intent_node_id_decode_hop`'s
+`COMMENT ON TABLE`, and it is the only occurrence of the phrase in the DDL. An implementer working
+the list edits the reason and leaves the refuted claim standing where it lives. Name both surfaces.
+
+**Finding 5 (question one, non-blocking). The register already carries a per-term ablation for the
+foreign-key count, on a consumer capture rather than a fixture.**
+
+"What was measured" says of the two limits on its table that "The foreign-key count was never timed
+without the walk, so the two are priced as a pair and the third column is not evidence that either
+half suffices." That is true of this item's own fixture sweeps, but `intent_node_id_decode_hop_live`'s
+`meta_materialize` reason already carries the separated reading, taken on a capture of a consumer
+schema: against a 4.7 s baseline, dropping one inner-side naming at a time leaves "3.4 s without the
+argument-site reference-target walk, 1.9 s without the input-field one, 3.3 s without the derived
+table counting foreign keys per table pair", and dropping both walks together leaves 1.1 s.
+
+That reading does not overturn anything here, and it points the same way the plan does. It does two
+things for the body. It narrows what the conditioning measurement still has to establish, since
+configurations three and four exist to separate a pair that has in fact been separated once already
+on a real population. And it puts a rough size on each half, the count at about 1.4 s of 4.7 s and
+the two walks at about 3.6 s between them, which bears directly on the outcome branch that says
+"The count is the term and the walks are not." Cite it and say what it leaves open.
+
+**Finding 6 (question one, non-blocking). R953 is Backlog, and the coordination clause assumes it is
+further along than it is.**
+
+Slice two says "**Neither item implements until both bodies record that split**; R953's Spec is where
+its half of the record goes", and "Other solutions" calls lever 2 "already specced". R953's
+front-matter reads `status: Backlog`. It has a body, and lever 3 in it is indeed the twin of half of
+slice two, but it has no Spec state and nobody has picked it up, so as written this item's
+implementation waits on a transition no one is committed to making. `depends-on:` here is empty,
+which is the one place a reader would look for that wait.
+
+Either drop the mutual clause to a one-way one, this item records the split and R953's body is
+amended whenever it is next touched, or make the dependency real in the front-matter. The clause as
+it stands is a gate with no owner.
+
+**Finding 7 (question one, non-blocking). The conditioning measurement has four outcomes and no
+branch for not being able to take it.**
+
+"What this plan is conditioned on" says the measurement is "one nobody can take without the `sis`
+workspace on disk" and makes it "the implementer's first act at pickup, before any code". All four
+outcomes below presuppose it was taken. R943 and R953 both took `sis` readings, so this is plainly
+obtainable and not a reason to doubt the plan, but a Ready item whose first act may be unavailable
+should say what happens then. The body already contains the answer: slice one is justified by the
+modelling claim alone, which no measurement moves, and "Other solutions" says slice one would stand
+as its own item. State it as the fifth branch rather than leaving the implementer to assemble it.
+
+**Small, and left as findings rather than corrected here because their resolution depends on
+Finding 1.** The Goal says "the decode rule joins four stored relations" and slice three says it
+"becomes a join of one view to three stored relations". Counting the shipping shape:
+`intent_node_id_decode_endpoint` is the view, and `intent_argument_reference_step_target`,
+`intent_input_field_reference_step_target`, `sql_table_reference` and `sql_referential_constraint`
+are four stored relations, the last of them because slice one still reaches it for the constraint
+name. One of the two numbers is wrong, and which one depends on whether that reach survives Finding
+1's rework.
