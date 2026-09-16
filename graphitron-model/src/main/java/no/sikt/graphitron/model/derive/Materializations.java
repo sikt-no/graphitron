@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.Public;
 import org.jooq.DSLContext;
 import org.jooq.Name;
 import org.jooq.exception.DataAccessException;
@@ -10,9 +11,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
+import java.util.stream.Collectors;
 
 import static org.jooq.impl.DSL.asterisk;
 import static org.jooq.impl.DSL.field;
@@ -135,7 +138,7 @@ public final class Materializations {
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
-                graphKeyed(dsl, registration.targetTableName())
+                graphKeyed(registration.targetTableName())
                     ? Optional.of(graphName)
                     : Optional.empty(),
                 progress, statements -> statements.apply(dsl));
@@ -191,7 +194,7 @@ public final class Materializations {
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
-                graphKeyed(dsl, registration.targetTableName())
+                graphKeyed(registration.targetTableName())
                     ? Optional.of(graphName)
                     : Optional.empty(),
                 progress,
@@ -237,7 +240,7 @@ public final class Materializations {
         long startedAt = System.nanoTime();
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
-            if (graphKeyed(dsl, registration.targetTableName())) {
+            if (graphKeyed(registration.targetTableName())) {
                 for (String graph : graphs) {
                     refreshOne(registration, position + 1, registrations.size(),
                         Optional.of(graph), progress, statements -> statements.apply(dsl));
@@ -498,14 +501,25 @@ public final class Materializations {
             rowsInserted);
     }
 
+    /**
+     * The relations carrying a {@code graph_name} column, which is what decides a refresh's shape.
+     *
+     * <p>Read off the generated model rather than asked of {@code INFORMATION_SCHEMA}, because the
+     * answer is a property of the DDL this module compiles against and is settled before any store
+     * exists. It had been a query per registration per refresh: over one run of {@code
+     * graphitron}'s suite that was 3543 executions and 76.2 s, more than every other statement the
+     * module issued put together, for a question whose answer never differs between two calls.
+     * {@code StoreRefresh.graphScoped} already asked the generated model the same thing, so this is
+     * the answer the tree had rather than a new idea.
+     */
+    private static final Set<String> GRAPH_KEYED = Public.PUBLIC.getTables().stream()
+        .filter(t -> t.field("GRAPH_NAME", String.class) != null)
+        .map(t -> t.getName().toUpperCase(Locale.ROOT))
+        .collect(Collectors.toUnmodifiableSet());
+
     /** Whether the relation carries a {@code graph_name} column, which decides the refresh shape. */
-    private static boolean graphKeyed(DSLContext dsl, String relationName) {
-        return dsl.fetchExists(
-            select(field(name("COLUMN_NAME")))
-                .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                .and(field(name("TABLE_NAME"), String.class).eq(fold(relationName)))
-                .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
+    private static boolean graphKeyed(String relationName) {
+        return GRAPH_KEYED.contains(fold(relationName));
     }
 
     private static Name relation(String relationName) {
