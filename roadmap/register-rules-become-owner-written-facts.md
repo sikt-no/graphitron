@@ -1,7 +1,7 @@
 ---
 id: R955
 title: "The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 2
 theme: model-cleanup
@@ -45,246 +45,415 @@ of them belonged to any single gatherer, and a register standing outside every g
 thing that could refresh them. R876 computed the owner every relation in the store has, taking a
 view's owner to be the latest, in gatherer order, of the owners of what it reads, and every registered
 target computed to `graphitron`. The register is therefore that gatherer's refresh plan, held in a
-mechanism of its own because the gatherer did not yet run its stages in an order that could hold it.
-It does now: `GraphitronFactCapture.capture` runs eight stages in an order its own comments justify,
-the last being `FieldEndpoints.derive`, which reads `graphitron_`, `graphql_` and `sql_` relations,
-joins and ranks across three families, and writes `graphitron_field_table`. That is the shape every
-registration becomes, and nothing about it is new.
+mechanism of its own because nothing in the pass ran that gatherer's derivations as an ordered list.
+The pass has such a list now: `FactCapture.capture` runs `GraphitronFactCapture.capture`'s eight
+stages, flushes, and then runs five more producers in a fixed order before the refresh,
+`ClassificationDomainCapture`, `InputOccurrencePaths`, `ArgMappingCandidates`, `TypeBackingRows` and
+`AuthoredClaimRejectionRows`, each writing a table the next may read. Appending to that list is what
+every conversion here does.
+
+**What a stage is here, and what it is not.** The fact-model page states the shape under "Derived
+reads are views, not stored facts": where a derivation must be paid once and stored, "the reduction is
+an ordinary table populated `INSERT INTO derived SELECT ... FROM <view>`, which keeps the view as the
+single statement of the rule while making reads a plain indexed scan". That is the stage this item
+writes, and it is deliberately not `FieldEndpoints.derive`'s shape, whose rules are jOOQ expressions
+over base tables. The rule stays a stored view, so its read set stays in the catalog where
+`ViewReferences` and `MetaDeclarationGateTest.aDeclaredViewReadsOnlyWhatItsOwnerMay` can see it, the
+`EXCEPT` oracle between rule and table stays runnable for as long as both exist rather than for one
+commit, and nothing is restated in a second language. What goes is the register: the row that
+scheduled the insert, the boot-time dependency derivation that ordered it, and the `_live` suffix whose
+own comment says it names "the registration in `meta_materialize`".
 
 **Why the derivations were not captured earlier.** They could have been. Computed from the shipped
 DDL: every one of the twenty-three registered rules, expanded through every `intent_` view it names
 until only stored relations remain, bottoms out in captured facts of the `graphitron_`, `graphql_`,
-`sql_`, `jvm_` and `store_` families plus at most four of the six hand-written `intent_` base tables,
-which are themselves written by producers in Java before the refresh runs. Not one reads anything a
-gatherer does not hold by the time the `graphitron` gatherer starts. The rules were not put in stages
-because the model was built view-first: a verdict was stated as a view because a view was the cheapest
-thing to write, the view was found slow, and the register was the one lever that did not require
-deciding who owned it. The result is the shape R876 names, a pipeline whose intermediate results were
-never written down, and it is why the `@nodeId` decode rule has to re-derive a `@reference` walk with a
-recursive common table expression and two window functions once per driving row instead of joining a
-table that holds the resolved path.
+`sql_`, `jvm_` and `store_` families plus at most three of the six hand-written `intent_` base tables,
+`intent_type_backing_class`, `intent_input_occurrence_path` and `intent_input_occurrence_path_step`,
+which are themselves written by the producers above. Not one reads anything the pass does not hold
+before the refresh runs. The rules were not put in stages because the model was built view-first: a
+verdict was stated as a view because a view was the cheapest thing to write, the view was found slow,
+and the register was the one lever that did not require deciding who owned it. The result is the shape
+R876 names, a pipeline whose intermediate results were never written down, and it is why the `@nodeId`
+decode rule has to re-derive a `@reference` walk with a recursive common table expression and two window
+functions once per driving row instead of joining a table that holds the resolved path.
 
 **The seam that blocked this dissolves bottom-up, and R954 shows how.** A stage may read a plain view
-and may not read a registered target, because `FactCapture.capture` runs every hand-written producer
-before `Materializations.refresh`, so a producer beside them would read the previous capture's rows.
-Taken one relation at a time that blocked every conversion, and the register's own `reason` for
-`intent_node_id_decode_column_live` records being blocked for exactly this. Taken bottom-up it blocks
-nothing: convert the registration with no registration under it first, and every registration one rung
-up then reads only captured facts, plain views and stage-written tables, so it converts with no seam.
-No ordering mechanism and no successor to `meta_materialize_dependency` is needed. The order the stages
-run in *is* the dependency order, chosen once by the person writing the stage, exactly as the eight
-existing stages are ordered today.
+and may not read a table a *later* step of the pass writes, registered or hand-written, because it
+would read the previous capture's rows; the register's own `reason` for
+`intent_node_id_decode_column_live` records being blocked for exactly this. Taken one relation at a
+time that blocked every conversion. Taken bottom-up it blocks nothing: convert the registration with
+no registration under it first, and every registration one rung up then reads only captured facts,
+plain views, tables the producers above wrote and tables earlier stages wrote, so it converts with no
+seam. No successor to `meta_materialize_dependency` is needed to *find* the order, because the ladder
+is it. What is still owed is an enforcer for the order once it is statement order in Java, and
+"Implementation" names one built from the parse the register already has.
 
 ## What is in scope
 
-The fifteen registered rules R954 does not reach, arranged by the registrations they read. The rung of
-a relation is one more than the highest rung it reads; R954's eight occupy rungs 0 to 5 and are treated
-here as already stage-written tables. The read sets are computed from the shipped `_live` view bodies
-and are for the implementer to recompute at pickup rather than trust.
+The fifteen registered rules R954 does not reach. The *rung* of a relation is one more than the
+highest rung of any registration its rule reads, directly or through plain views; a rule reading no
+registration is rung 0. Computed from the shipped `_live` view bodies with SQL comments stripped, and
+for the implementer to recompute at pickup rather than trust. R954's eight occupy rungs 0 to 6 and are
+listed in its own body; two of this item's fifteen sit *inside* that range, which is stated below
+rather than smoothed over.
 
-[cols="1,4,5"]
+[cols="1,4,5,1,2"]
 |===
-| rung | relation | reads, among the registrations
+| rung | relation | registered rules it reads (direct; then through plain views) | view readers | key today
 
-| 6 | `intent_field_column_scope` | `intent_resolved_type_binding`, and the field walk as a plain view
-| 6 | `intent_argument_column_scope` | `intent_argument_reference_step_target`, `intent_argument_scope_table`
-| 6 | `intent_mutation_write_payload` | `intent_field_scope_table`
-| 6 | `intent_input_field_column_match` | none; reads `intent_input_field_column_scope`, a plain view over rung-5 relations
-| 6 | `intent_node_id_instruction` | `intent_argument_reference_step_target`, `intent_argument_scope_table`, and the field walk as a plain view
-| 6 | `intent_node_id_decode_hop` | `intent_argument_reference_step_target`, and the input-field walk as a plain view
-| 7 | `intent_argument_column_match` | `intent_argument_column_scope`
-| 7 | `intent_node_id_decode_hop_column` | `intent_node_id_decode_hop`
-| 7 | `intent_input_field_filter_role` | `intent_input_field_column_match`, `intent_node_id_instruction`, and three rung-5 relations
-| 8 | `intent_node_id_decode_column` | `intent_node_id_decode_hop_column`
-| 9 | `intent_input_field_carrier_role` | `intent_input_field_filter_role`, `intent_node_id_decode_column`
-| 10 | `intent_mutation_payload_refusal` | `intent_input_field_carrier_role`, `intent_input_field_filter_role`, `intent_mutation_write_payload`, `intent_input_field_resolving_table`
-| 11 | `intent_mutation_payload_column` | `intent_mutation_payload_refusal` and five below it
-| 12 | `intent_mutation_payload_key_membership` | `intent_mutation_payload_column`
-| 13 | `intent_mutation_write_destination` | `intent_mutation_payload_column`, `intent_mutation_payload_key_membership`
+| 3 | `intent_field_column_scope` | `intent_resolved_type_binding`; `intent_field_reference_step_hop` | 3 | primary key
+| 5 | `intent_mutation_write_payload` | `intent_field_scope_table` | 4 | none
+| 7 | `intent_argument_column_scope` | `intent_argument_reference_step_target`, `intent_argument_scope_table` | 1 | primary key
+| 7 | `intent_input_field_column_match` | none direct; `intent_input_field_resolving_table`, `intent_field_reference_step_hop` through `intent_input_field_column_scope` | 2 | one index
+| 7 | `intent_node_id_instruction` | `intent_argument_reference_step_target`, `intent_argument_scope_table`; `intent_resolved_type_binding`, `intent_field_reference_step_hop` | 8, and one Java reader | one index
+| 8 | `intent_argument_column_match` | `intent_argument_column_scope` | 1 | none
+| 8 | `intent_input_field_filter_role` | `intent_input_field_column_match`, `intent_node_id_instruction`, and three of R954's | 4 | one index
+| 8 | `intent_node_id_decode_hop` | `intent_argument_reference_step_target`; `intent_node_id_instruction` and three of R954's | 2 | primary key
+| 9 | `intent_node_id_decode_hop_column` | `intent_node_id_decode_hop` | 1 | one index
+| 10 | `intent_node_id_decode_column` | `intent_node_id_decode_hop_column`; `intent_node_id_instruction` | 4 | none
+| 11 | `intent_input_field_carrier_role` | `intent_input_field_filter_role`, `intent_node_id_decode_column` | 2 | none
+| 12 | `intent_mutation_payload_refusal` | `intent_input_field_carrier_role`, `intent_input_field_filter_role`, `intent_mutation_write_payload`, `intent_input_field_resolving_table` | 2 | one index
+| 13 | `intent_mutation_payload_column` | `intent_mutation_payload_refusal` and five below it | 3 | none
+| 14 | `intent_mutation_payload_key_membership` | `intent_mutation_payload_column` | 2 | none
+| 15 | `intent_mutation_write_destination` | `intent_mutation_payload_column`, `intent_mutation_payload_key_membership` | 1 | one index
 |===
 
-Three families of verdict, and they land in that order because the ladder says so: the column-scope
-pair and the mutation write payload at rung 6, then the `@nodeId` decode chain from instruction through
-hop, hop column and decode column, then the input-field roles and the mutation payload chain that reads
-them. The mutation chain is the deepest thing in the store, twenty registrations below its top rung,
-and it is the last to convert because everything it reads has to be a table first.
+**The two rungs inside R954's range.** `intent_field_column_scope` reads nothing above R954's rung 2
+and `intent_mutation_write_payload` nothing above its rung 4, so both are convertible before R954
+finishes, and the `depends-on:` edge is on R954's phases rather than on its Done: this item's first
+commit can land once `intent_resolved_type_binding` and the hop are tables, its second once
+`intent_field_scope_table` is. The other thirteen wait for R954's rung 6, and the mutation write chain
+at the top is the deepest thing in the store, twenty registrations below it in the transitive closure,
+so it converts last because everything it reads has to be a table first.
 
-Also in scope, because they exist only to serve the register:
+**Three verdict families, landing in ladder order.** The column-scope pair and the mutation write
+payload; then the `@nodeId` decode chain, instruction through hop, hop column and decode column; then
+the input-field roles and the mutation payload chain that reads them. The decode chain is where the
+`@nodeId` decode rule pays for a `@reference` walk today, and `intent_node_id_decode_column_live` is
+itself recursive: its `lifted` term walks `intent_node_id_decode_hop_column` position by position to
+carry the local column name along the chain. It is the one rule among the fifteen whose stage inserts
+from a recursive view, which "Implementation" prices.
 
-- `Materializations` (535 lines), `MaterializeDependencies` (261) and `RefreshProgress` (185) in
-  `graphitron-model`, the boot-time derivation of `meta_materialize_dependency` from stored view
-  definitions, and the `refresh`, `refreshAnalysing` and `refreshAll` call sites in `FactCapture`,
-  `GraphitronModelStore`, `StoreRefresh` and `DevMojo`. `Materializations.analyse` stays if the
-  stage-written tables want statistics after the gatherer writes them; that is a question for the
-  first conversion to answer with a plan, not a prediction.
+**Also in scope, because they exist only to serve the register:**
+
+- `Materializations` (535 lines) and `RefreshProgress` (185) in `graphitron-model`, and the four call
+  sites: `FactCapture.capture`'s refresh and its empty-store cadence, `GraphitronModelStore`'s
+  boot-time `MaterializeDependencies.populate`, `StoreRefresh`, and `DevMojo`'s `refreshAll` at
+  session start. `MaterializeDependencies` (261 lines) is not deleted: its parse of stored view
+  definitions into read sets is the derivable source the stage order's gate needs, and it is repointed
+  rather than retired. `ModelCapture.capture`, the entry point R876 is moving the run onto, calls no
+  refresh today; the stages land in `FactCapture`'s derivation stratum, which is the part of the pass
+  R876's own plan carries across.
 - `UnlowerableOrderingRejectionRows`, the one producer that runs *after* the refresh because it reads
   `intent_field_scope_table`. Once that relation is a stage-written table the producer is a stage like
-  any other and moves into the gatherer's order.
+  any other and moves into the order.
 - The `_live` naming convention and the 23 `COMMENT ON VIEW ... _live` blocks that explain it, which
-  go with the views.
+  are rewritten with the rename.
+- `Materializations.analyse` and the two statistics cadences `FactCapture.capture` keeps, which survive
+  the register with a new roster; "Implementation" says how.
+
+**Out of this item's fifteen but in the last commit's way: the ten relations `meta_relation` declares
+under the `derivation` gatherer.** `lint_violation` and nine `intent_` views: `intent_scalar_java_type`,
+`intent_condition_slot`, `intent_condition_context_parameter`, `intent_reference_for_application`,
+`intent_field_unlowerable_ordering`, `intent_field_unlowerable_ordering_rejection`,
+`intent_field_reference_step_fanout`, `intent_external_field_contract_defect` and
+`intent_node_id_decode_landing_defect`. None is registered. `meta_relation.owner_name` is a foreign key
+to `meta_gatherer`, so the `derivation` row cannot go while any of them names it, and R876's finding that
+every *registered target* computes to `graphitron` says nothing about these ten. They are enumerated
+here so the last commit's claim is honest about its precondition; "The last commit" says what happens to
+each.
 
 ## Implementation
 
 Bottom-up, one rung per commit or a few, each commit leaving the tree green and the register strictly
-smaller. The shape of every conversion is the one R954's phase 1 sets and is restated here so this body
-stands alone.
+smaller. Everything below is stated so this body stands alone; where it copies R954, it says so.
 
-**One conversion.** The `_live` view's rule moves unchanged into a stage's `INSERT ... SELECT`, scoped to
-the graph being captured. The canonical table takes a `graphitron_` name, keeps its indexes and gains a
-`COMMENT ON INDEX` naming the reader each index serves where it lacks one. The `_live` view and the
-`meta_materialize` row are deleted. The stage is placed in `GraphitronFactCapture.capture` after the
-last stage it reads and before the first stage that reads it, and the placement comment says which two
-those are, the way the existing eight do. Every Java reader that spelled `Tables.INTENT_X` spells
-`Tables.GRAPHITRON_X`; the fifteen relations here have one such reader, `intent_node_id_instruction`'s,
-so the rename cost is almost entirely inside the DDL and the tests.
+**One conversion.** Three DDL edits and one Java line. The `_live` view keeps its text and is renamed
+`graphitron_<x>_rule`, its comment rewritten to say it is the rule the stage inserts from. The table
+takes `graphitron_<x>`, keeps its indexes, gains a `COMMENT ON INDEX` naming the reader each serves
+where it lacks one, and gains a primary key where the grain admits one. The `meta_materialize` row is
+deleted. The stage is one statement, `INSERT INTO graphitron_<x> SELECT * FROM graphitron_<x>_rule
+WHERE graph_name = ?`, preceded by the graph-scoped `DELETE` the refresh issues today, placed in
+`FactCapture.capture`'s derivation stratum after the last step it reads and before the first that reads
+it, with a placement comment naming both. Every reader spelling the old name spells the new one: in
+the DDL that is each view body counted in the table above, in Java it is one site,
+`Tables.INTENT_NODE_ID_INSTRUCTION`, the only one of the fifteen any main source names.
 
-**Convert or demote, per relation.** Where a registered rule's only reader is the stage directly above
-it, demoting it to a plain view that stage evaluates inline is the smaller change: the registration was
-buying rows-on-disk for many readers and buys nothing for one. Where it has several readers, it converts
-to a stage. `DerivedReadCostTest`'s reader counts decide, and the commit records which way each went.
-The decode chain is the case to watch: `intent_node_id_decode_hop_column` has one reader today and its
-stated case was a recursive walk over rows the register filled; with the hop a table, whether the column
-projection needs its own table or is a join the decode column's stage makes inline is an answer the
-reader count gives, not a doctrine.
+**Where the stages run, and why that position is current for every input.** All fifteen bottom out in
+at least one hand-written table except `intent_field_column_scope`, and `FactCapture.capture` writes
+those tables *after* `GraphitronFactCapture.capture` returns. So the stages go after the five producers
+in the derivation stratum, in ladder order, not inside the gatherer's eight stages: the position
+`ArgMappingCandidates.derive` already occupies, and the one R954's round-2 review names for its own
+rungs 4 and 5. One class per verdict family under `derive/`, each exposing `derive(dsl, graphName)` on
+that precedent, called from the stratum in the order the ladder gives. The invariant every placement
+satisfies: **no stage reads a table a later step of the pass writes, registered or hand-written.**
+Whether the gatherer's eight stages, the five producers and these fifteen become one list under one
+class is R876's "The capture layer dissolves into one linear read" and is not reorganised here; this
+item appends to the stratum.
 
-**A recursive rule becomes a fold.** Where a `_live` rule is a recursive common table expression, the
-stage writes it as R954's phase 2 does: the seed is one insert, position k is an insert joining the rows
-written at position k-1 to the step relation on the index that serves it, the loop stops when a pass
-inserts no rows, and the bound is asserted from the walk's own entry relation so an edit that stops
-terminating fails loudly. Aggregates that were window functions over the recursive term, such as
-`last_position` on the decode hop, become one grouped `UPDATE` per graph after the fold. Of the fifteen,
-none is recursive in its own body today; the recursion they pay for is in the walks under them, which
-R954 folds. The rule is stated here so that the next recursive derivation anyone writes has a shape to
-copy that is not a view.
+**The order gets an enforcer, built from the parse the register already has.** Statement order in one
+method is a hand-kept ordering, and the fact-model page's objection to hand-kept orderings is that
+they have no derivable source. This one has one: each stage inserts from a stored rule view, and
+`MaterializeDependencies` already parses stored view definitions into read sets with `ViewReferences`.
+A gate, `StageOrderGateTest` in `graphitron-model`, reads the stratum's stage list in order, resolves
+each stage's rule view to the `graphitron_` tables it reads transitively through plain views, and fails
+the build when a stage reads a table a later stage or producer writes. The hand-written producers are
+jOOQ code the parse cannot see, so their write sets are declared to the gate by the same equality-pinned
+roster `HAND_WRITTEN` uses today, which is what that roster becomes. This is the "admissible version"
+R954's own "Other solutions" names, an ordering derived from the producer's source and gated on drift,
+and it is what answers R876's open question rather than statement order alone.
 
-**The graph partition is written, not filtered.** `Materializations.refreshPartition` issues
-`INSERT INTO target SELECT * FROM source WHERE graph_name = ?`, and R954 measured that the predicate
-cannot reach inside a recursive term, so a workspace store holding several subgraph modules paid every
-module's rule at every module's refresh. A stage writes one graph's rows because it is running for one
-graph. This is the one cost term a registration cannot reach and a conversion removes by construction,
-and it is the reason the item is about `generate` and CI as much as about the dev round.
+**Convert or demote, per relation, on three terms.** Where a registered rule has one reader and that
+reader is a stage this item writes, the table can go and the stage read the rule view inline: the
+registration was buying rows on disk for many readers and buys nothing for one statement. Three terms
+decide, recorded per relation in the commit: view-body readers, counted from the DDL as in the table
+above; Java and stage readers, enumerated by hand once readers are stages the parse cannot count; and
+the statement size of the reader after the demote, from `report-inline-multiplicity`, which must stay
+inside the shipped maximum. The third term is the fact-model page's own warning that past some size a
+stored table "is not buying speed, it is buying a plan existing", and it bites hardest at the top of
+this ladder, where the mutation chain's closure is a hundred relations. By the first term alone three
+are candidates: `intent_argument_column_scope`, read only by `intent_argument_column_match`'s rule;
+`intent_node_id_decode_hop_column`, read only by `intent_node_id_decode_column`'s; and
+`intent_mutation_write_destination`, read only by the plain view `intent_mutation_write_agreement`,
+which is a consumer read and therefore converts unless that view is itself made a stage.
+`intent_argument_column_match`'s one reader, `intent_argument_filter_role`, is a plain view with readers
+of its own, so it converts.
+
+**The recursive rule keeps its recursion in the view.** `intent_node_id_decode_column`'s rule is the one
+of the fifteen with a `WITH RECURSIVE`, its `lifted` term walking `intent_node_id_decode_hop_column`
+position by position. It converts like the others, the recursion staying inside the rule view and the
+stage inserting from it, and a Java fixpoint loop is not written: a `UNION` recursion reaches a fixpoint
+on its own, the tree's one Java loop, `ClassificationDomainCapture`, is admitted on an impossibility
+argument this rule cannot make, and R954's round-2 review makes the same point about its phase 2. One
+cost follows and is stated rather than hidden. R954 measured that an outer `graph_name = ?` cannot prune
+inside a recursive term, so this stage's insert evaluates the recursion over every graph in the store
+and keeps one graph's rows, which is the register's own cost for this rule today and no worse. Whether
+the seed should carry the graph predicate inside the statement, which a stored view cannot be handed
+and a SQL string in the stage can, is the fork R954's phase 2 is settling for its walks now; this item
+copies whatever shape R954 lands for the one rule here, and says so rather than picking twice.
+
+**The graph partition is written, not filtered, for the fourteen non-recursive rules.**
+`Materializations.refreshPartition` issues `INSERT INTO target SELECT * FROM source WHERE graph_name = ?`,
+and for a non-recursive rule view H2 pushes that predicate into the view, so the fourteen already pay
+one graph's evaluation and keep doing so as stages. The per-graph term R954 measured on its walks, 170.9
+ms against 22.6 ms on a three-graph store, belongs to recursive rules and is the paragraph above's.
+
+**Statistics keep both cadences; only the roster changes.** `FactCapture.capture` has two today, and
+the fact-model page prices why: a warm store refreshes inside the capture transaction and runs
+`Materializations.analyse` after it commits, H2's `ANALYZE` committing; a store holding no graph runs
+`refreshAnalysing` outside the transaction, one committed step per registration, analysing each target
+before the next plans against it, and one cold refresh prefix measured 6293 s against 90.8 s with that
+cadence. Stages inside one transaction on a cold store would reproduce the 6293 s case rung by rung. So
+both cadences carry across, keyed to stages: warm, the stratum runs inside the transaction and one
+`ANALYZE TABLE` pass follows over every stage-written table; cold, each stage commits and analyses its
+table before the next runs, exactly as `refreshAnalysing` does per registration. The roster the analyse
+walks is no longer `meta_materialize` but `meta_relation` where `owner_name = 'graphitron'` and the
+relation is a table, which each conversion's declaration adds its relation to. This is the one piece of
+`Materializations` that survives, renamed for what it does, and `RefreshPrerequisiteStatisticsTest`'s
+claim, that every derivation meets the tables its rule reads analysed, keeps a successor with the same
+assertion over stages. R953's lever 2, a static `SELECTIVITY 1` on each stage-written table's
+`graph_name`, is the cheap floor under both cadences and lands per table as R953 specifies.
+
+**Progress lines move with the statements.** `RefreshProgress` prints one line per registration before
+its statements and one after, at debug, and `dev-loop-internals.adoc` teaches a consumer to find a
+stuck relation by the last line with no `done in` under it. A stage order owes the same instrument or
+that recipe dies with the register: each stage reports its name before its statements and its row
+count and duration after, on the same logger tier, and the how-to is rewritten to grep for stage lines
+instead of `n/20` lines.
 
 **The register's prose is retired with it, not edited.** Each `meta_materialize.reason` carries the
 measurements that justified its row, several of them stale by R876's own audit. A conversion deletes
-the row; the figures that still say something true about the rule's cost move to the table's
-`COMMENT ON TABLE`, stated as facts about the rule and never as a comparison against a registration
-that no longer exists. Neighbouring reasons stop being re-priced at each retirement because there stop
-being neighbours; until the last row goes, each commit edits the reasons of surviving rows whose rules
-read what it converted, which `meta_materialize.reason`'s own comment requires.
-
-**The last commit drops the mechanism.** With no rows left: drop `meta_materialize` and
-`meta_materialize_dependency` from the DDL, delete `Materializations`, `MaterializeDependencies` and
-`RefreshProgress`, remove the refresh call and the empty-store exception path from `FactCapture` and
-the `ModelCapture` order it is being replaced by, delete `MaterializeRegistryGateTest`,
-`MaterializationOrderTest`, `MaterializationProgressTest`, `RefreshPlanStatisticsTest`,
-`RefreshPrerequisiteStatisticsTest`, `WarmStartRefreshTest` where its subject was the refresh, and the
-`derivation` row of `meta_gatherer` with its six `meta_gatherer_dependency` edges, per R876's "What each
-mechanism becomes" table. `UnlowerableOrderingRejectionRows` moves into the stage order in the same
-commit. `HAND_WRITTEN`'s impossibility criterion, which exists to tell a deliberate hand-written
-`intent_` table from a bespoke materializer written beside the register, has nothing left to
-discriminate and goes with the gate; the six tables it lists are the `graphitron` gatherer's producers
-and get declared as such.
+the row; a figure that still says something true about the rule's cost moves to the table's
+`COMMENT ON TABLE`, stated as a fact about the rule and never as a comparison against a registration
+that no longer exists. Until the last row goes, each commit edits the reasons of surviving rows whose
+rules read what it converted, which `meta_materialize.reason`'s own comment requires; after it, there
+are no neighbours to re-price.
 
 **What each stage owes on landing.** A `meta_relation` row naming `graphitron` as owner and stating the
 grain, since the frozen undeclared roster only shrinks and a renamed relation is a new one to it. A
-primary key where the grain admits one; R876's burn-down item 9 records that fifteen of the register's
-targets carry no key at all and that nothing refuses a duplicate row in them, and a stage-written table
-is the moment to fix that, because the writer is now code someone can read. An index for each reader
-that seeks into it, with the comment the gate already requires.
+primary key where the grain admits one: ten of the fifteen carry none today, R876's burn-down item 9
+records that nothing refuses a duplicate row in them, and a stage-written table is the moment to fix
+that; where the grain includes a meaningfully nullable column the table is indexed instead and the
+comment says why, on `MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot`'s existing
+argument. An index for each reader that seeks into it, with the comment the gate already requires. And
+a line in the stage order's gate roster where the writer is jOOQ code rather than a rule view.
+
+**The last commit drops the mechanism.** With no rows left:
+
+- Drop `meta_materialize` and `meta_materialize_dependency` from the DDL. Delete `Materializations`
+  except the analyse loop above, and `RefreshProgress`. Remove the refresh call and the empty-store
+  cadence from `FactCapture.capture`, replacing both with the stage cadences above; remove the
+  dependency population from `GraphitronModelStore`'s boot; remove `DevMojo`'s `refreshAll` at session
+  start, whose own comment says it exists because "a warm partition whose capture was skipped because
+  nothing changed refreshes nothing of its own", and a stage-written table holds the previous capture's
+  rows in exactly that case. `StoreRefresh`'s comment naming `refreshPartition` is repaired.
+- Move `UnlowerableOrderingRejectionRows` into the stage order.
+- Delete `MaterializeRegistryGateTest`, `MaterializationOrderTest`, `MaterializationProgressTest`,
+  `RefreshPlanStatisticsTest`, `UnregisteredRelationTest`, `CandidateCutSetTest` and the
+  `CandidateCutSet`, `RefreshStages` and `UnregisteredRelation` test helpers, all of which take a
+  registration as their subject. `RefreshPrerequisiteStatisticsTest` is rewritten over stages, above.
+  `DetectionReadReachGateTest` and `WarmStartRefreshTest` keep their subjects and lose the arms that
+  enumerate registrations.
+- `HAND_WRITTEN` becomes the stage order gate's write-set roster for jOOQ-written tables, above. Its
+  impossibility criterion, which told a deliberate hand-written derivation from a bespoke materializer
+  written beside the register, is replaced by the criterion the gate enforces: every base table under
+  a derived family's prefix is written by a step the order names, and a base table no step writes fails
+  the build. The six tables it lists are declared by their actual owner per relation, not blanket:
+  `intent_type_domain` is the SDL gatherer's, as the fact-model page and `ClassificationDomainCapture`'s
+  own javadoc say; the other five are written by producers in the stratum and are declared `graphitron`.
+- The ten `derivation`-declared relations are re-owned one by one. Each of the nine `intent_` views is
+  declared with the owner R876's rule computes for it, checked by
+  `MetaDeclarationGateTest.aDeclaredViewReadsOnlyWhatItsOwnerMay` against that owner's declared
+  dependency set; one whose reads that set does not admit stays `derivation` and is named in the
+  changelog entry. `lint_violation` is written by the lint engine, not by any stage here, and is R876's
+  to move to a `lint` gatherer per its 2026-09-16 chapter; it stays `derivation` until then. So the
+  `derivation` row of `meta_gatherer` and its eight `meta_gatherer_dependency` edges go in this item
+  only if all ten have left it, and otherwise go with whichever item moves the last one. The
+  mechanism's deletion does not wait on that.
+- Rewrite the contributor-facing surfaces that describe the register as a mechanism:
+  `fact-model.adoc`'s "Ownership" section, whose paragraph on what `meta_materialize` is becomes a
+  paragraph on the stage order and its gate; the same page's lever order under "Derived reads are
+  views, not stored facts", whose fourth rung, "a registration", becomes "its owner stores it in a
+  stage", with one added sentence saying what a rule that is right as a view and too slow now does,
+  which also retires `meta_materialize.reason`'s distinction between "too slow" and "no view could
+  state it"; that page's paragraphs on `DerivedReadCostTest`, the two statistics tests and the refresh
+  observer, rewritten for their successors; `pipeline-overview.adoc`'s line naming the capture-cadence
+  materializations; and `dev-loop-internals.adoc`'s stuck-refresh recipe, rewritten around stage lines.
+  The `store-performance` skill names the register in seven places and is corrected in the same
+  commit; it sits outside the citation guard but not outside being true.
+- The retired names below graduate into `RetiredVocabularyGuardTest`'s registry, so `meta_materialize`
+  and `_live` cannot grow back as prose, and `FactSchemaGateTest`'s frozen relation roster holds that
+  they cannot grow back as relations.
 
 ## Tests
 
 - **Answer preservation, per conversion.** `EXCEPT` in both directions between the stage-written table
-  and the `_live` view text it replaced, over a populated store, per graph, before the view is deleted.
-  This oracle is the whole reason the conversions are cheap to review, and it is available precisely
-  because every one of these rules is expressible as a view.
+  and its rule view, per graph, over a populated store. Because the rule view survives the conversion,
+  this is a standing assertion rather than a one-commit check: a test in `graphitron`'s pipeline tier
+  runs it over every stage-written table on the captured fixture store, and it is the successor to the
+  agreement `FactCaptureAgreementTest.REGISTRATIONS` pins today.
 - **The relation tests already pinning each verdict** at the coordinate grain pass with no edit beyond
   the rename. A test whose expectations move is a signal that a conversion moved an answer.
-- **`FactCaptureAgreementTest`**, whose `REGISTRATIONS` map is the agreement surface between the two
-  capture entry points, shrinks with the register and is deleted with it.
+- **`StageOrderGateTest`**, new, above: the stratum's order against each stage's parsed read set and the
+  producers' declared write sets, failing on a stage that reads a table a later step writes. It binds
+  from the first conversion, not the last.
 - **`DerivedReadCostTest`** prices every pair of a registration and a relation reaching its target. Every
-  retirement moves its pinned set, which is the confrontation it exists to force, and when the register
-  is empty the test's subject is gone; what replaces it is the rule bench R876 names under "No instrument
-  for any of this lives in the repository", pricing a stage's statement against a captured store, and
-  that is R899's instrument rather than this item's to build.
+  retirement moves its pinned set, which is the confrontation it exists to force; when the register is
+  empty its subject is gone and it is deleted with the mechanism. What replaces it is the rule bench
+  R876 names under "No instrument for any of this lives in the repository", pricing a stage's statement
+  against a captured store, and that is R899's instrument rather than this item's to build.
+- **`RefreshPrerequisiteStatisticsTest`'s successor**: on a store holding no graph, every stage's insert
+  plans against analysed tables for every table its rule reads, asserted the way the test asserts it
+  today over registrations.
 - **`MetaDeclarationGateTest`** binds on every converted relation's declaration, including the
-  view-ownership gate, which is the mechanical check that a moved relation reads only what its owner may.
-- **`CaptureCorpusIsolationTest`** covers a producer's reads, which no catalog parse can see, and is the
-  gate that a stage reading a relation its gatherer is not declared downstream of fails.
-- **Acceptance evidence for the goal**, which a green build does not supply: `SELECT COUNT(*) FROM
-  meta_materialize` is not a query the store can answer, `grep -r "_live" graphitron-model/src/main`
-  finds nothing, and the `sis` consumer's `graphitron:capture` pass is timed before and after on a copy of
-  its store and written into the changelog entry.
+  view-ownership gate, which is the mechanical check that a moved rule view reads only what its owner
+  may, and on each of the ten re-owned relations.
+- **Acceptance evidence for the goal**, which a green build does not supply: the `sis` consumer's
+  `graphitron:capture` pass timed before and after on a copy of its store, warm and cold, written into
+  the changelog entry beside the per-stage lines that replaced the per-registration ones.
+
+## Retired vocabulary
+
+Mechanism names, gone with the last commit: `meta_materialize`, `meta_materialize_dependency`, the
+`_live` suffix and "the `_live` view", "registration", "registered target", "the register",
+"materializer", "materialization refresh", "refresh pass", "refresh order", "refresh stage",
+`Materializations` (as a class; the analyse loop is renamed), `RefreshProgress`, `refreshPartition`,
+`refreshWhole`, `refreshAll`, `refreshAnalysing`, `REGISTRATIONS`, `REFRESH_STAGES`, `HAND_WRITTEN`
+(as a name; the roster is repurposed under the gate's name), and "hand-written derivation" as a
+category distinct from a stage.
+
+Relation names, renamed by the move: the fifteen `intent_` names in the table above, each to its
+`graphitron_` successor and its `_rule` view, and R954's eight where R954 has not already swept them.
 
 ## What this item does not do
 
+- **It does not restate any rule in Java.** Every stage inserts from a stored rule view. The one open
+  shape question, a graph predicate inside a recursive seed, is R954's to settle and this item copies
+  its answer.
 - **It does not move the family-local misplacements.** Nine `intent_` relations compute to an owner that
   runs before `graphitron` and are R876's enumerated list; this item converts rules whose owner is
   `graphitron` and leaves the prefix on everything else, per R876's decision that the prefix stops
   naming an owner rather than being renamed away.
-- **It does not settle per-gatherer transaction control.** The stages run inside the capture transaction
-  as the eight existing ones do. Whether a gatherer should commit its family before deriving over it,
-  which the fact-model page names as the prerequisite for statistics-aware refresh, is R876's and stays
-  so; this item makes the question smaller by leaving one gatherer with one boundary.
+- **It does not merge the gatherer's stages, the producers and these stages into one class.** That is
+  R876's linear-read target; this item appends to the stratum in the order the ladder gives.
+- **It does not settle per-gatherer transaction control.** Both statistics cadences carry across as they
+  are; whether a gatherer should commit its family before deriving over it stays R876's.
 - **It does not touch R857's or R872's refresh scoping.** Both would let a dev round skip stages the edit
-  did not touch. A stage is a better unit for that than a registration, because its reads are in one
-  method rather than derived from a view definition at boot, but making stages skippable is their work.
+  did not touch. A stage is a better unit for that than a registration, because its read set is one
+  rule view rather than a boot-time derivation, but making stages skippable is their work.
 - **It does not build the rule bench.** R899 owns making a rule's cost countable from the tree.
+- **It does not mint a `lint` gatherer.** R876 has designed one; `lint_violation` waits for it.
 
 ## Relation to other items
 
-**R954** is the first rungs of this ladder and this item depends on it in the front-matter: its eight
-conversions are what make the fifteen here reachable without a seam, and its phase 2 is where the fold
-shape is first written. If R954's phase-3 measurement splits its phases 4 and 5 into a successor, that
-successor's four registrations sit between R954 and this item and are absorbed here rather than filed
-twice.
+**R954** is the bottom of this ladder and this item depends on it in the front-matter. Its eight
+conversions are what make thirteen of the fifteen here reachable without a seam, and two of this
+item's rungs become convertible part-way through it, as "What is in scope" states. Its round-2 review
+found two things this body takes as settled: that rungs reaching a hand-written table run after the
+producers, which is where every stage here runs, and that a recursive rule stays a single SQL
+statement rather than a Java loop. If its phase-3 measurement splits its phases 4 and 5 into a
+successor, that successor's four registrations sit between R954 and this item and are absorbed here
+rather than filed twice.
 
 **R876** is the doctrine and this is its burn-down item 8, the register, taken as an item of its own so
-that R876's own body, already past four thousand lines, does not carry another sequenced arc. R876's
-"What each mechanism becomes" table is this item's acceptance criterion row by row, and its finding that
-"all twenty registered targets compute to `graphitron`" is what lets this item convert without a single
-ownership judgement. What this item hands back: the ordering question R876 left open, "what orders two
-relations under one owner", turns out to have the answer the gatherer already had, statement order in
-one method, and `meta_materialize_dependency` needs no successor. R876's burn-down item 9, keying the
-targets, is folded into each conversion here rather than left to the end.
+that R876's own body does not carry another sequenced arc. R876's "What each mechanism becomes" table
+is this item's acceptance criterion row by row, with two amendments this body argues:
+`meta_materialize_dependency`'s *parse* survives as the stage order's gate, and the `derivation` row
+goes when its last declared relation leaves rather than with the register. Its finding that "all
+twenty registered targets compute to `graphitron`" is what lets this item convert without a single
+ownership judgement, and its silence about the ten declared `derivation` relations is why the last
+commit has to make ten. What this item hands back on R876's open question, "what orders two relations
+under one owner": the ordering constraint is satisfiable by construction bottom-up, statement order in
+one method realises it, and the derivable source the page demands is the rule view's stored definition
+read by a gate. R876's burn-down item 9, keying the targets, is folded into each conversion here.
 
 **R899** prices one register row at a time and was reopened to Spec because R876 takes the register
 away as the unit of account. This item is the removal; R899's instrument survives it as a bench over
 stages rather than registrations, and R899 should be re-cut against that once this item is Ready.
 
 **R942** fails the build on a rule that names an unregistered view once per driving row. With the
-register gone, "unregistered" stops meaning anything and the gate's subject becomes a stage that names a
-plain view on the inner side of a join; the detector's positions are unchanged, and R942 should say so in
-its own body when it is next touched.
+register gone, "unregistered" stops meaning anything and the gate's subject becomes a rule view named
+on the inner side of a join by another rule view; the detector's positions are unchanged, and R942
+should say so in its own body when it is next touched.
 
-**R953** is a statistics cliff on one evaluation of the walk and is orthogonal: a `SELECTIVITY` on a
-partition column is as true of a stage-written table as of a registered one.
+**R953** is a statistics cliff on one evaluation of the walk and is orthogonal: its lever 2, a
+`SELECTIVITY` on a partition column, is the floor under both statistics cadences here and lands per
+stage-written table.
 
 **R877** declares grains and owners family by family. Each conversion here writes the `meta_relation`
 row its relation owes, which is R877's kind of work done at the moment the relation is being rewritten
-anyway, and R877's reconciliation of the fourteen `sql_` rows declared `catalog` while `JooqFactCapture`
-writes them is unaffected.
+anyway, and the ten `derivation` re-declarations are the same work on relations this item does not
+otherwise touch.
 
 ## Other solutions we've considered
 
 - **Leave the register and register more.** It is three DDL lines per rule and it lands the same rows.
   It is not the plan because it grows a mechanism that exists to compensate for a gatherer not having an
-  order, when the gatherer has one; because it cannot write one graph's partition; and because its
-  reasons are unchecked prose that R876's audit found stale by up to three orders of magnitude with
-  nothing failing. R954's "Other solutions" makes the same case for its subtree and it holds for every
-  rung above.
-- **A producer inside the refresh order, declaring what it reads in a `meta_` relation.** The mechanism
-  R954's first draft proposed and withdrew: a hand-kept ordering with no derivable source, which the
-  fact-model page rules out by name. Bottom-up conversion makes it unnecessary.
+  order, when the pass has one; because its ordering is derived at boot from a register rather than
+  checked at build from the rule; and because its reasons are unchecked prose that R876's audit found
+  stale by up to three orders of magnitude with nothing failing. R954's "Other solutions" makes the same
+  case for its subtree and it holds for every rung above.
+- **Move each rule's text into the stage as a SQL string and delete the view.** This is the Backlog
+  draft of this item and R954's phase 1 as written. It takes the rule's read set out of the catalog,
+  where `ViewReferences`, the ownership gate and the order gate all read it, and makes the `EXCEPT`
+  oracle a one-commit artifact. The fact-model page's stored form keeps the view for exactly these
+  reasons. The one place the string form buys something a view cannot, a graph predicate inside a
+  recursive seed, is stated under "The recursive rule keeps its recursion in the view".
+- **A `meta_` relation declaring what each producer reads.** A hand-kept ordering with no derivable
+  source, which the fact-model page rules out by name. The gate above derives the read set from the rule
+  view instead, and only the jOOQ-written producers need a declared write set.
 - **Convert top-down, starting with the dearest rule.** The dearest rules are the deepest, so a top-down
-  order meets the seam at every step and needs the mechanism above. The bottom-up order costs the
-  cheapest conversions first and never meets the seam, which is why the ladder is ordered as it is.
+  order meets the seam at every step. The bottom-up order costs the cheapest conversions first and never
+  meets the seam.
 - **One commit for all fifteen.** Fifteen relations across three verdict families and a hundred-relation
   closure at the top, with the mutation chain's tests as the regression surface. The per-rung order
   exists so a reviewer checks one `EXCEPT` at a time and so trunk stays green between rungs.
-- **Rewrite the rules in Java rather than SQL.** A stage is an `INSERT ... SELECT`, so the rule stays
-  stated once in SQL and what changes is who runs it and when. Hand-rolled Java resolution would restate
-  each rule in a second language with no oracle to prove it against.
+- **Rewrite the rules in Java rather than SQL.** A stage inserts from a view, so the rule stays stated
+  once in SQL and what changes is who runs it and when. Hand-rolled Java resolution would restate each
+  rule in a second language with no oracle to prove it against.
+- **Drop the `derivation` gatherer with the register.** Ten declared relations name it and the foreign
+  key refuses. Re-owning them is ten judgements, not one, and one of them is a gatherer R876 has
+  designed and not yet landed.
 
 ## Provenance
 
