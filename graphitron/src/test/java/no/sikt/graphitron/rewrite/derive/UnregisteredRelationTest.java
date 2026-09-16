@@ -57,7 +57,7 @@ class UnregisteredRelationTest {
 
         List<String> registeredTarget;
         List<String> registeredDependent;
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("registered"), sdl, jooq)) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("registered"), sdl, jooq)) {
             registeredTarget = rows(store, TARGET);
             registeredDependent = rows(store, DEPENDENT);
         }
@@ -66,7 +66,7 @@ class UnregisteredRelationTest {
         assertThat(registeredTarget).as("the fixture populates the swapped relation").isNotEmpty();
         assertThat(registeredDependent).as("and the view that names it").isNotEmpty();
 
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("unregistered"), sdl, jooq)) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("unregistered"), sdl, jooq)) {
             var registration = Materializations.registrations(store.dsl()).stream()
                 .filter(r -> r.targetTableName().equals(TARGET))
                 .findFirst().orElseThrow();

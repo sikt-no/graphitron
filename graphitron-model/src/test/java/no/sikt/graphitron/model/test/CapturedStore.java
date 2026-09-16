@@ -84,8 +84,21 @@ public final class CapturedStore implements AutoCloseable {
     private final Path file;
     private final TypeDefinitionRegistry registry;
 
+    /**
+     * Whether this fixture booted its own store or borrowed the thread's, which is all
+     * {@link #close()} has to decide between. A case that rewrites the schema owns one; see
+     * {@link #ownStore}.
+     */
+    private final boolean owned;
+
     private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
                           TypeDefinitionRegistry registry) {
+        this(store, graphName, directory, file, registry, false);
+    }
+
+    private CapturedStore(GraphitronModelStore store, String graphName, Path directory, Path file,
+                          TypeDefinitionRegistry registry, boolean owned) {
+        this.owned = owned;
         this.store = store;
         this.graphName = graphName;
         this.directory = directory;
@@ -116,6 +129,43 @@ public final class CapturedStore implements AutoCloseable {
     // ---------------------------------------------------------------------------------------
     // The handle: one factory per capture shape.
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * {@link #of(Path, String)} on a store of this fixture's own rather than the thread's.
+     *
+     * <p>For a case that changes the schema. A clear puts rows back and cannot put a relation back,
+     * so a case that drops a table, or demotes a materialized target to a view the way the
+     * read-cost instrument does, would leave every later case on that thread looking at a different
+     * store. That is the rule the funnel already applies to the gate classes that issue DDL, and
+     * this is how a fixture obeys it.
+     *
+     * <p>Such a case pays for a boot, which is the honest price of the schema it rewrites.
+     */
+    public static CapturedStore ownStore(Path directory, String graphName, String sdl) {
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = FactStores.inMemory();
+        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, null, List.of(), false);
+        return new CapturedStore(store, graphName, directory, file, registry, true);
+    }
+
+    /**
+     * {@link #ofCatalog(Path, String, JooqCatalog)} on a store of this fixture's own, for the same
+     * reason {@link #ownStore} exists: the cases that reach for this install their own relations or
+     * demote registered ones to views, and a clear cannot undo either.
+     */
+    public static CapturedStore ownStoreOfCatalog(Path directory, String sdl, JooqCatalog jooq) {
+        Path file = write(directory, GRAPH, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        var store = FactStores.inMemory();
+        captureFiles(store.dsl(), List.of(file), directory, GRAPH, registry, jooq, List.of(), false);
+        return new CapturedStore(store, GRAPH, directory, file, registry, true);
+    }
+
+    /** {@link #ownStore(Path, String, String)} under the default graph. */
+    public static CapturedStore ownStore(Path directory, String sdl) {
+        return ownStore(directory, GRAPH, sdl);
+    }
 
     /** Captures {@code sdl} alone: the shape for the arms answered by SDL-derived facts. */
     public static CapturedStore of(Path directory, String sdl) {
@@ -159,7 +209,7 @@ public final class CapturedStore implements AutoCloseable {
         List<Path> files = List.of(write(directory, firstName, firstSdl),
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
-        var store = FactStores.inMemory();
+        var store = ThreadConfinedStore.borrow();
         captureFiles(store.dsl(), files, directory, GRAPH, registry, jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
     }
@@ -235,7 +285,7 @@ public final class CapturedStore implements AutoCloseable {
             throw new AssertionError("nothing objected to " + files.getLast().getFileName()
                 + "; this arm's whole subject is a read that refused something");
         }
-        var store = FactStores.inMemory();
+        var store = ThreadConfinedStore.borrow();
         var assembly = SchemaAssembly.of(parse.registry());
         FactCapture.capture(store.dsl(), false, graph(directory), corpusOf(files, directory),
             parse.registry(), assembly, new SdlVerdicts(parse.failures(), parse.registryErrors()),
@@ -249,7 +299,7 @@ public final class CapturedStore implements AutoCloseable {
                                                 List<CompletionData.ExternalReference> census) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = FactStores.inMemory();
+        var store = ThreadConfinedStore.borrow();
         captureFile(store, file, directory, graphName, registry, jooq, census, false);
         return new CapturedStore(store, graphName, directory, file, registry);
     }
@@ -568,6 +618,10 @@ public final class CapturedStore implements AutoCloseable {
 
     @Override
     public void close() {
-        store.close();
+        if (owned) {
+            store.close();
+        } else {
+            ThreadConfinedStore.release();
+        }
     }
 }

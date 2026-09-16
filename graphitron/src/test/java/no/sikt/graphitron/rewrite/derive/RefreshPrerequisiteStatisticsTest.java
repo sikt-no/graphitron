@@ -78,7 +78,7 @@ class RefreshPrerequisiteStatisticsTest {
     static void observeBothCadences() {
         var ctx = TestConfiguration.testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("prerequisites"),
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("prerequisites"),
                 MaterializedRegistryFixture.scaledSdl(UNITS), jooq)) {
             DSLContext dsl = store.dsl();
             Map<String, Set<String>> prerequisites = prerequisiteTargets(dsl);

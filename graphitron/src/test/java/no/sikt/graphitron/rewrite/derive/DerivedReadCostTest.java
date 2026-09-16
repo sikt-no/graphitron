@@ -847,7 +847,7 @@ class DerivedReadCostTest {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         String sdl = scaledSdl(UNITS);
 
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("registered"), sdl, jooq)) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("registered"), sdl, jooq)) {
             reached = MaterializeDependencies.registrationsReachedByView(store.dsl());
             registrations = Materializations.registrations(store.dsl());
             for (var cell : reached.entrySet()) {
@@ -861,7 +861,7 @@ class DerivedReadCostTest {
 
         for (var registration : registrations) {
             List<String> readers = readersOf(registration);
-            try (var store = CapturedStore.ofCatalog(
+            try (var store = CapturedStore.ownStoreOfCatalog(
                     tmp.resolve("unregistered-" + registration.targetTableName()), sdl, jooq)) {
                 UnregisteredRelation.install(store.dsl(), registration);
                 for (String reader : readers) {
@@ -946,7 +946,7 @@ class DerivedReadCostTest {
             .filter(r -> r.targetTableName().equals("intent_resolved_type_binding"))
             .findFirst().orElseThrow();
 
-        try (var store = CapturedStore.ofCatalog(
+        try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
             RunawayRelation.install(store.dsl(), "intent_bound_table");

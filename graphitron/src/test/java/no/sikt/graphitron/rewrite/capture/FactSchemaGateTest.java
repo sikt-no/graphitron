@@ -396,7 +396,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("merge ordinals are dense from zero within each type")
     void mergeOrdinalsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var gaps = store.dsl()
                 .select(GRAPHQL_TYPE_DECLARATION.TYPE_NAME)
                 .from(GRAPHQL_TYPE_DECLARATION)
@@ -421,7 +421,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("node key-column entries hang only off a parent that stated an array")
     void nodeKeyColumnEntriesHangOffAnArrayParent(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, FIXTURE, fixtureCatalog())) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp, FIXTURE, fixtureCatalog())) {
             assertThat(store.dsl().fetchCount(SQL_NODE_KEY_COLUMN))
                 .as("entries the fixture catalog's node-bearing tables state")
                 .isPositive();
@@ -447,7 +447,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("node key-column positions are dense from zero within each table")
     void nodeKeyColumnPositionsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, FIXTURE, fixtureCatalog())) {
+        try (var store = CapturedStore.ownStoreOfCatalog(tmp, FIXTURE, fixtureCatalog())) {
             var gaps = store.dsl()
                 .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME)
                 .from(SQL_NODE_KEY_COLUMN)
@@ -468,7 +468,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("application ordinals are dense from zero within each coordinate")
     void applicationOrdinalsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             assertThat(store.dsl()
                 .select(GRAPHQL_TYPE_DIRECTIVE.TYPE_NAME, GRAPHQL_TYPE_DIRECTIVE.DIRECTIVE_NAME)
                 .from(GRAPHQL_TYPE_DIRECTIVE)
@@ -490,7 +490,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("the wrapping decode agrees with the captured type expression")
     void wrappingDecodeAgreesWithTypeSdl(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             // The correspondences SQL can express: an outermost '!' is non_null, a leading '['
             // is is_list, and the named type is a substring of the expression. Deeper interior
             // structure is out of a LIKE's reach and stays the decode's own business.
@@ -508,7 +508,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("default values appear only under INPUT_OBJECT parents")
     void defaultValuesOnlyOnInputFields(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var offenders = store.dsl()
                 .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
                 .from(GRAPHQL_FIELD)
@@ -529,7 +529,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every directive application resolves to a captured definition")
     void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE);
             assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_DIRECTIVE,
                 GRAPHQL_SCHEMA_DIRECTIVE.DIRECTIVE_NAME.notIn(defined))).isZero();
@@ -552,7 +552,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("a decoded graphitron application keeps its verbatim row too")
     void theDecodeDoesNotReplaceTheTranscription(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var decoded = store.dsl()
                 .select(GRAPHITRON_TABLE_ENTRY.TYPE_NAME)
                 .from(GRAPHITRON_TABLE_ENTRY)
@@ -571,7 +571,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("the federation dual projection agrees with its verbatim twin")
     void federationKeyProjectionsAgree(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var decoded = store.dsl()
                 .select(GRAPHITRON_FEDERATION_KEY_ENTRY.TYPE_NAME, GRAPHITRON_FEDERATION_KEY_ENTRY.ORDINAL)
                 .from(GRAPHITRON_FEDERATION_KEY_ENTRY)
@@ -590,7 +590,7 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every element hangs off a declaration site of its own type")
     void elementSiteReferencesAreTotal(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             // The FK already guarantees this; the gate exists because a NULL source_name would
             // silently disable it under MATCH SIMPLE, which is the reason that column is NOT NULL.
             var orphans = store.dsl()

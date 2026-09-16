@@ -141,27 +141,34 @@ final class ThreadConfinedStore {
      * one. It had been at the count, and that is what a clean run at eighty-two cost. Leave the
      * headroom, and recount when it is gone.
      *
-     * <p><b>Four hundred and twenty, and the number is a debt rather than a budget.</b> This guard
+     * <p><b>A hundred and fifty, and the number is a debt rather than a budget.</b> This guard
      * only runs when a funnel case runs, so for as long as {@code graphitron} had exactly one such
      * case it never fired there and the module's boot count went unread. Routing
      * {@code CapturedStore}'s scoped form through the funnel switched it on, and the first thing it
-     * said was that the module opens 398 stores in a JVM against a figure chosen for 55. The count
-     * is real and was always real; what changed is that something now reads it.
+     * said was that the module opens 398 stores in a JVM against a figure chosen for 55. The count was
+     * real and was always real; what changed is that something now reads it. Routing
+     * {@code CapturedStore} through the funnel took it to about 105, and this sits above that.
      *
      * <p>So this is pinned above what {@code graphitron} costs today, which makes it a ratchet and
-     * not an allowance: it can only come down, and it comes down as {@code CapturedStore}'s held
-     * form follows its scoped one onto the funnel. Pinned well above rather than just above, which
-     * the first attempt got wrong: 420 against an observed 398 failed on the next run at 438,
-     * because at this size the count is not the stable ordering the paragraph above describes but a
-     * total over however many threads the pool happened to use. Headroom here is not slack, it is
-     * the difference between a guard and a coin flip. Two consequences worth naming rather than
+     * not an allowance: it can only come down, and what brings it down is a case that stops booting
+     * a store of its own. Pinned well above rather than just above, which two attempts got wrong:
+     * 420 against an observed 398 failed on the next run at 438, and 100 against an observed 105
+     * failed at once. At this size the count is not the stable ordering the paragraph above
+     * describes but a total over however many threads the pool happened to use, so headroom here is
+     * not slack, it is the difference between a guard and a coin flip.
+     *
+     * <p>What is left under it is the cases that own a store deliberately, which is the ones that
+     * change the schema: a clear puts rows back and cannot put a relation back, so a case that
+     * demotes a registered target to a view leaves the thread's store a different shape for every
+     * case after it. Those reach {@code CapturedStore.ownStore}, and every one of them is a boot
+     * this number is counting. Two consequences worth naming rather than
      * discovering. It is one constant over two modules whose counts differ by a factor of seven, so
      * while it sits here it guards {@code graphitron-model}'s 55 against nothing; that is the price
      * of keeping the number in one place while the larger module is mid-conversion. And a store
      * boot is around 390 ms, so 398 of them is most of a CPU-minute per fork, which is what the
      * ratchet is for.
      */
-    private static final int BOOT_BUDGET = 550;
+    private static final int BOOT_BUDGET = 150;
 
     private final GraphitronModelStore store;
 
@@ -212,6 +219,49 @@ final class ThreadConfinedStore {
         } finally {
             held.inUse = false;
         }
+    }
+
+    /**
+     * The same borrow as {@link #run}, taken and given back by hand rather than around a body, for
+     * a fixture whose own shape is acquire-and-close. {@code CapturedStore} hands its caller an
+     * {@link AutoCloseable} and cannot wrap the caller's block in a callback. The store rather than
+     * its {@code DSLContext}, because a fixture that borrows also mints readers off it.
+     *
+     * <p><b>A borrow nobody gave back is reclaimed, not refused, and the clear is why.</b> Every
+     * borrow begins by putting the store back into its booted state, so a case inheriting one that
+     * another case forgot inherits nothing with it. Refusing was tried and is worse than the leak:
+     * the next unrelated case on that thread failed, so the failure landed nowhere near its cause
+     * and one missed close took 121 cases down with it.
+     *
+     * <p>Still refused is a borrow taken while a {@link #run} body is executing, where the clear is
+     * the damage rather than the repair: it empties the rows that body is asserting on.
+     * {@code inUse} is true only for the span of such a body, which makes it an exact test for that
+     * and nothing else.
+     *
+     * <p>What a borrow cannot survive is a case that changes the schema. A clear puts rows back and
+     * cannot put a relation back, so a case that drops a table, or demotes a materialized target to
+     * a view as the read-cost instrument does, leaves the thread's store a different shape for
+     * every case after it. Such a case owns its store; {@code CapturedStore.ownStore} is that arm,
+     * and the rule is the one the funnel already had for the gate classes that issue DDL.
+     */
+    static GraphitronModelStore borrow() {
+        ThreadConfinedStore held = HOLDER.get();
+        if (held.inUse) {
+            throw new IllegalStateException("a seeded-store body is running on this thread, and a"
+                + " borrow taken inside it would clear that body's rows out from under it; a case"
+                + " wanting a second store should reach FactStores directly, and one wanting a"
+                + " second graph should seed it with SeededStore.seedGraph inside the body it has");
+        }
+        verifyBootBudget();
+        held.clear();
+        return held.store;
+    }
+
+    /**
+     * Gives back what {@link #borrow} took. Idempotent, and not load-bearing: the next borrow
+     * clears regardless, so this says the fixture is done rather than keeping it correct.
+     */
+    static void release() {
     }
 
     /** The budget {@link FactStores#boots()} is held to, so a test need not restate the number. */
