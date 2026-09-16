@@ -46,6 +46,62 @@ ordering the fact model should have been using. The evidence is in
 `roadmap/audits/2026-08-28-derived-read-cost-premise.md`, which is filed as an audit precisely so it
 outlives this file.
 
+## Entries, derivations and anchors, and what each one forces
+
+The target shape, stated here because every slice below is a step toward it.
+
+An **entry** is computed from a corpus: one row per written thing, read from one file. A
+**derivation** is computed from rows already in the store. An **aggregating derivation** is one that
+collapses, meaning no single input row answers for a row of it; a window function does not collapse,
+since `lead`, `lag` and `count() over` preserve one row per input row. Aggregation names a sort of
+derivation and forces nothing of its own: it is the case where no foreign key could state the
+dependency even in principle, which is why the view below is required of every derivation and not
+only of this sort.
+
+An **anchor** establishes a grain, its key being one no other relation is the authority for. That
+cuts across the rest: an anchor may be an entry or a derivation. It is decidable from the declared
+keys and the foreign keys between them, so it needs no declaring. A key its own references already
+cover is composed; a key they do not cover is established.
+
+| what it is | why | what it forces |
+|---|---|---|
+| an entry | a view cannot read a corpus | a table |
+| a derivation | a foreign key states only what a relation keys into, and a derivation consults more than that | its rule stated as a view |
+| an anchor | a foreign key cannot reference a view | a table |
+| stored, for any of those | a later reading must correct its rows | an owner, and mark and sweep |
+| measured hot | read cost | may be stored, and forces nothing else |
+
+So the full arrangement, a view and a table and an owner that sweeps, is earned by a derivation that
+establishes a grain, and by nothing else. `graphql_element` and `graphitron_field_chain_link` are
+that; the resolved chain links, which compose a grain, are a view and no more.
+
+Dependencies are never declared. A derivation's come from its view body; an entry's are its own
+foreign keys, there being nothing else it reads. A gatherer's set is the union over its relations,
+which is why the declaration belongs to the relation: a gatherer captures entries and derivations at
+once, so a gatherer-grained edge is too coarse to be true of either. The document gatherer owns 84
+declared relations and carries no dependency rows at all.
+
+A view body is read to check, not to plan. Ordering is the owner's own and local to it, and no
+graph-wide walk decides what runs when. The register and its dependency planner both dissolve, which
+is what naming an owner buys: a rule nobody owns needs scheduling, and an owned one does not.
+
+Three gates follow. A relation's declared owner is the gatherer that refreshes it. A derivation's
+view reads only what its owner owns or depends on. A stored relation got its rows by mark and
+sweep.
+
+Storing has three possible reasons and no default, which is the habit this item exists to break.
+
+### Owed before this is cut
+
+- **The aggregate census**: which relations collapse and have no view stating their rule. That count
+  is the size of the migration.
+- **The anchor test as a gate**, since it is decidable rather than declarable, catching both a
+  relation inventing a grain and one claiming a grain it composes.
+- **The rules a view cannot state.** One candidate turned out not to be: the chain walk wanted a
+  window function over the path order, consecutive key elements sharing a table. What remains is the
+  expansion that mints population.
+- **What an owner states about its own order**, where one of its stored relations reads another.
+
 ## What changes when this lands
 
 **Every rule gets an owner, and `meta_materialize` dissolves.** That is what this item is about. A
@@ -337,6 +393,13 @@ its owner is that document's crawler. An anchor is the opposite shape by constru
 joining an entry against `sql_node_metadata`, and could not run inside a walk at all. The two halves
 are the two answers to the ownership question, and the family they share was never what the question
 asked.
+
+That is still the rule, in the vocabulary the section above settles: an entry is computed from a
+corpus and a derivation from rows, which is this section's own question, what a row is a function of,
+asked about the input rather than the owner. What it does not decide is the derivation's form. Two
+properties do that, and they are independent of the kind and of each other: collapsing, which means
+no foreign key can state the dependency, and being keyed into, which means it cannot be a view. This
+sentence's "anchor" means the first, so it means aggregate.
 
 That sentence read "the SDL walk writes every entry" until 2026-09-11, and the correction is the rule
 working rather than the rule bending. An entry is a function of one document, so its owner is
