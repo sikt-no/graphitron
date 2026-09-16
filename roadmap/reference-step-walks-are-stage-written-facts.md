@@ -64,14 +64,22 @@ endpoint pair a reference walk chains between.
 
 ## What is in scope
 
-Three sibling walks, which differ only in where the chain departs from, and which all read
-`intent_field_reference_step_hop`'s candidate joins:
+Three sibling walks, which differ only in where the chain departs from, and which all read the
+candidate joins of `intent_field_reference_step_hop`, itself a registered target:
 
-- `intent_field_reference_step_target`, departing from the enclosing type's own binding. Registered.
+- `intent_field_reference_step_target`, departing from the enclosing type's own binding. A view.
+  R953's third lever proposes registering it; this item proposes a stage instead, and the two should
+  agree before either implements.
 - `intent_argument_reference_step_target`, departing from the table the argument's content binds
-  against. Registered, by R943's fourth lever.
+  against. The only one of the three already stored, registered by R943's fourth lever, and
+  therefore the one that shows what storing buys: it costs nothing measurable in the rule this
+  investigation timed, where its unstored sibling dominates.
 - `intent_input_field_reference_step_target`, departing from the table the consuming field handed
   the expansion. A view, and the one this investigation measured.
+
+Two of the three are unstored, and the third is stored by the lever this item argues against. That
+is the item in one sentence: the same rule shape has been answered three different ways, none of
+them by writing the fact down.
 
 One relation that is not a walk and belongs to a different family. `intent_node_id_decode_hop_live`
 inlines an anonymous derived table over `sql_referential_constraint` that counts the foreign keys
