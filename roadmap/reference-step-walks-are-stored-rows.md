@@ -738,3 +738,86 @@ the phase that used to is now a measurement phase with no such sentence, so ther
 be inconsistent. The underlying fact the finding establishes is kept where it matters: phase 0 still
 reaches `sql_referential_constraint` for the constraint name, and the body now says so explicitly and
 asks whether that reach wants an index.
+
+### Round 2 (2026-09-16, Spec -> Ready, reviewer session 01AXRLbCvhG9iCJNKVHG5akT)
+
+Verdict: withhold. Two blocking findings on question two. Both are about the shape of a phase rather
+than about the goal, which question one clears: a consumer whose schema is large gets a
+`graphitron:dev` round, a `generate` and a CI build whose cost grows with the schema rather than with
+its square, because the `@reference` walk every `@nodeId` decode reads becomes rows the graphitron
+gatherer wrote once per capture instead of a recursive view re-expanded under each driving row. The
+structural finding checks out as computed rather than as argued: the closure of the three walks
+through `intent_` relations is 27 relations with 8 registered, the field walk's own closure carries
+exactly the three registrations the ladder names and no hand-written table, and every rung 0 to 2
+relation's inputs are captured facts or plain views over them. `FactCapture.capture` runs the jooq,
+catalog and sdl gatherers before the graphitron one, so a stage placed before `FieldEndpoints.derive`
+reads current `sql_`, `jvm_` and `graphql_` rows. Round 1's findings are all answered in the body as
+their responses say.
+
+**Finding 1 (question two: architecture fit). The seam dissolves bottom-up for registered targets,
+and rungs 4 and 5 read hand-written targets the same seam covers and nothing on the ladder converts.**
+
+"The seam is self-dissolving bottom-up" and "converting bottom-up means no stage ever reads a
+registered target" are both true and both too narrow. `FactCapture.capture` runs
+`GraphitronFactCapture.capture`, flushes, and then runs the hand-written producers
+`ClassificationDomainCapture.derive`, `InputOccurrencePaths.derive`, `ArgMappingCandidates.derive`,
+`TypeBackingRows.derive` and `AuthoredClaimRejectionRows.derive` before `Materializations.refresh`. A
+stage inside the graphitron gatherer therefore reads a hand-written table's *previous* capture's rows,
+exactly as it would a registered target's. Computed from the DDL: the input-field walk's closure
+contains `intent_input_occurrence_path`, `intent_input_occurrence_path_step` and
+`intent_type_backing_class`, and the argument walk's contains `intent_type_backing_class`; all three
+are `HAND_WRITTEN` and written after the gatherer. The field walk's closure contains none of them,
+so phases 1 and 2 are placed correctly and this finding does not touch them. Phase 4's list of what
+rung 4 reaches names `intent_type_backing` and stops one relation short of the table under it.
+
+The fix is placement rather than a mechanism, and the tree already has the shape: `ArgMappingCandidates.derive`
+writes `graphitron_argmapping_candidate`, the R876 precedent this body cites, and it runs in the
+derivation stratum after the hand-written producers, not as a stage of `GraphitronFactCapture.capture`.
+None of the five hand-written producers reads any ladder relation (checked against their `Tables`
+imports and the closures of the views they do read), so placing rungs 4 and 5 after them closes the
+seam with no cycle. What would satisfy this: phases 4 and 5 say where their producers run and why
+that position is current for every input, and the "What this item does not do" bullet says "no stage
+ever reads a registered or hand-written target that a later step of the pass writes", or the
+equivalent in the author's words. Whether the rung 0 to 2 stages stay in the gatherer or all of them
+move to the stratum is the author's call; the body should make it, since it decides which class an
+implementer edits.
+
+**Finding 2 (question two: architecture fit). Phase 2's fold restates a rule the tree states in SQL,
+on a reading of the view that is not what the DDL holds, and phase 5 inherits the shape.**
+
+The structural finding says the rule "stays stated once, in SQL, and what changes is who runs it and
+when", and phase 1 does exactly that, "the rule moving into the stage's `INSERT ... SELECT`
+unchanged". Phase 2 does something else: a Java loop of one insert per position with a termination
+bound and an assertion, then "one grouped `UPDATE` per graph rather than two window functions inside
+a recursive term". Two things about that.
+
+The reading is off. In `intent_field_reference_step_target` as shipped, `targets` and `candidates`
+are `MAX(target_rank) OVER` and `COUNT(*) OVER` in the outer `SELECT` over the finished `chain`, not
+inside the recursive term; the recursive term is a plain `UNION` of the seed with one join to the hop
+table on the eight columns `ix_field_reference_step_hop_step` serves. So the fold removes nothing that
+is there, and the walk standalone is milliseconds by this body's own table; the cost was the
+per-driving-row re-evaluation, which any once-per-capture write removes.
+
+The single-statement form is available. H2 2.4.240 accepts `INSERT INTO t WITH RECURSIVE chain AS
+(...) SELECT ..., COUNT(*) OVER (...) FROM chain`, checked on the jar in the local repository with a
+seed filtered to one graph. So the view text moves into the stage as phase 1's does, per graph, with
+the `EXCEPT` oracle comparing two evaluations of the same text rather than two texts, and the
+termination assertion is unnecessary because `UNION` reaches a fixpoint and `position` strictly
+increases. A Java fixpoint loop has one precedent in the tree, `ClassificationDomainCapture`, which is
+a `HAND_WRITTEN` producer admitted on the argument that no view could state its rule; this rule is
+stated by a view, so the licence does not transfer. What would satisfy this: phase 2 (and phase 5,
+"on the phase-2 shape") adopt the single-statement form, or the body states the H2 limit or the
+measurement that makes the fold necessary, so an implementer is not left to pick.
+
+**Non-blocking, question two.** Phase 0 says "the existing `sweep(dsl, sourceNames(tables),
+touchedAt)` covers it". The sweep iterates `TABLES_TO_SWEEP`, a fixed list in `JooqFactCapture`,
+so the new table is covered once it is added there; the discipline the body names is right, the
+sentence understates the edit by one line.
+
+**Non-blocking, question one.** Phase 2 says `intent_resolved_type_binding` "has five named readers".
+Eight view bodies name it in the DDL (`intent_field_reference_step_target`,
+`intent_field_column_scope_live`, `intent_field_reference_discovery`, `intent_type_backing`,
+`intent_field_participant_scope_table`, `intent_field_scope_table_live`, `intent_carrier_routine_hop`,
+`intent_input_field_filter_role_live`) and `StoreNodeTables` reads it from Java. The count only
+strengthens the convert expectation, so nothing in the plan moves; the number should match whatever
+`DerivedReadCostTest` says when the phase lands.
