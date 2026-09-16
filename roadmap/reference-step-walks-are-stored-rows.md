@@ -244,7 +244,7 @@ this phase only stops it being read through a registration.
 
 ### Phase 2: the field walk
 
-`intent_resolved_type_binding` converts or demotes per the rule above; it has five named readers, so
+`intent_resolved_type_binding` converts or demotes per the rule above; eight view bodies and `StoreNodeTables` name it, so
 converting is the expectation and the commit says which way the count sent it.
 
 `intent_field_reference_step_target` becomes `graphitron_field_reference_step_target`, written by a
@@ -821,3 +821,53 @@ Eight view bodies name it in the DDL (`intent_field_reference_step_target`,
 `intent_input_field_filter_role_live`) and `StoreNodeTables` reads it from Java. The count only
 strengthens the convert expectation, so nothing in the plan moves; the number should match whatever
 `DerivedReadCostTest` says when the phase lands.
+
+### Round 3 (2026-09-16, Spec -> Ready, reviewer session 01XUN2yJExpaZCTtLj3DPWqC)
+
+Verdict: withhold. Nothing new is blocking; round 2's two blocking findings stand unanswered in the
+body, and both were re-checked against the tree by this session rather than taken on trust. The plan
+sections still read as they did when round 2 was written: phase 2 still describes a Java fold and
+"two window functions inside a recursive term", phases 4 and 5 still say nothing about where their
+producers run, and neither finding carries a response. A spec with an open blocking finding is not
+Ready whatever a third reader thinks of it, so this round exists to record that the findings were
+independently confirmed and to say what the next pass will look at.
+
+**Round 2, finding 1 stands (question two).** `FactCapture.capture` runs `GraphitronFactCapture.capture`,
+flushes, then runs `ClassificationDomainCapture.derive`, `InputOccurrencePaths.derive`,
+`ArgMappingCandidates.derive`, `TypeBackingRows.derive` and `AuthoredClaimRejectionRows.derive`, and
+only then `Materializations.refresh`. Recomputed from the DDL: the input-field walk's closure holds
+`intent_input_occurrence_path`, `intent_input_occurrence_path_step` and `intent_type_backing_class`,
+the argument walk's holds `intent_type_backing_class`, and rung 4's own reach holds all three through
+`intent_type_backing`. All are `HAND_WRITTEN` and written after the gatherer. The field walk's closure
+holds none, so phases 1 and 2 are placed correctly. What satisfies it is what round 2 said: phases 4
+and 5 name where their producers run and why that position is current for every input, and the
+"does not do" bullet widens from "registered target" to any target a later step of the pass writes.
+
+**Round 2, finding 2 stands (question two).** In `intent_field_reference_step_target` as shipped the
+recursive term is a plain `UNION` of the seed with one join to the hop on the eight indexed columns;
+`DENSE_RANK`, `MAX(target_rank) OVER` and `COUNT(*) OVER` sit in the outer `SELECT` over the finished
+`chain`. Phase 2's fold therefore removes nothing that is there, and the plan's own structural finding
+("the rule stays stated once, in SQL") argues against it. What satisfies it is what round 2 said:
+phase 2 and phase 5 adopt the single-statement `INSERT ... WITH RECURSIVE ... SELECT` per graph, or
+the body names the H2 limit or measurement that makes the fold necessary.
+
+**Everything else was re-verified and holds.** The closure of the three walks through `intent_`
+relations is 27 relations with 8 registered, exactly the eight the ladder names, and every leaf is
+`graphitron_`, `graphql_`, `sql_`, `jvm_` or `store_`. Rung 0's inputs are all captured facts, and
+`graphitron_spelled_reference_entry` is written by `SdlCapture.captureGraphitronAnchors` before the
+graphitron gatherer runs, so a stage placed before `FieldEndpoints.derive` reads current rows for
+phase 1. `GraphitronFactCapture.capture` runs eight stages ending in `FieldEndpoints.derive`.
+`JooqFactCapture.capture` writes `referentialConstraints` and closes with the sweep over
+`TABLES_TO_SWEEP`; `CatalogFactCapture.capture` calls `captureExtensions` alone. Fourteen of the
+fifteen `sql_` tables carry `touched_at`, `sql_table_record_supertype` being the one without. All
+fourteen declared `sql_` relations name `catalog` as owner and none names `jooq`; `jooq` carries a
+`catalog` corpus row and `graphitron` carries none. The `graphitron_` family is 127 tables and 2
+views, `graphitron_argmapping_match` is among the views, and `sql_table_reference`,
+`graphitron_spelled_table` and `graphitron_field_reference_step_hop` are free names. Both indexes the
+body names exist with the comments it quotes, "would dominate the read" occurs once in the DDL and on
+`intent_node_id_decode_hop`'s table comment, and R953 is `Backlog`. Every test class, gate method and
+fixture the body names exists under that name.
+
+**Corrected in passing.** Phase 2's "five named readers" of `intent_resolved_type_binding` is now the
+count the DDL and `StoreNodeTables` give, per round 2's non-blocking note; the convert expectation it
+supports is unchanged.
