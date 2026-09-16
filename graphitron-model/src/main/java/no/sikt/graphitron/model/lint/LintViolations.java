@@ -31,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.length;
@@ -40,6 +41,7 @@ import static org.jooq.impl.DSL.substring;
 import static org.jooq.impl.DSL.trim;
 import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.position;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
@@ -227,7 +229,7 @@ public final class LintViolations {
             f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f,
             f.GRAPH_NAME.eq(graph)
                 .and(undocumented(f.DESCRIPTION))
-                .and(org.jooq.impl.DSL.exists(selectOne().from(r)
+                .and(exists(selectOne().from(r)
                     .where(r.GRAPH_NAME.eq(graph), r.TYPE_NAME.eq(f.TYPE_NAME))))
                 .and(authored(f.SOURCE_NAME))
                 .and(notExcluded(dsl, graph, f.TYPE_NAME)));
@@ -491,7 +493,7 @@ public final class LintViolations {
                     inline("_"), inline("!_")),
                 inline("*"), inline("%")),
             inline("?"), inline("_"));
-        return org.jooq.impl.DSL.notExists(selectOne()
+        return notExists(selectOne()
             .from(x)
             .where(x.GRAPH_NAME.eq(graph))
             .and(typeName.like(pattern, '!')));

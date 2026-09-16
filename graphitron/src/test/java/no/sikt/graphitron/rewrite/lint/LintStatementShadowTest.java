@@ -63,6 +63,7 @@ class LintStatementShadowTest {
           widgetName: String
           widgetland: String
           bare: String
+          Colour: String
           kind: Kind
           arg(Locale: String, fine: String): String
           old: String @deprecated
@@ -87,6 +88,22 @@ class LintStatementShadowTest {
         }
         """;
 
+    /**
+     * Every rule the statements implement, which the corpus above is written to break at least
+     * once each. Held here rather than read off the findings, that being the thing under test: a
+     * corpus that stopped reaching a rule would otherwise narrow this list along with itself.
+     */
+    private static final List<String> EVERY_RULE = List.of(
+        "input-object-name-suffix",
+        "type-names-pascal-case",
+        "enum-values-screaming-snake-case",
+        "input-and-argument-names-camel-case",
+        "field-names-camel-case",
+        "no-typename-prefix",
+        "types-and-fields-have-descriptions",
+        "deprecations-have-a-reason",
+        "no-deprecated-directive-usage");
+
     @Test
     @DisplayName("the statements and the visitors find the same things in the same places")
     void theRowsAgreeWithTheWalk() {
@@ -102,11 +119,22 @@ class LintStatementShadowTest {
             var walked = fromTheWalk(store.dsl());
             var stored = fromTheRows(store.dsl());
 
+            assertThat(rulesIn(walked))
+                .as("the corpus still exercises every rule, without which two empty sets would"
+                    + " agree and the comparison would report a parity it never made")
+                .containsExactlyInAnyOrderElementsOf(EVERY_RULE);
             assertThat(stored)
                 .as("every finding the walk reports, at the position it reports it, and nothing"
                     + " the walk does not")
                 .containsExactlyInAnyOrderElementsOf(walked);
         }
+    }
+
+    /** The rules a set of findings names, each finding being {@code rule @ line:column}. */
+    private static Set<String> rulesIn(Set<String> findings) {
+        var rules = new TreeSet<String>();
+        findings.forEach(finding -> rules.add(finding.substring(0, finding.indexOf(" @ "))));
+        return rules;
     }
 
     /**
