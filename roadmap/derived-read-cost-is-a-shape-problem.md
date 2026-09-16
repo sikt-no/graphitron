@@ -4130,3 +4130,46 @@ The fix is local to `captureEntries`, which already holds the list of sources it
 graph's entry rows whose `source_name` is not in that list, and drop the `store_source` rows the
 graph no longer references. It goes in before the anchors gain catalog access, because once they
 resolve against `sql_` and `code_` a stale entry feeds catalog resolution too.
+
+## The lint rules become statements, and lint wants a gatherer (2026-09-16)
+
+Harvested from session-b. Nine rules that were visitors over the parsed document are now nine
+statements over the captured rows, writing `lint_violation`: `input-object-name-suffix`, the three
+name shapes, `field-names-camel-case`, `no-typename-prefix`,
+`types-and-fields-have-descriptions`, `deprecations-have-a-reason` and
+`no-deprecated-directive-usage`.
+
+The relation is keyed on the written position rather than on the coordinate, and the consequence is
+taken rather than tolerated: a name spelled wrongly at a base declaration and at two extensions is
+three rows, because that is three lines the author edits. A coordinate-keyed relation would have
+said it once and pointed at whichever site capture met first.
+
+A row asserts a defect, which decides each rule's population and not only its predicate. A type
+extension carries no description slot, so an undescribed one draws no row: it is not an undocumented
+type, it is a place where documenting cannot be done, and a finding there would be a false fact
+rather than a noisy one.
+
+Two things are worth keeping from how it was verified. The statements are held against the visitors
+they replace, and separately against this repository's own five thousand line example schema, which
+nobody wrote for a lint test. And the anchors are the whole difference between a pattern in Java and
+the same pattern in SQL: `Pattern.matches` anchors both ends, `regexp_like` does not, so an
+unanchored camel-case pattern holds of nearly every name there is and the rule goes quiet rather
+than loud. A rule gone quiet reads exactly like a corpus with nothing wrong in it.
+
+Nothing in production calls `LintViolations.write` yet. It is a shadow family with parity tests,
+which is the right order: the statements exist and agree before anything depends on them.
+
+### The ownership this leaves open
+
+`lint_violation` is filed under the `derivation` gatherer, on the ground that every rule reads more
+than one family and none of them belongs to a single corpus's own gatherer. That is true and it is
+not the final answer. Under the rule recorded above, `lint` is a gatherer of its own: the `code`,
+`jooq` and `document` gatherers transcribe their own corpus, and the `lint` and `graphitron`
+gatherers derive from what those transcribed.
+
+The registration is mechanically available. A gatherer that reads no corpus is exempt from the
+corpus gate, as `derivation` already is, and the class-loading gate is satisfied by a class that
+exists. What is missing is a run position: `meta_gatherer_dependency`'s edges are what a capture
+order has to satisfy, and `LintViolations` has no place in one. So the `derivation` filing stands as
+a placeholder that is honest about what runs today, and the `lint` row lands when the writer is
+wired into the order, alongside the anchors moving to `graphitron`.
