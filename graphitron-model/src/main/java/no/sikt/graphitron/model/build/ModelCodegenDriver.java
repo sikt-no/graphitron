@@ -68,7 +68,7 @@ public final class ModelCodegenDriver {
                 // constraint stays where it is: it is what a reader at a SQL prompt sees and what
                 // defends a row written by anything other than this code.
                 .withForcedTypes(new ForcedType()
-                    .withUserType("no.sikt.graphitron.model.capture.document.EntryKind")
+                    .withUserType("no.sikt.graphitron.model.vocabulary.EntryKind")
                     .withEnumConverter(true)
                     .withIncludeExpression("PUBLIC\\.GRAPHQL_AST_ENTRY\\.ENTRY_KIND")
                     .withIncludeTypes(".*")))

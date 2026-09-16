@@ -1,8 +1,8 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.EntryKind;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import org.jooq.DSLContext;

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;

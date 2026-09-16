@@ -1,4 +1,4 @@
-package no.sikt.graphitron.model.capture.document;
+package no.sikt.graphitron.model.vocabulary;
 
 /**
  * Which entry relation a row of the entry index came from, as a type rather than as a string.
@@ -14,6 +14,13 @@ package no.sikt.graphitron.model.capture.document;
  * <p>Named for the relation rather than for the grammar, on the column's own terms: a reader
  * wanting more than the position and the enclosing element joins the relation this names, so the
  * name has to be the one they will type.
+ *
+ * <p>Here rather than beside the writer that fills the column, and the gatherer isolation gate is
+ * what decides it: a class inside a gatherer's package is that gatherer's private helper, and this
+ * is named by the codegen driver as well, which belongs to no gatherer and never will. So the
+ * package is the one the gate's second option describes, tier vocabulary that is nobody's
+ * gatherer's. The schema states thirty-nine closed vocabularies as a CHECK and this is the first
+ * bound to a type; the rest, if they follow, land beside it.
  */
 public enum EntryKind {
     TYPE_DECLARATION,
