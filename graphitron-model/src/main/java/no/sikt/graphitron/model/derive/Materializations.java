@@ -138,7 +138,7 @@ public final class Materializations {
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
-                graphKeyed(registration.targetTableName())
+                graphKeyed(dsl, registration.targetTableName())
                     ? Optional.of(graphName)
                     : Optional.empty(),
                 progress, statements -> statements.apply(dsl));
@@ -194,7 +194,7 @@ public final class Materializations {
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
-                graphKeyed(registration.targetTableName())
+                graphKeyed(dsl, registration.targetTableName())
                     ? Optional.of(graphName)
                     : Optional.empty(),
                 progress,
@@ -240,7 +240,7 @@ public final class Materializations {
         long startedAt = System.nanoTime();
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
-            if (graphKeyed(registration.targetTableName())) {
+            if (graphKeyed(dsl, registration.targetTableName())) {
                 for (String graph : graphs) {
                     refreshOne(registration, position + 1, registrations.size(),
                         Optional.of(graph), progress, statements -> statements.apply(dsl));
@@ -517,9 +517,33 @@ public final class Materializations {
         .map(t -> t.getName().toUpperCase(Locale.ROOT))
         .collect(Collectors.toUnmodifiableSet());
 
-    /** Whether the relation carries a {@code graph_name} column, which decides the refresh shape. */
-    private static boolean graphKeyed(String relationName) {
-        return GRAPH_KEYED.contains(fold(relationName));
+    /** Every relation the generated model knows, which is every relation the DDL declares. */
+    private static final Set<String> DECLARED = Public.PUBLIC.getTables().stream()
+        .map(t -> t.getName().toUpperCase(Locale.ROOT))
+        .collect(Collectors.toUnmodifiableSet());
+
+    /**
+     * Whether the relation carries a {@code graph_name} column, which decides the refresh shape.
+     *
+     * <p>Answered from the generated model for everything the DDL declares, and from the database
+     * for anything else. The fallback is not defensive: a test registers a scratch relation it
+     * created at runtime, which the model compiled against cannot know about, and answering "no
+     * graph column" for it would refresh the whole relation where the case means a partition.
+     * {@code MaterializationProgressTest} is that case and is what caught this, the first draft
+     * having had the fast path alone.
+     */
+    private static boolean graphKeyed(DSLContext dsl, String relationName) {
+        String folded = fold(relationName);
+        return DECLARED.contains(folded) ? GRAPH_KEYED.contains(folded) : asksTheDatabase(dsl, folded);
+    }
+
+    private static boolean asksTheDatabase(DSLContext dsl, String folded) {
+        return dsl.fetchExists(
+            select(field(name("COLUMN_NAME")))
+                .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                .and(field(name("TABLE_NAME"), String.class).eq(folded))
+                .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
     }
 
     private static Name relation(String relationName) {
