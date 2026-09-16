@@ -8,6 +8,10 @@ import org.jooq.Table;
 
 import java.time.LocalDateTime;
 
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
+import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
@@ -59,13 +63,15 @@ import static org.jooq.impl.DSL.when;
  * instant. That is {@code AstEntries}' rule for resolving one arm against another, and without it a
  * link would be free to depart from where a previous reading arrived.
  *
- * <p>One statement per arm, and no arm ranks against another. Three of the four are disjoint by
- * construction: a link is a directive application or an element of a path and never both, and a
- * function result is exactly the departure that declares no foreign key for the table arm to find.
- * The fourth boundary is authored and stated once, in {@link #namesNoKey}: an element naming a key
- * belongs to the key arm, the key being the route and a table beside it an assertion about where
- * the route ends. The primary key is what holds all four to it, a second arm answering for one link
- * being a duplicate rather than a preference to settle.
+ * <p>One statement per arm, five of them, and no arm ranks against another. Two boundaries are
+ * structural: a link is a directive application or an element of a path and never both, which
+ * separates the routine arm from the rest, and a function result is exactly the departure that
+ * declares no foreign key, which is what separates the name-matched arm from the table arm. The
+ * other two are authored and each is stated once, in {@link #namesNoKey} and {@link #namesNoTable}:
+ * a key is a route and a table beside it is an assertion about where that route ends, so an element
+ * naming a key is the key arm's, and only an element naming neither has its route in a condition's
+ * signature. The primary key is what holds all five to those boundaries, a second arm answering for
+ * one link being a duplicate rather than a preference to settle.
  *
  * <p>Each arm reads its two element shapes as one relation, the one written under
  * {@code @reference} and the one under {@code @referenceFor} being one fact with one shape, which
@@ -102,6 +108,8 @@ public final class FieldTableLinks {
     private static final String SITE_NAME = "site_name";
     private static final String SITE_LINE = "site_line";
     private static final String SITE_COLUMN = "site_column";
+    private static final String CLASS_NAME = "class_name";
+    private static final String METHOD_NAME = "method_name";
     private static final String CANDIDATES = "candidates";
 
     /** Re-derives the graph's resolved chain links; see the class javadoc. */
@@ -115,6 +123,7 @@ public final class FieldTableLinks {
             keys(dsl, graphName, position, touchedAt);
             tables(dsl, graphName, position, touchedAt);
             nameMatches(dsl, graphName, position, touchedAt);
+            conditions(dsl, graphName, position, touchedAt);
         }
         // After every pass, because a link at position three is a link this reading resolved as
         // much as one at position zero.
@@ -585,6 +594,182 @@ public final class FieldTableLinks {
             .set(t.TO_TABLE, excluded(t.TO_TABLE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
+    }
+
+    /**
+     * The condition arm at one position: an element carrying a condition and naming neither a key
+     * nor a table has no foreign key to read, so its route is the one its method's own signature
+     * declares. The parameter after the first names the table the link arrives at.
+     *
+     * <p>Read off the {@code code_} family, which is the classpath as the arm that admits a
+     * condition sees it, and written before the walk, so it is there to be queried when this runs.
+     *
+     * <p>Two things the read-time rule had to do are gone, and both for the same reason: it
+     * answered for a class and a method with no coordinate attached. It enumerated every table in
+     * the graph's sources as a candidate departure wherever the first parameter named none, and it
+     * demanded every overload of a name agree on its first parameter before it would answer at all.
+     * Here the departure is already known, so neither is a question. What is left of both is one
+     * demand: that nothing about the first parameter contradicts the departure. A method with no
+     * first parameter, or one whose first parameter is not a generated table, contradicts nothing
+     * and the chain's own departure stands; a first parameter naming a different table is a method
+     * this link cannot be travelling through.
+     *
+     * <p>That predicate is also what tells overloads apart, so no unanimity is needed: the ones
+     * whose first parameter contradicts the departure are gone, and two survivors reaching the same
+     * arrival are two candidates and draw no row. A row existing therefore means exactly one
+     * signature answered, which is the invariant a reader of the method itself can lean on.
+     */
+    private static void conditions(DSLContext dsl, String graph, int position,
+                                   LocalDateTime touchedAt) {
+        var cl = GRAPHITRON_FIELD_CHAIN_LINK;
+        var cm = CODE_CONDITION_METHOD;
+        var arrives = CODE_CONDITION_METHOD_PARAMETER.as("arrives");
+        var departs = CODE_CONDITION_METHOD_PARAMETER;
+        var m = STORE_GRAPH_SOURCE;
+        var mt = STORE_GRAPH_SOURCE.as("mt");
+        var md = STORE_GRAPH_SOURCE.as("md");
+        var st = SQL_TABLE;
+        var other = SQL_TABLE.as("other");
+        var t = GRAPHITRON_FIELD_TABLE_LINK;
+        var stated = conditionSpellings(dsl, graph);
+        var d = departures(dsl, graph, position, touchedAt);
+
+        Field<String> fromSource = d.field(FROM_SOURCE_NAME, String.class);
+        Field<String> fromSchema = d.field(FROM_SCHEMA, String.class);
+        Field<String> fromTable = d.field(FROM_TABLE, String.class);
+
+        // Nothing about the first parameter contradicts the departure. A parameter naming a table
+        // other than where the chain stands is the whole of what this excludes.
+        Condition departureStands = notExists(selectOne().from(departs)
+            .join(md).on(md.GRAPH_NAME.eq(cl.GRAPH_NAME))
+            .join(other).on(other.SOURCE_NAME.eq(md.SOURCE_NAME),
+                other.CLASS_FQN.eq(departs.PARAMETER_TYPE))
+            .where(departs.SOURCE_NAME.eq(cm.SOURCE_NAME),
+                departs.CLASS_NAME.eq(cm.CLASS_NAME),
+                departs.METHOD_NAME.eq(cm.METHOD_NAME),
+                departs.DESCRIPTOR.eq(cm.DESCRIPTOR),
+                departs.POSITION.eq(0))
+            .and(other.SOURCE_NAME.ne(fromSource)
+                .or(other.TABLE_SCHEMA.ne(fromSchema))
+                .or(other.TABLE_NAME.ne(fromTable))));
+
+        var resolved = dsl
+            .select(cl.TYPE_NAME.as(TYPE_NAME), cl.FIELD_NAME.as(FIELD_NAME),
+                d.field(TARGET_SOURCE_NAME, String.class).as(TARGET_SOURCE_NAME),
+                d.field(TARGET_SCHEMA, String.class).as(TARGET_SCHEMA),
+                d.field(TARGET_TABLE, String.class).as(TARGET_TABLE),
+                fromSource.as(FROM_SOURCE_NAME), fromSchema.as(FROM_SCHEMA),
+                fromTable.as(FROM_TABLE),
+                st.SOURCE_NAME.as(TO_SOURCE_NAME), st.TABLE_SCHEMA.as(TO_SCHEMA),
+                st.TABLE_NAME.as(TO_TABLE),
+                count().over(partitionBy(cl.TYPE_NAME, cl.FIELD_NAME,
+                    d.field(TARGET_SOURCE_NAME, String.class),
+                    d.field(TARGET_SCHEMA, String.class),
+                    d.field(TARGET_TABLE, String.class))).as(CANDIDATES))
+            .from(cl)
+            .join(d).on(d.field(cl.TYPE_NAME).eq(cl.TYPE_NAME),
+                d.field(cl.FIELD_NAME).eq(cl.FIELD_NAME))
+            .join(stated).on(stated.field(SITE_NAME, String.class).eq(cl.SOURCE_NAME),
+                stated.field(SITE_LINE, Integer.class).eq(cl.SOURCE_LINE),
+                stated.field(SITE_COLUMN, Integer.class).eq(cl.SOURCE_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(cl.GRAPH_NAME))
+            .join(cm).on(cm.SOURCE_NAME.eq(m.SOURCE_NAME),
+                cm.CLASS_NAME.eq(stated.field(CLASS_NAME, String.class)),
+                cm.METHOD_NAME.eq(stated.field(METHOD_NAME, String.class)))
+            // The parameter after the first names the arrival, which is what makes this a route.
+            .join(arrives).on(arrives.SOURCE_NAME.eq(cm.SOURCE_NAME),
+                arrives.CLASS_NAME.eq(cm.CLASS_NAME), arrives.METHOD_NAME.eq(cm.METHOD_NAME),
+                arrives.DESCRIPTOR.eq(cm.DESCRIPTOR), arrives.POSITION.eq(1))
+            .join(mt).on(mt.GRAPH_NAME.eq(cl.GRAPH_NAME))
+            .join(st).on(st.SOURCE_NAME.eq(mt.SOURCE_NAME),
+                st.CLASS_FQN.eq(arrives.PARAMETER_TYPE))
+            .where(cl.GRAPH_NAME.eq(graph))
+            .and(cl.POSITION.eq(position))
+            .and(namesNoKey(cl))
+            .and(namesNoTable(cl))
+            .and(departureStands)
+            .asTable("resolved");
+
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
+                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
+                t.VIA, t.KEY_MATCHED_BY,
+                t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE,
+                t.CONSTRAINT_NAME, t.FK_ON_FROM,
+                t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
+                t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    resolved.field(TYPE_NAME, String.class),
+                    resolved.field(FIELD_NAME, String.class),
+                    resolved.field(TARGET_SOURCE_NAME, String.class),
+                    resolved.field(TARGET_SCHEMA, String.class),
+                    resolved.field(TARGET_TABLE, String.class),
+                    val(position, t.POSITION), val("CONDITION", t.VIA),
+                    castNull(t.KEY_MATCHED_BY),
+                    castNull(t.CONSTRAINT_SOURCE_NAME), castNull(t.CONSTRAINT_SCHEMA),
+                    castNull(t.CONSTRAINT_TABLE), castNull(t.CONSTRAINT_NAME),
+                    castNull(t.FK_ON_FROM),
+                    resolved.field(FROM_SOURCE_NAME, String.class),
+                    resolved.field(FROM_SCHEMA, String.class),
+                    resolved.field(FROM_TABLE, String.class),
+                    resolved.field(TO_SOURCE_NAME, String.class),
+                    resolved.field(TO_SCHEMA, String.class),
+                    resolved.field(TO_TABLE, String.class),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(resolved)
+                .where(resolved.field(CANDIDATES, Integer.class).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.VIA, excluded(t.VIA))
+            .set(t.KEY_MATCHED_BY, excluded(t.KEY_MATCHED_BY))
+            .set(t.CONSTRAINT_SOURCE_NAME, excluded(t.CONSTRAINT_SOURCE_NAME))
+            .set(t.CONSTRAINT_SCHEMA, excluded(t.CONSTRAINT_SCHEMA))
+            .set(t.CONSTRAINT_TABLE, excluded(t.CONSTRAINT_TABLE))
+            .set(t.CONSTRAINT_NAME, excluded(t.CONSTRAINT_NAME))
+            .set(t.FK_ON_FROM, excluded(t.FK_ON_FROM))
+            .set(t.FROM_SOURCE_NAME, excluded(t.FROM_SOURCE_NAME))
+            .set(t.FROM_SCHEMA, excluded(t.FROM_SCHEMA))
+            .set(t.FROM_TABLE, excluded(t.FROM_TABLE))
+            .set(t.TO_SOURCE_NAME, excluded(t.TO_SOURCE_NAME))
+            .set(t.TO_SCHEMA, excluded(t.TO_SCHEMA))
+            .set(t.TO_TABLE, excluded(t.TO_TABLE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * What the condition arm demands beyond {@link #namesNoKey}: that the element named no table
+     * either. A condition written beside a key or a table filters that hop rather than routing it,
+     * so only an element naming neither has its route in the method's signature.
+     */
+    private static Condition namesNoTable(GraphitronFieldChainLink cl) {
+        var s = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+        var f = GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
+        return notExists(selectOne().from(s)
+            .where(s.GRAPH_NAME.eq(cl.GRAPH_NAME), s.SOURCE_NAME.eq(cl.SOURCE_NAME),
+                s.SOURCE_LINE.eq(cl.SOURCE_LINE), s.SOURCE_COLUMN.eq(cl.SOURCE_COLUMN)))
+            .and(notExists(selectOne().from(f)
+                .where(f.GRAPH_NAME.eq(cl.GRAPH_NAME), f.SOURCE_NAME.eq(cl.SOURCE_NAME),
+                    f.SOURCE_LINE.eq(cl.SOURCE_LINE), f.SOURCE_COLUMN.eq(cl.SOURCE_COLUMN))));
+    }
+
+    /**
+     * The condition an element named, whichever of the two directives wrote it, on the terms
+     * {@link #spellings} states for the key. A method the author left out is no signature to read,
+     * so the join below drops the element rather than this relation excluding it.
+     */
+    private static Table<?> conditionSpellings(DSLContext dsl, String graph) {
+        var s = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
+        var f = GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
+        return dsl
+            .select(s.SOURCE_NAME.as(SITE_NAME), s.SOURCE_LINE.as(SITE_LINE),
+                s.SOURCE_COLUMN.as(SITE_COLUMN),
+                s.CLASS_NAME.as(CLASS_NAME), s.METHOD.as(METHOD_NAME))
+            .from(s).where(s.GRAPH_NAME.eq(graph))
+            .unionAll(dsl
+                .select(f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN, f.CLASS_NAME, f.METHOD)
+                .from(f).where(f.GRAPH_NAME.eq(graph)))
+            .asTable("stated");
     }
 
     /**

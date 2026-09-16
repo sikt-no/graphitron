@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
+import no.sikt.graphitron.model.classpath.CompletionData;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -38,6 +41,14 @@ class FieldTableLinksTest {
           title: String
           actors: [FilmActor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
           language: Language @reference(path: [{table: "language"}])
+          junction: [FilmActor!]! @reference(path: [{condition: {
+              className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
+              method: "filmToFilmActor"
+          }}])
+          rentals: [Rental!]! @reference(path: [{condition: {
+              className: "no.sikt.graphitron.rewrite.TestConditionRoutes",
+              method: "routineResultToRental"
+          }}])
         }
         type Language @table(name: "language") { name: String }
         type FilmActor @table(name: "film_actor") {
@@ -49,6 +60,7 @@ class FieldTableLinksTest {
             @reference(path: [{key: "film_actor_actor_id_fkey"},
                               {key: "film_actor_film_id_fkey"}])
         }
+        type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
         type Row { title: String }
         type Query {
           films: [Film!]!
@@ -170,6 +182,37 @@ class FieldTableLinksTest {
     }
 
     /**
+     * An element carrying a condition and naming neither a key nor a table has no foreign key to
+     * read, so its route is the one its method's signature declares: the parameter after the first
+     * names the arrival. Nothing here resolves through a name with no coordinate attached.
+     */
+    @Test
+    @DisplayName("a condition element routes by its method's signature")
+    void aConditionElementRoutesByItsSignature() {
+        withCaptured(dsl -> assertThat(links(dsl, "Film", "junction"))
+            .containsExactly("[film_actor] 0 CONDITION film -> film_actor"));
+    }
+
+    /**
+     * The predicate that replaced two mechanisms the read-time rule needed, and the reason it could
+     * drop both: it answered for a class and a method with no coordinate, so it enumerated every
+     * table as a candidate departure and demanded every overload agree. Here the departure is known,
+     * and a first parameter naming a different table says this link is not travelling through this
+     * method. {@code routineResultToRental} departs a routine result, so at a coordinate standing on
+     * {@code film} it contradicts the chain and draws no row.
+     */
+    @Test
+    @DisplayName("a condition whose first parameter names another table routes nothing")
+    void aConditionContradictingTheDepartureRoutesNothing() {
+        withCaptured(dsl -> {
+            assertThat(links(dsl, "Film", "junction"))
+                .as("an empty relation would satisfy the absence below without meaning it")
+                .isNotEmpty();
+            assertThat(links(dsl, "Film", "rentals")).isEmpty();
+        });
+    }
+
+    /**
      * The identity a reader can check, and the reason the target is part of the key: a chain that
      * resolved to its end arrives at the table the field claims to return from.
      */
@@ -224,8 +267,15 @@ class FieldTableLinksTest {
                    : " via " + r.value6() + "." + r.value7() + ", fk_on_from=" + r.value8()));
     }
 
+    /**
+     * The catalog and the classpath both, because the arms need both: a key or a table element
+     * meets the catalog, and a condition element's route is read off the signature the
+     * {@code code_} family captured. The census is the walk's transcription of a classpath and the
+     * class root is that family's reading of one, and a run does both.
+     */
     private void withCaptured(Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq())) {
+        try (var store = CapturedStore.ofCatalog(tmp, CapturedStore.GRAPH, SDL, jooq(), census(),
+                testClassRoot())) {
             body.accept(store.dsl());
         }
     }
@@ -233,5 +283,18 @@ class FieldTableLinksTest {
     private static JooqCatalog jooq() {
         var ctx = testContext();
         return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+    }
+
+    private static List<CompletionData.ExternalReference> census() {
+        return ClasspathScanner.scan(testClassRoot(), testContext().jooqPackage());
+    }
+
+    private static Path testClassRoot() {
+        try {
+            return Path.of(FieldTableLinksTest.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("the test classes are not on a file path", e);
+        }
     }
 }
