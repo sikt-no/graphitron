@@ -4,12 +4,28 @@ title: "Name matching is a stratum: side relations, match views, and folds nowhe
 status: Spec
 bucket: architecture
 theme: classification-model
-depends-on: []
+depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-08-17
-last-updated: 2026-08-18
+last-updated: 2026-09-16
 ---
 
 # Name matching is a stratum: side relations, match views, and folds nowhere else
+
+> **Blocked on R876 (2026-09-16).** This item's solution is the defect R876 removes. It proposes
+> completing a match stratum of side relations and match views, citing `intent_spelled_table` as the
+> instance to copy into the key and column namespaces: ambiguity as rows, arity as a column. That
+> shape exists because `GraphitronAnchor` has no access to `sql_` and `code_` and so cannot resolve
+> an authored name where it is written; R876's chapter "The anchors are a decode filed under a
+> crawler" moves the anchors to the `graphitron` gatherer so the resolution happens once, in Java,
+> at anchor time. The key and column resolutions this item would layer are `@reference` and `@field`
+> arguments, transcribed in the `graphitron_ast_` entries and resolved against `sql_key` and
+> `sql_column`, so they relocate with the rest rather than needing a stratum of their own.
+>
+> The problem statement below is unaffected and is cited by R876 as evidence: the thirteen inline
+> `UPPER(`, the effective-name rule written six times, the doubly-computed tier decision, and the
+> measured seventy-times regression on `intent_column_match_claim`. What remains of the fold
+> restatement once the anchors resolve in Java is not knowable until they do, which is why this is
+> held rather than dissolved.
 
 ## Problem
 

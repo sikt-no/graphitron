@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-15 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-16 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -52,7 +52,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-07-14 <sub>created 2026-05-21</sub> | [plan](intellij-lsp-plugin.md) |
-| `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else | Spec | 2026-08-18 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
+| `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-09-16 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
@@ -425,7 +425,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R586` [**Exemption taxonomy: unpopulated arms and the population census**](exemption-taxonomy-arm-census.md) — Backlog, testing
 - `R567` [**Lookup coordinates: unrealized co-member payloads**](lookup-unrealized-co-members.md) — Backlog, generator
 - `R591` [**Member payload storage home: the three leaf-homed axes**](member-payload-storage-home.md) — Backlog, architecture
-- `R697` [**Name matching is a stratum: side relations, match views, and folds nowhere else**](name-matching-stratum.md) — Spec, architecture
+- `R697` [**Name matching is a stratum: side relations, match views, and folds nowhere else**](name-matching-stratum.md) — Spec, architecture, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R180` [**Resolved accessors for record-parent column reads (recordColumnReadArgs)**](record-parent-column-read-helper.md) — Spec
 - `R545` [**The model owns no emit-library vocabulary**](model-free-of-emit-vocabulary.md) — Backlog, structural
 - `R698` [**fact-model doctrine: a view carries keys and its own products, and prose only where it was captured**](views-carry-keys-not-payloads.md) — Backlog, architecture

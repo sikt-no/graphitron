@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-09-15
+last-updated: 2026-09-16
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -3971,3 +3971,162 @@ fallback from one it could not have.
 
 It does not reorder the burn down's items four through six, rename the entry vocabulary, or re-argue
 the register.
+
+## The anchors are a decode filed under a crawler (2026-09-16)
+
+`GraphitronAnchor` cannot see `sql_` or `code_`. That is why the read side carries a `candidates`
+column, and the column is the largest single shape defect this item has found on the read side.
+
+### What the deferral costs
+
+An authored coordinate is transcribed unresolved and stays unresolved.
+`intent_field_producer_reference.class_name` says so itself: "the fully-qualified binary name the
+reference spells, exactly as authored. Unresolved: no row here asserts the class is on the
+classpath, and a misspelling is a row like any other."
+
+Resolution then happens in a view, joining through `store_graph_source` into `sql_table` or
+`jvm_method`. A view cannot decline, so ambiguity becomes rows plus a window count:
+
+```sql
+CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.type_name,
+                                 r.field_name, r.declared_via) AS INT) AS candidates
+```
+
+On the shipping DDL that column is on 20 relations and 34 predicates guard `candidates = 1`.
+
+`intent_field_producer_method` states what it is for: "The intended reading is that a reference
+matching more than one method is a rejection, and what a rejection needs is the arity, which is why
+this relation states it rather than picking." The mechanism transports a rejection to a position
+that would be able to make it, and no such position exists downstream. It also spreads by citation
+rather than by decision; the same comment reads "Ambiguity is rows and never a decline, as on
+`intent_bound_table`."
+
+### Why it could not have been fixed where it sits
+
+`ModelCapture.capture` is five statements and the anchors run second.
+
+```java
+writeGraph(dsl, graph, readAt);
+SdlCapture.capture(dsl, graph, config, readAt);              // captureGraphitronAnchors runs inside
+StoreEntries.write(dsl, graph.name(), config, readAt);
+JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);    // sql_ first exists here
+CodeCapture.capture(dsl, classpath, ..., readAt);            // jvm_ first exists here
+```
+
+`sql_` does not exist until the fourth statement and `jvm_` until the fifth. The incumbent carries
+the opposite order, `CatalogFactCapture` at `FactCapture:366` against the anchors at `:382`, so the
+two entry points disagree and the target one has it backwards. Resolving at anchor time was never
+rejected on the merits. It was unavailable.
+
+The roster hid that. `document` declares corpus `sdl` and no dependency edges, and
+`meta_gatherer_dependency`'s comment reads the absence as an invariant: "A crawler carries no edges
+at all: its rows about its own corpus may not vary with any other corpus's contents." True of a
+transcription, and `document` owns one. It owns a decode as well, and that half is undeclared:
+`graphql_type_declaration`, `graphql_type_element` and `graphql_directive` carry no `meta_relation`
+row, so the stratum whose classification is wrong is the stratum the roster does not list.
+
+### The rule
+
+The `code`, `jooq` and `document` gatherers transcribe their own corpus and never look beyond it.
+The `lint` and `graphitron` gatherers derive from what those transcribed.
+
+`document` straddles it today. It owns 84 relations, of which 72 are transcription and 12 are not.
+
+| Stratum | Writer | Owner today | Owner under the rule |
+|---|---|---|---|
+| `graphql_ast_*_entry`, 19 relations | `SdlEntries` | `document` | `document`, unchanged |
+| `graphitron_ast_*_entry`, 53 relations | `GraphitronEntries` | `document` | `document`, unchanged |
+| `graphql_` anchors, 26 statements | `SdlAnchor` | undeclared | `graphitron` |
+| `graphitron_` anchors, 11 relations | `GraphitronAnchor` | `document` | `graphitron` |
+| `graphql_schema_problem` | `SdlSchemaProblems` | `document` | `lint` |
+
+`lint` is new. The roster has eleven gatherers and none of them is it.
+
+`SdlAnchor` moves on classification rather than on need. It reads only the entry stratum and would
+work where it stands. It moves because a derivation living inside a transcription gatherer is
+exactly what made this hard to see, and leaving one there leaves the boundary ambiguous for whoever
+reads it next.
+
+### What the order becomes
+
+```java
+writeGraph(dsl, graph, readAt);
+SdlCapture.captureEntries(dsl, graph, config, readAt);       // document
+StoreEntries.write(dsl, graph.name(), config, readAt);       // store
+JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);    // jooq
+CodeCapture.capture(dsl, classpath, ..., readAt);            // code
+GraphitronCapture.derive(dsl, graph, readAt);                // graphitron: both anchor families
+LintCapture.derive(dsl, graph, readAt);                      // lint
+```
+
+Transcription first, derivation after, each gatherer reading only what the lines above it wrote.
+That is the linear read the plan already asks for, and it sharpens the acceptance criterion rather
+than competing with it: a gatherer that reads the store is not a violation, a gatherer that reads a
+layer it is not declared downstream of is, and statement order is what separates the two.
+
+### It costs no incrementality
+
+The objection is that the anchors would stop depending on the SDL alone, so a catalog change would
+have to re-run them. They have already given that up. `SdlAnchor` is whole-graph rather than
+per-source, and `captureFacts` states why: "an anchor is what the corpus says: a coordinate one file
+stopped declaring is gone only if no other file declares it, which no per-file pass sees." A stratum
+that re-derives for the whole graph on every reading loses nothing by reading two more corpora. The
+half that is genuinely per-source and incremental is the entry stratum, and that half does not move.
+
+### What it buys
+
+`table_ref` and `class_name` stop being spellings. The anchor resolves once, in Java, where it can
+pick or write a diagnostic row, and `candidates` stops propagating. The current extent is 20
+relations and 34 guards.
+
+### R697 is blocked on this rather than dissolved
+
+R697 proposes completing a name-matching stratum of side relations and match views, citing
+`intent_spelled_table` as the instance to copy into the key and column namespaces: "ambiguity as
+rows, arity as a column". That is this defect proposed as doctrine, and it would add the third and
+fourth instances of the shape this chapter removes. Its subject is relocated rather than reshaped:
+the key and column resolutions it would layer are `@reference` and `@field` arguments transcribed in
+the `graphitron_ast_` entries and resolved against `sql_key` and `sql_column`, which under the rule
+is the `graphitron` gatherer's work at anchor time.
+
+Blocked rather than dissolved for two reasons. Its problem statement is independent evidence for
+this chapter and survives it: thirteen in-scope lines carry an inline `UPPER(`, the effective-name
+rule is written six times across two views, and `intent_field_reference_step_hop` computes its tier
+decision twice. And it carries the only measurement of what getting this shape wrong costs, a
+seventy-times regression recorded on `intent_column_match_claim`. What remains of the fold
+restatement once the anchors resolve in Java is not knowable until they do, so the item is held
+against that answer instead of being closed on a prediction.
+
+## The entry sweep reclaims nodes, not files (2026-09-16)
+
+Found alongside the chapter above and a precondition for it. The entry stratum marks and sweeps per
+source: `SdlEntries.write` and `GraphitronEntries.write` each end in a delete scoped
+`graph_name = ? AND source_name = ? AND touched_at <> ?`, which reclaims nodes an author removed
+from a file. `captureEntries` loops the sources this reading parsed, so a file that left the corpus
+is never visited and nothing deletes its rows. Mark and sweep reclaims within a file. No pass
+reclaims files.
+
+`store_source` has the same gap from the other side. `writeSource` is an upsert and no site in main
+deletes from the relation, so a schema file removed from the configuration keeps its registry row
+with a stale `last_seen`.
+
+The DDL anticipated exactly this and neither half of the mechanism runs. Every entry relation
+carries `source_ref`, nullable, `REFERENCES store_source (source_name) ON DELETE SET NULL`, with a
+`CHECK (source_ref IS NULL OR source_ref = source_name)`, and the column comment states the intended
+cycle: "Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this
+graph's reading of it standing and flagged, and the owning graph reaps its own on its next refresh."
+Nothing deletes the registry row, so the flag never sets, and no query anywhere reads
+`source_ref IS NULL`, so nothing would reap if it did.
+
+It is latent rather than live because `StoreRefresh.clear` still empties every graph-keyed base
+relation for the graph on a warm pass, and the entry relations are in that set: their owner is
+`document` and `SELF_SWEEPING` is `Set.of("code")`. The clear that the per-source sweep exists to
+replace is what currently removes a vanished file's rows. Adding `document` to `SELF_SWEEPING`
+without closing this first makes a removed schema file permanent, and it does not stay in the entry
+stratum: `SdlAnchor` reads the entries filtered on `graph_name` alone, so a stale entry keeps a
+deleted type's coordinate alive in the anchors and from there in front of the generator.
+
+The fix is local to `captureEntries`, which already holds the list of sources it read: delete the
+graph's entry rows whose `source_name` is not in that list, and drop the `store_source` rows the
+graph no longer references. It goes in before the anchors gain catalog access, because once they
+resolve against `sql_` and `code_` a stale entry feeds catalog resolution too.
