@@ -105,9 +105,12 @@ public final class CapturedStore implements AutoCloseable {
     /** The same under a graph the caller names, for the cases whose subject is the partition. */
     public static void withCapturedStore(Path directory, String graphName, String sdl,
                                          Consumer<DSLContext> body) {
-        try (var store = of(directory, graphName, sdl)) {
-            body.accept(store.dsl());
-        }
+        Path file = write(directory, graphName, sdl);
+        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
+        SeededStore.withSeededStore(dsl -> {
+            captureFiles(dsl, List.of(file), directory, graphName, registry, null, List.of(), false);
+            body.accept(dsl);
+        });
     }
 
     // ---------------------------------------------------------------------------------------
@@ -157,7 +160,7 @@ public final class CapturedStore implements AutoCloseable {
             write(directory, secondName, secondSdl));
         var registry = SchemaLoader.load(files.stream().map(SchemaSource::file).toList());
         var store = FactStores.inMemory();
-        captureFiles(store, files, directory, GRAPH, registry, jooq, List.of(), false);
+        captureFiles(store.dsl(), files, directory, GRAPH, registry, jooq, List.of(), false);
         return new CapturedStore(store, GRAPH, directory, files.getFirst(), registry);
     }
 
@@ -324,7 +327,7 @@ public final class CapturedStore implements AutoCloseable {
     private static void captureFile(GraphitronModelStore store, Path file, Path directory,
                                     String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                     List<CompletionData.ExternalReference> census, boolean warm) {
-        captureFiles(store, List.of(file), directory, graphName, registry, jooq, census, warm);
+        captureFiles(store.dsl(), List.of(file), directory, graphName, registry, jooq, census, warm);
     }
 
     /**
@@ -360,12 +363,12 @@ public final class CapturedStore implements AutoCloseable {
      * arms capturing a second graph write its file beside the first, and a glob would hand each
      * graph the other's source.
      */
-    private static void captureFiles(GraphitronModelStore store, List<Path> files, Path directory,
+    private static void captureFiles(DSLContext dsl, List<Path> files, Path directory,
                                      String graphName, TypeDefinitionRegistry registry, JooqCatalog jooq,
                                      List<CompletionData.ExternalReference> census, boolean warm) {
-        FactCapture.capture(store.dsl(), warm, new GraphIdentity(graphName, directory),
+        FactCapture.capture(dsl, warm, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), registry, attributionOfFiles(files), jooq, census);
-        ModelCapture.capture(store.dsl(), new GraphIdentity(graphName, directory),
+        ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
             corpusOf(files, directory), List.of(), null, LocalDateTime.now());
     }
 
