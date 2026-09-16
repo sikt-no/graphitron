@@ -37,9 +37,12 @@ class FieldTableLinksTest {
         type Film @table(name: "film") {
           title: String
           actors: [FilmActor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
+          language: Language @reference(path: [{table: "language"}])
         }
+        type Language @table(name: "language") { name: String }
         type FilmActor @table(name: "film_actor") {
           film: Film @reference(path: [{key: "film_actor_film_id_fkey"}])
+          actor: Actor @reference(path: [{table: "actor"}])
         }
         type Actor @table(name: "actor") {
           films: [Film!]!
@@ -54,6 +57,11 @@ class FieldTableLinksTest {
             @routine(name: "films_for_actor",
                      argMapping: "pActorId: actorId, pMinLength: minLength")
             @defaultOrder(fields: [{name: "film_id"}])
+          hopped(actorId: Int!, minLength: Int!): [Film!]!
+            @routine(name: "films_for_actor",
+                     argMapping: "pActorId: actorId, pMinLength: minLength")
+            @reference(path: [{table: "film"}])
+            @defaultOrder(primaryKey: true)
         }
         """;
 
@@ -111,6 +119,54 @@ class FieldTableLinksTest {
     void aRoutineLinkDepartsFromNothing() {
         withCaptured(dsl -> assertThat(links(dsl, "Query", "rows"))
             .containsExactly("[films_for_actor] 0 ROUTINE (none) -> films_for_actor"));
+    }
+
+    /**
+     * A table element states the arrival and leaves the route to be found, which at a coordinate is
+     * a lookup: the one foreign key joining the departure to it. Here the key is declared on the
+     * departure, so the link runs along it, and nothing in the element said so.
+     */
+    @Test
+    @DisplayName("a table element joins by the one foreign key between the two ends")
+    void aTableElementFindsTheKeyBetweenTheEnds() {
+        withCaptured(dsl -> assertThat(links(dsl, "FilmActor", "actor"))
+            .containsExactly("[actor] 0 TABLE film_actor -> actor"
+                + " via film_actor.film_actor_actor_id_fkey, fk_on_from=true"));
+    }
+
+    /**
+     * Where two foreign keys join the same pair of tables the element has not said which, and this
+     * arm cannot: a table names the arrival and a key names the route, so an author meaning one of
+     * the two writes it. The link draws no row, which the chain's own length makes visible, and
+     * saying which was meant is the coordinate's to answer.
+     *
+     * <p>The fixture is sakila's own: film references language twice, once for the language and
+     * once for the original language.
+     */
+    @Test
+    @DisplayName("a table element with two foreign keys between the ends resolves to neither")
+    void twoKeysBetweenTheEndsResolveToNeither() {
+        withCaptured(dsl -> {
+            assertThat(links(dsl, "FilmActor", "actor"))
+                .as("an empty relation would satisfy the absence below without meaning it")
+                .isNotEmpty();
+            assertThat(links(dsl, "Film", "language")).isEmpty();
+        });
+    }
+
+    /**
+     * The chain that needs both arms and the reason the sequence is what resolves it. Link 0 is the
+     * routine, which departs from nothing and arrives at the function result; link 1 names a table
+     * and departs from that result, which declares no foreign key, so the route is the whole
+     * primary-key name match instead. Neither link could be resolved by reading its own element.
+     */
+    @Test
+    @DisplayName("a table element leaving a function result joins by the name match")
+    void aTableElementLeavingAFunctionMatchesByName() {
+        withCaptured(dsl -> assertThat(links(dsl, "Query", "hopped"))
+            .containsExactly(
+                "[film] 0 ROUTINE (none) -> films_for_actor",
+                "[film] 1 NAME_MATCH films_for_actor -> film"));
     }
 
     /**

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.tables.GraphitronFieldChainLink;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -9,6 +10,10 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TABLE;
@@ -54,12 +59,17 @@ import static org.jooq.impl.DSL.when;
  * instant. That is {@code AstEntries}' rule for resolving one arm against another, and without it a
  * link would be free to depart from where a previous reading arrived.
  *
- * <p>One statement per arm, and the arms are disjoint by construction: a link is a directive
- * application or an element of a path, never both. The primary key is what says so, a second arm
- * answering for one link being a duplicate rather than a preference to settle. The two shapes the
- * key arm reads, the element written under {@code @reference} and the one under
- * {@code @referenceFor}, arrive as one relation because they are one fact with one shape, which is
- * {@code SdlAnchor}'s reason for unioning the five its element anchor reads.
+ * <p>One statement per arm, and no arm ranks against another. Three of the four are disjoint by
+ * construction: a link is a directive application or an element of a path and never both, and a
+ * function result is exactly the departure that declares no foreign key for the table arm to find.
+ * The fourth boundary is authored and stated once, in {@link #namesNoKey}: an element naming a key
+ * belongs to the key arm, the key being the route and a table beside it an assertion about where
+ * the route ends. The primary key is what holds all four to it, a second arm answering for one link
+ * being a duplicate rather than a preference to settle.
+ *
+ * <p>Each arm reads its two element shapes as one relation, the one written under
+ * {@code @reference} and the one under {@code @referenceFor} being one fact with one shape, which
+ * is {@code SdlAnchor}'s reason for unioning the five its element anchor reads.
  *
  * <p>Each arm demands a single candidate, on {@code graphitron_tabletype}'s terms, counted over one
  * link toward one target: two links of a chain are two questions and neither makes the other
@@ -103,6 +113,8 @@ public final class FieldTableLinks {
         for (int position = 0; last != null && position <= last; position++) {
             routines(dsl, graphName, position, touchedAt);
             keys(dsl, graphName, position, touchedAt);
+            tables(dsl, graphName, position, touchedAt);
+            nameMatches(dsl, graphName, position, touchedAt);
         }
         // After every pass, because a link at position three is a link this reading resolved as
         // much as one at position zero.
@@ -335,6 +347,280 @@ public final class FieldTableLinks {
             .set(t.TO_TABLE, excluded(t.TO_TABLE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
+    }
+
+    /**
+     * The table arm at one position: a link whose element named a table arrives there, and the
+     * foreign key between the departure and it is what carries the rows across.
+     *
+     * <p>The spelling resolves against the catalog directly and not through the relation of
+     * resolved spellings, which is {@link FieldRoutines}' reason and the same one: that relation is
+     * refilled after this stage runs, so reading it here would resolve this reading's elements
+     * against the last reading's catalog. The match folds case on both sides and an unqualified
+     * name is admitted against any schema the graph's sources carry.
+     *
+     * <p>An element naming a key as well is the key arm's and not this one's. The key is the route
+     * there, and the table beside it is an assertion about where the route ends, which is a fact
+     * about the coordinate rather than a second way to travel.
+     *
+     * <p>Both ends are known here, so the foreign key is a lookup rather than a discovery: the one
+     * constraint joining the departure to the arrival, in whichever direction it runs. Two
+     * constraints joining one pair of tables are two candidates and draw no row, which is the
+     * ambiguity this arm cannot settle and the coordinate has to.
+     */
+    private static void tables(DSLContext dsl, String graph, int position,
+                               LocalDateTime touchedAt) {
+        var cl = GRAPHITRON_FIELD_CHAIN_LINK;
+        var rc = SQL_REFERENTIAL_CONSTRAINT;
+        var m = STORE_GRAPH_SOURCE;
+        var st = SQL_TABLE;
+        var t = GRAPHITRON_FIELD_TABLE_LINK;
+        var named = tableSpellings(dsl, graph);
+        var d = departures(dsl, graph, position, touchedAt);
+
+        Field<String> fromSource = d.field(FROM_SOURCE_NAME, String.class);
+        Field<String> fromSchema = d.field(FROM_SCHEMA, String.class);
+        Field<String> fromTable = d.field(FROM_TABLE, String.class);
+        Field<String> namespaceUpper = named.field(NAMESPACE_UPPER, String.class);
+        Field<String> nameUpper = named.field(NAME_UPPER, String.class);
+
+        Condition fkOnDeparture = rc.SOURCE_NAME.eq(fromSource)
+            .and(rc.TABLE_SCHEMA.eq(fromSchema)).and(rc.TABLE_NAME.eq(fromTable))
+            .and(rc.REFERENCED_SOURCE_NAME.eq(st.SOURCE_NAME))
+            .and(rc.REFERENCED_SCHEMA.eq(st.TABLE_SCHEMA))
+            .and(rc.REFERENCED_TABLE.eq(st.TABLE_NAME));
+        Condition fkOnArrival = rc.REFERENCED_SOURCE_NAME.eq(fromSource)
+            .and(rc.REFERENCED_SCHEMA.eq(fromSchema)).and(rc.REFERENCED_TABLE.eq(fromTable))
+            .and(rc.SOURCE_NAME.eq(st.SOURCE_NAME))
+            .and(rc.TABLE_SCHEMA.eq(st.TABLE_SCHEMA))
+            .and(rc.TABLE_NAME.eq(st.TABLE_NAME));
+
+        var resolved = dsl
+            .select(cl.TYPE_NAME.as(TYPE_NAME), cl.FIELD_NAME.as(FIELD_NAME),
+                d.field(TARGET_SOURCE_NAME, String.class).as(TARGET_SOURCE_NAME),
+                d.field(TARGET_SCHEMA, String.class).as(TARGET_SCHEMA),
+                d.field(TARGET_TABLE, String.class).as(TARGET_TABLE),
+                rc.SOURCE_NAME.as(CONSTRAINT_SOURCE_NAME),
+                rc.TABLE_SCHEMA.as(CONSTRAINT_SCHEMA), rc.TABLE_NAME.as(CONSTRAINT_TABLE),
+                rc.CONSTRAINT_NAME.as(CONSTRAINT_NAME),
+                when(fkOnDeparture, val(true, t.FK_ON_FROM))
+                    .otherwise(val(false, t.FK_ON_FROM)).as(FK_ON_FROM),
+                fromSource.as(FROM_SOURCE_NAME), fromSchema.as(FROM_SCHEMA),
+                fromTable.as(FROM_TABLE),
+                st.SOURCE_NAME.as(TO_SOURCE_NAME), st.TABLE_SCHEMA.as(TO_SCHEMA),
+                st.TABLE_NAME.as(TO_TABLE),
+                count().over(partitionBy(cl.TYPE_NAME, cl.FIELD_NAME,
+                    d.field(TARGET_SOURCE_NAME, String.class),
+                    d.field(TARGET_SCHEMA, String.class),
+                    d.field(TARGET_TABLE, String.class))).as(CANDIDATES))
+            .from(cl)
+            .join(d).on(d.field(cl.TYPE_NAME).eq(cl.TYPE_NAME),
+                d.field(cl.FIELD_NAME).eq(cl.FIELD_NAME))
+            .join(named).on(named.field(SITE_NAME, String.class).eq(cl.SOURCE_NAME),
+                named.field(SITE_LINE, Integer.class).eq(cl.SOURCE_LINE),
+                named.field(SITE_COLUMN, Integer.class).eq(cl.SOURCE_COLUMN))
+            .join(m).on(m.GRAPH_NAME.eq(cl.GRAPH_NAME))
+            .join(st).on(st.SOURCE_NAME.eq(m.SOURCE_NAME), st.TABLE_NAME_UPPER.eq(nameUpper))
+            .and(namespaceUpper.isNull().or(st.TABLE_SCHEMA_UPPER.eq(namespaceUpper)))
+            .join(rc).on(fkOnDeparture.or(fkOnArrival))
+            .where(cl.GRAPH_NAME.eq(graph))
+            .and(cl.POSITION.eq(position))
+            .and(namesNoKey(cl))
+            .asTable("resolved");
+
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
+                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
+                t.VIA, t.KEY_MATCHED_BY,
+                t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE,
+                t.CONSTRAINT_NAME, t.FK_ON_FROM,
+                t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
+                t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    resolved.field(TYPE_NAME, String.class),
+                    resolved.field(FIELD_NAME, String.class),
+                    resolved.field(TARGET_SOURCE_NAME, String.class),
+                    resolved.field(TARGET_SCHEMA, String.class),
+                    resolved.field(TARGET_TABLE, String.class),
+                    val(position, t.POSITION), val("TABLE", t.VIA),
+                    castNull(t.KEY_MATCHED_BY),
+                    resolved.field(CONSTRAINT_SOURCE_NAME, String.class),
+                    resolved.field(CONSTRAINT_SCHEMA, String.class),
+                    resolved.field(CONSTRAINT_TABLE, String.class),
+                    resolved.field(CONSTRAINT_NAME, String.class),
+                    resolved.field(FK_ON_FROM, Boolean.class),
+                    resolved.field(FROM_SOURCE_NAME, String.class),
+                    resolved.field(FROM_SCHEMA, String.class),
+                    resolved.field(FROM_TABLE, String.class),
+                    resolved.field(TO_SOURCE_NAME, String.class),
+                    resolved.field(TO_SCHEMA, String.class),
+                    resolved.field(TO_TABLE, String.class),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(resolved)
+                .where(resolved.field(CANDIDATES, Integer.class).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.VIA, excluded(t.VIA))
+            .set(t.KEY_MATCHED_BY, excluded(t.KEY_MATCHED_BY))
+            .set(t.CONSTRAINT_SOURCE_NAME, excluded(t.CONSTRAINT_SOURCE_NAME))
+            .set(t.CONSTRAINT_SCHEMA, excluded(t.CONSTRAINT_SCHEMA))
+            .set(t.CONSTRAINT_TABLE, excluded(t.CONSTRAINT_TABLE))
+            .set(t.CONSTRAINT_NAME, excluded(t.CONSTRAINT_NAME))
+            .set(t.FK_ON_FROM, excluded(t.FK_ON_FROM))
+            .set(t.FROM_SOURCE_NAME, excluded(t.FROM_SOURCE_NAME))
+            .set(t.FROM_SCHEMA, excluded(t.FROM_SCHEMA))
+            .set(t.FROM_TABLE, excluded(t.FROM_TABLE))
+            .set(t.TO_SOURCE_NAME, excluded(t.TO_SOURCE_NAME))
+            .set(t.TO_SCHEMA, excluded(t.TO_SCHEMA))
+            .set(t.TO_TABLE, excluded(t.TO_TABLE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The same element where the departure is a function result, which declares no foreign key for
+     * the arm above to find. The route is then the one the generator applies there and the only one
+     * available: the arrival's primary key matched to the function's columns by name, which
+     * {@code sql_name_matched_key_column} states, and states only where the whole key matches.
+     *
+     * <p>It cannot collide with the arm above, a function result being exactly the departure that
+     * declares nothing for a foreign key to be found on. The two are one authored form and two
+     * routes, which is why {@code via} tells them apart: what a reader joins on differs, a
+     * constraint on one and a column pairing on the other.
+     */
+    private static void nameMatches(DSLContext dsl, String graph, int position,
+                                    LocalDateTime touchedAt) {
+        var cl = GRAPHITRON_FIELD_CHAIN_LINK;
+        var m = STORE_GRAPH_SOURCE;
+        var st = SQL_TABLE;
+        var fn = SQL_TABLE.as("fn");
+        var pair = SQL_NAME_MATCHED_KEY_COLUMN;
+        var t = GRAPHITRON_FIELD_TABLE_LINK;
+        var named = tableSpellings(dsl, graph);
+        var d = departures(dsl, graph, position, touchedAt);
+
+        Field<String> fromSource = d.field(FROM_SOURCE_NAME, String.class);
+        Field<String> fromSchema = d.field(FROM_SCHEMA, String.class);
+        Field<String> fromTable = d.field(FROM_TABLE, String.class);
+        Field<String> namespaceUpper = named.field(NAMESPACE_UPPER, String.class);
+        Field<String> nameUpper = named.field(NAME_UPPER, String.class);
+
+        var resolved = dsl
+            .select(cl.TYPE_NAME.as(TYPE_NAME), cl.FIELD_NAME.as(FIELD_NAME),
+                d.field(TARGET_SOURCE_NAME, String.class).as(TARGET_SOURCE_NAME),
+                d.field(TARGET_SCHEMA, String.class).as(TARGET_SCHEMA),
+                d.field(TARGET_TABLE, String.class).as(TARGET_TABLE),
+                fromSource.as(FROM_SOURCE_NAME), fromSchema.as(FROM_SCHEMA),
+                fromTable.as(FROM_TABLE),
+                st.SOURCE_NAME.as(TO_SOURCE_NAME), st.TABLE_SCHEMA.as(TO_SCHEMA),
+                st.TABLE_NAME.as(TO_TABLE),
+                count().over(partitionBy(cl.TYPE_NAME, cl.FIELD_NAME,
+                    d.field(TARGET_SOURCE_NAME, String.class),
+                    d.field(TARGET_SCHEMA, String.class),
+                    d.field(TARGET_TABLE, String.class))).as(CANDIDATES))
+            .from(cl)
+            .join(d).on(d.field(cl.TYPE_NAME).eq(cl.TYPE_NAME),
+                d.field(cl.FIELD_NAME).eq(cl.FIELD_NAME))
+            .join(named).on(named.field(SITE_NAME, String.class).eq(cl.SOURCE_NAME),
+                named.field(SITE_LINE, Integer.class).eq(cl.SOURCE_LINE),
+                named.field(SITE_COLUMN, Integer.class).eq(cl.SOURCE_COLUMN))
+            // The departure is the function, which is what makes this arm the one that answers.
+            .join(fn).on(fn.SOURCE_NAME.eq(fromSource), fn.TABLE_SCHEMA.eq(fromSchema),
+                fn.TABLE_NAME.eq(fromTable), fn.TABLE_TYPE.eq("FUNCTION"))
+            .join(m).on(m.GRAPH_NAME.eq(cl.GRAPH_NAME))
+            .join(st).on(st.SOURCE_NAME.eq(m.SOURCE_NAME), st.TABLE_NAME_UPPER.eq(nameUpper))
+            .and(namespaceUpper.isNull().or(st.TABLE_SCHEMA_UPPER.eq(namespaceUpper)))
+            .where(cl.GRAPH_NAME.eq(graph))
+            .and(cl.POSITION.eq(position))
+            .and(namesNoKey(cl))
+            .andExists(selectOne().from(pair)
+                .where(pair.SOURCE_NAME.eq(fn.SOURCE_NAME),
+                    pair.TABLE_SCHEMA.eq(fn.TABLE_SCHEMA), pair.TABLE_NAME.eq(fn.TABLE_NAME),
+                    pair.TO_SOURCE_NAME.eq(st.SOURCE_NAME), pair.TO_SCHEMA.eq(st.TABLE_SCHEMA),
+                    pair.TO_TABLE.eq(st.TABLE_NAME)))
+            .asTable("resolved");
+
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME,
+                t.TARGET_SOURCE_NAME, t.TARGET_SCHEMA, t.TARGET_TABLE, t.POSITION,
+                t.VIA, t.KEY_MATCHED_BY,
+                t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE,
+                t.CONSTRAINT_NAME, t.FK_ON_FROM,
+                t.FROM_SOURCE_NAME, t.FROM_SCHEMA, t.FROM_TABLE,
+                t.TO_SOURCE_NAME, t.TO_SCHEMA, t.TO_TABLE, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME),
+                    resolved.field(TYPE_NAME, String.class),
+                    resolved.field(FIELD_NAME, String.class),
+                    resolved.field(TARGET_SOURCE_NAME, String.class),
+                    resolved.field(TARGET_SCHEMA, String.class),
+                    resolved.field(TARGET_TABLE, String.class),
+                    val(position, t.POSITION), val("NAME_MATCH", t.VIA),
+                    castNull(t.KEY_MATCHED_BY),
+                    castNull(t.CONSTRAINT_SOURCE_NAME), castNull(t.CONSTRAINT_SCHEMA),
+                    castNull(t.CONSTRAINT_TABLE), castNull(t.CONSTRAINT_NAME),
+                    castNull(t.FK_ON_FROM),
+                    resolved.field(FROM_SOURCE_NAME, String.class),
+                    resolved.field(FROM_SCHEMA, String.class),
+                    resolved.field(FROM_TABLE, String.class),
+                    resolved.field(TO_SOURCE_NAME, String.class),
+                    resolved.field(TO_SCHEMA, String.class),
+                    resolved.field(TO_TABLE, String.class),
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(resolved)
+                .where(resolved.field(CANDIDATES, Integer.class).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.VIA, excluded(t.VIA))
+            .set(t.KEY_MATCHED_BY, excluded(t.KEY_MATCHED_BY))
+            .set(t.CONSTRAINT_SOURCE_NAME, excluded(t.CONSTRAINT_SOURCE_NAME))
+            .set(t.CONSTRAINT_SCHEMA, excluded(t.CONSTRAINT_SCHEMA))
+            .set(t.CONSTRAINT_TABLE, excluded(t.CONSTRAINT_TABLE))
+            .set(t.CONSTRAINT_NAME, excluded(t.CONSTRAINT_NAME))
+            .set(t.FK_ON_FROM, excluded(t.FK_ON_FROM))
+            .set(t.FROM_SOURCE_NAME, excluded(t.FROM_SOURCE_NAME))
+            .set(t.FROM_SCHEMA, excluded(t.FROM_SCHEMA))
+            .set(t.FROM_TABLE, excluded(t.FROM_TABLE))
+            .set(t.TO_SOURCE_NAME, excluded(t.TO_SOURCE_NAME))
+            .set(t.TO_SCHEMA, excluded(t.TO_SCHEMA))
+            .set(t.TO_TABLE, excluded(t.TO_TABLE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * What both table arms demand of an element: that it named no key. An element naming both is
+     * the key arm's, the key being the route and the table an assertion about where it ends, and
+     * the two arms would otherwise answer for one link and meet on its key.
+     */
+    private static Condition namesNoKey(GraphitronFieldChainLink cl) {
+        var k = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+        var kf = GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
+        return notExists(selectOne().from(k)
+            .where(k.GRAPH_NAME.eq(cl.GRAPH_NAME), k.SOURCE_NAME.eq(cl.SOURCE_NAME),
+                k.SOURCE_LINE.eq(cl.SOURCE_LINE), k.SOURCE_COLUMN.eq(cl.SOURCE_COLUMN)))
+            .and(notExists(selectOne().from(kf)
+                .where(kf.GRAPH_NAME.eq(cl.GRAPH_NAME), kf.SOURCE_NAME.eq(cl.SOURCE_NAME),
+                    kf.SOURCE_LINE.eq(cl.SOURCE_LINE), kf.SOURCE_COLUMN.eq(cl.SOURCE_COLUMN))));
+    }
+
+    /**
+     * The table an element named, whichever of the two directives wrote it, on the terms
+     * {@link #spellings} states for the key: one fact with one shape, so one relation.
+     */
+    private static Table<?> tableSpellings(DSLContext dsl, String graph) {
+        var s = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+        var f = GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
+        return dsl
+            .select(s.SOURCE_NAME.as(SITE_NAME), s.SOURCE_LINE.as(SITE_LINE),
+                s.SOURCE_COLUMN.as(SITE_COLUMN),
+                s.TABLE_REF_NAMESPACE_PART_UPPER.as(NAMESPACE_UPPER),
+                s.TABLE_REF_NAME_PART_UPPER.as(NAME_UPPER))
+            .from(s).where(s.GRAPH_NAME.eq(graph))
+            .unionAll(dsl
+                .select(f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN,
+                    f.TABLE_REF_NAMESPACE_PART_UPPER, f.TABLE_REF_NAME_PART_UPPER)
+                .from(f).where(f.GRAPH_NAME.eq(graph)))
+            .asTable("named");
     }
 
     /**

@@ -1818,6 +1818,8 @@ CREATE TABLE graphitron_ast_table_entry (
   table_ref     VARCHAR NOT NULL,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR NOT NULL,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -1833,6 +1835,8 @@ COMMENT ON COLUMN graphitron_ast_table_entry.touched_at IS 'when the reading tha
 COMMENT ON COLUMN graphitron_ast_table_entry.table_ref IS 'the name argument exactly as written. A bare @table writes no row: the author is asking for the table name to be deduced from the type''s own, which is a thing they said and which the absence of a row here is what records';
 COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_name_part IS 'the table half of the same';
+COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_table_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_scalar_type_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2068,6 +2072,8 @@ CREATE TABLE graphitron_ast_field_reference_table_step_entry (
   table_ref                VARCHAR NOT NULL,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR NOT NULL,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2083,6 +2089,8 @@ COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.touched_at IS 
 COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref IS 'the table field of the element as written. NOT NULL because a row exists exactly where the author named a table, which is what this relation says';
 COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_name_part IS 'the table half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_field_reference_key_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2168,6 +2176,8 @@ CREATE TABLE graphitron_ast_field_reference_for_table_step_entry (
   table_ref                VARCHAR NOT NULL,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR NOT NULL,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2183,6 +2193,8 @@ COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.touched_at
 COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref IS 'the table field of the element as written. NOT NULL because a row exists exactly where the author named a table, which is what this relation says';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_name_part IS 'the table half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_field_reference_for_key_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2646,6 +2658,8 @@ CREATE TABLE graphitron_ast_input_value_reference_table_step_entry (
   table_ref                VARCHAR NOT NULL,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR NOT NULL,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2661,6 +2675,8 @@ COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.touched_
 COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref IS 'the table field of the element exactly as written';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_name_part IS 'the table half of the same, which is what the spelled-table resolution is matched on';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_input_value_reference_condition_step_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2725,6 +2741,8 @@ CREATE TABLE graphitron_ast_input_value_reference_for_table_step_entry (
   table_ref                VARCHAR NOT NULL,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR NOT NULL,
+  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
+  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2740,6 +2758,8 @@ COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.touc
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref IS 'the table field of the element exactly as written';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_name_part IS 'the table half of the same, which is what the spelled-table resolution is matched on';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
 CREATE TABLE graphitron_ast_input_value_reference_for_condition_step_entry (
   graph_name    VARCHAR NOT NULL,
