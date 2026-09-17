@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 1
 theme: model-cleanup
-depends-on: []
+depends-on: [reference-step-arms-are-separate-keyed-relations]
 created: 2026-09-16
 last-updated: 2026-09-17
 ---
@@ -225,10 +225,187 @@ was buying for many readers and is not buying for one. Where it has several read
 `DerivedReadCostTest`'s reader counts decide this per relation rather than a rule in this body, and
 the commit records which way each went and why.
 
+**Two relations arrive decomposed, which is R956's and is this item's one dependency, and no gate
+changes.** The hop and the field walk each state four arms discriminated by a `via` literal with two
+different natural keys between them, which is why neither carries a primary key today and why neither
+could carry one as written; a conversion of either would be the first declared keyless base table in
+the tree. R956 splits each into a keyed table per key shape under a view carrying the existing name,
+and this item then converts what it finds. "The key gate, and the arm this item takes" under
+Implementation derives that and records the three arms declined, one of which was a gate widening this
+item drafted and withdrew. Nothing here edits a gate:
+`nothingMaterializesOutsideTheMechanism` and `HAND_WRITTEN`'s impossibility criterion are left exactly
+as they stand, which was the point of moving family in the first place, and
+`aDeclaredTableKeyMatchesItsGrain` is satisfied rather than widened.
+
 ## Implementation
 
 Five phases. The first is independent of the ladder entirely. After that each phase is one rung or
 two, lands on its own, and leaves the tree green and the register smaller or the same.
+
+### What every converting stage does, stated once so no phase has to restate it
+
+Three obligations, in the order an implementer meets them. Each is a consequence of the conversion
+rather than a policy this item invents, and each was found by a review round reading where the
+conversion lands rather than what it removes.
+
+**A stage reconciles; it does not append.** The statement is a graph-scoped `DELETE` and then the
+`INSERT ... SELECT`, in that order, per graph:
+
+```
+DELETE FROM graphitron_<x> WHERE graph_name = ?;
+INSERT INTO graphitron_<x> <the rule's text, seed filtered to that graph>;
+```
+
+That is exactly what `Materializations.refreshPartition` issues for a registered target today, run by
+the owner instead of by the register, and it is the whole of what a conversion changes about
+reconciliation: who runs it and when, not what it is. The shipped precedent is
+`ArgMappingCandidates.derive`, which opens `dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graphName))` and
+then inserts, on a target carrying no `touched_at`. It is not `FieldEndpoints.derive`, which this body
+cites as the precedent for a stage's *shape*: that one reconciles by `onDuplicateKeyUpdate` on a
+primary key and then sweeps `WHERE graph_name = ? AND touched_at <> ?`, and both halves need what the
+ladder's own relations lack. Take the shape from `FieldEndpoints` and the reconciliation from
+`ArgMappingCandidates`; the phases below say `INSERT` for brevity and mean both statements.
+
+Why this is mandatory per rung rather than good practice. The store persists across `graphitron:dev`
+rounds, so a second capture of the same graph is the ordinary case rather than an edge one. Without
+the `DELETE`, a keyed rung fails loudly on a primary-key violation and a keyless one fails silently by
+doubling the relation, which every reader above it then fans out on. The silent half is the one that
+would ship.
+
+**A converted relation owes a `meta_relation` declaration.**
+`MetaDeclarationGateTest.theUndeclaredRosterOnlyShrinks` pins the relations carrying no declaration,
+no registration naming them as a source view and no `meta_stated_relation` row to a frozen roster in
+`undeclared-relations.txt`, and its own message states the ratchet: a missing entry "is a new relation
+that must be declared rather than added to the roster". All five relations the ladder touches stand on
+that roster today under their `intent_` names. A conversion retires the `intent_` name and introduces a
+`graphitron_` one, and of the roster's three doors the new name can take none: the roster is frozen,
+the registration's source view is the thing this item exists to retire, and `meta_stated_relation` is
+for relations whose rows this DDL file itself supplies. So the declaration is owed by every rung, not
+by whichever rung happens to want one.
+
+That is a well-trodden path and not a new burden. Sixteen `graphitron_`-owned relations are declared
+today, `graphitron_field_table` and `graphitron_argmapping_candidate` among them. The corpus half of
+the obligation is vacuous here: `MetaDeclarationGateTest`'s corpus check skips an owner with no
+`meta_gatherer_corpus` row, and the graphitron gatherer carries none, which is the same fact the
+placement argument above leans on from the other side. What each rung owes concretely is a roster line
+removed, a `meta_relation` row added, a `meta_grain` row where the grain is new, and the `_live` view
+deleted where there was one. `intent_condition_method_route` converts nothing, stays a plain view and
+stays on the roster.
+
+**A declared base table meets the key gate, and two of the four cannot satisfy it as written.** That
+is the next subsection, because the answer is a design call rather than a step.
+
+### The key gate, and the arm this item takes
+
+`MetaDeclarationGateTest.aDeclaredTableKeyMatchesItsGrain` requires every declared `BASE TABLE`'s
+primary-key shape to equal its grain's `key_shape`. `meta_grain.key_shape` is `NOT NULL` with
+`CHECK (CHAR_LENGTH(key_shape) >= 1)` and the gate builds its comparison map from
+`INFORMATION_SCHEMA`, so a table with no primary key has no entry and offends any declared shape. Its
+message says so: "an unkeyed declared table owes a key before it owes anything else". Of the shipped
+tree's 270 base tables, 17 carry no primary key and every one of the 17 is an `intent_` registration
+target standing on the frozen roster. So there is no keyless declared table to lean on, and the
+absence is not an oversight: a registration target is exempt from both gates for one reason, that it
+is on the roster, and the conversion is precisely what removes that standing.
+
+The four conversions split three ways, and the split is the grain's rather than a preference.
+
+`intent_spelled_table` is already keyed on all five of its identity columns and converts with nothing
+owed but the declaration.
+
+`intent_resolved_type_binding` **takes a real primary key with no change to its rule and no column
+made non-nullable**, which an earlier reading of this fork got wrong by counting it among the
+unkeyable. All six of its columns are `NOT NULL` today, and its rule is a `COUNT(*) OVER (PARTITION BY
+graph_name, type_name)` over a `UNION` of `intent_bound_table` and `intent_routine_return_binding`. The
+`UNION` dedupes, so `(graph_name, type_name, table_source_name, table_schema, table_name)` is unique by
+construction and `candidates` is a payload the partition determines. Declare that as the grain and the
+gate is satisfied outright.
+
+`intent_field_reference_step_hop` and `intent_field_reference_step_target` are the two that cannot be
+keyed as written, and following why says what to do about it. Their rule is a `UNION ALL` of four arms
+discriminated by a `via` literal, and on the `NAME_MATCH` and `CONDITION` arms `key_matched_by`,
+`constraint_name` and `fk_on_from` are projected as literal `NULL`, because a name-matched hop joins on
+no foreign key and a condition hop joins on an authored predicate. The shipped column comments state
+each of those three absences as the fact it is.
+
+That is not a relation with three optional columns. **The arms have two different natural keys, which
+is the whole reason no key exists.** On the `KEY` and `TABLE` arms `constraint_name` and `fk_on_from`
+are identity, both orientations of every foreign key connecting the pair being separate rows; on the
+`NAME_MATCH` and `CONDITION` arms there is no key to enumerate, so the coordinate with the departing
+and arriving triples is already total. One relation cannot carry two key shapes, and a projected
+literal `NULL` is padding that makes four row shapes share one column list rather than a fact about a
+hop. The subject is the fact-model page's own worked anti-example: a `@reference` path element that
+"needed nine nullable columns and a legality rule no constraint could state" became three relations,
+one per assertion. `intent_condition_method_route` and its `_defect` sibling are the shipped instance
+of the same move.
+
+**The arm: the relations decompose on `via`, no gate changes, and the decomposition is R956 rather than
+this item.** Each becomes two keyed base tables and a view unioning them under the name every reader
+already spells: one table for the foreign-key arms, keyed on the coordinate, both table triples,
+`constraint_name` and `fk_on_from`; one for the keyless arms, keyed on the coordinate and both triples,
+which is already total there. Both `NOT NULL` throughout, each carrying a `CHECK` on the `via` values it
+admits. `aDeclaredTableKeyMatchesItsGrain` then clears untouched, because every declared base table
+carries a real primary key and the key gate does not read views, and
+`theUndeclaredRosterOnlyShrinks` is satisfied by declaring each arm table at the grain it actually has.
+R956 carries the diagnosis, the shape and the evidence it owes; this body states it, depends on it and
+does not perform it.
+
+Two things that buys beyond clearing the gate, which is why it is the arm rather than the concession.
+It refuses a duplicate row, which R876's burn-down records that nothing in these targets does today and
+which that item names a stage-written table as the moment to fix; the `DELETE` above covers
+reconciliation and a key covers the rest. And it states each arm's legality in constraints rather than
+in prose, which the tree already ships the exemplar of: `graphitron_field_table_link` is a stage-written
+`graphitron_` table over the same `via` vocabulary, carrying a primary key beside `CHECK
+((constraint_name IS NULL) = (fk_on_from IS NULL))`, `CHECK (constraint_name IS NOT NULL OR via <>
+'KEY')` and `CHECK (key_matched_by IS NULL OR via = 'KEY')`. Why that table is keyed where the hop is
+not, since it is the nearest thing to a counter-case: its arm-conditional columns are payload, one link
+per position per target, where the hop's are identity, many candidate routes per position. That
+asymmetry is the whole problem in one sentence.
+
+**Why it is a separate item and not two more paragraphs here.** The walk's recursive term joins the hop
+once per accumulated row and `ix_field_reference_step_hop_step` is what makes that a seek, 18308 scans
+against 523 by its own comment. Under a union view the planner has to push that eight-column seek into
+both arm tables. H2 usually does; usually is not good enough for the figure this item's cost claim
+rests on, so the decomposition owes that re-measurement as its own acceptance evidence, and owing a
+measurement is what makes it an item rather than a paragraph. This body writes no figure for it,
+because none has been taken.
+
+**The fallback if R956 does not land, which this body already licenses per rung.** The rung takes the
+registration instead: the rows land on the same disk, the `intent_` name and the frozen roster line
+stay, both gates clear with no change, and `intent_field_reference_step_fanout` still answers in
+0.37 s, because what fixes it is the walk being a table rather than who wrote it. That is "Other
+solutions we've considered"'s cheap fallback applied per rung, and this body's own "Convert or demote,
+per relation" rule already says taking it and recording why is a legitimate outcome rather than a
+failure. What it costs is the per-graph partition write and the modelling claim for that one relation,
+and where the walk is concerned it grows the register by a row. It is a smaller concession than being
+the item that puts the first keyless table through a gate whose message forbids it.
+
+Three arms were weighed and declined, recorded so the call is not re-litigated. **Manufacturing a key**
+needs a sentinel standing for "no constraint", which makes one column mean two things and is the
+denormalisation phase 0 declines by name a few paragraphs down. **Keeping one relation and keying a
+narrow prefix beside the nullable columns** does not work: the nullable columns are what tells two
+routes apart, so no prefix of them is unique. And **widening the key gate to admit a declared keyless
+table with a stated reason** was drafted and withdrawn, for reasons worth recording because it is the
+arm a reader would reach for. `meta_grain.key_shape`'s own comment is that "a declared base table at
+this grain carries exactly this primary key (gated)", so an aspirational `key_shape` on the exceptions
+makes one column mean two things. The three exception rosters this project treats as normal each admit
+on something harder than an author's argument: `undeclared-relations.txt` is frozen and only shrinks,
+`HAND_WRITTEN` admits on an impossibility criterion this item refuses to weaken by name, and `NO_INDEX`
+carries a measurement per entry. "The grain names a column the table declares nullable" is none of
+those three and would admit every future relation that nominates one. And an index is not a key: it
+would have traded duplicate refusal away for a seek and called it a buy-back. The honest reading is
+that the gate was right and the relation was wrong, which is what the decomposition acts on.
+
+**This is a shared answer, and the sibling item needs it too.** R955's "What each stage owes on
+landing" takes the same first step, a `meta_relation` row on the same roster-ratchet argument, and then
+says "a primary key where the grain admits one" with an index and a stated reason where a meaningfully
+nullable column is in the grain, leaning on `everyTargetIsIndexedOrStatesWhyNot`. That is the same
+graded rule and this body adopts it rather than inventing a second one. What it does not do is clear
+the key gate, which R955 never names: twelve of its fifteen carry no primary key today by its own
+table, and the gate it leans on stops covering a relation the moment the registration is retired, while
+`aDeclaredTableKeyMatchesItsGrain` starts covering it the moment it is declared. R955's own last commit
+deletes `MaterializeRegistryGateTest` outright. So the pincer is identical there and larger, and this
+item takes the gate change because it lands first and because four relations is a cheaper place to get
+the shape right than fifteen. "Relation to other items" carries the hand-off.
 
 ### Phase 0: the foreign-key count becomes a captured catalog fact
 
@@ -323,7 +500,9 @@ Rung 0 then rung 1, in one phase because rung 0 buys nothing on its own.
 `intent_spelled_table` becomes `graphitron_spelled_table`, written by a stage of the graphitron
 gatherer immediately before `FieldEndpoints.derive`, which is the eighth of that gatherer's ten
 stages and not the last. Its registration is retired. Its `_live` view is
-deleted, the rule moving into the stage's `INSERT ... SELECT` unchanged.
+deleted, the rule moving into the stage's `DELETE` and `INSERT ... SELECT` unchanged. It keeps the
+primary key it already carries on all five identity columns, so it is the one rung the key gate costs
+nothing.
 
 `intent_field_reference_step_hop` becomes `graphitron_field_reference_step_hop`, written by the stage
 after it. Its whole input list, checked against the shipped rule rather than assumed:
@@ -333,7 +512,17 @@ written) and `intent_condition_method_route` (rung 0, a plain view read inline).
 captured fact or a plain view over captured facts by the time the stage runs, the `sql_` table among
 them because `NameMatchedKeys.derive` runs earlier in the same pass. Its registration is retired. It
 keeps `ix_field_reference_step_hop_step`, whose comment already prices what that index removes:
-reading the field walk whole costs 18308 scans without it and 523 with it.
+reading the field walk whole costs 18308 scans without it and 523 with it, on a copy per arm table.
+
+**The hop arrives already split and keyed, which is R956's, and this phase converts what it finds.**
+Per the key-gate subsection above, the hop is a discriminated union of four arms with two natural keys
+between them, so R956 decomposes it into a keyed table per key shape under a view carrying the existing
+name; this phase then writes each of those two tables with a stage of its own and retires the
+registration. The two stages are the two arms of today's `UNION ALL` taken apart, so the rule's text is
+unchanged rather than rewritten, which is what keeps the `EXCEPT` oracle comparing two evaluations of
+one text. The declaration each arm table owes is the ordinary one, and it needs no gate to move. If
+R956 has not landed when this phase is picked up, the rung takes the registration fallback the key-gate
+subsection states and the commit records that it did.
 
 Two registrations retired, none added, and the hop is the relation *all three* walks read, so this
 phase is the one that moves the most for the least.
@@ -364,13 +553,18 @@ the three cases and says which it took.
 ### Phase 2: the field walk
 
 `intent_resolved_type_binding` converts or demotes per the rule above; eight view bodies and `StoreNodeTables` name it, so
-converting is the expectation and the commit says which way the count sent it.
+converting is the expectation and the commit says which way the count sent it. On conversion it gains
+the primary key the key-gate subsection above derives, `(graph_name, type_name, table_source_name,
+table_schema, table_name)`, which needs no column made non-nullable and no change to the rule.
 
 `intent_field_reference_step_target` becomes `graphitron_field_reference_step_target`, written by a
-stage as **one statement per graph**: `INSERT INTO graphitron_field_reference_step_target WITH
-RECURSIVE chain AS (...) SELECT ..., MAX(target_rank) OVER (...), COUNT(*) OVER (...) FROM (...)
-ranked`, with the seed filtered to the graph. The view text moves into the stage exactly as phase 1's
-does, and the `EXCEPT` oracle then compares two evaluations of one text rather than two texts.
+stage as a graph-scoped `DELETE` and then **one insert per graph**: `INSERT INTO
+graphitron_field_reference_step_target WITH RECURSIVE chain AS (...) SELECT ..., MAX(target_rank) OVER
+(...), COUNT(*) OVER (...) FROM (...) ranked`, with the seed filtered to the graph. The view text moves
+into the stage exactly as phase 1's does, and the `EXCEPT` oracle then compares two evaluations of one
+text rather than two texts. The `DELETE` is what an earlier draft of this paragraph left out, and on a
+keyless target its absence is silent: see the subsection above for why it is per rung rather than per
+taste.
 
 The earlier drafts of this phase proposed a Java fold instead, one insert per position with a
 termination bound and an assertion, on the reading that the fold would remove "two window functions
@@ -390,9 +584,21 @@ cannot borrow. H2 2.4.240, the pinned version, accepts the single-statement form
 checked it on the jar in the local repository with a seed filtered to one graph, and the implementer
 re-checks rather than taking it from here.
 
-Indexed and not keyed: the grain includes `constraint_name` and `fk_on_from`, both meaningfully
-nullable, and H2 refuses a primary key over a nullable column. The coordinate index is shaped like
-`ix_argument_reference_step_target_coordinate` and carries a `COMMENT ON INDEX` naming its reader.
+**The walk arrives split too, on the hop's shape and for the hop's reason**, and R956 carries that half
+as well: its `constraint_name` and `fk_on_from` are identity on two arms and absent on the other two,
+so one relation would carry two key shapes, with `targets` and `candidates` as payload either way.
+Earlier drafts of this paragraph said "indexed and not keyed" and gave H2's refusal of a key over a
+nullable column as the reason; that is a statement about an engine and could never have been the reason
+for a modelling decision, which is the correction the round-6 review's finding forced.
+
+This phase therefore writes two inserts per graph rather than one, each carrying the same `WITH
+RECURSIVE chain` and the same ranking over it and differing only in a closing arm filter, so the rule's
+text is still one text and the `EXCEPT` oracle still compares two evaluations of it. That evaluates the
+walk twice per graph, which phase 3 priced standalone at 0.08 s, so the second evaluation is under a
+tenth of a second once per capture; an implementer who wants one may stage the ranked chain and split
+out of it, and says which they did. Each arm table keeps a coordinate index shaped like
+`ix_argument_reference_step_target_coordinate` with a `COMMENT ON INDEX` naming its reader, which is
+what the three readers holding the element coordinate seek on.
 
 **What this phase reaches in `intent_node_id_instruction_live`, and what it does not.** That rule is
 the 592 s statement R953 measured and it does read the field walk, but not once per driving row
@@ -735,11 +941,16 @@ without either the view or this item changing a line for it.
 **The scope call: phases 0 to 2 are this item, and phases 4 and 5 split to a successor.** The argument
 in the order the evidence supports it.
 
-1. **Phase 2 is what makes the `sis` build finish, independently of R953.** The fanout read is
-   outside the refresh pass and outside the cliff's reach, it did not return inside a 30-minute cap
-   with hop analysed, and storing the field walk takes it to 0.37 s. Lever 2 does not reach it and no
-   statistic will. That is this item's priority-1 ground, and it is ground R953 does not stand on, so
-   claiming it is not annexing the cliff.
+1. **Phase 2 is necessary for the `sis` round to finish and is reachable by nothing else, R953
+   included.** The fanout read is outside the refresh pass and outside the cliff's reach, it did not
+   return inside a 30-minute cap with hop analysed, and storing the field walk takes it to 0.37 s.
+   Lever 2 does not reach it and no statistic will. That is this item's priority-1 ground, and it is
+   ground R953 does not stand on, so claiming it is not annexing the cliff. Necessary and not
+   sufficient, which the heading used to overstate: with phase 2 landed and R953 not,
+   `intent_node_id_instruction` goes from 436.1 s to 0.91 s but `intent_node_id_decode_hop` is
+   outside this item's scope at about 2536 s, so the pass is still tens of minutes. The contingency
+   bullet below and the acceptance evidence under "Tests" both already said so; the heading is what
+   was out of step.
 2. **This item's own rule fires for phases 4 and 5.** The rule phase 3 was filed with is that if the
    round is in seconds, the remaining rungs are a modelling tidy rather than a fix and say so in their
    own priority. Lever
@@ -782,7 +993,20 @@ phase cheap to review however large the ladder gets.
 
 - **Answer preservation, per rung.** `EXCEPT` in both directions between the stage-written table and the
   view text it was converted from, over a populated store, per graph. This is the oracle the whole plan
-  rests on and it exists precisely because these rules are expressible as views.
+  rests on and it exists precisely because these rules are expressible as views. **It is blind to a
+  stage that appends instead of reconciling, in two independent ways, and the bullet below is what
+  covers that rather than this one.** `EXCEPT` is set semantics, so both directions return zero rows
+  even when one side holds every row twice; and on a fresh store the stage runs once, so there is
+  nothing to duplicate. An oracle this load-bearing is worth knowing the shape of what it does not see.
+- **Reconciliation, per rung: a second capture of one graph into one store leaves the row count
+  unchanged.** This is the reading that tells a stage which reconciles from one which appends, and it
+  is the acceptance evidence the `DELETE`-then-`INSERT` discipline owes. It has a home already:
+  `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` captures twice into a persistent store and
+  compares a per-relation row-count census against a cold load, and `census` counts every non-view
+  table in the schema, so a converted relation joins it with no edit. What it does not do today is give
+  these relations any rows: it runs on that class's `SDL`, which binds no table, and the class already
+  carries `TABLE_BOUND_SDL` and a `captureBound` helper that exist for exactly this, "so the intent
+  targets take rows". So the ask is a bound-schema arm on an existing case, not a new fixture.
 - **`ReferenceStepTargetTest`, `ArgumentReferenceStepTargetTest`, `ReferenceStepFanoutTest`,
   `ChainTerminusTest`, `InputFieldResolvingTableTest`** already pin what these relations answer at the
   coordinate grain. They must pass with no edit beyond the renames; a test whose expectations move is a
@@ -798,9 +1022,20 @@ phase cheap to review however large the ladder gets.
   retirement moves its pinned set as surely as an addition does, and the set is edited per phase, which
   is the confrontation it is built to force. Its reader counts are also what decides convert against
   demote.
-- **`MetaDeclarationGateTest`** binds on any converted relation that carries a declaration, including
-  the view-ownership gate, which is the mechanical check that a moved relation's reads match its new
-  owner.
+- **`MetaDeclarationGateTest`** binds on **every** converted relation, per rung and not conditionally,
+  which is the correction the round-6 review forced: `theUndeclaredRosterOnlyShrinks` makes a
+  declaration mandatory the moment a relation leaves the frozen roster under a new name, so there is no
+  arm where a conversion carries none. Three of its cases bind per rung. The roster case is the one
+  that creates the obligation, and it is two edits: the `intent_` line removed, the declaration added.
+  `aDeclaredTableKeyMatchesItsGrain` is satisfied rather than widened, every declared base table this
+  item introduces carrying a real primary key, which for two of the four is what R956 delivers. And the
+  view-ownership gate is the mechanical check that a moved relation's reads match its new owner, which
+  now binds on two union views as well. The corpus case is
+  vacuous here, the graphitron gatherer carrying no `meta_gatherer_corpus` row, which is worth stating
+  so an implementer does not go looking for a grain corpus to pick.
+- **`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`** binds on every rung once it is
+  keyed, which is all four after R956: each key must lead with `graph_name`, which every candidate key
+  here does.
 - **`FactCaptureAgreementTest`, `FactSchemaGateTest`, `CaptureCorpusIsolationTest`** are the regression
   surface for a column list or a capture path that moved, and the third is what covers a producer's
   reads, which no catalog parse can see.
@@ -827,6 +1062,13 @@ phase cheap to review however large the ladder gets.
   table is the proof that avoiding it is possible for this subtree.
 - **It does not change what admits a hand-written derivation.** `HAND_WRITTEN`'s impossibility criterion
   stands, and every relation here leaves its scope by moving family rather than by weakening it.
+- **It does not change a gate at all, and an earlier draft of this plan did.** The declaration the
+  rename forces meets `MetaDeclarationGateTest.aDeclaredTableKeyMatchesItsGrain`, whose message is that
+  "an unkeyed declared table owes a key before it owes anything else", and two of the four relations
+  could not carry a key as written. The draft answer was a roster-pinned exemption arm on that gate.
+  It is withdrawn: the key-gate subsection records why, and the short form is that the gate was right
+  and the relation was wrong. Every declared base table this item introduces carries a real primary
+  key.
 - **It does not promote `intent_node_id_instruction_live`'s inner alias to a named relation.** That
   rule's `slot_table` is a local alias joined back to the `instructed` alias it derives from, so H2
   recomputes it once per driving row, and its own `meta_materialize.reason` already says the alias
@@ -879,6 +1121,39 @@ measurement split it). A fourth thing it contributes is a correction rather
 than a contribution: R876's own enumeration of family-local misplacements still lists
 `intent_name_matched_key_pair`, which commit 78b6a58 retired on 2026-09-14, so that count is one row
 stale and is that item's to re-take. The precedent it follows is R876's own `graphitron_argmapping_match`.
+
+**R956** is this item's one `depends-on:` edge and the answer to the round-6 review's finding that two
+of the four conversions could not carry a primary key. It decomposes the hop and the field walk on
+their `via` discriminator into a keyed relation per key shape under a view carrying the existing name,
+which is what lets those two be declared without a gate moving. The dependency is real rather than
+courteous: phases 1 and 2 convert what R956 leaves, and if it has not landed those rungs take the
+registration fallback the key-gate subsection states. It is a separate item because it owes a
+re-measurement of the recursive step's seek across a union view, and owing a measurement is what makes
+something an item rather than a paragraph. It is filed at Backlog and nobody has picked it up, which is
+the same standing the R953 record has.
+
+**R955** converts the register's remaining fifteen registrations on the same doctrine and the two items
+have to land one answer to one question, which is why the key-gate subsection above argues it once and
+this paragraph carries the hand-off rather than a second argument. Three things they share and one
+they do not. They share the placement criterion, what an input reaches, which is why that item's
+fifteen all go to the derivation stratum and rungs 0 to 3 here stay in the gatherer. They share the
+declaration obligation, both items reaching it from `theUndeclaredRosterOnlyShrinks`'s ratchet. And
+they share the first half of the key rule, a primary key where the grain admits one, which is that
+item's wording. Where they part is the other half. R955 says an index with a stated reason where a
+meaningfully nullable column is in the grain, and leans that on
+`MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot`. That gate iterates live registrations,
+so it stops covering a relation at the moment its registration is retired, which is the moment that
+item converts one, and that item's own last commit deletes `MaterializeRegistryGateTest` outright. It
+never names `MetaDeclarationGateTest.aDeclaredTableKeyMatchesItsGrain`, which starts covering a relation
+at the moment it is declared, whose message is that "an unkeyed declared table owes a key before it
+owes anything else", and which twelve of its fifteen would offend. An index is also not a key: it does
+not refuse a duplicate row, which is the property R876's burn-down asks a stage-written table to add.
+So the pincer is that item's too and larger, and this body's answer is the one it should take: where the
+grain admits no key, ask whether the relation is one relation before asking the gate to tolerate a
+keyless one. Both of this item's two unkeyable relations turned out not to be, which is R956. Whether
+each of that item's twelve is the same shape is that item's to determine, and R956's own body says so.
+The record is one-way for the same reason the R953 one is: that item is in Spec with an open review
+round of its own, so nothing here waits on it.
 
 **R900** is the naming sweep, and the renames here are taken with their moves rather than deferred to
 it, on R876's reasoning that correcting the family and the noun together is one edit rather than two.
@@ -1933,3 +2208,149 @@ finish and reachable by nothing else, while the pass still needs lever 2.
 
 **Corrected in passing: nothing.** Every claim this round checked held, which is worth recording
 because the last two rounds each found a stale one.
+
+### Author's response to round 6 (2026-09-17)
+
+Not a review round: this is the author answering. **This round's commit carries no `Claude-Session`
+trailer**, as the round-5 response's did not, because it was written by a subagent and subagent commits
+do not get one. The next reviewer should read the commit's own message for who authored it.
+
+Both blocking findings are taken and both are answered in the body rather than here. Every claim below
+was re-derived from the shipped tree in this session rather than read off the review, and where the
+verification disagrees with the review the body carries what the tree says and this response names the
+difference. Finding 5 is a design fork, so the `principles-architect` subagent was consulted on it
+before an arm was taken, as the contributor guide asks; its reading changed the answer, and the arm
+this body had drafted first is recorded as declined rather than quietly dropped.
+
+**Finding 5 (the rename forces a declaration, and the declaration meets the key gate). Taken, and both
+halves reproduce.** `theUndeclaredRosterOnlyShrinks` compares the observed relations carrying no
+`meta_relation` row, no `meta_materialize` source-view row and no `meta_stated_relation` row against a
+225-line frozen roster, and all five relations the ladder touches stand on it.
+`aDeclaredTableKeyMatchesItsGrain`'s helper selects every declared `BASE TABLE`, joins `meta_grain` and
+flags any row whose `key_shape` differs from the primary-key column list read out of
+`INFORMATION_SCHEMA`, so a table with no key has no entry and offends. `meta_grain.key_shape` is `NOT
+NULL` with the length check the review names. The review's "no counter-case" is stronger than it
+claimed and the stronger form is in the body: parsing the shipped DDL statement by statement, of 270
+base tables 17 carry no primary key, and **every one of the 17 is an `intent_` registration target on
+the frozen roster**. So keylessness and roster standing are the same population, and the conversion is
+exactly what separates them.
+
+**Two corrections to the finding, both narrowing it.** The review counts three of the four conversions
+as keyless. Two is right. `intent_resolved_type_binding` has no primary key today, but all six of its
+columns are already `NOT NULL` and its rule is a `COUNT(*) OVER (PARTITION BY graph_name, type_name)`
+over a `UNION` of `intent_bound_table` and `intent_routine_return_binding`; the `UNION` dedupes, so the
+five identity columns are unique by construction and `candidates` is a payload. It takes a real primary
+key with no nullability change and no change to the rule. And the review locates the unkeyable arm at
+`via = 'CONDITION'`. It is two arms: `intent_field_reference_step_hop_live` is a `UNION ALL` of four
+branches projecting `'KEY'`, `'TABLE'`, `'NAME_MATCH'` and `'CONDITION'` as constants, and
+`key_matched_by`, `constraint_name` and `fk_on_from` are projected as `NULL` and `CAST(NULL AS
+BOOLEAN)` on both `NAME_MATCH` and `CONDITION`.
+
+**One door the finding did not check, checked here because the same failure shape produced rounds 4, 5
+and 6: it is closed.** A `meta_relation` row needs a grain, a grain needs a corpus, and
+`MetaDeclarationGateTest` holds a declared relation's grain corpus against its owner's. That check skips
+an owner with no `meta_gatherer_corpus` row, and the graphitron gatherer has none, which is the same
+fact the placement argument already leans on from the other side. Sixteen `graphitron_`-owned relations
+are declared today, `graphitron_field_table` and `graphitron_argmapping_candidate` among them. A fourth
+gate was checked and binds only where a key exists:
+`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension` reads only tables that have one, so
+every key introduced here must lead with `graph_name`, which every candidate key does.
+
+**The arm, which is the author's call: the two unkeyable relations are not one relation each, so they
+decompose, and no gate moves.** Following the finding's own observation one step further is what
+settles it. If a present, closed, four-valued `via` determines which columns are null, the relation is a
+discriminated union of four arms, and the arms have two different natural keys: on `KEY` and `TABLE`,
+`constraint_name` and `fk_on_from` are identity, both orientations of every connecting foreign key
+being separate rows, which is what `ix_field_reference_step_hop_step`'s own comment means by "Not
+UNIQUE and not the grain"; on `NAME_MATCH` and `CONDITION` there is nothing to enumerate, so the
+coordinate with the two table triples is already total. One relation cannot carry two key shapes, and a
+projected literal `NULL` is padding to make four row shapes share one column list rather than a fact
+about a hop. The subject is the fact-model page's own worked anti-example, a `@reference` path element
+that "needed nine nullable columns and a legality rule no constraint could state" and became three
+relations. So the answer is a keyed relation per key shape under a view carrying the existing name,
+which satisfies `aDeclaredTableKeyMatchesItsGrain` outright and closes R876's burn-down finding that
+nothing refuses a duplicate row in these targets.
+
+**That decomposition is filed as R956 and this item depends on it rather than performing it.** The
+reason is evidence rather than size: the walk's recursive term joins the hop once per accumulated row
+and `ix_field_reference_step_hop_step` is what makes that a seek, 18308 scans against 523 by its own
+comment, and under a union view the planner has to push that eight-column seek into both arm tables.
+H2 usually does. Usually is not good enough for the figure this item's cost claim rests on, so the
+decomposition owes that re-measurement as its own acceptance evidence, and owing a measurement is what
+makes it an item. No figure for it appears in either body, none having been taken. Phases 1 and 2
+convert what R956 leaves; if it has not landed, each rung takes the registration fallback this body
+already licenses per rung.
+
+**The arm this body drafted first and withdrew, recorded because it is the one a reader would reach
+for.** The first draft of this response widened `aDeclaredTableKeyMatchesItsGrain` with a roster-pinned
+exemption for a declared base table whose grain names a column the table declares nullable. Three
+things killed it. `meta_grain.key_shape`'s own comment is that "a declared base table at this grain
+carries exactly this primary key (gated)", so an aspirational `key_shape` on the exceptions makes one
+column mean two things, which is the denormalisation phase 0 declines by name. The three exception
+rosters this project treats as normal each admit on something harder than an argument:
+`undeclared-relations.txt` is frozen and only shrinks, `HAND_WRITTEN` admits on an impossibility
+criterion this item refuses to weaken by name, and `NO_INDEX` carries a measurement per entry; "the
+grain names a nullable column" is none of those and would admit every future relation that nominates
+one. And the index the draft offered as compensation is not a key: it does not refuse a duplicate row,
+so it traded an integrity property for a seek and called it a buy-back. The justification the draft
+gave, that `via` is present and closed so the NULLs are its consequence, is correct and is kept in the
+body; what it establishes is that the relation is four relations, not that the gate should admit it as
+one. It also answered the wrong doctrine: absence-carries-meaning is satisfied, and the one that
+objects is sealed hierarchies over enums, whose named tell is "this enum value implies these fields are
+non-null", which the hop's three column comments state verbatim.
+
+**One correction to the review's own framing of its arm 4.** "Convert only the keyed rungs and demote
+the rest" would not have dropped the field walk or the cost claim. A registration lands the same rows
+on the same disk and `intent_field_reference_step_fanout` still answers in 0.37 s, because what fixes
+it is the walk being a table rather than who wrote it, which this body says twice already. What a
+registration loses is the per-graph partition write and the modelling claim for one relation. That
+makes it the honest fallback rather than a non-starter, and the body now states it as such per rung.
+
+**Finding 6 (the phases specify the insert and not the delete). Taken, and the precedent verified.**
+`Materializations.refreshPartition` is a `deleteFrom(target).where(graph_name = ?)` and then an
+`insertInto(target).select(... from source where graph_name = ?)`, as the review says.
+`ArgMappingCandidates.derive` opens `dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graphName)).execute()` and
+then seeds and expands, on a target carrying no `touched_at`, so it is that discipline run by the owner.
+`FieldEndpoints.derive` is the other thing: `onDuplicateKeyUpdate` on the primary key plus a
+`deleteFrom ... where graph_name = ? and touched_at <> ?` sweep. The body now names both, takes the
+shape from one and the reconciliation from the other, and states the `DELETE` once in a subsection every
+phase points at rather than four times. The review's reading that this strengthens the thesis is
+adopted in that subsection's own words: what a conversion changes is who runs the reconciliation and
+when, not what it is.
+
+**One thing the finding leaves implicit, which is what makes the discipline mandatory rather than
+advisable.** The two failure modes are not the same failure. A missing `DELETE` on a keyed rung fails
+loudly on a primary-key violation at the second capture; on a keyless one it fails silently by doubling
+the relation. Only the second would ship. After R956 every rung here is keyed, which narrows the
+exposure without removing the obligation, since a loud failure on every second dev round is not a
+shipping state either.
+
+**The Tests section's blindness is stated rather than patched over, and the acceptance evidence has a
+home already.** The `EXCEPT` bullet now carries both of the review's reasons it cannot see this defect,
+because an oracle this load-bearing is worth knowing the shape of. Beside it is a new per-rung bullet
+asking that a second capture of one graph into one store leave the row count unchanged. That is not a
+new fixture: `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` already captures twice into a
+persistent store and compares a per-relation row-count census against a cold load, and its `census`
+helper counts every non-view table in the schema, so a converted relation joins it with no edit. What it
+does not do today is give these relations rows, running on that class's `SDL`, which binds no table; the
+class already carries `TABLE_BOUND_SDL` and a `captureBound` helper that exist for exactly this, their
+javadoc saying "so the intent targets take rows". So the ask is a bound-schema arm on an existing case.
+
+**Finding 7 (non-blocking). Taken.** The heading claimed sufficiency where the paragraph argues
+necessity, and it now claims necessity and reachability-by-nothing-else, with the figures that make it
+not sufficient stated under it rather than left to the contingency bullet.
+
+**What else changed with these two.** "What is in scope" gains a paragraph on the decomposition and the
+one dependency, and says explicitly that no gate moves. The Tests section states the declaration
+obligation as per-rung rather than conditional, which is what finding 5 asked for whatever arm was
+taken, and names the two further gate methods the declaration brings to bear. Phase 1 and phase 2 say
+what each relation arrives as and what the stage does with it, and phase 2 drops "H2 refuses a primary
+key over a nullable column" as a reason, an engine's behaviour never being the reason for a modelling
+decision. Two "does not do" bullets are added, one recording that no gate changes and that a draft of
+this plan changed one. "Relation to other items" gains R956 and rewrites the sibling paragraph.
+
+**Left alone deliberately.** The `intent_` names of the relations that stay views, and
+`intent_condition_method_route`'s roster line, which no conversion touches. R955's body, whose own
+answer to this question is incomplete in a way this round found and which is that item's to repair; the
+record is here and in the sibling paragraph. And the scope call itself: nothing in this round moves
+which phases are this item's.
