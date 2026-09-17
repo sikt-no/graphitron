@@ -92,6 +92,20 @@ arm-conditional columns are payload, one link per position per target; the hop's
 candidate routes per position. That asymmetry is why the answer here is decomposition rather than
 copying that table's constraint set onto one relation.
 
+**The union view is a new name too, and owes its own declaration.**
+`MetaDeclarationGateTest.theUndeclaredRosterOnlyShrinks` observes every relation rather than every base
+table, views included: `intent_condition_method_route` stands on the frozen roster as a view, and so
+does `intent_field_reference_step_target` today. Both existing `graphitron_` views,
+`graphitron_node_type` and `graphitron_argmapping_match`, are on that roster rather than declared, so
+this item introduces the first declared `graphitron_` view and there is no precedent to copy. Nothing
+fails, `aDeclaredTableKeyMatchesItsGrain` reading only base tables, but `meta_relation.grain_name` and
+`meta_grain.key_shape` are both `NOT NULL`, so the view has to say what grain it is at while its rows
+carry two key shapes. The reading this item proposes, for the implementer to confirm against
+`aDeclaredViewReadsOnlyWhatItsOwnerMay` rather than take on trust: the view declares the keyed arm's
+grain, since that is the finer of the two and the one a reader seeking a route holds, with `grain_text`
+saying in words that the match arm's rows leave the constraint columns absent. So each decomposed
+relation carries **three** declarations, two tables and a view, not two.
+
 Whether the two relations stay registration targets or become gatherer-written stages is R954's
 question, not this one. This item changes what the relations are; it does not change who writes them.
 Taking it first is what lets R954 declare them without touching a gate.

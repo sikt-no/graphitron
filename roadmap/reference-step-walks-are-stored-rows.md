@@ -289,8 +289,9 @@ the obligation is vacuous here: `MetaDeclarationGateTest`'s corpus check skips a
 `meta_gatherer_corpus` row, and the graphitron gatherer carries none, which is the same fact the
 placement argument above leans on from the other side. What each rung owes concretely is a roster line
 removed, a `meta_relation` row added, a `meta_grain` row where the grain is new, and the `_live` view
-deleted where there was one. `intent_condition_method_route` converts nothing, stays a plain view and
-stays on the roster.
+deleted where there was one. The roster observes views as well as base tables, so a decomposed rung
+owes three declarations rather than one: each keyed arm table and the union view over them, which R956
+carries. `intent_condition_method_route` converts nothing, stays a plain view and stays on the roster.
 
 **A declared base table meets the key gate, and two of the four cannot satisfy it as written.** That
 is the next subsection, because the answer is a design call rather than a step.
@@ -1105,7 +1106,7 @@ began. Its lever 3 proposes
 registering the field walk, which phase 2 supersedes: the same rows land, written by their owner rather
 than scheduled by the register. The record of that split is **one-way and this item's**: R953 is
 `Backlog` and nobody has picked it up, so a mutual clause would be a gate with no owner, and
-`depends-on:` here stays empty deliberately rather than inventing a wait on a transition nobody is
+this item carries no edge to R953 deliberately rather than inventing a wait on a transition nobody is
 committed to. Phase 2 states the supersession, and R953's body is amended whenever it is next touched;
 an implementer who reaches phase 2 first and finds lever 3 already landed takes the registration as
 that phase's fallback and says so. Its lever 2 is a static `SELECTIVITY` on a partition column and
@@ -1129,8 +1130,16 @@ which is what lets those two be declared without a gate moving. The dependency i
 courteous: phases 1 and 2 convert what R956 leaves, and if it has not landed those rungs take the
 registration fallback the key-gate subsection states. It is a separate item because it owes a
 re-measurement of the recursive step's seek across a union view, and owing a measurement is what makes
-something an item rather than a paragraph. It is filed at Backlog and nobody has picked it up, which is
-the same standing the R953 record has.
+something an item rather than a paragraph.
+
+**Why this one carries an edge where R953 does not, since both are Backlog items nobody has picked
+up.** R953's lever 3 is a *substitute* for phase 2: either shape lands the same rows, so an edge would
+name a wait with no owner and no purpose. R956 is what phases 1 and 2's *stated shape* is built on:
+without it those rungs convert relations that cannot be declared, which is a different plan rather than
+a delayed one. So the edge records the shape, and the per-rung registration fallback records what
+happens if R956 does not land, which is the same fallback R953's lever 3 names. The rule is that an
+edge goes where the plan changes without the other item, not where the other item would merely be
+convenient.
 
 **R955** converts the register's remaining fifteen registrations on the same doctrine and the two items
 have to land one answer to one question, which is why the key-gate subsection above argues it once and
@@ -2346,8 +2355,9 @@ obligation as per-rung rather than conditional, which is what finding 5 asked fo
 taken, and names the two further gate methods the declaration brings to bear. Phase 1 and phase 2 say
 what each relation arrives as and what the stage does with it, and phase 2 drops "H2 refuses a primary
 key over a nullable column" as a reason, an engine's behaviour never being the reason for a modelling
-decision. Two "does not do" bullets are added, one recording that no gate changes and that a draft of
-this plan changed one. "Relation to other items" gains R956 and rewrites the sibling paragraph.
+decision. One "does not do" bullet is added, recording that no gate changes and that a draft of this
+plan changed one. "Relation to other items" gains R956, says why that edge exists where the R953 one
+does not, and rewrites the sibling paragraph.
 
 **Left alone deliberately.** The `intent_` names of the relations that stay views, and
 `intent_condition_method_route`'s roster line, which no conversion touches. R955's body, whose own
