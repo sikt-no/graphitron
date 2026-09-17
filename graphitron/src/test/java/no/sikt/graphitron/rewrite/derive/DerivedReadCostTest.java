@@ -172,8 +172,15 @@ class DerivedReadCostTest {
      * catalog is a reader and a derived table is not, so the count loses the row the view held. The
      * two moves are offsetting and are stated separately on purpose: a single net figure would hide
      * that one relation arrived and another left.
+     *
+     * <p>Raised to 128 by the reference-step hop becoming two keyed tables under a union view, and
+     * it is the shape no earlier entry here has: a registration split rather than added, retired or
+     * captured. One {@code _live} view leaves and two arrive, which would be net one; the second is
+     * the union view itself, {@code intent_field_reference_step_hop}, which was a registered target
+     * and is a view now, so a relation crosses into this count from the table side without any rule
+     * being written. Both reader figures below moved with it.
      */
-    private static final int READERS_IN_SCHEMA = 126;
+    private static final int READERS_IN_SCHEMA = 128;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -218,8 +225,14 @@ class DerivedReadCostTest {
      * arrival: it drives from the field-site reference walk, so it inherits that walk's reach whole
      * and enters the domain on the day it is written rather than on a later change to what it
      * reads.
+     *
+     * <p>Sixty-three to sixty-five with the reference-step hop's split, by exactly the two relations
+     * {@link #READERS_IN_SCHEMA}'s own entry names as new: the keyless arm's rule, which reads the
+     * registered table spelling, and the union view over the two arms, which reaches both of their
+     * registrations because it is what presents them. The keyed arm's rule is the retired rule under
+     * a new name and is not a second arrival.
      */
-    private static final int READERS_WITH_CELLS = 63;
+    private static final int READERS_WITH_CELLS = 65;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -327,8 +340,18 @@ class DerivedReadCostTest {
      * arithmetic the paragraph above states, read once more from a relation that adds nothing of
      * its own to the walk's reach: it sits directly on the target view and so pays for that view's
      * rungs and no others, however much catalog it joins beside them.
+     *
+     * <p>Raised to 164 by the reference-step hop's split, nineteen cells and the largest single move
+     * in this history that no registration arrived or left for. What moved it is the union view: the
+     * canonical name is a view now rather than a registered target, so the reachability walk no
+     * longer stops there. Every relation that reached the hop reaches two registrations where it
+     * reached one, which is a cell apiece for sixteen readers, and the three relations the entries
+     * above name as new carry the rest. Read it as the mirror of a registration arriving: a
+     * registration cuts every walk at its target, and a target becoming a view uncuts them.
+     * Registering the union view is what would take the nineteen back, and nothing has argued for
+     * that; the cells it would remove are cheap ones, the union being a concatenation of two seeks.
      */
-    private static final int CELLS = 145;
+    private static final int CELLS = 164;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -413,24 +436,21 @@ class DerivedReadCostTest {
      * the one thing this gate is built without; the day that index lands, the equality assertion
      * deletes them.
      *
-     * <p>The last four are the instrument's own floor rather than work, and they are worth reading
-     * before adding anything that looks like them. The three input-field resolution relations each
-     * name the reference-step hop relation, and against the registered target they visit exactly
-     * four rows more than against the source view: 189 against 185, 345 against 341, 1110 against
-     * 1106. H2 charges a table visit at least one scan per naming where a view whose evaluation
-     * short-circuits is charged none, and four namings is what these three bodies make between the
-     * walk's anchor and its recursive term. The wall clocks run the other way and decisively, two
-     * milliseconds against thirteen, four against fourteen and six against twenty-six, which is the
-     * shape that says this is the counter's floor and not a cost. No index question arises: the
-     * target already carries one, and a difference of four scans is not an index's to move.
-     *
-     * <p>The fourth is the same floor counted three times over: the input-field role relation, 4845
-     * against 4833, whose body names the column-match relation in three of its arms, so the walk's
-     * four namings are made three times. Twelve scans on 4845 is a quarter of one per cent, and here
-     * the clocks are a wash rather than decisively better, sixty milliseconds against fifty-nine,
-     * which is what a difference that size looks like on a clock. Three namings looks like something
-     * to fold into one, and the one-pass shape that would do it was written and measured and is not
-     * an improvement: see that relation's own comment, which carries the figures and the reason.
+     * <p>Four rows stood here on the instrument's own floor rather than on work, and they are worth
+     * keeping in the record because the next four-scan pair should be read the same way. The three
+     * input-field resolution relations each name the reference-step hop relation, and against the
+     * registered target they visited exactly four rows more than against the source view: 189
+     * against 185, 345 against 341, 1110 against 1106. H2 charges a table visit at least one scan
+     * per naming where a view whose evaluation short-circuits is charged none, and four namings is
+     * what those three bodies make between the walk's anchor and its recursive term. The wall clocks
+     * ran the other way and decisively, two milliseconds against thirteen, four against fourteen and
+     * six against twenty-six, which is the shape that says this is the counter's floor and not a
+     * cost. The fourth was the same floor counted three times over, the input-field role relation at
+     * 4845 against 4833, whose body names the column-match relation in three of its arms. All four
+     * have gone, and not because anything about them got cheaper: the hop split into two keyed
+     * targets under a union view, so each of those readers has two cells where it had one and the
+     * split's own cost puts both above a four-scan floor. A floor-level pair is the one kind this
+     * set holds that a bigger measurement resolves.
      *
      * <p>The last three are where the counter and the clock disagree outright, and they are the
      * clearest case in this set for reading the instrument as a row count rather than as a cost. The
@@ -669,27 +689,22 @@ class DerivedReadCostTest {
         // for once and is the row to look at first if the lever below is ever taken.
         "intent_spelled_table|intent_field_unlowerable_ordering",
         "intent_spelled_table|diagnostic",
-        // The instrument's own floor, four scans apiece; measured above.
-        "intent_field_reference_step_hop|intent_input_field_reference_step_target",
-        "intent_field_reference_step_hop|intent_input_field_column_scope",
-        // Named for the rule rather than the relation since the column match was registered, on
-        // the carrier's precedent below: the rule keeps its cell under the _live name and the
-        // canonical name is a table the walk stops at.
-        "intent_field_reference_step_hop|intent_input_field_column_match_live",
-        // The filter role stood beside the row above and left the stopped-reaching way: it
+        // Five cells at the instrument's own floor, four scans apiece, stood here charged to the
+        // field-site reference hop: the input-field reference walk, the input-field column scope,
+        // the input-field column-match rule, the carrier role rule and the decode hop rule. All
+        // five have gone, and how is worth stating because it is a fourth kind of departure beside
+        // the three this set already records. They did not stop reaching the rung and they did not
+        // get cheaper: the rung split. The hop is two keyed tables under a union view now, so each
+        // of those readers has two cells where it had one, and at four scans the split's own cost
+        // is enough to put both sides above the floor on either arm. A floor-level cell is the one
+        // kind that can be resolved by making the measurement bigger rather than by making the
+        // relation cheaper, which is what happened here and is why no lever is recorded for it.
+        // The filter role stood beside the rows above and left the stopped-reaching way: it
         // reached this rung only by expanding the column-match view, which it named three times,
         // and that relation is a table now, so the walk stops there and the cell does not exist
         // to be non-monotonic in. The registration underneath it is what moved it, which is the
         // direction this set exists to notice, and its own row in meta_materialize carries what
         // the move was worth on a consumer population: 24.4 s to 0.13 s.
-        // Named for the rule rather than the relation since the carrier was registered: the
-        // rule keeps its cells under the _live name and the canonical name is a table the walk
-        // stops at.
-        "intent_field_reference_step_hop|intent_input_field_carrier_role_live",
-        // The same floor reached through the input-field reference walk, which the decode's hop
-        // child took up when the input-field path stopped being unwalkable. Named for the rule
-        // rather than the relation since the hop was registered, on the carrier's precedent above.
-        "intent_field_reference_step_hop|intent_node_id_decode_hop_live",
         // The hop-column rule stood beside the row above and has stopped being non-monotonic,
         // which is the got-cheaper kind of departure rather than the stopped-reaching kind: it
         // still reaches this rung, but it reads the hop as a table now instead of expanding the
@@ -792,8 +807,20 @@ class DerivedReadCostTest {
         // Three argument-site cells stood beside these two, charged to intent_argument_scope_table,
         // and left when that target was keyed. The class note above carries their figures and what
         // their leaving means for the next pair that appears here.
-        "intent_field_reference_step_hop|intent_field_reference_step_target",
-        "intent_field_reference_step_hop|intent_field_column_scope_live",
+        //
+        // Both pairs are now four, a cell per arm, the hop being two keyed tables under a union
+        // view keeping the canonical name. The figures are re-taken and the reading is the same:
+        // the walk is 973 scans registered against 619 with the keyed arm left a rule and 477 with
+        // the keyless one, 3 milliseconds against 10 and 13; the scope rule 2750 against 2396 and
+        // 2254, 27 milliseconds against 24 and 22. The split's own cost on the registered side is
+        // 178 scans on each of those two readers, measured against the single-table shape, and it
+        // is the same 178 on both because it is the walk's namings against the second branch. What
+        // the counter charges the registered side here is still the arm's rows visited rather than
+        // work done, which the walk's clock says most plainly.
+        "intent_field_reference_step_hop_keyed|intent_field_reference_step_target",
+        "intent_field_reference_step_hop_keyless|intent_field_reference_step_target",
+        "intent_field_reference_step_hop_keyed|intent_field_column_scope_live",
+        "intent_field_reference_step_hop_keyless|intent_field_column_scope_live",
         // A third reader of the same rung, and it is the walk's own charge arriving one reader
         // further out: the fan-out rule drives from intent_field_reference_step_target and pairs it
         // with itself, so whatever the walk is charged for the namings the row above prices, this
@@ -811,7 +838,13 @@ class DerivedReadCostTest {
         // rewrite lever taken before a registration is considered, in that order. It stays a plain
         // view on those terms: no measurement on a populated store says otherwise yet, and this
         // fixture prices a plan rather than a population.
-        "intent_field_reference_step_hop|intent_field_reference_step_fanout");
+        //
+        // A cell per arm here too, and the absolute figure is re-taken with it: 22183 scans
+        // registered against 19351 with the keyed arm unregistered and 18215 with the keyless one,
+        // where it was 20759 over the single table. The clock still says what it said: 56
+        // milliseconds registered against 223 and 116.
+        "intent_field_reference_step_hop_keyed|intent_field_reference_step_fanout",
+        "intent_field_reference_step_hop_keyless|intent_field_reference_step_fanout");
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

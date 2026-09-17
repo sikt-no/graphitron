@@ -602,6 +602,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_bound_table", Arm.DERIVED);
         registrations.put("intent_spelled_table", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop_keyed", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop_keyless", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
         registrations.put("intent_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
@@ -687,7 +689,8 @@ class FactCaptureAgreementTest {
         registrations.put("intent_input_field_carrier_role_live", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding_live", Arm.DERIVED);
         registrations.put("intent_field_column_scope_live", Arm.DERIVED);
-        registrations.put("intent_field_reference_step_hop_live", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop_keyed_live", Arm.DERIVED);
+        registrations.put("intent_field_reference_step_hop_keyless_live", Arm.DERIVED);
         registrations.put("intent_node_id_instruction_live", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);

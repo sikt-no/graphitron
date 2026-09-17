@@ -71,8 +71,19 @@ class MaterializeRegistryGateTest {
      * raise it in the commit that argues for it. What the pin prevents is the shape moving in a
      * commit that argues for something else, which is exactly how it last moved. {@link #NO_INDEX}
      * is the model: a figure that has to be edited deliberately, not a ceiling nobody may exceed.
+     *
+     * <p>Twenty-four since the reference-step hop became two relations, and it is the one increment
+     * in this figure's history that registered no new rule. The hop's four arms have two key
+     * shapes, so the one relation carrying them could hold no primary key; splitting it on that
+     * axis into {@code intent_field_reference_step_hop_keyed} and
+     * {@code intent_field_reference_step_hop_keyless} under a union view keeping the canonical name
+     * splits its registration with it. Two rows now state what one stated, over the same text, and
+     * the pair is registered or unregistered together: the union view every reader spells is a
+     * table on both branches or a re-evaluated rule on one. So a reader of this figure should not
+     * read the increment as a registration's worth of new refresh; {@link #REFRESH_STAGES} did not
+     * move with it, both arms sitting at the depth the single target sat at.
      */
-    private static final int REGISTRATIONS = 23;
+    private static final int REGISTRATIONS = 24;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -262,10 +273,35 @@ class MaterializeRegistryGateTest {
      *   here would be a second index over the same leading columns, bought for no reader. The
      *   precedent for not buying it on a guess is the decode column's row above, where an index
      *   bought for two readers lost on measurement once the key widened.</li>
+     *   <li>{@code intent_field_reference_step_hop_keyed} and
+     *   {@code intent_field_reference_step_hop_keyless}: the decode hop's structural argument, and
+     *   the one pair here where it was put to the instrument rather than argued. Both are keyed,
+     *   and both keys lead with the eight columns every reader seeks on, the element coordinate and
+     *   the departing triple: the recursive step in {@code intent_field_reference_step_target}, the
+     *   same join in {@code intent_field_chain_node} and the input-field walk. A declared index on
+     *   those eight is a prefix of each key, and {@code intent_spelled_table}'s own comment records
+     *   that a prefix is not always free to drop, so this pair shipped with one index apiece and the
+     *   folding was measured on both instruments this domain has. Neither moved in the direction of
+     *   keeping them. On the read-cost gate's twelve-unit fixture with statistics current, with the
+     *   two indexes against neither: {@code intent_field_reference_step_target} 973 scans either
+     *   way, {@code intent_field_column_scope_live} 2750 either way,
+     *   {@code intent_field_reference_step_fanout} 22183 either way, and the recursive step's plan
+     *   differing only in which index name the keyed seek carries, the primary key's where the
+     *   declared one stood. On {@code RefreshPlanStatisticsTest} the indexes were a cost rather than
+     *   a wash: with them declared, {@code intent_resolved_type_binding_live} joins the set of
+     *   registrations whose refresh plans differently with the targets' statistics than without,
+     *   which is a ninth statement whose cold-capture plan stops matching its settled one. So the
+     *   indexes went and the keys serve the seek, which is the opposite verdict to
+     *   {@code intent_spelled_table}'s on the same question and is why that comment says a
+     *   measurement rather than a rule. Falsified by a new reader rather than by a new figure: a
+     *   reader seeking these targets on something that is not a prefix of their keys is what would
+     *   buy an index here.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(
         "intent_node_id_decode_hop",
+        "intent_field_reference_step_hop_keyed",
+        "intent_field_reference_step_hop_keyless",
         "intent_field_column_scope",
         "intent_argument_column_scope",
         "intent_argument_column_match",

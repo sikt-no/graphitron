@@ -1,7 +1,7 @@
 ---
 id: R956
 title: "A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -137,21 +137,23 @@ today, so none is edited: `intent_field_reference_step_target`, `intent_field_ch
 `NULL` that was padding inside the rule is now a presentation of absence at the one surface that has
 to present fifteen columns, which is where a compatibility shape belongs.
 
-**Each arm keeps a step index beside its key, until a measurement says otherwise.**
-`ix_field_reference_step_hop_step` serves the recursive step's join on eight columns, the element
+**Neither arm carries a step index: the keys serve the seek, measured.**
+`ix_field_reference_step_hop_step` served the recursive step's join on eight columns, the element
 coordinate and the departing triple, and both primary keys above lead with exactly those eight columns
-in that order. That makes a declared index read as redundant, and the tree has already measured that
-reading and refuted it: `intent_spelled_table`'s own comment records that `ix_spelled_table_spelling`
+in that order. That makes a declared index read as redundant, and the tree had already measured that
+reading and refuted it once: `intent_spelled_table`'s own comment records that `ix_spelled_table_spelling`
 "stays beside the key rather than being folded into it, and that was measured rather than assumed: it
 is a prefix of the key, so it reads as redundant, and removing it moved three refresh statements into
 needing the registered targets' statistics to plan and changed a pair in the read-cost gate. A narrow
 non-unique index is not the same offer to the planner as the leading columns of a wide unique one."
-So the default is `ix_field_reference_step_hop_keyed_step` and `ix_field_reference_step_hop_keyless_step`,
-each on the eight columns, each with the `COMMENT ON INDEX` naming its readers that
-`everyIndexOnATargetStatesItsReader` requires, and the folding is an experiment under "The measurement
-this item owes" rather than a decision made here. `intent_node_id_decode_hop`'s row in
-`MaterializeRegistryGateTest.NO_INDEX` is the other precedent, a key serving as the seek with no index
-declared, and it is the weaker one: no index ever existed there to measure against.
+So the pair shipped with one index apiece and the folding was run as the experiment under "The
+measurement this item owes", which came back the other way on both instruments: identical scan counts
+and identical plans on the read-cost gate, and the same nine-member set on `RefreshPlanStatisticsTest`.
+The indexes are therefore gone and the two targets carry `MaterializeRegistryGateTest.NO_INDEX` rows
+in `intent_node_id_decode_hop`'s structural form, the argument being that an index on those eight
+columns is a prefix of each key. The two verdicts are not in conflict: what the spelled-table finding
+says is that a prefix is not always free to drop, which is why this one was measured rather than
+assumed.
 
 **Why `via` is a payload and not part of either key.** Whether an element resolves through the `KEY`
 or the `TABLE` arm is a property of the element: the two arms select on `key_ref IS NOT NULL` and on
@@ -201,7 +203,9 @@ and `ix_field_reference_step_hop_step` with:
   view's comment says it for both in the sentence that says which table holds which arm. These are the
   first declared registration targets in the tree, confirmed by joining `meta_materialize`'s targets
   against `meta_relation` on the shipped DDL, so there is no precedent to copy and this is the one.
-- One step index per table, as under "The shape", each commented with its readers.
+- No index on either table: the keys lead with the eight columns every reader seeks on, and the
+  folding experiment found them serving it. Two `MaterializeRegistryGateTest.NO_INDEX` rows instead,
+  the roster carrying the measurement.
 - The union view under the existing name, with a `COMMENT ON VIEW` saying what a row is (one candidate
   route of one element, before the walk decides), that it is two relations under one name because its
   rows have two key shapes, which refilled table holds which arm, and the pushdown premise readers
@@ -244,33 +248,41 @@ changes, which is R954's rename, and "Relation to other items" hands it over wit
 proposes. The retired `_live` view was exempt through the register and stood on no roster, so no roster
 line moves at all.
 
-**Gates and pins that move**, each a deliberate edit the implementer makes with the figure in hand:
+**Gates and pins that moved**, each re-derived on the fixture rather than predicted:
 
-- `MaterializeRegistryGateTest.REGISTRATIONS` goes from 23 to 24. `REFRESH_STAGES` is expected to hold
-  at 16, both arms sitting at the depth the one target sat at; the implementer reads
-  `RefreshStages.depth` rather than assuming it.
-- `MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot` and `everyIndexOnATargetStatesItsReader`
-  bind on the two step indexes; `NO_INDEX` does not move unless the folding experiment under "The
-  measurement this item owes" reproduces `intent_spelled_table`'s result in the opposite direction, in
-  which case the indexes go and two roster rows arrive carrying the key-prefix argument in
-  `intent_node_id_decode_hop`'s form.
-- `DerivedReadCostTest`'s pinned non-monotonic pairs: eight cells today are charged to
-  `intent_field_reference_step_hop`, most at "the instrument's own floor, four scans apiece". A cell is
-  keyed by registration, so each of those readers is re-measured against each arm registration and the
-  set is re-pinned to what the fixture says: a cell that stays non-monotonic is pinned under the arm it
-  is charged to with its figure, and one that goes monotonic is dropped, per that class's own rules for
-  a departing row.
-- `RefreshPlanStatisticsTest`'s pinned set of registrations whose plan differs with statistics. Its own
-  note says `intent_node_id_decode_hop_live` sits there because its read of the hop seeks the step index
-  with statistics and the `graph_name` constraint index without; the implementer re-derives whether
-  that holds with the seek pushed through the union view into two arm tables, and re-pins. This set is
-  also the instrument the folding experiment reads, since the spelled-table finding was a plan and
-  statistics effect the scan count alone did not show.
-- `FactCaptureAgreementTest`'s roster of relations and their agreement arm: the two tables and the two
-  `_live` views join it under `Arm.DERIVED`, as the retired names sit there today.
+- `MaterializeRegistryGateTest.REGISTRATIONS` 23 to 24. `REFRESH_STAGES` held at 16, both arms sitting
+  at the depth the one target sat at, as the body expected.
+- `MaterializeRegistryGateTest.NO_INDEX` gains both arm tables, the folding experiment having gone the
+  way "The shape" above now records. `everyTargetIsIndexedOrStatesWhyNot` and
+  `everyIndexOnATargetStatesItsReader` bind on the roster rows rather than on two indexes.
+- `DerivedReadCostTest` moved on all four of its pinned figures. `READERS_IN_SCHEMA` 126 to 128, one
+  `_live` view out and two in plus the union view crossing from the table side; `READERS_WITH_CELLS` 63
+  to 65; `CELLS` 145 to 164, nineteen cells, because the canonical name is a view again so the
+  reachability walk no longer stops there and every reader that reached the hop reaches two
+  registrations. The non-monotonic set went from eight cells charged to the hop to six: the three
+  readers that were regressions stay, one cell per arm, and the five at the instrument's four-scan
+  floor left because the split's own cost is larger than the floor. Figures on the two survivors, in
+  scans registered against each arm unregistered: the walk 973 against 619 and 477, the field-site
+  column scope 2750 against 2396 and 2254, the fan-out 22183 against 19351 and 18215.
+- `RefreshPlanStatisticsTest` gains a ninth member, `intent_resolved_type_binding_live`, and it is the
+  set's own first-paragraph mechanism arriving on another statement: with the targets analysed its read
+  of the hop seeks the keyed arm's primary key on the eight columns, and cold it falls to that arm's
+  `graph_name` constraint index. The set moved because the relation gained a key, not because this rule
+  changed, which is a new way for that set to move and the note there says so. The same paragraph's
+  named index no longer exists and is respelled to the arm key.
+- `DetectionReadReachGateTest`'s `UnlowerableOrderings` component gains
+  `intent_field_reference_step_hop`, which the body did not anticipate and which follows from the same
+  fact: that name is a view again, so the detection pass expands it. What it expands to is a `UNION
+  ALL` of two registered targets with no rule under either, so the row costs a concatenation of two
+  seeks.
+- `FactCaptureAgreementTest`'s roster: the two tables, the two `_live` views and the union view under
+  `Arm.DERIVED`, where the two retired names sat.
 - `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` censuses every non-view table, so both arm
-  tables join it with no edit, and the case gains the reading that matters for a keyed target: a second
-  capture of one graph into one store leaves both row counts unchanged.
+  tables joined it with no edit, and it passes: a second capture of one graph into one store leaves
+  both row counts unchanged.
+- `SchemaIdentifierDriftCheck`, the roadmap-tool gate nobody named in this body, caught the one stale
+  citation the sweep would otherwise have left: a `meta_materialize.reason` naming the retired rule.
+  Worth recording because it is the mechanical half of the retirement sweep for store identifiers.
 
 **Documentation.** `docs/architecture/explanation/fact-model.adoc`'s paragraph on splitting the hop
 from the walk gains the sentence that the hop is itself two relations under a view, because its arms
@@ -310,7 +322,36 @@ phase's inserts land in and nothing about its writer changes.
 
 ## The measurement this item owes
 
-The acceptance evidence, and the reason this is an item rather than two paragraphs of R954. The
+**Taken, and here is what it said.** Reading 1: the seek survives the union view and costs 178 scans.
+On `DerivedReadCostTest`'s twelve-unit fixture with statistics current, reading
+`intent_field_reference_step_target` whole is 973 scans over the union view against 795 over the single
+table it replaces, and `intent_field_column_scope_live` 2750 against 2572, the same 178 on both because
+it is the walk's namings against the second branch. The `EXPLAIN ANALYZE` plan of the recursive step
+shows an index probe into each branch and no scan of either: the keyed branch seeks its primary key on
+all eight columns at one row per iteration, and the keyless branch seeks its `graph_name` constraint
+index at two, that arm holding two rows at this fixture's size. What a scan would cost is on the same
+plan for comparison: with the keyed arm's registration removed the union view costs 14457 scans where it
+costs 397 as two tables. The kill criterion below is therefore not met. The folding experiment came back
+against the indexes on both instruments, and "The shape" above records the outcome and where the
+argument now lives.
+
+Readings 2 and 3, on a store captured from the sakila example schema, best of five reads: the union view
+1 millisecond for 280 rows against 2 for the single table, the walk 1 against 1,
+`intent_field_chain_node` 4 against 4, and `intent_field_reference_step_fanout` 22.3 seconds against
+17.1. That last one is the one place the split costs anything a clock can see, and it is the relation
+that was already this store's outlier by three orders of magnitude, the walk paired with itself over the
+catalog; the scan counter charges the same direction at a seventh of the size, 22183 against 20759.
+Refresh: 12 milliseconds for the keyed arm's 265 rows and 7 for the keyless arm's 15, against 18 for the
+single refill of 280 they replace. The register rows carry readings 2 and 3 and the union view's comment
+carries reading 1, as planned below.
+
+**The `EXCEPT` oracle, run during implementation**, on three fixtures, the pre-split four-arm rule text
+against the new union view: the read-cost gate's twelve-unit store (197 rows, 192 `KEY`, 4 `TABLE`, 1
+`NAME_MATCH`), a routine-then-hop capture over the sakila catalog (11 rows, 9 `TABLE`, 2 `NAME_MATCH`),
+and a seeded four-arm fixture in `graphitron-model` (5 rows, 2 `KEY`, 2 `TABLE`, 1 `CONDITION`). Both
+directions empty and `COUNT(*)` equal on every one.
+
+The plan the readings above answer, kept because it states what each reading was for. The
 recursive step in the walk, the same join in `intent_field_chain_node` and the input-field walk, and the
 `@nodeId` decode rule through that walk all seek into the hop on the eight leading columns. Under a
 union view the planner has to push that eight-column equality into both branches and seek each arm
@@ -383,15 +424,15 @@ What demonstrates the goal, by name:
   new union view, both directions empty and `COUNT(*)` equal, the count being what `EXCEPT` cannot see
   when a side holds a row twice.
 - **`MaterializeRegistryGateTest`** in full: `targetsAreShapedLikeTheViewsThatFillThem` on both pairs,
-  `theRegisterIsTheShapeThisTestStates` at 24, `everyTargetIsIndexedOrStatesWhyNot` and
-  `everyIndexOnATargetStatesItsReader` on the two step indexes, `nothingMaterializesOutsideTheMechanism`
-  seeing two registered `intent_` tables where it saw one.
+  `theRegisterIsTheShapeThisTestStates` at 24, `everyTargetIsIndexedOrStatesWhyNot` on the two
+  `NO_INDEX` rows the folding experiment bought, `nothingMaterializesOutsideTheMechanism` seeing two
+  registered `intent_` tables where it saw one.
 - **`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`** on both keys, which lead with
   `graph_name`; and its comment census on every new column.
 - **`WarmStartRefreshTest`** on a bound schema, the second capture leaving both counts unchanged.
-- **The measurement above**, written into the union view's comment, the index comments and the
-  register reasons, is the item's acceptance evidence at the Done gate: a green build is compatible with
-  the seek having been lost, and only reading 1 says it was not.
+- **The measurement above**, written into the union view's comment, the two `NO_INDEX` roster rows and
+  the register reasons, is the item's acceptance evidence at the Done gate: a green build is compatible
+  with the seek having been lost, and only reading 1 says it was not.
 - **No reader discriminates on the hop's nullable columns**, checked on the shipped tree: the
   `constraint_name IS NULL` and `IS NOT NULL` tests in view bodies are over other aliases (a primary-key
   probe, the fan-out rule's covering constraint, the decode rule's anonymous foreign-key count, the
@@ -402,8 +443,8 @@ What demonstrates the goal, by name:
 ## Retired vocabulary
 
 - `intent_field_reference_step_hop_live`, the single rule view; replaced by the two arm rules.
-- `ix_field_reference_step_hop_step`, the declared step index; replaced by one step index per arm, or
-  by the two keys alone if the folding experiment says so.
+- `ix_field_reference_step_hop_step`, the declared step index; replaced by nothing, the two keys
+  serving the seek, which the folding experiment measured on both instruments.
 - `intent_field_reference_step_hop` as a *table*: the name persists as the union view, so the sweep
   is for prose calling it a table or a registration target, in comments, `reason` texts and docs.
 
@@ -428,9 +469,11 @@ an inapplicable attribute on one of them, which a `CHECK` states exactly.
 link keyed by chain position; the hop's are identity, and no set of `CHECK`s makes one relation carry
 two key shapes. "The shape" carries the sentence.
 
-**Folding each step index into its key.** Reads as free and was measured not to be on
-`intent_spelled_table`, whose comment records what folding cost. Kept as the experiment under "The
-measurement this item owes" rather than taken here.
+**Keeping a step index beside each key.** Reads as the safe default and was measured not to be
+needed. `intent_spelled_table` records what folding cost there, which is why this was run as the
+experiment under "The measurement this item owes" rather than decided by analogy; here the read-cost
+figures and plans were identical either way and `RefreshPlanStatisticsTest` held the same nine members,
+so the indexes went.
 
 **Splitting the walk as views now.** Doubles the recursion under every reader and refuses no duplicate,
 per "The walk".
@@ -443,7 +486,10 @@ the writer changes.
 ## Relation to other items
 
 **R954** converts this subtree's relations into facts the graphitron gatherer writes, and its phases 1
-and 2 depend on this item. The dependency is the declaration the conversion forces: a converted
+and 2 depend on this item. Its body cites `ix_field_reference_step_hop_step` and the single hop rule in
+several places, and those citations are stale the moment this lands: the index is gone, the keys serve
+the seek, and the rule is two. They are left for that item's own next revision rather than edited here,
+since a cross-item edit to a `Spec` body moves that item's reviewer-rule guard. The dependency is the declaration the conversion forces: a converted
 relation leaves `MaterializeRegistryGateTest.nothingMaterializesOutsideTheMechanism`'s `intent_`-scoped
 scan and lands on `MetaDeclarationGateTest.theUndeclaredRosterOnlyShrinks`, whose ratchet makes a
 `meta_relation` row mandatory, which in turn brings `aDeclaredTableKeyMatchesItsGrain` to bear. Of the

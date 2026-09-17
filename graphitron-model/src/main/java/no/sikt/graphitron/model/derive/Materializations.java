@@ -266,7 +266,11 @@ public final class Materializations {
      * this call the planner reads every target as having the row count and selectivity it assumes
      * for a table it has never looked at. The difference is most of the gain the indexes exist
      * for. On the read-cost gate's twelve-unit fixture the deepest reader over the reference-step
-     * hop table costs 8880 scans with the index and no statistics, and 523 with both.
+     * hop costs 8880 scans with a seekable ordering and no statistics, and 523 with both. That
+     * figure was taken when the ordering was a declared index and the relation one table; it is two
+     * keyed tables under a union view now, whose keys carry the same eight leading columns, and the
+     * mechanism is the same either way: without statistics the planner prices a one-column seek on
+     * {@code graph_name} as though it were nearly exact and never reaches the wide ordering at all.
      *
      * <p><b>Must not run inside a transaction, which is why this is a call of its own rather than
      * a step of {@link #refresh}.</b> H2 commits the current transaction as a side effect of

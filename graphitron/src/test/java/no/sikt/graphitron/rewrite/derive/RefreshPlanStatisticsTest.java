@@ -109,10 +109,15 @@ class RefreshPlanStatisticsTest {
      * unremarked.
      *
      * <p>One mechanism, seen plainly on {@code intent_node_id_decode_hop_live}. With statistics its
-     * read of {@code intent_field_reference_step_hop}, a registered target, seeks
-     * {@code IX_FIELD_REFERENCE_STEP_HOP_STEP} on seven columns; without them it seeks
-     * {@code CONSTRAINT_INDEX_98} on {@code GRAPH_NAME} alone, which is a scan of the whole graph's
-     * partition per driving row. H2's no-statistics default assumes every column has half as many
+     * read of {@code intent_field_reference_step_hop}, the union view over two registered targets,
+     * seeks {@code intent_field_reference_step_hop_keyed}'s primary key on the eight columns the
+     * element coordinate and the departing triple make up; without them it seeks that table's
+     * {@code GRAPH_NAME} constraint index alone, which is a scan of the whole graph's partition per
+     * driving row. The keyless branch plans the same either way, its own seek resolving to the
+     * {@code GRAPH_NAME} index in both regimes at this fixture's size. The named index this
+     * paragraph used to point at, a declared step index on the single hop table, is gone: the
+     * arm tables carry the seek on their keys, which {@code MaterializeRegistryGateTest}'s
+     * {@code NO_INDEX} roster records the measurement for. H2's no-statistics default assumes every column has half as many
      * distinct values as the table has rows, which is a wild over-estimate of a partition column's
      * selectivity, so the one-column seek prices as though it were nearly exact. That is the case
      * {@code Materializations.analyse}'s own javadoc describes, arriving where that call cannot
@@ -121,8 +126,9 @@ class RefreshPlanStatisticsTest {
      * <p>{@code intent_node_id_decode_hop_column_live} carried that mechanism until the hop itself
      * was registered, and the swap is one statement inheriting it from another rather than anything
      * changing about the mechanism. That rule reached the reference-step-hop target by expanding the
-     * hop view; the hop is a table now, so its read stops there and plans the same either way, while
-     * the hop's own rule is the statement that reads the reference walk and needs its statistics.
+     * hop's rule; the hop is stored now, so its read stops at the arm tables and plans the same
+     * either way, while the hop's own rule is the statement that reads the reference walk and needs
+     * its statistics.
      * The decode-hop-column figures in the paragraph below were taken on that older shape and are
      * kept as what the mechanism did there, not as a claim about the rule today.
      *
@@ -154,6 +160,18 @@ class RefreshPlanStatisticsTest {
      * source view reading registered targets. The figures the paragraph above records for the
      * filter role were taken on the older shape and are kept as what the mechanism did there.
      *
+     * <p>A tenth registration is in the set and a ninth member of it,
+     * {@code intent_resolved_type_binding_live}, which joined when the reference-step hop became two
+     * keyed tables under a union view. It is the first paragraph's mechanism arriving on another
+     * statement rather than a new one, and the plan diff is one node: with the targets analysed its
+     * read of the hop seeks the keyed arm's primary key on those same eight columns, and cold it
+     * falls to that arm's {@code GRAPH_NAME} constraint index. What changed is not this rule, which
+     * read the hop before and reads it now; it is that the hop is a union view over two keyed tables
+     * where it was one unkeyed one, so there is a key for a settled store to plan onto and nothing
+     * for a cold one to reach for. A registration that gains a key gives this set a new way to move,
+     * which is worth stating because the eight rows above it all moved for the other reason, a source
+     * view coming to read a registered target.
+     *
      * <p>What the figures do <em>not</em> say is what this costs a schema of consumer size. Nothing
      * in this repo captures one, and the ratios above are taken over a twelve-unit fixture whose
      * whole point is that it understates: a per-driving-row cost is linear in driving rows, and the
@@ -167,7 +185,8 @@ class RefreshPlanStatisticsTest {
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
         "intent_node_id_decode_hop_live",
-        "intent_node_id_instruction_live");
+        "intent_node_id_instruction_live",
+        "intent_resolved_type_binding_live");
 
     @TempDir
     static Path tmp;

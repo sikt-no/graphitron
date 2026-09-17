@@ -267,7 +267,7 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 [source,text]
 ----
-[DEBUG] graphitron:  4/20 intent_field_reference_step_hop_live -> intent_field_reference_step_hop, graph 'orders'
+[DEBUG] graphitron:  4/20 intent_field_reference_step_hop_keyed_live -> intent_field_reference_step_hop_keyed, graph 'orders'
 [DEBUG] graphitron:  4/20 done in 3.1 s, deleted 812 rows in 4 ms, inserted 812 rows in 3.1 s
 ----
 

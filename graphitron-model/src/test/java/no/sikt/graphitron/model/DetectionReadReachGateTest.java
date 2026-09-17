@@ -159,6 +159,16 @@ class DetectionReadReachGateTest {
             "intent_field_chain_terminus",
             "intent_field_navigated_type",
             "intent_field_participant_scope_table",
+            // Arrived when the reference-step hop became two keyed tables under a union view
+            // keeping the canonical name. This component reaches that name through the chain
+            // relations above it, and the walk used to stop there, the name being a registered
+            // target; it is a view now, so the body is expanded, and what it expands to is a
+            // UNION ALL of two table reads with no rule under either. Priced rather than
+            // assumed: the two arms are registered targets and the walk stops at each, so this
+            // row costs a concatenation of two seeks and not a derivation. What would take it
+            // out again is a registration of the union view itself, which nothing has argued for
+            // and which this figure is the instrument for arguing on.
+            "intent_field_reference_step_hop",
             "intent_field_unlowerable_ordering",
             "intent_mutation_routine_seat",
             "intent_poly_member"));
