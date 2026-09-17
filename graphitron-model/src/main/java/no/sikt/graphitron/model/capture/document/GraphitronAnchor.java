@@ -17,6 +17,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
@@ -123,6 +125,7 @@ public final class GraphitronAnchor {
         nodes(dsl, graph, touchedAt);
         nodeKeyColumns(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
+        routineColumnMappingPairs(dsl, graph, touchedAt);
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
@@ -291,7 +294,8 @@ public final class GraphitronAnchor {
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
-            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
+            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
+            GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
             GRAPHITRON_FIELD_CHAIN_LINK);
 
     /**
@@ -648,6 +652,69 @@ public final class GraphitronAnchor {
     }
 
     /**
+     * Every {@code @routine} application at its coordinate, numbered in written order.
+     *
+     * <p>Shared by the anchor and the pair child below it rather than spelled twice, because the
+     * ordinal is the key both of them land on and a second spelling is how the two would come to
+     * disagree about which application a pair belongs to.
+     */
+    private static Table<?> routineApplications(DSLContext dsl, String graph) {
+        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var ix = GRAPHQL_AST_ENTRY;
+        var ef = GRAPHQL_ELEMENT_FIELD;
+        return dsl
+            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
+                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
+                fd.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(ef.TYPE_NAME, ef.FIELD_NAME)
+                    .orderBy(fd.SOURCE_LINE.asc(), fd.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(WRITTEN_AT))
+            .from(fd)
+            .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
+                ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME),
+                ef.COORDINATE.eq(ix.ELEMENT_COORDINATE))
+            .where(fd.GRAPH_NAME.eq(graph))
+            .and(fd.NAME.eq("routine"))
+            .and(ef.ARGUMENT_NAME.isNull())
+            .asTable("applications");
+    }
+
+    /**
+     * The pairs of one application's {@code columnMapping}, carried onto the coordinate the routine
+     * anchor keys at.
+     *
+     * <p>The index is the entry's own, read off the decode rather than ranked again here: a pair has
+     * no written position of its own, being written inside a string, so the entry stratum already
+     * assigned it the index the grammar gave it and this relation states the same one.
+     *
+     * <p>After {@link #routines}, which every row here holds a foreign key into.
+     */
+    private static void routineColumnMappingPairs(DSLContext dsl, String graph,
+                                                  LocalDateTime touchedAt) {
+        var applications = routineApplications(dsl, graph);
+        var e = GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+        var t = GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.POSITION,
+                t.PARAM_NAME, t.COLUMN_REF, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
+                    applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
+                    e.POSITION, e.PARAM_NAME, e.COLUMN_REF, val(touchedAt, t.TOUCHED_AT))
+                .from(applications)
+                .join(e).on(e.GRAPH_NAME.eq(graph),
+                    e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
+                    e.SOURCE_LINE.eq(applications.field(SITE_LINE)),
+                    e.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN))))
+            .onDuplicateKeyUpdate()
+            .set(t.PARAM_NAME, excluded(t.PARAM_NAME))
+            .set(t.COLUMN_REF, excluded(t.COLUMN_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
      * Every {@code @routine} a field carries, numbered in the order they were written.
      *
      * <p>Not {@link #claimedOnField}, and the difference is the point rather than a preference. That
@@ -669,29 +736,9 @@ public final class GraphitronAnchor {
      * it.
      */
     private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-        var ix = GRAPHQL_AST_ENTRY;
-        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
-        var ef = GRAPHQL_ELEMENT_FIELD;
         var e = GRAPHITRON_AST_ROUTINE_ENTRY;
         var t = GRAPHITRON_ROUTINE_ENTRY;
-        var applications = dsl
-            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
-                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
-                fd.SOURCE_COLUMN.as(SITE_COLUMN),
-                rowNumber().over(partitionBy(ef.TYPE_NAME, ef.FIELD_NAME)
-                    .orderBy(fd.SOURCE_LINE.asc(), fd.SOURCE_COLUMN.asc()))
-                    .minus(inline(1)).as(WRITTEN_AT))
-            .from(fd)
-            .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
-                ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            .join(ee).on(ee.GRAPH_NAME.eq(ix.GRAPH_NAME), ee.SOURCE_NAME.eq(ix.SOURCE_NAME),
-                ee.SOURCE_LINE.eq(ix.PARENT_LINE), ee.SOURCE_COLUMN.eq(ix.PARENT_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
-            .where(fd.GRAPH_NAME.eq(graph))
-            .and(fd.NAME.eq("routine"))
-            .and(ef.ARGUMENT_NAME.isNull())
-            .asTable("applications");
+        var applications = routineApplications(dsl, graph);
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.SOURCE_NAME,
                 t.SOURCE_LINE, t.SOURCE_COLUMN, t.ROUTINE_REF, t.ROUTINE_REF_NAMESPACE_PART,

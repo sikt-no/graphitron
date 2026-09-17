@@ -636,39 +636,28 @@ public final class GraphitronFactCapture {
                 spelling(string(directive, "table"));
             }
             case "routine" -> {
+                // Both relations are derived now, by GraphitronAnchor over the entry stratum: the
+                // application at its coordinate, and the columnMapping pairs the entry stratum
+                // decodes at the position the application was written at. The claim stays, being
+                // what decides which application the argMapping pairs below are attributed to where
+                // a field carries more than one, and the spelling stays for @table's reason, its
+                // relation being keyed by the value across the sites that write one.
                 if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
-                String argMapping = string(directive, "argMapping");
-                String columnMapping = string(directive, "columnMapping");
-                var record = sink.dsl().newRecord(GRAPHITRON_ROUTINE_ENTRY);
-                record.setTypeName(type);
-                record.setFieldName(field);
-                record.setOrdinal(ordinal);
-                position(directive, record::setSourceName, record::setSourceLine, record::setSourceColumn);
-                spelledReference(name, record::setRoutineRef,
-                    record::setRoutineRefNamespacePart, record::setRoutineRefNamePart);
-                record.setArgmapping(argMapping);
-                record.setColumnMapping(columnMapping);
-                sink.add(record);
+                spelling(name);
                 int pair = 0;
-                for (ParsedEntry entry : pairs(argMapping, directive, "argMapping")) {
+                for (ParsedEntry entry : pairs(string(directive, "argMapping"), directive,
+                        "argMapping")) {
                     int at = pair++;
                     String path = String.join(".", entry.segments());
                     argMappingPair("ROUTINE", useSite(type, field, null, ordinal, null),
                         type, field, null, ordinal, null, at, entry.key(), path, directive);
                 }
-                int column = 0;
-                for (ParsedEntry entry : pairs(columnMapping, directive, "columnMapping")) {
-                    var row = sink.dsl().newRecord(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY);
-                    row.setTypeName(type);
-                    row.setFieldName(field);
-                    row.setOrdinal(ordinal);
-                    row.setPosition(column++);
-                    row.setParamName(entry.key());
-                    row.setColumnRef(String.join(".", entry.segments()));
-                    sink.add(row);
-                }
+                // Read for its quarantine alone: a columnMapping the grammar rejects is reported
+                // from here, the entry stratum stating what a definition admits and nothing about
+                // what it refused.
+                pairs(string(directive, "columnMapping"), directive, "columnMapping");
             }
             default -> { /* no decoded relation */ }
         }

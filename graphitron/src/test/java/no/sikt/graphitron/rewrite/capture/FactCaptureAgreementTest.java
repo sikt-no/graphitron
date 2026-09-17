@@ -524,6 +524,15 @@ class FactCaptureAgreementTest {
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
             "graphitron_ast_routine_entry",
+            // Its columnMapping pairs, decoded where the string was written. The oracle it
+            // would be compared against is the same one its parent has none of, and a pair
+            // carries less besides: the walk that wrote the resolved relation is gone, so
+            // there is no second reading of the string left to differ from this one. What
+            // pins it is GraphitronSiteAnchorAgreementTest, over a corpus writing a
+            // two-pair mapping on one of a field's two routines: both strata are asserted
+            // there, because the grammar's index is the number a derivation could get wrong
+            // while still producing the right rows.
+            "graphitron_ast_routine_column_mapping_pair_entry",
             // Deprecation, which the walk this replaces never captured at all: it recognised the
             // two markers on a parsed registry at the moment a reader asked. GraphitronSchema has
             // no counterpart because there was nothing to shadow, and the docstring convention is

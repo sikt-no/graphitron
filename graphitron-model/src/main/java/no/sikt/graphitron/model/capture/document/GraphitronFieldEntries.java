@@ -7,7 +7,12 @@ import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
 
+import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
+import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
+import no.sikt.graphitron.model.selection.ParsedEntry;
+
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
@@ -27,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
@@ -112,7 +118,9 @@ final class GraphitronFieldEntries {
         defaultOrders(dsl, graph, touchedAt, defaultOrders);
         defaultOrderFields(dsl, graph, touchedAt, defaultOrders);
 
-        routines(dsl, graph, touchedAt, wrote(applied(applications, "routine"), "name"));
+        var routineApplications = wrote(applied(applications, "routine"), "name");
+        routines(dsl, graph, touchedAt, routineApplications);
+        routineColumnMappingPairs(dsl, graph, touchedAt, routineApplications);
         GraphitronEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -135,7 +143,8 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_SOURCE_ROW_ENTRY, GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_FIELD_NODE_ID_ENTRY, GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_PIVOT_ENTRY, GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-        GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_AST_ROUTINE_ENTRY);
+        GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
+        GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_AST_ROUTINE_ENTRY);
 
     private static void bindings(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                  List<Directive> applications) {
@@ -614,5 +623,66 @@ final class GraphitronFieldEntries {
                 .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
                 .set(t.COLUMN_MAPPING, excluded(t.COLUMN_MAPPING)));
+    }
+
+    /** One pair of one application's columnMapping, at the index the grammar gave it. */
+    private record MappingPair(Directive application, int position, String param, String column) {}
+
+    /**
+     * Every application's {@code columnMapping}, parsed.
+     *
+     * <p>The decode belongs here rather than where the routine resolves, because the grammar is a
+     * parse-boundary fact no query can express, and stating the pairs at the position the
+     * application was written at is what lets the resolved relation be derived instead of written a
+     * second time.
+     *
+     * <p>A string the grammar rejects yields no rows, which is this stratum's rule rather than a
+     * choice made here: an application states what its definition admits, and a value that does not
+     * fit the shape states nothing this relation can hold. The raw string stays on the routine row
+     * beside it, so nothing an author typed is lost by the refusal.
+     */
+    private static List<MappingPair> mappingPairsOf(List<Directive> applications) {
+        var pairs = new ArrayList<MappingPair>();
+        for (Directive application : applications) {
+            String written = string(application, "columnMapping");
+            if (written == null || written.isBlank()) {
+                continue;
+            }
+            List<ParsedEntry> entries;
+            try {
+                entries = GraphQLSelectionParser.parseEntries(written);
+            } catch (GraphQLSelectionParseException e) {
+                continue;
+            }
+            int position = 0;
+            for (ParsedEntry entry : entries) {
+                pairs.add(new MappingPair(application, position++, entry.key(),
+                    String.join(".", entry.segments())));
+            }
+        }
+        return pairs;
+    }
+
+    private static void routineColumnMappingPairs(DSLContext dsl, String graph,
+                                                  LocalDateTime touchedAt,
+                                                  List<Directive> applications) {
+        var t = GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+        var rows = mappingPairsOf(applications).stream().collect(Rows.toRowList(
+            pair -> val(graph, t.GRAPH_NAME),
+            pair -> SdlEntries.sourceName(pair.application()),
+            pair -> SdlEntries.sourceLine(pair.application()),
+            pair -> SdlEntries.sourceColumn(pair.application()),
+            pair -> val(pair.position(), t.POSITION),
+            pair -> val(touchedAt, t.TOUCHED_AT),
+            pair -> val(pair.param(), t.PARAM_NAME),
+            pair -> val(pair.column(), t.COLUMN_REF)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.POSITION, t.TOUCHED_AT, t.PARAM_NAME, t.COLUMN_REF)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.PARAM_NAME, excluded(t.PARAM_NAME))
+                .set(t.COLUMN_REF, excluded(t.COLUMN_REF)));
     }
 }

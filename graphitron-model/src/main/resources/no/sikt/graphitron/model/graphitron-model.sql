@@ -2662,6 +2662,31 @@ COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_name_part IS 'the rou
 COMMENT ON COLUMN graphitron_ast_routine_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
 COMMENT ON COLUMN graphitron_ast_routine_entry.column_mapping IS 'the columnMapping argument, kept the same way. It shares argMapping''s grammar and not its subject, binding a routine parameter to a column of the previous chain node rather than to an input path, which is why the two are columns beside each other rather than one';
 
+CREATE TABLE graphitron_ast_routine_column_mapping_pair_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  param_name    VARCHAR NOT NULL,
+  column_ref    VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_routine_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_routine_column_mapping_pair_entry IS 'One pair the columnMapping string parsed into, at its index in that parse. For example columnMapping: "p_id: film_id, p_year: release_year" gives two rows, the first naming p_id and film_id.';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_column IS 'source column of the same. With the line and the file, the application whose string this pair came out of';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.position IS 'the pair''s 0-based index in the string the grammar read. A pair is written inside a string rather than as a node, so it has no position of its own to be identified by and takes its index instead; that is the whole of what this column is';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of this file carrying an older instant, which are the pairs an author removed from a string that still stands; an application the author moved is swept with the routine row it hangs on';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.param_name IS 'the routine parameter the pair binds, as written and resolved against nothing';
+COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.column_ref IS 'the column the pair binds it to, as written. A dotted spelling is kept whole here and rejected by detection rather than split, the grammar admitting what the author typed and the verdict belonging to a reader of these rows';
+
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
@@ -4371,6 +4396,7 @@ CREATE TABLE graphitron_routine_column_mapping_pair_entry (
   position   INT     NOT NULL,
   param_name VARCHAR NOT NULL,
   column_ref VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
   FOREIGN KEY (graph_name, type_name, field_name, ordinal)
     REFERENCES graphitron_routine_entry (graph_name, type_name, field_name, ordinal)
@@ -4383,6 +4409,7 @@ COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.ordinal IS 'the o
 COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.param_name IS 'the Java or routine parameter (left side of the pair)';
 COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.column_ref IS 'the previous-node column as written; a dotted right side is captured and rejected by detection';
+COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the pairs an author removed from a mapping string that still stands; an application the author removed takes its pairs with it through the reference above';
 
 -- @experimental_constructType has no relation, and unlike every other name in this stratum it
 -- is not a graphitron directive: its declaration in directives.graphqls is a bug (the census
@@ -14189,6 +14216,9 @@ INSERT INTO meta_grain VALUES
   ('lint-violation',
    'one rule broken at one written position, in one graph',
    'graph_name, lint_rule, source_name, source_line, source_column', 'sdl'),
+  ('sdl-parsed-pair',
+   'one pair of one mapping string, at its index in the list the grammar reads it as, under the application that wrote it',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('sdl-parsed-selection',
    'one leaf selection of one field set, at its index in the list the grammar reads it as, under the application that wrote it',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
@@ -14646,6 +14676,10 @@ INSERT INTO meta_relation VALUES
    'What a federation @key application says: the field set naming the entity''s key, and whether the subgraph resolves it, as written.',
    'For example type Film @key(fields: "id reviews { id }") gives one row carrying that field set verbatim.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one type apart: the directive repeats and no ordinal is assigned here. The field set is kept whole in a column and parsed into the two relations below it, which is this family''s only grammar whose output is rows. The string stays because the parse is a reading of it and a re-emitter wants what was read. The rows exist because the anchors this derives into have held selections and segments since before the entry stratum did: the shape is transcribed rather than chosen here, and a decode that rendered the parse back into a dotted name would hand that derivation a string to take apart again. No reader outside those anchors consumes a key today, so what the rows are worth is a question the first one will settle.'),
+  ('graphitron_ast_routine_column_mapping_pair_entry', 'sdl-parsed-pair', 'graphitron-ast',
+   'One pair the columnMapping string parsed into, at its index in that parse.',
+   'For example columnMapping: "p_id: film_id, p_year: release_year" gives two rows, the first naming p_id and film_id.',
+   'A grammar yields a list and a relation holds a set, so the order is a column, which is the same reading the parsed field set beside it takes. The pairs are decoded here rather than where the routine resolves because the grammar is a parse-boundary fact SQL cannot express, and stating them at the written position is what lets the resolved relation be derived rather than written twice. The string itself stays on the routine entry: this is its decode and not its replacement, so an author''s exact spelling survives a grammar that later reads it differently. A string the grammar rejects yields no rows here at all, which is the entry stratum''s rule that an application states what the definition admits and nothing else; the quarantine of that raw text belongs to the reader that reports it.'),
   ('graphitron_ast_federation_key_selection_entry', 'sdl-parsed-selection', 'graphitron-ast',
    'One leaf selection the field set parsed into, at its index in that parse.',
    'For example "id reviews { id }" gives two rows, one for id and one for the id inside reviews.',

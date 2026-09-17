@@ -4640,8 +4640,15 @@ from it. What makes that its own slice rather than a line here is that the pair 
 shared decoder with a quarantine path, reached from ten sites across the argMapping family, so
 moving it for `columnMapping` alone would either fork the decoder or drag the family with it.
 
-Until then the walk keeps writing `graphitron_routine_entry` beside the derivation, which is the
-state the other two just left: both producers write the same rows, and the last one to run wins.
+That slice landed in the same arc. `graphitron_ast_routine_column_mapping_pair_entry` states the
+pairs at the position the application was written at, keyed by the index the grammar gave each one,
+on the shape `graphitron_ast_federation_key_selection_entry` already uses for a string with its own
+grammar. The resolved relation is derived from it, carrying that index across to the coordinate
+rather than ranking the pairs again, and both it and `graphitron_routine_entry` now have one
+producer. The walk's `@routine` arm keeps three things and loses two: it still claims, still records
+the spelling, and still writes the argMapping pairs, which key into nothing that moved; it no longer
+writes the routine row or the mapping pairs. It still parses `columnMapping`, for its quarantine
+alone, the entry stratum stating what a definition admits and nothing about what it refused.
 
 ### What retiring a walk writer actually depends on
 

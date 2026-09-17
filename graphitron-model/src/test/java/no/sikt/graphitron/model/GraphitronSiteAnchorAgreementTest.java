@@ -11,6 +11,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -41,7 +43,7 @@ class GraphitronSiteAnchorAgreementTest {
     private static final String SDL = """
         type Query {
           films: [Film!]!
-          lookup: Language @routine(name: "public.pick_first") @routine(name: "public.pick_second")
+          lookup: Language @routine(name: "public.pick_first", columnMapping: "pId: film_id, pYear: release_year") @routine(name: "public.pick_second")
         }
 
         type Film @table(name: "film") @node(typeId: "film", keyColumns: ["film_id", "title"]) {
@@ -100,5 +102,42 @@ class GraphitronSiteAnchorAgreementTest {
 
     private static org.assertj.core.groups.Tuple tuple(Object... values) {
         return org.assertj.core.groups.Tuple.tuple(values);
+    }
+
+    /**
+     * The mapping pairs, in both strata, because the number that ties them together is the one a
+     * derivation could get wrong while producing the right rows.
+     *
+     * <p>A pair is written inside a string rather than as a node, so it has no position of its own
+     * and the grammar's index is what identifies it. The entry states that index at the position the
+     * application was written at; the anchor carries it across to the coordinate the application
+     * resolves to, rather than ranking the pairs a second time. Asserting both is what says the two
+     * agree about which pair is which, and the two-pair string is what makes the claim have content:
+     * with one pair every index is zero and any rule at all would pass.
+     */
+    @Test
+    @DisplayName("a columnMapping's pairs keep the grammar's index into the resolved relation")
+    void theMappingPairsAgreeAcrossTheTwoStrata() {
+        try (var store = CapturedStore.of(tmp, SDL)) {
+            var dsl = store.dsl();
+
+            var e = GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+            assertThat(dsl.select(e.POSITION, e.PARAM_NAME, e.COLUMN_REF).from(e)
+                    .orderBy(e.POSITION).fetch()
+                    .map(row -> row.value1() + ":" + row.value2() + "=" + row.value3()))
+                .as("the entry holds each pair at the index the grammar read it at, and the"
+                    + " application with no mapping contributes none")
+                .containsExactly("0:pId=film_id", "1:pYear=release_year");
+
+            var t = GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
+            assertThat(dsl.select(t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.POSITION,
+                        t.PARAM_NAME, t.COLUMN_REF).from(t)
+                    .orderBy(t.POSITION).fetch()
+                    .map(row -> row.value1() + "." + row.value2() + "#" + row.value3()
+                        + " " + row.value4() + ":" + row.value5() + "=" + row.value6()))
+                .as("and the anchor carries both the index and the ordinal of the application the"
+                    + " pairs were written on, which is the first of the field's two routines")
+                .containsExactly("Query.lookup#0 0:pId=film_id", "Query.lookup#0 1:pYear=release_year");
+        }
     }
 }

@@ -289,6 +289,7 @@ class SupertypeSignatureGateTest {
         // where the entry carries that by being keyed at the position, so the two share no payload
         // and this tranche has one row for @node rather than two.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
+<<<<<<< HEAD
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and
@@ -298,6 +299,28 @@ class SupertypeSignatureGateTest {
         // spell a coordinate, and the grammar already tells them apart, so the collapsed relation
         // keys on the coordinate with neither a nullable column nor a discriminator.
         Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"));
+=======
+        // @routine's columnMapping pairs, which pair on both payload columns because a pair is its
+        // two names and nothing else. The keys differ the way this whole tranche's do: the entry is
+        // keyed at the position the application was written at plus the index the grammar gave the
+        // pair, the anchor at the coordinate the application resolves to plus its ordinal there.
+        // Both indexes are the same number, the anchor carrying the entry's across rather than
+        // ranking again, which is what makes this a derivation of the row beside it instead of a
+        // second reading of the string.
+        Set.of("graphitron_ast_routine_column_mapping_pair_entry",
+               "graphitron_routine_column_mapping_pair_entry"),
+        // One decode and three resolutions of it, and the payload is one column because a
+        // deprecation carries one thing: the replacement hint. What differs is what was deprecated
+        // and how the author said it, which is the key and the relation, not the payload. So this
+        // set is not a supertype owed but the shape working: an entry keyed where the marker was
+        // written, and three anchors keyed by what it marked, because the one decode reaches a
+        // directive, one of its arguments, or a field of an input object, and no two of those share
+        // a coordinate. Collapsing them needs a relation with a nullable coordinate and a column
+        // saying which of three things a row is about, which is the shape every split in this
+        // family was made to avoid.
+        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated_directive",
+               "graphitron_deprecated_directive_argument", "graphitron_deprecated_input_field"));
+>>>>>>> 2504a3b4e (The columnMapping pairs are decoded where they were written)
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as
