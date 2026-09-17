@@ -131,7 +131,7 @@ apply, exactly as it does not apply to `graphitron_field_table`. So renaming wit
 keeps the impossibility criterion meaningful instead of forcing this item to weaken it. R876 set the
 precedent when `intent_argmapping_binding_leaf` became `graphitron_argmapping_match`, on the finding
 that the `intent_` prefix there "recorded the default placement rather than a decision"; the
-`graphitron_` family now holds 127 tables and 2 views, so neither shape is new.
+`graphitron_` family now holds 130 tables and 2 views, so neither shape is new.
 
 **The target the conversions copy already exists.** `FieldEndpoints.derive` is the last stage of
 `GraphitronFactCapture.capture`, it reads `graphitron_`, `graphql_` and `sql_` relations across three
@@ -1279,3 +1279,114 @@ copied into "What was measured" until that sweep finishes.
 misplacements still lists `intent_name_matched_key_pair` under the `catalog` owner, and that relation
 has not existed since 78b6a58. That count is one row stale. It is named in "Relation to other items"
 here and left for that item to re-take, this item touching no other item's body.
+
+### Round 5 (2026-09-17, Spec -> Ready, reviewer session 012mGDp2tCWRZnnLhXg275rz)
+
+Verdict: withhold. Round 2's two blocking findings and round 4's are answered, and each answer was
+re-derived from the shipped tree by this session rather than read off the response. One new blocking
+finding, of the same kind as round 4's and out of the same window: the body's account of the pass it
+places stages in is taken from a tree nine DDL commits old. `FieldEndpoints.derive` is not the last
+stage of `GraphitronFactCapture.capture` any more, and the invariant the placement argument
+discharges is enumerated in two cases where the shipped pass now has three.
+
+Question one clears and is not what withholds. A consumer with a large schema gets a
+`graphitron:dev` round, a `generate` and a CI build whose cost grows with the schema rather than with
+its square, because the `@reference` path every `@nodeId` decode reads stops being a recursive view
+re-evaluated once per driving row and becomes rows the graphitron gatherer wrote once per capture.
+The goal paragraph reads on its own and every term it needs is glossed where it first appears.
+
+**Round 2, finding 1 (rung-4 stage placement) is answered.** Recomputed rather than accepted:
+`MaterializeRegistryGateTest.HAND_WRITTEN` holds six relations, `intent_type_domain`,
+`intent_type_backing_class`, `intent_authored_claim_rejection`, `intent_input_occurrence_path`,
+`intent_input_occurrence_path_step` and `intent_field_unlowerable_ordering_rejection`. Taking each
+rung's closure against that roster: rungs 0, 1, 2 and 3 reach none of the six, rungs 4 and 5 reach
+exactly the three the body names. `FactCapture.capture` runs `GraphitronFactCapture.capture`, flushes,
+then the five producers, then `Materializations.refresh`, as the body says. So the split the body
+makes, rungs 0 to 3 in the gatherer and rungs 4 and 5 in the derivation stratum, is the split the
+closures give, and the "does not do" bullet now carries the invariant in the general form round 2
+asked for.
+
+**Round 2, finding 2 (phase 2's shape claim) is answered.** In `intent_field_reference_step_target`
+as shipped the recursive term is a plain `UNION` of the seed with one join to the hop, and
+`DENSE_RANK`, `MAX(target_rank) OVER` and `COUNT(*) OVER` are all in the outer `SELECT` over the
+finished `chain`, exactly as the body now states. The fold is gone and the single-statement `INSERT
+... WITH RECURSIVE ... SELECT` per graph is what phases 2 and 5 take.
+
+**Round 4, finding 3 (the structural finding is stale) is answered.** Recomputed independently from
+the shipped DDL, parsed statement by statement with comments and string literals stripped, registered
+relations resolved through their `_live` rules: 396 relations (270 tables, 126 views), 23
+registrations, and the closure of the three walks through `intent_` relations is 26 relations with 8
+registered, which are exactly the eight the ladder names. The non-`intent_` leaves are `graphitron_`,
+`graphql_`, `sql_`, `store_` and `code_`, with no `jvm_` relation in the closure.
+`intent_name_matched_key_pair` is not in the schema. The field walk's closure is 11 with 3 registered.
+Every figure in the author's response reproduces.
+
+**Finding 4 (question two, blocking). `FieldEndpoints.derive` is no longer the last stage of the
+gatherer, and the invariant's two cases are three in the shipped pass.**
+
+`GraphitronFactCapture.capture` today runs ten steps: `FieldChainApplications.derive`,
+`TableTypes.derive`, `Nodes.derive`, `NodeKeyColumns.derive`, `MacroCapture.expand`,
+`ElementAnchors.derive`, `navigation`, `FieldEndpoints.derive`, `FieldRoutines.derive` and
+`FieldTableLinks.derive`. `FieldEndpoints.derive` is third from last. The body says otherwise in four
+places: the `Goal`'s gloss of a capture stage ("of which `GraphitronFactCapture.capture` runs eight,
+the last being `FieldEndpoints.derive`"), "The target the conversions copy already exists"
+("`FieldEndpoints.derive` is the last stage of `GraphitronFactCapture.capture`"), and phase 1 twice,
+where it puts both of its stages "immediately before `FieldEndpoints.derive`".
+
+The window is the one round 4 opened. Between the tree round 3 read and `94e23bae4` there are nine
+commits to `graphitron-model.sql`, three of which add a `graphitron_` table and a stage to write it:
+`graphitron_field_chain_link`, `graphitron_field_routine` and `graphitron_field_table_link`. Round 4's
+recomputation covered the DDL-derived figures and did not reach the two Java-derived ones, which is
+how a body dated `94e23bae4` still describes an eight-stage gatherer. The source helped it along:
+`FieldEndpoints.derive`'s own comment in `GraphitronFactCapture` still opens "Last, because", with two
+stages under it and the next comment beginning "After it". That comment is a neighbouring defect and
+belongs to whichever item owns those stages, not to this one.
+
+Why this is about the argument and not only the count. The body's invariant is stated generally and
+correctly, a stage may not read a table a later step of the same pass writes, and then discharged in
+exactly two cases: a registered target, answered by conversion order, and a hand-written producer's
+output, answered by placement. The shipped pass has a third, an ordinary `graphitron_` table written
+by a later stage of the same gatherer, and neither answer reaches it. "The seam is two seams, and each
+has its own answer" is the sentence that is now wrong, and it is the sentence phases 1 and 2 place
+their stages on. An implementer told that `FieldEndpoints.derive` ends the pass has no reason to look
+at what follows it, which is the situation round 2 blocked to prevent.
+
+The conclusion survives, and the computation is here so the revision is a paragraph rather than a
+redesign. The three tables those two stages write appear in no rung's closure. Rungs 2 and 3 do reach
+`graphitron_field_chain_application`, `graphitron_field_navigation`, `graphitron_routine_entry` and
+`graphitron_table_entry`, and all four are written at or before `navigation`, so before
+`FieldEndpoints.derive` and before any position phase 1 or phase 2 would take. Placement before
+`FieldEndpoints.derive` is therefore still admissible for rungs 0 to 3; what is missing is the body
+knowing why.
+
+What would satisfy it: the stage list and `FieldEndpoints.derive`'s position in it recomputed against
+the shipped tree wherever the body states them; the invariant's discharge widened to the third case
+and discharged for this ladder by naming the three tables and the fact that no rung reads them; and
+phase 1 saying whether "immediately before `FieldEndpoints.derive`" is still the intended position or
+whether the intended position was the end of the gatherer, which is now a different line. Whether the
+position moves is the author's call; on this session's reading either works and the first is the
+smaller change.
+
+**Corrected in passing.** "the `graphitron_` family now holds 127 tables and 2 views" is 130 and 2 on
+the shipped tree, the three additions being the tables named above. The claim the sentence supports,
+that neither shape is new, is unaffected, and the same count in round 3's findings is left alone,
+being true of the tree that round read.
+
+**Everything else re-verified this round holds.** Rung 1's inputs are exactly the eight the body
+lists, `graphitron_field_reference_step_entry`, `store_graph_source`, `sql_table`, `sql_constraint`,
+`sql_referential_constraint`, `sql_name_matched_key_column`, `intent_spelled_table` and
+`intent_condition_method_route`; rung 2 reads `intent_bound_table` and `intent_routine_return_binding`
+and rung 3 reads rungs 1 and 2. The six relations named as plain views under the field walk are all
+views. `NameMatchedKeys.derive` runs after the two crawlers and before `SdlFactCapture` and
+`GraphitronFactCapture`. `CodeCapture.capture` runs from `ModelCapture.capture`, which the mojo's
+`captureModel` calls before it invokes the generator, so `code_` rows are on disk before the pass
+this item's stages sit in. `CatalogFactCapture.capture` calls `captureExtensions` alone;
+`JooqFactCapture`'s javadoc is "The `sql_` family and nothing else" word for word, and
+`TABLES_TO_SWEEP` is a fourteen-entry list swept in reverse. There are sixteen `sql_` tables, fourteen
+carry `touched_at`, and the two without are `sql_table_record_supertype` and
+`sql_name_matched_key_column`, which the body now treats as two cases rather than one. Fifteen `sql_`
+relations are declared in `meta_relation` and every one names `catalog`.
+`sql_referential_constraint`'s primary key is `(source_name, table_schema, table_name,
+constraint_name)`, so the body's three-column-prefix reading is right.
+`ix_field_reference_step_hop_step`'s comment carries 18308 against 523. `sql_table_reference`,
+`graphitron_spelled_table` and `graphitron_field_reference_step_hop` are free names.
