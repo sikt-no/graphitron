@@ -1,7 +1,7 @@
 ---
 id: R956
 title: "A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -254,7 +254,7 @@ line moves at all.
   measurement this item owes" reproduces `intent_spelled_table`'s result in the opposite direction, in
   which case the indexes go and two roster rows arrive carrying the key-prefix argument in
   `intent_node_id_decode_hop`'s form.
-- `DerivedReadCostTest`'s pinned non-monotonic pairs: ten cells today are charged to
+- `DerivedReadCostTest`'s pinned non-monotonic pairs: eight cells today are charged to
   `intent_field_reference_step_hop`, most at "the instrument's own floor, four scans apiece". A cell is
   keyed by registration, so each of those readers is re-measured against each arm registration and the
   set is re-pinned to what the fixture says: a cell that stays non-monotonic is pinned under the arm it

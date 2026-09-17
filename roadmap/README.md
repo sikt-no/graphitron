@@ -14,9 +14,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R956` | A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls | Spec | 2026-09-17 | [plan](reference-step-arms-are-separate-keyed-relations.md) |
 | `R954` | A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row <sub>blocked by: [reference-step-arms-are-separate-keyed-relations](reference-step-arms-are-separate-keyed-relations.md)</sub> | Spec | 2026-09-17 <sub>created 2026-09-16</sub> | [plan](reference-step-walks-are-stored-rows.md) |
 | `R953` | The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold | Spec | 2026-09-17 <sub>created 2026-09-16</sub> | [plan](first-refresh-plans-without-statistics.md) |
+| `R956` | A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls | Ready | 2026-09-17 | [plan](reference-step-arms-are-separate-keyed-relations.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-16 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -632,7 +632,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R956` [**A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls**](reference-step-arms-are-separate-keyed-relations.md) — Spec, architecture
+- `R956` [**A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls**](reference-step-arms-are-separate-keyed-relations.md) — Ready, architecture
 - `R954` [**A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row**](reference-step-walks-are-stored-rows.md) — Spec, architecture, blocked by [reference-step-arms-are-separate-keyed-relations](reference-step-arms-are-separate-keyed-relations.md)
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
 - `R923` [**A grain declares its corpora, so a cross-corpus grain can say so**](grain-declares-its-corpora.md) — Spec, architecture
