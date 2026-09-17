@@ -1,7 +1,7 @@
 ---
 id: R953
 title: "The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: dev-loop
@@ -87,7 +87,7 @@ This is the only lever that reaches a pass planning inside a transaction, and th
 
 Lever 2 lands first, as this item's first commit. It carries the measurement, it is the whole of the priority-1 fix on the symptom R954 phase 3 priced, and two other Spec items name it as a floor they build on. That is a commit order rather than an item split: plans describe what to do and not how many commits land it, and nothing in lever 1 is upstream of lever 2. The Spec gate may still prefer the split, and the case for it is real (the two levers are independent axes, their acceptance evidence is two different tests, and a sibling item would let lever 2 clear its gate without waiting on lever 1's review); what it costs is a second number and a re-cut title, this item's own naming both defects. The gate decides.
 
-What must not follow from landing lever 2 first is lever 1 being read as optional once the clock looks better. Its case is the modelling one and does not rest on the residual cost: the cadence's benefit condition covers every registration whose plan moves, which `RefreshPlanStatisticsTest` pins at eight of twenty-two, where lever 2 removes one index choice. A predicate on the fact it depends on is right whether or not anything is measurably slow afterwards.
+What must not follow from landing lever 2 first is lever 1 being read as optional once the clock looks better. Its case is the modelling one and does not rest on the residual cost: the cadence's benefit condition covers every registration whose plan moves, which `RefreshPlanStatisticsTest` pins at eight of twenty-three, where lever 2 removes one index choice. A predicate on the fact it depends on is right whether or not anything is measurably slow afterwards.
 
 ## Tests
 
