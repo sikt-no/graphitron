@@ -559,8 +559,11 @@ public final class CapturedStore implements AutoCloseable {
                                            SchemaAssembly assembly) {
         var raised = new ArrayList<SchemaError>(parse.registryErrors());
         raised.addAll(assembly.errors());
-        SdlSchemaProblems.write(dsl, graphName, parse.failures(), List.copyOf(raised),
-            LocalDateTime.now());
+        var at = LocalDateTime.now();
+        // Two calls because the relation numbers and sweeps per stage, so each stage's writer
+        // stands alone; a fixture driving the walk plays both of them.
+        SdlSchemaProblems.writeParsed(dsl, graphName, parse.failures(), at);
+        SdlSchemaProblems.writeAssembled(dsl, graphName, List.copyOf(raised), at);
     }
 
     /**

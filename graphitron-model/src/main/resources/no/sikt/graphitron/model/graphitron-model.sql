@@ -465,7 +465,7 @@ CREATE TABLE graphql_schema_problem (
   source_name   VARCHAR,
   source_line   INT,
   source_column INT,
-  PRIMARY KEY (graph_name, ordinal),
+  PRIMARY KEY (graph_name, stage, ordinal),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (stage IN ('PARSE', 'REGISTRY', 'ASSEMBLY')),
   -- A file that will not parse is always known by name, the reader having opened it, even where
@@ -475,7 +475,7 @@ CREATE TABLE graphql_schema_problem (
 );
 COMMENT ON TABLE graphql_schema_problem IS 'Reading this graph''s documents and making a schema of them produced this problem: one of the errors graphql-java raised, whichever of the three stages raised it. For example a file that will not parse is one row naming that file, and a second file declaring a type an earlier file already declares is another.';
 COMMENT ON COLUMN graphql_schema_problem.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_schema_problem.ordinal IS 'this problem''s place in the order graphql-java raised them. Part of the key because a problem need not carry a position, so there is nothing else that tells two of them apart';
+COMMENT ON COLUMN graphql_schema_problem.ordinal IS 'this problem''s place in the order graphql-java raised them within its own stage, numbered from zero there rather than across the three. Part of the key because a problem need not carry a position, so there is nothing else that tells two of them apart; numbered per stage so the stage that raised them is the only thing that has to have held them';
 COMMENT ON COLUMN graphql_schema_problem.touched_at IS 'when the reading that produced this row ran; the reading finishes by deleting this graph''s rows that still carry an older instant, which are the problems the corpus no longer has';
 COMMENT ON COLUMN graphql_schema_problem.stage IS 'which reading refused: PARSE judged one file alone, REGISTRY combined the files, ASSEMBLY made a schema of the result. A column rather than three relations, all three being what happened when we tried to make a schema out of these documents';
 COMMENT ON COLUMN graphql_schema_problem.error_class IS 'graphql-java''s own name for the kind of problem, its error class''s simple name, so a reader can group without parsing the sentence';
@@ -13899,8 +13899,8 @@ INSERT INTO meta_grain VALUES
    'one formal argument of one directive the corpus declares, in one graph',
    'graph_name, directive_name, argument_name', 'sdl'),
   ('graph-schema-problem',
-   'one problem raised while creating one graph''s schema, at its place in the order they were raised',
-   'graph_name, ordinal', 'sdl'),
+   'one problem raised while creating one graph''s schema, at its place in the order its own stage raised them',
+   'graph_name, stage, ordinal', 'sdl'),
   ('sdl-declaration-site',
    'one position in one SDL document, where that document declared or extended something',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -14096,7 +14096,7 @@ INSERT INTO meta_relation VALUES
   ('graphql_schema_problem', 'graph-schema-problem', 'document',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the errors graphql-java raised, whichever of the three stages raised it.',
    'For example a file that will not parse is one row naming that file, and a second file declaring a type an earlier file already declares is another.',
-   'graphql-java decides this and the store records it rather than deciding it again. Making a schema out of the documents is the step that checks whether they work together, and it is around thirty checks deep: references resolving, interface contracts, input against output position, directive locations and arguments, uniqueness inside a declaration, the schema''s own shape. Re-deriving any of it from the declaration entries would be a second implementation of a validation the toolchain already runs, and the two would disagree the first time the library moved. One relation for all three stages rather than one each, because parsing a file, combining the files and building a schema of the result are not three questions a reader has; the stage is a column so a reader who does care can ask. A file that will not parse contributes no entries at all, which is why the site columns are here: this is the only relation that can say the file was read. They are nullable because the later stages point at a declaration where they can and nowhere where they cannot. Absence is success: a graph whose documents made a schema has no rows here, so a reader asking whether the corpus is sound counts rather than interprets. Keyed at the graph and the order the problems were raised rather than at a site, because a problem need not report one.'),
+   'graphql-java decides this and the store records it rather than deciding again. Making a schema of the documents is the step that checks whether they work together, around thirty checks deep: references resolving, interface contracts, input against output position, directive locations and arguments, uniqueness inside a declaration, the schema''s own shape. Re-deriving it from the declaration entries would be a second implementation of a validation the toolchain already runs, and the two would disagree the first time the library moved. One relation for all three stages, not one each: parsing a file, combining them and building a schema are not three questions a reader has, and the stage is a column so one who does care can ask. A file that will not parse contributes no entries at all, which is why the site columns are here: this is the only relation that can say the file was read. They are nullable because the later stages point at a declaration where they can and nowhere where they cannot. Absence is success: a graph whose documents made a schema has no rows here, so a reader asking whether the corpus is sound counts rather than interprets. Keyed at the graph, the stage and the order raised within it, not at a site, a problem need not report one. The stage is in the key so each stage numbers its own and each stage''s writer stands alone; an ordinal dense across all three let only one writer hold them, which constrains the gatherers rather than describing the corpus.'),
   ('graphql_ast_type_declaration_entry', 'sdl-declaration-site', 'document',
    'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name.',
    'For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.',

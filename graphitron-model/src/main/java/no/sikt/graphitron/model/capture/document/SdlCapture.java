@@ -57,14 +57,36 @@ public final class SdlCapture {
      * without one the file would look like one nobody configured rather than one that would not
      * read.
      */
+    public static void capture(DSLContext dsl, GraphIdentity graph,
+                               List<GraphQLSourceCapture.SourceDocument> documents,
+                               LocalDateTime readAt) {
+        captureFacts(dsl, graph, documents, readAt);
+        // The reduce is this face's own, which is what this face is for: combining the documents is
+        // what raises the two stages below the parser, and it is done in the order they were read so
+        // an older declaration wins a collision.
+        var merged = SchemaLoader.merge(documents.stream()
+            .filter(GraphQLSourceCapture.SourceDocument::parsed)
+            .map(GraphQLSourceCapture.SourceDocument::registry).toList());
+        // What the merge refused and what the assembly refused are the same question asked of the
+        // same corpus, so they arrive as one list in the order the stages ran. The parse stage is
+        // not here: the gatherer that ran the parser wrote it, each stage numbering and sweeping
+        // its own rows.
+        var raised = new ArrayList<>(merged.registryErrors());
+        raised.addAll(SchemaAssembly.of(merged.registry()).errors());
+        SdlSchemaProblems.writeAssembled(dsl, graph.name(), List.copyOf(raised), readAt);
+    }
+
+    /**
+     * Reads the corpus and captures it, which is the whole transcription in the order it runs.
+     *
+     * <p>Transitional. It exists because the corpus reader was split out from under this face and
+     * its callers want the sequence rather than either half; when this class is itself split into
+     * the gatherers that survive it, the sequence belongs to whatever runs them and this goes with
+     * the class.
+     */
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                LocalDateTime readAt) {
-        var parse = captureFacts(dsl, graph, config, readAt);
-        // What the merge refused and what the assembly refused are the same question asked of the
-        // same corpus, so they arrive as one list in the order the stages ran.
-        var raised = new ArrayList<>(parse.registryErrors());
-        raised.addAll(SchemaAssembly.of(parse.registry()).errors());
-        SdlSchemaProblems.write(dsl, graph.name(), parse.failures(), List.copyOf(raised), readAt);
+        capture(dsl, graph, GraphQLSourceCapture.capture(dsl, graph, config, readAt), readAt);
     }
 
     /**
@@ -76,10 +98,10 @@ public final class SdlCapture {
      * assemble while every fact this writes about it is still true; a reading that wants the facts
      * should not have to survive the assembly to get them.
      */
-    public static SchemaLoader.PerSourceParse captureFacts(DSLContext dsl, GraphIdentity graph,
-                                                           SubjectConfig config,
-                                                           LocalDateTime readAt) {
-        var parse = captureEntries(dsl, graph, config, readAt);
+    public static void captureFacts(DSLContext dsl, GraphIdentity graph,
+                                    List<GraphQLSourceCapture.SourceDocument> documents,
+                                    LocalDateTime readAt) {
+        captureEntries(dsl, graph, documents, readAt);
         // After every document, because an anchor is what the corpus says: a coordinate one file
         // stopped declaring is gone only if no other file declares it, which no per-file pass sees.
         // Its sweep takes the graphitron rows hanging off a coordinate it drops, those references
@@ -87,7 +109,12 @@ public final class SdlCapture {
         SdlAnchor.write(dsl, graph.name(), readAt);
         captureAstIndex(dsl, graph, readAt);
         captureGraphitronAnchors(dsl, graph, readAt);
-        return parse;
+    }
+
+    /** {@link #captureFacts} over a corpus this reads for itself; transitional, as above. */
+    public static void captureFacts(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                                    LocalDateTime readAt) {
+        captureFacts(dsl, graph, GraphQLSourceCapture.capture(dsl, graph, config, readAt), readAt);
     }
 
     /**
@@ -103,9 +130,31 @@ public final class SdlCapture {
      * this half writes meets nothing: the entry stratum is keyed by written position and the walk
      * does not write a row of it.
      */
-    public static SchemaLoader.PerSourceParse captureEntries(DSLContext dsl, GraphIdentity graph,
-                                                             SubjectConfig config,
-                                                             LocalDateTime readAt) {
+    public static void captureEntries(DSLContext dsl, GraphIdentity graph,
+                                      List<GraphQLSourceCapture.SourceDocument> documents,
+                                      LocalDateTime readAt) {
+        for (var document : documents) {
+            if (!document.parsed()) {
+                continue;
+            }
+            SdlEntries.write(dsl, graph.name(), document.sourceName(), document.registry(), readAt);
+            GraphitronEntries.write(dsl, graph.name(), document.sourceName(), document.registry(),
+                readAt);
+        }
+    }
+
+    /**
+     * The entry writers over a corpus this reads for itself, writing the source rows and no
+     * membership.
+     *
+     * <p>Transitional, and narrower than {@link GraphQLSourceCapture} deliberately. The walk's pass
+     * derives its own read set from what it parsed rather than from configuration, and writes the
+     * source rows and this graph's membership itself; a corpus reader running there would write a
+     * read set the walk disagrees with and meet the walk's own membership rows on their key. So that
+     * pass keeps parsing for itself until the walk goes, and the corpus reader is the other pass's.
+     */
+    public static void captureEntries(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                                      LocalDateTime readAt) {
         var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
@@ -116,7 +165,6 @@ public final class SdlCapture {
         for (var failure : parse.failures()) {
             writeSource(dsl, failure.sourceName(), readAt);
         }
-        return parse;
     }
 
     /**

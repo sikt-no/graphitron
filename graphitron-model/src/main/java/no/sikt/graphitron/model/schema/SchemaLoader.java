@@ -239,6 +239,36 @@ public final class SchemaLoader {
     }
 
     /**
+     * Reduces documents already parsed into one registry, reporting what the combination refused
+     * instead of failing on it.
+     *
+     * <p>In the order given, which is the order the corpus was read in: oldest file first, so a
+     * declaration that loses a collision loses it to the older document, and the winner does not
+     * depend on the order a directory happened to list its files in.
+     *
+     * <p>One definition at a time, and an error is recorded and then ignored. That is the whole
+     * difference from {@link TypeDefinitionRegistry#merge}, which refuses the document rather than
+     * the declaration: a corpus with one bad declaration should combine to everything else it
+     * declares, because the reader that wants the facts is looking at a schema somebody is in the
+     * middle of editing.
+     *
+     * <p>The definitions come back from the registry's own parse order, which holds every
+     * {@code SDLDefinition} it was given, grouped by the source that gave it. Nothing here has to
+     * enumerate the registry by kind.
+     */
+    public static PerSourceParse merge(List<TypeDefinitionRegistry> documents) {
+        var merged = new TypeDefinitionRegistry();
+        var errors = new ArrayList<SchemaError>();
+        for (TypeDefinitionRegistry document : documents) {
+            document.getParseOrder().getInOrder().values().stream()
+                .flatMap(List::stream)
+                .forEach(definition -> admit(merged, definition)
+                    .ifPresent(e -> errors.add(SchemaError.of(SchemaError.Stage.REGISTRY, e))));
+        }
+        return new PerSourceParse(merged, List.of(), List.copyOf(errors));
+    }
+
+    /**
      * One source's definitions in a registry of their own, with whatever that document refused
      * itself.
      *

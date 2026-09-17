@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.sink.FactSink;
@@ -173,7 +174,10 @@ class AstEntryIndexTest {
             write(directory, "schema.graphqls", SDL);
             var graph = new GraphIdentity(GRAPH, directory);
             LocalDateTime readAt = LocalDateTime.now().withNano(0);
-            var parse = SdlCapture.captureEntries(dsl, graph, corpus(directory), readAt);
+            // The walk's pass parses for itself and owns its own source rows, so this drives that
+            // path rather than the corpus reader; the two together would write one read set twice.
+            var parse = SchemaLoader.parsePerSource(corpus(directory).schemaFiles(directory));
+            SdlCapture.captureEntries(dsl, graph, corpus(directory), readAt);
             // The walk, which is this pass's producer of the element anchors the index keys into.
             var sink = new FactSink(dsl, GRAPH, readAt);
             SdlFactCapture.capture(sink, parse.registry(), new ClasspathSources(),

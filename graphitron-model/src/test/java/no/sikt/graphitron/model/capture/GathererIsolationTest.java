@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
@@ -43,29 +44,39 @@ class GathererIsolationTest {
     private static final Path MAIN = Path.of("src/main/java/no/sikt/graphitron/model");
     private static final Path CAPTURE = MAIN.resolve("capture");
 
-    /** Each gatherer package, keyed by its directory, valued by the gatherer it exists for. */
-    private static final Map<String, String> GATHERERS = gatherers();
+    /**
+     * Each gatherer package, keyed by its directory, valued by the gatherers it exists for.
+     *
+     * <p>Several to a package, because a corpus can have more than one gatherer over it and they
+     * belong together: the SDL is read by one gatherer that owns the store's record of what was
+     * read and by others that transcribe what it parsed, and each is a gatherer rather than the
+     * others' helper. What the gate is for is the helpers, and a helper is anything in the package
+     * that is nobody's gatherer.
+     */
+    private static final Map<String, Set<String>> GATHERERS = gatherers();
 
-    private static Map<String, String> gatherers() {
-        var roll = new LinkedHashMap<String, String>();
-        roll.put("capture", "FactCapture");
-        roll.put("capture/config", "ConfigurationFactCapture");
+    private static Map<String, Set<String>> gatherers() {
+        var roll = new LinkedHashMap<String, Set<String>>();
+        roll.put("capture", Set.of("FactCapture"));
+        roll.put("capture/config", Set.of("ConfigurationFactCapture"));
         // Two gatherers transcribe the configuration: this one writes the store_graph_ rows from
         // the run's own SubjectConfig, marking and sweeping them per graph.
-        roll.put("capture/store", "StoreEntries");
-        roll.put("capture/catalog", "CatalogFactCapture");
+        roll.put("capture/store", Set.of("StoreEntries"));
+        roll.put("capture/catalog", Set.of("CatalogFactCapture"));
         // And two read the classpath: this one writes the sql_ family from the jOOQ catalog.
-        roll.put("capture/jooq", "JooqFactCapture");
+        roll.put("capture/jooq", Set.of("JooqFactCapture"));
         // And this one reads the classfiles, for what a schema may name at each directive.
-        roll.put("capture/code", "CodeCapture");
-        roll.put("capture/sdl", "SdlFactCapture");
+        roll.put("capture/code", Set.of("CodeCapture"));
+        roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document, and
         // the verdict beside them, the three reading stages having one relation between them.
-        roll.put("capture/document", "SdlCapture");
-        roll.put("capture/graphitron", "GraphitronFactCapture");
-        roll.put("capture/macro", "MacroCapture");
-        roll.put("capture/java", "JavaSourceFacts");
-        roll.put("capture/compile", "CompileFacts");
+        // Two gatherers in this package and more to come: the corpus reader owns the store's
+        // record of what was read, and the transcription faces run on what it parsed.
+        roll.put("capture/document", Set.of("SdlCapture", "GraphQLSourceCapture"));
+        roll.put("capture/graphitron", Set.of("GraphitronFactCapture"));
+        roll.put("capture/macro", Set.of("MacroCapture"));
+        roll.put("capture/java", Set.of("JavaSourceFacts"));
+        roll.put("capture/compile", Set.of("CompileFacts"));
         return Map.copyOf(roll);
     }
 
@@ -76,7 +87,7 @@ class GathererIsolationTest {
             Path dir = MAIN.resolve(gatherer.getKey());
             for (Path helper : declaredIn(dir)) {
                 String simple = simpleName(helper);
-                if (simple.equals(gatherer.getValue())) {
+                if (gatherer.getValue().contains(simple)) {
                     continue;
                 }
                 for (Path reader : mainSourcesOutside(dir)) {
@@ -110,11 +121,11 @@ class GathererIsolationTest {
     @Test
     void everyRolledGathererIsOnDisk() {
         var missing = new ArrayList<String>();
-        GATHERERS.forEach((dir, gatherer) -> {
+        GATHERERS.forEach((dir, gatherers) -> gatherers.forEach(gatherer -> {
             if (!Files.exists(MAIN.resolve(dir).resolve(gatherer + ".java"))) {
                 missing.add(dir + "/" + gatherer);
             }
-        });
+        }));
         assertThat(missing)
             .as("a rolled gatherer that is not on disk; a stale roll would pass the isolation"
                 + " check vacuously for its whole package")

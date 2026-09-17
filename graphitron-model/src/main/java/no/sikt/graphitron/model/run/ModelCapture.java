@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.capture.code.CodeCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.SdlCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
@@ -52,7 +53,10 @@ public final class ModelCapture {
                                List<ClasspathEntry> classpath, JooqCatalog jooq,
                                LocalDateTime readAt) {
         writeGraph(dsl, graph, readAt);
-        SdlCapture.capture(dsl, graph, config, readAt);
+        // The corpus is read once, by the gatherer that owns the store's record of what was read,
+        // and every gatherer below it is handed the documents rather than the configuration.
+        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        SdlCapture.capture(dsl, graph, documents, readAt);
         StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
         CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),
