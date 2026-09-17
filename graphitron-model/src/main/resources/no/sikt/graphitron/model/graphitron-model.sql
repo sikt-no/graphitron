@@ -64,6 +64,19 @@
 -- at this scale. no.sikt.graphitron.model.derive.Materializations.analyse is what supplies them
 -- after a refill, and its javadoc carries the one placement constraint: H2's ANALYZE commits, so
 -- it cannot run inside the capture transaction the refresh runs in.
+--
+-- One statistic this file states itself, because no ANALYZE can reach the pass that needs it.
+-- graph_name is the partition dimension: it holds one value per partition and a store holds one
+-- or a few, so its selectivity is a fact about the shape of the model and not a measurement of a
+-- population. H2 assumes fifty distinct values per hundred rows for a column it has never looked
+-- at, which on this column reads as nearly unique and prices a seek returning the whole graph's
+-- partition as though it were exact. So boot declares SELECTIVITY 1 on graph_name on every base
+-- table carrying it, as a sweep over the column rather than a line per table:
+-- no.sikt.graphitron.model.boot.GraphitronModelStore.create issues it where these statements run,
+-- and no.sikt.graphitron.model.catalog.GraphPartition holds the value and the argument for
+-- declaring it rather than measuring it. The mechanism is derived at boot for the reason
+-- meta_materialize_dependency below is: a rule over the whole class of relations carrying a column
+-- is true by construction where a hand-written line per relation needs a gate to stay true.
 
 -- ==== Store bookkeeping ===========================================================
 -- The store's own family: the record of what it read, what it was built from, and which graphs

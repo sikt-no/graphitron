@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.boot;
 
 import no.sikt.graphitron.model.boot.StoreReaper.Reaped;
+import no.sikt.graphitron.model.catalog.GraphPartition;
 import no.sikt.graphitron.model.derive.MaterializeDependencies;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.DSLContext;
@@ -739,11 +740,21 @@ public final class GraphitronModelStore implements AutoCloseable {
      * is ordinary DML. An in-memory store keeps the one connection and would never notice; a
      * file-backed one closes this connection and would reopen to find the schema present and the
      * seeded rows gone.
+     *
+     * <p>The partition dimension's selectivity is declared after the file's statements and before
+     * that commit: {@link #partitionSelectivity} carries the form and
+     * {@link GraphPartition#DECLARED_SELECTIVITY} the fact. It is stated here because it is a
+     * property of the schema rather than of any population, so it belongs where the schema is
+     * created and with the same lifetime.
      */
     private static void create(Connection connection) {
         String current = null;
         try (Statement statement = connection.createStatement()) {
             for (String sql : splitStatements(readDdl())) {
+                current = sql;
+                statement.execute(sql);
+            }
+            for (String sql : partitionSelectivity(connection)) {
                 current = sql;
                 statement.execute(sql);
             }
@@ -755,6 +766,34 @@ public final class GraphitronModelStore implements AutoCloseable {
             throw new IllegalStateException("the fact schema DDL did not execute: " + e.getMessage()
                 + (current == null ? "" : " (statement: " + current + ")"), e);
         }
+    }
+
+    /**
+     * The statements that state the partition dimension's selectivity, one per graph-keyed base
+     * table the DDL just created. {@link GraphPartition#DECLARED_SELECTIVITY} carries what the value
+     * is and why it is declared rather than measured; what belongs here is where it is stated and in
+     * what form.
+     *
+     * <p><b>A sweep over the column rather than a line per table.</b> The schema declares
+     * {@code graph_name} on most of its relations, and the argument for deriving the set from the
+     * column is construction rather than convenience: over the whole class of graph-keyed tables a
+     * sweep makes the declaration true of every one of them, where an explicit line per table leaves
+     * an invariant that then needs a gate of its own to stop the next relation from silently lacking
+     * it. {@code StoreRefresh} derives its ownership scope from the same column for the same reason.
+     *
+     * <p><b>Where the schema is created, and nowhere else.</b> Creation runs once per store and never
+     * on reopen, so the sweep costs what a DDL line would and runs when one would; a warm store
+     * carries the declaration its own creation stated, the file living under a stamp that names this
+     * DDL. A per-open sweep would be a write on the read path, which is not what this is.
+     *
+     * <p>The rule itself is stated in the DDL's header beside the partition conventions, a reader of
+     * {@code CREATE TABLE ... graph_name} having no reason to meet a fact stated only here.
+     */
+    private static java.util.List<String> partitionSelectivity(Connection connection) {
+        return GraphPartition.keyedBaseTables(DSL.using(connection, SQLDialect.H2)).stream()
+            .map(table -> "ALTER TABLE \"" + table + "\" ALTER COLUMN \"" + GraphPartition.COLUMN
+                + "\" SELECTIVITY " + GraphPartition.DECLARED_SELECTIVITY)
+            .toList();
     }
 
     /**

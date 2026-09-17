@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.catalog.GraphPartition;
 import org.jooq.DSLContext;
 import org.jooq.Name;
 import org.jooq.exception.DataAccessException;
@@ -133,7 +134,7 @@ public final class Materializations {
         progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(),
             List.of(graphName)));
         long startedAt = System.nanoTime();
-        Set<String> graphKeyed = graphKeyedRelations(dsl);
+        Set<String> graphKeyed = GraphPartition.keyedRelations(dsl);
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
@@ -155,10 +156,14 @@ public final class Materializations {
      * <p><b>What this buys, and why no cheaper placement reaches it.</b> The plans that move are the
      * ones reading a <em>registered target</em>, which the refresh itself writes, so a statistics
      * pass before the refresh has nothing to state: {@code ANALYZE} on an empty table records
-     * nothing, and H2's unanalysed default reads a partition column as nearly unique, which prices a
-     * one-column seek on {@code graph_name} as though it were exact and loses against the
-     * multi-column index a settled store picks. Analysed after each refill, a registration plans
-     * against the targets the registrations before it filled, which
+     * nothing, and H2's unanalysed default assumes a column has half as many distinct values as its
+     * table has rows, which prices a one-column seek as though it were exact and loses against the
+     * multi-column index a settled store picks. The one column on which that default is wrong by
+     * construction rather than by population is the partition dimension, and the store declares that
+     * one at creation instead of waiting for this pass, which
+     * {@link no.sikt.graphitron.model.catalog.GraphPartition#DECLARED_SELECTIVITY} carries; what is
+     * left here is every statistic a declaration cannot state. Analysed after each refill, a
+     * registration plans against the targets the registrations before it filled, which
      * {@link MaterializeDependencies} makes exactly the population it reads: it refuses a
      * registration whose source view reads its own target, and orders every registration after the
      * ones whose targets it reads. The measurement is on the fact-model page.
@@ -190,7 +195,7 @@ public final class Materializations {
         progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(),
             List.of(graphName)));
         long startedAt = System.nanoTime();
-        Set<String> graphKeyed = graphKeyedRelations(dsl);
+        Set<String> graphKeyed = GraphPartition.keyedRelations(dsl);
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             refreshOne(registration, position + 1, registrations.size(),
@@ -238,7 +243,7 @@ public final class Materializations {
             .fetch(0, String.class);
         progress.observe(new RefreshProgress.Event.PassStarted(registrations.size(), graphs));
         long startedAt = System.nanoTime();
-        Set<String> graphKeyed = graphKeyedRelations(dsl);
+        Set<String> graphKeyed = GraphPartition.keyedRelations(dsl);
         for (int position = 0; position < registrations.size(); position++) {
             Registration registration = registrations.get(position);
             if (graphKeyed.contains(fold(registration.targetTableName()))) {
@@ -506,28 +511,6 @@ public final class Materializations {
             rowsInserted);
     }
 
-    /**
-     * Every relation in this store carrying a {@code graph_name} column, which is what decides a
-     * refresh's shape. One query per pass rather than one per registration.
-     *
-     * <p>It had been per registration per refresh, which is the same answer fetched again for each
-     * of the register's entries: over one run of {@code graphitron}'s suite that was 3543
-     * executions and 76.2 s, more than every other statement the module issued put together.
-     * Hoisting it out of the loop leaves one query per pass and makes no other change.
-     *
-     * <p>Asked of the database rather than read off the generated model, which was the first
-     * attempt and cannot work here: this class is compiled by the codegen driver, before jOOQ has
-     * generated anything to read. That only shows on a clean build, the generated sources being
-     * present from the previous one otherwise. Asking the catalog also keeps the answer right for a
-     * relation the DDL never declared, which a test registers after creating it at runtime.
-     */
-    private static Set<String> graphKeyedRelations(DSLContext dsl) {
-        return dsl.select(field(name("TABLE_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME"))
-            .fetchSet(0, String.class);
-    }
 
     private static Name relation(String relationName) {
         return name(fold(relationName));

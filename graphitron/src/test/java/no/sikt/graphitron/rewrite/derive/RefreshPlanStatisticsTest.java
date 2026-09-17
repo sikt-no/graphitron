@@ -72,8 +72,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <ul>
  *   <li><b>settled</b>: the store as a capture leaves it, before anything here touches it.
- *   <li><b>cold</b>: no selectivity anywhere, which is what the refresh inside a cold capture plans
- *       against.
+ *   <li><b>cold</b>: nothing analysed, which is what the refresh inside a cold capture plans
+ *       against. Not nothing <em>stated</em>: a created store declares the partition dimension's
+ *       selectivity on every graph-keyed base table, before any capture and outside any
+ *       {@code ANALYZE}, so the cold regime is {@link StoreStatistics#reset} and that declaration
+ *       restored. A reset without it models a store no run can open.
  *   <li><b>facts</b>: the base fact tables analysed and the registered targets not, which is the
  *       most that committing and analysing the facts ahead of a still-single-transaction refresh
  *       could buy.
@@ -132,15 +135,17 @@ class RefreshPlanStatisticsTest {
      * The decode-hop-column figures in the paragraph below were taken on that older shape and are
      * kept as what the mechanism did there, not as a claim about the rule today.
      *
-     * <p>Rows visited, cold against targets-analysed, on this fixture and as documentation rather
-     * than as an assertion: the decode hop column 11213 against 1387, the input-field filter role
-     * 34323 against 4845, the payload refusal 42685 against 13207, the payload column 41961 against
-     * 12483, the field column scope 12115 against 2854. The last two rows of the set move the plan
-     * without moving the count much, the field scope table 3260 against 3243 and the node-id
-     * instruction 1854 against 1854, and they are in the set because the claim is about the plan.
-     * Wall clocks move in the same direction and by less, the widest being the decode hop column at
-     * 103 milliseconds against 29. No number here is asserted, for {@code DerivedReadCostTest}'s
-     * reason: a tier that must not fail for being slow cannot hold a figure.
+     * <p>Rows visited, cold against targets-analysed, as documentation rather than as an assertion
+     * and all of it taken before the declaration existed, so the cold half of each pair is the
+     * unstated-partition regime the paragraphs above describe: the decode hop column 11213 against
+     * 1387, the input-field filter role 34323 against 4845, the payload refusal 42685 against 13207,
+     * the payload column 41961 against 12483, the field column scope 12115 against 2854. Two rows
+     * moved the plan without moving the count much, the field scope table 3260 against 3243 and the
+     * node-id instruction 1854 against 1854, and they were in the set because the claim is about the
+     * plan. Wall clocks moved in the same direction and by less, the widest being the decode hop
+     * column at 103 milliseconds against 29. No number here is asserted, for
+     * {@code DerivedReadCostTest}'s reason: a tier that must not fail for being slow cannot hold a
+     * figure.
      *
      * <p>An eighth row joined the set when {@code intent_input_field_carrier_role} was registered,
      * and it is the mechanism above arriving on a new statement rather than a new mechanism: that
@@ -178,10 +183,7 @@ class RefreshPlanStatisticsTest {
      * gap between a seven-column seek and a partition scan widens with the partition.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
-        "intent_field_column_scope_live",
-        "intent_input_field_carrier_role_live",
         "intent_field_scope_table_live",
-        "intent_input_field_column_match_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
         "intent_node_id_decode_hop_live",
@@ -250,10 +252,11 @@ class RefreshPlanStatisticsTest {
      * transaction can still do, and it reaches none of the set above: every registration whose plan
      * moves is reading a <em>registered target</em>, which no statement before the refresh can have
      * analysed because no statement before the refresh has written it. Stated as a superset rather
-     * than as an equality because the fact tables' statistics move two further registrations onto
-     * plans of their own ({@code intent_carrier_data_field_live} and, differently from cold,
-     * {@code intent_field_scope_table_live}), which is a second finding and not this claim: what this
-     * asserts is that the cheap half closes nothing, not that it changes nothing.
+     * than as an equality because the fact tables' statistics move further registrations onto plans
+     * of their own ({@code intent_field_reference_step_hop_live}, {@code intent_spelled_table_live}
+     * and {@code intent_node_id_instruction_live}, the last of which the declaration took out of the
+     * pinned set), which is a second finding and not this claim: what this asserts is that the cheap
+     * half closes nothing, not that it changes nothing.
      */
     @Test
     void analysingTheFactsAloneReachesNoneOfThem() {

@@ -1,7 +1,7 @@
 ---
 id: R953
 title: "The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: dev-loop
