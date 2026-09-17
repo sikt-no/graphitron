@@ -4175,20 +4175,22 @@ remember to filter on, `last_position` is not needed to find a terminus that is 
 `intent_node_id_decode_hop` survives is then a question with an answer rather than a lever: a relation
 that is rows costs nothing to read twice.
 
-## The anchors are a decode filed under a crawler (2026-09-16)
+## The anchors resolve nothing, and the read side pays for it (2026-09-16, revised 2026-09-17)
 
-`GraphitronAnchor` cannot see `sql_` or `code_`. That is why the read side carries a `candidates`
-column, and the column is the largest single shape defect this item has found on the read side.
+Read against "Entries, derivations and anchors, and what each one forces" above, which is the model
+this chapter reports a defect against. An earlier revision proposed a rule of its own and a
+migration of gatherers; that rule is superseded by the section above and the prescription with it,
+and what is kept here is the measurement and the ordering fact, which nothing else records.
 
-### What the deferral costs
+### The defect
 
 An authored coordinate is transcribed unresolved and stays unresolved.
 `intent_field_producer_reference.class_name` says so itself: "the fully-qualified binary name the
 reference spells, exactly as authored. Unresolved: no row here asserts the class is on the
 classpath, and a misspelling is a row like any other."
 
-Resolution then happens in a view, joining through `store_graph_source` into `sql_table` or
-`jvm_method`. A view cannot decline, so ambiguity becomes rows plus a window count:
+Resolution then happens in a view a consumer reads, joining through `store_graph_source` into
+`sql_table` or `jvm_method`, and the arity travels with it:
 
 ```sql
 CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.type_name,
@@ -4199,12 +4201,26 @@ On the shipping DDL that column is on 20 relations and 34 predicates guard `cand
 
 `intent_field_producer_method` states what it is for: "The intended reading is that a reference
 matching more than one method is a rejection, and what a rejection needs is the arity, which is why
-this relation states it rather than picking." The mechanism transports a rejection to a position
-that would be able to make it, and no such position exists downstream. It also spreads by citation
-rather than by decision; the same comment reads "Ambiguity is rows and never a decline, as on
-`intent_bound_table`."
+this relation states it rather than picking." The mechanism carries a rejection to a position able
+to make it and there is none downstream, so every consumer carries the number instead. It spreads by
+citation rather than by decision: the same comment reads "Ambiguity is rows and never a decline, as
+on `intent_bound_table`."
 
-### Why it could not have been fixed where it sits
+### The form that fixes it is already in the tree
+
+The section above requires a derivation's rule to be stated as a view, which reads as forbidding the
+resolution from ever deciding. It does not. `graphitron_field_routine` is the worked example:
+the rule is a view, it computes the arity with a window function, it filters `candidates = 1`, and
+the stored relation holds only the resolved row. A spelling two schemas both answer draws no row.
+The count is computed once where the rule is stated and never reaches a consumer, which is the whole
+of what the twenty relations and thirty-four guards are paying for.
+
+So the defect is not that the resolution is in SQL. It is that the arity is published instead of
+spent. Two things are owed at each site that publishes one: the filter, and a defect relation total
+over the population it excludes, on `intent_condition_method_route_defect`'s settled terms, so that
+absence means "not reached" alone.
+
+### The ordering fact, which is the live blocker
 
 `ModelCapture.capture` is five statements and the anchors run second.
 
@@ -4216,89 +4232,41 @@ JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);    // sql_ first exist
 CodeCapture.capture(dsl, classpath, ..., readAt);            // jvm_ first exists here
 ```
 
-`sql_` does not exist until the fourth statement and `jvm_` until the fifth. The incumbent carries
-the opposite order, `CatalogFactCapture` at `FactCapture:366` against the anchors at `:382`, so the
-two entry points disagree and the target one has it backwards. Resolving at anchor time was never
-rejected on the merits. It was unavailable.
+`sql_` does not exist until the fourth statement and `jvm_` until the fifth, so a rule resolving
+against either cannot be stated at the anchors on this path. The incumbent carries the opposite
+order, `CatalogFactCapture` at `FactCapture:366` against the anchors at `:382`, so the two entry
+points disagree and the target one has it backwards. Resolving at anchor time was never rejected on
+the merits; on the path this item is converging on, it was unavailable.
 
-The roster hid that. `document` declares corpus `sdl` and no dependency edges, and
-`meta_gatherer_dependency`'s comment reads the absence as an invariant: "A crawler carries no edges
-at all: its rows about its own corpus may not vary with any other corpus's contents." True of a
-transcription, and `document` owns one. It owns a decode as well, and that half is undeclared:
-`graphql_type_declaration`, `graphql_type_element` and `graphql_directive` carry no `meta_relation`
-row, so the stratum whose classification is wrong is the stratum the roster does not list.
+That is an ordering defect and nothing more, which is what the section above buys by making ordering
+the owner's own and local to it. No gatherer has to move and no edge has to be declared: what a rule
+reads is read off its body, and what has to be true is that the statement writing it runs after the
+statements writing what it reads.
 
-### The rule
+### What the document gatherer is, in the vocabulary above
 
-The `code`, `jooq` and `document` gatherers transcribe their own corpus and never look beyond it.
-The `lint` and `graphitron` gatherers derive from what those transcribed.
+It owns 84 declared relations. Seventy-two are entries, computed from the SDL corpus, and twelve are
+not: eleven `graphitron_` anchors written by `GraphitronAnchor` and `graphql_schema_problem`, which
+is an assembly verdict. The `graphql_` anchors `SdlAnchor` writes are a further population again and
+carry no `meta_relation` row at all, which is why the classification question was never asked of
+them.
 
-`document` straddles it today. It owns 84 relations, of which 72 are transcription and 12 are not.
+Kind is not ownership, and the two were run together in the earlier revision of this chapter. A
+derivation may sit under the gatherer whose corpus it decodes; what the first gate requires is only
+that the gatherer named is the one that refreshes it. Both relations the QC below corrected were
+corrected toward `document` on exactly that reading, which is the opposite direction from the
+migration this chapter used to propose.
 
-| Stratum | Writer | Owner today | Owner under the rule |
-|---|---|---|---|
-| `graphql_ast_*_entry`, 19 relations | `SdlEntries` | `document` | `document`, unchanged |
-| `graphitron_ast_*_entry`, 53 relations | `GraphitronEntries` | `document` | `document`, unchanged |
-| `graphql_` anchors, 26 statements | `SdlAnchor` | undeclared | `graphitron` |
-| `graphitron_` anchors, 11 relations | `GraphitronAnchor` | `document` | `graphitron` |
-| `graphql_schema_problem` | `SdlSchemaProblems` | `document` | `lint` |
+### R697 stays blocked
 
-`lint` is new. The roster has eleven gatherers and none of them is it.
-
-`SdlAnchor` moves on classification rather than on need. It reads only the entry stratum and would
-work where it stands. It moves because a derivation living inside a transcription gatherer is
-exactly what made this hard to see, and leaving one there leaves the boundary ambiguous for whoever
-reads it next.
-
-### What the order becomes
-
-```java
-writeGraph(dsl, graph, readAt);
-SdlCapture.captureEntries(dsl, graph, config, readAt);       // document
-StoreEntries.write(dsl, graph.name(), config, readAt);       // store
-JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);    // jooq
-CodeCapture.capture(dsl, classpath, ..., readAt);            // code
-GraphitronCapture.derive(dsl, graph, readAt);                // graphitron: both anchor families
-LintCapture.derive(dsl, graph, readAt);                      // lint
-```
-
-Transcription first, derivation after, each gatherer reading only what the lines above it wrote.
-That is the linear read the plan already asks for, and it sharpens the acceptance criterion rather
-than competing with it: a gatherer that reads the store is not a violation, a gatherer that reads a
-layer it is not declared downstream of is, and statement order is what separates the two.
-
-### It costs no incrementality
-
-The objection is that the anchors would stop depending on the SDL alone, so a catalog change would
-have to re-run them. They have already given that up. `SdlAnchor` is whole-graph rather than
-per-source, and `captureFacts` states why: "an anchor is what the corpus says: a coordinate one file
-stopped declaring is gone only if no other file declares it, which no per-file pass sees." A stratum
-that re-derives for the whole graph on every reading loses nothing by reading two more corpora. The
-half that is genuinely per-source and incremental is the entry stratum, and that half does not move.
-
-### What it buys
-
-`table_ref` and `class_name` stop being spellings. The anchor resolves once, in Java, where it can
-pick or write a diagnostic row, and `candidates` stops propagating. The current extent is 20
-relations and 34 guards.
-
-### R697 is blocked on this rather than dissolved
-
-R697 proposes completing a name-matching stratum of side relations and match views, citing
-`intent_spelled_table` as the instance to copy into the key and column namespaces: "ambiguity as
-rows, arity as a column". That is this defect proposed as doctrine, and it would add the third and
-fourth instances of the shape this chapter removes. Its subject is relocated rather than reshaped:
-the key and column resolutions it would layer are `@reference` and `@field` arguments transcribed in
-the `graphitron_ast_` entries and resolved against `sql_key` and `sql_column`, which under the rule
-is the `graphitron` gatherer's work at anchor time.
-
-Blocked rather than dissolved for two reasons. Its problem statement is independent evidence for
-this chapter and survives it: thirteen in-scope lines carry an inline `UPPER(`, the effective-name
-rule is written six times across two views, and `intent_field_reference_step_hop` computes its tier
-decision twice. And it carries the only measurement of what getting this shape wrong costs, a
-seventy-times regression recorded on `intent_column_match_claim`. What remains of the fold
-restatement once the anchors resolve in Java is not knowable until they do, so the item is held
-against that answer instead of being closed on a prediction.
+R697 would copy "ambiguity as rows, arity as a column" into the key and column namespaces, which is
+the published-arity shape above at two more sites. It is held rather than dissolved: its problem
+statement is independent evidence and survives, thirteen in-scope lines carrying an inline `UPPER(`,
+the effective-name rule written six times across two views, and `intent_field_reference_step_hop`
+computing its tier decision twice. It also carries the only measurement of what getting this shape
+wrong costs, a seventy-times regression on `intent_column_match_claim`. What remains of the fold
+restatement once the sites spend their arity rather than publishing it is not knowable until they
+do.
 
 ## The entry sweep reclaims nodes, not files (2026-09-16)
 
@@ -4330,11 +4298,20 @@ stratum: `SdlAnchor` reads the entries filtered on `graph_name` alone, so a stal
 deleted type's coordinate alive in the anchors and from there in front of the generator.
 
 The fix is local to `captureEntries`, which already holds the list of sources it read: delete the
-graph's entry rows whose `source_name` is not in that list, and drop the `store_source` rows the
-graph no longer references. It goes in before the anchors gain catalog access, because once they
-resolve against `sql_` and `code_` a stale entry feeds catalog resolution too.
+graph's entry rows whose `source_name` is not in that list. This is the entry stratum's half of what
+the section above forces of anything stored, an owner and a mark and sweep that a later reading can
+correct; the per-source sweep is the half that corrects nodes, and this is the half that corrects
+files.
 
-## The lint rules become statements, and lint wants a gatherer (2026-09-16)
+It is blocked, and on the same requirement one stratum up. A sweep that actually deletes anchors
+meets 45 stored relations that no owner corrects, so their rows are held only by a parent's clear.
+Cascading them builds green and is the wrong answer: a cascade corrects a row when its parent goes
+and does nothing for a row whose parent stands and which this reading no longer derives. Twenty-six
+of the 45 are composed rather than establishing a grain, so under the table above they are views and
+not stored at all. Across the whole schema 125 of 266 tables carry no stamp, which is one cut of the
+census that section records as owed.
+
+## The lint rules become statements, and nothing refreshes them yet (2026-09-16, revised 2026-09-17)
 
 Harvested from session-b. Nine rules that were visitors over the parsed document are now nine
 statements over the captured rows, writing `lint_violation`: `input-object-name-suffix`, the three
@@ -4365,17 +4342,15 @@ which is the right order: the statements exist and agree before anything depends
 ### The ownership this leaves open
 
 `lint_violation` is filed under the `derivation` gatherer, on the ground that every rule reads more
-than one family and none of them belongs to a single corpus's own gatherer. That is true and it is
-not the final answer. Under the rule recorded above, `lint` is a gatherer of its own: the `code`,
-`jooq` and `document` gatherers transcribe their own corpus, and the `lint` and `graphitron`
-gatherers derive from what those transcribed.
+than one family and none of them belongs to a single corpus's own gatherer. By the first gate above
+the question is narrower than that: the owner is whichever gatherer refreshes the relation, and
+today nothing does. `LintViolations.write` is called from parity tests and from no capture path, so
+the filing names the gatherer that would run last rather than one that runs at all.
 
-The registration is mechanically available. A gatherer that reads no corpus is exempt from the
-corpus gate, as `derivation` already is, and the class-loading gate is satisfied by a class that
-exists. What is missing is a run position: `meta_gatherer_dependency`'s edges are what a capture
-order has to satisfy, and `LintViolations` has no place in one. So the `derivation` filing stands as
-a placeholder that is honest about what runs today, and the `lint` row lands when the writer is
-wired into the order, alongside the anchors moving to `graphitron`.
+What that costs is a run position, and only that. There is no edge to declare, dependencies being
+read off a rule rather than stated, and a gatherer reading no corpus is exempt from the corpus gate
+as `derivation` already is. So the `derivation` filing stands as a placeholder honest about what
+runs today, and the relation takes the name of whatever refreshes it once something does.
 
 ## QC of the field-chain slices (2026-09-17)
 

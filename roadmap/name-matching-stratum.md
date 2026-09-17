@@ -6,26 +6,28 @@ bucket: architecture
 theme: classification-model
 depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-08-17
-last-updated: 2026-09-16
+last-updated: 2026-09-17
 ---
 
 # Name matching is a stratum: side relations, match views, and folds nowhere else
 
-> **Blocked on R876 (2026-09-16).** This item's solution is the defect R876 removes. It proposes
-> completing a match stratum of side relations and match views, citing `intent_spelled_table` as the
-> instance to copy into the key and column namespaces: ambiguity as rows, arity as a column. That
-> shape exists because `GraphitronAnchor` has no access to `sql_` and `code_` and so cannot resolve
-> an authored name where it is written; R876's chapter "The anchors are a decode filed under a
-> crawler" moves the anchors to the `graphitron` gatherer so the resolution happens once, in Java,
-> at anchor time. The key and column resolutions this item would layer are `@reference` and `@field`
-> arguments, transcribed in the `graphitron_ast_` entries and resolved against `sql_key` and
-> `sql_column`, so they relocate with the rest rather than needing a stratum of their own.
+> **Blocked on R876 (2026-09-16, restated 2026-09-17).** This item's solution is the shape R876
+> removes. It proposes completing a match stratum of side relations and match views, citing
+> `intent_spelled_table` as the instance to copy into the key and column namespaces: ambiguity as
+> rows, arity as a column. R876's "Entries, derivations and anchors, and what each one forces" is
+> the model to read this against, and `graphitron_field_routine` is the worked example: the rule is
+> a view, it computes the arity, it filters `candidates = 1`, and the stored relation holds the
+> resolved row alone. The arity is spent where the rule is stated instead of being published to
+> every consumer, which is what the twenty relations and thirty-four `candidates = 1` guards in the
+> shipping DDL are paying for. The key and column resolutions this item would layer want that same
+> treatment, plus a defect relation total over what the filter excludes, on
+> `intent_condition_method_route_defect`'s terms.
 >
 > The problem statement below is unaffected and is cited by R876 as evidence: the thirteen inline
 > `UPPER(`, the effective-name rule written six times, the doubly-computed tier decision, and the
 > measured seventy-times regression on `intent_column_match_claim`. What remains of the fold
-> restatement once the anchors resolve in Java is not knowable until they do, which is why this is
-> held rather than dissolved.
+> restatement once those sites spend their arity rather than publishing it is not knowable until
+> they do, which is why this is held rather than dissolved.
 
 ## Problem
 
