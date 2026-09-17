@@ -4445,10 +4445,18 @@ parser walked. The assembly honours it, so a collision between two declarations 
 the older standing, and it is free to merge better than the library does: `SchemaLoader.merge`
 refuses the clashing declaration where `TypeDefinitionRegistry.merge` refuses the whole document.
 
-The roster follows the code. One `document` row became four, and its 86 relations partition cleanly:
-20 `graphql_ast_*` to `graphql-ast`, 65 `graphitron_*` to `graphitron-ast`, and
-`graphql_schema_problem` to `graphql-assembly`. `graphql-source` owns no declared relation, the one
-relation it writes rows of being shared across every source kind and partitioned by none of them.
+The roster follows the code. One `document` row became four, and its 86 relations partition by grain:
+20 at the written position under `graphql_ast_` to `graphql-ast`, 53 at the written position under
+`graphitron_ast_` to `graphitron-ast`, `graphql_schema_problem` to `graphql-assembly`, and the 12
+coordinate-grained `graphitron_` relations to `graphitron`, where they already sat.
+`graphql-source` owns no declared relation, the one relation it writes rows of being shared across
+every source kind and partitioned by none of them.
+
+The first cut of that partition took the name prefix instead, which put those 12 under
+`graphitron-ast` because `GraphitronAnchor` writes them. That is the trap this item has now fallen
+into three times: what a class currently writes is evidence about the state of the refactor and not
+about where a relation belongs, `GraphitronAnchor` writing relations of two grains at once precisely
+because the decode has not finished moving. Grain separates them and the writing class does not.
 
 ### Owed, not done here
 
