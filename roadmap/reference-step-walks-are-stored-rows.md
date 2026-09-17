@@ -871,3 +871,103 @@ fixture the body names exists under that name.
 **Corrected in passing.** Phase 2's "five named readers" of `intent_resolved_type_binding` is now the
 count the DDL and `StoreNodeTables` give, per round 2's non-blocking note; the convert expectation it
 supports is unchanged.
+
+### Round 4 (2026-09-17, Spec -> Ready, reviewer session 01SHm9PuTU3FYYFhNeuyV7S3)
+
+Verdict: withhold. Round 2's two blocking findings are still open, and both were re-derived from the
+tree by this session rather than read off round 3. One new blocking finding, on the section the body
+names as what the whole plan is built on: the structural finding reproduces the tree as it stood
+before two commits of 2026-09-14, which is two days before the item was filed, and the ladder
+carries a rung 0 relation one of them retired.
+
+Question one is not what withholds, and the goal reads clearly without the phase list. A consumer with
+a large schema gets a `graphitron:dev` round, a `generate` and a CI build whose cost grows with the
+schema rather than with its square, because the `@reference` path every `@nodeId` decode reads stops
+being a recursive view re-evaluated once per driving row and becomes rows the graphitron gatherer
+wrote once per capture, which every reader then seeks into on an index. Nothing a consumer authors
+changes; what changes is how long the build takes on a schema of real size.
+
+**Round 2, finding 1 stands (question two).** Verified again from the source rather than from round 3.
+`FactCapture.capture` runs `GraphitronFactCapture.capture`, flushes, then
+`ClassificationDomainCapture.derive`, `InputOccurrencePaths.derive`, `ArgMappingCandidates.derive`,
+`TypeBackingRows.derive` and `AuthoredClaimRejectionRows.derive`, and only then
+`Materializations.refresh`. `intent_input_field_resolving_table_live`, which is rung 4, reads
+`intent_input_occurrence_path` and `intent_input_occurrence_path_step`; `intent_type_backing`, which
+rung 4 also reaches, reads `intent_type_backing_class`. All three are in
+`MaterializeRegistryGateTest.HAND_WRITTEN` and all three are written after the gatherer, so a rung-4
+stage placed inside `GraphitronFactCapture` reads the previous capture's rows exactly as it would a
+registered target's. The field walk's closure holds none of them, so phases 1 and 2 stay correctly
+placed. Phase 4 still says nothing about where its producer runs, phase 5 still says "on the phase-2
+shape", and the "does not do" bullet still reads "no stage ever reads a registered target". What
+satisfies it is what round 2 said.
+
+**Round 2, finding 2 stands (question two).** In `intent_field_reference_step_target` as shipped, the
+recursive term is a plain `UNION` of the seed with one join to `intent_field_reference_step_hop`;
+`DENSE_RANK`, `MAX(target_rank) OVER` and `COUNT(*) OVER` are all in the outer `SELECT` over the
+finished `chain`. Phase 2 still describes a Java fold with a termination assertion and still says the
+fold replaces "two window functions inside a recursive term", which is not what the DDL holds, and
+phase 5 still inherits the shape. What satisfies it is what round 2 said: adopt the single-statement
+`INSERT ... WITH RECURSIVE ... SELECT` per graph, which is what the body's own "the rule stays stated
+once, in SQL" asks for, or name the H2 limit or the measurement that makes a fold necessary.
+
+**Finding 3 (question two, blocking). The structural finding, its family list and rung 0 are computed
+from a tree two commits out of date, and one rung names a relation that no longer exists.**
+
+`intent_name_matched_key_pair` is not in `graphitron-model.sql`. Commit 78b6a58, "a name-matched key
+is a catalog fact, and only whole keys are keys", landed 2026-09-14 and retired it;
+`DerivedReadCostTest`'s javadoc records the retirement and says a catalog gatherer now answers its
+question as `sql_name_matched_key_column`. `intent_field_reference_step_hop_live` today reads
+`graphitron_field_reference_step_entry`, `store_graph_source`, `sql_table`, `sql_constraint`,
+`sql_referential_constraint`, `sql_name_matched_key_column`, `intent_spelled_table` and
+`intent_condition_method_route`. So rung 0 holds two relations and not three, and the rung table's
+second row is a rung an implementer would go looking for and not find.
+
+The closure figure is from the same superseded tree. Parsing the shipped DDL statement by statement,
+with line comments and string literals removed so every one of the 396 relations is seen, and
+following each registered relation through its `_live` rule: the closure of the three walks today is
+**26 `intent_` relations, 8 of them registered**, where the body says 27 and 8. At `78b6a58~1` the
+same computation gives 27 and 8. The eight registrations are exactly the eight the ladder names, in
+both trees; the single relation that left the closure is the retired one.
+
+The leaf family list dates the paragraph the same way. The body says no relation in the closure "reads
+anything that is not ultimately `graphitron_`, `graphql_`, `sql_`, `jvm_` or `store_`", which is the
+list at `78b6a58~1` exactly. Today the closure's non-`intent_` leaves are `graphitron_`, `graphql_`,
+`sql_`, `store_` and `code_`, with no `jvm_` relation in it at all: commit f826c5c, also 2026-09-14,
+moved `intent_condition_method_route` off `jvm_class` and `jvm_method` onto `code_condition_method`
+and `code_condition_method_parameter`.
+
+The modelling claim survives all of this, which is why the finding is about the evidence rather than
+the conclusion, and the direction is favourable rather than otherwise. `code_condition_method` is
+written by `CodeCapture`, which `ModelCapture.capture` runs and which `AbstractRewriteMojo.runGenerator`
+calls before the generator's own capture, so it is a captured fact and current when a graphitron stage
+would read it. Twenty six relations bottoming out entirely in captured facts argues what twenty seven
+did. And the input that replaced the retired view on rung 1 is a captured `sql_` table rather than a
+plain view, which is a stronger base for the bottom-up argument than what it replaced.
+
+What makes this the author's rather than a stale number a reviewer corrects in passing is phase 1's
+closing paragraph. It says `intent_name_matched_key_pair`'s "owner computes to `catalog` and it stays
+a plain view here", and that moving it into the catalog family is one of the nine misplacements R876
+enumerates and that item's to take. That move has already happened by another route, so the paragraph
+is instructing an implementer about a relation that is not there, and R876's count of misplacements
+may have moved with it.
+
+What would satisfy it: the structural finding's count and family list and the rung table recomputed
+against the shipped DDL, phase 1's closing paragraph dropped or restated, and rung 1's read of
+`sql_name_matched_key_column` named where rung 0's relations are named today. Whether the phase-1
+scope changes at all is the author's call; on this session's reading it gets slightly smaller.
+
+**Everything else re-verified this round holds.** The field walk's closure is 11 `intent_` relations
+with exactly three registered, `intent_spelled_table`, `intent_field_reference_step_hop` and
+`intent_resolved_type_binding`, and the six relations the body names as plain views around it,
+`intent_bound_table`, `intent_routine_return_binding`, `intent_field_chain_terminus`,
+`intent_field_chain_node`, `intent_field_chain_start` and `intent_field_navigated_type`, are all views
+and all in that closure. `intent_spelled_table_live` is the three-way join the body describes, over
+`graphitron_spelled_reference_entry`, `store_graph_source` and `sql_table`.
+`MaterializeRegistryGateTest.REGISTRATIONS` is 23. `intent_resolved_type_binding` is named by eight
+view bodies and by `StoreNodeTables`, which is the count round 3 corrected into the body.
+`ix_field_reference_step_hop_step`'s comment carries the 18308-against-523 figures the body quotes.
+`MaterializedRegistryFixture.scaledSdl` exists, as do `FieldEndpoints`, `Materializations`,
+`JooqFactCapture`, `CatalogFactCapture`, `ClassificationDomainCapture`, `SchemaIdentifierDriftCheck`,
+`StoreNodeTables`, `SchemaQueries`, `ClaimFacts`, `RefreshStages` and every test class the Tests
+section names. `sql_table_reference`, `graphitron_spelled_table` and
+`graphitron_field_reference_step_hop` are still free names.
