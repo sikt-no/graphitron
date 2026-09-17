@@ -197,7 +197,7 @@ class AstEntryIndexTest {
                     SchemaInput.file(directory.resolve("schema.graphqls"))),
                 Set.of());
             sink.flush();
-            GraphQLAstCapture.captureAstIndex(dsl, graph, readAt);
+            GraphQLAstCapture.captureAstIndex(dsl, GRAPH, readAt);
 
             assertThat(dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)))
                 .as("the pass that writes the anchors reading this index also fills it")

@@ -51,7 +51,7 @@ import static org.jooq.impl.DSL.val;
  * one table are one target rather than two, which is why the participant arm is distinct on the
  * table it arrives at rather than on the member it came from.
  *
- * <p>Marked and swept, on {@code SdlAnchor}'s terms and for {@link ElementAnchors}' reason. Each arm
+ * <p>Marked and swept, on the anchoring step of {@link no.sikt.graphitron.model.capture.document.GraphQLAstCapture}'s terms and for {@link ElementAnchors}' reason. Each arm
  * upserts on the reading's instant and the sweep at the end takes the targets this reading did not
  * name. Clearing the partition first was the shape before, and it is a correctness point rather
  * than a cost: relations key into this one with {@code ON DELETE CASCADE}, so emptying it takes

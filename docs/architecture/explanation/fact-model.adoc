@@ -274,8 +274,9 @@ state and the directive rejects both together, which is one relation and one CHE
 The names do not say this yet, and that is worth knowing before reading them. The graphitron entry
 relations carry an `ast` infix they should not. It is the right word only where the rows really are
 the parse tree, as the AST entries above are; these are decided facts about what an author meant. The
-end state is the shape `SdlAnchor` already has, an entry named `graphitron_<x>_entry` and its anchor
-named `graphitron_<x>`, which is blocked only by the incumbent still holding the unprefixed names.
+end state is the shape the `graphql_` family already has, an entry named `graphitron_<x>_entry` and
+its anchor named `graphitron_<x>`, which is blocked only by the incumbent still holding the
+unprefixed names.
 
 *Enforced by:* partly, and the gap is worth stating. A CHECK holds the alternative-spelling case and
 `NOT NULL` holds the required one, both in the DDL. `SupertypeSignatureGateTest` reports when two

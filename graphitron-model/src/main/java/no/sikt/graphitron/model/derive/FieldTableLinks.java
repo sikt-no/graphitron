@@ -75,7 +75,7 @@ import static org.jooq.impl.DSL.when;
  *
  * <p>Each arm reads its two element shapes as one relation, the one written under
  * {@code @reference} and the one under {@code @referenceFor} being one fact with one shape, which
- * is {@code SdlAnchor}'s reason for unioning the five its element anchor reads.
+ * is the element anchor's reason for unioning the five relations it reads.
  *
  * <p>Each arm demands a single candidate, on {@code graphitron_tabletype}'s terms, counted over one
  * link toward one target: two links of a chain are two questions and neither makes the other

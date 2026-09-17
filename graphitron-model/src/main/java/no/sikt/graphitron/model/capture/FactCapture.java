@@ -431,7 +431,7 @@ public final class FactCapture {
             // and not by the anchor writer this pass skips, because a reading has to write what its
             // own stages read: a graphitron anchor referencing a written position finds no index
             // row to reference otherwise, this pass being the one its stages run in.
-            GraphQLAstCapture.captureAstIndex(txDsl, graph, readAt);
+            GraphQLAstCapture.captureAstIndex(txDsl, graph.name(), readAt);
             GraphitronAstCapture.anchor(txDsl, graph, readAt);
             GraphitronFactCapture.capture(sink, txDsl, graph.name(), readAt);
             sink.flush();

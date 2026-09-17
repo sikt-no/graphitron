@@ -1847,6 +1847,15 @@ picking once the rows are bound per row instead. `MultiRowWritesAreChunkedTest` 
 replaced by `WritesBindPerRowTest`, which holds the stronger claim that the module has no multi-row
 write rather than that its multi-row writes are bounded.
 
+**Java, the gatherer split.** `SdlCapture`, which was four gatherers behind one face, along with
+its `captureFacts`, `captureEntries` and `captureGraphitronAnchors` entry points and the transitional
+`SubjectConfig` overloads it grew while the corpus reader was being lifted out from under it. Its
+callers name `GraphQLSourceCapture`, `GraphQLAstCapture`, `GraphitronAstCapture` and
+`GraphQLAssemblyCapture` instead. `SdlAnchor` went with it, dissolved into `GraphQLAstCapture`, the
+anchoring being a step of the gatherer whose entries it derives from rather than a thing of its own;
+`SdlAnchorTest` is `GraphQLAnchorTest`. The gatherer roster row `document` is retired and is four
+rows now, `graphql-source`, `graphql-ast`, `graphitron-ast` and `graphql-assembly`.
+
 **Swept, with seven survivors found and fixed.** One in main sources: the comment on
 `intent_field_navigated_type.basis` still described a closed vocabulary of three and named the retired
 rung as current. Six in roadmap bodies, four of them live plans rather than history:
@@ -4411,7 +4420,7 @@ reducing them raised. The four are now four classes, and the face is gone.
 | Gatherer | Input | Writes | Anchors with |
 | --- | --- | --- | --- |
 | `GraphQLSourceCapture` | the configuration | the `SCHEMA_FILE` rows of `store_source` and this graph's membership | nothing; it establishes no grain |
-| `GraphQLAstCapture` | the documents | `graphql_ast_*` | `SdlAnchor`, then the entry-position index |
+| `GraphQLAstCapture` | the documents | `graphql_ast_*` | its own anchor statements, then the entry-position index |
 | `GraphitronAstCapture` | the documents | `graphitron_ast_*` | `GraphitronAnchor` |
 | `GraphQLAssemblyCapture` | the documents | `graphql_schema_problem` | nothing |
 
@@ -4419,9 +4428,10 @@ Three things this settles that the single face left unsaid.
 
 **Anchoring is a gatherer's last step, not a gatherer.** An anchor establishes a grain out of what
 the whole corpus says, so it cannot run per document; it runs after the gatherer's own mark and
-sweep, on the rows that survived. `SdlAnchor` and `GraphitronAnchor` are therefore steps of the two
-transcription gatherers rather than stages of their own, and each gatherer's anchoring reads only
-what that gatherer just wrote plus what an earlier one settled.
+sweep, on the rows that survived. Each gatherer's anchoring reads only what that gatherer just wrote
+plus what an earlier one settled. `SdlAnchor` was a class named as though the step were a thing, and
+its 26 anchor statements and their sweep are `GraphQLAstCapture`'s own now. `GraphitronAnchor` is
+still a class of its own and is the same case; it moves when `GraphitronAstCapture` takes it.
 
 **The corpus is read once and the read set has one owner.** The gatherers below the parser are
 handed a list of documents, not a configuration, so no two of them can disagree about which files a

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlAnchor;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.SdlEntries;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.schema.SchemaLoader;
@@ -67,8 +67,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * anything the newer one does not.
  *
  * <p>The {@code graphql_} anchors have two producers. {@link SdlFactCapture} walks a merged registry
- * with graphql-java accessors in hand and writes them directly; {@link SdlAnchor} derives the same
- * relations from the entry stratum with SQL. Both run on a mojo build, the derivation first and the
+ * with graphql-java accessors in hand and writes them directly; {@link GraphQLAstCapture} derives the
+ * same relations from the entry stratum with SQL. Both run on a mojo build, the derivation first and the
  * walk second, so the rows a reader sees are the walk's and the derivation's are overwritten
  * unexamined. That is the arrangement this case exists to end: nothing chose it, and while it holds,
  * every column added to an anchor has to be taught to two writers in two languages, which is what
@@ -277,7 +277,7 @@ class SdlWalkIsRedundantTest {
         seedSource(dsl, file.toString());
         SchemaLoader.parsePerSource(List.of(SchemaSource.file(file))).perSource().forEach(document ->
             SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), readAt));
-        SdlAnchor.write(dsl, GRAPH, readAt);
+        GraphQLAstCapture.anchor(dsl, GRAPH, readAt);
     }
 
     /**

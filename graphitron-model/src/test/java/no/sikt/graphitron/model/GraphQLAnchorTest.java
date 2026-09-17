@@ -1,6 +1,6 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlAnchor;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.SdlEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -63,7 +63,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * on the entry relations, so a planted row would be asserting the fixture's arithmetic rather than
  * the schema's.
  */
-class SdlAnchorTest {
+class GraphQLAnchorTest {
 
     private static final String GRAPH = "anchors";
 
@@ -641,7 +641,7 @@ class SdlAnchorTest {
 
     /**
      * Reads every file as its own document, then derives the anchors once, which is the cadence
-     * {@link no.sikt.graphitron.model.capture.document.GraphQLAstCapture} runs them at.
+     * {@link GraphQLAstCapture} runs them at.
      */
     private static void read(DSLContext dsl, LocalDateTime touchedAt, Path... files) {
         seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
@@ -650,7 +650,7 @@ class SdlAnchorTest {
             .perSource()
             .forEach(document ->
                 SdlEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
-        SdlAnchor.write(dsl, GRAPH, touchedAt);
+        GraphQLAstCapture.anchor(dsl, GRAPH, touchedAt);
     }
 
     /** Sets a file's modification time, which is what the merge order sorts sources by. */

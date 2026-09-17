@@ -56,7 +56,7 @@ import static org.jooq.impl.DSL.val;
 /**
  * Derives graphitron's own anchors from the rows the same reading wrote.
  *
- * <p>{@link SdlAnchor}'s sibling, on the same terms: one statement per anchor, an insert over a
+ * <p>The sibling of the anchoring step in {@link GraphQLAstCapture}, on the same terms: one statement per anchor, an insert over a
  * select, run once the corpus has been read because what a directive is cannot be settled by any
  * one file. Nothing is read into Java and written back, and nothing is decided here.
  *
