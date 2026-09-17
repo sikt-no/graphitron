@@ -1,6 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -302,10 +305,14 @@ class GraphitronFieldEntriesTest {
 
     /** One reading of everything the directory holds, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir) {
-        SdlCapture.capture(dsl, new GraphIdentity(GRAPH, baseDir),
-            SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
-                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            LocalDateTime.now());
+        var graph = new GraphIdentity(GRAPH, baseDir);
+        var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
+        var readAt = LocalDateTime.now();
+        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
     }
 
     private static void write(Path directory, String name, String sdl) {

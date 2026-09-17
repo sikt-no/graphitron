@@ -2,7 +2,10 @@ package no.sikt.graphitron.rewrite.lint;
 
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -75,8 +78,13 @@ class LintEngineTest {
             // The graph's anchor row is the caller's, not the SDL capture's: every row it
             // writes holds a foreign key into it, so a gatherer does not mint what two need.
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            SdlCapture.capture(store.dsl(), new GraphIdentity(GRAPH, directory),
-                config(directory, sdl), LocalDateTime.now());
+            var graph = new GraphIdentity(GRAPH, directory);
+            var config = config(directory, sdl);
+            var readAt = LocalDateTime.now();
+            var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
             return LintEngine.builtIn()
                 .run(registry, new StoreHandle(store.dsl(), GRAPH)).stream()
                 .map(BuildWarning.LintFinding.class::cast)

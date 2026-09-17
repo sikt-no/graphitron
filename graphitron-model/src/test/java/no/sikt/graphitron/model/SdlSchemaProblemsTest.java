@@ -1,6 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -28,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What went wrong when the documents were read and made into a schema, recorded rather than
  * re-derived.
  *
- * <p>Driven through {@link SdlCapture} rather than through the writer, because the claim is that a
+ * <p>Driven through the document gatherers rather than through the writer, because the claim is that a
  * reading records its own verdict. A case that ran the three stages itself would pass over a
  * capture that recorded none of them.
  *
@@ -176,7 +179,7 @@ class SdlSchemaProblemsTest {
         write(clean, "ok.graphqls", "type Query { a: String }\n");
 
         withSeededStore(GRAPH, dsl -> {
-            // The sibling's anchor row, which SdlCapture no longer mints: the graph is the
+            // The sibling's anchor row, which no document gatherer mints: the graph is the
             // registry row every relation it writes hangs a key on, so ModelCapture writes it and
             // a case reading a second graph states it the way withSeededStore states the first.
             seedGraph(dsl, "sibling");
@@ -226,11 +229,15 @@ class SdlSchemaProblemsTest {
     }
 
     /** {@link #read(DSLContext, Path)} under a graph the case names, for the two-graph case. */
-    private static void read(DSLContext dsl, String graph, Path baseDir) {
-        SdlCapture.capture(dsl, new GraphIdentity(graph, baseDir),
-            SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
-                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            LocalDateTime.now());
+    private static void read(DSLContext dsl, String graphName, Path baseDir) {
+        var graph = new GraphIdentity(graphName, baseDir);
+        var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
+        var readAt = LocalDateTime.now();
+        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
     }
 
     private static Path write(Path directory, String name, String sdl) {

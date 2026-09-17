@@ -3,7 +3,9 @@ package no.sikt.graphitron.model.capture;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
@@ -36,6 +38,7 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.RunStore;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -45,14 +48,19 @@ import org.jooq.DSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
  * Entry point for the generator's capture loads: fills a fact store from the parsed SDL, the jOOQ
@@ -411,7 +419,9 @@ public final class FactCapture {
             // graphql_ ones and those are still the walk's to write. The order is therefore the
             // one production already has, with the walk's rows the ones a reader sees wherever
             // both still produce; what changes is that the overlap is no longer the whole.
-            SdlCapture.captureEntries(txDsl, graph, config, readAt);
+            var documents = readCorpus(txDsl, graph, config, readAt);
+            GraphQLAstCapture.captureEntries(txDsl, graph, documents, readAt);
+            GraphitronAstCapture.captureEntries(txDsl, graph, documents, readAt);
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
@@ -421,8 +431,8 @@ public final class FactCapture {
             // and not by the anchor writer this pass skips, because a reading has to write what its
             // own stages read: a graphitron anchor referencing a written position finds no index
             // row to reference otherwise, this pass being the one its stages run in.
-            SdlCapture.captureAstIndex(txDsl, graph, readAt);
-            SdlCapture.captureGraphitronAnchors(txDsl, graph, readAt);
+            GraphQLAstCapture.captureAstIndex(txDsl, graph, readAt);
+            GraphitronAstCapture.anchor(txDsl, graph, readAt);
             GraphitronFactCapture.capture(sink, txDsl, graph.name(), readAt);
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
@@ -495,6 +505,66 @@ public final class FactCapture {
     public static void capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                TypeDefinitionRegistry registry, Map<String, SchemaInput> attribution) {
         capture(dsl, graph, config, registry, attribution, null, List.of());
+    }
+
+    /**
+     * This pass's own reading of the SDL corpus, in the shape the document gatherers take.
+     *
+     * <p>Transitional, and deliberately narrower than {@link GraphQLSourceCapture}. That gatherer
+     * owns the store's record of what was read, deriving it from configuration and writing this
+     * graph's source membership; this pass derives its read set from what it parsed and writes the
+     * membership itself through the walk's sink. Running the owner here would write a read set the
+     * walk disagrees with and meet the walk's own membership rows on their key, so this pass keeps
+     * parsing for itself until the walk goes, and it goes with the walk.
+     *
+     * <p>A source that would not parse gets its registry row and no entry in the list, which is
+     * this pass's shape rather than the owner's: the gatherers below are handed the list only to
+     * transcribe from it, the sweeps that want a broken file named being the owner's callers'.
+     *
+     * <p>Every document is reported as changed, which is the reading that cannot be wrong: nothing
+     * here computes a content stamp, and unknown has to mean recapture rather than skip.
+     */
+    private static List<GraphQLSourceCapture.SourceDocument> readCorpus(
+            DSLContext dsl, GraphIdentity graph, SubjectConfig config, LocalDateTime readAt) {
+        var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
+        var documents = new ArrayList<GraphQLSourceCapture.SourceDocument>();
+        for (var document : parse.perSource()) {
+            writeSource(dsl, document.sourceName(), readAt);
+            documents.add(new GraphQLSourceCapture.SourceDocument(
+                document.sourceName(), document.registry(), true));
+        }
+        for (var failure : parse.failures()) {
+            writeSource(dsl, failure.sourceName(), readAt);
+        }
+        return List.copyOf(documents);
+    }
+
+    /**
+     * The registry row every one of a document's rows hangs its {@code source_ref} on. Written from
+     * the parse's own source name, so the bundled directive vocabulary gets a row on the same terms
+     * as an author's file: it is a document this reading read.
+     */
+    private static void writeSource(DSLContext dsl, String sourceName, LocalDateTime readAt) {
+        var t = STORE_SOURCE;
+        var mtime = modifiedAt(sourceName);
+        dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.MTIME, t.LAST_SEEN, t.READ_AT)
+            .values(sourceName, "SCHEMA_FILE", mtime, readAt, readAt)
+            .onDuplicateKeyUpdate()
+            .set(t.MTIME, mtime)
+            .set(t.LAST_SEEN, readAt)
+            .set(t.READ_AT, readAt)
+            .execute();
+    }
+
+    /** When the file was last written, or null for a source that is not a file on disk. */
+    private static LocalDateTime modifiedAt(String sourceName) {
+        try {
+            return LocalDateTime.ofInstant(
+                Files.getLastModifiedTime(Path.of(sourceName)).toInstant(),
+                ZoneId.systemDefault()).withNano(0);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /**

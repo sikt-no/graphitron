@@ -1,8 +1,10 @@
 package no.sikt.graphitron.model.run;
 
 import no.sikt.graphitron.model.capture.code.CodeCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
@@ -56,7 +58,13 @@ public final class ModelCapture {
         // The corpus is read once, by the gatherer that owns the store's record of what was read,
         // and every gatherer below it is handed the documents rather than the configuration.
         var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
-        SdlCapture.capture(dsl, graph, documents, readAt);
+        // The transcription, then the decode of what it transcribed, then the two stages that can
+        // only be asked of the corpus whole. The assembly's verdict is written down rather than
+        // returned onwards: nothing here needs the executable schema, and a capture whose corpus
+        // did not assemble still has every fact above it to record.
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
         StoreEntries.write(dsl, graph.name(), config, readAt);
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
         CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),

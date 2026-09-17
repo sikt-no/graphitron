@@ -1,6 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -256,9 +259,13 @@ class EntryLegalityTest {
 
     /** The whole face, because the problem rows are half of every assertion here. */
     private static void read(DSLContext dsl, Path directory) {
-        SdlCapture.capture(dsl, new GraphIdentity(directory.getFileName().toString(), directory),
-            SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            LocalDateTime.now());
+        var graph = new GraphIdentity(directory.getFileName().toString(), directory);
+        var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
+        var readAt = LocalDateTime.now();
+        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAssemblyCapture.capture(dsl, graph, documents, readAt);
     }
 }

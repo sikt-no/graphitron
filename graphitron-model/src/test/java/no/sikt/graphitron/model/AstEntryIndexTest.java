@@ -1,6 +1,8 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
@@ -26,6 +28,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
+import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -174,10 +177,19 @@ class AstEntryIndexTest {
             write(directory, "schema.graphqls", SDL);
             var graph = new GraphIdentity(GRAPH, directory);
             LocalDateTime readAt = LocalDateTime.now().withNano(0);
-            // The walk's pass parses for itself and owns its own source rows, so this drives that
-            // path rather than the corpus reader; the two together would write one read set twice.
+            // The walk's pass parses for itself and owns its own source rows, so the documents are
+            // assembled here rather than by the corpus reader, whose membership rows the walk's own
+            // sink writes below and would meet on their key.
             var parse = SchemaLoader.parsePerSource(corpus(directory).schemaFiles(directory));
-            SdlCapture.captureEntries(dsl, graph, corpus(directory), readAt);
+            seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
+            seedSource(dsl, directory.resolve("schema.graphqls").toString(), "SCHEMA_FILE");
+            var documents = parse.perSource().stream()
+                .map(source -> new GraphQLSourceCapture.SourceDocument(
+                    source.sourceName(), source.registry(), true))
+                .toList();
+            // The transcription alone, which is the half the walk's pass runs. It skips the anchor
+            // step that follows it there, the walk being that pass's producer of the anchors.
+            GraphQLAstCapture.captureEntries(dsl, graph, documents, readAt);
             // The walk, which is this pass's producer of the element anchors the index keys into.
             var sink = new FactSink(dsl, GRAPH, readAt);
             SdlFactCapture.capture(sink, parse.registry(), new ClasspathSources(),
@@ -185,7 +197,7 @@ class AstEntryIndexTest {
                     SchemaInput.file(directory.resolve("schema.graphqls"))),
                 Set.of());
             sink.flush();
-            SdlCapture.captureAstIndex(dsl, graph, readAt);
+            GraphQLAstCapture.captureAstIndex(dsl, graph, readAt);
 
             assertThat(dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)))
                 .as("the pass that writes the anchors reading this index also fills it")
@@ -227,8 +239,11 @@ class AstEntryIndexTest {
 
     /** One reading of everything the directory holds, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir) {
-        SdlCapture.captureFacts(dsl, new GraphIdentity(GRAPH, baseDir), corpus(baseDir),
-            LocalDateTime.now());
+        var graph = new GraphIdentity(GRAPH, baseDir);
+        var readAt = LocalDateTime.now();
+        var documents = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir), readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
     }
 
     /** The corpus a reading is of, stated as the configuration a run would have had. */

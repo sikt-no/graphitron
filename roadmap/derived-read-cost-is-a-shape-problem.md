@@ -4401,3 +4401,53 @@ deciding before it is built, and during a refactor a declaration may legitimatel
   being a function of the catalog rather than of the run, and stated as such in its writer. It is
   still the one new relation that does not get its rows the way the third gate says a stored
   relation does, and the gate should either admit the total recompute or the relation should stamp.
+
+## One gatherer per stage of reading the corpus (2026-09-17)
+
+`SdlCapture` was four gatherers behind one face. It parsed the corpus, transcribed each document,
+decoded the directives on what it transcribed, and reduced the documents into a schema to see what
+reducing them raised. The four are now four classes, and the face is gone.
+
+| Gatherer | Input | Writes | Anchors with |
+| --- | --- | --- | --- |
+| `GraphQLSourceCapture` | the configuration | the `SCHEMA_FILE` rows of `store_source` and this graph's membership | nothing; it establishes no grain |
+| `GraphQLAstCapture` | the documents | `graphql_ast_*` | `SdlAnchor`, then the entry-position index |
+| `GraphitronAstCapture` | the documents | `graphitron_ast_*` | `GraphitronAnchor` |
+| `GraphQLAssemblyCapture` | the documents | `graphql_schema_problem` | nothing |
+
+Three things this settles that the single face left unsaid.
+
+**Anchoring is a gatherer's last step, not a gatherer.** An anchor establishes a grain out of what
+the whole corpus says, so it cannot run per document; it runs after the gatherer's own mark and
+sweep, on the rows that survived. `SdlAnchor` and `GraphitronAnchor` are therefore steps of the two
+transcription gatherers rather than stages of their own, and each gatherer's anchoring reads only
+what that gatherer just wrote plus what an earlier one settled.
+
+**The corpus is read once and the read set has one owner.** The gatherers below the parser are
+handed a list of documents, not a configuration, so no two of them can disagree about which files a
+reading met. Each element carries the source name, the registry where there is one, and whether the
+file's bytes differ from what the store last held. A document that would not parse is in the list
+carrying no registry, which is what lets the gatherers below sweep the rows an author just broke.
+
+**The order is the source gatherer's contract and the assembly's obligation.** The list comes back
+oldest file first, bound by `GraphQLSourceCaptureTest` rather than inherited from whatever order the
+parser walked. The assembly honours it, so a collision between two declarations of one name leaves
+the older standing, and it is free to merge better than the library does: `SchemaLoader.merge`
+refuses the clashing declaration where `TypeDefinitionRegistry.merge` refuses the whole document.
+
+The roster follows the code. One `document` row became four, and its 86 relations partition cleanly:
+20 `graphql_ast_*` to `graphql-ast`, 65 `graphitron_*` to `graphitron-ast`, and
+`graphql_schema_problem` to `graphql-assembly`. `graphql-source` owns no declared relation, the one
+relation it writes rows of being shared across every source kind and partitioned by none of them.
+
+### Owed, not done here
+
+- **`GraphitronFactCapture` is still mid-pass.** It reads `graphql_`, `sql_` and `code_`, so it
+  belongs after all three are current, and it is named for a stratum rather than for what it does.
+  It becomes `GraphitronAssemblyCapture` at the tail of the capture run.
+- **The walk still parses for itself.** `FactCapture` reads the corpus its own way, deriving its read
+  set from what it parsed and writing membership through its sink, so the corpus reader stays the
+  other pass's. Both go together when the walk does.
+- **Nothing reads `changed` yet.** It is captured because it is free where the bytes are already in
+  hand and expensive anywhere else. Skipping the recapture of an unchanged document is what it is
+  for.

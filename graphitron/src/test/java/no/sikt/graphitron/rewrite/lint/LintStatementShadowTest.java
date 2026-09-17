@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.schema.idl.SchemaParser;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintViolations;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -112,8 +115,12 @@ class LintStatementShadowTest {
         try (var store = FactStores.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
             var readAt = LocalDateTime.now();
-            SdlCapture.capture(store.dsl(), new GraphIdentity(GRAPH, directory),
-                config(directory), readAt);
+            var graph = new GraphIdentity(GRAPH, directory);
+            var config = config(directory);
+            var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
             LintViolations.write(store.dsl(), GRAPH, readAt);
 
             var walked = fromTheWalk(store.dsl());

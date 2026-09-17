@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.lint;
 
 import graphql.schema.idl.SchemaParser;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
@@ -326,8 +329,13 @@ class LintSubjectPopulationTest {
         var registry = new SchemaParser().parse(SchemaLoader.directivesSdl() + "\n" + sdl);
         try (var store = FactStores.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            SdlCapture.capture(store.dsl(), new GraphIdentity(GRAPH, directory),
-                config(directory, sdl), LocalDateTime.now());
+            var graph = new GraphIdentity(GRAPH, directory);
+            var config = config(directory, sdl);
+            var readAt = LocalDateTime.now();
+            var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
             body.accept(registry, store.dsl());
         }
     }

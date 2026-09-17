@@ -641,7 +641,7 @@ class SdlAnchorTest {
 
     /**
      * Reads every file as its own document, then derives the anchors once, which is the cadence
-     * {@code SdlCapture} runs them at.
+     * {@link no.sikt.graphitron.model.capture.document.GraphQLAstCapture} runs them at.
      */
     private static void read(DSLContext dsl, LocalDateTime touchedAt, Path... files) {
         seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");

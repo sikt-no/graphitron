@@ -1,6 +1,9 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.lint.LintViolations;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -308,10 +311,12 @@ class LintViolationsTest {
 
     private static void reread(DSLContext dsl, Path directory) {
         var readAt = LocalDateTime.now();
-        SdlCapture.captureFacts(dsl, new GraphIdentity(GRAPH, directory),
-            SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-                List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            readAt);
+        var graph = new GraphIdentity(GRAPH, directory);
+        var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
+        var documents = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         LintViolations.write(dsl, GRAPH, readAt);
     }
 

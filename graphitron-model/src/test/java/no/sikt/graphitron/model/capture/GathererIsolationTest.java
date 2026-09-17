@@ -68,11 +68,12 @@ class GathererIsolationTest {
         // And this one reads the classfiles, for what a schema may name at each directive.
         roll.put("capture/code", Set.of("CodeCapture"));
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
-        // Two gatherers read the SDL: this one writes the graphql_ast_ entries per document, and
-        // the verdict beside them, the three reading stages having one relation between them.
-        // Two gatherers in this package and more to come: the corpus reader owns the store's
-        // record of what was read, and the transcription faces run on what it parsed.
-        roll.put("capture/document", Set.of("SdlCapture", "GraphQLSourceCapture"));
+        // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
+        // owns the store's record of what was read and hands the documents on, the two
+        // transcription faces write the as-written strata off that list, and the assembly asks the
+        // two questions no single document can answer and writes the verdicts down.
+        roll.put("capture/document", Set.of("GraphQLSourceCapture", "GraphQLAstCapture",
+            "GraphitronAstCapture", "GraphQLAssemblyCapture"));
         roll.put("capture/graphitron", Set.of("GraphitronFactCapture"));
         roll.put("capture/macro", Set.of("MacroCapture"));
         roll.put("capture/java", Set.of("JavaSourceFacts"));

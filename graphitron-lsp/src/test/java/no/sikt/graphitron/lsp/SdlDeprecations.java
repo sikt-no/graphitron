@@ -1,7 +1,10 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
-import no.sikt.graphitron.model.capture.document.SdlCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
+import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
@@ -52,8 +55,13 @@ final class SdlDeprecations {
         Path directory = temporaryDirectory();
         try (var store = FactStores.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            SdlCapture.capture(store.dsl(), new GraphIdentity(GRAPH, directory),
-                config(directory), LocalDateTime.now());
+            var graph = new GraphIdentity(GRAPH, directory);
+            var config = config(directory);
+            var readAt = LocalDateTime.now();
+            var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
+            GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
+            GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
             var dsl = store.dsl();
             var out = new LinkedHashSet<SchemaCoordinate>();
 

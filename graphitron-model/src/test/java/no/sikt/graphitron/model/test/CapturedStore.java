@@ -549,8 +549,8 @@ public final class CapturedStore implements AutoCloseable {
      *
      * <p>A primitive rather than a step inside the walk, because the two are on either side of the
      * migration: the walk writes the transcription families and {@link SdlSchemaProblems} writes the
-     * one relation all three stages record in. Reached directly rather than through {@code
-     * SdlCapture}, whose anchor derivation sweeps every anchor row carrying an instant other than
+     * one relation all three stages record in. Reached directly rather than through the document
+     * gatherers, whose anchor step sweeps every anchor row carrying an instant other than
      * its own and would therefore delete what the walk had just written, and called after the walk,
      * the verdict row referencing a graph whose anchor row is the walk's to write.
      */
