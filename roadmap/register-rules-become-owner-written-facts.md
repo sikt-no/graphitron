@@ -463,3 +463,135 @@ mechanism, and asked, in effect, why the same was not true of the rest of the re
 principle is R876's, stated on the fact-model page: a materialization is usually the price of a fact
 nobody captured, and the `intent_` family is the shape a pipeline takes when its intermediate results
 are not written down. This item writes them down.
+
+## Reviewer findings
+
+### Round 1 (2026-09-17, Spec -> Ready, reviewer session 01Kc43YJCDD7SrJp3kXLiRxb)
+
+Verdict: withhold, on four findings. None of them touches the ladder or the method, which are right
+and were checked rather than taken on trust; three are the plan naming an instrument that will not
+do what the plan asks of it, and one is the goal paragraph claiming outcomes the item does not
+deliver. All four are a sentence or a bullet each.
+
+**What was recomputed from the tree and holds.** This is stated first because the body's factual
+density is unusual and a later reviewer should not spend the passes again. `meta_materialize` holds
+exactly 23 rows. The rung of every one of the fifteen was recomputed from the shipped `_live` bodies
+with comments stripped, expanding through plain views, and every rung in the scope table is right,
+3 and 5 through 15 as printed, with R954's eight occupying 0 through 6 under the same definition and
+the fifteen plus the eight partitioning the register exactly. Every `view readers` count is right,
+all fifteen of them. The three demote candidates are the three relations with one view reader and no
+other, and `intent_mutation_write_destination`'s one reader is the plain view
+`intent_mutation_write_agreement`. The `key today` column is right in all fifteen rows. The leaf
+closure of the fifteen bottoms out in `graphitron_`, `graphql_` and `sql_` facts plus
+`intent_input_occurrence_path` and `intent_input_occurrence_path_step` and nothing else, so no stage
+reads `intent_type_domain`, `intent_authored_claim_rejection` or
+`intent_field_unlowerable_ordering_rejection` and moving `UnlowerableOrderingRejectionRows` into the
+order closes no cycle. `FactCapture.capture` runs the eight stages, flushes, then
+`ClassificationDomainCapture`, `InputOccurrencePaths`, `ArgMappingCandidates`, `TypeBackingRows` and
+`AuthoredClaimRejectionRows`, then the refresh, then `analyse`, then the rejection rows, in that
+order. `Materializations` is 535 lines, `RefreshProgress` 185, `MaterializeDependencies` 261, and
+the four call sites are where the body says. `refreshPartition` issues the delete and the
+`INSERT ... SELECT * ... WHERE graph_name` the body quotes. `intent_node_id_instruction` is the only
+one of the fifteen any main source names, in `NodeIdDecodeCoverageFacts`, and that read sits in
+`detect` rather than in the derivation stratum, so it raises no ordering constraint on the stages.
+`meta_relation` declares exactly the ten `derivation` relations the body enumerates and
+`meta_gatherer_dependency` carries exactly eight `derivation` edges. `HAND_WRITTEN` lists the six
+tables on the impossibility argument the body describes, and `ClassificationDomainCapture`'s javadoc
+does call itself the SDL gatherer's last stage. Every quotation from `fact-model.adoc` is verbatim,
+including the stored form, the plan-existing sentence and the 6293 s against 90.8 s. Every class,
+test and gate method the body names exists under that name, `StageOrderGateTest` excepted, which is
+the one it proposes.
+
+**Finding 1, blocking (question one). The goal paragraph claims two outcomes this item does not
+deliver, and the middle one it does.** "No view is refreshed into a table by a register" is exactly
+what lands and is judgeable on its own. The clause around it is not. "Computes every derived verdict
+the fact store answers with exactly once per capture" is false the day this lands: about a hundred
+plain `intent_` views remain views, inlined at every naming, which "What this item does not do" says
+in as many words. "No reader ever meets a rule that a recursive view re-walks once per driving row"
+is also not delivered: the schema ships seven recursive views, this item converts one of them
+(`intent_node_id_decode_column`) and R954 converts three, leaving `intent_authored_field_claim`,
+`intent_field_chain_node` and `intent_jvm_ancestor` as recursive plain views readers still name, and
+`intent_field_chain_node` is one R954 explicitly leaves for a stage to read inline. This is blocking
+rather than a wording note because of what the goal paragraph is for here: it stands alone, both
+gates are decided by reading it, and the revive rule decides an item undelivered when its acceptance
+evidence does not demonstrate its goal. As written, the acceptance evidence this item names, a
+consumer's capture timed warm and cold, cannot demonstrate two thirds of its own goal sentence.
+What satisfies it: trim the first and last clauses to the register and its fifteen rules, and let the
+recursion claim say what is true, that the one recursive rule among the fifteen is evaluated once per
+capture instead of once per driving row.
+
+**Finding 2, blocking (question two). The demote rule's third term measures against a maximum that
+does not exist, and the tool that would supply it refuses to have one.** "Convert or demote, per
+relation, on three terms" makes the third term the statement size after the demote, "from
+`report-inline-multiplicity`, which must stay inside the shipped maximum". There is no shipped
+maximum. `InlineMultiplicityCheck`'s own javadoc is explicit that there is not and argues why:
+"Reports rather than gates. A ceiling would have to be a number somebody could defend, and the metric
+is a deliberate over-approximation ... Until a few reductions give that number a basis, printing the
+ranking is what the metric is for." Run against the tree as it stands it prints a top-15 ranking, no
+threshold anywhere, heaviest relation 141, which does not agree with the 963 `fact-model.adoc` states
+for the same quantity, so an implementer reaching for a ceiling finds neither a gate nor two figures
+that agree. The term bites exactly where the body says it bites hardest: `intent_mutation_write_destination`
+is rung 15 with a hundred-relation closure and is one of the three demote candidates, and the same
+page prices the fully-demoted schema at 2739455 with two relations exhausting a four-gigabyte heap
+while still parsing. What satisfies it: either give the ceiling a basis and say what it is, this item
+being precisely the reduction the tool's javadoc says it is waiting for, or drop the third term to a
+recorded judgement, the relation's before and after number from the ranking written into the commit
+beside the other two terms, with no threshold claimed.
+
+**Finding 3, blocking (question two). `StoreRefresh` reads the register in executable code, not in a
+comment.** The last commit lists it as "`StoreRefresh`'s comment naming `refreshPartition` is
+repaired". What is actually there is `refilled(dsl)`, a method whose whole body selects
+`META_MATERIALIZE.TARGET_TABLE_NAME`, and whose result the warm pass's graph-scoped clear subtracts
+so that a registered target is not emptied by a clear that is not its owner's. Dropping
+`meta_materialize` breaks the method, and repairing the comment above it does not answer what
+replaces the exemption. It is also an unmade decision rather than a mechanical repoint, because every
+converted relation gains a `meta_relation` row owned by `graphitron` on this item's own terms, so the
+clear either starts covering the converted tables, emptying each one in the same transaction that its
+stage is about to delete and refill, on relations that comment calls a consumer store's largest, or it
+excludes them from a source that has to exist. The stage roster the order gate and the analyse loop
+both already need is the obvious one, which is why this is a sentence and not a redesign. Worth saying
+that the adjacent argument holds: `StoreRefresh.prepare` is called from inside the capture, so a
+`graphitron:dev` round that skips the capture runs neither the clear nor the stages, and the case
+made for deleting `DevMojo`'s `refreshAll` is sound.
+
+**Finding 4, blocking (question two). Blanket graduation into `RetiredVocabularyGuardTest` is against
+that guard's entry bar, and the generic half of the list fails the build on arrival.** The last commit
+says "the retired names below graduate into `RetiredVocabularyGuardTest`'s registry". Two things
+refuse that. The guard's own javadoc sets the bar at demonstrated recurrence, "a term enters the
+registry when an audit finds it surviving a cleanup, not at every rename", and excludes the generic
+case by name, "tokens too generic to be unambiguous are omitted even when retired";
+`roadmap/workflow.adoc` says the same, that recurrently-surviving terms graduate, as the escalation
+step of the Done-gate sweep rather than as a plan deliverable. And mechanically the list cannot be
+entered as it stands. Token entries match a whole identifier token over the Java identifier character
+class, and in main sources outside the three classes being deleted, `registration` occurs 155 times,
+`registered` 186 and `register` 106, almost all of it the live and unrelated data-fetcher sense in the
+generators, so `noRegisteredTokenIsALiveMainSourceName` fails the build the moment any of them is
+registered. `_live` cannot be a token entry at all, being a suffix rather than a token:
+`intent_node_id_instruction_live` is one identifier. What satisfies it: keep the `## Retired
+vocabulary` section as it is, since it is the right declaration for the Done-gate sweep, and change
+the last-commit bullet to say that the sweep runs and only what survives it graduates, naming the
+handful that could be token entries (`meta_materialize`, `meta_materialize_dependency`,
+`Materializations`, `RefreshProgress`, `refreshPartition`, `refreshWhole`, `refreshAll`,
+`refreshAnalysing`, `REGISTRATIONS`, `REFRESH_STAGES`) and leaving the generic terms to the sweep and
+to `FactSchemaGateTest`'s frozen roster, which already holds the relation names against regrowth.
+
+**Non-blocking, two.** "Ten of the fifteen carry none today", of a primary key, disagrees with this
+item's own `key today` column and with the DDL: three of the fifteen have a primary key
+(`intent_field_column_scope`, `intent_argument_column_scope`, `intent_node_id_decode_hop`) and twelve
+have none, six of those carrying one index. The plan is unaffected, the instruction being to key what
+the grain admits, but the number is quoted as a finding and should be twelve. Separately, "the other
+thirteen wait for R954's rung 6" attributes to R954 a number from this item's numbering: R954's own
+ladder stops at rung 5 because it counts plain views as rungs and this item counts only registrations,
+so the same relations carry different numbers in the two bodies. Under this item's definition the
+figure is right. Say "the top of R954's ladder", or state the numbering difference once where the rung
+is defined.
+
+**On the dependency.** R954 is `Spec` with three withheld rounds, and its round 3 records that round
+2's two blocking findings still stand unanswered in its body. This item takes both of those findings
+as settled ("Its round-2 review found two things this body takes as settled"), which is a fair reading
+of the findings but not of R954's plan, which still describes the Java fold round 2 objected to. It
+also defers a live shape question, the graph predicate inside a recursive seed, to "whatever shape
+R954 lands". Not raised as a finding, because deferring one open question to the item that owns it is
+the right call and the front-matter edge is honest about the ordering. Worth knowing when this item is
+picked up: two of its fifteen are convertible against R954's phases rather than its Done, and the
+other thirteen are not startable until R954 both lands and settles the seed question.
