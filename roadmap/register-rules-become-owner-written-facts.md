@@ -1,13 +1,13 @@
 ---
 id: R955
 title: "The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 2
 theme: model-cleanup
 depends-on: [reference-step-walks-are-stored-rows]
 created: 2026-09-16
-last-updated: 2026-09-16
+last-updated: 2026-09-17
 ---
 
 # The register empties bottom-up: every remaining registered rule becomes a fact the graphitron gatherer writes in stage order, and meta_materialize has no rows left
