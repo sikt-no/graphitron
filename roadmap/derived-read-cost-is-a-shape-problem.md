@@ -4461,3 +4461,59 @@ relation it writes rows of being shared across every source kind and partitioned
 - **Nothing reads `changed` yet.** It is captured because it is free where the bytes are already in
   hand and expensive anywhere else. Skipping the recapture of an unchanged document is what it is
   for.
+
+## The three site anchors the walk was still the only producer of (2026-09-17)
+
+`GraphitronFactCapture`'s nine resolution stages read five families, and `ModelCapture`'s pass writes
+all five. Asking what actually stopped them running there produced a list of three, not a design
+problem: `graphitron_node_entry`, `graphitron_node_keycolumn_entry` and `graphitron_routine_entry`
+were written by the walk alone, while `GraphitronAnchor` already derived ten siblings of exactly
+their shape from the `graphitron_ast_` stratum. They are derived now too, so nothing the stages read
+comes from the walk.
+
+Each is the same statement the ten beside it are, an insert over a select over the entries, with
+`touched_at` added to all three so they mark and sweep like every other anchor.
+
+Three decisions worth stating, because each was a fork with a wrong branch that still compiles.
+
+**`routines()` does not use `claimedOnField`.** That helper joins the type declaration for its merge
+order, and `chainLinks` had already found that wrong for a field-site directive: a field coordinate
+is declared once, two declarations of one field being a duplicate-field error rather than an order
+to settle, so the join multiplies each application by the number of declarations the type carries.
+Filtered to rank one the multiplication is invisible. This relation is keyed *by* the ordinal, so
+every rank is a value a reader sees, and a numbering has to be right everywhere a choice only has to
+be right once. The coordinate therefore comes off the entry stratum's own index.
+
+**The ordinal is assigned before the decode is joined, not after.** `routine_ref` is NOT NULL, so an
+application naming nothing writes no row in either stratum, and the walk had already spent its
+ordinal on it. Ranking after the join would close that gap and renumber every application behind it.
+
+**A key column's position is selected, not ranked.** It is the element's own index on
+`graphql_ast_value_entry`, which is `defaultOrderFields`' argument reused: the order is part of what
+the directive says, the element's row carries it, and the legality rule stops a gap opening between
+the two strata.
+
+### How the agreement is held
+
+Both readings run against one store in the `CapturedStore` fixtures, the walk first with its own
+instant and the derivation second with another, and the derivation ends by sweeping every row of the
+graph carrying an instant that is not its own. So a row the walk wrote and the derivation failed to
+reproduce is deleted rather than left standing, and what survives is the derivation's work by
+construction. `GraphitronSiteAnchorAgreementTest` reads the three relations after that and pins what
+the corpus says they should hold.
+
+The test was checked against a broken derivation rather than assumed to be live: with the directive
+name misspelled the relation comes back empty and the case fails, which is the sweep doing what the
+paragraph above claims. The existing agreement fixture would not have caught it, carrying neither
+`@node` nor `@routine`.
+
+### Owed, not done here
+
+- **The walk still writes all three.** One producer each is the next slice, and until it lands the
+  rows a reader sees depend on which pass ran last.
+- **The sink, and then the move.** `MacroCapture.expand` takes a `FactSink` for its first-wins claims
+  on `graphitron_minted_`, which is a construction rather than a redesign, and after it the nine
+  stages move to the tail of `ModelCapture` as `GraphitronAssemblyCapture`.
+- **Three `intent_` reads travel with the stages.** `intent_node_metadata_defect` reads the catalog
+  alone and `intent_connection_element_type` reads two relations the stage sequence writes two lines
+  earlier, so both resolve in either pass. Neither blocks the move and both still owe a placing.

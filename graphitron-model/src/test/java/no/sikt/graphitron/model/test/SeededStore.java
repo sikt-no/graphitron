@@ -1811,6 +1811,7 @@ public final class SeededStore {
             .set(GRAPHITRON_NODE_ENTRY.SOURCE_LINE, 2)
             .set(GRAPHITRON_NODE_ENTRY.SOURCE_COLUMN, 3)
             .set(GRAPHITRON_NODE_ENTRY.TYPE_ID, typeId)
+            .set(GRAPHITRON_NODE_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1828,6 +1829,7 @@ public final class SeededStore {
             .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TYPE_NAME, typeName)
             .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.POSITION, position)
             .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.COLUMN_REF, columnRef)
+            .set(GRAPHITRON_NODE_KEYCOLUMN_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -1951,6 +1953,7 @@ public final class SeededStore {
             .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF, routineRef)
             .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART, QualifiedNameGrammar.namespacePart(routineRef))
             .set(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART, QualifiedNameGrammar.namePart(routineRef))
+            .set(GRAPHITRON_ROUTINE_ENTRY.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

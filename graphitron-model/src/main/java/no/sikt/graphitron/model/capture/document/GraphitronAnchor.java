@@ -11,6 +11,11 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
@@ -114,6 +119,10 @@ public final class GraphitronAnchor {
         connections(dsl, graph, touchedAt);
         pivots(dsl, graph, touchedAt);
         mutations(dsl, graph, touchedAt);
+        // The node before its key columns, which reference it.
+        nodes(dsl, graph, touchedAt);
+        nodeKeyColumns(dsl, graph, touchedAt);
+        routines(dsl, graph, touchedAt);
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
@@ -279,6 +288,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
+            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
             GRAPHITRON_FIELD_CHAIN_LINK);
 
     /**
@@ -547,6 +557,156 @@ public final class GraphitronAnchor {
             .set(t.SCALAR_REF, excluded(t.SCALAR_REF))
             .set(t.SCALAR_REF_CLASS_PART, excluded(t.SCALAR_REF_CLASS_PART))
             .set(t.SCALAR_REF_FIELD_PART, excluded(t.SCALAR_REF_FIELD_PART))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+
+    /**
+     * The type-identity a declaration claims: rank one of the {@code @node} applications, with the
+     * written type-id joined on from the decode.
+     *
+     * <p>A left join for the reason {@link #tables} takes one, and the decode agrees: both of
+     * {@code @node}'s arguments are optional, an author writing a bare {@code @node} is asking for
+     * the type's own name and the database's own key, and the entry writer produces a row for every
+     * application rather than only for those that wrote an argument. So the outer half never fires
+     * on a legal corpus and states the right thing where the entry stratum refused an application.
+     */
+    private static void nodes(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimed(dsl, graph, "node");
+        var e = GRAPHITRON_AST_NODE_ENTRY;
+        var t = GRAPHITRON_NODE_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.SOURCE_NAME, t.DECLARATION_LINE,
+                t.DECLARATION_COLUMN, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TYPE_ID, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(SITE_NAME),
+                    c.field(DECLARATION_LINE), c.field(DECLARATION_COLUMN), c.field(SITE_LINE),
+                    c.field(SITE_COLUMN), e.TYPE_ID, val(touchedAt, t.TOUCHED_AT))
+                .from(c)
+                .leftJoin(e).on(onSite(e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
+                    graph, c))
+                .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.DECLARATION_LINE, excluded(t.DECLARATION_LINE))
+            .set(t.DECLARATION_COLUMN, excluded(t.DECLARATION_COLUMN))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.TYPE_ID, excluded(t.TYPE_ID))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The columns an id is built from, in the order the author listed them.
+     *
+     * <p>{@link #defaultOrderFields}' shape and its argument: the index is the element's own, read
+     * off {@code graphql_ast_value_entry} rather than ranked here, because the order is part of what
+     * the directive says and the element's row carries it already. A gap cannot open between the
+     * two strata either, the entry stratum refusing an application whose element is not a string
+     * rather than skipping the element and numbering past it.
+     *
+     * <p>After {@link #nodes}, which every row here holds a foreign key into.
+     */
+    private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var c = claimed(dsl, graph, "node");
+        var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+        var v = GRAPHQL_AST_VALUE_ENTRY;
+        var e = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+        var t = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.POSITION, t.COLUMN_REF, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME),
+                    coalesce(v.POSITION, inline(0)), e.COLUMN_REF, val(touchedAt, t.TOUCHED_AT))
+                .from(c)
+                .join(a).on(a.GRAPH_NAME.eq(graph))
+                    .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
+                    .and(a.PARENT_LINE.eq(c.field(SITE_LINE)))
+                    .and(a.PARENT_COLUMN.eq(c.field(SITE_COLUMN)))
+                    .and(a.NAME.eq("keyColumns"))
+                .join(v).on(v.GRAPH_NAME.eq(graph))
+                    .and(v.SOURCE_NAME.eq(a.SOURCE_NAME))
+                    .and(v.HOLDER_LINE.eq(a.SOURCE_LINE))
+                    .and(v.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
+                .join(e).on(e.GRAPH_NAME.eq(graph))
+                    .and(e.SOURCE_NAME.eq(v.SOURCE_NAME))
+                    .and(e.SOURCE_LINE.eq(v.SOURCE_LINE))
+                    .and(e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
+                .where(c.field(RANK).eq(1)))
+            .onDuplicateKeyUpdate()
+            .set(t.COLUMN_REF, excluded(t.COLUMN_REF))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * Every {@code @routine} a field carries, numbered in the order they were written.
+     *
+     * <p>Not {@link #claimedOnField}, and the difference is the point rather than a preference. That
+     * helper ranks to pick one application per coordinate; this relation is keyed by the ordinal, so
+     * every application is a row and the rank <em>is</em> the ordinal. A numbering has to be right
+     * at every value where a choice only has to be right at one, and the declaration join that
+     * helper takes for its merge order multiplies each application by the number of declarations
+     * the type has. So the coordinate comes off the entry stratum's own index, as
+     * {@link #chainLinks} takes it: a field coordinate is declared once, two declarations of one
+     * field being a duplicate-field error rather than an order to settle, so all of a field's
+     * directives sit in one definition in one file and there is no merge order to ask about.
+     *
+     * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
+     * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an
+     * application naming nothing writes no row in either stratum, and it consumed its ordinal all
+     * the same. Ranking after the join would close that gap and renumber every application behind
+     * it.
+     */
+    private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var ix = GRAPHQL_AST_ENTRY;
+        var ef = GRAPHQL_ELEMENT_FIELD;
+        var e = GRAPHITRON_AST_ROUTINE_ENTRY;
+        var t = GRAPHITRON_ROUTINE_ENTRY;
+        var applications = dsl
+            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
+                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
+                fd.SOURCE_COLUMN.as(SITE_COLUMN),
+                rowNumber().over(partitionBy(ef.TYPE_NAME, ef.FIELD_NAME)
+                    .orderBy(fd.SOURCE_LINE.asc(), fd.SOURCE_COLUMN.asc()))
+                    .minus(inline(1)).as(WRITTEN_AT))
+            .from(fd)
+            .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
+                ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME),
+                ef.COORDINATE.eq(ix.ELEMENT_COORDINATE))
+            .where(fd.GRAPH_NAME.eq(graph))
+            .and(fd.NAME.eq("routine"))
+            .and(ef.ARGUMENT_NAME.isNull())
+            .asTable("applications");
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.SOURCE_NAME,
+                t.SOURCE_LINE, t.SOURCE_COLUMN, t.ROUTINE_REF, t.ROUTINE_REF_NAMESPACE_PART,
+                t.ROUTINE_REF_NAME_PART, t.ARGMAPPING, t.COLUMN_MAPPING, t.TOUCHED_AT)
+            .select(dsl
+                .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
+                    applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
+                    applications.field(SITE_NAME), applications.field(SITE_LINE),
+                    applications.field(SITE_COLUMN), e.ROUTINE_REF,
+                    e.ROUTINE_REF_NAMESPACE_PART, e.ROUTINE_REF_NAME_PART, e.ARGMAPPING,
+                    e.COLUMN_MAPPING, val(touchedAt, t.TOUCHED_AT))
+                .from(applications)
+                .join(e).on(e.GRAPH_NAME.eq(graph),
+                    e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
+                    e.SOURCE_LINE.eq(applications.field(SITE_LINE)),
+                    e.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN))))
+            .onDuplicateKeyUpdate()
+            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
+            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
+            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
+            .set(t.ROUTINE_REF, excluded(t.ROUTINE_REF))
+            .set(t.ROUTINE_REF_NAMESPACE_PART, excluded(t.ROUTINE_REF_NAMESPACE_PART))
+            .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
+            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
+            .set(t.COLUMN_MAPPING, excluded(t.COLUMN_MAPPING))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

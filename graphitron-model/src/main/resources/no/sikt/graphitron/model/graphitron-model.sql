@@ -4059,6 +4059,7 @@ CREATE TABLE graphitron_node_entry (
   source_line      INT,
   source_column    INT,
   type_id          VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name),
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
@@ -4073,12 +4074,14 @@ COMMENT ON COLUMN graphitron_node_entry.declaration_column IS 'column of the con
 COMMENT ON COLUMN graphitron_node_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_node_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_node_entry.type_id IS 'the typeId as written, null where the author wrote none. Null means unstated rather than unknown: what such a node answers to is resolved on graphitron_node, which is never null because its last tier is the type''s own name';
+COMMENT ON COLUMN graphitron_node_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a type that still stands; a type the author removed takes its rows with it through the element reference above, so the two together are what makes this relation total without a pass emptying it first';
 
 CREATE TABLE graphitron_node_keycolumn_entry (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   position   INT     NOT NULL,
   column_ref VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, position),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node_entry (graph_name, type_name)
 );
@@ -4087,6 +4090,7 @@ COMMENT ON COLUMN graphitron_node_keycolumn_entry.graph_name IS 'the owning grap
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.column_ref IS 'the key column as written, folded against nothing and resolved against nothing. Either the catalog''s own spelling or the generated field name will resolve, both being names a consumer sees, but which one this is is not asked here and no fold sits beside it: the crossing happens once, where the column is resolved, and a fold on this side would be a second one';
+COMMENT ON COLUMN graphitron_node_keycolumn_entry.touched_at IS 'when the reading that derived this row ran, on the parent relation''s terms. A list the author shortened loses its tail here and nowhere else: the elements it dropped carry the previous instant and the parent row does not, the application still standing';
 
 CREATE TABLE graphitron_field_node_id_entry (
   graph_name    VARCHAR NOT NULL,
@@ -4246,6 +4250,7 @@ CREATE TABLE graphitron_routine_entry (
   routine_ref_name_part      VARCHAR,
   argmapping    VARCHAR,
   column_mapping VARCHAR,
+  touched_at    TIMESTAMP NOT NULL,
   routine_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_namespace_part)),
   routine_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_name_part)),
   PRIMARY KEY (graph_name, type_name, field_name, ordinal),
@@ -4266,6 +4271,7 @@ COMMENT ON COLUMN graphitron_routine_entry.routine_ref_namespace_part_upper IS '
 COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_routine_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
 COMMENT ON COLUMN graphitron_routine_entry.column_mapping IS 'the columnMapping string as written; the pair child is its decode';
+COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
 
 CREATE TABLE graphitron_routine_column_mapping_pair_entry (
   graph_name VARCHAR NOT NULL,
