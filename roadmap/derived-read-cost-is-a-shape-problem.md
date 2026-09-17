@@ -4376,3 +4376,40 @@ exists. What is missing is a run position: `meta_gatherer_dependency`'s edges ar
 order has to satisfy, and `LintViolations` has no place in one. So the `derivation` filing stands as
 a placeholder that is honest about what runs today, and the `lint` row lands when the writer is
 wired into the order, alongside the anchors moving to `graphitron`.
+
+## QC of the field-chain slices (2026-09-17)
+
+The five arms are each covered, positives and negatives both, and the two stored derivations sweep
+after their writes rather than clearing before them. Two things did not hold, both of the same kind,
+and both are what the first of the three gates above exists to catch.
+
+**A relation's declared owner was not the gatherer that refreshes it, twice.**
+`graphitron_field_chain_link` was declared to the graphitron gatherer and is written and swept by
+`GraphitronAnchor`, which is the document gatherer's, as every sibling relation in that class is
+declared. Its grain declares the sdl corpus, which is the document gatherer's corpus and not
+graphitron's, and a chain's order is a written fact, so document is the answer on all three readings.
+`graphql_ast_entry` was declared to the sdl gatherer and is written by `SdlCapture`; that one
+predates this work, but the writer moved in it and the declaration did not follow. Both are now
+document.
+
+Neither was caught by anything. The corpus gate is the only declaration gate that reads an owner,
+and it exempts a gatherer that reads no corpus, which the graphitron gatherer is. So the roster can
+name any corpus-less gatherer as owner and nothing objects. That is the gate's case, argued by the
+two relations that needed it rather than in the abstract.
+
+### Owed, not done here
+
+- **A resolution that comes up empty owes a defect relation.** `graphitron_field_routine` filters
+  `candidates = 1` and stores only the resolved row, which is right and is what keeps the arity off
+  every consumer downstream. But absence there now means four things at once: no routine written, a
+  spelling nothing answers, a spelling two schemas answer, and a result that is not FUNCTION-typed.
+  `intent_condition_method_route_defect` states the settled shape for this, total over the
+  unresolved population so that absence means "not reached" alone. Owed before a consumer reads the
+  relation; nothing reads it yet.
+- **No case re-reads.** All three new writers mark and sweep and no test writes twice, so the sweeps
+  are unexercised. The arms are pinned; what is not pinned is that a row this reading stopped
+  deriving goes away.
+- **`sql_name_matched_key_column` clears whole rather than sweeping.** Defensible on its own terms,
+  being a function of the catalog rather than of the run, and stated as such in its writer. It is
+  still the one new relation that does not get its rows the way the third gate says a stored
+  relation does, and the gate should either admit the total recompute or the relation should stamp.
