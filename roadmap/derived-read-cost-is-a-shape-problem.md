@@ -4245,17 +4245,26 @@ statements writing what it reads.
 
 ### What the document gatherer is, in the vocabulary above
 
-It owns 84 declared relations. Seventy-two are entries, computed from the SDL corpus, and twelve are
-not: eleven `graphitron_` anchors written by `GraphitronAnchor` and `graphql_schema_problem`, which
-is an assembly verdict. The `graphql_` anchors `SdlAnchor` writes are a further population again and
-carry no `meta_relation` row at all, which is why the classification question was never asked of
-them.
+It owns 84 declared relations, and the count is a fact about a refactor in progress rather than
+about a boundary. Seventy-two are at the written-position grain, which is one family; eleven are
+coordinate-grained `graphitron_` relations written by `GraphitronAnchor`, which is another; and
+`graphql_schema_problem` is an assembly verdict, which is a third. The `graphql_` anchors `SdlAnchor`
+writes are a further population again and carry no `meta_relation` row at all.
 
-Kind is not ownership, and the two were run together in the earlier revision of this chapter. A
-derivation may sit under the gatherer whose corpus it decodes; what the first gate requires is only
-that the gatherer named is the one that refreshes it. Both relations the QC below corrected were
-corrected toward `document` on exactly that reading, which is the opposite direction from the
-migration this chapter used to propose.
+**Grain separates those families and the writing class does not, which is the trap this chapter fell
+into twice.** `graphitron_ast_table_entry` is keyed by written position and `graphitron_table_entry`
+by coordinate; one class writes relations of both families today because the decode has not finished
+moving, so what a class currently writes is evidence about the state of the refactor and not about
+where a relation belongs. The earlier revision read the mixing as a rule and proposed a migration
+from it. The field-chain QC then read it the other way and moved a coordinate-grained relation to
+`document` to match the class writing it, which was the same mistake with the sign flipped and is
+reverted: `graphitron_field_chain_link` sits at the grain of
+`graphitron_field_chain_application`, which is the `graphitron` gatherer's.
+
+What survives is narrower than either. Kind is decided by what a row is a function of and ownership
+by which gatherer refreshes the relation, and neither is decided by which package the current writer
+happens to sit in. Where a declaration and today's writer disagree mid-refactor, which of the two
+the first gate holds to is a real question and not one this chapter settles.
 
 ### R697 stays blocked
 
@@ -4355,22 +4364,26 @@ runs today, and the relation takes the name of whatever refreshes it once someth
 ## QC of the field-chain slices (2026-09-17)
 
 The five arms are each covered, positives and negatives both, and the two stored derivations sweep
-after their writes rather than clearing before them. Two things did not hold, both of the same kind,
-and both are what the first of the three gates above exists to catch.
+after their writes rather than clearing before them.
 
-**A relation's declared owner was not the gatherer that refreshes it, twice.**
-`graphitron_field_chain_link` was declared to the graphitron gatherer and is written and swept by
-`GraphitronAnchor`, which is the document gatherer's, as every sibling relation in that class is
-declared. Its grain declares the sdl corpus, which is the document gatherer's corpus and not
-graphitron's, and a chain's order is a written fact, so document is the answer on all three readings.
-`graphql_ast_entry` was declared to the sdl gatherer and is written by `SdlCapture`; that one
-predates this work, but the writer moved in it and the declaration did not follow. Both are now
-document.
+**One relation named an owner its grain contradicts.** `graphql_ast_entry` was declared to the sdl
+gatherer. It sits at the written-position grain along with seventy other relations, every one of
+them owned by `document`, and `document` is what writes it. Now `document`.
 
-Neither was caught by anything. The corpus gate is the only declaration gate that reads an owner,
-and it exempts a gatherer that reads no corpus, which the graphitron gatherer is. So the roster can
-name any corpus-less gatherer as owner and nothing objects. That is the gate's case, argued by the
-two relations that needed it rather than in the abstract.
+**One finding here was wrong and is reverted.** `graphitron_field_chain_link` was read the same way
+and moved to `document` because `GraphitronAnchor` writes it and the other relations that class
+writes are declared `document`. That is reasoning from the state of a refactor. The class writes
+relations of two families at once, `graphitron_ast_` at the written position and `graphitron_` at
+the coordinate, because the decode has not finished moving; the relation is coordinate-grained and
+sits with `graphitron_field_chain_application`, which is the `graphitron` gatherer's. The original
+declaration was right and stands.
+
+What the pair shows is not what the first draft of this section claimed. The corpus gate is the only
+declaration gate that reads an owner and it exempts a gatherer reading no corpus, so the roster can
+name any corpus-less gatherer and nothing objects; that much holds and is the first gate's case. But
+a gate comparing a declaration against the class that currently writes a relation would have passed
+the one real error and failed the correct declaration, so what such a gate compares against needs
+deciding before it is built, and during a refactor a declaration may legitimately lead its code.
 
 ### Owed, not done here
 
