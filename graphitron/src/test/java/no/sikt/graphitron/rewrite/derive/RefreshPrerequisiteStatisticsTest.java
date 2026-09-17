@@ -1,9 +1,14 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.derive.RefreshProgress;
+import no.sikt.graphitron.model.run.ModelCapture;
+import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
@@ -13,8 +18,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -49,6 +57,16 @@ import static org.jooq.impl.DSL.table;
  * <p><b>Two legs, because one of them is the control.</b> The pair matters more than either half: an
  * assertion that the new cadence analyses its prerequisites is a tautology unless something says the
  * old one does not, and it is the old one that shipped for as long as this defect went unmeasured.
+ *
+ * <p><b>A third leg, over the selector rather than over the cadences.</b> The two legs above call
+ * {@code Materializations} directly, so together they say what each cadence does and nothing at all
+ * about which one a capture takes. That was the gap the defect lived in: the selector read
+ * {@code store_graph} as a proxy for the register's state, three unrelated writers mint that anchor
+ * row before a capture, and so every consumer build took the in-transaction cadence on a store with
+ * no statistics anywhere while both cadences went on behaving exactly as pinned. The third leg
+ * drives {@code FactCapture.capture} on a store whose anchor was pre-written the way the build
+ * writes it, and asserts the same claim as the first. Same observation, same instrument, one step
+ * further out.
  */
 @PipelineTier
 class RefreshPrerequisiteStatisticsTest {
@@ -66,7 +84,9 @@ class RefreshPrerequisiteStatisticsTest {
 
     private static Map<String, Set<String>> unanalysedUnderSplitCadence;
     private static Map<String, Set<String>> unanalysedUnderCallerCadence;
+    private static Map<String, Set<String>> unanalysedUnderCapture;
     private static Set<String> dependentRegistrations;
+    private static Set<String> dependentRegistrationsUnderCapture;
 
     /**
      * Runs both cadences over one store, each from a reset, and records for every registration which
@@ -81,7 +101,7 @@ class RefreshPrerequisiteStatisticsTest {
         try (var store = CapturedStore.ownStoreOfCatalog(tmp.resolve("prerequisites"),
                 MaterializedRegistryFixture.scaledSdl(UNITS), jooq)) {
             DSLContext dsl = store.dsl();
-            Map<String, Set<String>> prerequisites = prerequisiteTargets(dsl);
+            Map<String, Set<String>> prerequisites = populated(dsl, prerequisiteTargets(dsl));
             dependentRegistrations = prerequisites.keySet();
 
             StoreStatistics.reset(dsl);
@@ -94,6 +114,81 @@ class RefreshPrerequisiteStatisticsTest {
             Materializations.refreshAnalysing(dsl, CapturedStore.GRAPH, split);
             unanalysedUnderSplitCadence = split.observed();
         }
+    }
+
+    /**
+     * Runs a capture the way a build runs one: the run-configuration families first, which lead with
+     * the graph's {@code store_graph} anchor, and the generator's capture into the same store after
+     * them. Records what each registration met, exactly as the legs above do.
+     *
+     * <p>A store of its own and a capture of its own, because the subject here is a capture into a
+     * store nothing has written a target row into yet, and the store the legs above use has been
+     * captured into twice by the time they are done.
+     *
+     * <p>The population is filtered after the capture rather than before it: a fresh store's targets
+     * are all empty, and {@code ANALYZE} on an empty table records nothing, so a target that stays
+     * empty would read here as a defect it cannot be.
+     */
+    @BeforeAll
+    static void observeTheCaptureItself() {
+        var ctx = TestConfiguration.testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        Path directory = tmp.resolve("anchored");
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
+            var registry = CapturedStore.registryOf(directory,
+                MaterializedRegistryFixture.scaledSdl(UNITS));
+            var graph = CapturedStore.graph(directory);
+            var config = CapturedStore.corpusOf(directory);
+            LocalDateTime readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
+            // The writer that made the old selector wrong, in the position a build puts it:
+            // AbstractRewriteMojo.captureModel writes these families into the store the generator
+            // is about to capture into, and the pass leads with the anchor row.
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq, readAt);
+
+            var prerequisites = prerequisiteTargets(dsl);
+            var observer = new UnanalysedPrerequisites(dsl, prerequisites);
+            // Warm, which is what a build's own capture is told here and not a choice of this
+            // test's: RunStore reads the graph's store_graph row as "this graph has been captured
+            // before", and the pass above has just written one. So the capture stands its own rows
+            // down before rewriting them, which is why this leg does not collide with the recipe
+            // families that pass wrote.
+            FactCapture.capture(dsl, true, graph, config, registry, SchemaAssembly.of(registry),
+                SdlVerdicts.none(), CapturedStore.attributionOf(directory), jooq, List.of(),
+                Map.of(), readAt, observer);
+
+            var populated = populated(dsl, prerequisites);
+            dependentRegistrationsUnderCapture = populated.keySet();
+            unanalysedUnderCapture = new TreeMap<>();
+            observer.observed().forEach((view, unanalysed) -> {
+                var kept = new TreeSet<>(unanalysed);
+                kept.retainAll(populated.getOrDefault(view, Set.of()));
+                if (!kept.isEmpty()) {
+                    unanalysedUnderCapture.put(view, kept);
+                }
+            });
+        }
+    }
+
+    /**
+     * The claim, one step out: a capture picks the cadence that gives every registration statistics
+     * on the targets its own rule reads, on a store whose anchor row another writer had already
+     * minted. This is the invariant the selector broke, and the leg that fails on the predicate it
+     * used to use.
+     */
+    @Test
+    @DisplayName("a capture behind a pre-written anchor row still meets every prerequisite analysed")
+    void aCaptureBehindAPreWrittenAnchorMeetsThemAnalysed() {
+        assertThat(dependentRegistrationsUnderCapture)
+            .as("registrations whose source view reads another registration's populated target, on"
+                + " the store the capture filled. Non-empty, or this leg is vacuous")
+            .isNotEmpty();
+        assertThat(unanalysedUnderCapture)
+            .as("registration -> the targets its source view reads that carried no statistics when"
+                + " its refresh statements were issued, during a capture into a store whose"
+                + " store_graph anchor a run-configuration capture had already written. None: the"
+                + " cadence is decided on the register's state, and no target held a row")
+            .isEmpty();
     }
 
     /**
@@ -146,15 +241,29 @@ class RefreshPrerequisiteStatisticsTest {
             .forEach(r -> targetByView.put(r.sourceViewName(), r.targetTableName()));
         var prerequisites = new TreeMap<String, Set<String>>();
         dsl.fetch("SELECT SOURCE_VIEW_NAME, DEPENDS_ON FROM META_MATERIALIZE_DEPENDENCY")
-            .forEach(row -> {
-                String target = targetByView.get(row.get(1, String.class));
-                if (holdsRows(dsl, target)) {
-                    prerequisites
-                        .computeIfAbsent(row.get(0, String.class), view -> new LinkedHashSet<>())
-                        .add(target);
-                }
-            });
+            .forEach(row -> prerequisites
+                .computeIfAbsent(row.get(0, String.class), view -> new LinkedHashSet<>())
+                .add(targetByView.get(row.get(1, String.class))));
         return prerequisites;
+    }
+
+    /**
+     * The same map with the empty targets dropped, and with it any registration left asking about
+     * nothing. Asked of the store as it stands, which is why the two legs above filter before their
+     * cadences run and the capture leg filters afterwards: its store holds no row until the capture
+     * it is observing has written one.
+     */
+    private static Map<String, Set<String>> populated(DSLContext dsl,
+                                                      Map<String, Set<String>> prerequisites) {
+        var kept = new TreeMap<String, Set<String>>();
+        prerequisites.forEach((view, targets) -> {
+            var holding = targets.stream().filter(target -> holdsRows(dsl, target))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            if (!holding.isEmpty()) {
+                kept.put(view, holding);
+            }
+        });
+        return kept;
     }
 
     /**

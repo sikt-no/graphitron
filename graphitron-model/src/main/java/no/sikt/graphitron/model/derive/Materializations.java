@@ -68,11 +68,13 @@ import static org.jooq.impl.DSL.table;
  * flushed, so a target is current exactly when the partition it derives from is. A reader that
  * opens a store without capturing into it (the language server, the MCP server, a warm start that
  * skipped capture because nothing changed) calls {@link #refreshAll}, which assumes nothing about
- * whether a capture ran. A capture into a store that holds no graph at all calls
+ * whether a capture ran. A capture into a store no registered target holds a row in calls
  * {@link #refreshAnalysing}, which commits each registration on its own and analyses the target it
  * just refilled: on that store every target is empty, so the pass would otherwise plan every
- * statement it issues with no selectivity on anything it reads, and it is also the one store where
- * committing between two registrations publishes nothing, there being nothing committed to empty.
+ * statement it issues with no selectivity on anything it reads, and it is also the store where
+ * committing between two registrations empties nothing that was committed.
+ * {@link #analysingCadenceApplies} is that condition, asked of the register rather than inferred
+ * from the anchor row a capture is about to write.
  *
  * <p>Every cadence owes the planner statistics on what it just wrote, which is {@link #analyse},
  * and they reach it differently for a reason stated there rather than here: a refresh may run
@@ -149,9 +151,11 @@ public final class Materializations {
     /**
      * {@link #refresh(DSLContext, String, RefreshProgress)}'s statements, one committed transaction
      * per registration, each analysing the target it just refilled. The cadence for a capture into a
-     * store that holds no graph at all, which is the one case where nothing committed can be emptied
-     * and the one case where it matters: every registered target is empty, so every statement in the
-     * pass would otherwise be planned with no selectivity on anything it reads.
+     * store no registered target holds a row in, which is the case where a commit between two
+     * registrations empties nothing that was committed and the case where it matters: every
+     * registered target is empty, so every statement in the pass would otherwise be planned with no
+     * selectivity on anything it reads. {@link #analysingCadenceApplies} is the condition, and
+     * carries why it is asked of the register rather than of the store's graphs.
      *
      * <p><b>What this buys, and why no cheaper placement reaches it.</b> The plans that move are the
      * ones reading a <em>registered target</em>, which the refresh itself writes, so a statistics
@@ -210,6 +214,71 @@ public final class Materializations {
             analyse(dsl, registration);
         }
         progress.observe(new RefreshProgress.Event.PassFinished(System.nanoTime() - startedAt));
+    }
+
+    /**
+     * Whether a capture about to run against this store may take {@link #refreshAnalysing}, asked
+     * before the capture opens its transaction. The cadence selector, stated over the register's own
+     * state.
+     *
+     * <p>It had been a proxy, "this store holds no graph at all", and the proxy is what broke: three
+     * writers mint the {@code store_graph} anchor for three unrelated reasons, the build path's
+     * configuration capture among them, so on every consumer build the check found a row on a store
+     * whose every target was empty and the refresh planned with no statistics anywhere. Repairing
+     * the ordering would restore the proxy rather than remove it, and would make this cadence's
+     * correctness an invariant over three writers with nothing enforcing it.
+     *
+     * <p>Two conditions, both of which {@link #refreshAnalysing}'s contract rests on, named apart
+     * here because one name for two conditions is how a proxy becomes spellable:
+     *
+     * <ul>
+     *   <li><b>Safety.</b> The cadence commits per registration, which is admissible exactly when
+     *       the pass's {@code DELETE}s remove no committed row. A graph-keyed target is emptied for
+     *       one graph and a graph-free one whole, which is the split {@link #refreshPartition} and
+     *       {@link #refreshWhole} carry.
+     *   <li><b>Benefit.</b> The plans that move are the ones reading a registered target, and
+     *       {@code ANALYZE} on an empty table records nothing, so a store whose targets are all
+     *       empty carries no statistics worth planning against.
+     * </ul>
+     *
+     * <p>{@link #noRegisteredTargetHoldsRow} is the witness for both, and it is deliberately not
+     * scoped to the capturing graph: {@link #refreshWhole} does not scope its {@code DELETE} by
+     * {@code graph_name}, so a predicate narrowed to the capturing graph's rows would be unsafe for
+     * the first graph-free registration anybody adds.
+     *
+     * <p><b>What the predicate admits that the proxy did not.</b> Every store that took the cadence
+     * under the proxy still takes it, plus the fresh store whose anchor a non-capture writer minted,
+     * plus one case the proxy could not reach: a workspace store holding a live sibling graph whose
+     * registered targets are all legitimately empty, into which a second graph now captures on this
+     * cadence. That is safe, and the reasoning is worth keeping. The graph-keyed {@code DELETE}s are
+     * scoped to the capturing graph, so no row of the sibling's partition moves; {@link #anchor}
+     * takes the capturing graph's own {@code store_graph} row, so it does not serialize against a
+     * concurrent capture of the sibling and does not need to; and what a reader of the sibling can
+     * newly observe is this graph's rows arriving between per-registration commits, which is the
+     * partial state {@link #refreshAll} already publishes on every reader open. The one residue is a
+     * graph-free registration, whose whole-table {@code DELETE} would be visible mid-pass to such a
+     * reader. No registration is graph-free today, every target carrying {@code graph_name}, and the
+     * day one arrives it is the safety condition above that has to be revisited.
+     *
+     * <p>Costs one {@code EXISTS} per registration against an empty or small table, issued once per
+     * capture, over the registrations {@link #refreshOrder} already reads.
+     */
+    public static boolean analysingCadenceApplies(DSLContext dsl) {
+        return noRegisteredTargetHoldsRow(dsl);
+    }
+
+    /**
+     * Whether the register's targets are all empty, which is what both of
+     * {@link #analysingCadenceApplies}' conditions turn out to witness. Stops at the first target
+     * holding a row.
+     */
+    private static boolean noRegisteredTargetHoldsRow(DSLContext dsl) {
+        for (Registration registration : registrations(dsl)) {
+            if (dsl.fetchExists(table(relation(registration.targetTableName())))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -286,9 +355,9 @@ public final class Materializations {
      * the caller that owns the transaction, and {@link #refreshAll} analyses inline, holding none.
      *
      * <p>The rule is about a transaction that must not be committed, not about a moment in the pass,
-     * and {@link #refreshAnalysing} is where that distinction pays: on a store with nothing
-     * committed under any graph there is no state a commit could publish, so that cadence analyses
-     * between registrations and the statistics reach the pass that needs them. Which is the whole of
+     * and {@link #refreshAnalysing} is where that distinction pays: on a store whose registered
+     * targets hold no rows a commit between two registrations empties nothing that was committed, so
+     * that cadence analyses between registrations and the statistics reach the pass that needs them. Which is the whole of
      * why it is a cadence of its own rather than a flag: no other store can be analysed part-way
      * through its own refresh.
      *

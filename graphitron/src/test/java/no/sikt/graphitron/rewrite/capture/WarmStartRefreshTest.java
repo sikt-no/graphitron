@@ -127,14 +127,15 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The recovery the first-graph refresh cadence leans on, and the one shape of stopped run this
-     * family did not already cover. A capture into a store holding no graph commits its facts and
-     * then refreshes the registered targets outside that transaction, one committed transaction per
-     * registration, because on such a store every target is empty and a refresh inside the
-     * transaction cannot be given statistics on the targets its own statements read;
-     * {@code Materializations.refreshAnalysing} carries that argument. The cost is that this is the
-     * one capture that can stop having left the facts complete and a target stale, and what makes
-     * that acceptable is the round below.
+     * The recovery the analysing refresh cadence leans on, and the one shape of stopped run this
+     * family did not already cover. A capture into a store no registered target holds a row in
+     * commits its facts and then refreshes the registered targets outside that transaction, one
+     * committed transaction per registration, because on such a store every target is empty and a
+     * refresh inside the transaction cannot be given statistics on the targets its own statements
+     * read; {@code Materializations.refreshAnalysing} carries that argument and
+     * {@code Materializations.analysingCadenceApplies} is where the condition is asked. The cost is
+     * that this is the one capture that can stop having left the facts complete and a target stale,
+     * and what makes that acceptable is the round below.
      *
      * <p>The stopped state is constructed rather than reached, the stop being a kill inside a
      * transaction sequence with no seam to inject one at. Both halves are set: a registered target

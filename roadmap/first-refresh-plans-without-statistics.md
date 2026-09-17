@@ -103,6 +103,14 @@ Four claims, each in the tier that can hold it, and none of them a wall clock: a
 
 A fifth thing is deliberately not tested. Nothing asserts the wall clock of a `sis` round, that store being a consumer's rather than the repository's, and the goal's "in the seconds the same statements take on a settled store" is demonstrated by the four claims above plus one recorded re-measurement on the consumer at delivery, reported at the Done gate rather than held by a test.
 
+## Retired vocabulary
+
+Three names go, and the sweep at the Done gate is over prose as much as over code.
+
+- **"a store that holds no graph"**, and its variants ("a store holding no graph", "a store that holds no graph at all"), as the condition the analysing refresh cadence turns on. What replaces it is *a store no registered target holds a row in*. One deliberate survivor: `Materializations.analysingCadenceApplies`' javadoc quotes the phrase to say what the predicate used to be and why the proxy broke, which is history rather than a live claim.
+- **"first graph" / "first-graph refresh cadence" / the local `firstGraph`**, as a name for that cadence or for the capture that takes it. What replaces it is *the analysing refresh cadence*, and the local is `analysingCadence`.
+- **`Materializations.graphKeyedRelations`**, the private census of relations carrying `graph_name`. It is `no.sikt.graphitron.model.catalog.GraphPartition.keyedRelations` now, beside `keyedBaseTables`, `COLUMN` and `DECLARED_SELECTIVITY`, which is the one home this item's lever 2 gives the predicate.
+
 ## Other solutions we've considered
 
 Running `ANALYZE` inside the capture transaction: H2's `ANALYZE` commits, and a commit between the pass's delete and its inserts publishes an emptied partition, which the one-transaction contract in `FactCapture` exists to prevent. Committing the capture before the refresh on every path: this is what the analysing cadence already does for the first graph, and lever 1 is the smaller change that routes the first fill there. Dropping the foreign-key index on `graph_name`: it is the constraint's own index and every target carries one; removing it is not a local change. Disabling H2's result reuse or changing lock or isolation settings: measured, no effect.

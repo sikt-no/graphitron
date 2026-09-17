@@ -28,11 +28,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p><b>Why the question exists.</b> {@code Materializations.analyse} runs after the capture
  * transaction commits, because H2 commits as a side effect of {@code ANALYZE} and a commit between
  * the refresh's delete and its inserts would publish the emptied target the one-transaction
- * contract exists to prevent. So every statement a cold capture's refresh issues is planned with no
- * selectivity on anything it reads, while every timing anyone has ever taken of those same
- * statements was taken afterwards, against a store {@code analyse} had run on. Those are not
- * necessarily the same plan, and until this test there was nothing in the tree that said whether
- * they were.
+ * contract exists to prevent. So every statement an in-transaction refresh issues is planned with
+ * no selectivity on anything it reads beyond what the schema declares, while every timing anyone
+ * has ever taken of those same statements was taken afterwards, against a store {@code analyse} had
+ * run on. Those are not necessarily the same plan, and until this test there was nothing in the
+ * tree that said whether they were.
+ *
+ * <p>Which capture takes that cadence has since moved, and the regimes below are unaffected by it.
+ * A capture into a store no registered target holds a row in refreshes outside its transaction and
+ * analyses as it goes, which is what {@code Materializations.analysingCadenceApplies} decides, so
+ * the store this test's cold regime models is a capture into a store whose targets already hold
+ * rows: the second graph of a workspace, and every recapture of the first.
  *
  * <p><b>What this is worth, so nobody reads it as more than it is.</b> A secondary cost. The register
  * has a larger and separate problem, an unregistered view re-evaluated once per driving row inside a

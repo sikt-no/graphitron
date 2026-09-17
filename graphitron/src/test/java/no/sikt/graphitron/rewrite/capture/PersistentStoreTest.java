@@ -491,7 +491,7 @@ class PersistentStoreTest {
      * to supply for free. An attempt has to know whether it is walking into rows of its own, and the
      * store's warm flag is fixed when the store opens: it answered that question only while a capture
      * was all-or-nothing, a failed attempt rolling back so that the next one met the store the first
-     * one found. The first-graph refresh cadence commits this graph's facts, its anchor row and its
+     * one found. The analysing refresh cadence commits this graph's facts, its anchor row and its
      * hand-written derivations before it refreshes, so an attempt after a failed refresh meets a
      * partition its own predecessor wrote while the flag still reports the store as empty. Handed the
      * flag, it skips reconciliation and collides with itself on the first key it re-inserts, and the

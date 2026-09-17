@@ -256,15 +256,17 @@ public final class FactCapture {
      * write concurrently. Two modules are two files now, so there is no second capture to serialize
      * against and nothing left for either budget to buy.
      *
-     * <p><b>One exception, on the one store where the contract protects nothing.</b> A capture into a
-     * store that holds no graph at all commits its facts and then refreshes the materialized targets
-     * outside this transaction, on {@link Materializations#refreshAnalysing}'s cadence, because on
-     * such a store every target is empty and a refresh inside the transaction cannot be given the
-     * statistics its own statements are planned against. Nothing committed can be emptied there, and
-     * no reader can be reading a partition the store does not yet have. What the window does publish
-     * is the graph present with its derivations incomplete, which is the state
-     * {@link Materializations#refreshAll} already publishes on every reader open. Every other capture
-     * is one transaction exactly as above.
+     * <p><b>One exception, on the store where the contract protects nothing.</b> A capture into a
+     * store no registered target holds a row in commits its facts and then refreshes the
+     * materialized targets outside this transaction, on
+     * {@link Materializations#refreshAnalysing}'s cadence, because on such a store every target is
+     * empty and a refresh inside the transaction cannot be given the statistics its own statements
+     * are planned against. A commit between two registrations empties nothing that was committed
+     * there. What the window does publish is this graph's rows arriving between those commits, which
+     * is the state {@link Materializations#refreshAll} already publishes on every reader open. Every
+     * other capture is one transaction exactly as above. Which store that is,
+     * {@link Materializations#analysingCadenceApplies} decides, over the register's own state rather
+     * than over the anchor row this pass is about to write.
      *
      * @param warm whether the store opened onto a previous run's rows. A cold store needs no
      *             reconciliation; a warm one is cleared of everything this run owns and rewrites,
@@ -333,11 +335,43 @@ public final class FactCapture {
                                Map<String, SchemaInput> attribution, JooqCatalog jooq,
                                List<CompletionData.ExternalReference> extensions,
                                Map<String, String> classpathStamps, LocalDateTime readAt) {
+        capture(dsl, warm, graph, config, registry, assembly, verdicts, attribution, jooq,
+            extensions, classpathStamps, readAt, refreshLines());
+    }
+
+    /**
+     * {@link #capture(DSLContext, boolean, GraphIdentity, SubjectConfig, TypeDefinitionRegistry,
+     * SchemaAssembly, SdlVerdicts, Map, JooqCatalog, List, Map, LocalDateTime)} reporting the
+     * materialization refresh to {@code refresh} rather than to this class's log lines.
+     *
+     * <p>The events are the same either way, {@link #refreshLines} being one rendering of them, so
+     * this arity changes nothing about what a capture does. It exists because the cadence chosen
+     * above is only observable from inside the pass: both cadences leave the same store behind, and
+     * the invariant that broke, that the cadence is decided on the register's state and not on the
+     * anchor row, is therefore not assertable from the outside at all. A caller with somewhere
+     * better to put a registration's events than a log supplies one, and
+     * {@code RefreshPrerequisiteStatisticsTest} is what that buys.
+     *
+     * @param refresh what the refresh pass reports to, never null; {@link RefreshProgress#none()}
+     *                for a caller that wants silence
+     */
+    public static void capture(DSLContext dsl, boolean warm, GraphIdentity graph,
+                               SubjectConfig config, TypeDefinitionRegistry registry,
+                               SchemaAssembly assembly, SdlVerdicts verdicts,
+                               Map<String, SchemaInput> attribution, JooqCatalog jooq,
+                               List<CompletionData.ExternalReference> extensions,
+                               Map<String, String> classpathStamps, LocalDateTime readAt,
+                               RefreshProgress refresh) {
         Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(refresh, "refresh");
         Objects.requireNonNull(attribution, "attribution");
         Objects.requireNonNull(verdicts, "verdicts");
         Objects.requireNonNull(assembly, "assembly");
-        boolean firstGraph = !dsl.fetchExists(STORE_GRAPH);
+        // Asked before the transaction opens, of the register rather than of store_graph. The
+        // condition used to be "this store holds no graph", which is a proxy three unrelated
+        // writers of the anchor row defeat, the build path's configuration capture among them;
+        // Materializations.analysingCadenceApplies carries what the cadence actually turns on.
+        boolean analysingCadence = Materializations.analysingCadenceApplies(dsl);
         var sources = new ClasspathSources(classpathStamps, readAt);
         dsl.transaction(tx -> {
             DSLContext txDsl = tx.dsl();
@@ -403,22 +437,22 @@ public final class FactCapture {
             ArgMappingCandidates.derive(txDsl, graph.name());
             TypeBackingRows.derive(txDsl, graph.name());
             AuthoredClaimRejectionRows.derive(txDsl, graph.name());
-            if (!firstGraph) {
-                Materializations.refresh(txDsl, graph.name(), refreshLines());
+            if (!analysingCadence) {
+                Materializations.refresh(txDsl, graph.name(), refresh);
                 sources.commitStamps(txDsl);
             }
         });
-        if (firstGraph) {
-            // The one exception to the paragraph above, and the whole of it: a store that held no
-            // graph when this capture began refreshes outside this transaction, one committed
-            // transaction per registration, analysing each target as it refills it. Every target on
-            // such a store is empty, so the pass inside the transaction plans every statement it
-            // issues with no selectivity on anything it reads, which on a consumer-size schema is
-            // hours rather than a factor; Materializations.refreshAnalysing carries the measurement,
-            // and carries why this is the one store where committing between two registrations
-            // publishes nothing. Nothing before this point is conditional: the facts, the anchor row
-            // and the hand-written derivations are written the same way on both paths.
-            Materializations.refreshAnalysing(dsl, graph.name(), refreshLines());
+        if (analysingCadence) {
+            // The one exception to the paragraph above, and the whole of it: a store no registered
+            // target held a row in when this capture began refreshes outside this transaction, one
+            // committed transaction per registration, analysing each target as it refills it. Every
+            // target on such a store is empty, so the pass inside the transaction plans every
+            // statement it issues with no selectivity on anything it reads, which on a consumer-size
+            // schema is hours rather than a factor; Materializations.refreshAnalysing carries the
+            // measurement, and carries why a commit between two registrations empties nothing that
+            // was committed there. Nothing before this point is conditional: the facts, the anchor
+            // row and the hand-written derivations are written the same way on both paths.
+            Materializations.refreshAnalysing(dsl, graph.name(), refresh);
             // And the stamps follow the refresh rather than the flush, because here they vouch for
             // the derived targets as well: a pass that stops part-way has to leave a null stamp, so
             // that the next run reloads and re-derives the partition instead of retaining one whose
@@ -431,7 +465,7 @@ public final class FactCapture {
         // between this capture's delete and its inserts would publish the emptied partition the
         // one-transaction contract above exists to prevent. After the commit the store is settled,
         // so analysing here is exactly as safe as the dev session's own call and reaches the
-        // readers a captured store has, the build path's diagnostics among them. On the first-graph
+        // readers a captured store has, the build path's diagnostics among them. On the analysing
         // path it is the idempotent restatement of what that pass already analysed, kept so that one
         // call states the whole register's statistics on every path out of a capture.
         Materializations.analyse(dsl);

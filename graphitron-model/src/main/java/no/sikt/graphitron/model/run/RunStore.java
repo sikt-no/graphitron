@@ -243,7 +243,7 @@ public sealed interface RunStore extends AutoCloseable {
      * <p><b>Asked per attempt rather than taken from the open.</b> {@link GraphitronModelStore#warm}
      * is fixed when the store opens, and it stood in for this question only while a capture was
      * all-or-nothing: a failed attempt rolled back, so the next attempt met the store the first one
-     * found. That equivalence does not survive the first-graph refresh cadence, which commits this
+     * found. That equivalence does not survive the analysing refresh cadence, which commits this
      * graph's facts, its anchor row and its hand-written derivations before it refreshes. A later
      * capture on the same handle therefore meets a partition an earlier one wrote, and taking
      * warmth from the open would have it skip {@code StoreRefresh#prepare} and collide with itself

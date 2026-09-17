@@ -676,8 +676,19 @@ class DerivedReadCostTest {
         // Two of these four left when the type binding gained an index on the key its readers
         // hold, along with the scope table's own cell below: the carrier's two readers stopped
         // being non-monotonic outright, so the pairs go rather than being kept as history.
-        "intent_spelled_table|intent_carrier_routine_hop",
-        "intent_spelled_table|intent_mutation_routine_seat",
+        // The four cells this family had left, all readers of intent_spelled_table, went together
+        // when the store began declaring the partition dimension's selectivity, and they left the
+        // got-cheaper way rather than the gate getting weaker. Both sides moved, and the registered
+        // side moved between eight and thirteen times where the unregistered side moved under
+        // three. Registered, then unregistered, without the declaration against with it, in scans:
+        // the seat 4552 to 487 against 1532 to 868, the carrier routine hop 4385 to 344 against 886
+        // to 566, the unlowerable-ordering rule 9223 to 1093 against 3181 to 1853, and the read
+        // surface over it 9230 to 1100 against 3188 to 1860. The registered side is the one that
+        // reads the target whose partition column the declaration states, which is why it is the
+        // side that collapses; the unregistered side reaches the same column through the captured
+        // relations the rule expands, so it gains the smaller share of the same fact. That is a
+        // fifth shape a row can leave this set by, beside the four the paragraphs above name: a
+        // statistic the schema states rather than an index, a key, or a rung that split.
         // The same unindexed named-type join a third and a fourth time, inherited rather than
         // newly committed: the unlowerable-ordering rule names the seat relation above for its
         // write arm, and the read surface joins that rule for the arm an editor reads, so both
@@ -687,8 +698,6 @@ class DerivedReadCostTest {
         // half and they say two different things: the rule is 53 milliseconds against 54, a wash,
         // while the read surface is 102 against 63, which is the counter and the clock agreeing
         // for once and is the row to look at first if the lever below is ever taken.
-        "intent_spelled_table|intent_field_unlowerable_ordering",
-        "intent_spelled_table|diagnostic",
         // Five cells at the instrument's own floor, four scans apiece, stood here charged to the
         // field-site reference hop: the input-field reference walk, the input-field column scope,
         // the input-field column-match rule, the carrier role rule and the decode hop rule. All
