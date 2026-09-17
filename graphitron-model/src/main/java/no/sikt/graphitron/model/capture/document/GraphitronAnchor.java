@@ -647,12 +647,14 @@ public final class GraphitronAnchor {
      * <p>Not {@link #claimedOnField}, and the difference is the point rather than a preference. That
      * helper ranks to pick one application per coordinate; this relation is keyed by the ordinal, so
      * every application is a row and the rank <em>is</em> the ordinal. A numbering has to be right
-     * at every value where a choice only has to be right at one, and the declaration join that
-     * helper takes for its merge order multiplies each application by the number of declarations
-     * the type has. So the coordinate comes off the entry stratum's own index, as
-     * {@link #chainLinks} takes it: a field coordinate is declared once, two declarations of one
-     * field being a duplicate-field error rather than an order to settle, so all of a field's
-     * directives sit in one definition in one file and there is no merge order to ask about.
+     * at every value where a choice only has to be right at one.
+     *
+     * <p>What it does not need is that helper's declaration join, which is there to order
+     * applications by the merge order of the declaration each was written in. A field coordinate is
+     * declared once, two declarations of one field being a duplicate-field error rather than an
+     * order to settle, so all of a field's applications sit in one definition in one file and their
+     * written positions already order them. The coordinate comes off the entry stratum's own index
+     * instead, as {@link #chainLinks} takes it.
      *
      * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
      * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an

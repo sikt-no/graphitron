@@ -4574,3 +4574,39 @@ for, `sql_node_metadata_defect`, is the one R952 reserves for the narrower of it
 taking it would have claimed the name while leaving the fault. The stages keep reading the view
 until that item lands, which costs the move nothing: it reads one corpus and resolves in either
 pass.
+
+## QC of the site anchors and the intent_ admission test (2026-09-17)
+
+The three site anchors hold up. Each carries a stamp, each joined `GraphitronAnchor`'s sweep list in
+the right place with the key column's child ahead of its parent, the walk's writer gained the column
+it now has to supply, and the agreement cases assert values rather than shapes, one of them over the
+sweep. The roster partition holds too, checked against every relation rather than the twelve that
+moved: 53 at the written position under `graphitron-ast`, 20 under `graphql-ast`, 29 coordinate-
+grained under `graphitron`, and the assembly verdict at its own grain. No relation sits under an
+owner its key contradicts.
+
+**One claim in it is false, and it is about code the commit did not touch.** `routines`'s javadoc
+said `claimedOnField`'s declaration join "multiplies each application by the number of declarations
+the type has". It does not. The join binds all five columns of `graphql_type_declaration`'s key,
+including the field's own enclosing position, so it matches exactly one row. Measured rather than
+read: a `Widget` carrying three declarations and one `@asConnection` yields one row from that join,
+not three. The decision the sentence was supporting is still right, and for the reason stated beside
+it, that a relation keyed by the ordinal shows every rank where one keyed by the coordinate shows
+only the winner. What the sentence added was a defect in five existing callers that do not have it,
+which is worse than a loose sentence: it invites a fix where nothing is broken. Corrected in place.
+
+### The admission test, applied to the family rather than to one member
+
+The rename states a decidable test for `intent_` membership: expand a candidate until only captured
+relations remain and count the families they sit in, `graphql_` and `graphitron_` counting as one.
+Two or more admits it; one means the rule belongs to the family it reads.
+
+Run over every view in the family, the test condemns **57 of them**. The implementation was held to
+the two verdicts the rename itself states before the count was believed: it agrees that
+`intent_node_metadata_defect` reaches only `sql_`, and `intent_connection_element_type` is absent
+because it has already moved.
+
+That is not a finding against the rename, which fixed one and deferred one deliberately. It is the
+size of what the test implies, and it belongs with the aggregate census this item already owes. The
+number is large enough to be a claim about the family rather than about its members: a stratum where
+half the rules read one family is not a resolution layer, it is where rules were put.
