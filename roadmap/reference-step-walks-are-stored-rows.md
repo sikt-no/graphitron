@@ -1784,3 +1784,152 @@ bullet under "Tests", which now names the three readings a proxy cannot stand in
 **One arithmetic note.** The failing round's other 21 registrations inserted 29413 rows in 23.2 s,
 computed from the log's own per-registration lines and from 2915.7 minus 2892.5. The body carries
 those rather than any rounder figure.
+
+### Round 6 (2026-09-17, Spec -> Ready, reviewer session 014DVampdhrbmzh4U1ezxb6J)
+
+Verdict: withhold. Round 5's finding 4 is answered, and every figure this round could recompute from
+the shipped tree reproduced, including the ones rounds 4 and 5 found stale. Two new blocking findings,
+both on question two, both about the same thing: the rename that carries the whole conversion argument
+walks the converted relations into a gate the body never names, and the reconciliation discipline the
+stages need is not the one the body cites as its precedent. Neither is a redesign. One non-blocking
+precision note follows them.
+
+Question one clears. A consumer with a large schema gets a `graphitron:dev` round in which a lint's
+read that today does not return answers in under a second, because the `@reference` walk it expands
+eight times is rows the graphitron gatherer wrote once per capture rather than a recursive view. The
+goal paragraph stands alone, every project term arrives glossed, and the causal story it rests on
+checks out: at read time `intent_node_id_decode_hop_live` reaches the input-field walk and does not
+reach the field walk, which is what makes the scope call's split the closures' split rather than a
+preference.
+
+**What reproduced.** Recomputed independently, parsing the DDL statement by statement with comments
+and string literals stripped and registered relations resolved through their `_live` rules: 396
+relations (270 tables, 126 views), 23 registrations, and the three walks' `intent_` closure is 26 with
+8 registered, which are exactly the eight the rung table names. Leaf prefixes are `code_`,
+`graphitron_`, `graphql_`, `sql_` and `store_`, with no `jvm_`. The field walk's closure is 11 with 3
+registered, and the six relations the body names as plain views under it are all views.
+`intent_name_matched_key_pair` is gone. `GraphitronFactCapture.capture` runs the ten steps the body now
+lists and `FieldEndpoints.derive` is the eighth; `graphitron_field_routine` and
+`graphitron_field_table_link` occur only inside their own `CREATE TABLE` and `COMMENT` blocks and in
+`meta_relation`, so no rung's closure can reach them, and `graphitron_field_chain_link` declares owner
+`document`, which is the author's correction to the review standing up. In
+`intent_field_reference_step_target` the recursive term is a plain `UNION` with one join to the hop and
+all three window functions sit in the outer `SELECT` over the finished `chain`.
+`intent_field_reference_step_fanout`'s `pair` CTE names the walk twice and `pair` is named four times
+below it, which is the eight expansions. `intent_node_id_decode_hop_live` inlines the foreign-key count
+as an anonymous derived table on the inner side of a `LEFT JOIN`, and it projects `d.constraint_name`
+and tests it in the outer `WHERE`, which is the reach phase 0's own paragraph already anticipates.
+`HAND_WRITTEN` holds the six named; `REGISTRATIONS` is 23; `TABLES_TO_SWEEP` is fourteen entries swept
+reversed; sixteen `sql_` tables, fourteen stamped, the two unstamped the two the body treats as two
+cases; fifteen `sql_` relations declared and every one `catalog`; `graphitron_` is 130 tables and 2
+views; `ix_field_reference_step_hop_step`'s comment carries 18308 against 523; and
+`nothingMaterializesOutsideTheMechanism` filters to `intent_`-prefixed base tables, so the family move
+does leave its scan's scope exactly as the body argues. The DDL has not moved since `94e23bae4`, so the
+window that produced rounds 4 and 5 is closed for this pass.
+
+**Finding 5 (question two, blocking). The rename forces a `meta_relation` declaration, and three of
+the four converted relations cannot carry one.**
+
+The body's argument for moving a converted relation to `graphitron_` is that it leaves
+`nothingMaterializesOutsideTheMechanism`'s scan rather than weakening `HAND_WRITTEN`'s impossibility
+criterion. That half is right. What the body does not follow is where the new name lands instead.
+
+`MetaDeclarationGateTest.theUndeclaredRosterOnlyShrinks` asserts that the observed relations carrying
+no `meta_relation` row, no `meta_materialize` row naming them as a source view, and no
+`meta_stated_relation` row are *exactly* the frozen roster in `undeclared-relations.txt`. Its own
+message states the ratchet: "a missing entry is a new relation that must be declared rather than added
+to the roster". All five relations the ladder touches sit on that roster today under their `intent_`
+names. A conversion removes the `intent_` name and introduces a `graphitron_` one, and the new name has
+three doors: the frozen roster, which is frozen and which a new name may not join; a registration's
+source view, which is the thing this item exists to retire; and `meta_stated_relation`, which is for
+relations whose rows the DDL file itself supplies, "for example lint_rule", and not for a stage-written
+derivation. So every conversion in phases 1 and 2 owes a `meta_relation` declaration. The Tests section
+says `MetaDeclarationGateTest` "binds on any converted relation that carries a declaration", which
+reads the obligation as optional; the roster ratchet makes it mandatory, and for every rung rather than
+for some.
+
+That obligation then meets `aDeclaredTableKeyMatchesItsGrain`, which for every declared `BASE TABLE`
+requires the table's primary-key shape to equal its grain's `key_shape`. `meta_grain.key_shape` is
+`NOT NULL` with `CHECK (CHAR_LENGTH(key_shape) >= 1)`, and the gate compares against a map built from
+`INFORMATION_SCHEMA`, so a table with no primary key has no entry and is an offender against any
+declared shape. All 133 declared base tables in the shipped tree carry a primary key; there is no
+counter-case to lean on.
+
+Three of the four conversions are keyless. `intent_field_reference_step_hop` declares fifteen columns,
+every one nullable, and no primary key. `intent_resolved_type_binding` has none either, and phase 2
+expects it to convert rather than demote. And `intent_field_reference_step_target` is keyless *by this
+plan's own decision*: "Indexed and not keyed: the grain includes `constraint_name` and `fk_on_from`,
+both meaningfully nullable, and H2 refuses a primary key over a nullable column". Only
+`intent_spelled_table` is keyed and converts cleanly.
+
+So the item is in a pincer of its own making, and it is worth stating that way because either half
+alone looks fine. Keeping the `intent_` prefix trips `nothingMaterializesOutsideTheMechanism`, which is
+why the body renames. Renaming forces a declaration, which trips the key gate, which is what the body
+does not check. Today these relations sit outside both gates for one reason only, that they are
+registration targets on a frozen roster, and the conversion is precisely what removes that standing.
+
+This is the author's design call and not the reviewer's. Four arms are visible from here and the body
+should take one and say why: make the grain keyable, which costs `NOT NULL` on the key columns and an
+answer for the `via = 'CONDITION'` arm where `constraint_name` is genuinely absent; declare a grain
+whose `key_shape` is a real key over a narrower relation and carry the nullable columns beside it;
+extend the key gate to admit a declared keyless table with a stated reason, which is a change to a gate
+this item would then own; or convert only the keyed rungs and demote the rest, which changes what the
+item delivers. What would satisfy the finding is the body naming the gate, saying which arm each of the
+three keyless relations takes, and the Tests section stating the declaration obligation as per-rung
+rather than conditional.
+
+**Finding 6 (question two, blocking). What removes the previous capture's rows is unstated, and the
+precedent the body names is the one that does not transfer.**
+
+A registration reconciles by `Materializations.refreshPartition`: `DELETE FROM target WHERE graph_name
+= ?` then `INSERT INTO target SELECT * FROM source`. That is what keeps a second capture of the same
+graph into the same store from stacking rows on the first, which is the ordinary `graphitron:dev` case,
+the store persisting across rounds.
+
+The phases specify the insert and not the delete. Phase 1 moves each rule "into the stage's `INSERT ...
+SELECT`" and phase 2 writes the walk "as **one statement per graph**: `INSERT INTO
+graphitron_field_reference_step_target WITH RECURSIVE chain AS (...) SELECT ...`". One statement. On a
+keyless target nothing rejects the duplicates, so the second dev round doubles the walk and the readers
+above it silently fan out.
+
+The precedent the body offers makes this harder rather than easier. "The target the conversions copy
+already exists" points at `FieldEndpoints.derive`, and that stage reconciles by upserting with
+`onDuplicateKeyUpdate` on the target's primary key and then sweeping `WHERE graph_name = ? AND
+touched_at <> ?`. Both halves need what finding 5 says these relations do not have: a key to collide on
+and a `touched_at` to sweep by. `graphitron_field_table`, `graphitron_field_routine` and
+`graphitron_field_table_link` all carry both. So an implementer told to copy `FieldEndpoints.derive`
+reaches for a discipline that is unavailable on three of the four relations, and the body's own phase-0
+paragraph shows the author reasoning carefully about exactly this for `sql_table_reference` while the
+ladder's own relations get nothing. The parenthetical "It admits a real primary key, which nothing on
+the ladder does" is the place the thought stopped.
+
+The precedent that does transfer is in the tree and the body already cites it for something else:
+`ArgMappingCandidates.derive` opens with `dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graphName))` and then
+inserts, which is `refreshPartition`'s discipline run by the owner instead of the register, on a target
+carrying no `touched_at`. Naming that as the shape each converting stage takes is a paragraph, and it
+also strengthens the item's thesis: what a conversion changes is who runs the reconciliation and when,
+not what the reconciliation is.
+
+The Tests section compounds this rather than catching it. `EXCEPT` is set semantics, so `A EXCEPT B`
+and `B EXCEPT A` both return zero rows when A holds every row twice; and on a fresh store the stage
+runs once, so there is nothing to duplicate. The oracle the plan calls "the oracle the whole plan rests
+on" is blind to this defect on both counts. Whatever arm the body takes, the acceptance evidence wants
+a second capture into the same store asserting the row count is unchanged, which is the one reading
+that distinguishes a stage that reconciles from one that appends.
+
+**Finding 7 (non-blocking, question one). The scope call's first heading overstates the paragraph
+under it.**
+
+"**Phase 2 is what makes the `sis` build finish, independently of R953**" argues necessity in its own
+prose, that the fanout read is outside the pass and no statistic reaches it, and then claims
+sufficiency in its heading. On this body's own figures it is not sufficient. With phase 2 landed and
+R953 not, `intent_node_id_instruction` goes from 436.1 s to 0.91 s in the failing regime, and
+`intent_node_id_decode_hop` is untouched by this item's scope at about 2536 s, so the pass is still
+tens of minutes. The body knows this: the contingency bullet says "the pass is then still minutes", and
+the Tests section's acceptance evidence correctly asks for the fanout answering rather than for the
+build finishing. The goal paragraph is careful too, claiming only that the relation answers. It is one
+heading out of step with the rest, and the accurate form is that phase 2 is necessary for the round to
+finish and reachable by nothing else, while the pass still needs lever 2.
+
+**Corrected in passing: nothing.** Every claim this round checked held, which is worth recording
+because the last two rounds each found a stale one.
