@@ -4610,3 +4610,76 @@ That is not a finding against the rename, which fixed one and deferred one delib
 size of what the test implies, and it belongs with the aggregate census this item already owes. The
 number is large enough to be a claim about the family rather than about its members: a stratum where
 half the rules read one family is not a resolution layer, it is where rules were put.
+
+## Two of the three site anchors get their single producer (2026-09-17)
+
+The walk's `@node` arm is gone. `graphitron_node_entry` and `graphitron_node_keycolumn_entry` are
+`GraphitronAnchor`'s alone now, so which pass ran last no longer decides what a reader sees. The arm
+lifted out whole: it wrote those two relations and nothing else, and `@node` falls to the decode's
+`default`, which is what a directive with no relation of its own already does.
+
+Nothing else moved with it. Neither relation is declared, both standing on the frozen undeclared
+roster, so there were no ownership rows to carry; and neither went through a hand-written statement
+in `FactWrites`, so the sink's generic arm covered them and still does for whatever else uses it.
+
+Ordering holds in both passes. In `ModelCapture` the derivation is the only writer. In the walk's
+pass `GraphitronAstCapture.anchor` still runs inside the same transaction, after the walk's flush and
+before the stages that read these relations, so the rows are there when `Nodes` and `NodeKeyColumns`
+ask for them.
+
+### `graphitron_routine_entry` is not retired here, and the reason is a second relation
+
+`graphitron_routine_column_mapping_pair_entry` holds a foreign key into it and the walk writes both
+in one buffered pass, flushed before the anchors run. Remove the parent's write alone and the child
+dangles at that flush. Reordering does not answer it either: the anchors read the `graphql_` anchors
+the walk itself writes, so they cannot precede the flush that publishes them.
+
+The shape that does answer it is the one this item keeps arriving at: the pair belongs in the entry
+stratum, keyed at the written position like every other decode, with the resolved relation derived
+from it. What makes that its own slice rather than a line here is that the pair grammar is one
+shared decoder with a quarantine path, reached from ten sites across the argMapping family, so
+moving it for `columnMapping` alone would either fork the decoder or drag the family with it.
+
+Until then the walk keeps writing `graphitron_routine_entry` beside the derivation, which is the
+state the other two just left: both producers write the same rows, and the last one to run wins.
+
+### What retiring a walk writer actually depends on
+
+The retirement broke one case, and the break is worth more than the fix. `PipelineCapturedStore`
+captured with `SubjectConfig.none()`, so that pass read no corpus, wrote no entry stratum, and
+therefore derived no `graphitron_node_entry`; two synthesised federation keys went missing and the
+agreement case against the registry rewrite caught it. The fix is that the pass now names the
+fixture it had already written to disk, which is what makes its two halves read the same documents.
+
+The condition is older than this slice and wider than the one site. A `none()` capture runs the
+document gatherers over nothing, so every relation standing on the entry stratum comes back empty,
+and `graphitron_table_entry` has been in that state since its own arm was retired. Nothing noticed
+because nothing in those passes asserts on it. There are around fifty `SubjectConfig.none()` capture
+sites in the test tree and only one of them happened to assert on a relation that had moved.
+
+So the rule a retirement has to satisfy is not "one producer writes it" but "every pass that reads
+it supplies the corpus it is derived from", and the second is a property of the callers rather than
+of the gatherer.
+
+`SubjectConfig.none()` is now compatible with that rather than a hole in it, and the fix is one
+branch rather than fifty edits. A merged registry has not forgotten where its definitions came from:
+its parse order is grouped by source, so a pass configured with no files takes its corpus from the
+registry it was already handed, splitting it back into one registry per source with the same two
+calls `SchemaLoader.merge` makes in the other direction. The entry stratum such a pass writes says
+what the walk beside it says, because both read the same merged registry.
+
+**It refuses the one thing it cannot do soundly, and finding that out is what the experiment was
+for.** The first version wrote whatever the registry held, and the pipeline fixture failed several
+frames down in a writer asking a null source location for its file name. The entry stratum is keyed
+by the position a node was written at, so a node carrying no location was never written and has
+nowhere to key; a registry holding one was assembled rather than parsed and is not a corpus,
+whatever else it is. That is refused at the boundary with a message naming the definition and
+telling the caller to configure the files it reads. Across the whole `graphitron` module the refusal
+fires nowhere: every remaining `none()` caller hands in a registry parsed from files it wrote, and
+the one that did not is the pipeline store, which has a fixture on disk and now names it.
+
+What the fallback does not do is make a registry as good as a corpus. A merge has already dropped
+the losing side of a duplicate declaration, so two documents declaring one name are two entry rows
+when the files are read and one when the registry is split. No caller on this path can reach that
+difference, the merge having happened before capture was called, and it is the same loss the walk's
+pass already carries.

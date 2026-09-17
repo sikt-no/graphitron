@@ -76,8 +76,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MULTITABLE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_FIELD_ENTRY;
@@ -329,25 +327,6 @@ public final class GraphitronFactCapture {
                     row.setSqlState(stringOf(field(object, "sqlState"), directive, "handlers"));
                     row.setMatches(stringOf(field(object, "matches"), directive, "handlers"));
                     row.setDescription(stringOf(field(object, "description"), directive, "handlers"));
-                    sink.add(row);
-                }
-            }
-            case "node" -> {
-                if (!sink.claim(GRAPHITRON_NODE_ENTRY, type)) return;
-                var record = sink.dsl().newRecord(GRAPHITRON_NODE_ENTRY);
-                record.setTypeName(type);
-                site(site, directive, record::setSourceName, record::setDeclarationLine,
-                    record::setDeclarationColumn, record::setSourceLine, record::setSourceColumn);
-                record.setTypeId(string(directive, "typeId"));
-                sink.add(record);
-                int position = 0;
-                for (Value<?> column : list(directive, "keyColumns")) {
-                    String name = stringOf(column, directive, "keyColumns");
-                    if (name == null) continue;
-                    var row = sink.dsl().newRecord(GRAPHITRON_NODE_KEYCOLUMN_ENTRY);
-                    row.setTypeName(type);
-                    row.setPosition(position++);
-                    row.setColumnRef(name);
                     sink.add(row);
                 }
             }

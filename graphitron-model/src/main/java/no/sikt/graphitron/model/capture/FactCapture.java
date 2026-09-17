@@ -429,7 +429,7 @@ public final class FactCapture {
             // graphitron's own vocabulary into forty-five graphitron_ entry relations. Those are
             // what a later pass has to move onto the graphitron_ast_ entries beside them before
             // this call can go.
-            var documents = readCorpus(txDsl, graph, config, readAt);
+            var documents = readCorpus(txDsl, graph, config, registry, readAt);
             GraphQLAstCapture.captureEntries(txDsl, graph, documents, readAt);
             GraphitronAstCapture.captureEntries(txDsl, graph, documents, readAt);
             SdlFactCapture.capture(sink, registry, sources, attribution,
@@ -531,8 +531,13 @@ public final class FactCapture {
      * here computes a content stamp, and unknown has to mean recapture rather than skip.
      */
     private static List<GraphQLSourceCapture.SourceDocument> readCorpus(
-            DSLContext dsl, GraphIdentity graph, SubjectConfig config, LocalDateTime readAt) {
-        var parse = SchemaLoader.parsePerSource(config.schemaFiles(graph.baseDir()));
+            DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+            TypeDefinitionRegistry registry, LocalDateTime readAt) {
+        var sources = config.schemaFiles(graph.baseDir());
+        if (sources.isEmpty()) {
+            return fromRegistry(dsl, registry, readAt);
+        }
+        var parse = SchemaLoader.parsePerSource(sources);
         var documents = new ArrayList<GraphQLSourceCapture.SourceDocument>();
         for (var document : parse.perSource()) {
             writeSource(dsl, document.sourceName(), readAt);
@@ -541,6 +546,61 @@ public final class FactCapture {
         }
         for (var failure : parse.failures()) {
             writeSource(dsl, failure.sourceName(), readAt);
+        }
+        return List.copyOf(documents);
+    }
+
+    /**
+     * The corpus taken from the registry the caller already holds, for a pass configured with no
+     * schema files at all.
+     *
+     * <p>A merged registry has not forgotten where its definitions came from: its parse order is
+     * grouped by source, so splitting it back into one registry per source is the same two calls
+     * {@link SchemaLoader#merge} makes in the other direction. That is what lets a pass handed a
+     * registry and no configuration write an entry stratum at all, where it used to write none and
+     * silently derive nothing from it.
+     *
+     * <p>Consistent with what this pass is rather than as good as reading the files. The walk beside
+     * it walks this same merged registry, so an entry stratum taken from it says what the walk says;
+     * a corpus reader parsing per file would say more, because a merge has already dropped the
+     * losing side of a duplicate declaration and two documents declaring one name would be two rows
+     * there and one row here. No caller on this path can reach that difference, the merge having
+     * happened before capture was called.
+     *
+     * <p>Refuses a registry that was assembled rather than parsed, which is the one thing this
+     * cannot do soundly. The entry stratum is keyed by the position a node was written at, so a node
+     * carrying no source location was never written and has nowhere to key; a registry holding one
+     * is not a corpus, whatever else it is. Refusing says so at the boundary instead of failing
+     * several frames down in a writer asking a null location for its file name.
+     *
+     * <p>Transitional with the rest of this pass. A configuration naming no files is a shape that
+     * predates the document gatherers, when a merged registry was the whole of what a capture read,
+     * and it leaves when the walk does.
+     */
+    private static List<GraphQLSourceCapture.SourceDocument> fromRegistry(
+            DSLContext dsl, TypeDefinitionRegistry registry, LocalDateTime readAt) {
+        if (registry == null) {
+            return List.of();
+        }
+        var documents = new ArrayList<GraphQLSourceCapture.SourceDocument>();
+        for (var source : registry.getParseOrder().getInOrder().entrySet()) {
+            var document = new TypeDefinitionRegistry();
+            for (var definition : source.getValue()) {
+                if (definition.getSourceLocation() == null) {
+                    throw new IllegalArgumentException(
+                        "a capture configured with no schema files takes its corpus from the"
+                            + " registry, and this registry was assembled rather than parsed: "
+                            + definition.getClass().getSimpleName() + " in " + source.getKey()
+                            + " carries no source location, so the entry stratum has no position to"
+                            + " key it by. Configure the pass with the files it reads.");
+                }
+                // Already admitted to the registry this came out of, so each definition is distinct
+                // within its own source and the rejection this returns cannot arise.
+                document.add(definition);
+            }
+            writeSource(dsl, source.getKey(), readAt);
+            documents.add(new GraphQLSourceCapture.SourceDocument(
+                source.getKey(), document, true));
         }
         return List.copyOf(documents);
     }

@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
@@ -68,10 +69,25 @@ public final class PipelineCapturedStore implements AutoCloseable {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         var attributed = TestSchemaHelper.attributedRegistry(ctx);
         var store = FactStores.inMemory();
-        FactCapture.capture(store.dsl(), CapturedStore.graph(directory), SubjectConfig.none(),
+        // The corpus this pass reads, stated as the configuration a run would have had, and not
+        // SubjectConfig.none(). The pass runs the document gatherers, whose rows are keyed by the
+        // position a node was written at in one file, so a capture given no corpus writes no entry
+        // stratum and therefore derives none of the graphitron_ relations that stand on it. The
+        // fixture is already on disk above, and naming it here is what makes the two halves of this
+        // pass read the same documents.
+        FactCapture.capture(store.dsl(), CapturedStore.graph(directory), corpusOf(directory, file),
             attributed.preSynthesisRegistry(), SchemaInputAttribution.build(List.of(input)),
             new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), List.of());
         return new PipelineCapturedStore(store, attributed);
+    }
+
+    /**
+     * The corpus a reading is of, stated as the configuration a run would have had. A literal
+     * binding rather than a glob, so the gatherer is handed exactly the file this fixture wrote.
+     */
+    private static SubjectConfig corpusOf(Path directory, Path file) {
+        return SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            List.of(SchemaRecipe.Binding.literal(SchemaSource.file(file))), List.of("graphqls")));
     }
 
     /**
