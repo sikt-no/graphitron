@@ -257,10 +257,13 @@ touchedAt)`. The stage takes the same instant, and the sweep covers the new tabl
 named here so the edit is not discovered at implementation. This is not tidiness: a pair row that
 outlives the foreign key it counted says `constraints = 1` about a pair with none, which is exactly
 the arm the decode rule's `LEFT JOIN` reads. The two tables without a stamp are
-`sql_table_record_supertype` and `sql_name_matched_key_column`, and both are written by a stage called
-without an instant that clears its relation whole; that is the precedent for the other arm and not the
-one this relation is on, a whole clear being available to a derivation over the store and not to a
-reading of a consumer's database.
+`sql_table_record_supertype` and `sql_name_matched_key_column`, and neither is a precedent this
+relation can take, for different reasons. `NameMatchedKeys.derive` clears its relation whole before
+refilling it, which is available to a derivation over the store and not to a reading of a consumer's
+database. `JooqFactCapture.recordSupertypes` neither stamps nor clears: every column of that relation
+is a key column, so a row that is still true is the row already there and there is nothing to
+reconcile. `sql_table_reference` is on neither arm, carrying a `constraints` count that is exactly the
+non-key column a stale row would lie about.
 
 **The reach for the constraint name.** After the change the `DISCOVERED_KEY` arm still joins
 `sql_referential_constraint` on six columns, of which only the first three prefix its primary key
@@ -1223,10 +1226,13 @@ should be able to see how far it reached.
   figures, the old ones, and the reason they moved.
 - *The `sql_` family's size.* Phase 0 said "Fourteen of the fifteen `sql_` tables carry" a
   `touched_at`. There are **sixteen** `sql_` tables today and fourteen carry one; the two without are
-  `sql_table_record_supertype` and the newly arrived `sql_name_matched_key_column`, and both are
-  written by a stage called without an instant that clears its relation whole. Phase 0 now says that,
-  and says why a whole clear is available to a derivation over the store and not to a reading of a
-  consumer's database, which is the arm `sql_table_reference` is on.
+  `sql_table_record_supertype` and the newly arrived `sql_name_matched_key_column`. Neither is a
+  precedent this relation can take and they are not the same case as each other, which phase 0 now
+  says rather than grouping them: `NameMatchedKeys.derive` clears its relation whole, which a
+  derivation over the store may do and a reading of a consumer's database may not, while
+  `JooqFactCapture.recordSupertypes` neither stamps nor clears because every column of its relation is
+  a key column. `sql_table_reference` carries a `constraints` count, the non-key column a stale row
+  would lie about, so it is on the stamp-and-sweep arm and neither of theirs.
 - *The declared-ownership argument.* Phase 0 said "All fourteen declared `sql_` relations name
   `catalog` as owner while `JooqFactCapture` writes them". Fifteen are declared today, all naming
   `catalog`, and the fifteenth is `sql_name_matched_key_column`, which `NameMatchedKeys.derive`
