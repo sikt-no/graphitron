@@ -132,6 +132,26 @@ class RefreshPlanStatisticsTest {
      * {@code Materializations.analyse}'s own javadoc describes, arriving where that call cannot
      * reach: an index without statistics, costing most of the gain the index exists for.
      *
+     * <p><b>The cold regime is not the no-statistics regime any more, and the set moved in both
+     * directions when it changed.</b> A created store declares the partition dimension's
+     * selectivity on every graph-keyed base table, before any capture and outside any
+     * {@code ANALYZE}, so the cold leg below is what a run actually meets rather than a store that
+     * was told nothing. {@code intent_node_id_instruction_live} left the set on that change: the
+     * declaration is the whole of what its cold plan was missing. Three joined it,
+     * {@code intent_field_column_scope_live}, {@code intent_input_field_carrier_role_live} and
+     * {@code intent_input_field_column_match_live}, and they are the same kind of member as the rest
+     * rather than three new statements: their cold plans already differed from the analysed ones,
+     * the difference was the partition column's default, and stating that column moved the cold plan
+     * onto a third shape that is neither the old cold plan nor the analysed one. The set is about
+     * whether a registration's plan turns on statistics the refresh itself has to write, and for
+     * these three it still does; what changed is which plan it gets when they are missing.
+     *
+     * <p>The rows visited say the direction that costs anything is the other one. On the decode hop,
+     * the reader this set's worked example follows, the cold regime visits 1105 rows against 1107
+     * analysed, where a store told nothing about the partition column visits 1499.
+     * {@link PartitionSelectivityWorthTest} holds that pair and carries why it is a fifth of what
+     * the same measurement gave before the hop became two keyed tables.
+     *
      * <p>{@code intent_node_id_decode_hop_column_live} carried that mechanism until the hop itself
      * was registered, and the swap is one statement inheriting it from another rather than anything
      * changing about the mechanism. That rule reached the reference-step-hop target by expanding the
@@ -189,11 +209,13 @@ class RefreshPlanStatisticsTest {
      * gap between a seven-column seek and a partition scan widens with the partition.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
+        "intent_field_column_scope_live",
         "intent_field_scope_table_live",
+        "intent_input_field_carrier_role_live",
+        "intent_input_field_column_match_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
         "intent_node_id_decode_hop_live",
-        "intent_node_id_instruction_live",
         "intent_resolved_type_binding_live");
 
     @TempDir

@@ -103,6 +103,14 @@ Four claims, each in the tier that can hold it, and none of them a wall clock: a
 
 A fifth thing is deliberately not tested. Nothing asserts the wall clock of a `sis` round, that store being a consumer's rather than the repository's, and the goal's "in the seconds the same statements take on a settled store" is demonstrated by the four claims above plus one recorded re-measurement on the consumer at delivery, reported at the Done gate rather than held by a test.
 
+## What R956 changed under this item
+
+R956 landed on trunk while this item's levers were being verified, and it converted `intent_field_reference_step_hop` from one table with a declared eight-column index into two keyed arm tables under a union view. That is the relation lever 2's measurement was taken on, so the fixture-scale figures moved and the reading is recorded here rather than left to be rediscovered.
+
+On the single hop table, the decode-hop rule's read visited 10939 rows with the partition column unstated and 1113 with the declaration alone, which is what a fully analysed store visited. On the keyed arm tables the same read is 1499 bare against 1105 declared, with 1107 analysed. The arm keys lead with the coordinate the reader seeks on, so the planner now reaches a seekable ordering whether or not it has been told what `graph_name` holds, and what is left for the declaration to buy at this fixture size is the residue. Both levers still hold their own argument: a key on the target removes most of this cliff where the target has one, and the declaration remains the only statement of that column available to a pass that plans inside a transaction, where `ANALYZE` cannot run at all.
+
+Two consequences for this item's acceptance evidence. `RefreshPlanStatisticsTest`'s pinned set is eight of twenty-four rather than the four this plan predicted: the declaration takes `intent_node_id_instruction_live` out, and three registrations join whose cold plans differ from their analysed ones on the declared regime as they did on the unstated one. And the consumer-scale figures in "What was measured" above were taken on the single-table shape, so the re-measurement this item's Tests section asks for at delivery is now the only evidence for what a `sis` round pays on the shape that ships.
+
 ## Retired vocabulary
 
 Three names go, and the sweep at the Done gate is over prose as much as over code.
