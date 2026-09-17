@@ -20,10 +20,16 @@ coordinate it asks by. Today that resolution is a stack of SQL views held up by 
 walk that chains the hops is a recursive view carrying window functions no outer predicate can prune,
 two of its three departure sites name it where it is re-evaluated once per driving row, and beside it
 in the same statement an anonymous derived table recounts the foreign keys between a table pair per
-row. That makes the `@nodeId` decode rule grow as the square of the store's size, which on the `sis`
-consumer is a `graphitron:dev` round that runs past twenty minutes. When this lands, the resolution
-is written by the `graphitron` gatherer into its own family, the register is smaller rather than
-larger, and the round's cost grows with the schema instead of with its square.
+row. That makes both the `@nodeId` decode rule and every other reader of a walk grow as the square of
+the store's size, which on the `sis` consumer is a `graphitron:dev` round that runs past twenty
+minutes. Phase 3's measurement says what that twenty minutes is made of, and it is two things rather
+than one: a statistics cliff on a single column, which is R953's to fix, and one relation that does
+not return at all, `intent_field_reference_step_fanout`, which no statistic reaches because its cost
+is the field walk being re-expanded eight times in one evaluation. When this lands, the field walk is
+written by the `graphitron` gatherer into its own family once per capture, the register is smaller
+rather than larger, and that relation answers in under a second instead of not answering. The decode
+rule's own remaining per-row term is the input-field walk, which a successor stores; "What this plan
+was conditioned on" carries that split and its reasoning.
 
 Three terms, glossed once. The *fact store* is the H2 database each generator pass captures the
 schema, the jOOQ catalog and the classpath into, and answers its verdicts out of by SQL. A
@@ -31,14 +37,19 @@ schema, the jOOQ catalog and the classpath into, and answers its verdicts out of
 moves the canonical name onto a table a refresh pass empties and refills; it exists to schedule
 refreshes for rules that have no owner to schedule them. A *capture stage* is a step of a gatherer
 that computes a relation and writes its rows with an `INSERT ... SELECT` of its own, of which
-`GraphitronFactCapture.capture` runs eight, the last being `FieldEndpoints.derive`.
+`GraphitronFactCapture.capture` runs ten, `FieldEndpoints.derive` being the eighth and
+`FieldRoutines.derive` and `FieldTableLinks.derive` the two after it.
 
 Two claims sit under that outcome and they are separable, because only one of them is measured.
 
-**The cost claim.** With the walk stored and the foreign-key count stored, the decode rule grows
-linearly in the store's size where today it grows as its square. This is conditioned on a measurement
-this plan does not yet have; "What this plan is conditioned on" names it and says what the plan
-becomes under each outcome.
+**The cost claim.** With a walk stored and the foreign-key count stored, a rule that names them grows
+linearly in the store's size where today it grows as its square. The growth half of that is still a
+fixture reading; what a `sis` store measured on 2026-09-17 is the cost at one size, and phase 3
+carries it. What this item delivers of that is the field walk and the foreign-key count: the field
+walk is what makes `intent_field_reference_step_fanout` return at all and what takes
+`intent_node_id_instruction_live` from 436 s to under a second in the regime that failed, and the
+foreign-key count is 1.44 s of the decode rule's 4.124 s. The decode rule's linearity needs the
+input-field walk stored as well, which is phase 5 and is the successor's.
 
 **The modelling claim.** Nothing in this stack ever needed a register. Every relation under the three
 walks bottoms out entirely in captured facts, so every one of them is a resolution whose owner is
@@ -46,8 +57,15 @@ known and whose inputs a gatherer holds. That is the top rung of the lever order
 `docs/architecture/explanation/fact-model.adoc`, and R876's thesis stated for one subtree. No
 measurement moves it.
 
-The cost claim is what makes this priority 1. The modelling claim is what decides the shape, and it
-is the one that survived the structural check below.
+The cost claim is what makes this priority 1, and phase 3's measurement re-grounds it on something
+narrower and harder than the refresh pass: on the `sis` consumer a lint's read of
+`intent_field_reference_step_fanout` does not return, and the field walk this item stores is what
+makes it return in 0.37 s. That read sits outside the refresh pass and outside the reach of R953's
+statistics fix, so it is this item's cost claim and nobody else's. The modelling claim is what decides
+the shape, and it is the one that survived the structural check below. Neither claim is about the
+`@nodeId` decode rule any more, which the measurement moved to a successor and to R953 between them,
+and the item is named for the walk rather than for that rule because the walk is what every reader of
+it shares.
 
 ## The structural finding this plan is built on
 
@@ -93,9 +111,10 @@ that carry one, the rows are already on disk and a stage would not evaluate them
 converting them buys is not fewer evaluations; it is the per-graph partition write, the register's
 disappearance, and the seam below.
 
-**The seam is two seams, and each has its own answer.** The rule a stage has to satisfy is one rule,
-stated once: **a stage may not read a table a later step of the same pass writes**, whether that
-table is a registered target or a hand-written producer's output. `FactCapture.capture` runs
+**The seam is three seams, and each has its own answer.** The rule a stage has to satisfy is one
+rule, stated once: **a stage may not read a table a later step of the same pass writes**, whether
+that table is a registered target, a hand-written producer's output, or an ordinary `graphitron_`
+table a later stage of the same gatherer writes. `FactCapture.capture` runs
 `GraphitronFactCapture.capture`, then the five hand-written producers
 (`ClassificationDomainCapture.derive`, `InputOccurrencePaths.derive`, `ArgMappingCandidates.derive`,
 `TypeBackingRows.derive`, `AuthoredClaimRejectionRows.derive`), and only then
@@ -117,9 +136,26 @@ table at all, so they are stages of `GraphitronFactCapture` beside `FieldEndpoin
 and 5 reach three (`intent_input_occurrence_path`, `intent_input_occurrence_path_step` and
 `intent_type_backing_class`, all on `MaterializeRegistryGateTest.HAND_WRITTEN`), so they go into the
 derivation stratum after the five producers, the position `ArgMappingCandidates.derive` already
-occupies. The phases below say this again where an implementer needs it. Still no ordering mechanism
-is minted, which is what the earlier reading of this item got wrong; what the earlier reading also got
-wrong was thinking conversion order alone carried the whole invariant.
+occupies. The phases below say this again where an implementer needs it.
+
+Against a `graphitron_` table a later stage of the same gatherer writes, neither conversion order nor
+the producer split says anything, and the answer is that this ladder reaches none of them. The
+gatherer runs ten steps, of which `FieldEndpoints.derive` is the eighth: `FieldRoutines.derive`
+writes `graphitron_field_routine` and `FieldTableLinks.derive` writes `graphitron_field_table_link`,
+and those two tables are the whole of what any step after the eighth writes. Neither is named by any
+view body in the DDL, so neither can be in any rung's closure, and a scan of the schema finds every
+occurrence of both names inside their own `CREATE TABLE` and `COMMENT` block or in `meta_relation`.
+What rungs 2 and 3 do reach in the gatherer's own family is eight `graphitron_` relations, and every
+one of them is written at or before `navigation`, the seventh step: six are entry relations the
+transcription writes and the flush inside `capture` publishes before the first stage runs
+(`graphitron_argument_reference_step_entry`, `graphitron_field_reference_entry`,
+`graphitron_field_reference_step_entry`, `graphitron_routine_entry`,
+`graphitron_spelled_reference_entry`, `graphitron_table_entry`), `graphitron_field_chain_application`
+is the first stage, and `graphitron_field_navigation` is the seventh. So the third seam is discharged
+for this ladder by the same thing that discharges the other two, which is what an input reaches.
+
+Still no ordering mechanism is minted, which is what the earlier reading of this item got wrong; what
+the earlier reading also got wrong was thinking conversion order alone carried the whole invariant.
 
 **A converted relation moves to `graphitron_`, and that is load-bearing rather than cosmetic.**
 `MaterializeRegistryGateTest.nothingMaterializesOutsideTheMechanism` scans `intent_` base tables
@@ -133,10 +169,10 @@ precedent when `intent_argmapping_binding_leaf` became `graphitron_argmapping_ma
 that the `intent_` prefix there "recorded the default placement rather than a decision"; the
 `graphitron_` family now holds 130 tables and 2 views, so neither shape is new.
 
-**The target the conversions copy already exists.** `FieldEndpoints.derive` is the last stage of
-`GraphitronFactCapture.capture`, it reads `graphitron_`, `graphql_` and `sql_` relations across three
-families, it joins and ranks, and it writes `graphitron_field_table` with three `INSERT ... SELECT`
-statements. It is not hand-rolled Java resolution and nothing here would be either: the rule stays
+**The target the conversions copy already exists.** `FieldEndpoints.derive` is the eighth of the ten
+stages of `GraphitronFactCapture.capture`, it reads `graphitron_`, `graphql_` and `sql_` relations
+across three families, it joins and ranks, and it writes `graphitron_field_table` with three
+`INSERT ... SELECT` statements. It is not hand-rolled Java resolution and nothing here would be either: the rule stays
 stated once, in SQL, and what changes is who runs it and when.
 
 That precedent transfers to the ladder and to nothing outside it, which is worth stating because the
@@ -160,6 +196,11 @@ each rung is independently landable and independently verifiable.
 | 3 | `intent_field_reference_step_target` | plain view | rungs 1 and 2 |
 | 4 | `intent_argument_scope_table`, `intent_field_scope_table`, `intent_carrier_data_field`, `intent_input_field_resolving_table` | all registered | a wider subtree of the column-scope family |
 | 5 | `intent_input_field_reference_step_target`, `intent_argument_reference_step_target` | view, registered | rungs 1 and 4 |
+
+**Rungs 4 and 5 are the successor's**, on the phase-3 measurement and the call under "What this plan
+was conditioned on". They stay in this table and keep their phase text because the closure, the
+placement argument and the convert-or-demote rule all transfer to the successor unchanged, and
+re-deriving them there would be work already done.
 
 Three things the table is saying that are easy to miss. The field walk needs only rungs 0 to 2, which
 is **three registrations**, and its subtree is closed: `intent_bound_table`,
@@ -280,7 +321,8 @@ down every constraint of a pair, the denormalisation the referenced-side discipl
 Rung 0 then rung 1, in one phase because rung 0 buys nothing on its own.
 
 `intent_spelled_table` becomes `graphitron_spelled_table`, written by a stage of the graphitron
-gatherer immediately before `FieldEndpoints.derive`. Its registration is retired. Its `_live` view is
+gatherer immediately before `FieldEndpoints.derive`, which is the eighth of that gatherer's ten
+stages and not the last. Its registration is retired. Its `_live` view is
 deleted, the rule moving into the stage's `INSERT ... SELECT` unchanged.
 
 `intent_field_reference_step_hop` becomes `graphitron_field_reference_step_hop`, written by the stage
@@ -300,11 +342,24 @@ phase is the one that moves the most for the least.
 `GraphitronFactCapture.capture`, immediately before `FieldEndpoints.derive`, which is where a
 `graphitron_` relation's writer belongs by the family rule and where the precedent this phase copies
 already sits. The position is admissible because rungs 0 and 1 reach no table a later step of the pass
-writes: no registered target, by the conversion order above, and no `HAND_WRITTEN` table, the field
-walk's closure holding none of the six. That is the same invariant a sibling item states for its own
+writes, on all three of the invariant's cases: no registered target, by the conversion order above; no
+`HAND_WRITTEN` table, the field walk's closure holding none of the six; and none of the two tables the
+gatherer's ninth and tenth stages write. That is the same invariant a sibling item states for its own
 fifteen relations and it is why those land in the derivation stratum and these do not; the criterion is
 identical, and it is what an input reaches that decides where a stage goes, not which item the stage
 belongs to.
+
+**The position is before `FieldEndpoints.derive` rather than at the end of the gatherer, and now that
+those are two different lines the choice is made rather than inherited.** Before, for three reasons.
+The invariant is forward-only, so what a position has to clear is what runs *after* it, and every
+input rungs 0 to 3 reach is written at or before `navigation`, the seventh step; the eighth position
+clears them all with two stages to spare. Putting the stages at the end instead would assert a
+dependency on `FieldRoutines.derive` and `FieldTableLinks.derive` that does not exist, and a later
+reader would have to re-derive that it does not. And it is the smaller edit against the tree as it
+stands, which matters because the position is stated in a comment as well as in an order and a wrong
+comment is what produced this correction. The end of the gatherer is equally admissible on the
+closures, and an implementer who finds the shipped order changed again takes whichever line satisfies
+the three cases and says which it took.
 
 ### Phase 2: the field walk
 
@@ -354,22 +409,165 @@ relation today and wants promoting to one before it can be registered." So this 
 that rule's cost and the honest claim is a term, not the whole. Promoting the alias is a separate
 change this item does not take, named under "What this item does not do".
 
-### Phase 3: the foreign-key count and the field walk, measured together
+Phase 3's measurement quantifies both halves of that and does not flip it. In the regime the failing
+round ran in, storing the walk alone takes that rule from 436.1 s to 0.91 s and promoting the alias
+on top takes it to 0.06 s, both single executions. On an analysed store the same pair reads 2.582 s
+as shipped, 1.100 s with the walk stored and 0.080 s with the alias promoted. So the loop is real and
+the promotion is worth a further order of magnitude, and it is an order of magnitude of a second
+rather than of the failure.
 
-No code. The acceptance measurement for phases 0 to 2 on a `sis` store copy, written into the body,
-and the decision point for whether phases 4 and 5 are this item's or a successor's. If the round is in
-seconds here, the remaining rungs are a modelling tidy rather than a fix and say so in their own
-priority.
+**What this phase also fixes, named as a beneficiary rather than taken into scope.**
+`intent_field_reference_step_fanout` is an unregistered plain view whose `pair` CTE self-joins this
+walk and is named four times downstream, so one evaluation expands the walk eight times. On the `sis`
+store it does not return: a lint's read of it in the live round ran for sixteen minutes without
+answering and a probe of it did not answer inside a 30-minute cap. With this walk stored it answers in
+0.37 s for 60 rows. Phase 3 carries the figures and the caveats. The view is not edited, its own
+`pair` alias is not promoted, and nothing about it is filed: with the walk stored there is a 0.28 s
+residue left and that is not worth an item. Stated here so the phase's value is not read off the
+decode rule alone.
 
-**Status on 2026-09-17: the measurement is in progress and no figure from it is in this body yet.**
-It is being taken against a copy of a real `sis` store, on the six configurations "What this plan is
-conditioned on" already lists: as shipped; with R953's lever 2 alone, a static `SELECTIVITY 1` on
-`graph_name`; with the foreign-key count snapshotted and the walks left as views; with the field walk
-snapshotted alone; with the input-field walk snapshotted alone; and with all three, which is the
-shipping shape. Nothing is written here until it lands, and no number is estimated in the meantime:
-this section exists precisely because this family has produced two wrong readings already, and a
-guessed figure here would be the third. The outcome branches below stand unchanged and one of them
-becomes this item's shape when the reading arrives.
+### Phase 3: the acceptance measurement, taken on 2026-09-17
+
+No code. This phase was the acceptance measurement for phases 0 to 2 on a `sis` store copy and the
+decision point for whether phases 4 and 5 are this item's or a successor's. **It has been taken, and
+what follows is what it found.** The phase is therefore discharged at Spec time rather than at
+pickup; what an implementer still owes is the same configurations re-taken on the shipped tree per
+phase, which "Tests" already asks for. The rule this phase was filed with stands and is what the
+scope call below applies: if the round is in seconds here, the remaining rungs are a modelling tidy
+rather than a fix and say so in their own priority.
+
+**Method, stated first because two readings in this family have been wrong before.** Per the
+`store-performance` skill: per-relation timing before any hypothesis, body bisection, a control on
+the same fixture before believing anything, and `EXCEPT` in both directions before any figure from a
+substituted relation is used. Instrument: single-file Java over JDBC against a private copy of a real
+`sis` consumer store, `SET OPTIMIZE_REUSE_RESULTS FALSE`, timings read out of
+`INFORMATION_SCHEMA.QUERY_STATISTICS`, sweeps interleaved. No profiler, no thread dump, no reactor
+wall-clock. Two stores: an archived capture, and one captured by trunk `94e23bae4` with the refresh
+committed and all 23 targets analysed. Every view this body's figures touch was dumped out of the
+trunk store and compared against a fresh H2 built from trunk's DDL, and they match, three of them
+byte for byte and the rest with identical conjunct sets rendered in a different predicate order. The
+box was loaded throughout, so the ratios are trustworthy and the second-scale standard deviations are
+inflated.
+
+**The live round, from its own log and no instrument at all.** The refresh pass took 2915.7 s.
+`intent_node_id_decode_hop` took 2536.0 s to insert 377 rows and `intent_node_id_instruction` 356.5 s
+to insert 683. That is 2892.5 s of 2915.7 s, **99.2% of the pass in two registrations**. The other 21
+took 23.2 s between them and inserted 29413 rows, none of them costing more than 6.3 s.
+
+**A statistics cliff dominates the pass, and it is R953's subject rather than this item's.** Three
+states of `intent_field_reference_step_hop`'s statistics, each on its own copy of the store and each
+in its own JVM so no plan survives the change, timing `intent_node_id_instruction_live`: as captured
+and analysed, 3.54 s over five sweeps; with hop's fifteen columns at `SELECTIVITY 50`, which is the
+regime the failing round ran in, 626.9 s over three sweeps (474.3, 603.2 and 803.2 s, rising as other
+runs joined the box, so read 470 to 800 s as the band); and with `graph_name` alone put back to
+`SELECTIVITY 1` and every other hop column left at 50, **4.65 s**. That is **135x on one column**. The
+same pair on `intent_node_id_decode_hop_live` is 4.04 s analysed, 2447.6 s de-analysed (**a single
+execution**, so it ranks rather than measures) and 7.76 s with `graph_name` restored: **315x**. The
+de-analysed figure agrees within 4% with the failing round's own 2536.0 s. De-analysing the entire
+database instead, 2129 columns, lands on 631.9 s (a single execution), the same number as
+de-analysing hop's fifteen, so nothing else in the store contributes.
+
+The mechanism is visible in the round's log without any of that: hop was refilled at 10:11:10 and
+**all 23 `ANALYZE TABLE` statements ran at 10:59:49, after the whole pass**. Every registration that
+reads hop was refreshed while hop carried no statistics. This body states the relationship and does
+not annex it: the cliff is a defect in the cost of *one* evaluation and is R953's to fix, and R953's
+lever 2, a static `SELECTIVITY 1` declared in the DDL, is exactly the change state (c) above
+measures. This item is about the *number* of evaluations. The two compose and neither substitutes for
+the other.
+
+**The shape terms, on the analysed trunk store, five interleaved sweeps each.**
+`intent_node_id_decode_hop_live` as shipped is 4.124 s. Storing the foreign-key count alone takes it
+to 2.688 s, a saving of 1.44 s and a factor of 1.5. Storing the input-field walk alone takes it to
+1.466 s, a saving of 2.66 s and a factor of 2.8. Storing both, which is what phase 0 and phase 5 do
+between them and so is not a figure this item delivers on its own, phase 5 being the successor's,
+takes it to **0.098 s, a factor of 42**. Snapshot build cost is 0.06 s for the
+foreign-key count and 0.08 s for the walk. Neither term alone is the fix and both together are,
+because each sits on the inner side of a `LEFT JOIN` driven per endpoint row, so storing one leaves
+the other still inlined and still driven. Two controls refute the obvious alternative: storing
+`intent_node_id_decode_endpoint` alone is 4.108 s against the 4.124 s baseline, and adding it on top
+of the foreign-key count is 2.982 s against 2.688 s for the count alone. **Every configuration was
+proved answer-identical by `EXCEPT` in both directions**, fourteen counts across the decode-hop and
+instruction configurations, all zero.
+
+This confirms this body's own recorded ablation on a roughly ten times larger population than the
+fixture table above. That ablation put the foreign-key count at about 1.4 s and both walks together
+at about 3.6 s; here the count is **1.44 s**, essentially to the tenth, and the one walk still
+unstored is 2.66 s, the argument-site walk having been registered since and now contributing nothing.
+
+**The discriminating measurement, in the regime that actually failed.** On a copy of the trunk store
+with hop's fifteen columns at `SELECTIVITY 50` and the probe tables analysed so they model registered
+targets. **All four figures are single executions and rank rather than measure**; the ratios are 100x
+to 1000x and nothing about the regime is subtle. `intent_node_id_instruction_live` as shipped is
+**436.1 s**; with the field walk stored and `slot_table` left a CTE, **0.91 s**; with `slot_table`
+promoted as well, 0.06 s. `intent_node_id_decode_hop_live` with the input-field walk stored is
+**1.45 s**, and with the foreign-key table stored too, 0.11 s. Decode-hop as shipped was not re-run
+in this regime on the trunk store; the comparison for it is against 2447.6 s on the archived store
+and 2536.0 s in the failing round's log, and that is a number from a different store.
+
+So the answer to whether promoting `slot_table` is a requirement or an optimisation is: an
+optimisation. Storing the walk alone takes that rule from 436 s to 0.91 s in the regime that failed.
+On the analysed store the same pair reads the other way round, 2.582 s as shipped to 1.100 s with the
+walk stored and 0.080 s with the alias promoted, which on its own would say the loop is the term. The
+de-analysed pair is the one that matters, because the rule was never slow on an analysed store.
+
+**Phase 2 fixes a relation this item never mentions, and that is the finding to weigh most.**
+`intent_field_reference_step_fanout` is a plain view with no registration, so no refresh progress line
+ever times it and it does not appear in the 2915.7 s pass at all. Its `pair` CTE self-joins
+`intent_field_reference_step_target` and `pair` is named four times downstream, so one evaluation
+expands the recursive walk eight times. In the live round a lint read it, `ReferencePathFanout`
+issuing its query at 10:59:55.797, and it had not returned when the build was stopped at 11:16:37.573,
+sixteen minutes and forty-two seconds later. **`intent_field_reference_step_hop` had been analysed at
+10:59:49.554, six seconds before that read began**, so this cost is pure shape and the statistics
+cliff does not explain it. Probed on its own it did not return inside a 30-minute cap (a single
+execution against its own store copy, killed at the cap, so a lower bound and not a figure). With the
+field walk stored it answers in **0.37 s for 60 rows**, and storing `pair` on top of that buys a
+further 0.28 s.
+
+Answer preservation there is the weaker proof and is stated as such. `EXCEPT` runs against the live
+view, which is the thing that does not return, so that proof is unavailable by construction. What was
+proved instead is that the substituted relation is row-identical to the one it replaces,
+`intent_field_reference_step_target EXCEPT probe_step_target` and the reverse both returning zero rows
+over 276 rows each, and that the two configurations differ only by that substitution. That is
+equivalence by substitution, not by comparing the two answers.
+
+**A structural finding that touches the rung table.** `intent_field_reference_step_target` appears
+nowhere in `intent_node_id_decode_hop_live`'s reference closure on trunk: that view names exactly
+`intent_node_id_decode_endpoint`, `intent_argument_reference_step_target`,
+`intent_input_field_reference_step_target` and `sql_referential_constraint`, and the endpoint view
+names `intent_node_id_instruction`, `intent_argument_scope_table`, `intent_input_occurrence_path` and
+`graphitron_tabletype`, all stored. The field walk left that path when the argument walk was
+registered, and the one unstored walk there is the input-field one. The configuration that stored the
+field walk against that rule measured 4.104 s against a 4.124 s baseline, which is the no-op it has to
+be and is reported as the instrument control it is rather than as a result.
+
+**A population caveat that makes every shape figure conservative, and which every reader of them has
+to carry.** On the trunk store `code_condition_method` and `code_condition_method_parameter` hold zero
+rows while the JVM census is full (2486 classes, 13549 methods) and identical to the archived store's.
+So `intent_condition_method_route` is 0 rows there against 82 on the archived store, hop loses its
+whole `via = 'CONDITION'` arm (10776 rows against 11183, the `KEY` and `TABLE` arms identical at 872
+and 9904), and the field walk is 276 rows against 683. Every shape figure above is therefore taken on
+a walk two and a half times smaller than a fully populated one, which makes the walk-storing wins
+**conservative rather than optimistic**: a bigger walk is a bigger thing to stop re-evaluating. Stated
+as an observation about that store. Whether an empty `code_condition_method` beside a full JVM census
+is a capture gap on trunk is not this item's question and is worth someone checking separately.
+
+**One precision the loose version gets wrong.** Storing a walk does not remove the statistics cliff;
+it **moves** it, from N reader evaluations to one refresh evaluation. The refill still evaluates the
+walk once, and in the failing regime it evaluates it against an unanalysed hop, so that one evaluation
+still pays. The snapshots above were built on an analysed store, so the figures price the read and not
+that refill. That is also why R953's lever 2 is not made redundant by this item: it is the only lever
+that reaches the one evaluation a stage or a registration still pays.
+
+**What the measurement could not settle**, listed so no later reader mistakes silence for a null
+result. Growth across sizes was not measured; this is one population at one moment, and the growth
+claim in the goal still rests on the fixture table above. `intent_node_id_decode_hop_live` as shipped
+was not re-run de-analysed on the trunk store. Whether the foreign-key count still costs 1.44 s once
+the walk is a stage-written table rather than an unindexed snapshot is unknown, and could only be
+better, a real target inheriting the indexes declared beside it. `intent_field_reference_step_fanout`
+as shipped has a lower bound and not a figure. And `intent_field_chain_node`, a third reader of the
+hop table that is neither walk, returned 0 rows on this store, which says little on a store whose
+condition family is empty; it was not priced in the de-analysed regime and is named as unpriced rather
+than as safe.
 
 ### Phase 4: the column-scope departures
 
@@ -396,9 +594,13 @@ still `graphitron_` and still the graphitron gatherer's by the ownership rule; w
 statement's position in the pass, not whose family the rows are in, exactly as
 `ArgMappingCandidates.derive` writes `graphitron_argmapping_candidate` from that stratum today.
 
-Split this into its own item if the phase-3 measurement says the field walk was the cost. The body says
-so rather than leaving it to judgement: an item that reaches into a second family on a measurement that
-did not name it is scope creep whatever its doctrine.
+**This phase and the next split into a successor item, on the phase-3 measurement.** That measurement
+put the field walk and the fanout view it feeds inside this item's own family and put the refresh
+pass's dominant term in R953's, so nothing it found names rungs 4 and 5 as the failure. They are a
+real residual, the input-field walk being 2.66 s of the decode-hop rule's 4.124 s, and they reach into
+a second family, which this body already calls scope creep on a measurement that did not name it. The
+phase text stays here so the successor inherits the placement argument and the closure rather than
+re-deriving them. "What this plan was conditioned on" carries the call and its reasoning.
 
 ### Phase 5: the input-field and argument walks
 
@@ -414,8 +616,9 @@ retired, the third of the three.
 These stages run where rung 4's do, in the derivation stratum after the five producers, for the same
 reason: rung 5 reads rung 4, and the input-field walk's own closure reaches
 `intent_input_occurrence_path`, `intent_input_occurrence_path_step` and `intent_type_backing_class`
-through it. The register ends this item between three and eight rows smaller than it started, having
-gained none.
+through it. Across all six phases the register ends between three and eight rows smaller than it
+started, having gained none; with phases 4 and 5 split out on the phase-3 call above, this item's own
+share is the three retired by phases 1 and 2.
 
 **What every phase owes the register's prose, because the register is set-relative.**
 `meta_materialize.reason`'s own comment requires it: "A registration whose source view reads another
@@ -431,7 +634,8 @@ in the other.
 
 ## What was measured
 
-Fixture only, and the section after this one is what corrects that. Taken on the scaled registry
+Fixture only, and phase 3 above is what corrects that: this table is the growth reading and phase 3
+is the consumer reading. Taken on the scaled registry
 fixture (`MaterializedRegistryFixture.scaledSdl`, with a `@nodeId` input field added so the
 `INPUT_FIELD` decode arm has a population), three sweeps per configuration, best of three,
 `OPTIMIZE_REUSE_RESULTS` off. `intent_node_id_decode_hop_live`, which is the statement the refresh
@@ -485,7 +689,7 @@ into one arm per site buys 3.6 times and stays quadratic. That last reading also
 `intent_node_id_decode_hop`'s own comment, that a second naming of the endpoint subtree "would dominate
 the read", which this item corrects where it touches that comment.
 
-## What this plan is conditioned on
+## What this plan was conditioned on, and what the measurement settled
 
 The table above is a shape claim on a synthetic population, and this family has produced a wrong reading
 before. The `store-performance` skill's posture section records one: "a family of recursive
@@ -494,10 +698,10 @@ somewhere else entirely." The investigation that filed this item had a second co
 reporting that statistics were not the lever from a regime that measured identically at every fixture
 size, which R953's readings on a copy of the `sis` store contradict.
 
-So the first act is a measurement, and it is one nobody can take without the `sis` workspace on disk.
-**It is being taken as of 2026-09-17 and is not finished; nothing from it is in this body.** If it
-lands before pickup the implementer inherits it; if it does not, the implementer takes it at pickup,
-before any code. Per the `store-performance` skill's method, on a copy of the `sis` store, timing
+So the first act was a measurement, and it is one nobody can take without the `sis` workspace on disk.
+**It was taken on 2026-09-17 and phase 3 above is what it found.** The configurations stay here as
+the method, because "Tests" asks for the same ones re-taken on the shipped tree per phase. Per the
+`store-performance` skill's method, on a copy of the `sis` store, timing
 `intent_node_id_decode_hop_live` and `intent_node_id_instruction_live` per graph:
 
 1. as shipped;
@@ -513,23 +717,63 @@ what these configurations add is growth across sizes and a post-R943 baseline, n
 itself. Each snapshot is proved answer-preserving by `EXCEPT`
 in both directions before it is timed.
 
-What the plan becomes under each outcome:
+**The four outcome branches this section used to carry are not mutually exclusive against this
+evidence, and saying so is a better answer than forcing a fit.** Two of them fire at once. "Lever 2
+alone brings the round into seconds" is true of the *refresh pass*: with `graph_name` alone back at
+`SELECTIVITY 1` the instruction rule is 4.65 s and the decode-hop rule 7.76 s, which on a 2915.7 s
+pass whose other 21 registrations cost 23.2 s is a round in seconds. And "the input-field walk is the
+term" is true of the decode-hop rule's residual shape, 2.66 s of 4.124 s on an analysed store and
+about 2450 s to 1.45 s in the failing regime. The branches were written on the assumption that one
+relation's cost is one term, and the lattice says every rule here has two.
 
-- **Lever 2 alone brings the round into seconds.** The cost claim is R953's, not this item's. Phases 0
-  to 2 still land on the modelling claim and phases 4 and 5 drop to priority 3, which is an honest
-  outcome rather than a defeat: the register is still holding up a subtree that is entirely resolution.
-- **The field walk is the term.** Phases 0 to 3 are the item and phases 4 and 5 are a successor.
-- **The input-field walk is the term.** Phases 4 and 5 are needed and the item runs to its end.
-- **The foreign-key count is the term and neither walk is.** Phase 0 is the item and ships alone.
-- **The `sis` store cannot be obtained.** R943 and R953 both took readings on a copy, so this is a
-  scheduling problem rather than a structural one, and it does not stall the item. Phase 0 and phases
-  1 and 2 land on the modelling claim, which no measurement moves, with the fixture table and the
-  register's consumer ablation as the cost evidence on record. Phases 4 and 5 wait, because they reach
-  into a second family and the only thing that justifies that reach is a measurement naming the
-  input-field walk. Say in the changelog entry that the growth claim went unverified, rather than
-  letting a green build stand in for it.
+They also share an assumption the measurement broke: that the refresh pass is the whole of the round.
+It is not. `intent_field_reference_step_fanout` is read by a lint outside the pass, is unregistered so
+nothing times it, is unaffected by statistics (hop was analysed six seconds before the live round's
+read of it began), and is the one relation that did not return at all. Phase 2 fixes it, to 0.37 s,
+without either the view or this item changing a line for it.
 
-Under every outcome the measurement is written into this body, replacing this list with what it found.
+**The scope call: phases 0 to 2 are this item, and phases 4 and 5 split to a successor.** The argument
+in the order the evidence supports it.
+
+1. **Phase 2 is what makes the `sis` build finish, independently of R953.** The fanout read is
+   outside the refresh pass and outside the cliff's reach, it did not return inside a 30-minute cap
+   with hop analysed, and storing the field walk takes it to 0.37 s. Lever 2 does not reach it and no
+   statistic will. That is this item's priority-1 ground, and it is ground R953 does not stand on, so
+   claiming it is not annexing the cliff.
+2. **This item's own rule fires for phases 4 and 5.** The rule phase 3 was filed with is that if the
+   round is in seconds, the remaining rungs are a modelling tidy rather than a fix and say so in their
+   own priority. Lever
+   2 alone puts the pass in seconds. The input-field walk is real, and it is the decode-hop rule's
+   residual shape term, but it is seconds and not the failure, and rungs 4 and 5 reach into a second
+   family. "What is in scope" already calls a reach into a second family on a measurement that did not
+   name it scope creep whatever its doctrine, and the measurement names it as seconds. So they leave,
+   with the modelling claim intact and the figures above as their filed cost evidence.
+3. **Phase 0 stays with 1 and 2 rather than going with 5.** Its own measured value is 1.44 s of the
+   decode rule's 4.124 s on an analysed store, a factor of 1.5, and that is the whole of what it
+   delivers alone: the 42x needs the input-field walk beside it, and phase 0 alone was not measured in
+   the de-analysed regime at all. It stays because it is the top rung of the lever order on a value
+   that is a plain catalog fact, because it is independent of every rung of the ladder, and because
+   it costs one stage. That is the modelling claim carrying it, not the measurement.
+
+**The price of this call, stated rather than left to be discovered.** The `@nodeId` decode rule is
+the successor's. This item takes 1.44 s of its 4.124 s and leaves the 2.66 s its remaining unstored
+walk costs, so that rule's growth stays quadratic in that term until phase 5 lands, and what makes it
+tolerable in the meantime is R953's lever 2 rather than anything here. The goal paragraph and the
+"does not do" section both say so, because an item named for reference-step walks is exactly where a
+reader would look for that rule and find the wrong answer.
+
+**Where the evidence runs out, stated rather than glossed.** Growth across sizes was not measured, so
+the goal's growth claim still rests on the fixture table; the acceptance evidence "Tests" asks for per
+phase is what closes it. The de-analysed figures are single executions and rank rather than measure.
+Decode-hop as shipped was not re-run de-analysed on the trunk store, so its de-analysed comparison is
+against a figure from another store. Whether the foreign-key count still costs 1.44 s beside a
+stage-written walk was not measured. And the fanout view has a lower bound, not a figure.
+
+**One contingency, stated once.** If R953 has not landed when this item is done, the successor
+carrying phases 4 and 5 is urgent rather than a tidy, because the pass is then still minutes and the
+input-field walk is the decode-hop rule's remaining unstored term. Its cheap first move in that case
+is the registration fallback under "Other solutions we've considered", which is three DDL lines and
+lands the same rows.
 
 ## Tests
 
@@ -560,17 +804,25 @@ phase cheap to review however large the ladder gets.
 - **`FactCaptureAgreementTest`, `FactSchemaGateTest`, `CaptureCorpusIsolationTest`** are the regression
   surface for a column list or a capture path that moved, and the third is what covers a producer's
   reads, which no catalog parse can see.
-- **Acceptance evidence for the goal**, which a green build does not supply: the `sis` timings from the
-  section above, re-taken on the shipped tree per phase and written into the changelog entry. The goal is
-  a growth claim, and only the same configurations answering linearly demonstrate it.
+- **Acceptance evidence for the goal**, which a green build does not supply: phase 3's `sis` timings
+  re-taken on the shipped tree per phase and written into the changelog entry, on the configurations
+  "What this plan was conditioned on" lists. Phase 3 priced the shipped tree and a stack of snapshot
+  proxies; what a phase owes is the same reading against the stage-written relation it actually
+  landed, which is the one thing a proxy cannot stand in for. Three readings in particular:
+  `intent_field_reference_step_fanout` answering at all, which is the cost claim; the decode-hop rule
+  after phase 0, where the foreign-key count's 1.44 s was measured on an unindexed snapshot and a real
+  target carries its declared indexes; and the growth claim, which only the same configurations
+  answering linearly across sizes demonstrate and which phase 3 did not take.
 
 ## What this item does not do
 
 - **It does not mint an ordering mechanism for producers inside the refresh pass.** It does not need
   one. The invariant every placement here satisfies is that **no stage reads a table a later step of
-  the pass writes, registered or hand-written**, and two existing things carry it between them:
-  converting bottom-up handles the registered half, and placing rungs 4 and 5 after the five
-  hand-written producers handles the other. R876's open question, what orders two relations under one
+  the pass writes, registered, hand-written, or written by a later stage of the same gatherer**, and
+  three existing things carry it between them: converting bottom-up handles the registered case,
+  placing rungs 4 and 5 after the five hand-written producers handles the second, and for the third
+  the ladder simply reaches neither of the two tables the gatherer's last two stages write.
+  R876's open question, what orders two relations under one
   owner, stays open and stays R876's; this item avoids it rather than answering it, and the phase
   table is the proof that avoiding it is possible for this subtree.
 - **It does not change what admits a hand-written derivation.** `HAND_WRITTEN`'s impossibility criterion
@@ -580,9 +832,18 @@ phase cheap to review however large the ladder gets.
   recomputes it once per driving row, and its own `meta_materialize.reason` already says the alias
   "wants promoting to one before it can be registered" and that snapshotting it put that arm at 0.7 s.
   Phase 2 takes the recursion out of the inside of that loop and leaves the loop, which is a real term
-  and not the whole of that rule. The promotion is a different change to a different relation and
-  belongs in its own item. **It is not filed anywhere as of 2026-09-17**, which is stated so that a
-  reader of this bullet does not go looking for a covering item that does not exist.
+  and not the whole of that rule. Phase 3's measurement prices what is left: with the walk stored the
+  rule is 0.91 s in the failing regime and 1.100 s on an analysed store, and the promotion takes those
+  to 0.06 s and 0.080 s. Worth having, and not what makes the build finish. The promotion is a
+  different change to a different relation and belongs in its own item. **It is not filed anywhere as
+  of 2026-09-17**, which is stated so that a reader of this bullet does not go looking for a covering
+  item that does not exist.
+- **It does not store the input-field or argument walks, and so it does not make the `@nodeId` decode
+  rule linear.** Those are phases 4 and 5, which the phase-3 measurement split to a successor. The
+  decode rule reaches the input-field walk on the inner side of a `LEFT JOIN` driven per endpoint row,
+  and that term stands until the successor lands: this item takes 1.44 s of its 4.124 s with phase 0's
+  foreign-key count and leaves the 2.66 s the walk costs. A reader who came here for that rule should
+  read "What this plan was conditioned on" for why, and R953 for the term that dominates it today.
 - **It does not touch R953's levers 1 and 2.** They fix which plan one evaluation gets; this changes how
   many evaluations there are. Lever 2 should land whatever this item does.
 
@@ -592,7 +853,13 @@ phase cheap to review however large the ladder gets.
 cliff: `intent_field_reference_step_hop.graph_name` at H2's default selectivity makes the planner choose
 a one-column index over the step index, and the first refresh on a store plans with no statistics at all.
 That is a cliff in the cost of *one* evaluation; this item is about the *number* of evaluations. They
-multiply, because these walks join that table in both the anchor and the step. Its lever 3 proposes
+multiply, because these walks join that table in both the anchor and the step. Phase 3's measurement
+prices the cliff and hands the figure to R953 rather than keeping it: that one column is worth 135x on
+the instruction rule and 315x on the decode-hop rule on a `sis` store, and the live round's 23
+`ANALYZE TABLE` statements all ran after the pass that read the table they analyse. It is the larger
+term of the refresh pass and it is R953's. What phase 3 also establishes is that it is not the whole
+round: the fanout view's read sits outside the pass, and hop had been analysed six seconds before it
+began. Its lever 3 proposes
 registering the field walk, which phase 2 supersedes: the same rows land, written by their owner rather
 than scheduled by the register. The record of that split is **one-way and this item's**: R953 is
 `Backlog` and nobody has picked it up, so a mutual clause would be a gate with no owner, and
@@ -605,8 +872,10 @@ stays true of a stage-written table too, so it survives this item unchanged.
 **R876** is the doctrine this item instantiates, and this is the first subtree to be taken bottom-up
 rather than one relation at a time. It contributes three things back: the finding that a 26-relation
 closure bottoms out entirely in captured facts, the observation that a bottom-up order plus one
-placement rule needs no successor to `meta_materialize_dependency`, and between three and eight
-register rows retired against its twenty-three. A fourth thing it contributes is a correction rather
+placement rule needs no successor to `meta_materialize_dependency`, and three register rows against
+its twenty-three, with up to five more in the successor carrying phases 4 and 5 (earlier drafts of
+this sentence promised between three and eight, which was the whole ladder before the phase-3
+measurement split it). A fourth thing it contributes is a correction rather
 than a contribution: R876's own enumeration of family-local misplacements still lists
 `intent_name_matched_key_pair`, which commit 78b6a58 retired on 2026-09-14, so that count is one row
 stale and is that item's to re-take. The precedent it follows is R876's own `graphitron_argmapping_match`.
@@ -639,7 +908,11 @@ catalog family's refresh lifecycle, which phase 0's relation joins.
   It grows a register that is already holding up a subtree with no cross-family rule in it, which is the
   accretion R876 diagnoses. And it cannot reach the per-graph refresh term, the one measured cost a
   conversion removes by construction. If a phase turns out to be larger than its measured win, taking the
-  registration for that rung and recording why is a legitimate outcome rather than a failure.
+  registration for that rung and recording why is a legitimate outcome rather than a failure. Phase 3's
+  investigation independently reached for this shape and ranked it first of its own four fixes, on the
+  finding that it is the only lever reaching all three slow relations and that it reaches them in the
+  regime that actually failed. That is the same finding stated as a register row; the two differ in who
+  writes the rows, which is the modelling claim and not a measurement question.
 - **A producer inside the refresh order, with a `meta_` relation declaring what it reads.** This was the
   earlier reading of the item, and the bottom-up order plus the placement rule above make it
   unnecessary for this subtree. It is also the one artifact
@@ -649,8 +922,12 @@ catalog family's refresh lifecycle, which phase 0's relation joins.
   belongs with R876.
 - **A rewrite of the walk.** Three were measured, above. One regressed about 240 times, two changed
   nothing, and the one that helped left the exponent alone.
-- **R953's lever 2 alone.** Cheap, stated in a Backlog body, orthogonal, and whether it is *sufficient* is the
-  first question the conditioning measurement asks.
+- **R953's lever 2 alone.** Cheap, stated in a Backlog body, orthogonal, and the question of whether
+  it is *sufficient* is now answered rather than open. It is sufficient for the refresh pass, which it
+  takes from 2915.7 s to something in seconds, and it is not sufficient for the round: the fanout
+  view's read is outside the pass and is unaffected by any statistic, and the walks' residual shape
+  terms survive it. Lever 2 should land whatever this item does, and this item should land whatever
+  lever 2 does.
 - **Converting the whole 26-relation closure in one move.** Eight registrations and two families, with
   the column-scope half reached only through two of the three walks. The phase table exists so the
   measurement decides how far up the ladder this item goes, rather than the doctrine deciding it in
@@ -1390,3 +1667,120 @@ relations are declared in `meta_relation` and every one names `catalog`.
 constraint_name)`, so the body's three-column-prefix reading is right.
 `ix_field_reference_step_hop_step`'s comment carries 18308 against 523. `sql_table_reference`,
 `graphitron_spelled_table` and `graphitron_field_reference_step_hop` are free names.
+
+### Author's response to round 5 (2026-09-17)
+
+Not a review round: this is the author answering. **This round's commit carries no `Claude-Session`
+trailer**, unlike the round-4 response, because it was written by a subagent and subagent commits do
+not get one. The next reviewer should read the commit's own message for who authored it rather than
+the trailer.
+
+Finding 4 is answered in the body, and the phase-3 measurement the body has been waiting on since it
+was filed is now in it, which is the larger of the two changes. Every claim below was verified against
+the shipped tree at `94e23bae4` in this session rather than read off the review, and where the
+verification disagrees with the review the body carries what the tree says and this response names the
+difference.
+
+**Finding 4 (the gatherer's stage list and the invariant's cases). Taken, and the reviewer's
+conclusion reproduces.** `GraphitronFactCapture.capture` runs the ten steps the review lists, in that
+order, and `FieldEndpoints.derive` is the eighth. Four places in the body said eight and last; all four
+are corrected, in the goal's gloss, in "The target the conversions copy already exists", and twice in
+phase 1. The seam paragraph is rewritten from two cases to three, the third being an ordinary
+`graphitron_` table a later stage of the same gatherer writes, and the "does not do" bullet that
+enumerated two carriers now enumerates three.
+
+**One correction to the finding, on the third case's discharge.** The review names three tables as
+what the two trailing stages write. It is two. `FieldRoutines.derive` writes `graphitron_field_routine`
+and `FieldTableLinks.derive` writes `graphitron_field_table_link`; `graphitron_field_chain_link` is
+written by `GraphitronAnchor.chainLinks`, reached through `SdlCapture.captureGraphitronAnchors`, which
+`FactCapture.capture` calls on the line *before* `GraphitronFactCapture.capture`. `FieldTableLinks`
+only reads it, for `max(position)` and as a join. Its `meta_relation` row declares owner `document`
+against `graphitron` for the other two, which is the same fact from the declaration side. The three
+tables were added by the same window of commits, which is presumably how they came to be grouped; the
+writers differ. The discharge is unaffected and is stated on the two: a scan of the DDL finds every
+occurrence of either name inside its own `CREATE TABLE` and `COMMENT` block or in `meta_relation`, so
+no view body names either and no rung's closure can reach them.
+
+**One widening, on what rungs 2 and 3 do reach.** The review names four `graphitron_` relations. The
+closure computed here, parsing the DDL statement by statement with comments and string literals
+stripped and registered relations resolved through their `_live` rules, holds eight:
+`graphitron_argument_reference_step_entry`, `graphitron_field_chain_application`,
+`graphitron_field_navigation`, `graphitron_field_reference_entry`,
+`graphitron_field_reference_step_entry`, `graphitron_routine_entry`,
+`graphitron_spelled_reference_entry` and `graphitron_table_entry`. The review's four are among them and
+its conclusion holds for all eight: six are entry relations the transcription writes and the flush
+inside `capture` publishes before the first stage runs, `graphitron_field_chain_application` is the
+first stage and `graphitron_field_navigation` is the seventh, so every one is written at or before
+`navigation` and before any position phase 1 or phase 2 would take. The body states eight rather than
+four so a later reader checking it finds the same set.
+
+**The position call, which the review left to the author: it stays immediately before
+`FieldEndpoints.derive`.** Phase 1 now argues it rather than inheriting it. The invariant is
+forward-only, so a position has to clear what runs after it, and the eighth position clears every
+input rungs 0 to 3 reach with two stages to spare. Placing them at the end of the gatherer instead
+would assert a dependency on `FieldRoutines.derive` and `FieldTableLinks.derive` that does not exist,
+and a later reader would have to re-derive that it does not. The end of the gatherer is equally
+admissible on the closures and the body says so, with the instruction that an implementer who finds
+the order changed again takes whichever line satisfies the three cases and records which.
+
+Checked and not needed: none of the three trailing stages reads any `intent_` relation at all, so none
+of them is reading a registered target the refresh fills later. Checked to back an absolute: the two
+stages after `FieldEndpoints.derive` touch no relation beyond those two tables, each writing its own
+with an `INSERT ... SELECT` and sweeping its own with a `DELETE`, and neither issues a merge or an
+update anywhere. Left alone as the review asks: the
+"Last, because" comment in `GraphitronFactCapture`, which is a neighbouring defect belonging to
+whichever item owns those stages, and round 3's "127 tables and 2 views".
+
+**Phase 3's acceptance measurement is taken and written into the body, and phase 3 is retitled to say
+so.** It replaces the "in progress" status paragraph, and the four outcome branches under "What this
+plan was conditioned on" are replaced by what the measurement found and by the scope call. The
+configurations themselves stay, because "Tests" asks for the same ones re-taken on the shipped tree
+per phase. Every figure in the body is attributable to the probe record or to the failing round's own
+log, every single execution says it is one, and the three caveats that would otherwise be lost are
+carried: the trunk store's condition family is empty so every shape figure is taken on a walk two and
+a half times smaller than a full one and is conservative rather than optimistic; storing a walk
+*moves* the statistics cliff to one refresh evaluation rather than removing it, and the snapshots were
+built analysed so they price the read and not that refill; and the fanout view's answer preservation
+is equivalence by substitution, not an `EXCEPT` against a relation that does not return.
+
+**The scope call, which is the author's and is argued in the body.** The branches that section carried
+are not mutually exclusive against this evidence and two of them fire at once, so the body says that
+first rather than forcing a fit. **Phases 0 to 2 are this item; phases 4 and 5 split to a successor.**
+The load-bearing reason is not the refresh pass, which R953's lever 2 alone takes into seconds, but
+`intent_field_reference_step_fanout`: an unregistered plain view read by a lint outside the pass, which
+did not return in sixteen minutes in the live round with `intent_field_reference_step_hop` analysed six
+seconds before that read began, and which phase 2 takes to 0.37 s. No statistic reaches it. That is
+this item's priority-1 ground and it is not R953's. Phases 4 and 5 leave on this item's own stated
+rule, that a reach into a second family on a measurement that did not name it is scope creep: the
+input-field walk is a real 2.66 s of the decode-hop rule's 4.124 s, and 2.66 s is a residual rather
+than the failure.
+
+**One thing the round did not name, found while making the call: the goal promised what the call
+removes.** The goal paragraph answered question one by saying the `@nodeId` decode rule's cost stops
+growing as the square of the store's size, and the cost claim under it said the same. Both are the
+successor's after the split, because the walk that rule names is the input-field one and phase 3
+establishes that the field walk is not in its closure at all. They are also the causal story phase 3
+refutes: the twenty minutes is a statistics cliff plus a relation that does not return, and not the
+decode rule's shape. The goal is re-grounded on the two things that actually run long and on which of
+them is this item's, the cost claim now says what this item delivers of it, "What is in scope" marks
+rungs 4 and 5 as the successor's, the scope call states the price, and a new "does not do" bullet
+says the decode rule's remaining per-row term stands until the successor lands. A reviewer checking
+question one against phase 3 would otherwise have found the goal answering with a deliverable the
+item had dropped.
+
+The fanout view is named as a beneficiary in phase 2 and in phase 3 and is not taken into scope: the
+view is not edited, its `pair` alias is not promoted, and nothing about it is filed, because with the
+walk stored there is 0.28 s left in it. The existing "does not do" bullet on
+`intent_node_id_instruction_live`'s `slot_table` alias stands unchanged in its stance and gains the
+measured figures, which make it an optimisation rather than a requirement: 436.1 s to 0.91 s is the
+walk, and 0.91 s to 0.06 s is the alias.
+
+**Body text the measurement made stale, corrected in the same pass**: the goal's cost claim and its
+priority-1 sentence, "What was measured"'s opener, phase 2's paragraph on the instruction rule, phase
+4's split-if sentence, phase 5's register-row count, the R876 and R953 paragraphs, the "R953's lever 2
+alone" and "register the two unstored walks" bullets under other solutions, and the acceptance-evidence
+bullet under "Tests", which now names the three readings a proxy cannot stand in for.
+
+**One arithmetic note.** The failing round's other 21 registrations inserted 29413 rows in 23.2 s,
+computed from the log's own per-registration lines and from 2915.7 minus 2892.5. The body carries
+those rather than any rounder figure.
