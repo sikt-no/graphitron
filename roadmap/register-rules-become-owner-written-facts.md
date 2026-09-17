@@ -14,11 +14,12 @@ last-updated: 2026-09-16
 
 ## Goal
 
-A consumer's build computes every derived verdict the fact store answers with exactly once per
+A consumer's build computes each of the fact store's twenty-three registered verdicts exactly once per
 capture, written down by the gatherer that owns it, in the order that gatherer already runs its
-stages; no view is refreshed into a table by a register, and no reader ever meets a rule that a
-recursive view re-walks once per driving row. Today twenty-three such verdicts are *registrations*:
-rows of `meta_materialize`, the register that keeps a rule in a view under a `_live` name and moves the
+stages, and no view is refreshed into a table by a register. The `@nodeId` decode rule is the one among
+them a recursive view re-walks once per driving row today, and it lands as a table its readers seek
+into. Today those twenty-three verdicts are *registrations*: rows of
+`meta_materialize`, the register that keeps a rule in a view under a `_live` name and moves the
 canonical name onto a table a refresh pass empties and refills after every gatherer has finished. R954
 takes the eight of them under the `@reference` walks bottom-up into stage-written `graphitron_` tables
 and shows the method works. This item takes the remaining fifteen the same way, so that when it lands
@@ -93,9 +94,11 @@ is it. What is still owed is an enforcer for the order once it is statement orde
 The fifteen registered rules R954 does not reach. The *rung* of a relation is one more than the
 highest rung of any registration its rule reads, directly or through plain views; a rule reading no
 registration is rung 0. Computed from the shipped `_live` view bodies with SQL comments stripped, and
-for the implementer to recompute at pickup rather than trust. R954's eight occupy rungs 0 to 6 and are
-listed in its own body; two of this item's fifteen sit *inside* that range, which is stated below
-rather than smoothed over.
+for the implementer to recompute at pickup rather than trust. This counts only registrations, where
+R954's ladder counts the plain views between them as rungs of their own, so the same relation carries
+a different number in the two bodies and neither is wrong; every rung number below is this item's.
+R954's eight occupy rungs 0 to 6 under this counting and are listed in its own body; two of this
+item's fifteen sit *inside* that range, which is stated below rather than smoothed over.
 
 [cols="1,4,5,1,2"]
 |===
@@ -118,13 +121,14 @@ rather than smoothed over.
 | 15 | `intent_mutation_write_destination` | `intent_mutation_payload_column`, `intent_mutation_payload_key_membership` | 1 | one index
 |===
 
-**The two rungs inside R954's range.** `intent_field_column_scope` reads nothing above R954's rung 2
-and `intent_mutation_write_payload` nothing above its rung 4, so both are convertible before R954
-finishes, and the `depends-on:` edge is on R954's phases rather than on its Done: this item's first
-commit can land once `intent_resolved_type_binding` and the hop are tables, its second once
-`intent_field_scope_table` is. The other thirteen wait for R954's rung 6, and the mutation write chain
-at the top is the deepest thing in the store, twenty registrations below it in the transitive closure,
-so it converts last because everything it reads has to be a table first.
+**The two rungs inside R954's range.** `intent_field_column_scope` reads no registration above
+`intent_resolved_type_binding`, and `intent_mutation_write_payload` none above `intent_field_scope_table`,
+so both are convertible before R954 finishes, and the `depends-on:` edge is on R954's phases rather
+than on its Done: this item's first commit can land once `intent_resolved_type_binding` and the hop are
+tables, its second once `intent_field_scope_table` is. The other thirteen wait for the top of R954's
+ladder, and the mutation write chain at the top is the deepest thing in the store, twenty registrations
+below it in the transitive closure, so it converts last because everything it reads has to be a table
+first.
 
 **Three verdict families, landing in ladder order.** The column-scope pair and the mutation write
 payload; then the `@nodeId` decode chain, instruction through hop, hop column and decode column; then
@@ -139,7 +143,10 @@ from a recursive view, which "Implementation" prices.
 - `Materializations` (535 lines) and `RefreshProgress` (185) in `graphitron-model`, and the four call
   sites: `FactCapture.capture`'s refresh and its empty-store cadence, `GraphitronModelStore`'s
   boot-time `MaterializeDependencies.populate`, `StoreRefresh`, and `DevMojo`'s `refreshAll` at
-  session start. `MaterializeDependencies` (261 lines) is not deleted: its parse of stored view
+  session start. `StoreRefresh` is a read of the register rather than a call into it, and it is
+  executable rather than prose: its warm-pass clear queries `meta_materialize` to decide what not to
+  empty. "The last commit" says what replaces that query.
+  `MaterializeDependencies` (261 lines) is not deleted: its parse of stored view
   definitions into read sets is the derivable source the stage order's gate needs, and it is repointed
   rather than retired. `ModelCapture.capture`, the entry point R876 is moving the run onto, calls no
   refresh today; the stages land in `FactCapture`'s derivation stratum, which is the part of the pass
@@ -208,10 +215,21 @@ reader is a stage this item writes, the table can go and the stage read the rule
 registration was buying rows on disk for many readers and buys nothing for one statement. Three terms
 decide, recorded per relation in the commit: view-body readers, counted from the DDL as in the table
 above; Java and stage readers, enumerated by hand once readers are stages the parse cannot count; and
-the statement size of the reader after the demote, from `report-inline-multiplicity`, which must stay
-inside the shipped maximum. The third term is the fact-model page's own warning that past some size a
-stored table "is not buying speed, it is buying a plan existing", and it bites hardest at the top of
-this ladder, where the mutation chain's closure is a hundred relations. By the first term alone three
+the statement size of the reader before and after the demote, both figures read off
+`report-inline-multiplicity`'s ranking and written into the commit beside the other two terms. The
+third term is a judgement rather than a threshold, and deliberately so: that tool reports and does not
+gate, its own javadoc declining to name a ceiling until "a few reductions give that number a basis",
+and this item is one of those reductions rather than the pass that sets the number. What the figure is
+read against is the fact-model page's warning that past some size a stored table "is not buying speed,
+it is buying a plan existing", priced there at 963 for the schema as it ships against 2739455 with
+every registration demoted, two relations at the top of that range exhausting a four-gigabyte heap
+while still parsing. A demote whose reader lands anywhere near that upper range is refused whatever
+the reader count says, and the commit says which way it went and on what number. The term bites
+hardest at the top of this ladder, where the mutation chain's closure is a hundred relations.
+Worth knowing before reading the figure: the shipped ranking's own heaviest relation prints as 141
+rather than 963, so the page and the tool do not currently agree on the scale, and the implementer
+compares a demote's before and after against each other rather than against either published figure.
+By the first term alone three
 are candidates: `intent_argument_column_scope`, read only by `intent_argument_column_match`'s rule;
 `intent_node_id_decode_hop_column`, read only by `intent_node_id_decode_column`'s; and
 `intent_mutation_write_destination`, read only by the plain view `intent_mutation_write_agreement`,
@@ -271,7 +289,9 @@ are no neighbours to re-price.
 
 **What each stage owes on landing.** A `meta_relation` row naming `graphitron` as owner and stating the
 grain, since the frozen undeclared roster only shrinks and a renamed relation is a new one to it. A
-primary key where the grain admits one: ten of the fifteen carry none today, R876's burn-down item 9
+primary key where the grain admits one: twelve of the fifteen carry none today, only
+`intent_field_column_scope`, `intent_argument_column_scope` and `intent_node_id_decode_hop` having one,
+and R876's burn-down item 9
 records that nothing refuses a duplicate row in them, and a stage-written table is the moment to fix
 that; where the grain includes a meaningfully nullable column the table is indexed instead and the
 comment says why, on `MaterializeRegistryGateTest.everyTargetIsIndexedOrStatesWhyNot`'s existing
@@ -286,7 +306,27 @@ a line in the stage order's gate roster where the writer is jOOQ code rather tha
   dependency population from `GraphitronModelStore`'s boot; remove `DevMojo`'s `refreshAll` at session
   start, whose own comment says it exists because "a warm partition whose capture was skipped because
   nothing changed refreshes nothing of its own", and a stage-written table holds the previous capture's
-  rows in exactly that case. `StoreRefresh`'s comment naming `refreshPartition` is repaired.
+  rows in exactly that case, the clear below running only when a capture does.
+- **Repoint `StoreRefresh`'s exemption, which is code and not a comment.** Its warm-pass graph-scoped
+  clear subtracts `refilled(dsl)`, a method whose whole body selects `meta_materialize.target_table_name`,
+  so that a relation whose owner empties it itself is not emptied twice per pass with nothing writing it
+  in between. Dropping the register takes that method's only source away, and every converted relation
+  declares `graphitron` as its owner in `meta_relation`, so without a replacement the clear starts
+  covering exactly the tables the stages are about to delete and refill, which that comment measures at
+  24 ms over 2780 rows on the sakila example and expects to be a consumer store's largest relations.
+  The replacement is the stage roster the order gate and the analyse loop already need: the exemption
+  keeps its meaning and its measured argument, and only where it reads the list from changes. The
+  method is renamed for what it now names and its comment rewritten with it. Its foreign-key safety
+  argument carries across unchanged, the converted relations being the same tables under new names,
+  each declaring one foreign key and it to `store_graph`, which this clear never deletes. Making
+  `graphitron` a `SELF_SWEEPING` gatherer instead is the wrong shape here and is not done, and the
+  reason is worth stating because the name reads as though it fits. That set is read from the declared
+  owner, and the sixteen relations declaring `graphitron` today are the base tables the gatherer's own
+  eight stages write, from `graphitron_element` through `graphitron_argmapping_candidate`. None of them
+  empties its partition first; this clear is what empties them, which is what it means by still
+  covering 205 relations. Declaring the gatherer self-sweeping would stop the clear reaching those
+  sixteen while nothing else empties them, and the set only grows as R877 declares more. The exemption
+  belongs to the relations a stage refills, which is the roster, not to the gatherer.
 - Move `UnlowerableOrderingRejectionRows` into the stage order.
 - Delete `MaterializeRegistryGateTest`, `MaterializationOrderTest`, `MaterializationProgressTest`,
   `RefreshPlanStatisticsTest`, `UnregisteredRelationTest`, `CandidateCutSetTest` and the
@@ -321,9 +361,23 @@ a line in the stage order's gate roster where the writer is jOOQ code rather tha
   materializations; and `dev-loop-internals.adoc`'s stuck-refresh recipe, rewritten around stage lines.
   The `store-performance` skill names the register in seven places and is corrected in the same
   commit; it sits outside the citation guard but not outside being true.
-- The retired names below graduate into `RetiredVocabularyGuardTest`'s registry, so `meta_materialize`
-  and `_live` cannot grow back as prose, and `FactSchemaGateTest`'s frozen relation roster holds that
-  they cannot grow back as relations.
+- The retirement sweep runs at the Done gate over the vocabulary declared below, and only what survives
+  it graduates into `RetiredVocabularyGuardTest`'s registry. Blanket graduation is not the move, for two
+  reasons that both come from the guard itself. Its entry bar is demonstrated recurrence, "a term enters
+  the registry when an audit finds it surviving a cleanup, not at every rename", which is the escalation
+  step `roadmap/workflow.adoc` describes rather than a deliverable a plan can schedule. And the
+  mechanism cannot hold the generic half of the list whatever the bar: a token entry matches a whole
+  identifier over the Java identifier character class, and outside the three classes this item deletes,
+  the main sources spell `registration` 155 times, `registered` 186 and `register` 106, almost all of it
+  the unrelated and entirely live data-fetcher sense in the generators, so registering any of those
+  fails `noRegisteredTokenIsALiveMainSourceName` on arrival. `_live` cannot be a token entry at all,
+  being a suffix rather than a token: `intent_node_id_instruction_live` is one identifier. So the
+  candidates a sweep could plausibly graduate are the unambiguous names, `meta_materialize`,
+  `meta_materialize_dependency`, `Materializations`, `RefreshProgress`, `refreshPartition`,
+  `refreshWhole`, `refreshAll`, `refreshAnalysing`, `REGISTRATIONS` and `REFRESH_STAGES`, and the
+  generic terms are left to the sweep's own grep. What holds the relation names against regrowth needs
+  no registry entry either way: `FactSchemaGateTest`'s frozen roster does it, and the `_live`
+  convention leaves the tree with the last view that carries the suffix.
 
 ## Tests
 
@@ -595,3 +649,32 @@ R954 lands". Not raised as a finding, because deferring one open question to the
 the right call and the front-matter edge is honest about the ordering. Worth knowing when this item is
 picked up: two of its fifteen are convertible against R954's phases rather than its Done, and the
 other thirteen are not startable until R954 both lands and settles the seed question.
+
+### Response to round 1 (2026-09-17, session 01Kc43YJCDD7SrJp3kXLiRxb)
+
+All six findings are answered in the body by the session that raised them, which disqualifies that
+session from signing off the result: the next `Spec → Ready` gate needs a third session. What changed,
+so the next reviewer reads the diff rather than reconstructing it:
+
+- **Finding 1.** The goal's first sentence is scoped to the twenty-three registered verdicts, which is
+  what this item and R954 between them deliver, and the recursion clause now claims the one rule it is
+  true of rather than every reader in the store.
+- **Finding 2.** The demote rule's third term is a recorded judgement, the reader's statement size
+  before and after written into the commit, with no threshold claimed. The body says why there is no
+  ceiling to claim, that this item is one of the reductions the tool is waiting on, and what the figure
+  is read against instead. The disagreement between the shipped ranking's 141 and the page's 963 is
+  stated where an implementer will meet it.
+- **Finding 3.** `StoreRefresh` moves out of the comment-repair bullet into one of its own. The
+  exemption keeps its meaning and its measured argument and is repointed to the stage roster the order
+  gate and the analyse loop already need. The `SELF_SWEEPING` alternative is named and refused, with
+  the reason: the sixteen relations declaring `graphitron` today are base tables the gatherer's stages
+  write without emptying a partition, and this clear is what empties them.
+- **Finding 4.** Graduation into `RetiredVocabularyGuardTest` is conditioned on the Done-gate sweep
+  rather than scheduled. The body carries the guard's entry bar, the ten names a sweep could plausibly
+  graduate, and the mechanical reason the generic terms and the `_live` suffix cannot be token entries.
+- **The two non-blocking corrections** are made: twelve of the fifteen carry no primary key, the three
+  that do are named, and the rung numbering says once that it counts only registrations where R954
+  counts plain views too, with the one number that read as R954's replaced by the relation it means.
+
+Nothing in the ladder, the placement, the stage shape or the test plan changed, so the verification
+those parts had in round 1 carries.
