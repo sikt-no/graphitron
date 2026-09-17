@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SCOPE_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_field_navigated_type} answers, and what {@code intent_connection_element_type}
+ * What {@code intent_field_navigated_type} answers, and what {@code graphitron_connection_element_type}
  * answers underneath it: which type a field's own generated SQL should read the facts of, as against
  * the type the field's signature names. The two differ wherever a wrapper stands between the field
  * and what it delivers, and a rule reading the signature at such a coordinate reads the wrapper's
@@ -298,11 +298,11 @@ class FieldNavigatedTypeTest {
 
     private static List<String> elementRowsIn(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME,
-                INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME)
-            .from(INTENT_CONNECTION_ELEMENT_TYPE)
-            .where(INTENT_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME)
+        return dsl.select(GRAPHITRON_CONNECTION_ELEMENT_TYPE.TYPE_NAME,
+                GRAPHITRON_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME)
+            .from(GRAPHITRON_CONNECTION_ELEMENT_TYPE)
+            .where(GRAPHITRON_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_CONNECTION_ELEMENT_TYPE.TYPE_NAME)
             .fetch(r -> r.value1() + " " + r.value2());
     }
 

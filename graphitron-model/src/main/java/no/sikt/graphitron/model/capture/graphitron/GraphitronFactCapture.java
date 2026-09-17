@@ -92,7 +92,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_FAN_OUT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_UNDECODED_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.INTENT_CONNECTION_ELEMENT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ELEMENT_TYPE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
@@ -217,14 +217,14 @@ public final class GraphitronFactCapture {
             .select(dsl
                 .select(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
                     GRAPHITRON_FIELD.FIELD_NAME,
-                    when(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME.isNull(),
+                    when(GRAPHITRON_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME.isNull(),
                         val("NAMED_TYPE")).otherwise(val("CONNECTION_ELEMENT")),
-                    coalesce(INTENT_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME,
+                    coalesce(GRAPHITRON_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME,
                         GRAPHITRON_FIELD.NAMED_TYPE))
                 .from(GRAPHITRON_FIELD)
-                .leftJoin(INTENT_CONNECTION_ELEMENT_TYPE)
-                .on(INTENT_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
-                .and(INTENT_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.NAMED_TYPE))
+                .leftJoin(GRAPHITRON_CONNECTION_ELEMENT_TYPE)
+                .on(GRAPHITRON_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
+                .and(GRAPHITRON_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.NAMED_TYPE))
                 .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName)))
             .execute();
     }

@@ -153,7 +153,7 @@ class DetectionReadReachGateTest {
         REACH.put("UnlowerableOrderings", Set.of(
             "intent_bound_table",
             "intent_carrier_routine_hop",
-            "intent_connection_element_type",
+            "graphitron_connection_element_type",
             "intent_field_chain_node",
             "intent_field_chain_start",
             "intent_field_chain_terminus",

@@ -4514,6 +4514,55 @@ paragraph above claims. The existing agreement fixture would not have caught it,
 - **The sink, and then the move.** `MacroCapture.expand` takes a `FactSink` for its first-wins claims
   on `graphitron_minted_`, which is a construction rather than a redesign, and after it the nine
   stages move to the tail of `ModelCapture` as `GraphitronAssemblyCapture`.
-- **Three `intent_` reads travel with the stages.** `intent_node_metadata_defect` reads the catalog
-  alone and `intent_connection_element_type` reads two relations the stage sequence writes two lines
-  earlier, so both resolve in either pass. Neither blocks the move and both still owe a placing.
+- **One `intent_` read is left, and it is somebody else's item.** `intent_node_metadata_defect` is
+  R952's, which splits it per grain rather than renaming it; the section below says why. It does not
+  block the move, reading the catalog alone and therefore resolving in either pass.
+
+## A stage reading an intent_ view, and what the reaches turned out to be (2026-09-17)
+
+A capture stage must not read the derivation family, for four reasons that stack.
+
+It inverts the model's direction. `intent_` is the read side, the vocabulary the generator asks its
+questions in, shaped by what a consumer needs. A stage is a producer. When a producer reads a
+consumer-layer relation, a rule written to answer somebody's question becomes the definition of a
+captured fact, and tuning that rule for its actual consumer silently changes what capture recorded.
+
+The declared edge runs the other way. `meta_gatherer_dependency` has `derivation` depending on the
+graphitron and catalog gatherers, so a stage reading an `intent_` view is that edge reversed. The
+store already has the gate: a declared view may read only what its owner owns or depends on. These
+reads escape it because the stages are hand-written jOOQ rather than stored view definitions, not
+because they satisfy it.
+
+It makes a gatherer's output depend on a different reading. An anchor is derivable from the entries
+the same reading wrote, which is what lets its sweep mean anything; reading a derivation makes the
+output a function of whatever the derivation gatherer last refreshed.
+
+And the reach is a signal rather than only a debt. It usually means a fact the stage needs was never
+placed at a grain, and the derivation family is where that omission goes to hide.
+
+### Applying the family's own admission test
+
+Neither of the two reaches turned out to be a derivation-family rule. The `intent_` charter states a
+decidable test: expand a candidate through the family until only captured relations are left and
+count the families those sit in, where `graphql_` and `graphitron_` count as one. Two or more admits
+it; one means the rule belongs to the family it reads.
+
+`intent_connection_element_type` expands to `graphitron_type` and `graphitron_field` and stops. One
+family, so it is `graphitron_connection_element_type` now. The rename was the small part: the frozen
+undeclared roster reads a rename as a retirement plus a new relation, so it came off the roster and
+gained a `meta_relation` row. Its grain is `graphitron_type`'s, being that relation's key restricted
+to the types the rule admits, so it establishes no grain and owes no table; its owner owns both
+relations it reads, which is what the ownership gate wants; and the comment gate moved its prose
+into the two places that hold prose, the comment carrying the grain sentence and the example and the
+rationale carrying the why.
+
+`intent_node_metadata_defect` expands to `sql_node_metadata`, `sql_node_key_column` and `sql_column`
+and stops, so it is the catalog family's by the same test. It is **not** renamed here, and the
+rename this work started was backed out. R952 already owns it and its plan is a split rather than a
+rename: eight of its ten defect values sit at the metadata row's grain and two at the key-column
+entry's, so `position` is NULL on eight rows in ten, and a declared table cannot carry that against
+a key gate that requires the primary key to equal the grain's key shape. The name this work reached
+for, `sql_node_metadata_defect`, is the one R952 reserves for the narrower of its two relations, so
+taking it would have claimed the name while leaving the fault. The stages keep reading the view
+until that item lands, which costs the move nothing: it reads one corpus and resolves in either
+pass.

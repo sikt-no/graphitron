@@ -296,7 +296,7 @@ public final class SeededStore {
                    CASE WHEN ce.type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
                    COALESCE(ce.element_type_name, f.named_type)
               FROM graphitron_field f
-              LEFT JOIN intent_connection_element_type ce
+              LEFT JOIN graphitron_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
             """);
         dsl.execute("DELETE FROM graphitron_method_reference_entry");
