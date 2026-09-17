@@ -2364,3 +2364,150 @@ does not, and rewrites the sibling paragraph.
 answer to this question is incomplete in a way this round found and which is that item's to repair; the
 record is here and in the sibling paragraph. And the scope call itself: nothing in this round moves
 which phases are this item's.
+
+### Round 7 (2026-09-17, Spec -> Ready, reviewer session 01S8drkEy8dUBEs6QQMCBtyY)
+
+Verdict: withhold. Round 6's two blocking findings are answered on their own terms, and the answer to
+finding 5 is stronger than the finding was: the decomposition is the right call and the record of the
+three declined arms is what a later reader needs. What the answer also did is move half of this
+item's stated shape into a dependency, and that is where this round's findings are. All three are on
+question two, all three are about the seam between this body and R956, and none of them is a
+redesign of the ladder.
+
+Question one clears, unchanged from round 6 and re-read rather than inherited. A consumer with a
+large schema gets a `graphitron:dev` round in which a lint's read that does not return today answers
+in under a second, because the `@reference` walk it expands eight times is rows the graphitron
+gatherer wrote once per capture. Every project term arrives glossed and the split between what this
+item delivers and what the successor and R953 deliver is stated where a reader would look for it.
+
+**What reproduced.** Recomputed from the shipped DDL, parsing statement by statement with line
+comments and string literals stripped: 396 relations, 270 base tables and 126 views, and of the 270
+exactly **17 carry no primary key**, every one of them an `intent_` registration target, which is the
+author's stronger form of round 6's "no counter-case" and it holds. 23 registrations, and
+`intent_field_reference_step_target` is **not** among their targets, so the walk is a plain view as
+the rung table says. The frozen roster is 225 lines and carries all five relations the ladder
+touches. `graphitron_` is 130 tables and 2 views, `graphitron_node_type` and
+`graphitron_argmapping_match`, both on the roster. 16 `sql_` tables, 14 stamped.
+`meta_relation_family` selects from `INFORMATION_SCHEMA.TABLES` with no `table_type` filter, so the
+roster does observe views as well as base tables, which is the claim the three-declaration count
+rests on. `aDeclaredTableKeyMatchesItsGrain` reads declared `BASE TABLE`s only.
+`GraphitronFactCapture.capture` runs ten steps with `FieldEndpoints.derive` eighth;
+`FactCapture.capture` runs it, then the five producers the body names, then `Materializations.refresh`.
+`ArgMappingCandidates.derive` opens `dsl.deleteFrom(c).where(c.GRAPH_NAME.eq(graphName))`.
+`NameMatchedKeys.derive` runs before `SdlFactCapture` and `GraphitronFactCapture`. Eight view bodies
+and `StoreNodeTables` name `intent_resolved_type_binding`, exactly as phase 2 says.
+
+The round-6 response's own two corrections both reproduce, and they are the load-bearing ones.
+`intent_resolved_type_binding` declares six columns, all `NOT NULL`, and
+`intent_resolved_type_binding_live` is `COUNT(*) OVER (PARTITION BY graph_name, type_name)` over a
+`UNION` of the two arms, so the five identity columns are unique by construction and the key the body
+declares is real. And the unkeyable arm is two arms: `intent_field_reference_step_hop_live` projects
+`NULL` and `CAST(NULL AS BOOLEAN)` on both `NAME_MATCH` and `CONDITION`. One further check the bodies
+do not make and which the decomposition needs, offered because it holds rather than as a finding: the
+four arms' entry predicates make the two key shapes disjoint per element coordinate. `KEY` requires
+`s.key_ref IS NOT NULL`, `TABLE` and `NAME_MATCH` require `s.table_ref IS NOT NULL AND s.key_ref IS
+NULL`, and `CONDITION` requires `s.table_ref IS NULL`, so no element can produce both a `NAME_MATCH`
+and a `CONDITION` row, which is what makes the match arm's coordinate-plus-triples key total rather
+than merely plausible. The walk inherits it, its `chain` being a `UNION` over hop columns alone.
+
+**Finding 8 (question two, blocking). The one dependency cannot deliver the walk half as stated,
+because nothing writes the walk.**
+
+`intent_field_reference_step_hop` is a registered target: a base table the register fills. Splitting
+it into two keyed base tables under a union view is a change R956 can make without answering who
+writes the rows, because the register writes them either way, which is exactly what that item's "it
+does not change who writes them" says.
+
+`intent_field_reference_step_target` is not that. It carries no `meta_materialize` row in either
+column, so it is a plain view evaluated on demand and **nothing writes it at all**. A view cannot
+carry a primary key and cannot declare a column `NOT NULL`, so the shape R956 states for it, "one
+relation per key shape, keyed, every column `NOT NULL`", is unreachable for the walk without a writer,
+and R956 declines to supply one. There are only two ways out and they are different plans:
+
+- R956 registers the two walk arms, which adds two register rows to land rows that this item then
+  converts away. That is the accretion this body and R876 exist to reverse, and it falsifies this
+  body's "the register ends between three and eight rows smaller than it started, **having gained
+  none**" and phase 1's "Two registrations retired, none added" for the ladder taken as a whole.
+- Or the walk's decomposition is realised by phase 2 itself, R956 contributing the diagnosis and the
+  two key shapes but no relation. Then "The walk arrives split too ... and R956 carries that half as
+  well" is wrong about what arrives, and phase 2 owns a design it currently delegates.
+
+The second reading is the coherent one and costs this body a paragraph rather than a rung. What would
+satisfy the finding is the body saying which of the two it means for the walk, and if it is the
+second, phase 2 stating that it is the phase that splits the walk, with the arm predicate and the two
+key shapes written where an implementer meets them rather than by reference to another item. The
+per-rung registration fallback does not cover this, because it is the fallback for R956 *not* landing;
+this is what happens when it does.
+
+**Finding 9 (question two, blocking). The two bodies disagree about what names R956 leaves behind,
+and the disagreement is the family move this item's whole conversion argument turns on.**
+
+This body says three times that R956 leaves "a view carrying the existing name every reader already
+spells", and phase 1 then opens "`intent_field_reference_step_hop` becomes
+`graphitron_field_reference_step_hop`". So this body expects R956 to leave `intent_`-named relations
+and expects to perform the rename itself, which is what "A converted relation moves to `graphitron_`,
+and that is load-bearing rather than cosmetic" argues for at length.
+
+R956's own shape section names all three relations `graphitron_field_reference_step_hop_key`,
+`graphitron_field_reference_step_hop_match` and the view `graphitron_field_reference_step_hop`, and
+its declaration paragraph leans on that prefix: it says the union view "is a new name too, and owes
+its own declaration" and that the item "introduces the first declared `graphitron_` view". Under this
+body's reading the union view inherits the roster line the name already holds and owes no declaration
+at all, so the two bodies do not even agree on how many declarations R956 lands.
+
+The reading matters beyond bookkeeping. If R956's names hold, then when it lands and before this item
+does, the register holds a registration whose target carries a `graphitron_` name while the gatherer
+does not write it. That is the family and ownership mismatch the rename argument here exists to
+avoid, performed by the item that explicitly disclaims performing it. What would satisfy the finding
+is this body stating which names phases 1 and 2 expect to find, and if the answer is the `intent_`
+ones, saying so in the R956 paragraph under "Relation to other items" so the two bodies can be
+reconciled from either side. That paragraph is the natural home because it already carries why this
+edge exists where the R953 one does not.
+
+**Finding 10 (question two, blocking). The acceptance evidence for the reconciliation discipline is
+vacuous on the fixture the body names, for exactly the two relations phases 1 and 2 deliver.**
+
+The answer to round 6's finding 6 is right about the discipline and right about
+`WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` being the shape of the check: it captures
+twice into a persistent store and compares `census`, which iterates `Public.PUBLIC.getTables()` and
+skips views, so a converted relation does join it with no edit and an appending stage would show up as
+a doubled count against the cold load. That part checks out.
+
+What does not is "the ask is a bound-schema arm on an existing case, not a new fixture".
+`TABLE_BOUND_SDL` is `type Query { films: [Film!]! }` and `type Film @table(name: "film")` with two
+scalar fields. It carries no `@reference` application, and `graphitron_field_reference_step_entry` is
+by its own comment "An ordered path element of one @reference application", so on that schema the
+entry relation is empty, the hop is empty and the walk is empty. A second capture then leaves their
+row counts unchanged whether the stage reconciles or appends. Rung 0 and rung 2 do take rows there,
+`graphitron_spelled_reference_entry` carrying "the fact underneath @table(name:)", so the arm is not
+worthless; it just does not reach `graphitron_field_reference_step_hop` or
+`graphitron_field_reference_step_target`, which are the two relations phases 1 and 2 exist to write
+and the two whose keylessness made the silent-doubling failure mode worth a subsection.
+
+What would satisfy the finding is the Tests bullet naming what the fixture has to carry, a schema with
+a `@reference` path between two bound types, rather than pointing at an SDL constant that cannot
+populate the relations under test. Whether that is a third constant beside `TABLE_BOUND_SDL` or an
+extension of it is the implementer's call; what the body owes is the observation that the existing one
+does not reach these relations, since "not a new fixture" is the sentence an implementer would act on.
+
+**Finding 11 (non-blocking, question two). R953 moved while this round was being written, and four
+sentences here describe the state it left.**
+
+Trunk commit `d85bf71` flips R953 to `Spec` and drops its lever 3, on this body's own asking: that
+item's "Relation to other items" now records the supersession and says registering the walk "is not
+planned here". Four places in this body still describe the previous state. "Relation to other items"
+says R953 "is `Backlog` and nobody has picked it up, so a mutual clause would be a gate with no
+owner", and the paragraph after it opens "since both are Backlog items nobody has picked up". Both
+now read against the tree. The same paragraph says R953's body "is amended whenever it is next
+touched", which has happened. And the fallback sentence, and the "Other solutions we've considered"
+bullet that calls the registration "R953's lever 3", both name a lever that item no longer plans, so
+an implementer cannot reach phase 2 and find lever 3 landed by R953.
+
+None of it moves a conclusion. The edge rule this body states is about what a plan depends on rather
+than about who has picked an item up, so the reasoning survives the status change intact, and the
+registration fallback is this body's own and does not need another item to own it. It is listed
+because the last three rounds each found a sentence describing a tree that had moved, and this is the
+same shape caught early rather than a fifth round's finding.
+
+**Corrected in passing: nothing.** Every figure and symbol this round could recompute from the shipped
+tree held, including the two corrections the round-6 response made to the round-6 review.
