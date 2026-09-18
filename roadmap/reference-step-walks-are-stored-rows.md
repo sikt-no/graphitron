@@ -5,9 +5,9 @@ status: Spec
 bucket: architecture
 priority: 1
 theme: model-cleanup
-depends-on: [reference-step-arms-are-separate-keyed-relations]
+depends-on: []
 created: 2026-09-16
-last-updated: 2026-09-17
+last-updated: 2026-09-18
 ---
 
 # A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row
@@ -23,8 +23,8 @@ in the same statement an anonymous derived table recounts the foreign keys betwe
 row. That makes both the `@nodeId` decode rule and every other reader of a walk grow as the square of
 the store's size, which on the `sis` consumer is a `graphitron:dev` round that runs past twenty
 minutes. Phase 3's measurement says what that twenty minutes is made of, and it is two things rather
-than one: a statistics cliff on a single column, which is R953's to fix, and one relation that does
-not return at all, `intent_field_reference_step_fanout`, which no statistic reaches because its cost
+than one: a statistics cliff on a single column, which was R953's to fix and whose two levers are now
+on trunk, and one relation that does not return at all, `intent_field_reference_step_fanout`, which no statistic reaches because its cost
 is the field walk being re-expanded eight times in one evaluation. When this lands, the field walk is
 written by the `graphitron` gatherer into its own family once per capture, the register is smaller
 rather than larger, and that relation answers in under a second instead of not answering. The decode
@@ -70,9 +70,10 @@ it shares.
 ## The structural finding this plan is built on
 
 Computed from the shipped DDL, so it is checkable rather than argued, and recomputed against trunk
-`94e23bae4` on 2026-09-17 after this section was found to have been taken on a checkout predating two
-commits of 2026-09-14. The transitive closure of the three walks through `intent_` relations holds
-**26 relations, 8 of them registered**. Every one of the 26 bottoms out entirely in captured facts:
+`911176d` on 2026-09-18 after R956 split the hop. The transitive closure of the three walks through
+`intent_` relations holds **28 relations, 9 of them registered**, where before that split it held 26
+and 8: the hop is now a view over two registered arm tables, so one registered relation in the closure
+became two plus the view above them. Every one of the 26 bottoms out entirely in captured facts:
 not one reads anything that is not ultimately `graphitron_`, `graphql_`, `sql_`, `store_` or `code_`.
 There is no cross-family derivation anywhere in this subtree. It is all resolution, which is to say
 matching what an author wrote against what the catalog holds, and capture holds both sides of every
@@ -94,16 +95,17 @@ indexable equality. Capture does most of that work and hands the last join to a 
 needs a register row to be affordable.
 
 **What the registrations are holding up.** By the fact-model page's inlining rule, the one
-`report-inline-multiplicity` implements, recounted over the shipped DDL at `94e23bae4`:
-`intent_node_id_decode_hop_live` as shipped is a statement of size 12, and with the registrations
-under it demoted to their rules it is **4448**. The field walk is 4 against 145, the input-field walk
-4 against 655. So plan size is not what costs today, and the reason is that eight registrations are
+`report-inline-multiplicity` implements, recounted over the shipped DDL at `911176d`:
+`intent_node_id_decode_hop_live` as shipped is a statement of size 16, and with the registrations
+under it demoted to their rules it is **4556**. The field walk is 8 against 151, the input-field walk
+8 against 673. So plan size is not what costs today, and the reason is that nine registrations are
 truncating the tree. They are scaffolding under a subtree that is entirely resolution.
 
-The three shipped figures are what the tool reports and are unchanged; the three demoted ones fell
-from 4796, 163 and 709 with the recount, because the retired `intent_name_matched_key_pair` was a
-plain view under the hop and its subtree left the closure with it. Stated rather than silently
-replaced, since the same staleness is what the round-4 review found in the paragraph above.
+All six figures rose with R956's split, and the shipped three roughly doubled for the two walks:
+the hop's canonical name is a view now, so a walk naming it expands that view rather than stopping at a
+table. The previous recount, taken at `94e23bae4`, read 12 and 4448, 4 against 145, and 4 against 655.
+Stated rather than silently replaced, since a figure quietly restated is what the round-4 review found
+in the paragraph above. The conclusion is unmoved and the margin is wider.
 
 **A registration already evaluates its rule exactly once per capture.** `Materializations.refresh`
 issues one `DELETE` and one `INSERT ... SELECT` per registration per graph. So for the eight relations
@@ -191,7 +193,7 @@ each rung is independently landable and independently verifiable.
 |---|---|---|---|
 | 0 | `intent_spelled_table` | registered | nothing |
 | 0 | `intent_condition_method_route` | plain view | nothing; reads `code_condition_method` and `code_condition_method_parameter` |
-| 1 | `intent_field_reference_step_hop` | registered | the two rung-0 relations, plus `sql_name_matched_key_column` |
+| 1 | `intent_field_reference_step_hop_keyed`, `intent_field_reference_step_hop_keyless`, under the view `intent_field_reference_step_hop` | two registrations under a plain view | the two rung-0 relations, plus `sql_name_matched_key_column` |
 | 2 | `intent_resolved_type_binding` | registered | `intent_bound_table`, `intent_routine_return_binding` |
 | 3 | `intent_field_reference_step_target` | plain view | rungs 1 and 2 |
 | 4 | `intent_argument_scope_table`, `intent_field_scope_table`, `intent_carrier_data_field`, `intent_input_field_resolving_table` | all registered | a wider subtree of the column-scope family |
@@ -203,7 +205,7 @@ placement argument and the convert-or-demote rule all transfer to the successor 
 re-deriving them there would be work already done.
 
 Three things the table is saying that are easy to miss. The field walk needs only rungs 0 to 2, which
-is **three registrations**, and its subtree is closed: `intent_bound_table`,
+is **four registrations** since R956 split the hop into two, and its subtree is closed: `intent_bound_table`,
 `intent_routine_return_binding`, `intent_field_chain_terminus`, `intent_field_chain_node`,
 `intent_field_chain_start` and `intent_field_navigated_type` are all plain views a stage may read
 inline. The other two walks need rung 4, which reaches into the column-scope family and is where this
@@ -225,17 +227,27 @@ was buying for many readers and is not buying for one. Where it has several read
 `DerivedReadCostTest`'s reader counts decide this per relation rather than a rule in this body, and
 the commit records which way each went and why.
 
-**Two relations arrive decomposed, which is R956's and is this item's one dependency, and no gate
-changes.** The hop and the field walk each state four arms discriminated by a `via` literal with two
-different natural keys between them, which is why neither carries a primary key today and why neither
-could carry one as written; a conversion of either would be the first declared keyless base table in
-the tree. R956 splits each into a keyed table per key shape under a view carrying the existing name,
-and this item then converts what it finds. "The key gate, and the arm this item takes" under
-Implementation derives that and records the three arms declined, one of which was a gate widening this
-item drafted and withdrew. Nothing here edits a gate:
+**The hop arrived decomposed and the walk did not, which is what R956 settled, and no gate changes.**
+The hop and the field walk each stated four arms discriminated by a `via` literal with two different
+natural keys between them, which is why neither carried a primary key and why neither could have
+carried one as written; a conversion of either would have been the first declared keyless base table in
+the tree. R956 has landed, and it split the hop alone: `intent_field_reference_step_hop_keyed` and
+`intent_field_reference_step_hop_keyless` are two keyed, declared registration targets under a view
+carrying the canonical name, so rung 1 converts two relations that already satisfy
+`aDeclaredTableKeyMatchesItsGrain`. It deliberately left the walk a plain view, because a walk split
+into views would evaluate the recursion twice per reader and refuse no duplicate, so **the walk's split
+lands with its storing, which is phase 2 of this item**. R956's "The walk" section fixes the DDL that
+phase lands in and this body takes it rather than restating it. "The key gate, and the arm this item
+takes" under Implementation carries the reasoning and records the three arms declined, one of which was
+a gate widening this item drafted and withdrew. Nothing here edits a gate:
 `nothingMaterializesOutsideTheMechanism` and `HAND_WRITTEN`'s impossibility criterion are left exactly
 as they stand, which was the point of moving family in the first place, and
 `aDeclaredTableKeyMatchesItsGrain` is satisfied rather than widened.
+
+**Why this body carries no `depends-on:` edge any more.** It carried one to R956 while that item was
+unlanded. R956's DDL is on trunk, so there is nothing left to wait for, and the roadmap-tool fails the
+build on a `depends-on:` slug that no longer resolves, which is what that item's own file being deleted
+at Done would produce. The edge is removed rather than left to break.
 
 ## Implementation
 
@@ -290,11 +302,14 @@ the obligation is vacuous here: `MetaDeclarationGateTest`'s corpus check skips a
 placement argument above leans on from the other side. What each rung owes concretely is a roster line
 removed, a `meta_relation` row added, a `meta_grain` row where the grain is new, and the `_live` view
 deleted where there was one. The roster observes views as well as base tables, so a decomposed rung
-owes three declarations rather than one: each keyed arm table and the union view over them, which R956
-carries. `intent_condition_method_route` converts nothing, stays a plain view and stays on the roster.
+owes three declarations rather than one: each keyed arm table and the union view over them. Two of the
+hop's three are already paid, R956 having declared both arm tables; what the rename adds is the third,
+because the union view keeps the canonical name and therefore keeps the roster line that name already
+holds, and only a `graphitron_` spelling is new to the roster.
+`intent_condition_method_route` converts nothing, stays a plain view and stays on the roster.
 
-**A declared base table meets the key gate, and two of the four cannot satisfy it as written.** That
-is the next subsection, because the answer is a design call rather than a step.
+**A declared base table meets the key gate, and one of the five still has to be made to satisfy it.**
+That is the next subsection, because the answer is a design call rather than a step.
 
 ### The key gate, and the arm this item takes
 
@@ -303,15 +318,24 @@ primary-key shape to equal its grain's `key_shape`. `meta_grain.key_shape` is `N
 `CHECK (CHAR_LENGTH(key_shape) >= 1)` and the gate builds its comparison map from
 `INFORMATION_SCHEMA`, so a table with no primary key has no entry and offends any declared shape. Its
 message says so: "an unkeyed declared table owes a key before it owes anything else". Of the shipped
-tree's 270 base tables, 17 carry no primary key and every one of the 17 is an `intent_` registration
-target standing on the frozen roster. So there is no keyless declared table to lean on, and the
+tree's 272 base tables, 17 carry no primary key and every one of the 17 is an `intent_` registration
+target standing on the frozen roster; the count held across R956, which retired one keyless target and
+added two keyed ones. So there is no keyless declared table to lean on, and the
 absence is not an oversight: a registration target is exempt from both gates for one reason, that it
 is on the roster, and the conversion is precisely what removes that standing.
 
-The four conversions split three ways, and the split is the grain's rather than a preference.
+The conversions split three ways, and the split is the grain's rather than a preference. Two of the
+three are settled in the shipped tree and the third is this item's to land.
 
 `intent_spelled_table` is already keyed on all five of its identity columns and converts with nothing
 owed but the declaration.
+
+`intent_field_reference_step_hop_keyed` and `intent_field_reference_step_hop_keyless` **arrive keyed
+and declared**, which is R956 having landed. The keyed arm is keyed on the element coordinate, both
+table triples, `constraint_name` and `fk_on_from`, with `key_matched_by` the one nullable column under
+a biconditional `CHECK`; the keyless arm is twelve columns all `NOT NULL`, keyed on the coordinate and
+both triples. Rung 1 converts two relations that already satisfy the gate, and what it owes each is the
+declaration re-pointed at the new name rather than a new argument.
 
 `intent_resolved_type_binding` **takes a real primary key with no change to its rule and no column
 made non-nullable**, which an earlier reading of this fork got wrong by counting it among the
@@ -321,8 +345,8 @@ graph_name, type_name)` over a `UNION` of `intent_bound_table` and `intent_routi
 construction and `candidates` is a payload the partition determines. Declare that as the grain and the
 gate is satisfied outright.
 
-`intent_field_reference_step_hop` and `intent_field_reference_step_target` are the two that cannot be
-keyed as written, and following why says what to do about it. Their rule is a `UNION ALL` of four arms
+`intent_field_reference_step_target` is the one that still cannot be keyed as written, and following
+why says what to do about it. It inherited the shape from the hop, whose rule was a `UNION ALL` of four arms
 discriminated by a `via` literal, and on the `NAME_MATCH` and `CONDITION` arms `key_matched_by`,
 `constraint_name` and `fk_on_from` are projected as literal `NULL`, because a name-matched hop joins on
 no foreign key and a condition hop joins on an authored predicate. The shipped column comments state
@@ -339,16 +363,24 @@ hop. The subject is the fact-model page's own worked anti-example: a `@reference
 one per assertion. `intent_condition_method_route` and its `_defect` sibling are the shipped instance
 of the same move.
 
-**The arm: the relations decompose on `via`, no gate changes, and the decomposition is R956 rather than
-this item.** Each becomes two keyed base tables and a view unioning them under the name every reader
-already spells: one table for the foreign-key arms, keyed on the coordinate, both table triples,
+**The arm: the relation decomposes on `via`, no gate changes, and phase 2 is where the walk's half
+lands.** It becomes two keyed base tables and a view unioning them under the name every reader already
+spells: one table for the foreign-key arms, keyed on the coordinate, both table triples,
 `constraint_name` and `fk_on_from`; one for the keyless arms, keyed on the coordinate and both triples,
-which is already total there. Both `NOT NULL` throughout, each carrying a `CHECK` on the `via` values it
-admits. `aDeclaredTableKeyMatchesItsGrain` then clears untouched, because every declared base table
-carries a real primary key and the key gate does not read views, and
+which is already total there, with `targets` and `candidates` beside each key as payload. Each carries a
+`CHECK` on the `via` values it admits. `aDeclaredTableKeyMatchesItsGrain` then clears untouched, because
+every declared base table carries a real primary key and the key gate does not read views, and
 `theUndeclaredRosterOnlyShrinks` is satisfied by declaring each arm table at the grain it actually has.
-R956 carries the diagnosis, the shape and the evidence it owes; this body states it, depends on it and
-does not perform it.
+
+R956 proved that shape on the hop and shipped it: two keyed declared arm tables under a union view,
+with the `EXCEPT` oracle run on three fixtures and both directions empty on all three. What it
+deliberately did **not** do is split the walk, and the reason is this item's to act on rather than to
+re-derive. A walk split into two views would carry the `WITH RECURSIVE` twice under the union view and
+so evaluate the recursion twice for every reader, doubling the very re-evaluation this item exists to
+remove, and would buy nothing, a view refusing no duplicate row. The split is therefore only worth
+making at the moment the rows stop being a view, which is this item's phase 2. R956's "The walk"
+section fixes the DDL that phase lands in, down to the two table names, the keys, the `CHECK` and the
+coordinate index; phase 2 takes it as written rather than restating it here.
 
 Two things that buys beyond clearing the gate, which is why it is the arm rather than the concession.
 It refuses a duplicate row, which R876's burn-down records that nothing in these targets does today and
@@ -362,23 +394,23 @@ not, since it is the nearest thing to a counter-case: its arm-conditional column
 per position per target, where the hop's are identity, many candidate routes per position. That
 asymmetry is the whole problem in one sentence.
 
-**Why it is a separate item and not two more paragraphs here.** The walk's recursive term joins the hop
-once per accumulated row and `ix_field_reference_step_hop_step` is what makes that a seek, 18308 scans
-against 523 by its own comment. Under a union view the planner has to push that eight-column seek into
-both arm tables. H2 usually does; usually is not good enough for the figure this item's cost claim
-rests on, so the decomposition owes that re-measurement as its own acceptance evidence, and owing a
-measurement is what makes it an item rather than a paragraph. This body writes no figure for it,
-because none has been taken.
+**The seek across the union view was the open question, and it is now answered rather than owed.**
+The walk's recursive term joins the hop once per accumulated row, and what used to make that a seek was
+`ix_field_reference_step_hop_step`, whose comment priced reading the walk whole at 18308 scans without
+it and 523 with it. That index is gone: each arm table's primary key leads with the same eight columns,
+so the key serves the seek and both arms take `MaterializeRegistryGateTest.NO_INDEX` rows carrying the
+key-prefix argument. R956 measured what the union view costs on `DerivedReadCostTest`'s twelve-unit
+fixture: the eight-column seek survives it at 178 scans, reading the walk whole is 973 scans against
+795 over the single table, and with the keyed arm's registration removed the same read is 14457. So the
+planner does push the seek into both arms, the split costs the walk about a fifth more scans, and the
+registration is what the figure depends on. This body no longer owes that measurement and no longer
+carries a contingency on it.
 
-**The fallback if R956 does not land, which this body already licenses per rung.** The rung takes the
-registration instead: the rows land on the same disk, the `intent_` name and the frozen roster line
-stay, both gates clear with no change, and `intent_field_reference_step_fanout` still answers in
-0.37 s, because what fixes it is the walk being a table rather than who wrote it. That is "Other
-solutions we've considered"'s cheap fallback applied per rung, and this body's own "Convert or demote,
-per relation" rule already says taking it and recording why is a legitimate outcome rather than a
-failure. What it costs is the per-graph partition write and the modelling claim for that one relation,
-and where the walk is concerned it grows the register by a row. It is a smaller concession than being
-the item that puts the first keyless table through a gate whose message forbids it.
+**The one reader the split cost, which strengthens phase 2 rather than weakening it.** On a store
+captured from the sakila example schema R956 measured `intent_field_reference_step_fanout` at 22.3 s
+against 17.1 s before the split, the one reader it made worse and already that store's outlier. That is
+the relation phase 2 takes to 0.37 s by storing the walk, so the split has moved the argument for phase
+2 in the direction of urgency. Every other reader it measured was unchanged to within a millisecond.
 
 Three arms were weighed and declined, recorded so the call is not re-litigated. **Manufacturing a key**
 needs a sentinel standing for "no constraint", which makes one column mean two things and is the
@@ -405,8 +437,10 @@ the key gate, which R955 never names: twelve of its fifteen carry no primary key
 table, and the gate it leans on stops covering a relation the moment the registration is retired, while
 `aDeclaredTableKeyMatchesItsGrain` starts covering it the moment it is declared. R955's own last commit
 deletes `MaterializeRegistryGateTest` outright. So the pincer is identical there and larger, and this
-item takes the gate change because it lands first and because four relations is a cheaper place to get
-the shape right than fifteen. "Relation to other items" carries the hand-off.
+item takes the question first and because five relations is a cheaper place to get the shape right
+than fifteen. What that item can now copy is a shipped answer rather than an argument, R956 having put
+a decomposed hop through both gates with neither touched. "Relation to other items" carries the
+hand-off.
 
 ### Phase 0: the foreign-key count becomes a captured catalog fact
 
@@ -505,27 +539,42 @@ deleted, the rule moving into the stage's `DELETE` and `INSERT ... SELECT` uncha
 primary key it already carries on all five identity columns, so it is the one rung the key gate costs
 nothing.
 
-`intent_field_reference_step_hop` becomes `graphitron_field_reference_step_hop`, written by the stage
-after it. Its whole input list, checked against the shipped rule rather than assumed:
+**The hop arrives split, keyed and declared, so this phase converts two relations where it used to
+convert one.** `intent_field_reference_step_hop_keyed` and `intent_field_reference_step_hop_keyless`
+become `graphitron_field_reference_step_hop_keyed` and `graphitron_field_reference_step_hop_keyless`,
+each written by a stage of its own, and `intent_field_reference_step_hop` becomes
+`graphitron_field_reference_step_hop`, the same union view over the two under the new name. Each stage
+takes its arm's `_live` rule text unchanged into its `DELETE` and `INSERT ... SELECT`, which is what
+keeps the `EXCEPT` oracle comparing two evaluations of one text, and both `_live` views are deleted.
+**Two registrations are retired here, not one**, R956 having replaced the single hop registration with
+one per arm.
+
+The combined input list of the two rules, checked against the shipped text rather than assumed:
 `graphitron_field_reference_step_entry`, `store_graph_source`, `sql_table`, `sql_constraint`,
 `sql_referential_constraint`, `sql_name_matched_key_column`, `graphitron_spelled_table` (rung 0, just
 written) and `intent_condition_method_route` (rung 0, a plain view read inline). Every one is a
 captured fact or a plain view over captured facts by the time the stage runs, the `sql_` table among
-them because `NameMatchedKeys.derive` runs earlier in the same pass. Its registration is retired. It
-keeps `ix_field_reference_step_hop_step`, whose comment already prices what that index removes:
-reading the field walk whole costs 18308 scans without it and 523 with it, on a copy per arm table.
+them because `NameMatchedKeys.derive` runs earlier in the same pass.
 
-**The hop arrives already split and keyed, which is R956's, and this phase converts what it finds.**
-Per the key-gate subsection above, the hop is a discriminated union of four arms with two natural keys
-between them, so R956 decomposes it into a keyed table per key shape under a view carrying the existing
-name; this phase then writes each of those two tables with a stage of its own and retires the
-registration. The two stages are the two arms of today's `UNION ALL` taken apart, so the rule's text is
-unchanged rather than rewritten, which is what keeps the `EXCEPT` oracle comparing two evaluations of
-one text. The declaration each arm table owes is the ordinary one, and it needs no gate to move. If
-R956 has not landed when this phase is picked up, the rung takes the registration fallback the key-gate
-subsection states and the commit records that it did.
+Neither arm carries an index and neither should gain one: each primary key leads with the eight columns
+the walk's recursive term seeks on, which is what retired `ix_field_reference_step_hop_step`, and both
+arms hold `MaterializeRegistryGateTest.NO_INDEX` rows stating that. A converted stage inherits the keys
+with the rows, so the seek survives the move by construction; what it does not inherit is the
+`NO_INDEX` row, that roster iterating live registrations, so each arm's key-prefix argument moves onto
+the relation's own `COMMENT ON` as the registration goes.
 
-Two registrations retired, none added, and the hop is the relation *all three* walks read, so this
+**What each arm owes the declaration roster.** Both arm tables are declared today under their `intent_`
+names, so the conversion re-points two existing `meta_relation` rows rather than arguing two new ones.
+The union view is the one new obligation: it keeps the roster line its canonical name already holds
+while the name is `intent_`, and a `graphitron_` spelling is new to the roster, so the rename is what
+makes a declaration fall due. R956 worked out the grain it takes, and this phase uses it rather than
+re-deriving it: the view's rows are not at the keyed arm's grain, whose sentence says "in one
+orientation" of a foreign key and is false of a keyless row, so the view declares a third grain of its
+own, one candidate route a field-site `@reference` path element could take, foreign-key or not, in one
+graph, at the thirteen-column shape. One extra `meta_grain` row, and
+`aDeclaredTableKeyMatchesItsGrain` never asks about it, that gate binding on base tables only.
+
+Three registrations retired, none added, and the hop is the relation *all three* walks read, so this
 phase is the one that moves the most for the least.
 
 **Where this phase's stages run, and why that position is current for every input.** Inside
@@ -558,22 +607,30 @@ converting is the expectation and the commit says which way the count sent it. O
 the primary key the key-gate subsection above derives, `(graph_name, type_name, table_source_name,
 table_schema, table_name)`, which needs no column made non-nullable and no change to the rule.
 
-`intent_field_reference_step_target` becomes `graphitron_field_reference_step_target`, written by a
-stage as a graph-scoped `DELETE` and then **one insert per graph**: `INSERT INTO
-graphitron_field_reference_step_target WITH RECURSIVE chain AS (...) SELECT ..., MAX(target_rank) OVER
-(...), COUNT(*) OVER (...) FROM (...) ranked`, with the seed filtered to the graph. The view text moves
-into the stage exactly as phase 1's does, and the `EXCEPT` oracle then compares two evaluations of one
-text rather than two texts. The `DELETE` is what an earlier draft of this paragraph left out, and on a
-keyless target its absence is silent: see the subsection above for why it is per rung rather than per
-taste.
+`intent_field_reference_step_target` becomes two keyed tables under a view, and **this phase is what
+splits it**, which is the one thing R956 left to be done here rather than doing itself. The shape is
+fixed in that item's "The walk" section and this phase lands it:
+`graphitron_field_reference_step_target_keyed` and `graphitron_field_reference_step_target_keyless`,
+keyed as the two hop arms are with `targets` and `candidates` beside the key, a `CHECK` on the `via`
+values each admits, and `graphitron_field_reference_step_target` the union view over them under the
+name every reader already spells, presenting the three absent columns as `NULL` exactly as the hop's
+view does. Each table is written by a graph-scoped `DELETE` and then an insert, and the `DELETE` is
+what an earlier draft of this paragraph left out: see the subsection above for why it is per rung
+rather than per taste.
+
+The split is this phase's and not a separate item's because the two cannot usefully be separated. A
+walk split into views would carry the `WITH RECURSIVE` twice under the union view, evaluating the
+recursion once per arm per reader, which is the opposite of what this phase is for; and a walk stored
+as one relation would be the first declared keyless base table in the tree, which is what the key-gate
+subsection above refuses. The split and the storing are one edit, and R956 says so from its side.
 
 The earlier drafts of this phase proposed a Java fold instead, one insert per position with a
 termination bound and an assertion, on the reading that the fold would remove "two window functions
 inside a recursive term". That reading was wrong about the shipped rule and the correction is the
 reason this phase changed shape. In `intent_field_reference_step_target` as shipped, the recursive
 term is a plain `UNION` of the seed with one join to `intent_field_reference_step_hop` on the eight
-columns `ix_field_reference_step_hop_step` serves; `DENSE_RANK`, `MAX(target_rank) OVER` and `COUNT(*)
-OVER` are all in the outer `SELECT` over the finished `chain`. So the fold would have removed nothing
+columns each arm table's primary key now leads with; `DENSE_RANK`, `MAX(target_rank) OVER` and
+`COUNT(*) OVER` are all in the outer `SELECT` over the finished `chain`. So the fold would have removed nothing
 that is there, and it would have restated in Java a rule this tree states in SQL, against this item's
 own "the rule stays stated once, in SQL". Three further reasons it goes: the walk standalone is
 milliseconds by this body's own table, so the cost was never the recursion but the per-driving-row
@@ -585,21 +642,28 @@ cannot borrow. H2 2.4.240, the pinned version, accepts the single-statement form
 checked it on the jar in the local repository with a seed filtered to one graph, and the implementer
 re-checks rather than taking it from here.
 
-**The walk arrives split too, on the hop's shape and for the hop's reason**, and R956 carries that half
-as well: its `constraint_name` and `fk_on_from` are identity on two arms and absent on the other two,
-so one relation would carry two key shapes, with `targets` and `candidates` as payload either way.
-Earlier drafts of this paragraph said "indexed and not keyed" and gave H2's refusal of a key over a
-nullable column as the reason; that is a statement about an engine and could never have been the reason
-for a modelling decision, which is the correction the round-6 review's finding forced.
+**Why the walk takes the hop's two key shapes.** Its `constraint_name` and `fk_on_from` are identity
+on the `KEY` and `TABLE` arms and absent on the other two, with `targets` and `candidates` as payload
+either way, which is the hop's shape inherited through a recursion that carries the hop's columns
+forward unchanged. Earlier drafts of this paragraph said "indexed and not keyed" and gave H2's refusal
+of a key over a nullable column as the reason; that is a statement about an engine and could never have
+been the reason for a modelling decision, which is the correction the round-6 review's finding forced.
+The arms are disjoint per element coordinate rather than merely by convention, which is what makes each
+key total: a hop entry carrying a key spelling produces only `KEY` rows, one carrying a table spelling
+only `TABLE` and `NAME_MATCH` rows, and one carrying neither only `CONDITION` rows, so no coordinate
+can produce a `NAME_MATCH` and a `CONDITION` row at once.
 
 This phase therefore writes two inserts per graph rather than one, each carrying the same `WITH
 RECURSIVE chain` and the same ranking over it and differing only in a closing arm filter, so the rule's
-text is still one text and the `EXCEPT` oracle still compares two evaluations of it. That evaluates the
-walk twice per graph, which phase 3 priced standalone at 0.08 s, so the second evaluation is under a
-tenth of a second once per capture; an implementer who wants one may stage the ranked chain and split
-out of it, and says which they did. Each arm table keeps a coordinate index shaped like
-`ix_argument_reference_step_target_coordinate` with a `COMMENT ON INDEX` naming its reader, which is
-what the three readers holding the element coordinate seek on.
+text is still one text and the `EXCEPT` oracle still compares two evaluations of it. Taking the filter
+after the ranking rather than before it is load-bearing: `targets` and `candidates` are counted over the
+whole partition, both arms included, so an arm filter applied inside the window would change the answer
+rather than partition it. That evaluates the walk twice per graph, which phase 3 priced standalone at
+0.08 s, so the second evaluation is under a tenth of a second once per capture; an implementer who
+wants one may stage the ranked chain and split out of it, and says which they did. Each arm table takes
+a coordinate index shaped like `ix_argument_reference_step_target_coordinate` with the `COMMENT ON
+INDEX` `everyIndexOnATargetStatesItsReader` requires, which is what the three readers holding the
+element coordinate seek on.
 
 **What this phase reaches in `intent_node_id_instruction_live`, and what it does not.** That rule is
 the 592 s statement R953 measured and it does read the field walk, but not once per driving row
@@ -823,9 +887,11 @@ retired, the third of the three.
 These stages run where rung 4's do, in the derivation stratum after the five producers, for the same
 reason: rung 5 reads rung 4, and the input-field walk's own closure reaches
 `intent_input_occurrence_path`, `intent_input_occurrence_path_step` and `intent_type_backing_class`
-through it. Across all six phases the register ends between three and eight rows smaller than it
-started, having gained none; with phases 4 and 5 split out on the phase-3 call above, this item's own
-share is the three retired by phases 1 and 2.
+through it. Across all six phases the register ends between four and nine rows smaller than it started,
+having gained none; with phases 4 and 5 split out on the phase-3 call above, this item's own share is
+the four retired by phases 1 and 2, which is `intent_spelled_table`, both hop arms and
+`intent_resolved_type_binding`. It was three before R956 replaced the single hop registration with one
+per arm, and the register it retires from is 24 rather than 23 for the same reason.
 
 **What every phase owes the register's prose, because the register is set-relative.**
 `meta_materialize.reason`'s own comment requires it: "A registration whose source view reads another
@@ -949,9 +1015,11 @@ in the order the evidence supports it.
    ground R953 does not stand on, so claiming it is not annexing the cliff. Necessary and not
    sufficient, which the heading used to overstate: with phase 2 landed and R953 not,
    `intent_node_id_instruction` goes from 436.1 s to 0.91 s but `intent_node_id_decode_hop` is
-   outside this item's scope at about 2536 s, so the pass is still tens of minutes. The contingency
-   bullet below and the acceptance evidence under "Tests" both already said so; the heading is what
-   was out of step.
+   outside this item's scope at about 2536 s, so the pass would still be tens of minutes. That half
+   is now moot in the direction that favours the item rather than against it: R953's levers 1 and 2
+   are on trunk, so the pass they fix is fixed and what remains is the read this phase reaches and
+   nothing else does. The acceptance evidence under "Tests" asks for the fanout answering rather
+   than for the build finishing, which is the claim that was always the accurate one.
 2. **This item's own rule fires for phases 4 and 5.** The rule phase 3 was filed with is that if the
    round is in seconds, the remaining rungs are a modelling tidy rather than a fix and say so in their
    own priority. Lever
@@ -981,11 +1049,12 @@ Decode-hop as shipped was not re-run de-analysed on the trunk store, so its de-a
 against a figure from another store. Whether the foreign-key count still costs 1.44 s beside a
 stage-written walk was not measured. And the fanout view has a lower bound, not a figure.
 
-**One contingency, stated once.** If R953 has not landed when this item is done, the successor
-carrying phases 4 and 5 is urgent rather than a tidy, because the pass is then still minutes and the
-input-field walk is the decode-hop rule's remaining unstored term. Its cheap first move in that case
-is the registration fallback under "Other solutions we've considered", which is three DDL lines and
-lands the same rows.
+**The contingency this section used to carry has expired, and saying so is the honest close.** It read
+that if R953 had not landed when this item was done, the successor carrying phases 4 and 5 would be
+urgent rather than a tidy, the pass being still minutes. R953's levers 1 and 2 are on trunk, so the
+premise is gone and the successor is a tidy on the evidence above. What the successor still owes is its
+own re-measurement, because every figure here was taken before either lever shipped and the pass they
+fix is the one those figures are relative to.
 
 ## Tests
 
@@ -1001,13 +1070,22 @@ phase cheap to review however large the ladder gets.
   nothing to duplicate. An oracle this load-bearing is worth knowing the shape of what it does not see.
 - **Reconciliation, per rung: a second capture of one graph into one store leaves the row count
   unchanged.** This is the reading that tells a stage which reconciles from one which appends, and it
-  is the acceptance evidence the `DELETE`-then-`INSERT` discipline owes. It has a home already:
-  `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` captures twice into a persistent store and
-  compares a per-relation row-count census against a cold load, and `census` counts every non-view
-  table in the schema, so a converted relation joins it with no edit. What it does not do today is give
-  these relations any rows: it runs on that class's `SDL`, which binds no table, and the class already
-  carries `TABLE_BOUND_SDL` and a `captureBound` helper that exist for exactly this, "so the intent
-  targets take rows". So the ask is a bound-schema arm on an existing case, not a new fixture.
+  is the acceptance evidence the `DELETE`-then-`INSERT` discipline owes. The mechanism has a home
+  already: `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` captures twice into a persistent
+  store and compares a per-relation row-count census against a cold load, and `census` iterates
+  `Public.PUBLIC.getTables()` skipping views, so a converted relation joins it with no edit and an
+  appending stage shows up as a doubled count. **The fixture is the part that does not exist yet, and
+  an earlier draft of this bullet said otherwise.** That case runs on the class's `SDL`, which binds no
+  table, and the bound-schema constant beside it, `TABLE_BOUND_SDL`, is one `@table`-bound type with
+  two scalar fields and no `@reference` application at all. `graphitron_field_reference_step_entry` is
+  an ordered path element of one `@reference` application, so on that schema the entry relation is
+  empty and so are the hop and the walk: a second capture would leave their counts unchanged whether
+  the stage reconciled or appended. Rungs 0 and 2 do take rows there, `@table(name:)` being one of the
+  spellings `graphitron_spelled_reference_entry` records, so the existing constant is worth something
+  and is not worth this. What this phase owes is a schema carrying a `@reference` path between two
+  bound types, whether as a third constant beside `TABLE_BOUND_SDL` or as an extension of it, and the
+  commit says which it took. Without it the guard for the one failure mode that would ship silently
+  passes vacuously on exactly the relations phases 1 and 2 write.
 - **`ReferenceStepTargetTest`, `ArgumentReferenceStepTargetTest`, `ReferenceStepFanoutTest`,
   `ChainTerminusTest`, `InputFieldResolvingTableTest`** already pin what these relations answer at the
   coordinate grain. They must pass with no edit beyond the renames; a test whose expectations move is a
@@ -1016,9 +1094,12 @@ phase cheap to review however large the ladder gets.
   two, a self-referential key is one row, a pair with none has no row. The third is what the decode
   rule's `LEFT JOIN` depends on.
 - **`MaterializeRegistryGateTest`** is the gate that notices this item most. `REGISTRATIONS` falls
-  rather than rises and its refresh-stage depth moves; both are equality-pinned so they cannot move in
-  a commit arguing for something else. `nothingMaterializesOutsideTheMechanism` keeps its meaning
-  untouched, every converted relation having left the `intent_` prefix its scan is scoped to.
+  from 24 rather than rising and `REFRESH_STAGES` moves off 16; both are equality-pinned so they cannot
+  move in a commit arguing for something else. `nothingMaterializesOutsideTheMechanism` keeps its
+  meaning untouched, every converted relation having left the `intent_` prefix its scan is scoped to.
+  `NO_INDEX` loses a row per converted arm, that roster iterating live registrations, so each arm's
+  key-prefix argument moves onto the relation's own `COMMENT ON` in the same commit rather than being
+  dropped.
 - **`DerivedReadCostTest`** prices every pair of a registration and a relation reaching its target. A
   retirement moves its pinned set as surely as an addition does, and the set is edited per phase, which
   is the confrontation it is built to force. Its reader counts are also what decides convert against
@@ -1027,16 +1108,22 @@ phase cheap to review however large the ladder gets.
   which is the correction the round-6 review forced: `theUndeclaredRosterOnlyShrinks` makes a
   declaration mandatory the moment a relation leaves the frozen roster under a new name, so there is no
   arm where a conversion carries none. Three of its cases bind per rung. The roster case is the one
-  that creates the obligation, and it is two edits: the `intent_` line removed, the declaration added.
+  that creates the obligation, and it takes one of two shapes per relation. For a rung standing on the
+  roster under an `intent_` name it is two edits, the roster line removed and the declaration added.
+  For the two hop arms, which R956 already declared, it is one edit re-pointing an existing
+  `meta_relation` row at the new name, and the roster is not touched because they never stood on it.
+  The union views are the third shape: each keeps the roster line its canonical name holds while that
+  name is `intent_`, so the declaration falls due at the rename and not before.
   `aDeclaredTableKeyMatchesItsGrain` is satisfied rather than widened, every declared base table this
-  item introduces carrying a real primary key, which for two of the four is what R956 delivers. And the
-  view-ownership gate is the mechanical check that a moved relation's reads match its new owner, which
-  now binds on two union views as well. The corpus case is
-  vacuous here, the graphitron gatherer carrying no `meta_gatherer_corpus` row, which is worth stating
-  so an implementer does not go looking for a grain corpus to pick.
+  item introduces carrying a real primary key, which for the two hop arms is what R956 already
+  delivered and for the two walk arms is what phase 2 lands. And the view-ownership gate is the
+  mechanical check that a moved relation's reads match its new owner, which now binds on two union
+  views as well. The corpus case is vacuous here, the graphitron gatherer carrying no
+  `meta_gatherer_corpus` row, which is worth stating so an implementer does not go looking for a grain
+  corpus to pick.
 - **`FactSchemaGateTest.everyRelationLeadsWithItsPartitionDimension`** binds on every rung once it is
-  keyed, which is all four after R956: each key must lead with `graph_name`, which every candidate key
-  here does.
+  keyed, which is all five: each key must lead with `graph_name`, which every candidate key here does,
+  the two hop arms demonstrably so in the shipped tree.
 - **`FactCaptureAgreementTest`, `FactSchemaGateTest`, `CaptureCorpusIsolationTest`** are the regression
   surface for a column list or a capture path that moved, and the third is what covers a producer's
   reads, which no catalog parse can see.
@@ -1065,11 +1152,12 @@ phase cheap to review however large the ladder gets.
   stands, and every relation here leaves its scope by moving family rather than by weakening it.
 - **It does not change a gate at all, and an earlier draft of this plan did.** The declaration the
   rename forces meets `MetaDeclarationGateTest.aDeclaredTableKeyMatchesItsGrain`, whose message is that
-  "an unkeyed declared table owes a key before it owes anything else", and two of the four relations
-  could not carry a key as written. The draft answer was a roster-pinned exemption arm on that gate.
-  It is withdrawn: the key-gate subsection records why, and the short form is that the gate was right
-  and the relation was wrong. Every declared base table this item introduces carries a real primary
-  key.
+  "an unkeyed declared table owes a key before it owes anything else", and two of the relations could
+  not carry a key as written. The draft answer was a roster-pinned exemption arm on that gate. It is
+  withdrawn: the key-gate subsection records why, and the short form is that the gate was right and the
+  relations were wrong. R956 acted on that for the hop and shipped it with neither gate touched, and
+  phase 2 acts on it for the walk. Every declared base table this item introduces carries a real
+  primary key.
 - **It does not promote `intent_node_id_instruction_live`'s inner alias to a named relation.** That
   rule's `slot_table` is a local alias joined back to the `instructed` alias it derives from, so H2
   recomputes it once per driving row, and its own `meta_materialize.reason` already says the alias
@@ -1102,48 +1190,47 @@ the instruction rule and 315x on the decode-hop rule on a `sis` store, and the l
 `ANALYZE TABLE` statements all ran after the pass that read the table they analyse. It is the larger
 term of the refresh pass and it is R953's. What phase 3 also establishes is that it is not the whole
 round: the fanout view's read sits outside the pass, and hop had been analysed six seconds before it
-began. Its lever 3 proposes
-registering the field walk, which phase 2 supersedes: the same rows land, written by their owner rather
-than scheduled by the register. The record of that split is **one-way and this item's**: R953 is
-`Backlog` and nobody has picked it up, so a mutual clause would be a gate with no owner, and
-this item carries no edge to R953 deliberately rather than inventing a wait on a transition nobody is
-committed to. Phase 2 states the supersession, and R953's body is amended whenever it is next touched;
-an implementer who reaches phase 2 first and finds lever 3 already landed takes the registration as
-that phase's fallback and says so. Its lever 2 is a static `SELECTIVITY` on a partition column and
-stays true of a stage-written table too, so it survives this item unchanged.
+began. **Its levers 1 and 2 have shipped and its lever 3 is gone**, that item having dropped the
+registration of the field walk from its plan on this body's asking and recorded that phase 2 lands the
+same rows by a different route. So the supersession is settled from both sides and there is nothing
+left for an implementer of phase 2 to find already landed. Lever 2 is a static `SELECTIVITY` on a
+partition column and stays true of a stage-written table too, so it survives this item unchanged, and
+it is the only lever that reaches the one evaluation a stage still pays.
 
 **R876** is the doctrine this item instantiates, and this is the first subtree to be taken bottom-up
-rather than one relation at a time. It contributes three things back: the finding that a 26-relation
+rather than one relation at a time. It contributes three things back: the finding that a 28-relation
 closure bottoms out entirely in captured facts, the observation that a bottom-up order plus one
-placement rule needs no successor to `meta_materialize_dependency`, and three register rows against
-its twenty-three, with up to five more in the successor carrying phases 4 and 5 (earlier drafts of
-this sentence promised between three and eight, which was the whole ladder before the phase-3
-measurement split it). A fourth thing it contributes is a correction rather
+placement rule needs no successor to `meta_materialize_dependency`, and four register rows against its
+twenty-four, with up to five more in the successor carrying phases 4 and 5 (earlier drafts of this
+sentence promised between three and eight, which was the whole ladder before the phase-3 measurement
+split it, and then three, which was before R956 split the hop registration in two). A fourth thing it contributes is a correction rather
 than a contribution: R876's own enumeration of family-local misplacements still lists
 `intent_name_matched_key_pair`, which commit 78b6a58 retired on 2026-09-14, so that count is one row
 stale and is that item's to re-take. The precedent it follows is R876's own `graphitron_argmapping_match`.
 
-**R956** is this item's one `depends-on:` edge and the answer to the round-6 review's finding that two
-of the four conversions could not carry a primary key. It decomposes the hop and the field walk on
-their `via` discriminator into a keyed relation per key shape under a view carrying the existing name,
-which is what lets those two be declared without a gate moving. The dependency is real rather than
-courteous: phases 1 and 2 convert what R956 leaves, and if it has not landed those rungs take the
-registration fallback the key-gate subsection states. It is a separate item because it owes a
-re-measurement of the recursive step's seek across a union view, and owing a measurement is what makes
-something an item rather than a paragraph.
+**R956 has shipped, and it answered the round-6 review's finding that the conversions could not carry a
+primary key.** It decomposed the hop on its `via` discriminator into two keyed, declared arm tables
+under a view carrying the existing name, which is what lets rung 1 be declared without a gate moving,
+and it measured the one thing that was owed, that the recursive step's eight-column seek survives the
+union view. Three things it hands this item and all three are taken above. Phase 1 converts two keyed
+registration targets rather than one keyless one, retiring two rows where the ladder used to count one.
+Phase 2 is where the walk's own split lands, R956 having fixed that DDL and deliberately not performed
+it, because a walk split into views would double the recursion under every reader and refuse no
+duplicate. And the union views' declarations arrive with this item's renames, at a grain that item
+already worked out, because a `graphitron_` name is new to the roster where the `intent_` one it
+replaces is not.
 
-**Why this one carries an edge where R953 does not, since both are Backlog items nobody has picked
-up.** R953's lever 3 is a *substitute* for phase 2: either shape lands the same rows, so an edge would
-name a wait with no owner and no purpose. R956 is what phases 1 and 2's *stated shape* is built on:
-without it those rungs convert relations that cannot be declared, which is a different plan rather than
-a delayed one. So the edge records the shape, and the per-rung registration fallback records what
-happens if R956 does not land, which is the same fallback R953's lever 3 names. The rule is that an
-edge goes where the plan changes without the other item, not where the other item would merely be
-convenient.
+**The `depends-on:` edge is gone, and the rule that governed it is unchanged.** An edge goes where the
+plan changes without the other item rather than where the other item would merely be convenient, which
+is why this body carried one to R956 and not to R953, whose lever 3 was a substitute for phase 2 rather
+than a premise of it. R956's DDL is on trunk, so the premise is satisfied and there is nothing left to
+wait on; leaving the edge would also break the build the moment that item's file is deleted at Done,
+the roadmap-tool failing on a slug that no longer resolves.
 
-**R955** converts the register's remaining fifteen registrations on the same doctrine and the two items
-have to land one answer to one question, which is why the key-gate subsection above argues it once and
-this paragraph carries the hand-off rather than a second argument. Three things they share and one
+**R955** converts the register's remaining registrations on the same doctrine and the two items have to
+land one answer to one question, which is why the key-gate subsection above argues it once and this
+paragraph carries the hand-off rather than a second argument. What that item can now copy is a shipped
+answer rather than an argument: R956 put a decomposed relation through both gates with neither touched. Three things they share and one
 they do not. They share the placement criterion, what an input reaches, which is why that item's
 fifteen all go to the derivation stratum and rungs 0 to 3 here stay in the gatherer. They share the
 declaration obligation, both items reaching it from `theUndeclaredRosterOnlyShrinks`'s ratchet. And
@@ -1186,7 +1273,8 @@ catalog family's refresh lifecycle, which phase 0's relation joins.
 
 ## Other solutions we've considered
 
-- **Register the two unstored walks**, which is R953's lever 3 and the shape R943 gave the third walk.
+- **Register the two unstored walks**, which was R953's lever 3 before that item dropped it, and the
+  shape R943 gave the third walk.
   This is the cheap fallback and it remains available per phase: it lands the same rows on disk, needs no
   conversion, and is three DDL lines. It is not the plan for two reasons the structural finding supplies.
   It grows a register that is already holding up a subtree with no cross-family rule in it, which is the
@@ -1212,7 +1300,7 @@ catalog family's refresh lifecycle, which phase 0's relation joins.
   view's read is outside the pass and is unaffected by any statistic, and the walks' residual shape
   terms survive it. Lever 2 should land whatever this item does, and this item should land whatever
   lever 2 does.
-- **Converting the whole 26-relation closure in one move.** Eight registrations and two families, with
+- **Converting the whole 28-relation closure in one move.** Nine registrations and two families, with
   the column-scope half reached only through two of the three walks. The phase table exists so the
   measurement decides how far up the ladder this item goes, rather than the doctrine deciding it in
   advance.
@@ -2511,3 +2599,79 @@ same shape caught early rather than a fifth round's finding.
 
 **Corrected in passing: nothing.** Every figure and symbol this round could recompute from the shipped
 tree held, including the two corrections the round-6 response made to the round-6 review.
+
+### Author's response to round 7 (2026-09-18)
+
+Not a review round: this is the author answering. All three blocking findings are taken. Two of them
+were settled by the tree moving rather than by argument, R956 having landed between the round and this
+response, and where that happened this body says what shipped rather than what was predicted. Every
+claim below was re-derived from trunk `911176d` in this session.
+
+**Finding 8 (the dependency cannot deliver the walk half). Taken, and it is now settled from both
+sides.** The finding was right that `intent_field_reference_step_target` carries no `meta_materialize`
+row in either column, so nothing writes it and R956 could not have handed over two keyed base tables
+for it without adding a writer it declined to add. R956 took the second of the two readings the finding
+named: it split the hop alone, fixed the walk's DDL in a section of its own, and recorded that R954's
+phase 2 is the phase that splits the walk. This body now says the same thing from this side. Phase 2
+carries the split, with the reason the two cannot be separated stated where an implementer meets it: a
+walk split into views doubles the recursion under every reader, and a walk stored as one relation is
+the first declared keyless base table in the tree. "What is in scope" and the key-gate subsection say
+it too, the first briefly and the second with the derivation.
+
+**Finding 9 (the two bodies disagree about the names). Taken, and the disagreement is gone.** R956
+shipped `intent_` names, the union view carrying the canonical spelling and therefore the roster line
+that name already holds, which is the reading this body had. That item's own alternatives section
+records why: the prefix names the writer, the writer stays the register, and
+`nothingMaterializesOutsideTheMechanism` is what holds a stored `intent_` table to being registered or
+hand-written, so a `graphitron_` name while the register still writes the rows would have moved them
+out of the one scan that checks exactly that. The `graphitron_` names arrive with the writer, which is
+phases 1 and 2. Two consequences are now written where they belong. The declaration count is not three
+per decomposed relation uniformly: the two hop arms are declared already, so the conversion re-points
+two rows, and only the union view's declaration falls due at the rename. And phase 1 retires two
+registrations for the hop rather than one, so this item's share is four rather than three and the
+register it retires from is 24.
+
+**Finding 10 (the reconciliation evidence is vacuous on the fixture named). Taken, and the bullet was
+wrong in the way the finding said.** `WarmStartRefreshTest.warmAndColdAgreeRelationByRelation` does
+have the right mechanism, capturing twice into a persistent store and comparing a `census` that
+iterates `Public.PUBLIC.getTables()` skipping views. But `TABLE_BOUND_SDL` is one `@table`-bound type
+with two scalar fields and no `@reference` application, and
+`graphitron_field_reference_step_entry` is an ordered path element of one such application, so the
+entry relation, the hop and the walk are all empty on that schema and a second capture would prove
+nothing about them. "The ask is a bound-schema arm on an existing case, not a new fixture" is deleted.
+The bullet now says what the fixture has to carry, a `@reference` path between two bound types, and
+says plainly that without it the guard for the one failure mode that would ship silently passes
+vacuously on exactly the relations phases 1 and 2 write.
+
+**Finding 11 (non-blocking, R953 moved). Taken, and it moved further.** That item is now `In Review`
+with levers 1 and 2 on trunk and lever 3 dropped from its plan, which it did on this body's asking and
+recorded in its own "Relation to other items". So the four sentences the finding named are rewritten
+rather than patched: the supersession is settled from both sides, there is no longer a lever 3 for an
+implementer of phase 2 to find already landed, and the contingency bullet that made the successor
+urgent if R953 had not landed is recorded as expired rather than deleted.
+
+**What else this pass re-derived, because the tree moved under figures the review had no reason to
+re-check.** The three-walk closure is 28 relations with 9 registered, against 26 and 8, the hop having
+become a view over two registered arm tables. The inline-multiplicity figures all rose and the shipped
+three roughly doubled for the walks: `intent_node_id_decode_hop_live` reads 16 shipped against 4556
+demoted where it read 12 against 4448, the field walk 8 against 151 where it read 4 against 145, and
+the input-field walk 8 against 673 where it read 4 against 655. The previous figures are stated beside
+them in the body rather than replaced silently. `ix_field_reference_step_hop_step`
+is gone, each arm's primary key leading with the eight columns the recursive step seeks on, so the two
+places this body priced that index at 18308 scans against 523 now say what retired it and what R956
+measured across the union view instead: the seek survives at 178 scans, the walk reads 973 against 795,
+and 14457 with the keyed arm's registration removed. The one reader the split cost is
+`intent_field_reference_step_fanout`, 22.3 s against 17.1 on a sakila store, which is the relation
+phase 2 takes to 0.37 s, so the split moved that argument toward urgency. Base tables are 272 and the
+17 keyless are still all registration targets, the count holding across a split that retired one
+keyless target and added two keyed ones.
+
+**The `depends-on:` edge is removed.** R956's DDL is on trunk, so the premise the edge recorded is
+satisfied, and the roadmap-tool fails the build on a slug that no longer resolves, which is what that
+item's file being deleted at Done would produce. The rule that governed the edge is restated unchanged
+where the edge used to be argued.
+
+**Left alone deliberately.** Phase 3's measurement and every figure in it, which was taken before
+R953's levers shipped and is labelled as relative to the pass they fix; re-taking it is the acceptance
+evidence "Tests" already asks for per phase rather than a revision. The scope call, which nothing in
+this round or in R956 moves. And phases 4 and 5, which stay the successor's.
