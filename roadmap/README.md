@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R956` | A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls | Ready | 2026-09-18 <sub>created 2026-09-17</sub> | [plan](reference-step-arms-are-separate-keyed-relations.md) |
 | `R954` | A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row | Ready | 2026-09-18 <sub>created 2026-09-16</sub> | [plan](reference-step-walks-are-stored-rows.md) |
+| `R953` | The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold | Ready | 2026-09-18 <sub>created 2026-09-16</sub> | [plan](first-refresh-plans-without-statistics.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-16 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R953` | The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold | In Review | 2026-09-17 <sub>created 2026-09-16</sub> | [plan](first-refresh-plans-without-statistics.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -597,7 +597,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R951` [**A consumer pom that adds a dependency to the plugin realm can shadow the jOOQ graphitron parses with, and the store will not open**](plugin-realm-shadows-graphitron-jooq.md) — Backlog, dx
 - `R762` [**The census stores every class member to answer questions only ever asked by name**](census-stores-members-it-reads-by-name.md) — Backlog, architecture
-- `R953` [**The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold**](first-refresh-plans-without-statistics.md) — In Review, bug
+- `R953` [**The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold**](first-refresh-plans-without-statistics.md) — Ready, bug
 - `R925` [**A java_file row's stamp and its declarations come from one read of the file**](one-read-behind-a-java-file-row.md) — Backlog, correctness
 - `R522` [**Reconcile the emitted-code seam-pin assertion convention with the testing doc**](emitted-seam-pin-assertion-convention.md) — Backlog, tech-debt
 - `R924` [**What must re-run is a walk of the keys the schema already declares**](stale-rows-follow-the-declared-keys.md) — Backlog, architecture

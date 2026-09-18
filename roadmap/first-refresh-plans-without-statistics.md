@@ -1,13 +1,13 @@
 ---
 id: R953
 title: "The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: dev-loop
 depends-on: []
 created: 2026-09-16
-last-updated: 2026-09-17
+last-updated: 2026-09-18
 ---
 
 # The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold
@@ -110,6 +110,108 @@ R956 landed on trunk while this item's levers were being verified, and it conver
 On the single hop table, the decode-hop rule's read visited 10939 rows with the partition column unstated and 1113 with the declaration alone, which is what a fully analysed store visited. On the keyed arm tables the same read is 1499 bare against 1105 declared, with 1107 analysed. The arm keys lead with the coordinate the reader seeks on, so the planner now reaches a seekable ordering whether or not it has been told what `graph_name` holds, and what is left for the declaration to buy at this fixture size is the residue. Both levers still hold their own argument: a key on the target removes most of this cliff where the target has one, and the declaration remains the only statement of that column available to a pass that plans inside a transaction, where `ANALYZE` cannot run at all.
 
 Two consequences for this item's acceptance evidence. `RefreshPlanStatisticsTest`'s pinned set is eight of twenty-four rather than the four this plan predicted: the declaration takes `intent_node_id_instruction_live` out, and three registrations join whose cold plans differ from their analysed ones on the declared regime as they did on the unstated one. And the consumer-scale figures in "What was measured" above were taken on the single-table shape, so the re-measurement this item's Tests section asks for at delivery is now the only evidence for what a `sis` round pays on the shape that ships.
+
+## Reviewer findings
+
+Done-gate round 1, withheld. Both levers are implemented as this plan describes
+them, and the implementation is not what sends this back. What sends it back is
+question 2: the evidence this plan named for its own goal is not all in hand,
+and the plan itself says so.
+
+What the reviewer checked and found sound, so that the next pass does not
+re-litigate it: `mvn install -Plocal-db` passes on the rebased tree. Lever 1 is
+the predicate this plan specified, over the register rather than the anchor, with
+`RunStore`'s reading deliberately untouched. Lever 2 is the one home, the boot
+sweep, the DDL header rule and the `StoreStatistics.analysed` repair, scoped to
+every graph-keyed base table rather than to the register. Lever 3 is dropped per
+the supersession this body already records. `DerivedReadCostTest`'s four departed
+rows left the got-cheaper way with their figures recorded in place, which is a
+gate getting a fact rather than a gate getting weaker.
+
+The reviewer also verified the lever-1 enforcer rather than taking its word:
+reverting `FactCapture`'s selector to `!dsl.fetchExists(STORE_GRAPH)` and running
+`RefreshPrerequisiteStatisticsTest` fails
+`aCaptureBehindAPreWrittenAnchorMeetsThemAnalysed` on every dependent
+registration, while the two legs that call `Materializations` directly still
+pass. The control is real and it is the lever's deliverable, as this plan
+claimed.
+
+One thing worth recording because it strengthens lever 2 against the R956
+question and is not stated above: `Materializations.analyse` walks the
+registrations, so it reaches registered targets only. The graph-keyed base fact
+tables the refresh reads inside the same transaction are never analysed on any
+path, so the declaration is the only statement of `graph_name` those relations
+ever carry, on a warm store as much as a cold one. That is a standing structural
+benefit, independent of the fixture-scale figure R956 moved, and it is the
+argument lever 2 should lead with rather than the ratio.
+
+### 1. The goal's own number has no evidence on the shape that ships (question 2)
+
+The Tests section ends by naming what demonstrates the goal: the four claims
+above "plus one recorded re-measurement on the consumer at delivery, reported at
+the Done gate rather than held by a test". The Done gate is this round, and no
+re-measurement is recorded in the tree, in the body, or in any landing commit
+message. "What R956 changed under this item" then raises the same obligation to
+the only one there is: the consumer-scale figures in "What was measured" were
+taken on the single-table shape, so that re-measurement "is now the only evidence
+for what a `sis` round pays on the shape that ships". The delivery identified the
+gap and shipped without either closing it or amending what the item claims.
+
+This is not a request for ceremony. The goal paragraph leads with a number, 2662
+s down to the seconds a settled store pays, and R954 is open and says the number
+of evaluations is the other half of that same pass and that the two multiply. So
+a round on the shipped tree could be much better than 2662 s and still nowhere
+near seconds, with the residue belonging to R954. Nothing in the tree
+distinguishes those two outcomes, and the difference is exactly what this item's
+goal asserts. The four in-tree claims demonstrate the mechanism, which is real:
+the cadence is taken on the store that needs it, and a test the reviewer
+independently controlled holds it there. They do not demonstrate the outcome the
+goal states.
+
+What would satisfy it, either arm:
+
+- Run the round on a copy of the consumer store on the shipped tree and record
+  what the refresh pass costs, in this body, reported at the next Done gate as
+  the Tests section asks.
+- Or, if that store is no longer reachable to any session, say so plainly here
+  and rewrite the goal paragraph to state the outcome the tree can demonstrate,
+  naming the residue as R954's. That is a change to what the item claims to
+  deliver, so it belongs in the body where the next gate reads it, not in a
+  reviewer's note.
+
+### 2. The retirement sweep left three live uses of the retired phrase (question 1)
+
+This item declares `"a store that holds no graph"` retired everywhere as the
+condition the analysing cadence turns on, with one deliberate survivor in
+`Materializations.analysingCadenceApplies`' javadoc. The sweep covers `.adoc`
+files and roadmap bodies. Three live uses remain, and they are live claims rather
+than history:
+
+- `docs/architecture/explanation/fact-model.adoc:308`, under the per-gatherer
+  transaction-control rule: "One exception is already carved out for exactly
+  this: a store holding no graph commits its facts and refreshes outside that
+  transaction". Present tense, published, and false as of this item. It is on the
+  same page the item edited, two hundred lines above the paragraph that was
+  fixed.
+- `roadmap/register-rules-become-owner-written-facts.md:261`: "a store holding no
+  graph runs `refreshAnalysing` outside the transaction". R955 is `Ready`, so
+  this is a premise its implementer will read and carry forward.
+- The same file at line 399, naming the successor test's subject the same way.
+
+`FactCapture.capture`'s inline comment quotes the phrase too, but as history and
+in the same register as the sanctioned survivor; the reviewer reads that as
+within the exemption rather than a fourth instance. Worth adding to the survivor
+sentence when the body is next touched, so the next sweep does not re-raise it.
+
+### 3. The body still reads as an unexecuted plan
+
+The Done gate's precondition is that the body reflects what shipped: phases
+collapsed to one-line "shipped at `<sha>`" notes with the remaining work named.
+The Implementation and Sequencing sections are unchanged forward-looking plan
+prose, down to "The Spec gate may still prefer the split ... The gate decides",
+a question answered at `35a745d` and settled by two commits landing in the order
+this section proposed. Collapse both to what landed and where, and name the
+re-measurement of finding 1 as the remaining work.
 
 ## Retired vocabulary
 
