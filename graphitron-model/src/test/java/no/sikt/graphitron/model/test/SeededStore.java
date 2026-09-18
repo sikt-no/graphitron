@@ -6,7 +6,9 @@ import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
+import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import org.jooq.DSLContext;
@@ -227,6 +229,14 @@ public final class SeededStore {
             Nodes.derive(dsl, graph);
             NodeKeyColumns.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
+            // The reference stratum's own resolutions, in the order capture runs them: the
+            // spelling first, then the two hop arms that read it. Here for the reason the name
+            // matches above are here, that the rows are a stage's now where they used to be a
+            // rule computed on read, and a harness that seeds the catalog by hand gets nothing
+            // from a stage nobody ran.
+            SpelledTables.derive(dsl, graph);
+            FieldReferenceStepHops.deriveKeyed(dsl, graph);
+            FieldReferenceStepHops.deriveKeyless(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }

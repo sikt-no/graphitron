@@ -168,7 +168,7 @@ class DetectionReadReachGateTest {
             // row costs a concatenation of two seeks and not a derivation. What would take it
             // out again is a registration of the union view itself, which nothing has argued for
             // and which this figure is the instrument for arguing on.
-            "intent_field_reference_step_hop",
+            "graphitron_field_reference_step_hop",
             "intent_field_unlowerable_ordering",
             "intent_mutation_routine_seat",
             "intent_poly_member"));

@@ -96,10 +96,22 @@ class WarmStartRefreshTest {
      * A schema that fills registered targets, which {@link #SDL} does not: the intent relations are
      * classifications of bound coordinates, so a schema with no table binding leaves every one of
      * them empty and a case about a stale target would have nothing to make stale.
+     *
+     * <p>It carries a {@code @reference} path between two bound types as well, and that half is
+     * load-bearing rather than scenery. The reference stratum keys at a path element, so a schema
+     * that authors no path leaves the spelling resolution, both hop arms and the walk over them
+     * empty, and a case asserting that a second capture changes no row count would pass on them
+     * without ever writing one. With the path here it fails on a stage that appends instead of
+     * reconciling, which is the one failure mode the answer oracle cannot see.
      */
     private static final String TABLE_BOUND_SDL = """
         type Query { films: [Film!]! }
-        type Film @table(name: "film") { title: String, releaseYear: Int }
+        type Film @table(name: "film") {
+          title: String
+          releaseYear: Int
+          language: Language @reference(path: [{key: "film_language_id_fkey"}])
+        }
+        type Language @table(name: "language") { name: String }
         """;
 
     @Test
@@ -124,6 +136,51 @@ class WarmStartRefreshTest {
                 .as("relations whose warm row count differs from a cold load's")
                 .isEqualTo(cold);
         }
+    }
+
+    /**
+     * A stage reconciles; it does not append. A capture writes a relation's graph partition by
+     * clearing it and re-deriving it, and the store persists across rounds, so a second capture of
+     * one graph is the ordinary case rather than an edge one: a stage that inserted without
+     * clearing would fail loudly on a keyed relation and silently double a keyless one, and every
+     * reader above it would fan out on the doubling.
+     *
+     * <p>Stated as a row-count census rather than as a comparison of answers, because the answer
+     * oracle cannot see this. {@code EXCEPT} is set semantics, so both directions come back empty
+     * with one side holding every row twice, and on a fresh store the stage runs once and has
+     * nothing to duplicate. The census is what tells a stage that reconciles from one that appends.
+     *
+     * <p>{@link #TABLE_BOUND_SDL} rather than {@link #SDL}, and its {@code @reference} path is why:
+     * the reference stratum's relations are keyed at a path element, so on a schema authoring none
+     * this case would count zero against zero on exactly the relations it exists to hold.
+     */
+    @Test
+    @DisplayName("a second capture of one graph leaves every relation's row count unchanged")
+    void aSecondCaptureOfOneGraphDoublesNothing(@TempDir Path tmp) {
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        Path directory = tmp.resolve("graphitron-model");
+
+        Map<String, Integer> once;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureBound(store.dsl(), false, tmp, jooq);
+            once = census(store.dsl());
+        }
+        assertThat(once)
+            .as("the reference stratum takes rows on this schema, without which this case counts"
+                + " zero against zero on the relations it is here for")
+            .containsEntry("GRAPHITRON_SPELLED_TABLE", 2)
+            .hasEntrySatisfying("GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED",
+                rows -> assertThat(rows).isPositive());
+
+        Map<String, Integer> twice;
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            captureBound(store.dsl(), true, tmp, jooq);
+            twice = census(store.dsl());
+        }
+        assertThat(twice)
+            .as("relations whose row count moved on a second capture of the same graph; a stage"
+                + " that appends instead of reconciling shows up here as a doubled count")
+            .isEqualTo(once);
     }
 
     /**
@@ -583,9 +640,18 @@ class WarmStartRefreshTest {
         }
     }
 
-    /** {@link #TABLE_BOUND_SDL} captured over a real catalog, so the intent targets take rows. */
+    /**
+     * {@link #TABLE_BOUND_SDL} captured over a real catalog, so the intent targets take rows.
+     *
+     * <p>With the corpus rather than {@code SubjectConfig.none()}, which is what makes that
+     * sentence true. The document gatherer re-reads the corpus from configuration, and the entry
+     * relations it anchors are swept against what it wrote, so a pass given no corpus loses every
+     * {@code @table} binding to that sweep and leaves the whole intent stratum empty however bound
+     * the schema is. {@code CapturedStore.corpusOf} exists for exactly this and its own comment
+     * names the silence.
+     */
     private static void captureBound(DSLContext dsl, boolean warm, Path scratch, JooqCatalog jooq) {
-        FactCapture.capture(dsl, warm, graph(scratch), SubjectConfig.none(),
+        FactCapture.capture(dsl, warm, graph(scratch), CapturedStore.corpusOf(scratch),
             CapturedStore.registryOf(scratch, TABLE_BOUND_SDL),
             CapturedStore.attributionOf(scratch), jooq, List.of());
     }

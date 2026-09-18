@@ -93,7 +93,7 @@ The store instead holds the ingredients and derives the answer:
 
 * `graphitron_table_entry` holds what the author wrote: `@table` on a type, with the name they spelled.
 * `sql_table` holds what the catalog actually declares.
-* `intent_spelled_table` is a view that answers a small, general question: how does a written
+* `graphitron_spelled_table` is a view that answers a small, general question: how does a written
   table name meet the catalog? The same rule whether the name was written in `@table`, in a
   `@reference` path, or as a mutation's target.
 * `intent_bound_table` is a view one layer up: which catalog table does *this type's* binding

@@ -16,9 +16,11 @@ import no.sikt.graphitron.model.capture.macro.MacroCapture;
 import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
+import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Nodes;
+import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
@@ -152,8 +154,8 @@ public final class GraphitronFactCapture {
     // ---------------------------------------------------------------- the gatherer's own entry
 
     /**
-     * The gatherer's stages: eight of them, each joining, ranking or reaching the catalog, and each
-     * reading what the one before it wrote.
+     * The gatherer's stages: each joining, ranking or reaching the catalog, and each reading what
+     * the one before it wrote.
      *
      * <p>What is <em>not</em> here any more is the decode. Every relation whose rows are a function
      * of one document is written by the walk, which holds the parse; what remains is the half that
@@ -181,8 +183,15 @@ public final class GraphitronFactCapture {
         // the second arm of their population and everything below reads them rather than the union.
         ElementAnchors.derive(dsl, graphName);
         navigation(dsl, graphName);
-        // Last, because its target rule reads the navigation the line above writes and its
-        // departure reads the bindings three lines up.
+        // The reference stratum's own resolutions, bottom rung first: what a written table name
+        // resolves to against the catalog census, then the hops a @reference path element could
+        // take, which read it. Every input either was captured before this gatherer ran or is a
+        // plain view over facts that were, so nothing here reads a table a later step writes.
+        SpelledTables.derive(dsl, graphName);
+        FieldReferenceStepHops.deriveKeyed(dsl, graphName);
+        FieldReferenceStepHops.deriveKeyless(dsl, graphName);
+        // Then the endpoints, because their target rule reads the navigation two lines above and
+        // their departure reads the bindings above that.
         FieldEndpoints.derive(dsl, graphName, readAt);
         // After it, the applications being keyed by the chain the line above establishes.
         FieldRoutines.derive(dsl, graphName, readAt);

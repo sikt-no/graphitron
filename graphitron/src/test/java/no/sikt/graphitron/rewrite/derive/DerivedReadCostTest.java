@@ -180,7 +180,7 @@ class DerivedReadCostTest {
      * <p>Raised to 128 by the reference-step hop becoming two keyed tables under a union view, and
      * it is the shape no earlier entry here has: a registration split rather than added, retired or
      * captured. One {@code _live} view leaves and two arrive, which would be net one; the second is
-     * the union view itself, {@code intent_field_reference_step_hop}, which was a registered target
+     * the union view itself, {@code graphitron_field_reference_step_hop}, which was a registered target
      * and is a view now, so a relation crosses into this count from the table side without any rule
      * being written. Both reader figures below moved with it.
      *
@@ -196,8 +196,13 @@ class DerivedReadCostTest {
      * that {@code graphitron_node} and {@code graphitron_node_keycolumn} already hold as captured
      * rows. None of them is a rule that stopped being needed; they were the same rule written
      * twice, so this is the count losing a duplicate rather than a reader.
+     *
+     * <p>And to 123 when the spelling resolution and the two hop arms became capture stages. Three
+     * {@code _live} rules went with the registrations that named them, which is the count falling
+     * for the one reason it can fall without a reader losing anything: the rule is still stated
+     * once, and the statement that evaluates it is a stage's rather than a view's.
      */
-    private static final int READERS_IN_SCHEMA = 126;
+    private static final int READERS_IN_SCHEMA = 123;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -248,8 +253,17 @@ class DerivedReadCostTest {
      * registered table spelling, and the union view over the two arms, which reaches both of their
      * registrations because it is what presents them. The keyed arm's rule is the retired rule under
      * a new name and is not a second arrival.
+     *
+     * <p>Sixty-five to fifty, the largest fall this figure has taken, and it is one rung's
+     * conversion rather than fifteen changes. The table spelling and both hop arms are written by
+     * the graphitron gatherer now, so three targets left the register, and every view that reached
+     * a registration only through one of them stops being a reader in this domain: the whole
+     * reference stratum reaches the register through that rung and nothing else. What those views
+     * read did not change, and neither did what they cost; what changed is that the rows they read
+     * are a table nobody has to buy with a refresh, so there is no registered-against-unregistered
+     * comparison left to make about them.
      */
-    private static final int READERS_WITH_CELLS = 65;
+    private static final int READERS_WITH_CELLS = 50;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -367,8 +381,16 @@ class DerivedReadCostTest {
      * registration cuts every walk at its target, and a target becoming a view uncuts them.
      * Registering the union view is what would take the nineteen back, and nothing has argued for
      * that; the cells it would remove are cheap ones, the union being a concatenation of two seeks.
+     *
+     * <p>Down to 102 when the table spelling and both hop arms became capture stages, which is the
+     * mirror of that entry and then some: a target becoming a view uncuts every walk through it, and
+     * a target becoming a gatherer-written table cuts them for good. Sixty-two cells go, and none of
+     * them is a reader losing an answer. Each was a comparison between reading a refilled target and
+     * re-evaluating the rule behind it, and there is no rule behind it any more: the rows are on
+     * disk before the refresh starts, so the only shape left is the cheap one and no registration is
+     * paying for it.
      */
-    private static final int CELLS = 164;
+    private static final int CELLS = 102;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -693,7 +715,7 @@ class DerivedReadCostTest {
         // Two of these four left when the type binding gained an index on the key its readers
         // hold, along with the scope table's own cell below: the carrier's two readers stopped
         // being non-monotonic outright, so the pairs go rather than being kept as history.
-        // The four cells this family had left, all readers of intent_spelled_table, went together
+        // The four cells this family had left, all readers of graphitron_spelled_table, went together
         // when the store began declaring the partition dimension's selectivity, and they left the
         // got-cheaper way rather than the gate getting weaker. Both sides moved, and the registered
         // side moved between eight and thirteen times where the unregistered side moved under
@@ -771,7 +793,7 @@ class DerivedReadCostTest {
         // refresh from 24.4 s to 0.13 s, and these two cells are the instrument noticing that a
         // plan moved, which is what it is for.
         "intent_mutation_write_payload|intent_mutation_payload_column_live",
-        "intent_node_id_decode_column|intent_mutation_payload_column_live",
+        "intent_node_id_decode_column|intent_mutation_payload_column_live");
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the
@@ -804,73 +826,14 @@ class DerivedReadCostTest {
         // fewer rows through the write payload than the unregistered shape does, so the
         // direction this gate asserts is satisfied without any row here. Recorded rather than
         // silently deleted for this set's own convention: a lever landed.
-        // The two reference-step walks over the field-site hop, which joined this set when that
-        // hop gained its condition arm, and the clearest case in it for reading the counter as a
-        // row count. Both are 188 scans dearer registered (795 against 607 on the walk, 3272
-        // against 3084 on the scope rule) and both are decisively faster: 2 milliseconds against
-        // 18, and 13 against 34. The rows are the unregistered side's to lose rather than the
-        // registered side's to gain, which is what the new arm changed: inlined, its route join
-        // short-circuits to nothing on this fixture and H2 charges it no scans, where the same
-        // arm against a table is charged a visit per naming and the walk names the relation twice.
-        // No index question, the target carrying one already.
-        //
-        // The scope rule's own two figures moved when its named-type arm stopped spelling the
-        // navigation over the synthesis record and read intent_field_navigated_type instead. The
-        // difference of 188 scans did not, and that is the reading to take from the re-measurement:
-        // the gap is the walk's namings against the registered target, which that arm never
-        // touched, so the pair survives on the mechanism it was always charged to rather than on
-        // a coincidence of totals.
-        //
-        // Worth reading with the fixture in hand before treating either of these two as work. This
-        // gate's store is captured with no classpath census, so no condition method's signature
-        // resolves in it and the arm these two cells appeared with holds no rows at any unit
-        // count. What they price is therefore a plan and not a population, which is the state the
-        // input-surface note above records answering the other way: there the fixture could hold
-        // the rows and grew to, and three cells went monotonic. Populating this arm needs the
-        // census on this fixture's capture, which changes what every jvm-reading relation in the
-        // domain measures, so it is a question about this gate rather than about this arm.
-        //
-        // Three argument-site cells stood beside these two, charged to intent_argument_scope_table,
-        // and left when that target was keyed. The class note above carries their figures and what
-        // their leaving means for the next pair that appears here.
-        //
-        // Both pairs are now four, a cell per arm, the hop being two keyed tables under a union
-        // view keeping the canonical name. The figures are re-taken and the reading is the same:
-        // the walk is 973 scans registered against 619 with the keyed arm left a rule and 477 with
-        // the keyless one, 3 milliseconds against 10 and 13; the scope rule 2750 against 2396 and
-        // 2254, 27 milliseconds against 24 and 22. The split's own cost on the registered side is
-        // 178 scans on each of those two readers, measured against the single-table shape, and it
-        // is the same 178 on both because it is the walk's namings against the second branch. What
-        // the counter charges the registered side here is still the arm's rows visited rather than
-        // work done, which the walk's clock says most plainly.
-        "intent_field_reference_step_hop_keyed|intent_field_reference_step_target",
-        "intent_field_reference_step_hop_keyless|intent_field_reference_step_target",
-        "intent_field_reference_step_hop_keyed|intent_field_column_scope_live",
-        "intent_field_reference_step_hop_keyless|intent_field_column_scope_live",
-        // A third reader of the same rung, and it is the walk's own charge arriving one reader
-        // further out: the fan-out rule drives from intent_field_reference_step_target and pairs it
-        // with itself, so whatever the walk is charged for the namings the row above prices, this
-        // rule is charged for twice. Registered against unregistered, in scans: 20758 against
-        // 19342, where the walk's own row is 795 against 618. The clock is the half worth reading
-        // and it says the same thing here as it does two rows up, more emphatically: 53
-        // milliseconds against 368, so the registered side visits 1416 more rows and answers seven
-        // times faster.
-        //
-        // The absolute figure is this rule's own and is stated so the next reader does not have to
-        // re-take it: 20758 scans is twenty-six times the walk it drives from, and about two thirds
-        // of that is the catalog join the predicate is, a constraint and its columns per
-        // intermediate, rather than the walk. It was 31136 before the two hops' contributions to
-        // the bound column set were written as one union arm apiece instead of four, which is the
-        // rewrite lever taken before a registration is considered, in that order. It stays a plain
-        // view on those terms: no measurement on a populated store says otherwise yet, and this
-        // fixture prices a plan rather than a population.
-        //
-        // A cell per arm here too, and the absolute figure is re-taken with it: 22183 scans
-        // registered against 19351 with the keyed arm unregistered and 18215 with the keyless one,
-        // where it was 20759 over the single table. The clock still says what it said: 56
-        // milliseconds registered against 223 and 116.
-        "intent_field_reference_step_hop_keyed|intent_field_reference_step_fanout",
-        "intent_field_reference_step_hop_keyless|intent_field_reference_step_fanout");
+        // Six cells stood here, two apiece on the walk, the column-scope rule and the fan-out
+        // rule, charged to the two arms of the field-site hop. They left together when those
+        // arms stopped being registrations and became stages of the graphitron gatherer: the
+        // rung is written once per capture by its owner now, so there is no registered shape
+        // and no unregistered one to compare it against and the cells do not exist. That is a
+        // third reason a pair leaves this set, beside the two the notes above name, and it is
+        // the one that leaves no reader worse: every relation that reached the rung still
+        // reads a table, and reads it without the register paying a refresh for it.
 
     /**
      * The cells whose unregistered side did not answer inside its budget, and so were recorded rather

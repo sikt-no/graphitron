@@ -14,7 +14,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.upper;
@@ -272,7 +272,7 @@ class NameMatchedKeyPairTest {
 
     /** The authored view's name-matched rows, so a case can say which of the two relations answered. */
     private static List<String> authoredNameMatchedHops(DSLContext dsl) {
-        var s = INTENT_FIELD_REFERENCE_STEP_HOP;
+        var s = GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
         return dsl.select(s.fields())
             .from(s)
             .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH))

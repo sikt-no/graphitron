@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP_KEYED;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -54,16 +54,16 @@ class ReferenceStepHopArmConstraintTest {
     @DisplayName("both arm tables hold rows on this fixture")
     void bothArmsHoldRowsOnThisFixture() {
         withArmedStore(dsl -> {
-            assertThat(dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_HOP_KEYED))
+            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED))
                 .as("the KEY arm, from the seeded key path")
                 .isGreaterThan(0);
-            assertThat(dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS))
+            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS))
                 .as("the CONDITION arm, from the seeded condition path")
                 .isGreaterThan(0);
-            assertThat(dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_HOP))
+            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_HOP))
                 .as("the union view presents both arms under the name every reader spells")
-                .isEqualTo(dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_HOP_KEYED)
-                    + dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS));
+                .isEqualTo(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED)
+                    + dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS));
         });
     }
 
@@ -71,9 +71,9 @@ class ReferenceStepHopArmConstraintTest {
     @DisplayName("a keyed hop already present is refused by the key")
     void aDuplicateKeyedHopIsRefused() {
         withArmedStore(dsl -> {
-            var existing = dsl.selectFrom(INTENT_FIELD_REFERENCE_STEP_HOP_KEYED).fetchAny();
+            var existing = dsl.selectFrom(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED).fetchAny();
             assertThat(existing).as("a keyed row to duplicate").isNotNull();
-            assertThatThrownBy(() -> dsl.insertInto(INTENT_FIELD_REFERENCE_STEP_HOP_KEYED)
+            assertThatThrownBy(() -> dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED)
                 .set(copyOf(dsl, existing)).execute())
                 .as("the thirteen-column key names one candidate route in one orientation")
                 .isInstanceOf(DataAccessException.class);
@@ -84,9 +84,9 @@ class ReferenceStepHopArmConstraintTest {
     @DisplayName("a keyless hop already present is refused by the key")
     void aDuplicateKeylessHopIsRefused() {
         withArmedStore(dsl -> {
-            var existing = dsl.selectFrom(INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS).fetchAny();
+            var existing = dsl.selectFrom(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS).fetchAny();
             assertThat(existing).as("a keyless row to duplicate").isNotNull();
-            assertThatThrownBy(() -> dsl.insertInto(INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS)
+            assertThatThrownBy(() -> dsl.insertInto(GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS)
                 .set(copyOf(dsl, existing)).execute())
                 .as("with no constraint to enumerate, the coordinate and the two triples are total")
                 .isInstanceOf(DataAccessException.class);
@@ -152,7 +152,7 @@ class ReferenceStepHopArmConstraintTest {
 
     /** One keyed row at a coordinate of the case's own, so only the constraint under test refuses. */
     private static void insertKeyed(DSLContext dsl, String via, String keyMatchedBy, String field) {
-        var t = INTENT_FIELD_REFERENCE_STEP_HOP_KEYED;
+        var t = GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYED;
         dsl.insertInto(t)
             .set(t.GRAPH_NAME, GRAPH).set(t.TYPE_NAME, "Film").set(t.FIELD_NAME, field)
             .set(t.ORDINAL, 0).set(t.POSITION, 0)
@@ -165,7 +165,7 @@ class ReferenceStepHopArmConstraintTest {
 
     /** The same for the keyless arm, whose row carries no constraint columns to state. */
     private static void insertKeyless(DSLContext dsl, String via, String field) {
-        var t = INTENT_FIELD_REFERENCE_STEP_HOP_KEYLESS;
+        var t = GRAPHITRON_FIELD_REFERENCE_STEP_HOP_KEYLESS;
         dsl.insertInto(t)
             .set(t.GRAPH_NAME, GRAPH).set(t.TYPE_NAME, "Film").set(t.FIELD_NAME, field)
             .set(t.ORDINAL, 0).set(t.POSITION, 0).set(t.VIA, via)

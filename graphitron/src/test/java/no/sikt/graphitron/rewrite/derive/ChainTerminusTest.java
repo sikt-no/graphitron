@@ -16,12 +16,12 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_APPLICATION;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_CHAIN_TERMINUS;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_HOP;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The anchor for {@code intent_field_chain_terminus} and for the name-matched arm of
- * {@code intent_field_reference_step_hop} it stands on: where a {@code @routine} chain lands, and
+ * {@code graphitron_field_reference_step_hop} it stands on: where a {@code @routine} chain lands, and
  * whether the landing is a table-valued function's result.
  *
  * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
@@ -122,7 +122,7 @@ class ChainTerminusTest {
     void twoRoutesToOneTableAreOneLanding() {
         withCaptured(filmHop("[{table: \"film\"}, {table: \"language\"}]"), dsl -> {
             assertThat(hops(dsl, "TABLE").map(
-                r -> r.get(INTENT_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)))
+                r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)))
                 .as("the routes the hop view does carry, so the collapse below is not vacuous")
                 .contains("film_language_id_fkey", "film_original_language_id_fkey");
             var rows = termini(dsl);
@@ -265,16 +265,16 @@ class ChainTerminusTest {
     void aNameMatchedHopNamesNoForeignKey() {
         withCaptured(filmHop("[{table: \"film\"}]"), dsl -> {
             var rows = hops(dsl, "NAME_MATCH");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_HOP.FROM_TABLE))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE))
                 .stream().map(ChainTerminusTest::lower).toList())
                 .as("every function result in the graph's sources exposing film_id is a candidate")
                 .containsExactlyInAnyOrder("films_for_actor", "films_for_actor_or_all");
             assertThat(rows).allSatisfy(row -> {
-                assertThat(lower(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.TO_TABLE)))
+                assertThat(lower(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE)))
                     .isEqualTo("film");
-                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)).isNull();
-                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM)).isNull();
-                assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)).isNull();
+                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.CONSTRAINT_NAME)).isNull();
+                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FK_ON_FROM)).isNull();
+                assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.KEY_MATCHED_BY)).isNull();
             });
         });
     }
@@ -323,13 +323,13 @@ class ChainTerminusTest {
     }
 
     private static Result<Record> hops(DSLContext dsl, String via) {
-        return dsl.select(INTENT_FIELD_REFERENCE_STEP_HOP.fields())
-            .from(INTENT_FIELD_REFERENCE_STEP_HOP)
-            .where(INTENT_FIELD_REFERENCE_STEP_HOP.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(INTENT_FIELD_REFERENCE_STEP_HOP.VIA.eq(via))
-            .orderBy(INTENT_FIELD_REFERENCE_STEP_HOP.POSITION,
-                INTENT_FIELD_REFERENCE_STEP_HOP.FROM_TABLE,
-                INTENT_FIELD_REFERENCE_STEP_HOP.TO_TABLE)
+        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.fields())
+            .from(GRAPHITRON_FIELD_REFERENCE_STEP_HOP)
+            .where(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.VIA.eq(via))
+            .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_HOP.POSITION,
+                GRAPHITRON_FIELD_REFERENCE_STEP_HOP.FROM_TABLE,
+                GRAPHITRON_FIELD_REFERENCE_STEP_HOP.TO_TABLE)
             .fetch();
     }
 

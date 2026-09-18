@@ -118,8 +118,8 @@ class RefreshPlanStatisticsTest {
      * unremarked.
      *
      * <p>One mechanism, seen plainly on {@code intent_node_id_decode_hop_live}. With statistics its
-     * read of {@code intent_field_reference_step_hop}, the union view over two registered targets,
-     * seeks {@code intent_field_reference_step_hop_keyed}'s primary key on the eight columns the
+     * read of {@code graphitron_field_reference_step_hop}, the union view over two registered targets,
+     * seeks {@code graphitron_field_reference_step_hop_keyed}'s primary key on the eight columns the
      * element coordinate and the departing triple make up; without them it seeks that table's
      * {@code GRAPH_NAME} constraint index alone, which is a scan of the whole graph's partition per
      * driving row. The keyless branch plans the same either way, its own seek resolving to the
@@ -207,16 +207,19 @@ class RefreshPlanStatisticsTest {
      * in this repo captures one, and the ratios above are taken over a twelve-unit fixture whose
      * whole point is that it understates: a per-driving-row cost is linear in driving rows, and the
      * gap between a seven-column seek and a partition scan widens with the partition.
+     *
+     * <p>Four where it was eight, and what took the other four out is a conversion rather than a
+     * re-measurement. The spelling resolution and both arms of the field-site hop are capture
+     * stages now, written by their owner before the refresh begins, so a registration reading that
+     * rung reads a base table this pass can have analysed instead of a target only the refresh
+     * writes. That is this measurement's own conclusion arriving for one rung: the four that left
+     * were not made cheaper, they stopped being on the wrong side of the transaction boundary.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
-        "intent_field_column_scope_live",
         "intent_field_scope_table_live",
-        "intent_input_field_carrier_role_live",
-        "intent_input_field_column_match_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
-        "intent_node_id_decode_hop_live",
-        "intent_resolved_type_binding_live");
+        "intent_node_id_decode_hop_live");
 
     @TempDir
     static Path tmp;
@@ -281,16 +284,15 @@ class RefreshPlanStatisticsTest {
      * moves is reading a <em>registered target</em>, which no statement before the refresh can have
      * analysed because no statement before the refresh has written it. Stated as a superset rather
      * than as an equality because the fact tables' statistics move further registrations onto plans
-     * of their own ({@code intent_field_reference_step_hop_keyless_live},
-     * {@code intent_spelled_table_live} and {@code intent_node_id_instruction_live}, the last of
-     * which the declaration took out of the pinned set), which is a second finding and not this
-     * claim: what this asserts is that the cheap half closes nothing, not that it changes nothing.
+     * of their own ({@code intent_node_id_instruction_live}, which the declaration took out of the
+     * pinned set), which is a second finding and not this claim: what this asserts is that the cheap
+     * half closes nothing, not that it changes nothing.
      *
-     * <p>That first name was the undivided reference-step hop rule until the relation split into two
-     * keyed arms, and the split is why it is re-derived here rather than respelled: only the keyless
-     * arm's rule moves under the facts-analysed regime, the keyed arm's plan being what it is whether
-     * or not the fact tables carry statistics. A retired rule's behaviour does not transfer to the two
-     * rules that replace it by assumption, and this one did not.
+     * <p>Two names stood beside that one, the keyless hop arm's rule and the spelling resolution's,
+     * and both left the register when those rungs became capture stages. Worth a sentence rather
+     * than a deletion: each was a rule whose plan moved once the fact tables under it carried
+     * statistics, which is exactly the class of rule an owner can evaluate before the refresh, and
+     * each now is.
      */
     @Test
     void analysingTheFactsAloneReachesNoneOfThem() {

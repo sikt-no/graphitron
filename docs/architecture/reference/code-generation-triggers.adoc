@@ -69,7 +69,7 @@ xref:schema/index.adoc[the generated schema reference] for its columns and its f
   the root type names masked out.
 
 | Which catalog table does a type bind?
-| `intent_bound_table`, resolving `@table`'s reference through `intent_spelled_table`: the `name`
+| `intent_bound_table`, resolving `@table`'s reference through `graphitron_spelled_table`: the `name`
   argument as written, or the type name where the argument was omitted.
 
 | What does the catalog match on its own?

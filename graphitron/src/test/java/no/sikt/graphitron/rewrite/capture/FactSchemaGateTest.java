@@ -110,7 +110,7 @@ class FactSchemaGateTest {
 
     /**
      * The slice the materialization gate needs, which is a different slice: a table spelling for
-     * {@code intent_spelled_table} to resolve against the catalog, a {@code @routine} application
+     * {@code graphitron_spelled_table} to resolve against the catalog, a {@code @routine} application
      * carrying an {@code argMapping} so {@code graphitron_argmapping_entry} has an arm that fires, and a
      * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
      * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
@@ -860,13 +860,13 @@ class FactSchemaGateTest {
             var dsl = store.dsl();
             // A fixture registration whose view reads another registration's target, the shape the
             // derived refresh order exists for. Its name sorts ahead of its prerequisite's, so an
-            // unordered refresh would fill it from the not-yet-refreshed intent_spelled_table and
+            // unordered refresh would fill it from the not-yet-refreshed graphitron_spelled_table and
             // fail the equality below on the first capture; the re-population is what a fixture
             // registered after boot owes, the DDL's own registrations having been walked already.
-            dsl.execute("CREATE TABLE intent_fixture_binding AS SELECT * FROM intent_spelled_table"
+            dsl.execute("CREATE TABLE intent_fixture_binding AS SELECT * FROM graphitron_spelled_table"
                 + " WITH NO DATA");
             dsl.execute("CREATE VIEW intent_fixture_binding_live AS"
-                + " SELECT * FROM intent_spelled_table");
+                + " SELECT * FROM graphitron_spelled_table");
             dsl.insertInto(META_MATERIALIZE, META_MATERIALIZE.SOURCE_VIEW_NAME,
                     META_MATERIALIZE.TARGET_TABLE_NAME, META_MATERIALIZE.REASON)
                 .values("intent_fixture_binding_live", "intent_fixture_binding",
@@ -909,7 +909,7 @@ class FactSchemaGateTest {
     /**
      * A capture that populates every registered target, which is a property of the fixture SDL and
      * the fixture catalog together and has to be maintained as registrations are added. The catalog
-     * is what {@code intent_spelled_table} resolves its table spellings against; the
+     * is what {@code graphitron_spelled_table} resolves its table spellings against; the
      * {@code @routine} application is what gives {@code graphitron_argmapping_entry} an arm that fires;
      * the {@code @node} type with an {@code @nodeId} argument naming it is what puts a row in
      * {@code intent_node_id_instruction}; the {@code updatedSince} argument, whose
@@ -918,7 +918,7 @@ class FactSchemaGateTest {
      * on {@code films} because {@code Film} is bound twice here, by its own {@code @table} and by
      * being what a {@code @routine} field returns, so the argument scope declines at every argument
      * of a {@code Film}-returning field; and the {@code @reference} whose element names a table a
-     * foreign key reaches is what puts one in {@code intent_field_reference_step_hop}; and the
+     * foreign key reaches is what puts one in {@code graphitron_field_reference_step_hop}; and the
      * {@code byFilmTitle} argument, whose own {@code @reference} walks the same foreign key from
      * the argument's side, is what puts one in {@code intent_argument_reference_step_target}, the
      * field-site reference above reaching only the field-site walk. Without any

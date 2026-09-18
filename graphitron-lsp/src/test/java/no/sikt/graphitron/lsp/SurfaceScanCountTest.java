@@ -74,7 +74,7 @@ import static org.jooq.impl.DSL.select;
  * passes; it is finished when it has been seen to fail.
  *
  * <p>Re-measured whole, both shapes, with the two registrations the inlay read depends on
- * ({@code intent_spelled_table} and {@code intent_field_column_scope}) removed for the guarded
+ * ({@code graphitron_spelled_table} and {@code intent_field_column_scope}) removed for the guarded
  * side. Every ceiling below is between its pair: goto-definition on a type at 122 against 288,
  * on a member at 567 against 1490, hover at 172 against 421, the whole-file inlay at 482 against
  * 1744, diagnostics at 219 against 1426. Which corrects a claim this paragraph's neighbour used to

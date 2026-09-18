@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedCatalogRoutine;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
@@ -229,10 +229,10 @@ class FieldRoutineMethodTest {
     /** What the spelling itself resolved to, which is what separates the two causes of absence. */
     private static List<String> spellingsOf(DSLContext dsl, String spelling) {
         derive(dsl);
-        return dsl.select(INTENT_SPELLED_TABLE.TABLE_NAME)
-            .from(INTENT_SPELLED_TABLE)
-            .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH)
-                .and(INTENT_SPELLED_TABLE.SPELLING.eq(spelling)))
+        return dsl.select(GRAPHITRON_SPELLED_TABLE.TABLE_NAME)
+            .from(GRAPHITRON_SPELLED_TABLE)
+            .where(GRAPHITRON_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH)
+                .and(GRAPHITRON_SPELLED_TABLE.SPELLING.eq(spelling)))
             .fetch(0, String.class);
     }
 }

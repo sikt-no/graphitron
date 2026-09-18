@@ -58,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p><b>The two readers, and why the figures differ in kind between them.</b>
  * {@code intent_node_id_decode_hop_live} and {@code intent_node_id_instruction_live} both reach
- * {@code intent_field_reference_step_hop} through the same chain, and on a consumer-size store both
+ * {@code graphitron_field_reference_step_hop} through the same chain, and on a consumer-size store both
  * paid the cliff; the instruction view is the one an instrumented round measured at 592 s. On this
  * repository's twelve-unit fixture only the decode hop moves. Measured: the decode hop visits 1499
  * rows bare, 1105 declared and 1107 analysed, so the declaration reaches the analysed cost and
@@ -90,7 +90,7 @@ class PartitionSelectivityWorthTest {
 
     /**
      * The reader the instrument has signal on: the rule whose read of
-     * {@code intent_field_reference_step_hop} is the index choice the declaration decides.
+     * {@code graphitron_field_reference_step_hop} is the index choice the declaration decides.
      */
     private static final String DECODE_HOP = "intent_node_id_decode_hop_live";
 

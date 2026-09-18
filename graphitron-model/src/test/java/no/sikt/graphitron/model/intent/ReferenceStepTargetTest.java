@@ -14,7 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_EN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
-import static no.sikt.graphitron.model.Tables.INTENT_SPELLED_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
@@ -32,8 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What the three resolution views a {@code @reference} path stands on return:
- * {@code intent_spelled_table}, which resolves a written table name against the catalog census
- * whatever site wrote it, and the pair {@code intent_field_reference_step_hop} /
+ * {@code graphitron_spelled_table}, which resolves a written table name against the catalog census
+ * whatever site wrote it, and the pair {@code graphitron_field_reference_step_hop} /
  * {@code intent_field_reference_step_target}, which split a path into its per-element resolutions
  * and the chain that walks them.
  *
@@ -332,10 +332,10 @@ class ReferenceStepTargetTest {
             seedTablePath(dsl, "Film", "titleTexts", "film_translation");
 
             derive(dsl);
-            var resolved = dsl.select(INTENT_SPELLED_TABLE.TABLE_NAME)
-                .from(INTENT_SPELLED_TABLE)
-                .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
-                .and(INTENT_SPELLED_TABLE.SPELLING.eq("film_translation"))
+            var resolved = dsl.select(GRAPHITRON_SPELLED_TABLE.TABLE_NAME)
+                .from(GRAPHITRON_SPELLED_TABLE)
+                .where(GRAPHITRON_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
+                .and(GRAPHITRON_SPELLED_TABLE.SPELLING.eq("film_translation"))
                 .fetch(0, String.class);
             assertThat(resolved).hasSize(1);
             assertThat(resolved.getFirst()).isEqualToIgnoringCase("film_translation");
@@ -572,11 +572,11 @@ class ReferenceStepTargetTest {
     /** What one spelling resolves to, schema and arity, in schema order. */
     private static Result<Record2<String, Integer>> spelled(DSLContext dsl, String spelling) {
         derive(dsl);
-        return dsl.select(INTENT_SPELLED_TABLE.TABLE_SCHEMA, INTENT_SPELLED_TABLE.CANDIDATES)
-            .from(INTENT_SPELLED_TABLE)
-            .where(INTENT_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
-            .and(INTENT_SPELLED_TABLE.SPELLING.eq(spelling))
-            .orderBy(INTENT_SPELLED_TABLE.TABLE_SCHEMA)
+        return dsl.select(GRAPHITRON_SPELLED_TABLE.TABLE_SCHEMA, GRAPHITRON_SPELLED_TABLE.CANDIDATES)
+            .from(GRAPHITRON_SPELLED_TABLE)
+            .where(GRAPHITRON_SPELLED_TABLE.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHITRON_SPELLED_TABLE.SPELLING.eq(spelling))
+            .orderBy(GRAPHITRON_SPELLED_TABLE.TABLE_SCHEMA)
             .fetch();
     }
 
