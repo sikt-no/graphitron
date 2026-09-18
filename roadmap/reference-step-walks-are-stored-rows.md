@@ -1,7 +1,7 @@
 ---
 id: R954
 title: "A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -2485,3 +2485,96 @@ where the edge used to be argued.
 R953's levers shipped and is labelled as relative to the pass they fix; re-taking it is the acceptance
 evidence "Tests" already asks for per phase rather than a revision. The scope call, which nothing in
 this round or in R956 moves. And phases 4 and 5, which stay the successor's.
+
+### Round 8 (2026-09-18, In Review -> Done, reviewer session 01CjEaUS7fBntjApqJna5PAt)
+
+Rework, on question 1. Phases 0 and 1 are clean and phase 2's structure is the one the body
+specced; what fails is one statement inside phase 2's walk, and the failure is an answer change
+rather than a shape preference. Everything else below is non-blocking.
+
+**Finding 10 (blocking, question 1). The walk's arm filter is inside the window functions' own
+query block, so `targets` and `candidates` are counted per arm where the rule they replace counted
+them over the element's whole partition.**
+
+`FieldReferenceStepTargets.walked` renders, per arm:
+
+```
+WITH RECURSIVE chain (...) AS (...)
+SELECT ranked.*, CAST(MAX(ranked.target_rank) OVER (PARTITION BY <coordinate>) AS INT),
+                 CAST(COUNT(*)               OVER (PARTITION BY <coordinate>) AS INT)
+  FROM (SELECT chain.*, DENSE_RANK() OVER (PARTITION BY <coordinate> ORDER BY ...) AS target_rank
+          FROM chain) ranked
+ WHERE ranked.via IN ('KEY', 'TABLE')
+```
+
+`WHERE` is evaluated before window functions in the same `SELECT`, so both counts see only the
+arm's rows. Moving the filter out of the `ranked` derived table was necessary and is not
+sufficient: it has to be out of the block the windows are in as well, which needs one more nesting
+level (compute both counts in a derived table of their own, filter the arm outside it), or the
+counts computed inside `ranked` beside `target_rank`.
+
+The class's own javadoc and the commit message both state the property that is not held: "the two
+counts are over the whole partition, both arms included, so an arm filter applied inside the window
+would change the answer rather than partition it." So this is a slip and not a redesign.
+
+Reproduced against the shipped DDL, one coordinate with one row in each arm, comparing the stage
+output through `graphitron_field_reference_step_target` against the retired recursive view text run
+over the same rows:
+
+| arm | to_table | `targets` shipped | `targets` retired | `candidates` shipped | `candidates` retired |
+|---|---|---|---|---|---|
+| `TABLE` (keyed) | `language` | 1 | 1 | 1 | 2 |
+| `NAME_MATCH` (keyless) | `language` | 1 | 1 | 1 | 2 |
+
+With the two arms landing on different tables the `targets` column moves too: the keyed row reads
+`targets = 1` where the rule reads 2, which is the column's documented "1 where the destination is
+certain" asserted of an element that reaches two tables.
+
+This is not confined to the relation's own comments. `intent_field_reference_step_fanout`'s `pair`
+CTE gates on `WHERE e.candidates = 1 AND l.candidates = 1`, whose own comment says an element the
+walk reached by several candidate routes must draw no row because "the routes would bind different
+columns, crossing into contradictory verdicts at one key". A cross-arm element now presents
+`candidates = 1` on each arm and passes that gate, which is the false negative the gate exists to
+prevent.
+
+The state is reachable rather than theoretical. The `TABLE` and `NAME_MATCH` arms fire on the
+identical entry predicate (`table_ref IS NOT NULL AND key_ref IS NULL`), so any element naming a
+table draws both whenever the catalog offers a foreign key into the spelling and a `FUNCTION`-typed
+table name-matched to it; the sakila fixture catalog declares such functions. At position 0 the
+walk additionally needs both departures bound to the enclosing type, which is a type carrying a
+`@table` binding and standing as a `@routine` chain's return. `intent_routine_return_binding`'s own
+comment names that shape as ordinary: "a type carrying both being a fact about the schema and not a
+conflict for this relation to settle; where the two populations meet is
+`graphitron_resolved_type_binding`."
+
+**Finding 11 (question 2, and the reason finding 10 shipped). The `EXCEPT` oracle for phase 2 was
+run on a population that cannot separate the two rules.** The commit records it as "the binding at
+3 rows and the walk at 3" on a store captured from the sakila catalog. Three walk rows cannot hold
+a coordinate with rows in both arms, which is the one shape the split creates and therefore the one
+shape the oracle owed. `ReferenceStepTargetTest`'s two arity cases are single-arm for the same
+reason. What would satisfy this: the oracle re-run on a fixture carrying a cross-arm coordinate, and
+a case in `ReferenceStepTargetTest` pinning both arities across the arms at one coordinate, so the
+next rewrite of this statement cannot lose them silently.
+
+**Finding 12 (question 2, non-blocking, named so it is not mistaken for silence). The acceptance
+evidence the body asks for per phase is not recorded.** "Tests" asks for phase 3's `sis`
+configurations re-taken on the shipped tree per phase, naming three readings in particular, and
+says plainly that a snapshot proxy cannot stand in for the stage-written relation. No such reading
+is in the phase notes or the commits. Phase 3 was taken on a private `sis` store copy on
+2026-09-17 and phases 1 and 2 landed on 2026-09-18, so the instrument existed; if it no longer
+does, the body should say so where it currently asks for the reading. This is not what holds the
+gate, but the item's priority-1 ground is `intent_field_reference_step_fanout` answering at all on
+that consumer, and that is the one claim still standing on a proxy.
+
+**What checked out, so a rework pass does not re-audit it.** The full `mvn install -Plocal-db`
+verification build is green at `cceafee`. Phase 0's rule, phase 1's two stages and
+`ResolvedTypeBindings` each reproduce the view text they replaced, compared statement by statement
+against the retired bodies, including the two-orientation rewrite of the keyed hop and its
+self-referential exclusion. The placement invariant holds under the new stage order: the closure of
+everything `SpelledTables`, `FieldReferenceStepHops` and `ResolvedTypeBindings` read, recomputed
+from the shipped DDL, reaches no relation any later step of the pass writes, `graphitron_field_table`
+included. All four roster lines are gone and every new relation and union view carries a
+`meta_relation` row. The reconciliation case phase 1 owed exists and is non-vacuous, its fixture
+carrying the `@reference` path the body said it needed. No test asserts on generated method bodies.
+`docs/` carries no roadmap-internal markers, no retired `intent_` spelling survives anywhere outside
+this item's own history, and the body reflects what shipped.

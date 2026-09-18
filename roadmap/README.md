@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
+| `R954` | A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row | Ready | 2026-09-18 <sub>created 2026-09-16</sub> | [plan](reference-step-walks-are-stored-rows.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-09-16 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R954` | A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row | In Review | 2026-09-18 <sub>created 2026-09-16</sub> | [plan](reference-step-walks-are-stored-rows.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -632,7 +632,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R954` [**A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row**](reference-step-walks-are-stored-rows.md) — In Review, architecture
+- `R954` [**A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row**](reference-step-walks-are-stored-rows.md) — Ready, architecture
 - `R876` [**Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject**](derived-read-cost-is-a-shape-problem.md) — In Progress, architecture
 - `R923` [**A grain declares its corpora, so a cross-corpus grain can say so**](grain-declares-its-corpora.md) — Spec, architecture
 - `R877` [**The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation**](graphitron-model-house-cleaning.md) — In Progress, cleanup
