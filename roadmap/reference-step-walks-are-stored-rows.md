@@ -1,7 +1,7 @@
 ---
 id: R954
 title: "A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: model-cleanup
