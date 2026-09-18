@@ -62,11 +62,13 @@ class GathererIsolationTest {
         // Two gatherers transcribe the configuration: this one writes the store_graph_ rows from
         // the run's own SubjectConfig, marking and sweeping them per graph.
         roll.put("capture/store", Set.of("StoreEntries"));
-        roll.put("capture/catalog", Set.of("CatalogFactCapture"));
         // And two read the classpath: this one writes the sql_ family from the jOOQ catalog.
         roll.put("capture/jooq", Set.of("JooqFactCapture"));
         // And this one reads the classfiles, for what a schema may name at each directive.
-        roll.put("capture/code", Set.of("CodeCapture"));
+        // Two readings of one corpus: the arms say what an author may write at each
+        // directive, and the general reading says what is there. The second leaves when
+        // the first can answer everything asked of it.
+        roll.put("capture/code", Set.of("CodeCapture", "JvmCapture"));
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
         // owns the store's record of what was read and hands the documents on, the two

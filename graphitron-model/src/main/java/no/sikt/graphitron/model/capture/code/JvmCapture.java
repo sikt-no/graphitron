@@ -1,22 +1,15 @@
-package no.sikt.graphitron.model.capture.catalog;
+package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.classpath.ClasspathScanner;
 import no.sikt.graphitron.model.classpath.CompletionData;
-import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.sink.FactSink;
 import no.sikt.graphitron.model.sources.ClasspathSources;
 import no.sikt.graphitron.model.sources.GraphSourceMembership;
-import org.jooq.Field;
-import org.jooq.Schema;
-import org.jooq.Table;
-import org.jooq.UniqueKey;
+import org.jooq.DSLContext;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.JVM_CLASS;
 import static no.sikt.graphitron.model.Tables.JVM_CLASS_SUPERTYPE;
@@ -24,85 +17,53 @@ import static no.sikt.graphitron.model.Tables.JVM_DECLARED_TYPE_REF;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD;
 import static no.sikt.graphitron.model.Tables.JVM_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.JVM_RECORD_COMPONENT;
-import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
-import static no.sikt.graphitron.model.Tables.SQL_INDEX;
-import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
-import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
-import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
-import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
-import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
- * The {@code jvm_} family: the classes an author's schema names, read off the compile classpath.
+ * The classpath as the classes it declares: every public class the run can see, with its
+ * supertypes, its methods and their parameters, its record components, and the type arguments
+ * written inside any of those.
  *
- * <p>Named for the vocabulary a row is written in rather than for the reader that produced it. A
- * class on the compile classpath is a JVM fact whether or not it extends anything of graphitron's,
- * which is why the prefix names neither jOOQ nor this gatherer.
+ * <p>The general reading of a corpus {@link CodeCapture} reads for one question at a time. That one
+ * says what an author may write at each directive; this one says what is there. Both are wanted
+ * while the first cannot answer everything asked of it, and this leaves when it can.
  *
- * <p>It used to fill the {@code sql_} family too, and that half is gone: {@code JooqFactCapture}
- * was writing the same fourteen relations from the other capture entry point, so the catalog was
- * captured twice on any build that ran both. Diffing the whole store after each found three things
- * the newer one did not write, all of them since closed there, and the family is now written once.
+ * <h2>After the arms, and that is the point of the order</h2>
  *
- * <p>Its input arrives already reduced to values, which is the property the store then enforces
- * structurally: no live {@code Class<?>} crosses into a relation, so nothing lazy survives the
- * codegen classloader closing at the end of a pass.
+ * <p>Runs after {@link CodeCapture} in {@link no.sikt.graphitron.model.run.ModelCapture}, so no
+ * {@code code_} arm can read a {@code jvm_} row: there are none written yet when the arms are
+ * filled. The direction has to hold for this family to be removable at all, and a sequence holds it
+ * where a rule would have to be remembered.
+ *
+ * <p>Reads the classpath itself rather than taking a reading. The scan carries generic signatures,
+ * which is what {@code jvm_declared_type_ref} decomposes and what the {@code declared_} columns
+ * beside each erased one hold; a reading that had dropped them could not fill this family.
  */
-public final class CatalogFactCapture {
+public final class JvmCapture {
 
-    /** The standard's {@code TABLE_CONSTRAINTS} vocabulary, as far as the catalog walk reads it. */
-    private static final String PRIMARY_KEY = "PRIMARY KEY";
-    private static final String UNIQUE = "UNIQUE";
-    private static final String FOREIGN_KEY = "FOREIGN KEY";
-
-    /** {@code store_source.source_kind}'s catalog arm; the classpath arms are the scan's. */
-    private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
-
-
+    private JvmCapture() {}
 
     /**
-     * The standard's {@code ROUTINES.ROUTINE_TYPE} vocabulary, as far as the table census reaches
-     * it: a table-valued function is the one routine form jOOQ places among the tables, so the
-     * sibling {@code PROCEDURE} value has no writer until a walk reads the routines package.
+     * Writes what the classpath declares.
+     *
+     * <p>Its own sink, on {@code GraphitronAssemblyCapture}'s terms: what it buffers is this
+     * writer's own and the flush below is what publishes it.
      */
-    private static final String FUNCTION = "FUNCTION";
-
-    private CatalogFactCapture() {}
-
-    public static void capture(FactSink sink,
-                        List<CompletionData.ExternalReference> extensions,
-                        ClasspathSources sources) {
-        captureExtensions(sink, sources, extensions);
+    public static void capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
+                               String jooqPackage, LocalDateTime readAt) {
+        if (classpath.isEmpty()) {
+            return;
+        }
+        var sink = new FactSink(dsl, graph, readAt);
+        // The empty string is the scan's own "no package to skip" sentinel, where null is
+        // not: a run with no jOOQ package configured skips nothing rather than failing.
+        write(sink, new ClasspathSources(),
+            ClasspathScanner.scan(classpath, jooqPackage == null ? "" : jooqPackage));
+        sink.flush();
     }
 
-
-
-
-
-
-    /**
-     * Records the classes the classpath scan read, and the classpath entries it read them from.
-     * Javadoc and Java source positions stay out by design: they live on the LSP source walker's
-     * cadence and are joined at request time, so a {@code .java} edit is seen without a generator
-     * rebuild.
-     *
-     * <p>Each class carries the entry it came from, which is the partition a refresh deletes and
-     * re-walks. The entry's own row is claimed on first sight rather than from a separate pass over
-     * the classpath, so a census with no classes from an entry records no entry: the store says
-     * what the scan read, not what it was pointed at.
-     */
-    private static void captureExtensions(FactSink sink, ClasspathSources sources,
-                                          List<CompletionData.ExternalReference> extensions) {
-        for (CompletionData.ExternalReference reference : extensions) {
+    private static void write(FactSink sink, ClasspathSources sources,
+                              List<CompletionData.ExternalReference> classes) {
+        for (CompletionData.ExternalReference reference : classes) {
             // Membership is noted ahead of the class claim: a warm run pre-claims a retained
             // partition's classes, and the retained partition is still this graph's read.
             GraphSourceMembership.note(sink, reference.sourceName());
@@ -214,6 +175,4 @@ public final class CatalogFactCapture {
             }
         }
     }
-
-
 }

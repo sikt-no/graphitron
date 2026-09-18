@@ -200,7 +200,7 @@ class MetaDeclarationGateTest {
 
             // A well-formed declaration of sql_table, comment re-stated to match: no offenders.
             dsl.insertInto(META_RELATION)
-                .values("sql_table", "database-table", "catalog",
+                .values("sql_table", "database-table", "jooq",
                     "One table the consumer database declares.", "For example public.film.",
                     "Written table references need ground to resolve against.")
                 .execute();
@@ -223,7 +223,7 @@ class MetaDeclarationGateTest {
                 + " it. For example public.film.'");
             assertThat(echoOffenders(dsl)).as("a two-sentence grain_text is an offender").hasSize(1);
 
-            // An SDL-corpus grain under the catalog gatherer: the corpus gate names it.
+            // An SDL-corpus grain under the catalog-reading gatherer: the corpus gate names it.
             dsl.update(META_RELATION)
                 .set(META_RELATION.GRAIN_NAME, "sdl-something")
                 .where(META_RELATION.RELATION_NAME.eq("sql_table"))
@@ -248,7 +248,7 @@ class MetaDeclarationGateTest {
                     "relation_name", "catalog")
                 .execute();
             dsl.insertInto(META_RELATION)
-                .values("meta_family", "observed-relation", "catalog",
+                .values("meta_family", "observed-relation", "jooq",
                     "One family.", "For example sql_.", "The roster the census closes against.")
                 .values("meta_relation_family", "observed-relation", "compile",
                     "One relation.", "For example sql_table.", "The census itself.")
@@ -256,7 +256,7 @@ class MetaDeclarationGateTest {
             assertThat(viewOffenders(dsl))
                 .as("a view reading another owner's relation with no declared edge")
                 .isNotEmpty();
-            dsl.insertInto(META_GATHERER_DEPENDENCY).values("compile", "catalog").execute();
+            dsl.insertInto(META_GATHERER_DEPENDENCY).values("compile", "jooq").execute();
             assertThat(viewOffenders(dsl))
                 .as("the declared dependency edge clears the read")
                 .isEmpty();

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.capture.catalog.CatalogFactCapture;
 import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
@@ -406,7 +405,6 @@ public final class FactCapture {
             // supertype closure. What is left here is the classpath references, which it cannot
             // produce, and the order is a foreign key.
             JooqFactCapture.capture(txDsl, graph.name(), jooq, readAt);
-            CatalogFactCapture.capture(sink, extensions, sources);
             sink.flush();
             // The catalog's own closure, over the rows the two crawlers above have just flushed.
             // A stage of the catalog gatherer rather than a derivation: it reads no graph and no
