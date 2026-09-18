@@ -1,13 +1,12 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.derive.Materializations;
 import no.sikt.graphitron.model.test.UnregisteredRelation;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,7 +37,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * all: it is a test-jar helper exercised only through the fixtures that install it. This case lives
  * with its reader rather than repeating that gap.
  */
-@PipelineTier
 class UnregisteredRelationTest {
 
     @TempDir
@@ -51,7 +49,7 @@ class UnregisteredRelationTest {
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {
-        var ctx = TestConfiguration.testContext();
+        var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         String sdl = sdl();
 

@@ -1,6 +1,7 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.MaterializedRegistryFixture;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.derive.MaterializeDependencies;
@@ -9,7 +10,6 @@ import no.sikt.graphitron.model.test.RunawayRelation;
 import no.sikt.graphitron.model.test.UnregisteredRelation;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,7 +75,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * where these are sets of strings. Stated here so the next author of such a set knows where the line
  * is rather than rediscovering it.
  */
-@PipelineTier
 class DerivedReadCostTest {
 
     /**
@@ -899,7 +898,7 @@ class DerivedReadCostTest {
      */
     @BeforeAll
     static void priceTheMatrix() {
-        var ctx = TestConfiguration.testContext();
+        var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         String sdl = scaledSdl(UNITS);
 
@@ -996,7 +995,7 @@ class DerivedReadCostTest {
      */
     @Test
     void aCellThatCannotAnswerIsRecordedRatherThanFailed() {
-        var ctx = TestConfiguration.testContext();
+        var ctx = TestRunContext.of();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
             .filter(r -> r.targetTableName().equals("intent_field_column_scope"))

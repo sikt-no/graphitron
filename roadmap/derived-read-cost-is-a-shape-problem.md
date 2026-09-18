@@ -4760,3 +4760,32 @@ inventory: consumers do not branch on it, they follow it.
   predicate inside them. R952's split is not the answer either way.
 - **`graphitron_node_type` admits a `@node` with no `@table`**, which is not a legal node. It is a
   different relation from the two this chapter settled and it disagrees with them at that edge.
+
+## The gates over the schema run where the schema is (2026-09-18)
+
+Six gates ask questions about the store's shape. Three ran in `graphitron-model` at module five of
+fourteen, about four minutes into a build; three ran in `graphitron` at module seven, after that
+module's whole test tier, about twenty minutes in. Nothing about the later three needs a generator.
+
+The split was an accident of where a field was written. `UnregisteredRelationTest` reached into the
+generator's module for one thing, a `@Tag` annotation. `DerivedReadCostTest` reached for that and a
+six-line `RunContext` factory over a type this module already owns. The two arms of
+`FactCaptureAgreementTest` that enumerate relations and pair anchors against attributes reached for
+neither: they sat beside the arms that compare capture against `GraphitronSchema` because the
+registration map they read was declared in that class, and the map is read by nothing else.
+
+What it cost is the reason to move them. Every one of the three is a gate that fires when the schema
+changes, which is to say when someone is in the middle of changing it. `DerivedReadCostTest`'s
+reader count moved twice in one day, once because a sibling session added relations and once because
+another retired three; each time the answer arrived twenty minutes into a build rather than four.
+
+They are in `graphitron-model` now. No tier vocabulary moved with them: this module declares none,
+the four tiers being the generator module's own way of selecting within its suite, so a case moving
+down simply stops carrying a tag. Three fixtures moved to where they are read from:
+`MaterializedRegistryFixture`, a hundred and seventy lines of SDL-string building with no import
+outside the JDK; `TestRunContext`, which names the jOOQ package every store-reading case here
+already names; and `AgreementCorpus`, the schema both the moved gate and the arms that stayed
+capture, held once rather than copied.
+
+The five arms that stayed are the ones whose subject is the generator's model, and they retire with
+the consumers they shadow, which is what their own comment already said.

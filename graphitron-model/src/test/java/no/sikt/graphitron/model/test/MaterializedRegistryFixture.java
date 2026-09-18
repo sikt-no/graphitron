@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.test;
 
 import java.util.stream.IntStream;
 
@@ -20,7 +20,7 @@ import java.util.stream.IntStream;
  * refresh's plans depend on statistics, and both answers are only worth as much as the population
  * behind them.
  */
-final class MaterializedRegistryFixture {
+public final class MaterializedRegistryFixture {
 
     private MaterializedRegistryFixture() {}
 
@@ -85,7 +85,7 @@ final class MaterializedRegistryFixture {
      * a table, and the filter column is the key one of them declares on the other, which is what
      * makes the name resolve on both branches instead of on one.
      */
-    static String scaledSdl(int units) {
+    public static String scaledSdl(int units) {
         var sdl = new StringBuilder("""
             interface Node { id: ID! }
             input FilmInput { title: String }

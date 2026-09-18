@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
+import no.sikt.graphitron.model.test.MaterializedRegistryFixture;
+
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.capture.FactCapture;
 import no.sikt.graphitron.model.derive.Materializations;
