@@ -1,13 +1,13 @@
 ---
 id: R956
 title: "A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-09-17
-last-updated: 2026-09-17
+last-updated: 2026-09-18
 ---
 
 # A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls
@@ -537,3 +537,97 @@ gate, and that three of its four relations looked unkeyable. Following why produ
 of the three keys cleanly after all and the other two are not one relation each. R954's body records
 the four arms weighed there and why three were declined, including a widening of the key gate that was
 drafted and withdrawn.
+
+## Reviewer findings
+
+### Round 1 (2026-09-18, In Review -> Ready, reviewer session `01BKfBzr8KdGXF354jzXEaKw`)
+
+Verdict: rework. Question one passes without reservation. Question two fails on one of the three
+artifacts this body names as its own acceptance evidence, and the retirement sweep this gate owes
+turns up one surviving term. Both findings are located, narrow and prose-only; nothing below asks
+for a different design, a different DDL or a different test.
+
+Reviewed at `218dd0d` as it stands on trunk, with the full reactor green under
+`mvnd install -Plocal-db` at `9b289c2` (`BUILD SUCCESS`, 14 modules, none skipped). The two finding
+sites are unchanged at `2d2414f`.
+
+**Question one passes.** The delivered tree is the change this body approved, checked against the
+contract rather than against the commit message. The two arm tables carry the exact column lists,
+keys, foreign key and `CHECK`s the "The shape" section specifies, verbatim. The rule split is
+faithful where it matters most: diffing the two `_live` bodies against the retired four-arm rule,
+the `KEY` and `TABLE` branches are byte-identical and the `NAME_MATCH` and `CONDITION` branches
+differ only by the three literal-`NULL` projections being dropped from the column list, which is
+exactly what the body promised. The union view's explicit column list reproduces the retired table's
+column order position for position, so no reader could see a shift. The two `meta_grain` rows carry
+the proposed grain sentences and key shapes word for word; the two `meta_relation` rows sit under
+`derivation`; the register carries two rows where one stood, and the reader census in the keyed
+arm's `reason` is re-derived correctly rather than inherited, five namings across three view bodies
+being what the DDL actually holds. `ReferenceStepHopArmConstraintTest` pins every refusal the body
+named and two it did not, seeds both arms rather than assuming them, and asserts on constraint
+violations rather than on any code string. The docs edits land where the body said, with no
+roadmap-internal vocabulary leaking into them.
+
+The index decision is the one place the delivery departs from the shape the body was written
+around, and the departure is licensed: the body ran the folding as an experiment with a stated
+decision rule, so dropping the indexes is the rule firing rather than a substitution. Finding 1 is
+about what the tree now says that experiment found, not about the decision.
+
+**Finding 1, question two: the `NO_INDEX` roster entry misstates the folding experiment, in the
+direction that argues against the decision it justifies.** `MaterializeRegistryGateTest:290` reads
+"On `RefreshPlanStatisticsTest` the indexes were a cost rather than a wash: with them declared,
+`intent_resolved_type_binding_live` joins the set of registrations whose refresh plans differently
+with the targets' statistics than without, which is a ninth statement whose cold-capture plan stops
+matching its settled one. So the indexes went".
+
+That is false three ways, and the first needs no measurement. The shipped tree declares no indexes
+and pins `intent_resolved_type_binding_live` in `PLAN_DEPENDS_ON_STATISTICS`, with the test green:
+the member is in the set *without* the indexes, so its membership cannot be what declaring them
+cost. Second, it contradicts this body and the landing commit, both of which say the opposite in
+plain terms, "the same nine-member set on `RefreshPlanStatisticsTest`" here and "the same
+`RefreshPlanStatisticsTest` set either way" there. Third, it was put to the instrument: declaring
+both eight-column indexes on the arm tables and re-running leaves `RefreshPlanStatisticsTest` green
+on its pinned set and `DerivedReadCostTest` green on all four of its figures and its non-monotonic
+set. The folding is a wash on both instruments, which is what this body says and what the roster
+denies.
+
+Why this blocks rather than reading as a phrasing slip. This body names its own acceptance evidence
+and the roster is one third of it: "The measurement above, written into the union view's comment,
+the two `NO_INDEX` roster rows and the register reasons, is the item's acceptance evidence at the
+Done gate." The other two thirds are right; this one is not. And the error inverts the body's own
+decision rule, which says that if anything moves on either instrument the indexes stay. Read
+literally the roster now records a measurement that mandates the opposite of the DDL beside it, in
+the one roster whose stated doctrine, quoted inside the same entry, is that it carries a measurement
+rather than an argument. The next contributor weighing a prefix index against a key meets a
+precedent that says the prefix cost a plan divergence it did not cost, on exactly the question
+`intent_spelled_table`'s comment says is subtle.
+
+What satisfies it: restate that entry's second instrument as a wash, and account for
+`intent_resolved_type_binding_live`'s membership where it belongs, as the consequence of the
+relation gaining a key that `RefreshPlanStatisticsTest`'s own new paragraph already states
+correctly. No DDL, no pin and no test needs to move; the indexes stay gone and the key-prefix
+argument stands on the wash.
+
+**Finding 2, retirement sweep: `intent_field_reference_step_hop_live` survives in javadoc.**
+`RefreshPlanStatisticsTest:284` still names it, in the paragraph listing the registrations the fact
+tables' statistics move onto plans of their own. The term is declared retired in this body's
+`## Retired vocabulary`, the relation no longer exists, and javadoc is the first surface the sweep
+names. Three neighbouring paragraphs in that same file were rewritten for the split and this one was
+passed over, so the miss is local rather than systematic. Nothing mechanical catches it:
+`SchemaIdentifierDriftCheck` scans `docs/architecture` and the store's own prose, not Java.
+
+The citation's substance needs a look too, not just its name. The claim is about which registrations
+move when only the fact tables are analysed, and the retired rule is now two rules; whether both arm
+rules behave the way the single one did is a fact the paragraph asserts and nobody has checked. So
+the fix is a re-derivation and not only a respelling.
+
+The surviving citations in other roadmap bodies are not findings. `reference-step-walks-are-stored-rows.md`
+and `per-row-view-naming-fails-the-build.md` are `Spec` items whose bodies this item deliberately
+left alone with a reason stated under "Relation to other items", and
+`first-refresh-plans-without-statistics.md` cites the retired index as the historical shape its own
+measurements were taken on, which is provenance rather than drift.
+
+**Non-blocking, and not this item's to fix.** `PartitionSelectivityWorthTest` and
+`fact-model.adoc`'s cold-refresh paragraph were both re-grounded on the split by R953's own commits
+after this landed, correctly, and the eight-member figure they now carry matches the set as R953
+left it. Nothing here is owed by this item; it is recorded so the next reader of this section does
+not re-derive it as a discrepancy.
