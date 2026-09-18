@@ -49,6 +49,8 @@ class LintSubjectShapeTest {
         type Widget {
           widgetName: String
           Colour: String
+          "Its hue."
+          Hue: String
           arg(Locale: String): String
           old: String @deprecated
         }
@@ -138,6 +140,35 @@ class LintSubjectShapeTest {
                 .as("pairs whose template interpolates a second name and whose row has none")
                 .doesNotContainAnyElementsOf(TWO_NAMES);
         });
+    }
+
+    /**
+     * A described declaration is reported at its description, so the characters at the position are
+     * the author's prose. Both halves are asserted over one corpus and one rule, the two fields
+     * differing in nothing but whether somebody documented them: a flag that is always true passes
+     * every fix through, and one that is always false silently retires the rename fixes altogether.
+     */
+    @Test
+    @DisplayName("the position names the subject only where no description displaced it")
+    void theFlagFollowsTheDescription() {
+        withCapture(dsl -> {
+            assertThat(atPosition(dsl, "Colour"))
+                .as("an undescribed field is reported at its own name token")
+                .containsExactly(true);
+            assertThat(atPosition(dsl, "Hue"))
+                .as("a described field is reported at the description instead")
+                .containsExactly(false);
+        });
+    }
+
+    /** What the rows for one offending name say about their own position. */
+    private static List<Boolean> atPosition(DSLContext dsl, String subject) {
+        return dsl.select(LINT_VIOLATION.SUBJECT_AT_POSITION)
+            .from(LINT_VIOLATION)
+            .where(LINT_VIOLATION.GRAPH_NAME.eq(GRAPH))
+            .and(LINT_VIOLATION.LINT_RULE.eq("field-names-camel-case"))
+            .and(LINT_VIOLATION.SUBJECT.eq(subject))
+            .fetch(LINT_VIOLATION.SUBJECT_AT_POSITION);
     }
 
     private static Set<String> pairs(DSLContext dsl) {
