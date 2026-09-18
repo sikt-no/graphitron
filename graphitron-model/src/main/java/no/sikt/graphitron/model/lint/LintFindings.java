@@ -38,9 +38,13 @@ public final class LintFindings {
 
     private LintFindings() {}
 
-    // Duplicated from the visitors this replaces, deliberately and briefly. The visitors live in
-    // the generator module, which depends on this one, so the dependency cannot be pointed the
-    // other way; the shadow cases hold the two spellings together until the visitors go.
+    // The wording and the shapes the fixes are built from. The visitors this replaces carried these
+    // too, and that duplication went with them. What is still spelled twice is the camel-case shape,
+    // here and as the view's regexp_like, and the two are doing different jobs: the view decides
+    // whether a name draws a row, this decides whether the rename about to be offered is a name at
+    // all. They have to agree even so, or a fix proposes a spelling the rule flags again on the next
+    // run. Nothing holds them together. NameShapeParityTest holds the view's spelling against a Java
+    // one it states itself, which is this shape and not this constant.
     private static final Pattern CAMEL_CASE = Pattern.compile("[a-z][A-Za-z0-9]*");
     private static final String CAMEL_CASE_FIX = "Rename field to camelCase";
     private static final String PREFIX_FIX = "Drop the type-name prefix";
@@ -117,12 +121,24 @@ public final class LintFindings {
     /**
      * The edit offered beside the finding, where one is safe to offer.
      *
-     * <p>Four rules carry a fix and each withholds it on its own terms. The two renames withhold
-     * where the position is not the name token, a described declaration being reported at its
-     * description, so replacing characters there would edit the author's prose. The camel-case
-     * rename withholds again when the candidate is not a name or is the name it started with. The
-     * reason placeholder withholds where the application already carries arguments, its insertion
-     * point being the character after the directive's own name.
+     * <p>Four rules carry a fix and each withholds it on its own terms. Three withhold where the
+     * position is not the declaration's own, a described declaration being reported at its
+     * description instead, and they withhold there for two different reasons. The two renames would
+     * replace characters, so the edit would land in the author's prose. The description insert
+     * would write a second description above an existing one, which is not a document any longer:
+     * two strings in front of a declaration parse as a description and then as nothing the grammar
+     * admits. That the rule fires at all on a described declaration is what a blank description
+     * means, the row asserting that a description exists and says nothing.
+     *
+     * <p>The camel-case rename withholds again when the candidate is not a name or is the name it
+     * started with. The reason placeholder withholds where the application already carries
+     * arguments, its insertion point being the character after the directive's own name.
+     *
+     * <p>Withholding is the whole remedy and not a step towards one. Offering to replace the blank
+     * description would need the extent it was written across, and the entry stratum holds the
+     * decoded value rather than the spelling: {@code ""}, {@code "   "} and a block string of
+     * newlines all arrive here as a blank, and nothing in the store says which was written. The
+     * finding still lands on the description, which is the line the author has to edit.
      */
     private static Optional<LintFix> fix(String rule, String subject, String parent,
                                          boolean atPosition, SourceLocation at,
@@ -143,6 +159,7 @@ public final class LintFindings {
                 yield Optional.of(LintFix.replaceToken(PREFIX_FIX, at, subject.length(), candidate));
             }
             case "types-and-fields-have-descriptions" -> {
+                if (!atPosition) yield Optional.empty();
                 String indent = " ".repeat(Math.max(0, at.getColumn() - 1));
                 yield Optional.of(LintFix.insertAt(
                     DESCRIPTION_FIX, at, DESCRIPTION_PLACEHOLDER + "\n" + indent));
