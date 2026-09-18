@@ -20,9 +20,8 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -59,13 +58,13 @@ class GraphitronAnchorTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
+            var t = GRAPHITRON_DEPRECATED;
 
-            assertThat(dsl.select(t.DIRECTIVE_NAME, t.REASON).from(t).fetch())
+            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t).fetch())
                 .as("the marked directive and nothing else; the one beside it has a description "
                     + "too, which is what makes this a decode rather than a presence test")
                 .extracting(r -> r.value1(), r -> r.value2())
-                .contains(tuple("legacySort", "@deprecated use @sortBy(index:) instead"));
+                .contains(tuple("@legacySort", "@deprecated use @sortBy(index:) instead"));
             assertThat(marked(dsl, "sortBy"))
                 .as("and the directive beside it has a description too, which is what makes this a "
                     + "decode rather than a presence test")
@@ -115,16 +114,17 @@ class GraphitronAnchorTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+            var t = GRAPHITRON_DEPRECATED;
 
-            assertThat(dsl.select(t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.REASON).from(t).fetch())
-                .as("each marked argument under the directive that declares it, the two parent hops "
+            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t)
+                    .where(t.COORDINATE.like("%(%")).fetch())
+                .as("each marked argument under the coordinate naming it, the two parent hops "
                     + "having been resolved; a marker with no reason still deprecates, and stores "
                     + "the empty string rather than a null a reader would have to test for")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .extracting(r -> r.value1(), r -> r.value2())
                 .contains(
-                    tuple("paged", "pagedName", "own your Connection type"),
-                    tuple("bare", "legacy", ""));
+                    tuple("@paged(pagedName:)", "own your Connection type"),
+                    tuple("@bare(legacy:)", ""));
         });
     }
 
@@ -177,13 +177,13 @@ class GraphitronAnchorTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
+            var t = GRAPHITRON_DEPRECATED;
 
-            assertThat(dsl.select(t.DIRECTIVE_NAME).from(t).fetch(t.DIRECTIVE_NAME))
+            assertThat(dsl.select(t.COORDINATE).from(t).fetch(t.COORDINATE))
                 .as("@index is the deprecated alias of @order(index:) and @record no longer binds "
                     + "anything, and both say so in prose because GraphQL gives them nowhere else "
                     + "to say it")
-                .contains("index", "record");
+                .contains("@index", "@record");
         });
     }
 
@@ -255,15 +255,15 @@ class GraphitronAnchorTest {
 
     /** Whether the corpus marks this directive deprecated as a whole. */
     private static boolean marked(DSLContext dsl, String directive) {
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
-        return dsl.fetchExists(dsl.selectOne().from(t).where(t.DIRECTIVE_NAME.eq(directive)));
+        var t = GRAPHITRON_DEPRECATED;
+        return dsl.fetchExists(dsl.selectOne().from(t).where(t.COORDINATE.eq("@" + directive)));
     }
 
     /** Whether the corpus marks this argument of this directive deprecated. */
     private static boolean markedArgument(DSLContext dsl, String directive, String argument) {
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+        var t = GRAPHITRON_DEPRECATED;
         return dsl.fetchExists(dsl.selectOne().from(t)
-            .where(t.DIRECTIVE_NAME.eq(directive)).and(t.ARGUMENT_NAME.eq(argument)));
+            .where(t.COORDINATE.eq("@" + directive + "(" + argument + ":)")));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */

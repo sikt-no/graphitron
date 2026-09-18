@@ -281,8 +281,17 @@ public final class ElementAnchors {
      * a field and an input field is settled at the transcription's own write, from the parent's kind
      * at the moment the walk is in its body, and copying the column is how it survives here. Nothing
      * is anti-joined out of it, an authored coordinate a mint replaces staying at that same
-     * coordinate. The enum value is the one kind left out, and leaving it out is what makes the
-     * narrower CHECK on {@code element_kind} true rather than merely unviolated.
+     * coordinate.
+     *
+     * <p>Three of {@code graphql_element}'s seven kinds are left out, and the rule is the sentence
+     * above rather than a list: this admits a coordinate exactly when an anchor below claims it.
+     * An enum value has no anchor here. Neither has a directive nor an argument of one, which
+     * {@code graphql_element} holds because the specification's coordinate grammar spells them and
+     * a corpus can therefore declare them. That is a statement about what graphitron mints today,
+     * not about what it could: a macro that coined a directive would need an anchor beside the
+     * three below, and this filter and that CHECK would widen together with it. What the filter
+     * may not become is a guess, which is why it names the four it takes; a kind that appears
+     * upstream is refused here until somebody decides it belongs.
      *
      * <p>The minted arms add what the transcription does not hold, and each writes FIELD or
      * FIELD_ARGUMENT outright. A minted type is an OBJECT and a rewritten carrier sits on the type
@@ -298,7 +307,14 @@ public final class ElementAnchors {
                     GRAPHQL_ELEMENT.ELEMENT_KIND)
                 .from(GRAPHQL_ELEMENT)
                 .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(graphName))
-                .and(GRAPHQL_ELEMENT.ELEMENT_KIND.ne(inline("ENUM_VALUE")))
+                // The four kinds this relation claims, named, rather than the one it excludes.
+                // Both spellings admit the same rows today and they fail differently tomorrow: a
+                // kind added to graphql_element arrives here uninvited under an exclusion and is
+                // refused under this, which is the direction the CHECK beside it wants. It is not
+                // a judgement that the other three can never be emitted; see the supertype note.
+                .and(GRAPHQL_ELEMENT.ELEMENT_KIND.in(
+                    inline("NAMED_TYPE"), inline("FIELD"),
+                    inline("INPUT_FIELD"), inline("FIELD_ARGUMENT")))
                 .unionAll(dsl
                     .selectDistinct(GRAPHITRON_MINTED_TYPE.GRAPH_NAME,
                         typeCoordinate(GRAPHITRON_MINTED_TYPE.TYPE_NAME), val("NAMED_TYPE"))

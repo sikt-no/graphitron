@@ -10,6 +10,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CHAIN_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
@@ -29,9 +30,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RECORD_ENTRY;
@@ -46,9 +44,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
@@ -175,7 +175,8 @@ public final class GraphitronAnchor {
         var v = GRAPHQL_AST_VALUE_ENTRY;
         var t = GRAPHITRON_FIELD_CHAIN_LINK;
 
-        // The coordinate is read off the key the supertype forwards, not climbed to through the
+        // The coordinate is read off the declaration the application was written on, one hop up
+        // the tree the supertype holds, rather than climbed to through the
         // field definition and the type declaration. Those two joins were here and one of them was
         // wrong: the declaration was joined for its merge order, to order the directives of a field
         // declared across several files, and a field coordinate is declared once, two declarations
@@ -183,6 +184,7 @@ public final class GraphitronAnchor {
         // field's directives sit in one definition in one file, the merge order answers a question
         // that cannot arise, and joining a type's declarations matched every declaration of that
         // type and multiplied each application by their number.
+        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
         var applications = dsl
             .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
                 fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
@@ -190,7 +192,9 @@ public final class GraphitronAnchor {
             .from(fd)
             .join(e).on(e.GRAPH_NAME.eq(fd.GRAPH_NAME), e.SOURCE_NAME.eq(fd.SOURCE_NAME),
                 e.SOURCE_LINE.eq(fd.SOURCE_LINE), e.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(e.ELEMENT_COORDINATE))
+            .join(ee).on(ee.GRAPH_NAME.eq(e.GRAPH_NAME), ee.SOURCE_NAME.eq(e.SOURCE_NAME),
+                ee.SOURCE_LINE.eq(e.PARENT_LINE), ee.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
             .where(fd.GRAPH_NAME.eq(graph))
             .and(ef.ARGUMENT_NAME.isNull())
             .asTable("applications");
@@ -283,8 +287,7 @@ public final class GraphitronAnchor {
 
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
     private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED_DIRECTIVE, GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT,
-            GRAPHITRON_DEPRECATED_INPUT_FIELD, GRAPHITRON_TABLE_ENTRY,
+        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_TABLE_ENTRY,
             GRAPHITRON_SCALAR_TYPE_ENTRY, GRAPHITRON_RECORD_ENTRY,
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
@@ -299,11 +302,12 @@ public final class GraphitronAnchor {
      */
     private static void deprecatedDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var d = GRAPHQL_DIRECTIVE;
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
+        var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.REASON, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
             .select(dsl
-                .select(val(graph, t.GRAPH_NAME), d.DIRECTIVE_NAME, d.DESCRIPTION,
+                .select(val(graph, t.GRAPH_NAME), concat(inline("@"), d.DIRECTIVE_NAME),
+                    d.DESCRIPTION,
                     val(touchedAt, t.TOUCHED_AT))
                 .from(d)
                 .where(d.GRAPH_NAME.eq(graph))
@@ -328,11 +332,12 @@ public final class GraphitronAnchor {
         var a = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
         var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
+        var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.REASON, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, a.NAME,
+                .selectDistinct(val(graph, t.GRAPH_NAME),
+                    concat(inline("@"), d.NAME, inline("("), a.NAME, inline(":)")),
                     coalesce(e.REASON, inline("")), val(touchedAt, t.TOUCHED_AT))
                 .from(e)
                 .join(applied)
@@ -372,11 +377,12 @@ public final class GraphitronAnchor {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
         var applied = no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-        var t = GRAPHITRON_DEPRECATED_INPUT_FIELD;
+        var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.REASON, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME,
+                .selectDistinct(val(graph, t.GRAPH_NAME),
+                    concat(f.TYPE_NAME, inline("."), f.NAME),
                     coalesce(e.REASON, inline("")), val(touchedAt, t.TOUCHED_AT))
                 .from(e)
                 .join(applied)
@@ -402,7 +408,7 @@ public final class GraphitronAnchor {
      * there being no incoming row to match.
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var named = GRAPHITRON_DEPRECATED_DIRECTIVE;
+        var named = GRAPHITRON_DEPRECATED;
         for (Table<?> table : TABLES_TO_SWEEP) {
             dsl.deleteFrom(table)
                 .where(table.field(named.GRAPH_NAME).eq(graph))
@@ -665,6 +671,7 @@ public final class GraphitronAnchor {
     private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
         var ix = GRAPHQL_AST_ENTRY;
+        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
         var ef = GRAPHQL_ELEMENT_FIELD;
         var e = GRAPHITRON_AST_ROUTINE_ENTRY;
         var t = GRAPHITRON_ROUTINE_ENTRY;
@@ -678,8 +685,9 @@ public final class GraphitronAnchor {
             .from(fd)
             .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
                 ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME),
-                ef.COORDINATE.eq(ix.ELEMENT_COORDINATE))
+            .join(ee).on(ee.GRAPH_NAME.eq(ix.GRAPH_NAME), ee.SOURCE_NAME.eq(ix.SOURCE_NAME),
+                ee.SOURCE_LINE.eq(ix.PARENT_LINE), ee.SOURCE_COLUMN.eq(ix.PARENT_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
             .where(fd.GRAPH_NAME.eq(graph))
             .and(fd.NAME.eq("routine"))
             .and(ef.ARGUMENT_NAME.isNull())

@@ -179,8 +179,14 @@ class DerivedReadCostTest {
      * the union view itself, {@code intent_field_reference_step_hop}, which was a registered target
      * and is a view now, so a relation crosses into this count from the table side without any rule
      * being written. Both reader figures below moved with it.
+     *
+     * <p>Raised to 129 by {@code lint_violation}, which is a derivation that stores nothing: no
+     * corpus is read, no key is established that its own references do not already cover, and no
+     * read cost has been measured. The rules it states were a Java walk before and would have been
+     * a table filled by a writer, so this is the count gaining a row that never existed as one
+     * rather than a relation crossing over from the table side.
      */
-    private static final int READERS_IN_SCHEMA = 128;
+    private static final int READERS_IN_SCHEMA = 129;
 
     /**
      * Views whose derivation reaches at least one registration's target.

@@ -88,6 +88,29 @@ class SdlWalkIsRedundantTest {
     private static final String GRAPH = "test-graph";
 
     /**
+     * Where the derivation is allowed to hold a row the walk does not, and exactly which rows.
+     *
+     * <p>Directional on purpose, because the two directions are not the same finding. A row only
+     * the walk has is a fact the derivation loses, which is the migration's remaining debt and has
+     * no allowance at all. A row only the derivation has is a fact the walk cannot produce, which
+     * is what moving past it looks like.
+     *
+     * <p>The one instance is the coordinate grammar. The specification spells five productions and
+     * two of them begin with an at sign, naming a directive and an argument of one. The walk has no
+     * arm for those, so {@code graphql_element} held five kinds while the derivation reads all
+     * seven. Stated as the shape of the key rather than as the name of the relation: a row the
+     * derivation invents at any other coordinate is the failure this case exists for, and a blanket
+     * exemption on the relation would swallow it.
+     *
+     * <p>Held to being used, by the assertion at the end. An allowance nothing exercises is one the
+     * walk caught up with or one the derivation dropped, and a list that may quietly stop applying
+     * is a skip list wearing another name.
+     */
+    private static final java.util.function.BiPredicate<String, String> AHEAD_OF_THE_WALK =
+        (relation, key) -> relation.equals(GRAPHQL_ELEMENT.getName())
+            && key.substring(key.indexOf('/') + 1).startsWith("@");
+
+    /**
      * The relations both producers write. Twenty-six of the walk's twenty-seven; the twenty-seventh
      * is {@link #OVERFLOW} below.
      */
@@ -188,6 +211,7 @@ class SdlWalkIsRedundantTest {
             .isGreaterThan(100);
 
         var disagreements = new TreeMap<String, Object>();
+        var ahead = new TreeMap<String, TreeSet<String>>();
         for (String relation : byWalk.keySet()) {
             Map<String, Map<String, Object>> walk = byWalk.get(relation);
             Map<String, Map<String, Object>> derived = byDerivation.get(relation);
@@ -196,6 +220,10 @@ class SdlWalkIsRedundantTest {
             onlyWalk.removeAll(derived.keySet());
             var onlyDerived = new TreeSet<>(derived.keySet());
             onlyDerived.removeAll(walk.keySet());
+            var aheadHere = new TreeSet<>(onlyDerived);
+            aheadHere.removeIf(key -> !AHEAD_OF_THE_WALK.test(relation, key));
+            onlyDerived.removeAll(aheadHere);
+            ahead.put(relation, aheadHere);
             var differingColumns = new TreeSet<String>();
             walk.forEach((key, walkRow) -> {
                 Map<String, Object> derivedRow = derived.get(key);
@@ -221,6 +249,13 @@ class SdlWalkIsRedundantTest {
                 + "of them has is a fact the other loses; a column that differs is a fact they "
                 + "read differently, and which reading is right is a question about the fact")
             .isEmpty();
+
+        assertThat(ahead.get(GRAPHQL_ELEMENT.getName()))
+            .as("the derivation is still ahead of the walk here, which is what the allowance above "
+                + "is for. An allowance that stops being used is one the walk caught up with or one "
+                + "the derivation dropped, and either is a thing to notice rather than to keep "
+                + "spelling")
+            .isNotEmpty();
     }
 
     /**

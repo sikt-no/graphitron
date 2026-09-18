@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
@@ -66,8 +67,11 @@ class GraphitronFieldEntriesTest {
             var decode = GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
             var applied = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
             var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+            // The coordinate a declaration names now sits on the element supertype
+            // rather than on each kind that declares one.
+            var element = GRAPHQL_AST_ELEMENT_ENTRY;
 
-            assertThat(dsl.select(applied.NAME, declared.COORDINATE, decode.CLASS_NAME,
+            assertThat(dsl.select(applied.NAME, element.COORDINATE, decode.CLASS_NAME,
                         decode.METHOD, decode.OVERRIDE)
                     .from(decode)
                     .join(applied)
@@ -80,6 +84,11 @@ class GraphitronFieldEntriesTest {
                     .and(applied.SOURCE_NAME.eq(declared.SOURCE_NAME))
                     .and(applied.PARENT_LINE.eq(declared.SOURCE_LINE))
                     .and(applied.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .join(element)
+                    .on(element.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(element.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(element.SOURCE_LINE.eq(declared.SOURCE_LINE))
+                    .and(element.SOURCE_COLUMN.eq(declared.SOURCE_COLUMN))
                     .fetch())
                 .as("the decode, the application it decodes, and the field it was written on, none "
                     + "of which repeats what another holds; the flag the author left out is null "

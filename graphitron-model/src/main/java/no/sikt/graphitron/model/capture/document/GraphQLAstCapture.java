@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.run.GraphIdentity;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record1;
@@ -21,6 +22,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
@@ -35,6 +38,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_DIRECTIVE;
@@ -70,6 +75,7 @@ import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.values;
+import static org.jooq.impl.DSL.when;
 
 /**
  * Transcribes what each schema document says, node by node, and anchors what the corpus says once
@@ -185,6 +191,8 @@ public final class GraphQLAstCapture {
         fieldElements(dsl, graph, readAt);
         enumValueElements(dsl, graph, readAt);
         argumentElements(dsl, graph, readAt);
+        directiveElements(dsl, graph, readAt);
+        directiveArgumentElements(dsl, graph, readAt);
         typeDeclarations(dsl, graph, readAt);
         types(dsl, graph, readAt);
         fields(dsl, graph, readAt);
@@ -207,34 +215,8 @@ public final class GraphQLAstCapture {
         enumValueDirectiveArguments(dsl, graph, readAt);
         schemaDirectiveArguments(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
-        captureAstIndex(dsl, graph, readAt);
     }
 
-    /**
-     * The entry stratum's own index alone: every written position it holds, with the element that
-     * encloses each.
-     *
-     * <p>Reachable on its own because two passes read this relation and only one of them writes the
-     * SDL anchors. The walk's pass writes those itself and therefore skips the step above whole, so
-     * an index written only inside it would be written by one pass of the two, and the stages below
-     * the walk that reference the index would find no row to reference. A reading has to write what
-     * its own stages read.
-     *
-     * <p>After the element anchors in whichever pass, because every row carries a foreign key into
-     * one. It needs them present and reads none of them: an entry's enclosing element comes from
-     * the coordinate its own relation generates, or from the index row its parent already has.
-     *
-     * <p>Sweeps what this reading did not write, which travels with the write for the reason every
-     * sweep here does: a reading that wrote the rows is the only one that can say which rows are
-     * stale. Its own parent edge and the graphitron rows keyed into it cascade.
-     */
-    public static void captureAstIndex(DSLContext dsl, String graph, LocalDateTime readAt) {
-        AstEntries.write(dsl, graph, readAt);
-        dsl.deleteFrom(GRAPHQL_AST_ENTRY)
-            .where(GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(graph))
-            .and(GRAPHQL_AST_ENTRY.TOUCHED_AT.ne(readAt))
-            .execute();
-    }
 
 
     /**
@@ -254,33 +236,36 @@ public final class GraphQLAstCapture {
      * author halfway through a rename needs from them.
      */
     private static void elements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-        var i = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-        var e = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
-        var a = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+        var d = GRAPHQL_AST_ELEMENT_ENTRY;
+        var n = GRAPHQL_AST_ENTRY;
         var s = STORE_SOURCE;
         var t = GRAPHQL_ELEMENT;
+        // One relation rather than the five this used to union. Which element kind a declaration
+        // names follows from which kind of entry wrote it, so the case below reads the discriminator
+        // the supertype already carries instead of inlining a literal per arm.
+        //
+        // Every kind the element supertype holds, each named. No default arm: two of the seven are
+        // a directive definition and an argument of one, and a default would have filed both under
+        // whichever kind the last arm happened to be, which is how @asConnection became a field
+        // argument. The specification's coordinate grammar spells both, and graphitron_deprecated
+        // keys on exactly them, so they belong in the anchor rather than being filtered out of it.
         var candidates = dsl
-            .select(d.COORDINATE.as(COORDINATE), inline("NAMED_TYPE").as(ELEMENT_KIND),
+            .select(d.COORDINATE.as(COORDINATE),
+                when(n.ENTRY_KIND.eq(EntryKind.TYPE_DECLARATION), inline("NAMED_TYPE"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.FIELD_DEFINITION), inline("FIELD"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.INPUT_FIELD), inline("INPUT_FIELD"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.ENUM_VALUE_DEFINITION), inline("ENUM_VALUE"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.FIELD_ARGUMENT), inline("FIELD_ARGUMENT"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.DIRECTIVE_DEFINITION), inline("DIRECTIVE"))
+                    .when(n.ENTRY_KIND.eq(EntryKind.DIRECTIVE_ARGUMENT),
+                        inline("DIRECTIVE_ARGUMENT"))
+                    .as(ELEMENT_KIND),
                 d.SOURCE_NAME.as(SITE_NAME), d.SOURCE_LINE.as(SITE_LINE),
                 d.SOURCE_COLUMN.as(SITE_COLUMN))
-            .from(d).where(d.GRAPH_NAME.eq(graph))
-            .unionAll(dsl
-                .select(f.COORDINATE, inline("FIELD"), f.SOURCE_NAME, f.SOURCE_LINE, f.SOURCE_COLUMN)
-                .from(f).where(f.GRAPH_NAME.eq(graph)))
-            .unionAll(dsl
-                .select(i.COORDINATE, inline("INPUT_FIELD"), i.SOURCE_NAME, i.SOURCE_LINE,
-                    i.SOURCE_COLUMN)
-                .from(i).where(i.GRAPH_NAME.eq(graph)))
-            .unionAll(dsl
-                .select(e.COORDINATE, inline("ENUM_VALUE"), e.SOURCE_NAME, e.SOURCE_LINE,
-                    e.SOURCE_COLUMN)
-                .from(e).where(e.GRAPH_NAME.eq(graph)))
-            .unionAll(dsl
-                .select(a.COORDINATE, inline("FIELD_ARGUMENT"), a.SOURCE_NAME, a.SOURCE_LINE,
-                    a.SOURCE_COLUMN)
-                .from(a).where(a.GRAPH_NAME.eq(graph)))
+            .from(d)
+            .join(n).on(n.GRAPH_NAME.eq(d.GRAPH_NAME), n.SOURCE_NAME.eq(d.SOURCE_NAME),
+                n.SOURCE_LINE.eq(d.SOURCE_LINE), n.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+            .where(d.GRAPH_NAME.eq(graph))
             .asTable("candidates");
         var ranked = dsl
             .select(candidates.field(COORDINATE), candidates.field(ELEMENT_KIND),
@@ -325,17 +310,24 @@ public final class GraphQLAstCapture {
     private static void fieldElements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var i = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_FIELD_ELEMENT;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.COORDINATE, t.TOUCHED_AT)
             .select(dsl
-                .select(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME, f.COORDINATE,
+                .select(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME, ef.COORDINATE,
                     val(touchedAt, t.TOUCHED_AT))
-                .from(f).where(f.GRAPH_NAME.eq(graph))
+                .from(f).join(ef).on(ef.GRAPH_NAME.eq(f.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(f.SOURCE_NAME), ef.SOURCE_LINE.eq(f.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(f.SOURCE_COLUMN))
+                .where(f.GRAPH_NAME.eq(graph))
                 .union(dsl
-                    .select(val(graph, t.GRAPH_NAME), i.TYPE_NAME, i.NAME, i.COORDINATE,
+                    .select(val(graph, t.GRAPH_NAME), i.TYPE_NAME, i.NAME, ef.COORDINATE,
                         val(touchedAt, t.TOUCHED_AT))
-                    .from(i).where(i.GRAPH_NAME.eq(graph))))
+                    .from(i).join(ef).on(ef.GRAPH_NAME.eq(i.GRAPH_NAME),
+                        ef.SOURCE_NAME.eq(i.SOURCE_NAME), ef.SOURCE_LINE.eq(i.SOURCE_LINE),
+                        ef.SOURCE_COLUMN.eq(i.SOURCE_COLUMN))
+                    .where(i.GRAPH_NAME.eq(graph))))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -345,13 +337,17 @@ public final class GraphQLAstCapture {
     /** A named type under its own name, which is the coordinate spelled as the key already is. */
     private static void typeElements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_TYPE_ELEMENT;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.COORDINATE, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, d.COORDINATE,
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, ef.COORDINATE,
                     val(touchedAt, t.TOUCHED_AT))
-                .from(d).where(d.GRAPH_NAME.eq(graph))
+                .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+                .where(d.GRAPH_NAME.eq(graph))
                 .unionAll(dsl
                     .select(val(graph, t.GRAPH_NAME), SPECIFIED_SCALAR_NAME,
                         SPECIFIED_SCALAR_NAME, val(touchedAt, t.TOUCHED_AT))
@@ -365,13 +361,70 @@ public final class GraphQLAstCapture {
     /** An enum value under its type and its own name. */
     private static void enumValueElements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var e = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_ENUM_VALUE_ELEMENT;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), e.TYPE_NAME, e.NAME, e.COORDINATE,
+                .selectDistinct(val(graph, t.GRAPH_NAME), e.TYPE_NAME, e.NAME, ef.COORDINATE,
                     val(touchedAt, t.TOUCHED_AT))
-                .from(e).where(e.GRAPH_NAME.eq(graph)))
+                .from(e).join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(e.SOURCE_NAME), ef.SOURCE_LINE.eq(e.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
+                .where(e.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.COORDINATE, excluded(t.COORDINATE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The directive coordinates, decomposed into the name a reader holding a directive arrives
+     * with. The specification's coordinate grammar spells a directive, so graphql_element holds
+     * one, and this is the relation that says which directive it is.
+     */
+    private static void directiveElements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
+        var t = GRAPHQL_DIRECTIVE_ELEMENT;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .select(dsl
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, ef.COORDINATE,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+                .where(d.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.COORDINATE, excluded(t.COORDINATE))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
+     * The same for a directive's formal arguments, whose own name is on the entry and whose
+     * directive is the parent hop away. Written after the directives above, which its rows key
+     * into.
+     */
+    private static void directiveArgumentElements(DSLContext dsl, String graph,
+                                                  LocalDateTime touchedAt) {
+        var a = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
+        var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
+        var t = GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .select(dsl
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, a.NAME, ef.COORDINATE,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(a)
+                .join(d).on(d.GRAPH_NAME.eq(a.GRAPH_NAME), d.SOURCE_NAME.eq(a.SOURCE_NAME),
+                    d.SOURCE_LINE.eq(a.PARENT_LINE), d.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
+                .join(ef).on(ef.GRAPH_NAME.eq(a.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -381,14 +434,18 @@ public final class GraphQLAstCapture {
     /** A field argument under the three names that reach it. */
     private static void argumentElements(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var a = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
+        var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_ARGUMENT_ELEMENT;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.COORDINATE,
                 t.TOUCHED_AT)
             .select(dsl
                 .selectDistinct(val(graph, t.GRAPH_NAME), a.TYPE_NAME, a.FIELD_NAME, a.NAME,
-                    a.COORDINATE, val(touchedAt, t.TOUCHED_AT))
-                .from(a).where(a.GRAPH_NAME.eq(graph)))
+                    ef.COORDINATE, val(touchedAt, t.TOUCHED_AT))
+                .from(a).join(ef).on(ef.GRAPH_NAME.eq(a.GRAPH_NAME),
+                    ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
+                    ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
+                .where(a.GRAPH_NAME.eq(graph)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -1496,7 +1553,8 @@ public final class GraphQLAstCapture {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHQL_ELEMENT, GRAPHQL_TYPE_ELEMENT, GRAPHQL_FIELD_ELEMENT, GRAPHQL_ENUM_VALUE_ELEMENT,
-        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_TYPE_DECLARATION, GRAPHQL_TYPE, GRAPHQL_FIELD,
+        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ELEMENT,
+        GRAPHQL_TYPE_DECLARATION, GRAPHQL_TYPE, GRAPHQL_FIELD,
         GRAPHQL_ENUM_VALUE, GRAPHQL_ARGUMENT, GRAPHQL_UNION_MEMBER,
         GRAPHQL_IMPLEMENTS_INTERFACE, GRAPHQL_DIRECTIVE,
         GRAPHQL_DIRECTIVE_LOCATION, GRAPHQL_DIRECTIVE_ARGUMENT, GRAPHQL_ROOT_OPERATION,

@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFEREN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
@@ -77,8 +78,10 @@ class GraphitronInputValueEntriesTest {
             var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
             var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
             var inputField = GRAPHQL_AST_INPUT_FIELD_ENTRY;
+            // The coordinate a declaration names sits on the element supertype now.
+            var element = GRAPHQL_AST_ELEMENT_ENTRY;
 
-            assertThat(dsl.select(argument.COORDINATE, decode.NAME_REF)
+            assertThat(dsl.select(element.COORDINATE, decode.NAME_REF)
                     .from(decode)
                     .join(applied).on(applied.GRAPH_NAME.eq(decode.GRAPH_NAME))
                         .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
@@ -88,12 +91,16 @@ class GraphitronInputValueEntriesTest {
                         .and(argument.SOURCE_NAME.eq(applied.SOURCE_NAME))
                         .and(argument.SOURCE_LINE.eq(applied.PARENT_LINE))
                         .and(argument.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
+                    .join(element).on(element.GRAPH_NAME.eq(argument.GRAPH_NAME))
+                        .and(element.SOURCE_NAME.eq(argument.SOURCE_NAME))
+                        .and(element.SOURCE_LINE.eq(argument.SOURCE_LINE))
+                        .and(element.SOURCE_COLUMN.eq(argument.SOURCE_COLUMN))
                     .fetch())
                 .as("the decode of an application written on a field's argument")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple("Query.films(titleFilter:)", "title"));
 
-            assertThat(dsl.select(inputField.COORDINATE, decode.NAME_REF)
+            assertThat(dsl.select(element.COORDINATE, decode.NAME_REF)
                     .from(decode)
                     .join(applied).on(applied.GRAPH_NAME.eq(decode.GRAPH_NAME))
                         .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
@@ -103,6 +110,10 @@ class GraphitronInputValueEntriesTest {
                         .and(inputField.SOURCE_NAME.eq(applied.SOURCE_NAME))
                         .and(inputField.SOURCE_LINE.eq(applied.PARENT_LINE))
                         .and(inputField.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
+                    .join(element).on(element.GRAPH_NAME.eq(inputField.GRAPH_NAME))
+                        .and(element.SOURCE_NAME.eq(inputField.SOURCE_NAME))
+                        .and(element.SOURCE_LINE.eq(inputField.SOURCE_LINE))
+                        .and(element.SOURCE_COLUMN.eq(inputField.SOURCE_COLUMN))
                     .fetch())
                 .as("and of one written on an input object's field, out of the same relation")
                 .extracting(row -> row.value1(), row -> row.value2())

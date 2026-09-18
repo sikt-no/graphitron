@@ -47,13 +47,19 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static graphql.language.AstPrinter.printAstCompact;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
+
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
@@ -73,6 +79,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -143,6 +150,7 @@ public final class SdlEntries {
      * backwards.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
+        GRAPHQL_AST_ENTRY, GRAPHQL_AST_ELEMENT_ENTRY, GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY,
         GRAPHQL_AST_TYPE_DECLARATION_ENTRY, GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY,
         GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
         GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY, GRAPHQL_AST_IMPLEMENTS_ENTRY,
@@ -171,8 +179,113 @@ public final class SdlEntries {
         }
     }
 
+    /**
+     * The supertype row for each node one arm is about to write, on graphql_element's terms: the
+     * relation that says a written position exists, which every entry relation then keys into.
+     *
+     * <p>Not an anchor, whatever the position grain is classified as. The anchors are what
+     * {@code SdlAnchor} writes, resolving what several documents said into one answer, and this
+     * runs before any of that: the entry stratum's claim is that it exists before anything is
+     * composed, and a row here is one document saying it wrote something at a position.
+     *
+     * <p>One method for all nineteen, because graphql-java already gives them the supertype: every
+     * entry is a {@link Node}, a node knows the position it was read at, and {@link Nested} pairs
+     * one with what it was written inside. A position and a parent position are the whole of what
+     * an anchor holds, so nothing here needs to know which kind it is looking at beyond being told.
+     *
+     * <p>Called before the arm's own insert rather than after, the arm's foreign key naming this
+     * row. Root kinds pass a null parent and say so once, here, rather than nineteen times.
+     */
+    private static void supertype(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                  EntryKind kind, List<? extends Written> nodes) {
+        var a = GRAPHQL_AST_ENTRY;
+        var rows = nodes.stream().collect(Rows.toRowList(
+            nested -> val(graph, a.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> val(kind, a.ENTRY_KIND),
+            // A root was written inside nothing, so its parent columns are null together. The
+            // three top-level kinds are the roots and every other arm always has one.
+            nested -> nested.parent() == null ? inline((Integer) null) : parentLine(nested.parent()),
+            nested -> nested.parent() == null ? inline((Integer) null) : parentColumn(nested.parent()),
+            nested -> val(touchedAt, a.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(a, a.GRAPH_NAME, a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
+                    a.ENTRY_KIND, a.PARENT_LINE, a.PARENT_COLUMN, a.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(a.ENTRY_KIND, excluded(a.ENTRY_KIND))
+                .set(a.PARENT_LINE, excluded(a.PARENT_LINE))
+                .set(a.PARENT_COLUMN, excluded(a.PARENT_COLUMN))
+                .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
+    }
+
+    /**
+     * The element row for each node one arm is about to write: the coordinate that declaration
+     * names, in the specification's grammar.
+     *
+     * <p>The spelling is the caller's, because it is the one thing the five kinds do not share: a
+     * named type is its own name, a field and an enum value and an input field are the parent's
+     * name and a dot, and an argument goes one deeper. Everything around it is shared, which is why
+     * this takes the coordinate already spelled rather than a rule for spelling it.
+     */
+    private static void element(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                List<? extends Written> nodes,
+                                Function<Written, String> coordinate) {
+        var e = GRAPHQL_AST_ELEMENT_ENTRY;
+        var rows = nodes.stream().collect(Rows.toRowList(
+            nested -> val(graph, e.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> val(coordinate.apply(nested), e.COORDINATE),
+            nested -> val(touchedAt, e.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(e, e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
+                    e.COORDINATE, e.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(e.COORDINATE, excluded(e.COORDINATE))
+                .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
+    }
+
+    /**
+     * The application row for each directive one arm is about to write: the name it applies.
+     *
+     * <p>No spelling rule to pass in, unlike the element row beside it: every site writes the name
+     * the same way, which is exactly why the five have a supertype to write into at all.
+     */
+    private static void application(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                    List<Nested<Directive>> nodes) {
+        var a = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        var rows = nodes.stream().collect(Rows.toRowList(
+            nested -> val(graph, a.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> val(nested.node().getName(), a.NAME),
+            nested -> val(touchedAt, a.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(a, a.GRAPH_NAME, a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
+                    a.NAME, a.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(a.NAME, excluded(a.NAME))
+                .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
+    }
+
+    /** A root: written inside nothing, so the anchor's parent columns are null together. */
+    private static Written root(Node<?> node) {
+        return new Nested<>(null, node);
+    }
+
     private static void typeDeclarations(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                           TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.TYPE_DECLARATION,
+            declarations(document).map(SdlEntries::root).toList());
+        element(dsl, graph, touchedAt, declarations(document).map(SdlEntries::root).toList(),
+            nested -> ((TypeDefinition<?>) nested.node()).getName());
         var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
         var rows = declarations(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -200,6 +313,10 @@ public final class SdlEntries {
 
     private static void directiveDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                               TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_DEFINITION,
+            directives(document).map(SdlEntries::root).toList());
+        element(dsl, graph, touchedAt, directives(document).map(SdlEntries::root).toList(),
+            nested -> "@" + ((DirectiveDefinition) nested.node()).getName());
         var t = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
         var rows = directives(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -225,6 +342,8 @@ public final class SdlEntries {
 
     private static void schemaDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                            TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.SCHEMA_DEFINITION,
+            schemas(document).map(SdlEntries::root).toList());
         var t = GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
         var rows = schemas(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -248,6 +367,9 @@ public final class SdlEntries {
 
     private static void fieldDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                           TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.FIELD_DEFINITION, fields(document));
+        element(dsl, graph, touchedAt, fields(document),
+            nested -> nameOf(nested.parent()) + "." + ((FieldDefinition) nested.node()).getName());
         var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var rows = fields(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -291,6 +413,11 @@ public final class SdlEntries {
 
     private static void fieldArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.FIELD_ARGUMENT, argumentsOfFields(document));
+        element(dsl, graph, touchedAt, argumentsOfFields(document),
+            nested -> ((NestedArgument) nested).typeName() + "."
+                + ((FieldDefinition) nested.parent()).getName() + "("
+                + ((NestedArgument) nested).node().getName() + ":)");
         var t = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
         var rows = argumentsOfFields(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -339,6 +466,9 @@ public final class SdlEntries {
 
     private static void inputFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.INPUT_FIELD, fieldsOfInputObjects(document));
+        element(dsl, graph, touchedAt, fieldsOfInputObjects(document),
+            nested -> nameOf(nested.parent()) + "." + ((InputValueDefinition) nested.node()).getName());
         var t = GRAPHQL_AST_INPUT_FIELD_ENTRY;
         var rows = fieldsOfInputObjects(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -386,6 +516,10 @@ public final class SdlEntries {
     /** What a directive definition declares, where appliedArguments below is what an application passes. */
     private static void directiveArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_ARGUMENT, argumentsOfDirectiveDefinitions(document));
+        element(dsl, graph, touchedAt, argumentsOfDirectiveDefinitions(document),
+            nested -> "@" + nameOf(nested.parent()) + "("
+                + ((InputValueDefinition) nested.node()).getName() + ":)");
         var t = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var rows = argumentsOfDirectiveDefinitions(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -429,6 +563,9 @@ public final class SdlEntries {
 
     private static void enumValueDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                               TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.ENUM_VALUE_DEFINITION, enumValues(document));
+        element(dsl, graph, touchedAt, enumValues(document),
+            nested -> nameOf(nested.parent()) + "." + ((EnumValueDefinition) nested.node()).getName());
         var t = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
         var rows = enumValues(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -458,6 +595,7 @@ public final class SdlEntries {
 
     private static void implementsClauses(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                           TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.IMPLEMENTS, implementedInterfaces(document));
         var t = GRAPHQL_AST_IMPLEMENTS_ENTRY;
         var rows = implementedInterfaces(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -485,6 +623,7 @@ public final class SdlEntries {
 
     private static void unionMembers(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                       TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.UNION_MEMBER, members(document));
         var t = GRAPHQL_AST_UNION_MEMBER_ENTRY;
         var rows = members(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -512,6 +651,7 @@ public final class SdlEntries {
 
     private static void directiveLocations(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                             TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_LOCATION, locations(document));
         var t = GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
         var rows = locations(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -537,6 +677,7 @@ public final class SdlEntries {
 
     private static void operationTypeDefinitions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                                   TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.OPERATION_TYPE_DEFINITION, operations(document));
         var t = GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
         var rows = operations(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -564,6 +705,8 @@ public final class SdlEntries {
 
     private static void typeDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.TYPE_DIRECTIVE, directivesOnTypes(document));
+        application(dsl, graph, touchedAt, directivesOnTypes(document));
         var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
         var rows = directivesOnTypes(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -588,6 +731,8 @@ public final class SdlEntries {
     }
     private static void fieldDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.FIELD_DIRECTIVE, directivesOnFields(document));
+        application(dsl, graph, touchedAt, directivesOnFields(document));
         var t = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
         var rows = directivesOnFields(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -613,6 +758,8 @@ public final class SdlEntries {
     /** All three input-value sites in one relation: the parent is a union whichever way this is cut. */
     private static void inputValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.INPUT_VALUE_DIRECTIVE, directivesOnInputValues(document));
+        application(dsl, graph, touchedAt, directivesOnInputValues(document));
         var t = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
         var rows = directivesOnInputValues(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -637,6 +784,8 @@ public final class SdlEntries {
     }
     private static void enumValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.ENUM_VALUE_DIRECTIVE, directivesOnEnumValues(document));
+        application(dsl, graph, touchedAt, directivesOnEnumValues(document));
         var t = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
         var rows = directivesOnEnumValues(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -661,6 +810,8 @@ public final class SdlEntries {
     }
     private static void schemaDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.SCHEMA_DIRECTIVE, directivesOnSchemas(document));
+        application(dsl, graph, touchedAt, directivesOnSchemas(document));
         var t = GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
         var rows = directivesOnSchemas(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -686,6 +837,7 @@ public final class SdlEntries {
 
     private static void appliedArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                           TypeDefinitionRegistry document) {
+        supertype(dsl, graph, touchedAt, EntryKind.APPLIED_ARGUMENT, applicationArguments(document));
         var t = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
         var rows = applicationArguments(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -736,6 +888,13 @@ public final class SdlEntries {
     private static void valuesOfDepth(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                       List<WrittenValue> level) {
         var t = GRAPHQL_AST_VALUE_ENTRY;
+        // A value is written inside the value enclosing it where there is one, and inside the node
+        // holding the whole expression otherwise. Both are the tree the supertype records, so the
+        // choice is made here rather than left to which component the record happens to carry.
+        supertype(dsl, graph, touchedAt, EntryKind.VALUE, level.stream()
+            .map(written -> new Nested<>(
+                written.parent() == null ? written.holder() : written.parent(), written.node()))
+            .toList());
         var rows = level.stream().collect(Rows.toRowList(
             written -> val(graph, t.GRAPH_NAME),
             written -> sourceName(written.node()),
@@ -853,6 +1012,18 @@ public final class SdlEntries {
         return nodes.stream();
     }
 
+    /**
+     * A written node and what it was written inside, which is the whole of what a supertype row
+     * holds. The two records below carry more than that and differ in what they carry; this is the
+     * part they share, and naming it is what lets one writer serve every arm.
+     */
+    interface Written {
+        Node<?> parent();
+
+        Node<?> node();
+    }
+
+
     // ------------------------------------------------------- a node and the node it was written in
 
     /**
@@ -863,7 +1034,7 @@ public final class SdlEntries {
      * <p>Visible to the package because {@link GraphitronTypeEntries} decodes the same walk this one
      * transcribes, and two walks over one document would be two answers to which nodes it holds.
      */
-    record Nested<N extends Node<?>>(Node<?> parent, N node) {}
+    record Nested<N extends Node<?>>(Node<?> parent, N node) implements Written {}
 
     /**
      * One value node and where it was written: the node holding the whole expression, the value
@@ -893,7 +1064,8 @@ public final class SdlEntries {
      * spelled from both ancestors, and a generated column reads no row but its own. The other four
      * element kinds need one ancestor and travel as an ordinary {@link Nested}.
      */
-    private record NestedArgument(Node<?> parent, InputValueDefinition node, String typeName) {}
+    private record NestedArgument(Node<?> parent, InputValueDefinition node, String typeName)
+        implements Written {}
 
     /** The three parents an input value may have, which are the same node kind to the parser. */
     private static List<NestedArgument> argumentsOfFields(TypeDefinitionRegistry document) {

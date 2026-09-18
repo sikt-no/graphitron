@@ -21,9 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 
 /**
  * Every coordinate graphitron's shipped {@code directives.graphqls} marks deprecated, in either of
@@ -38,8 +36,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
  * <p>It used to parse the shipped resource with graphql-java, and said why: deprecation was not a
  * fact capture wrote, a marker on a directive definition's formal argument having no relation to
  * land in, so a store-shaped reader would have answered for two of the three markers and missed the
- * third. Capture writes all three now, so the reading is three selects and the coordinates are the
- * rows. The language server still neither parses this file nor asks this question.
+ * third. Capture writes all three now, into one relation keyed by the coordinate, so the reading is
+ * a single select and the only work left here is spelling each coordinate back into the shape this
+ * module's own type wants. The language server still neither parses this file nor asks this
+ * question.
  *
  * <p>Nothing is configured but an empty document: capture reads the bundled vocabulary alongside
  * whatever it is given, so the shipped markers arrive without this fixture naming the file.
@@ -64,25 +64,34 @@ final class SdlDeprecations {
             GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
             var dsl = store.dsl();
             var out = new LinkedHashSet<SchemaCoordinate>();
-
-            var directives = GRAPHITRON_DEPRECATED_DIRECTIVE;
-            dsl.select(directives.DIRECTIVE_NAME).from(directives)
-                .where(directives.GRAPH_NAME.eq(GRAPH))
-                .fetch(directives.DIRECTIVE_NAME)
-                .forEach(name -> out.add(new SchemaCoordinate.Directive(name)));
-
-            var arguments = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
-            dsl.select(arguments.DIRECTIVE_NAME, arguments.ARGUMENT_NAME).from(arguments)
-                .where(arguments.GRAPH_NAME.eq(GRAPH))
-                .forEach(row -> out.add(new SchemaCoordinate.DirectiveArg(row.value1(), row.value2())));
-
-            var fields = GRAPHITRON_DEPRECATED_INPUT_FIELD;
-            dsl.select(fields.TYPE_NAME, fields.FIELD_NAME).from(fields)
-                .where(fields.GRAPH_NAME.eq(GRAPH))
-                .forEach(row -> out.add(new SchemaCoordinate.InputField(row.value1(), row.value2())));
-
+            var deprecated = GRAPHITRON_DEPRECATED;
+            dsl.select(deprecated.COORDINATE).from(deprecated)
+                .where(deprecated.GRAPH_NAME.eq(GRAPH))
+                .fetch(deprecated.COORDINATE)
+                .forEach(coordinate -> out.add(coordinateOf(coordinate)));
             return out;
         }
+    }
+
+    /**
+     * One stored coordinate as the shape this module names it by.
+     *
+     * <p>Three cases and the grammar tells them apart, which is why the relation they come from
+     * needs no column saying which of three things a row is about: an at sign opens a directive,
+     * a parenthesis after one opens its argument, and anything else is a field of an input object.
+     */
+    private static SchemaCoordinate coordinateOf(String coordinate) {
+        if (!coordinate.startsWith("@")) {
+            int dot = coordinate.indexOf('.');
+            return new SchemaCoordinate.InputField(
+                coordinate.substring(0, dot), coordinate.substring(dot + 1));
+        }
+        int open = coordinate.indexOf('(');
+        if (open < 0) {
+            return new SchemaCoordinate.Directive(coordinate.substring(1));
+        }
+        return new SchemaCoordinate.DirectiveArg(coordinate.substring(1, open),
+            coordinate.substring(open + 1, coordinate.indexOf(':', open)));
     }
 
     /** An empty document on disk, which is all capture needs to reach the bundled vocabulary. */

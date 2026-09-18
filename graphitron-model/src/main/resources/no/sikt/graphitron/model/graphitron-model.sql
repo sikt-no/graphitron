@@ -317,12 +317,13 @@ CREATE TABLE graphql_element (
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT'))
+  CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT',
+                          'DIRECTIVE', 'DIRECTIVE_ARGUMENT'))
 );
 COMMENT ON TABLE graphql_element IS 'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it. For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.';
 COMMENT ON COLUMN graphql_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_element.coordinate IS 'the coordinate itself, in the specification''s own grammar: Type for a named type, Type.field for a field of one, for an input field of one and for an enum value of one, and Type.field(argument:) for an argument of a field. Total by construction, which is what lets one column stand for a coordinate of any kind where the decomposed keys beside it cannot, the parts being different parts at each of the four. A relation naming a coordinate carries this column and a foreign key, and joins the subtype relation for the kind it cares about when it wants the parts';
-COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. Five of the specification''s seven kinds appear here; the two directive kinds are schema elements this store holds no anchor for yet, which is scope and not a reading of the grammar. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
+COMMENT ON COLUMN graphql_element.element_kind IS 'which kind of schema element this row is, in the specification''s own vocabulary, and so which relation beside this one a reader joins to get the parts, FIELD and INPUT_FIELD sharing one. All seven of the specification''s kinds appear here: the two directive forms joined the other five when a relation needed to name a deprecated directive and found the coordinate unanchored. Stored rather than read off the spelling because Type.field spells a field, an input field and an enum value alike, the three being told apart by the parent type''s kind and not by the text; deciding it at the write, where the walk already knows which it is, is what keeps every reader from asking that question again';
 COMMENT ON COLUMN graphql_element.touched_at IS 'when the reading that derived this row ran. The derivation finishes by deleting this graph''s rows carrying a different instant, which are the coordinates the corpus stopped declaring. Swept per graph rather than per file because a coordinate is declared by the corpus and no one file''s reading can say it went away. NOT NULL, which is what makes the sweep total: a row with no instant would be a row no reading claims and no sweep reaches, so the column that decides what survives cannot be the one column a writer may forget';
 
 CREATE TABLE graphql_type_element (
@@ -390,6 +391,40 @@ CREATE TABLE graphql_enum_value_element (
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
 COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_element''s terms and for its reason.';
+
+CREATE TABLE graphql_directive_element (
+  graph_name     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+);
+COMMENT ON TABLE graphql_directive_element IS 'A directive coordinate exists in this graph: the decomposition of the coordinate graphql_element holds for a directive definition, which is the at sign and this name. For example directive @paged on FIELD_DEFINITION is the row (paged, @paged).';
+COMMENT ON COLUMN graphql_directive_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_directive_element.directive_name IS 'the directive''s name without the at sign, which is the key a reader holding a directive arrives with. graphql_directive carries what the definition says about itself; this carries only the coordinate, for the reason graphql_type_element is separate from graphql_type';
+COMMENT ON COLUMN graphql_directive_element.coordinate IS 'the coordinate the specification spells for this directive, which is the at sign and the name. One row of graphql_element, and the foreign key says so: a directive is an element of the corpus in the same sense a type is, and this is the relation that decomposes its coordinate into the part a reader joins by';
+COMMENT ON COLUMN graphql_directive_element.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this graph''s rows carrying an older instant, which are the directives the corpus stopped declaring';
+
+CREATE TABLE graphql_directive_argument_element (
+  graph_name     VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  argument_name  VARCHAR NOT NULL,
+  coordinate     VARCHAR NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name, argument_name),
+  UNIQUE (graph_name, coordinate),
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive_element (graph_name, directive_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
+);
+COMMENT ON TABLE graphql_directive_argument_element IS 'A directive argument coordinate exists on a directive: the decomposition of the coordinate graphql_element holds for a formal argument of a directive definition. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName, @paged(pagedName:)).';
+COMMENT ON COLUMN graphql_directive_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_directive_argument_element.directive_name IS 'the directive the argument is declared on, keyed into graphql_directive_element, which is what makes an argument row unable to outlive the directive it belongs to';
+COMMENT ON COLUMN graphql_directive_argument_element.argument_name IS 'the argument''s own name, the second half of the key a reader holding a directive argument arrives with';
+COMMENT ON COLUMN graphql_directive_argument_element.coordinate IS 'the coordinate the specification spells for this argument, which is the directive''s coordinate with the argument name and a colon in parentheses. Unique on its own, the two keys being two spellings of one thing, which is what lets a reader holding the coordinate join back to the parts instead of taking the string apart by hand';
+COMMENT ON COLUMN graphql_directive_argument_element.touched_at IS 'when the reading that produced this row ran, swept on the same terms as the directive above it';
 COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
@@ -484,6 +519,79 @@ COMMENT ON COLUMN graphql_schema_problem.source_name IS 'the file the problem is
 COMMENT ON COLUMN graphql_schema_problem.source_line IS 'line of the site the problem points at, 1-based, or null where the stage reported none';
 COMMENT ON COLUMN graphql_schema_problem.source_column IS 'column of that site, null exactly when the line is; graphql-java locates at the enclosing declaration rather than the offending element, so this is where to start reading and not where the fault is';
 
+CREATE TABLE graphql_ast_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  entry_kind    VARCHAR NOT NULL,
+  parent_line   INT,
+  parent_column INT,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK ((parent_line IS NULL) = (parent_column IS NULL)),
+  CHECK (entry_kind IN ('TYPE_DECLARATION', 'DIRECTIVE_DEFINITION', 'SCHEMA_DEFINITION',
+                        'FIELD_DEFINITION', 'ENUM_VALUE_DEFINITION', 'IMPLEMENTS',
+                        'UNION_MEMBER', 'DIRECTIVE_LOCATION', 'OPERATION_TYPE_DEFINITION',
+                        'FIELD_ARGUMENT', 'INPUT_FIELD', 'DIRECTIVE_ARGUMENT',
+                        'TYPE_DIRECTIVE', 'FIELD_DIRECTIVE', 'INPUT_VALUE_DIRECTIVE',
+                        'ENUM_VALUE_DIRECTIVE', 'SCHEMA_DIRECTIVE', 'APPLIED_ARGUMENT',
+                        'VALUE'))
+);
+COMMENT ON TABLE graphql_ast_entry IS 'A written position exists in this document: the supertype of the nineteen entry relations, keyed by the position the parse read it at, and carrying which of them holds the rest of it. For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field declaration whose position it names as its parent.';
+COMMENT ON COLUMN graphql_ast_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_ast_entry.source_name IS 'the file the entry was written in; half of the position that is this relation''s whole key';
+COMMENT ON COLUMN graphql_ast_entry.source_line IS 'line of the entry, 1-based per the graphql-java convention every entry relation follows';
+COMMENT ON COLUMN graphql_ast_entry.source_column IS 'column of the entry, on the same convention. A position identifies a written thing, which is what lets one relation hold nineteen populations without a discriminator in its key, and what every subtype hangs its own foreign key on';
+COMMENT ON COLUMN graphql_ast_entry.entry_kind IS 'which entry relation holds the rest of this row, named for the relation rather than for the grammar so a reader wanting more than the position and the tree joins the relation this names. Stored rather than derived from which subtype happens to hold a matching row, on graphql_element.element_kind''s reasoning: the writer knows it, and deciding it once at the write keeps every reader from asking';
+COMMENT ON COLUMN graphql_ast_entry.parent_line IS 'line of the entry this one was written inside, null at a root: a type declaration, a directive definition, the schema definition. This is where the entry stratum''s tree lives, and it lives here rather than on the subtypes because three of them have a parent whose relation is not fixed and could reference nothing at all';
+COMMENT ON COLUMN graphql_ast_entry.parent_column IS 'column of the same, null with its sibling exactly at a root';
+COMMENT ON COLUMN graphql_ast_entry.touched_at IS 'when the reading that wrote this row ran. Swept per file with the subtypes that key into it, a document''s reading being what claims its positions, and the subtypes swept first, a parent position outliving nothing that still points at it';
+
+CREATE TABLE graphql_ast_element_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  coordinate    VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphql_ast_element_entry IS 'This written position declares a schema element, and this is the coordinate it declares: the seven entry kinds that name one, under the nineteen that need not. For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here.';
+COMMENT ON COLUMN graphql_ast_element_entry.graph_name IS 'the owning graph''s partition, carried from the entry this describes';
+COMMENT ON COLUMN graphql_ast_element_entry.source_name IS 'the file the declaration was written in';
+COMMENT ON COLUMN graphql_ast_element_entry.source_line IS 'line of the declaration, which is the entry''s own position';
+COMMENT ON COLUMN graphql_ast_element_entry.source_column IS 'column of the same. Keyed by the position and not by the coordinate, two documents declaring one type being two rows here and one row in graphql_element, which is the whole difference between what a document wrote and what the corpus settled on';
+COMMENT ON COLUMN graphql_ast_element_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
+COMMENT ON COLUMN graphql_ast_element_entry.coordinate IS 'the coordinate this declaration names, in the specification''s grammar. A string the document''s own names compose and nothing else: no key into graphql_element, which does not exist when this is written and which is this relation''s composed counterpart rather than its parent. The five subtypes each generate the same expression from their own columns, and this is where that spelling is stated once for a reader who wants the coordinate without knowing which kind declared it';
+
+CREATE TABLE graphql_ast_directive_application_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  name          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphql_ast_directive_application_entry IS 'This written position applies a directive, and this is the name it applies: the five entry kinds that are an application, under the nineteen that need not be. For example the @key on type Widget @key(fields: "id") is one row here, and the declaration it was written on is one row of graphql_ast_element_entry beside it.';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.graph_name IS 'the owning graph''s partition, carried from the entry this describes';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.source_line IS 'line of the application, which is the entry''s own position';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.source_column IS 'column of the same. Keyed by the position because a position is what an application has: a directive applied twice in one file is two rows here, and the name is what they share rather than what tells them apart';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
+COMMENT ON COLUMN graphql_ast_directive_application_entry.name IS 'the directive name written here, without the at sign. The one column the five sites share, which is why this relation exists: a reader asking where a named directive was written joins this once instead of unioning five relations that differ only in what the application was written inside. What it was written inside is the parent hop graphql_ast_entry already carries, so the site is a join away and not a column here';
+
 CREATE TABLE graphql_ast_type_declaration_entry (
   graph_name     VARCHAR NOT NULL,
   source_name    VARCHAR NOT NULL,
@@ -495,8 +603,10 @@ CREATE TABLE graphql_ast_type_declaration_entry (
   is_extension   BOOLEAN NOT NULL,
   name           VARCHAR NOT NULL,
   description    VARCHAR,
-  coordinate     VARCHAR GENERATED ALWAYS AS (name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name),
@@ -513,7 +623,6 @@ COMMENT ON COLUMN graphql_ast_type_declaration_entry.kind IS 'which of the six d
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.is_extension IS 'whether this position extends a type rather than defining it. TRUE and FALSE are both ordinary states of a well-formed corpus, and a name carrying only extensions is an author error some detection reports, never a refusal here';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.description IS 'the description written here, or NULL where none was. Always NULL on an extension, the grammar giving extensions nowhere to put one; stated in a comment rather than a CHECK, because a gatherer that refuses a row is a gatherer that stops gathering';
-COMMENT ON COLUMN graphql_ast_type_declaration_entry.coordinate IS 'the schema coordinate this row names, which for a named type is the name itself. Generated rather than written so the specification''s grammar is stated once per element kind, on the relation holding that kind, and cannot drift from the columns it reads';
 
 CREATE TABLE graphql_ast_directive_definition_entry (
   graph_name     VARCHAR NOT NULL,
@@ -526,6 +635,9 @@ CREATE TABLE graphql_ast_directive_definition_entry (
   repeatable     BOOLEAN NOT NULL,
   description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name)
@@ -551,6 +663,9 @@ CREATE TABLE graphql_ast_schema_definition_entry (
   is_extension   BOOLEAN NOT NULL,
   description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name)
@@ -583,8 +698,10 @@ CREATE TABLE graphql_ast_field_definition_entry (
   item_non_null  BOOLEAN,
   list_depth     INT     NOT NULL,
   description    VARCHAR,
-  coordinate     VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -611,7 +728,6 @@ COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether t
 COMMENT ON COLUMN graphql_ast_field_definition_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
-COMMENT ON COLUMN graphql_ast_field_definition_entry.coordinate IS 'the schema coordinate this row names, Type.field as the specification spells it. Generated from the two names beside it, so neither a reader nor the derivation that fills graphql_element has to join to spell one';
 
 CREATE TABLE graphql_ast_enum_value_definition_entry (
   graph_name     VARCHAR NOT NULL,
@@ -625,8 +741,10 @@ CREATE TABLE graphql_ast_enum_value_definition_entry (
   type_name      VARCHAR NOT NULL,
   name           VARCHAR NOT NULL,
   description    VARCHAR,
-  coordinate     VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -645,7 +763,6 @@ COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_column IS 'sour
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
-COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.coordinate IS 'the schema coordinate this row names. The specification spells an enum value the way it spells a field, Type.value, and offers no second form, so this is the same expression under a different element kind';
 
 CREATE TABLE graphql_ast_implements_entry (
   graph_name      VARCHAR NOT NULL,
@@ -659,6 +776,9 @@ CREATE TABLE graphql_ast_implements_entry (
   type_name       VARCHAR NOT NULL,
   interface_name  VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -689,6 +809,9 @@ CREATE TABLE graphql_ast_union_member_entry (
   type_name      VARCHAR NOT NULL,
   member_name    VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -718,6 +841,9 @@ CREATE TABLE graphql_ast_directive_location_entry (
   parent_column  INT     NOT NULL,
   location       VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column),
@@ -747,6 +873,9 @@ CREATE TABLE graphql_ast_operation_type_definition_entry (
   operation      VARCHAR NOT NULL,
   type_name      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column),
@@ -785,9 +914,10 @@ CREATE TABLE graphql_ast_field_argument_entry (
   list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
-  coordinate         VARCHAR GENERATED ALWAYS AS
-                       (type_name || '.' || field_name || '(' || name || ':)'),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column),
@@ -816,7 +946,6 @@ COMMENT ON COLUMN graphql_ast_field_argument_entry.default_value_sdl IS 'the def
 COMMENT ON COLUMN graphql_ast_field_argument_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.type_name IS 'the name of the declaration the field was written inside, two hops up rather than one. Held here for the reason type_name is held one hop down on the relations that need only one: the coordinate names both ancestors, and a generated column reads no row but its own';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.field_name IS 'the name of the field this argument was written inside, which is the parent this row''s position keys into. The pair with type_name is what the coordinate spells';
-COMMENT ON COLUMN graphql_ast_field_argument_entry.coordinate IS 'the schema coordinate this row names, Type.field(argument:) with the trailing colon the specification writes. The deepest of the five forms, and why this relation denormalises two ancestors where the others denormalise one';
 
 CREATE TABLE graphql_ast_input_field_entry (
   graph_name         VARCHAR NOT NULL,
@@ -837,8 +966,10 @@ CREATE TABLE graphql_ast_input_field_entry (
   list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
   description        VARCHAR,
-  coordinate         VARCHAR GENERATED ALWAYS AS (type_name || '.' || name),
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -866,7 +997,6 @@ COMMENT ON COLUMN graphql_ast_input_field_entry.list_depth IS 'how many list wra
 COMMENT ON COLUMN graphql_ast_input_field_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_input_field_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
 COMMENT ON COLUMN graphql_ast_input_field_entry.type_name IS 'the name of the declaration this node was written inside, held here as well as on that row so the coordinate beside it is a function of this row alone. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file, which is what holds the two spellings equal. Not to be read as named_type beside it, which is the type this field returns where this is the type it belongs to';
-COMMENT ON COLUMN graphql_ast_input_field_entry.coordinate IS 'the schema coordinate this row names. An input field is spelled the way a field is, the parent''s kind being what tells the two readings apart, so the expression here is the field relation''s expression and the element kind is what differs';
 
 CREATE TABLE graphql_ast_directive_argument_entry (
   graph_name         VARCHAR NOT NULL,
@@ -887,6 +1017,9 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   default_value_sdl  VARCHAR,
   description        VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column),
@@ -925,6 +1058,12 @@ CREATE TABLE graphql_ast_type_directive_entry (
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
@@ -953,6 +1092,12 @@ CREATE TABLE graphql_ast_field_directive_entry (
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column),
@@ -981,6 +1126,12 @@ CREATE TABLE graphql_ast_input_value_directive_entry (
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name)
@@ -1007,6 +1158,12 @@ CREATE TABLE graphql_ast_enum_value_directive_entry (
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_enum_value_definition_entry (graph_name, source_name, source_line, source_column),
@@ -1035,6 +1192,12 @@ CREATE TABLE graphql_ast_schema_directive_entry (
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column),
@@ -1064,6 +1227,9 @@ CREATE TABLE graphql_ast_applied_argument_entry (
   name           VARCHAR NOT NULL,
   value_sdl      VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   CHECK (source_ref IS NULL OR source_ref = source_name)
@@ -1096,6 +1262,9 @@ CREATE TABLE graphql_ast_value_entry (
   kind              VARCHAR NOT NULL,
   written_text      VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
@@ -1124,47 +1293,6 @@ COMMENT ON COLUMN graphql_ast_value_entry.position IS 'where inside the enclosin
 COMMENT ON COLUMN graphql_ast_value_entry.object_field_name IS 'the object field this value was written at, null when the enclosing value is a list and at a root. The field node itself gets no row of its own: a field is a name and a value, and the name is this column';
 COMMENT ON COLUMN graphql_ast_value_entry.kind IS 'which of the nine forms the parser read here. An attribute of the value and not a different fact, which is why one relation holds all nine: every row says the same thing, that this slot was written with this literal';
 COMMENT ON COLUMN graphql_ast_value_entry.written_text IS 'the leaf''s text as the author wrote it, with a string''s quotes removed and nothing else interpreted: an int stays the digits, an enum stays the name, a boolean stays true or false. Null exactly for a list, an object and the null literal, which carry no text of their own. Not coerced to a type, because what a number means is a question for whoever anchors it against the argument''s declared type';
-
-CREATE TABLE graphql_ast_entry (
-  graph_name         VARCHAR NOT NULL,
-  source_name        VARCHAR NOT NULL,
-  source_line        INT     NOT NULL,
-  source_column      INT     NOT NULL,
-  entry_kind         VARCHAR NOT NULL,
-  parent_line        INT,
-  parent_column      INT,
-  element_coordinate VARCHAR,
-  touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, element_coordinate)
-    REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK ((parent_line IS NULL) = (parent_column IS NULL)),
-  CHECK (entry_kind IN ('TYPE_DECLARATION', 'DIRECTIVE_DEFINITION', 'SCHEMA_DEFINITION',
-                        'FIELD_DEFINITION', 'ENUM_VALUE_DEFINITION', 'IMPLEMENTS',
-                        'UNION_MEMBER', 'DIRECTIVE_LOCATION', 'OPERATION_TYPE_DEFINITION',
-                        'FIELD_ARGUMENT', 'INPUT_FIELD', 'DIRECTIVE_ARGUMENT',
-                        'TYPE_DIRECTIVE', 'FIELD_DIRECTIVE', 'INPUT_VALUE_DIRECTIVE',
-                        'ENUM_VALUE_DIRECTIVE', 'SCHEMA_DIRECTIVE', 'APPLIED_ARGUMENT',
-                        'VALUE')),
-  CHECK (element_coordinate IS NOT NULL OR entry_kind IN
-    ('SCHEMA_DEFINITION', 'OPERATION_TYPE_DEFINITION', 'SCHEMA_DIRECTIVE',
-     'DIRECTIVE_DEFINITION', 'DIRECTIVE_LOCATION', 'DIRECTIVE_ARGUMENT',
-     'INPUT_VALUE_DIRECTIVE', 'APPLIED_ARGUMENT', 'VALUE'))
-);
-COMMENT ON TABLE graphql_ast_entry IS 'Every written position the entry stratum holds at an element the corpus anchors, in one relation: which kind of entry sits there, what it was written inside, and which schema element encloses it. For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field''s declaration and naming the element Widget.name.';
-COMMENT ON COLUMN graphql_ast_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_ast_entry.source_name IS 'the file the entry was written in, carried from the arm''s own column; half of the position that is this relation''s whole key';
-COMMENT ON COLUMN graphql_ast_entry.source_line IS 'line of the entry, 1-based per the graphql-java convention every entry relation follows';
-COMMENT ON COLUMN graphql_ast_entry.source_column IS 'column of the entry, on the same convention. A position identifies a written thing, which is what lets this relation hold nineteen populations without a discriminator in its key';
-COMMENT ON COLUMN graphql_ast_entry.entry_kind IS 'which entry relation this row came from, named for the relation rather than for the grammar so the union is checkable against the schema. It tells a reader where the parts are: a reader wanting more than the position, the shape and the enclosing element joins the named relation on this same key';
-COMMENT ON COLUMN graphql_ast_entry.parent_line IS 'line of the entry this one was written inside, null at a root (a type declaration, a directive definition, the schema definition). Carried from the arm''s own parent columns, which three of the nineteen hold with no foreign key because their parent may be one of several relations. This resolves them for a reader and not for the schema: a derived relation cannot be the referent of the rows it is derived from';
-COMMENT ON COLUMN graphql_ast_entry.parent_column IS 'column of the same, null with its sibling exactly at a root';
-COMMENT ON COLUMN graphql_ast_entry.element_coordinate IS 'the schema element this entry declares, or where it declares none, the nearest one enclosing it: the nearest ancestor along parent_line that declares an element, which is one rule rather than nineteen. So a directive applied to a field, an argument passed to that directive, and a string nested three deep inside that argument''s value all name the field, because the field is the element an author is looking at when any of them is on screen. Null where no element encloses the entry at all, which is the schema block and what is written inside it, and today also a directive definition and its parts, directives being schema elements this store holds no anchor for yet. The CHECK beside it names those kinds: a kind not on that list may never be null, so a gap in the union''s resolution fails the write instead of reading as an entry that happens to enclose nothing';
-COMMENT ON COLUMN graphql_ast_entry.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. A relation keyed on this one cascades rather than sweeping alongside it, a finding at a position the corpus no longer holds being no finding at all';
 
 CREATE TABLE graphql_field (
   graph_name          VARCHAR NOT NULL,
@@ -3130,58 +3258,20 @@ COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.position IS 'which
 COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.segment_position IS 'the depth of this segment within that selection, zero being the outermost. Nesting survives the parse as segments rather than being rendered back into a dotted name a reader would take apart again';
 COMMENT ON COLUMN graphitron_ast_federation_key_segment_entry.segment_name IS 'the field this segment names, as the grammar cut it. Whether the type declares such a field is a question for a resolution and not for this row';
 
-CREATE TABLE graphitron_deprecated_directive (
-  graph_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  reason         VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, directive_name),
-  -- Cascading: a directive that stops being declared has no deprecation marker to keep, and the
-  -- refresh that clears the declaration would otherwise be blocked by the marker referencing it.
-  FOREIGN KEY (graph_name, directive_name)
-    REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_deprecated_directive IS 'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention. For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.';
-COMMENT ON COLUMN graphitron_deprecated_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_deprecated_directive.directive_name IS 'the deprecated directive, without the leading @; a foreign key into graphql_directive, so a row here is about a directive the corpus declares';
-COMMENT ON COLUMN graphitron_deprecated_directive.reason IS 'the replacement hint, which for this convention is the whole description text: the token marks the description as carrying the notice and the prose around it is the notice. NOT NULL because a row exists exactly where the token was found, and a description holding it is never empty';
-COMMENT ON COLUMN graphitron_deprecated_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphitron_deprecated_directive_argument (
-  graph_name     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  argument_name  VARCHAR NOT NULL,
-  reason         VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, directive_name, argument_name),
-  -- Cascading, for the reason stated on the sibling above.
-  FOREIGN KEY (graph_name, directive_name, argument_name)
-    REFERENCES graphql_directive_argument (graph_name, directive_name, argument_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_deprecated_directive_argument IS 'A formal argument of a declared directive is deprecated, by the native marker GraphQL admits there. For example the connectionName argument of @asConnection, marked with a reason, gives one row.';
-COMMENT ON COLUMN graphitron_deprecated_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_deprecated_directive_argument.directive_name IS 'the directive declaring the argument, without the leading @';
-COMMENT ON COLUMN graphitron_deprecated_directive_argument.argument_name IS 'the deprecated argument; keyed with the directive into graphql_directive_argument, so a row here is about an argument the corpus declares';
-COMMENT ON COLUMN graphitron_deprecated_directive_argument.reason IS 'the replacement hint the author gave, empty where they applied the marker and gave no reason. NOT NULL rather than nullable because the absence a reader cares about is the absence of the row: a marker with no reason still deprecates';
-COMMENT ON COLUMN graphitron_deprecated_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
-CREATE TABLE graphitron_deprecated_input_field (
+CREATE TABLE graphitron_deprecated (
   graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
+  coordinate VARCHAR NOT NULL,
   reason     VARCHAR NOT NULL,
   touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name),
-  -- Cascading, for the reason stated on the directive sibling.
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
 );
-COMMENT ON TABLE graphitron_deprecated_input_field IS 'A field of an input object is deprecated, by the native marker GraphQL admits there. For example input FilmFilter { legacyTitle: String @deprecated(reason: "use title") } gives one row.';
-COMMENT ON COLUMN graphitron_deprecated_input_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_deprecated_input_field.type_name IS 'the input object declaring the field';
-COMMENT ON COLUMN graphitron_deprecated_input_field.field_name IS 'the deprecated field; keyed with the type into graphql_field_element, an input object''s field being a field there like any other';
-COMMENT ON COLUMN graphitron_deprecated_input_field.reason IS 'the replacement hint the author gave, empty where they applied the marker and gave no reason. NOT NULL rather than nullable because the absence a reader cares about is the absence of the row';
-COMMENT ON COLUMN graphitron_deprecated_input_field.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON TABLE graphitron_deprecated IS 'This schema element is deprecated, and this is the replacement hint the author gave: whatever the corpus retired, under the coordinate that names it. For example a retired directive draws the row @asConnection and a retired argument of one draws @asConnection(connectionName:).';
+COMMENT ON COLUMN graphitron_deprecated.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_deprecated.coordinate IS 'the element that was deprecated, in the specification''s grammar. No foreign key into graphql_element, and the reason is a producer rather than the model: that relation still has two writers, and the older one predates the two directive coordinate kinds, so a row here naming a retired directive would resolve under one producer and dangle under the other. The key becomes a reference the day the second writer goes. One relation rather than three, which is what a coordinate buys: this was a relation per shape of key, a directive under its name, an argument of one under two names, an input field under a type and a field, each carrying the same reason under a differently spelled key. A reader asking whether something is deprecated asks once and does not sort out which of three relations to ask';
+COMMENT ON COLUMN graphitron_deprecated.reason IS 'the replacement hint, as the author wrote it. Empty where the marker carried none, which is a marker without advice rather than no marker: absence of a row is what says a thing is not deprecated. Which of the two markers said so is not recorded and not asked. GraphQL forces them apart, the native marker being illegal on a directive definition, so a retired directive says so with a token in its description instead; unifying the two is what this family is for';
+COMMENT ON COLUMN graphitron_deprecated.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphitron_table_entry (
   graph_name       VARCHAR NOT NULL,
@@ -13396,27 +13486,183 @@ INSERT INTO lint_rule VALUES
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
-CREATE TABLE lint_violation (
-  graph_name    VARCHAR NOT NULL,
-  lint_rule     VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, lint_rule, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (lint_rule) REFERENCES lint_rule (rule_id),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE lint_violation IS 'One rule broken at one written position: this rule has something to say about what this file wrote here. For example an input object named WidgetFilter draws a row of input-object-name-suffix at the position its declaration was written at.';
-COMMENT ON COLUMN lint_violation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN lint_violation.lint_rule IS 'which rule this row is a violation of, keyed into lint_rule so a finding cannot name a rule nothing declares. Severity is not repeated here: it is a column of the rule, and a copy could disagree';
+CREATE VIEW lint_violation
+  (graph_name, lint_rule, source_name, source_line, source_column) AS
+WITH
+-- Positions the author owns: the two source names the generator injects itself are the bundled
+-- directive vocabulary and the tag-link synthesiser's, and an author can neither rename nor
+-- document what either of them wrote.
+authored (source_name) AS (
+  SELECT source_name FROM store_source
+   WHERE source_name NOT IN ('directives.graphqls', '<graphitron-synthesised:tag-link>')
+),
+-- The consumer's excludedTypes globs as LIKE patterns. The escape runs before the translation, so
+-- a glob writing a literal % means that character rather than becoming a wildcard nobody asked for.
+excluded (graph_name, pattern) AS (
+  SELECT graph_name,
+         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(type_pattern,
+           '!', '!!'), '%', '!%'), '_', '!_'), '*', '%'), '?', '_')
+    FROM store_graph_lint_excluded_type
+),
+-- Every directive application a rule may speak about. An application is written directly inside
+-- what it is applied to, so the element is one hop up the tree and no walk is needed. This reads
+-- every site and lets the join below draw the boundary: a directive on the schema block and one on
+-- a directive definition's own argument sit inside something that declares no element, so the
+-- inner join finds nothing and drops them, which is the boundary the walk drew by having no arm
+-- for either. Selecting the sites here instead would state that boundary twice, once as a list of
+-- relations and once as the join that already implies it.
+application (graph_name, source_name, source_line, source_column, name) AS (
+  SELECT graph_name, source_name, source_line, source_column, name
+    FROM graphql_ast_directive_application_entry
+),
+-- An application with the element it sits on, and the type that element names: what a consumer's
+-- excludedTypes is matched against, a consumer asking for a type to be left alone meaning the
+-- things written inside it too.
+applied (graph_name, source_name, source_line, source_column, name, type_name) AS (
+  SELECT a.graph_name, a.source_name, a.source_line, a.source_column, a.name,
+         CASE WHEN POSITION('.' IN d.coordinate) > 0
+              THEN SUBSTRING(d.coordinate, 1, POSITION('.' IN d.coordinate) - 1)
+              ELSE d.coordinate END
+    FROM application a
+    JOIN graphql_ast_entry e
+      ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+     AND e.source_line = a.source_line AND e.source_column = a.source_column
+    JOIN graphql_ast_element_entry d
+      ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+     AND d.source_line = e.parent_line AND d.source_column = e.parent_column
+),
+-- One row per rule broken at one written position, before the two filters every rule shares.
+broken (graph_name, lint_rule, source_name, source_line, source_column, type_name) AS (
+  -- An input object's name ends in Input. Every declaration site of one, extensions included,
+  -- because the name is spelled at each and renaming means editing every line that spells it.
+  SELECT graph_name, 'input-object-name-suffix', source_name, source_line, source_column, name
+    FROM graphql_ast_type_declaration_entry
+   WHERE kind = 'INPUT_OBJECT' AND name NOT LIKE '%Input'
+   UNION ALL
+  -- The name shapes, anchored at both ends. Unanchored, the camel-case pattern would hold of any
+  -- name containing a lowercase run, which is nearly every name there is, and the rule would go
+  -- quiet rather than loud.
+  SELECT graph_name, 'type-names-pascal-case', source_name, source_line, source_column, name
+    FROM graphql_ast_type_declaration_entry
+   WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Za-z0-9]*$')
+   UNION ALL
+  SELECT graph_name, 'enum-values-screaming-snake-case', source_name, source_line, source_column,
+         type_name
+    FROM graphql_ast_enum_value_definition_entry
+   WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$')
+   UNION ALL
+  SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
+         type_name
+    FROM graphql_ast_input_field_entry
+   WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
+   UNION ALL
+  SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
+         type_name
+    FROM graphql_ast_field_argument_entry
+   WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
+   UNION ALL
+  SELECT graph_name, 'field-names-camel-case', source_name, source_line, source_column, type_name
+    FROM graphql_ast_field_definition_entry
+   WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
+   UNION ALL
+  -- A field must not repeat its own type's name. The third clause is what keeps Userland from
+  -- reading as User plus a prefix: the character after the repeat has to start a new word, tested
+  -- as one that changes under lower-casing and not under upper-casing, which is what the walk's
+  -- Character.isUpperCase means and what a range of A to Z would narrow to the Latin alphabet.
+  SELECT graph_name, 'no-typename-prefix', source_name, source_line, source_column, type_name
+    FROM graphql_ast_field_definition_entry
+   WHERE LENGTH(name) > LENGTH(type_name)
+     AND UPPER(SUBSTRING(name, 1, LENGTH(type_name))) = UPPER(type_name)
+     AND SUBSTRING(name, LENGTH(type_name) + 1, 1) <> LOWER(SUBSTRING(name, LENGTH(type_name) + 1, 1))
+     AND SUBSTRING(name, LENGTH(type_name) + 1, 1) = UPPER(SUBSTRING(name, LENGTH(type_name) + 1, 1))
+   UNION ALL
+  -- Every type, and the fields of a root operation type. Two populations, because the question is
+  -- whether the author documented something they could have documented: a type extension carries no
+  -- description slot at all, so a row there would assert a defect nobody can fix, while a field
+  -- declared inside that same extension is an ordinary field.
+  SELECT graph_name, 'types-and-fields-have-descriptions', source_name, source_line, source_column,
+         name
+    FROM graphql_ast_type_declaration_entry
+   WHERE is_extension = FALSE AND (description IS NULL OR TRIM(description) = '')
+   UNION ALL
+  SELECT f.graph_name, 'types-and-fields-have-descriptions', f.source_name, f.source_line,
+         f.source_column, f.type_name
+    FROM graphql_ast_field_definition_entry f
+   WHERE (f.description IS NULL OR TRIM(f.description) = '')
+     AND EXISTS (SELECT 1 FROM graphql_root_operation r
+                  WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name)
+   UNION ALL
+  -- A deprecation says why, and what counts as saying why is a written string with something in it.
+  -- An argument passed as anything else says nothing a reader can act on, and neither does a string
+  -- of spaces, so both draw a row exactly as an omitted argument does. Read off the decomposed
+  -- expression rather than the rendered literal beside it, which keeps the author's quotes.
+  SELECT a.graph_name, 'deprecations-have-a-reason', a.source_name, a.source_line, a.source_column,
+         a.type_name
+    FROM applied a
+   WHERE a.name = 'deprecated'
+     AND NOT EXISTS (
+       SELECT 1 FROM graphql_ast_applied_argument_entry g
+         JOIN graphql_ast_value_entry v
+           ON v.graph_name = g.graph_name AND v.source_name = g.source_name
+          AND v.holder_line = g.source_line AND v.holder_column = g.source_column
+        WHERE g.graph_name = a.graph_name AND g.source_name = a.source_name
+          AND g.parent_line = a.source_line AND g.parent_column = a.source_column
+          AND g.name = 'reason' AND v.kind = 'STRING' AND TRIM(v.written_text) <> '')
+   UNION ALL
+  -- An author writing something the vocabulary has retired. Three arms, because three different
+  -- things can be deprecated and each is written somewhere different, so each arm draws its row at
+  -- the words that have to change. What the arms no longer differ in is where they look it up: one
+  -- relation holds whatever the corpus retired, under the coordinate naming it, so an arm spells
+  -- the coordinate of the thing it found and asks once. Which marker said deprecated is never
+  -- asked, capture having unified the native form and the docstring convention before any rule
+  -- looked. @record is passed over as the walk passes over it, its redundancy being a classifier
+  -- advisory with its own rule id, and two rules reporting one application would be two findings
+  -- for one edit.
+  SELECT a.graph_name, 'no-deprecated-directive-usage', a.source_name, a.source_line,
+         a.source_column, a.type_name
+    FROM applied a
+    JOIN graphitron_deprecated d
+      ON d.graph_name = a.graph_name AND d.coordinate = '@' || a.name
+   WHERE a.name <> 'record'
+   UNION ALL
+  SELECT g.graph_name, 'no-deprecated-directive-usage', g.source_name, g.source_line,
+         g.source_column, a.type_name
+    FROM graphql_ast_applied_argument_entry g
+    JOIN applied a
+      ON a.graph_name = g.graph_name AND a.source_name = g.source_name
+     AND a.source_line = g.parent_line AND a.source_column = g.parent_column
+    JOIN graphitron_deprecated d
+      ON d.graph_name = g.graph_name AND d.coordinate = '@' || a.name || '(' || g.name || ':)'
+   WHERE a.name <> 'record'
+   UNION ALL
+  SELECT v.graph_name, 'no-deprecated-directive-usage', v.source_name, v.source_line,
+         v.source_column, a.type_name
+    FROM graphql_ast_value_entry v
+    JOIN graphql_ast_applied_argument_entry g
+      ON g.graph_name = v.graph_name AND g.source_name = v.source_name
+     AND g.source_line = v.holder_line AND g.source_column = v.holder_column
+    JOIN applied a
+      ON a.graph_name = g.graph_name AND a.source_name = g.source_name
+     AND a.source_line = g.parent_line AND a.source_column = g.parent_column
+    JOIN graphql_directive_argument f
+      ON f.graph_name = a.graph_name AND f.directive_name = a.name AND f.argument_name = g.name
+    JOIN graphitron_deprecated d
+      ON d.graph_name = v.graph_name
+     AND d.coordinate = f.named_type || '.' || v.object_field_name
+   WHERE v.object_field_name IS NOT NULL AND a.name <> 'record'
+)
+SELECT b.graph_name, b.lint_rule, b.source_name, b.source_line, b.source_column
+  FROM broken b
+  JOIN authored s ON s.source_name = b.source_name
+ WHERE NOT EXISTS (SELECT 1 FROM excluded x
+                    WHERE x.graph_name = b.graph_name
+                      AND b.type_name LIKE x.pattern ESCAPE '!');
+COMMENT ON VIEW lint_violation IS 'One rule broken at one written position: this rule has something to say about what this file wrote here. For example an input object named WidgetFilter draws a row of input-object-name-suffix at the position its declaration was written at.';
+COMMENT ON COLUMN lint_violation.graph_name IS 'the owning graph''s partition, carried from the entry the finding is about';
+COMMENT ON COLUMN lint_violation.lint_rule IS 'which rule this row is a violation of, spelled as LintRule.id(). Not a foreign key, a view carrying none: the arm that draws the row names the rule, so a row citing a rule nothing declares would have to be written into this file. Severity is not here at all, being a column of lint_rule, and a copy could disagree';
 COMMENT ON COLUMN lint_violation.source_name IS 'the file the offending thing was written in, the first part of the position that is this row''s subject';
 COMMENT ON COLUMN lint_violation.source_line IS 'line of the offending entry, 1-based per the convention the entry stratum records';
 COMMENT ON COLUMN lint_violation.source_column IS 'column of the same. Keyed on the position rather than on the coordinate the position sits in, because a lint finding is something an author goes to and fixes, and a coordinate assembled from several declaration sites names no single place to go. One consequence is deliberate: a name spelled wrongly at a base declaration and again at two extensions is three rows, which is three places the author has to edit';
-COMMENT ON COLUMN lint_violation.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep and the cascade answer different halves of going away: an author who deletes the declaration takes the entry with it and the cascade carries this row along, while an author who fixes what the rule objected to leaves the entry exactly where it was, and only the sweep can tell that this reading no longer draws the row';
 
 CREATE TABLE lint_finding (
   graph_name    VARCHAR NOT NULL,
@@ -13610,7 +13856,7 @@ CREATE VIEW meta_family (prefix, title, ordinal, introduction, definition) AS VA
   ('java_', 'The consumer''s Java sources', 5, 'Where things are written in the consumer''s own Java sources: the position and documentation comment of each class, method and field declaration, from a plain parse of the source files. It exists so tools can point at a line in a file the author owns. It reads the sources rather than the compiled output deliberately, because the two answer different questions and may legitimately disagree.', 'What the consumer''s .java sources declare, read by an unattributed parse: where each class, method and field is written, and what its doc comment says. Its own family beside jvm_ rather than columns on it, because the two are separate populations on separate cadences that may legitimately disagree: a source parse yields arity where a classfile yields a descriptor, and the jvm_ census excludes the generated jOOQ package this family has to answer for. Named for the language whose declarations it transcribes, and distinct from javac_, which holds what the compiler concluded about generated sources rather than what a parse read from authored ones.'),
   ('javac_', 'The compile oracle''s verdicts', 6, 'What the JDK compiler reported when the emitted sources were last compiled: one row per diagnostic, in the compiler''s own words. Each compile round replaces the previous one wholesale, so the family always describes the latest round and nothing older.', 'What the JDK compiler reports about the emitted sources, written in javax.tools.Diagnostic''s terms.'),
   ('code_', 'What a schema may name in Java', 7, 'What an author may write at each directive that names Java code: one arm per directive, each admitting the members that directive can take. A reader asking what may go in @scalarType(scalar:) reads the arm for it rather than filtering a census of every class.', 'One gatherer per thing an author writes, which is what this family is for and what the classpath census it replaces was not. A census answers what the classpath holds, so its one scope rule has to serve every reader and serves none of them exactly; the arms here each carry their own corpus and their own admission rule. Five of them read the reactor, since what a consumer names at @service, @condition, @externalField, @enum and a reference''s condition is their own code; two read the whole classpath, the scalar constants and the throwables, because what an author names there belongs to a library. Arguments, return types and declared exceptions are not arms of their own: they are facts about a method, and a method has exactly one arm.'),
-  ('intent_', 'Derived intent', 8, 'The derivation layer: what follows once the schema''s readings, the database catalog and the classpath census are put side by side. Rows here are computed, never captured; each view states one rule, and taller derivations are built by reading shorter ones. What puts a rule here is that its facts cross families, so the gatherer that runs after all of them owns it: a rule reading a single family belongs to that family instead. This is the family the generator and the editor tooling actually plan from.', 'The third and topmost layer of the SDL depth ordering, graphql_ under graphitron_ under this name, whose upper two layers are both derivation over what graphql_ captured: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations, and a materialized one owns why it is stored in one of two places: its own table comment where no view could express the rule, or its meta_materialize row where a view expresses the rule correctly and only too slowly. That changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. A registered reduction is two relations under one rule, the _live view stating it and the canonically named table holding it, and both are residents here for the same reason. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them and which layer among themselves on that same rule, a resolution keyed on a written name sitting under the ones keyed on a coordinate; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation should acquire the prefix by drifting into it; each new derived resident is its own change. What admits one is not that its rows are computed but that its owner is the gatherer that runs last rather than any one corpus''s own, and that is decidable rather than editorial: expand a candidate through every relation of this family it names until only captured relations are left, reading a materialized target as its rule so a registration cannot hide a crossing underneath it, and count the families those captured relations sit in, where graphql_ and graphitron_ are one family because they are one gatherer. Two or more is what this prefix is for. One means the rule belongs to that family instead, filed and named there and refreshed by the gatherer that owns it, which knows when its own corpus is complete and may therefore store the rule or not without a row in meta_materialize. A rule that does cross still owes the cut: the part of it reading one family belongs to that family, and what stays here is the join. The contributor-facing statement of this rule, and the transaction control it presumes, are on the fact model page under the architecture docs.'),
+  ('intent_', 'Derived intent', 8, 'This family is dissolving and nothing new belongs in it. It is not a layer so much as the absence of one: the shape a pipeline takes where a fact was never written down, so every reader computes it again. Each resident is a rule nobody owns, and the work in flight gives each one an owner and deletes the relation, which is why this count falls rather than grows. A rule that seems to want this prefix is a rule whose owner has not been found yet, and finding it is the change to make.', 'Dissolving, and closed to new residents: what follows below describes what these relations are and how they came to be, not a standard to build another one against. The third and topmost layer of the SDL depth ordering, graphql_ under graphitron_ under this name, whose upper two layers are both derivation over what graphql_ captured: what gets derived once something resolves and combines those readings into what the generator will actually do. The residents are views plus the materialized derivations, and a materialized one owns why it is stored in one of two places: its own table comment where no view could express the rule, or its meta_materialize row where a view expresses the rule correctly and only too slowly. That changes nothing about the name, since a family is named for whose vocabulary its rows are written in and materialization is not the discriminator. A registered reduction is two relations under one rule, the _live view stating it and the canonically named table holding it, and both are residents here for the same reason. The stratum has two layers, and a new resident picks one deliberately: the base derivations (the authored claim views, one per grain; the structural classifier views, one per classifier so each carries exactly its own witness columns; the resolutions those classifiers stand on, which earn their own relation as soon as a second reader asks them and which layer among themselves on that same rule, a resolution keyed on a written name sitting under the ones keyed on a coordinate; the demand and exemption rule views, stated at the grain their rules are authored at), and the reductions over them (intent_resolved_field_claim and the resolved demand views, the resolution expressions a planning reader joins). No relation may acquire this prefix at all. A crossing rule belongs to the gatherer that runs last, in a relation named for that gatherer''s vocabulary, which is what every departure from here has turned out to be. Nothing is admitted here any more, and the test that used to admit one is recorded because it is what a reader needs to understand the residents rather than to judge a candidate: an owner that is the gatherer running last rather than any one corpus''s own, decided by expand a candidate through every relation of this family it names until only captured relations are left, reading a materialized target as its rule so a registration cannot hide a crossing underneath it, and count the families those captured relations sit in, where graphql_ and graphitron_ are one family because they are one gatherer. Two or more is what this prefix is for. One means the rule belongs to that family instead, filed and named there and refreshed by the gatherer that owns it, which knows when its own corpus is complete and may therefore store the rule or not without a row in meta_materialize. A rule that does cross still owes the cut: the part of it reading one family belongs to that family, and what stays here is the join. The contributor-facing statement of this rule, and the transaction control it presumes, are on the fact model page under the architecture docs.'),
   ('rejection_', 'The legacy walk''s verdicts', 9, 'The legacy walk''s error verdicts, in the sealed rejection hierarchy''s own vocabulary. Transitional by construction: each kind of verdict moves out as its detection is rebuilt store-native, and the family empties as that migration completes.', 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as the classification walk itself: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 10, 'The linter''s findings: one row per finding, plus the corrections a rule can compute for its own findings, and the rules themselves. A correction here is a suggestion an editor may offer, never a rewrite the build performs. The family speaks the linter''s vocabulary, where severity follows from the rule, which is why the rules are a relation here and severity is a column of it.', 'The linter''s vocabulary (lint_finding.lint_rule is LintRule.id(), and lint_rule states the set those ids are drawn from), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
   ('build_warning_', 'The advisory arm', 11, 'The advisory arm of build feedback: warnings that point at nothing rule-shaped, just a message and a location worth a human''s attention. Small on purpose.', 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the code_scalar_constant precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not a family named for the classification walk, because a family may not be named for its producer and both of the arm''s producers outlive that walk.'),
@@ -13907,12 +14153,6 @@ INSERT INTO meta_grain VALUES
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
-  ('graph-directive',
-   'one directive the corpus declares, in one graph',
-   'graph_name, directive_name', 'sdl'),
-  ('graph-directive-argument',
-   'one formal argument of one directive the corpus declares, in one graph',
-   'graph_name, directive_name, argument_name', 'sdl'),
   ('graph-schema-problem',
    'one problem raised while creating one graph''s schema, at its place in the order its own stage raised them',
    'graph_name, stage, ordinal', 'sdl'),
@@ -13937,6 +14177,12 @@ INSERT INTO meta_grain VALUES
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
+  ('directive-name',
+   'one directive definition in one graph, identified by the name it is applied under',
+   'graph_name, directive_name', 'sdl'),
+  ('directive-argument-name',
+   'one formal argument of one directive definition in one graph',
+   'graph_name, directive_name, argument_name', 'sdl'),
   ('condition-site-slot',
    'one GraphQL slot in scope at one application of a @condition directive, in one graph',
    'graph_name, site, use_site, slot_name', 'sdl'),
@@ -14189,13 +14435,33 @@ INSERT INTO meta_relation VALUES
    'For example @reference(path: [{table: "film_actor"}]) writes three rows, the list, the object at index 0, and the string at the object field table, under the applied argument that holds them.',
    'One relation for a recursive thing, because a value is one kind of node however deep it sits: a string written at the top of an argument and a string written inside an object two levels down state the same fact, that this slot was written with this literal, and splitting them by depth or by kind would be splitting on an attribute. The nine kinds are a column for that reason, with a check naming them, and the leaf text is one column rather than one per type because coercing a written literal is the work of whoever anchors it against the declared type. The parent reference is a key back into this relation and the holder reference is not: an enclosing value is always a value, while a holder is an applied argument or one of three kinds of declaration carrying a default, and picking which relation holds it is a resolution. Keyed by the position the node was written at, like everything else in this family, so two documents writing one expression are two trees. The holder is repeated on every node rather than held at the root because the alternative is a recursive read on a family whose whole argument is that readers should not be doing recursive work; the same choice graphitron_argmapping_candidate already made. This is the decomposition graphql_ast_applied_argument_entry.value_sdl and the three default_value_sdl columns hold as one string, and those columns are owed a removal once nothing reads them.'),
   ('graphql_ast_entry', 'sdl-entry-position', 'graphql-ast',
-   'Every written position the entry stratum holds at an element the corpus anchors, in one relation: which kind of entry sits there, what it was written inside, and which schema element encloses it.',
-   'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field''s declaration and naming the element Widget.name.',
-   'Nineteen entry relations share a primary key and nothing else, so a reader holding a position had to know which to look in before asking anything, and a relation naming a position had nothing to reference. Derived rather than a supertype, which is the difference between this and graphql_element: the entry relations neither reference it nor wait for it, so the stratum keeps its per-file cadence. The element is the scope as well as the payload, which the foreign key says and the writer reads as a predicate: two readings of a corpus derive those anchors differently, so one wider than the other leaves an entry nothing anchored. The enclosing element is the nearest ancestor along the parent edge declaring one, a rule applied once here rather than nineteen times in shapes that could each drift, so a directive on a field, an argument passed to it and a string nested inside it all name the field, the element an author reading the line looks at. Three of the nineteen carry a parent position with no foreign key, their parent being one of several relations; this gives a reader the join they lack and cannot give them a constraint, being derived from them and written after them. A null coordinate is the schema block and what is inside it, and today a directive definition and its parts, directives being elements this store anchors none of yet; the check beside the column names those kinds, so a gap in the resolution fails the write rather than reading as an entry enclosing nothing.'),
+   'A written position exists in this document: the supertype of the nineteen entry relations, keyed by the position the parse read it at, and carrying which of them holds the rest of it.',
+   'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field declaration whose position it names as its parent.',
+   'Nineteen entry relations share a primary key and nothing else, so a reader holding a position had to know which of them to look in before it could ask anything, and a relation naming a position had nothing to reference. Written by the arms themselves as each writes its own rows, which is what lets them key into it and what keeps the two from disagreeing: one reading of one node produces the supertype row and the subtype row together. It carries the tree as well as the position, because three of the nineteen have a parent whose relation is not fixed and could otherwise reference nothing at all. What it does not carry is any name resolved against a later cadence: this is written while one document is being read, and the anchors that settle what the corpus honours do not exist yet.'),
+  ('graphql_ast_element_entry', 'sdl-entry-position', 'graphql-ast',
+   'This written position declares a schema element, and this is the coordinate it declares: the seven entry kinds that name one, under the nineteen that need not.',
+   'For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here.',
+   'The middle of the entry hierarchy, and why the coordinate is stated once rather than seven times: it was a generated column on each kind that declares one, so every reader wanting a coordinate without knowing which kind declared it unioned all seven, which capture did twice and the lint rules did again. Seven and not five because the specification''s coordinate grammar spells a directive and an argument of one, and graphitron keys deprecations on exactly those; the narrower five are what graphql_element held while a walk wrote it, the walk having no arm for a directive coordinate. Keyed by the position and not by the coordinate, two documents declaring one type being two rows here and one row in graphql_element, which is the whole difference between what a document wrote and what the corpus settled on. No key into graphql_element, for the reason nothing in this family has one: that relation is written long after this, and a coordinate here is a string the document''s own names compose rather than a reference to anything.'),
+  ('graphql_ast_directive_application_entry', 'sdl-entry-position', 'graphql-ast',
+   'This written position applies a directive, and this is the name it applies: the five entry kinds that are an application, under the nineteen that need not be.',
+   'For example the @key on type Widget @key(fields: "id") is one row here, and the declaration it was written on is one row of graphql_ast_element_entry beside it.',
+   'The other middle of the entry hierarchy, and the counterpart of the element one: the pair divide the same nineteen kinds along two different questions, so a directive written on a field has a row here and none there while the field itself has the reverse. The same argument as the element one makes about coordinates: the name a directive applies was a column on each of the five sites, identical in all five, so a reader asking where a directive was written unioned five relations that differ only in what the application sits inside. Capture did that union, the lint rules did it again, and the five relations remain because each is the parent of a different decode and carries the site as a foreign key a collapsed relation could not state. What they no longer carry alone is the name, which is the one thing they share and is now said once here. The site stays a join rather than becoming a column: an application is written directly inside what it applies to, so the parent hop graphql_ast_entry already carries answers it, and adding a column saying which of five things a row is about would state twice what the tree states once.'),
+  ('graphql_directive_element', 'directive-name', 'graphql-ast',
+   'A directive coordinate exists in this graph: the decomposition of the coordinate graphql_element holds for a directive definition, which is the at sign and this name.',
+   'For example directive @paged on FIELD_DEFINITION is the row (paged, @paged).',
+   'The specification''s coordinate grammar has five productions and two of them open with an at sign, so a directive and a formal argument of one are schema elements exactly as a type and a field are. graphql_element has held all five productions since it stopped being written by a walk, which had no arm for either; what was missing was the pair of relations decomposing those two coordinates into the parts a reader joins by, so a reader holding a directive coordinate had to take the string apart. The split from graphql_directive is graphql_type_element''s split from graphql_type and has its reason: what a definition says about itself is one fact, and that its coordinate exists is another.'),
+  ('graphql_directive_argument_element', 'directive-argument-name', 'graphql-ast',
+   'A directive argument coordinate exists on a directive: the decomposition of the coordinate graphql_element holds for a formal argument of a directive definition.',
+   'For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName, @paged(pagedName:)).',
+   'The other of the two, and the one with a reader already written: a deprecation keys on a coordinate like @paged(pagedName:), and before this the only way back to the directive and the argument was to find the parentheses and the colon and cut. The unique on the coordinate makes that join total in both directions, the two keys being two spellings of one thing.'),
   ('lint_violation', 'lint-violation', 'derivation',
    'One rule broken at one written position: this rule has something to say about what this file wrote here.',
    'For example an input object named WidgetFilter draws a row of input-object-name-suffix at the position its declaration was written at.',
-   'Keyed on the position rather than on the coordinate, because a lint finding is something an author goes to and fixes and a coordinate assembled from several declaration sites names no single place to go. That decides more than the key: a name spelled wrongly at a base declaration and at two extensions is three rows, one per place the author has to edit, where a coordinate-keyed relation would have said it once and pointed at whichever site capture met first. A row asserts a defect, so a rule''s population is the positions where the author could have written it otherwise and not every position of the right kind: a type extension carries no description slot at all, so an undescribed one is not an undocumented type but a place where documenting is not a thing that can be done, and a row there would be a false fact rather than a noisy one. Owned by the gatherer that runs last, on the rule the derived family already states: every rule here reads more than one family, the schema''s transcription for what was written and the decode beside it for what a directive meant, so none of them belongs to a single corpus''s own gatherer.'),
+   'Keyed on the position rather than on the coordinate, because a lint finding is something an author goes to and fixes and a coordinate assembled from several declaration sites names no single place to go. That decides more than the key: a name spelled wrongly at a base declaration and at two extensions is three rows, one per place the author has to edit, where a coordinate-keyed relation would have said it once and pointed at whichever site capture met first. A row asserts a defect, so a rule''s population is the positions where the author could have written it otherwise and not every position of the right kind: a type extension carries no description slot at all, so an undescribed one is not an undocumented type but a place where documenting is not a thing that can be done, and a row there would be a false fact rather than a noisy one. A view and not a table, which is what a derivation gets when nothing forces storage: no corpus is read, no key is established here that its own references do not cover, and no read cost has been measured. What that buys beyond the rule being stated once is that the integrity a stored version would need foreign keys to defend is structural instead, every row being constructed by joining the relations it cites.'),
+  ('graphitron_deprecated', 'schema-element', 'graphitron',
+   'This schema element is deprecated, and this is the replacement hint the author gave: whatever the corpus retired, under the coordinate that names it.',
+   'For example a retired directive draws the row @asConnection and a retired argument of one draws @asConnection(connectionName:).',
+   'One relation where there were three, which is what keying on a coordinate buys. They were a relation per shape of key, a directive under its name, an argument of one under two names and an input field under a type and a field, each carrying the same reason under a differently spelled key, and a reader asking whether something was deprecated had to know which of the three to ask before it could ask. The coordinate is the specification''s own answer to what names an element, and the two directive forms were anchored so that this relation could use it rather than spelling its keys out again.'),
   ('graphql_element', 'schema-element', 'sdl',
    'A schema element exists in this graph: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example the input argument of Mutation.rentFilm is the row Mutation.rentFilm(input:), the field it sits on is Mutation.rentFilm, and the type declaring that field is Mutation.',
@@ -14204,18 +14470,9 @@ INSERT INTO meta_relation VALUES
    'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
    'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
    'A decode of one directive application, keyed by the application''s own position, so the input value it was written on and the file are one join away rather than columns here. @deprecated is not graphitron''s directive, and it is decoded here for the reason federation''s @key is: graphitron gives it a meaning GraphQL does not, unifying it with a docstring convention the specification has no room for, and a consumer asking whether something is deprecated should not have to know which of the two marked it. The decode is why this sits beside the applied-argument row rather than being read off it: that row carries the rendered literal, quotes and all, and recovering the text from it would mean re-reading SDL at every read.'),
-  ('graphitron_deprecated_input_field', 'graph-field', 'graphitron',
-   'A field of an input object is deprecated, by the native marker GraphQL admits there.',
-   'For example input FilmFilter { legacyTitle: String @deprecated(reason: "use title") } gives one row.',
-   'Derived from the input-value decode beside the two directive relations, and for the same reason: an entry is keyed by where the marker was written and a reader wants to ask about a coordinate. Unlike the directive-argument one this coordinate does have an applied-directive anchor, an input object''s field being a field like any other, so the fact could have been read from there instead. It is derived here because that anchor carries the reason as the rendered literal, quotes and all, and a reader taking it from there would be re-reading SDL to get the text. One decode, three resolutions, and no consumer parses anything.'),
-  ('graphitron_deprecated_directive', 'graph-directive', 'graphitron',
-   'A directive the corpus declares is deprecated as a whole, by graphitron''s docstring convention.',
-   'For example a directive definition whose description opens with the token and reads "use @order(index:) instead" gives one row.',
-   'Derived once the corpus is read, because what a directive is cannot be settled by one file. The convention exists because GraphQL forbids @deprecated on a directive definition and graphitron needs to say it anyway, so the marker is a token in the description; finding it is a decode, and a decode belongs at capture rather than in every reader''s predicate. There is no column saying which marker was used, because the relation is: this one is the docstring form and the argument relation beside it is the native one, and no site admits both.'),
-  ('graphitron_deprecated_directive_argument', 'graph-directive-argument', 'graphitron',
-   'A formal argument of a declared directive is deprecated, by the native marker GraphQL admits there.',
-   'For example the connectionName argument of @asConnection, marked with a reason, gives one row.',
-   'Derived from the input-value decode, whose rows this resolves to the coordinate they are about: an entry is keyed by where the application was written and a reader wants to ask about a directive and an argument by name. The resolution is the reason the anchor exists at all, and it is one the anchors of the graphql_ family deliberately do not offer: a directive applied to a directive definition''s own argument reaches no applied-directive anchor, an argument of a definition not being a schema element, so this is the one relation that says such an application happened at a coordinate.'),
+
+
+
   ('graphitron_ast_table_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What an @table application says: the table this declaration is bound to, as written.',
    'For example type Film @table(name: "film") gives one row reading film.',

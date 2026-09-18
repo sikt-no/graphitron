@@ -164,6 +164,12 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
+        // The five application sites, which keep their own signature now that a supertype carries
+        // the name they share: each still holds the parent hop as a foreign key into the relation
+        // its own site declares, and that is the payload grouping them here. The row stays because
+        // a set is discharged by every member referencing the payload, and no member references a
+        // parent position that differs per member. What the supertype discharged is the
+        // reconstruction, which is the cost that was actually being paid: four written-out unions.
         Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
                "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
                "graphql_ast_type_directive_entry"),
@@ -175,6 +181,18 @@ class SupertypeSignatureGateTest {
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_element", "graphql_element"),
+        // A coordinate at the entry position beside the six anchors keyed by the names that spell
+        // one, one anchor per production of the specification's coordinate grammar. The six declare
+        // over graphql_element and would discharge on their own; the entry relation is what keeps
+        // the row here, and it cannot join them in that declaration. The
+        // foreign key this gate asks for would point from the graphql_ast_ family into the graphql_
+        // one, and the second does not exist while the first is being written: an entry is one
+        // document's own reading, and graphql_element is what the corpus settled on afterwards.
+        // So the row is honest and long-lived rather than a supertype anyone should go and write,
+        // and what it costs is the reconstruction below that became visible with it.
+        Set.of("graphql_argument_element", "graphql_ast_element_entry",
+               "graphql_directive_argument_element", "graphql_directive_element",
+               "graphql_enum_value_element", "graphql_field_element", "graphql_type_element"),
         Set.of("graphitron_argument", "graphitron_field"),
 
         // The rest of this roster is the decode migration, and it reads as one thing rather than
@@ -192,7 +210,14 @@ class SupertypeSignatureGateTest {
                "graphitron_ast_input_value_condition_context_arg_entry",
                "graphitron_ast_service_context_arg_entry",
                "graphitron_field_condition_context_arg_entry",
-               "graphitron_service_context_arg_entry"),
+               "graphitron_service_context_arg_entry",
+               // A seventh member that is a name column and not a context argument. This gate reads
+               // a payload as the columns a relation carries beyond its key, so one VARCHAR called
+               // name reads the same whether it holds a parameter's name or an applied directive's,
+               // and the group is the signature rather than the subject. Recorded here rather than
+               // worked around: the coarseness is what makes the gate cheap enough to run over every
+               // relation, and a set nobody can discharge is better named than hidden.
+               "graphql_ast_directive_application_entry"),
         Set.of("graphitron_argument_condition_entry", "graphitron_ast_field_condition_entry",
                "graphitron_ast_input_value_condition_entry", "graphitron_field_condition_entry"),
         // Nine, and they arrived by being stamped: an @enum application records a class, a method
@@ -264,17 +289,15 @@ class SupertypeSignatureGateTest {
         // where the entry carries that by being keyed at the position, so the two share no payload
         // and this tranche has one row for @node rather than two.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
-        // One decode and three resolutions of it, and the payload is one column because a
-        // deprecation carries one thing: the replacement hint. What differs is what was deprecated
-        // and how the author said it, which is the key and the relation, not the payload. So this
-        // set is not a supertype owed but the shape working: an entry keyed where the marker was
-        // written, and three anchors keyed by what it marked, because the one decode reaches a
-        // directive, one of its arguments, or a field of an input object, and no two of those share
-        // a coordinate. Collapsing them needs a relation with a nullable coordinate and a column
-        // saying which of three things a row is about, which is the shape every split in this
-        // family was made to avoid.
-        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated_directive",
-               "graphitron_deprecated_directive_argument", "graphitron_deprecated_input_field"));
+        // One decode and one resolution of it, and the payload is one column because a deprecation
+        // carries one thing: the replacement hint. The three anchors this used to name were one
+        // relation each for a directive, an argument of one, and a field of an input object, and
+        // the argument against collapsing them was that no two share a coordinate and a collapsed
+        // relation would need a nullable one beside a column saying which of three things a row is
+        // about. That turned out to be wrong in its premise rather than its reasoning: all three
+        // spell a coordinate, and the grammar already tells them apart, so the collapsed relation
+        // keys on the coordinate with neither a nullable column nor a discriminator.
+        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as
@@ -296,6 +319,12 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
+        // Older than this roster and unchanged by it. It unions two element relations, which was
+        // not a reconstruction while the four declared over graphql_element and discharged; adding
+        // the entry position to their set is what made the set undeclared and this view visible as
+        // a union of two of its members. The supertype it names is graphql_element, which exists,
+        // so what this row records is a view that could join it instead of unioning its subtypes.
+        "graphql_element_field|graphql_argument_element,graphql_field_element",
         "graphql_poly_member|graphql_implements_interface,graphql_union_member",
         // The union the poly split leaves behind, spelled once here rather than at each reader.
         // Over the two base relations and not over graphql_poly_member, which says the same thing:

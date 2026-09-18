@@ -2,12 +2,11 @@ package no.sikt.graphitron.model.lint;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
+
 import java.util.Objects;
 import java.util.Optional;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED_INPUT_FIELD;
 
 /**
  * Answers whether something the corpus declares is deprecated, by reading what capture wrote.
@@ -54,39 +53,33 @@ public final class DeprecationRecognizer {
         }
     }
 
-    /** Whole-directive deprecation via the docstring token. */
-    public Optional<DeprecationInfo> directiveDeprecation(String name) {
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE;
+    /**
+     * Whether the corpus retired this element, under the coordinate that names it.
+     *
+     * <p>One query where there were three, because the relation behind it is one: a directive, an
+     * argument of one and an input field are three shapes of key and one kind of fact, and the
+     * coordinate is the specification's own way of saying which element a fact is about.
+     */
+    private Optional<String> reasonFor(String coordinate) {
+        var t = GRAPHITRON_DEPRECATED;
         return store.dsl().select(t.REASON).from(t)
             .where(t.GRAPH_NAME.eq(store.graphName()))
-            .and(t.DIRECTIVE_NAME.eq(name))
-            .fetchOptional(t.REASON)
-            .map(DeprecationInfo::docstring);
+            .and(t.COORDINATE.eq(coordinate))
+            .fetchOptional(t.REASON);
+    }
+
+    /** Whole-directive deprecation via the docstring token. */
+    public Optional<DeprecationInfo> directiveDeprecation(String name) {
+        return reasonFor("@" + name).map(DeprecationInfo::docstring);
     }
 
     /** Directive-argument deprecation via the native marker. */
     public Optional<DeprecationInfo> directiveArgDeprecation(String directive, String arg) {
-        var t = GRAPHITRON_DEPRECATED_DIRECTIVE_ARGUMENT;
-        return store.dsl().select(t.REASON).from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .and(t.DIRECTIVE_NAME.eq(directive))
-            .and(t.ARGUMENT_NAME.eq(arg))
-            .fetchOptional(t.REASON)
-            .map(DeprecationInfo::native_);
+        return reasonFor("@" + directive + "(" + arg + ":)").map(DeprecationInfo::native_);
     }
 
-    /**
-     * Input-field deprecation via the native marker, resolved to the field's coordinate by capture
-     * rather than read off the applied-directive anchor. That anchor holds the reason as the
-     * rendered literal, quotes and all; this holds what the author wrote.
-     */
+    /** Input-field deprecation via the native marker. */
     public Optional<DeprecationInfo> inputFieldDeprecation(String type, String field) {
-        var t = GRAPHITRON_DEPRECATED_INPUT_FIELD;
-        return store.dsl().select(t.REASON).from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()))
-            .and(t.TYPE_NAME.eq(type))
-            .and(t.FIELD_NAME.eq(field))
-            .fetchOptional(t.REASON)
-            .map(DeprecationInfo::native_);
+        return reasonFor(type + "." + field).map(DeprecationInfo::native_);
     }
 }

@@ -100,6 +100,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
@@ -397,6 +401,10 @@ class FactCaptureAgreementTest {
             "graphql_element",
             "graphql_type_element", "graphql_field_element",
             "graphql_argument_element", "graphql_enum_value_element",
+            // The two at-sign productions of the coordinate grammar, on the same terms. Their
+            // attribute siblings are graphql_directive and graphql_directive_argument, which are
+            // already on this list, and the pairing is asserted beside the other four.
+            "graphql_directive_element", "graphql_directive_argument_element",
             "graphql_type", "graphql_type_declaration", "graphql_field", "graphql_argument",
             "graphql_enum_value", "graphql_poly_member",
             // The two arms the poly view unions, which the walk writes directly now. Their
@@ -522,9 +530,7 @@ class FactCaptureAgreementTest {
             // against. What pins them is GraphitronAnchorTest, over a corpus carrying both markers
             // and over the bundled vocabulary, which declares two of its own.
             "graphitron_ast_input_value_deprecated_entry",
-            "graphitron_deprecated_directive",
-            "graphitron_deprecated_directive_argument",
-            "graphitron_deprecated_input_field",
+            "graphitron_deprecated",
             // And of an input-value application, where the two paths do not even agree on which
             // relation the row belongs to: GraphitronSchema routes an input object's field down its
             // field path, and the parser calls it an input value, so there is no population here to
@@ -582,6 +588,8 @@ class FactCaptureAgreementTest {
         // claims are pinned in AstEntryIndexTest: every arm's positions present, the enclosing
         // element resolved at each depth, and a retired position swept.
         registrations.put("graphql_ast_entry", Arm.DERIVED);
+        registrations.put("graphql_ast_element_entry", Arm.DERIVED);
+        registrations.put("graphql_ast_directive_application_entry", Arm.DERIVED);
         registrations.put("graphql_directive_site", Arm.DERIVED);
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
@@ -794,8 +802,8 @@ class FactCaptureAgreementTest {
         registrations.put("lint_rule", Arm.DERIVED);
         // The findings, derived from the transcription and the decode beside it. Nothing of
         // GraphitronSchema's to agree with: the walk produced a list per run and kept no row,
-        // so there is no second population to compare against. What pins it is
-        // LintViolationsTest, over a corpus edited between two readings.
+        // so there is no second population to compare against. What pins it is the two shadow
+        // tests, which read one corpus through the view and through the walk.
         registrations.put("lint_violation", Arm.DERIVED);
         registrations.put("javac_diagnostic", Arm.ORACLE);
         registrations.put("rejection_validation_error", Arm.ORACLE);
@@ -988,7 +996,20 @@ class FactCaptureAgreementTest {
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME, GRAPHQL_ENUM_VALUE.VALUE_NAME)
                         .from(GRAPHQL_ENUM_VALUE).fetch());
-            // The supertype against the four it generalises. This direction is the one no
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_ELEMENT.DIRECTIVE_NAME)
+                .from(GRAPHQL_DIRECTIVE_ELEMENT).fetch())
+                .as("directive anchors against directive attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE).fetch());
+            assertThat(dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.DIRECTIVE_NAME,
+                    GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.ARGUMENT_NAME)
+                .from(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT).fetch())
+                .as("directive argument anchors against directive argument attributes")
+                .containsExactlyInAnyOrderElementsOf(
+                    dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
+                        GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME)
+                        .from(GRAPHQL_DIRECTIVE_ARGUMENT).fetch());
+            // The supertype against the six it generalises. This direction is the one no
             // constraint reaches: a foreign key refuses an anchor with no supertype row and
             // nothing refuses a supertype row no anchor claimed, so the equality is stated here.
             // The field arm restates the rule the stored kind rests on rather than repeating the
@@ -998,7 +1019,7 @@ class FactCaptureAgreementTest {
             // whatever capture happened to write.
             assertThat(dsl.select(GRAPHQL_ELEMENT.COORDINATE, GRAPHQL_ELEMENT.ELEMENT_KIND)
                 .from(GRAPHQL_ELEMENT).fetch())
-                .as("the element supertype against the union of the four anchors")
+                .as("the element supertype against the union of the six anchors")
                 .containsExactlyInAnyOrderElementsOf(
                     dsl.select(GRAPHQL_TYPE_ELEMENT.COORDINATE, val("NAMED_TYPE"))
                         .from(GRAPHQL_TYPE_ELEMENT)
@@ -1013,6 +1034,11 @@ class FactCaptureAgreementTest {
                         .from(GRAPHQL_ARGUMENT_ELEMENT))
                     .unionAll(dsl.select(GRAPHQL_ENUM_VALUE_ELEMENT.COORDINATE, val("ENUM_VALUE"))
                         .from(GRAPHQL_ENUM_VALUE_ELEMENT))
+                    .unionAll(dsl.select(GRAPHQL_DIRECTIVE_ELEMENT.COORDINATE, val("DIRECTIVE"))
+                        .from(GRAPHQL_DIRECTIVE_ELEMENT))
+                    .unionAll(dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.COORDINATE,
+                            val("DIRECTIVE_ARGUMENT"))
+                        .from(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT))
                     .fetch());
             // The equality above is only as strong as the kinds the fixture reaches. Without an
             // input object in it the field arm's two branches collapse to one and the split it
@@ -1021,7 +1047,8 @@ class FactCaptureAgreementTest {
             assertThat(dsl.select(GRAPHQL_ELEMENT.ELEMENT_KIND).from(GRAPHQL_ELEMENT)
                 .fetchSet(GRAPHQL_ELEMENT.ELEMENT_KIND))
                 .as("the fixture has to reach every kind, or the equality above is partly vacuous")
-                .contains("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE", "FIELD_ARGUMENT");
+                .contains("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE", "FIELD_ARGUMENT",
+                    "DIRECTIVE", "DIRECTIVE_ARGUMENT");
         }
     }
 

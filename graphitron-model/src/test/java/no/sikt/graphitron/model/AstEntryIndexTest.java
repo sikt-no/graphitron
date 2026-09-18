@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -86,40 +87,7 @@ class AstEntryIndexTest {
         });
     }
 
-    @Test
-    @DisplayName("a declaration names its own element and an application names the one it sits on")
-    void resolutionFollowsTheEnclosingElement() {
-        withCapture(dsl -> {
-            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DEFINITION))
-                .as("a field declares its own coordinate")
-                .contains("Widget.name");
-            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DIRECTIVE))
-                .as("a directive on a field names the field, not itself")
-                .contains("Widget.name");
-            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_ARGUMENT))
-                .as("an argument declares its own coordinate")
-                .contains("Widget.name(locale:)");
-            assertThat(kindsAndCoordinates(dsl, EntryKind.TYPE_DIRECTIVE))
-                .as("a directive on a type names the type")
-                .contains("Widget");
-            assertThat(kindsAndCoordinates(dsl, EntryKind.ENUM_VALUE_DIRECTIVE))
-                .as("a directive on an enum value names the value")
-                .contains("WidgetKind.SMALL");
-        });
-    }
 
-    @Test
-    @DisplayName("a value names the element the expression it sits in was written on")
-    void valuesResolveThroughTheirHolder() {
-        withCapture(dsl -> {
-            assertThat(kindsAndCoordinates(dsl, EntryKind.APPLIED_ARGUMENT))
-                .as("an argument passed to a directive names the element the directive is on")
-                .contains("Widget", "Widget.name", "WidgetKind.SMALL");
-            assertThat(kindsAndCoordinates(dsl, EntryKind.VALUE))
-                .as("and so does every value written inside it")
-                .contains("Widget", "Widget.name", "WidgetKind.SMALL");
-        });
-    }
 
     @Test
     @DisplayName("every value entry is indexed, however deeply it nests")
@@ -153,68 +121,15 @@ class AstEntryIndexTest {
             var after = dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH));
 
             assertThat(after).as("the smaller corpus indexes fewer positions").isLessThan(before);
-            assertThat(dsl.fetchCount(GRAPHQL_AST_ENTRY,
-                GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)
-                    .and(GRAPHQL_AST_ENTRY.ELEMENT_COORDINATE.like("Widget%"))))
-                .as("nothing survives for the type the author deleted")
+            assertThat(dsl.fetchCount(GRAPHQL_AST_ELEMENT_ENTRY,
+                GRAPHQL_AST_ELEMENT_ENTRY.GRAPH_NAME.eq(GRAPH)
+                    .and(GRAPHQL_AST_ELEMENT_ENTRY.COORDINATE.like("Widget%"))))
+                .as("no declaration survives for the type the author deleted")
                 .isZero();
         });
     }
 
-    /**
-     * The other reading of the same documents, and the reason the index is written by a step of its
-     * own rather than by the anchor writer. A pass that walks the registry writes the element
-     * anchors itself and therefore skips that writer whole, so an index written inside it was
-     * written by one reading of the two; the reader that surfaced this was a graphitron anchor
-     * referencing a written position, which found no index row to reference in the only pass its
-     * own stages run in.
-     */
-    @Test
-    @DisplayName("the walk's pass indexes the stratum too, not only the derivation's")
-    void theWalksPassWritesTheIndex() {
-        withSeededStore(GRAPH, dsl -> {
-            Path directory = temporaryDirectory();
-            write(directory, "schema.graphqls", SDL);
-            var graph = new GraphIdentity(GRAPH, directory);
-            LocalDateTime readAt = LocalDateTime.now().withNano(0);
-            // The walk's pass parses for itself and owns its own source rows, so the documents are
-            // assembled here rather than by the corpus reader, whose membership rows the walk's own
-            // sink writes below and would meet on their key.
-            var parse = SchemaLoader.parsePerSource(corpus(directory).schemaFiles(directory));
-            seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
-            seedSource(dsl, directory.resolve("schema.graphqls").toString(), "SCHEMA_FILE");
-            var documents = parse.perSource().stream()
-                .map(source -> new GraphQLSourceCapture.SourceDocument(
-                    source.sourceName(), source.registry(), true))
-                .toList();
-            // The transcription alone, which is the half the walk's pass runs. It skips the anchor
-            // step that follows it there, the walk being that pass's producer of the anchors.
-            GraphQLAstCapture.captureEntries(dsl, graph, documents, readAt);
-            // The walk, which is this pass's producer of the element anchors the index keys into.
-            var sink = new FactSink(dsl, GRAPH, readAt);
-            SdlFactCapture.capture(sink, parse.registry(), new ClasspathSources(),
-                Map.of(directory.resolve("schema.graphqls").toString(),
-                    SchemaInput.file(directory.resolve("schema.graphqls"))),
-                Set.of());
-            sink.flush();
-            GraphQLAstCapture.captureAstIndex(dsl, GRAPH, readAt);
 
-            assertThat(dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)))
-                .as("the pass that writes the anchors reading this index also fills it")
-                .isPositive();
-            assertThat(kindsAndCoordinates(dsl, EntryKind.FIELD_DIRECTIVE))
-                .as("and resolves each position the same way, a directive naming its field")
-                .contains("Widget.name");
-        });
-    }
-
-    /** The coordinates the index resolved for one entry kind. */
-    private static List<String> kindsAndCoordinates(DSLContext dsl, EntryKind entryKind) {
-        var e = GRAPHQL_AST_ENTRY;
-        return dsl.select(e.ELEMENT_COORDINATE).from(e)
-            .where(e.GRAPH_NAME.eq(GRAPH), e.ENTRY_KIND.eq(entryKind))
-            .fetch(e.ELEMENT_COORDINATE);
-    }
 
     private static final List<org.jooq.Table<?>> ENTRY_RELATIONS = List.of(
         Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY, Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY,

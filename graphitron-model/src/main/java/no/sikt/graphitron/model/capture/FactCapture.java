@@ -412,26 +412,32 @@ public final class FactCapture {
             // A stage of the catalog gatherer rather than a derivation: it reads no graph and no
             // directive, so it is a function of the store's catalog and not of this run.
             NameMatchedKeys.derive(txDsl);
-            // The document gatherer's entries, which this pass has to write because the relations
-            // moving off the walk are derived from them and from nothing else. It straddles the
-            // walk rather than preceding it: nothing here meets a row the walk writes, the entry
-            // stratum being keyed by written position, but graphitron's anchors below key into the
-            // graphql_ ones and those are still the walk's to write. The order is therefore the
-            // one production already has, with the walk's rows the ones a reader sees wherever
-            // both still produce; what changes is that the overlap is no longer the whole.
+            // The entry strata, then the walk, then the anchors derived from those entries.
+            //
+            // The graphql_ anchors had two producers: this derivation, in SQL over the entry
+            // stratum, and the walk, writing them directly from a merged registry. They agreed on
+            // every row, which is what made the pair worth ending, and the derivation is the one
+            // that stays: the walk has no arm for a directive coordinate, so @paged and
+            // @paged(pagedName:) were absent from graphql_element and graphitron_deprecated could
+            // not key into it. Deriving after the walk rather than instead of it is what the two
+            // writers allow, the walk's sink inserting where the derivation upserts: the
+            // derivation lands on the walk's rows without complaint and adds the coordinates the
+            // walk cannot spell, where the reverse order collides on graphql_directive at the
+            // first directive either of them writes.
+            //
+            // The walk stays for its other half, which has no second producer: the decode of
+            // graphitron's own vocabulary into forty-five graphitron_ entry relations. Those are
+            // what a later pass has to move onto the graphitron_ast_ entries beside them before
+            // this call can go.
             var documents = readCorpus(txDsl, graph, config, readAt);
             GraphQLAstCapture.captureEntries(txDsl, graph, documents, readAt);
             GraphitronAstCapture.captureEntries(txDsl, graph, documents, readAt);
             SdlFactCapture.capture(sink, registry, sources, attribution,
                 verdicts.refusedSourceNames());
             sink.flush();
-            // Between the walk and the stages, which is the only place either can go. Both key into
-            // the graphql_ anchors, so neither can precede the walk that writes them; the stages
-            // below read what they derive, so neither can follow them. The index is written here
-            // and not by the anchor writer this pass skips, because a reading has to write what its
-            // own stages read: a graphitron anchor referencing a written position finds no index
-            // row to reference otherwise, this pass being the one its stages run in.
-            GraphQLAstCapture.captureAstIndex(txDsl, graph.name(), readAt);
+            GraphQLAstCapture.anchor(txDsl, graph.name(), readAt);
+            // After the anchors and before the stages, which is the only place it can go: it keys
+            // into the graphql_ anchors above and the stages below read what it derives.
             GraphitronAstCapture.anchor(txDsl, graph, readAt);
             GraphitronFactCapture.capture(sink, txDsl, graph.name(), readAt);
             sink.flush();

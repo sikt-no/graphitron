@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
-import no.sikt.graphitron.model.lint.LintViolations;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -114,14 +113,17 @@ class LintStatementShadowTest {
         write(directory, SDL);
         try (var store = FactStores.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
+            // No writer to run: the rules are the view's arms, so capturing the
+            // corpus is the whole of making the findings exist.
             var readAt = LocalDateTime.now();
+            // No writer to run: the rules are the view's arms, so capturing the corpus is the
+            // whole of making the findings exist.
             var graph = new GraphIdentity(GRAPH, directory);
             var config = config(directory);
             var documents = GraphQLSourceCapture.capture(store.dsl(), graph, config, readAt);
             GraphQLAstCapture.capture(store.dsl(), graph, documents, readAt);
             GraphitronAstCapture.capture(store.dsl(), graph, documents, readAt);
             GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
-            LintViolations.write(store.dsl(), GRAPH, readAt);
 
             var walked = fromTheWalk(store.dsl());
             var stored = fromTheRows(store.dsl());
