@@ -20,7 +20,7 @@ import no.sikt.graphitron.model.derive.StoreDetections;
 import no.sikt.graphitron.model.derive.ClassifiedRun;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.model.lint.LintConfig;
-import no.sikt.graphitron.rewrite.lint.LintEngine;
+import no.sikt.graphitron.model.lint.LintFindings;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
@@ -875,10 +875,12 @@ public class GraphQLRewriteGenerator {
                                                 no.sikt.graphitron.model.read.StoreHandle store) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>(schema.warnings());
-        // excludedTypes widens the engine's per-type skip; injectedNames excludes the
-        // federation @link injector's generator-owned definitions at the same boundary.
-        all.addAll(LintEngine.builtIn(lintConfig.excludedTypePatterns())
-            .run(attributed.registry(), attributed.injectedNames(), store));
+        // The nine rules, read off this run's rows. Both things the walk was handed here are gone
+        // rather than moved: excludedTypes is a relation the configuration gatherer writes and the
+        // rules join, so a consumer's exclusion is applied once where the rule is stated instead of
+        // being passed down a call chain; and injectedNames has nothing to exclude, the federation
+        // injector's definitions never being in the corpus this reads.
+        all.addAll(LintFindings.of(store));
         // Codegen-config advisories about the owned-connection runtime's identity posture, derived
         // from the <sessionState> config. Folded in here so they ride the same suppression, LSP
         // replay, and MCP projection as every other warning.
