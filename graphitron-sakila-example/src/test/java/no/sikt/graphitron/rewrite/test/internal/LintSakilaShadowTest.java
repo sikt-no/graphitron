@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintFindings;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -29,7 +30,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -104,7 +104,7 @@ class LintSakilaShadowTest {
             GraphQLAssemblyCapture.capture(store.dsl(), identity, documents, readAt);
 
             var walked = fromTheWalk(store.dsl(), sdl);
-            var stored = fromTheRows(store.dsl());
+            var stored = fromTheStore(store.dsl());
 
             assertThat(stored)
                 .as("every finding the walk reports over the example schema, at the position it"
@@ -128,8 +128,7 @@ class LintSakilaShadowTest {
         var findings = new TreeSet<String>();
         LintEngine.builtIn().run(registry, new StoreHandle(dsl, GRAPH)).stream()
             .map(BuildWarning.LintFinding.class::cast)
-            .forEach(f -> findings.add(f.rule().id() + " @ " + f.location().getLine()
-                + ":" + f.location().getColumn()));
+            .forEach(f -> findings.add(render(f)));
         return findings;
     }
 
@@ -140,16 +139,30 @@ class LintSakilaShadowTest {
         return rules;
     }
 
-    /** What the statements wrote, in the same spelling. */
-    private static Set<String> fromTheRows(DSLContext dsl) {
-        var rows = new TreeSet<String>();
-        dsl.select(LINT_VIOLATION.LINT_RULE, LINT_VIOLATION.SOURCE_LINE,
-                LINT_VIOLATION.SOURCE_COLUMN)
-            .from(LINT_VIOLATION)
-            .where(LINT_VIOLATION.GRAPH_NAME.eq(GRAPH))
-            .fetch()
-            .forEach(row -> rows.add(row.value1() + " @ " + row.value2() + ":" + row.value3()));
-        return rows;
+    /** What the rows become once something turns them into findings, in the same spelling. */
+    private static Set<String> fromTheStore(DSLContext dsl) {
+        var findings = new TreeSet<String>();
+        LintFindings.of(new StoreHandle(dsl, GRAPH)).forEach(f -> findings.add(render(f)));
+        return findings;
+    }
+
+    /**
+     * A finding in full: rule, position, wording, and the edit offered beside it. Over a found
+     * corpus rather than a written one, which is where a wording that interpolates the wrong name
+     * has somewhere to hide: a fixture's author knows what each message should say.
+     */
+    private static String render(BuildWarning.LintFinding f) {
+        var edits = new StringBuilder();
+        f.fix().ifPresent(fix -> {
+            edits.append(" fix[").append(fix.description()).append(']');
+            fix.edits().forEach(e -> edits.append(" (")
+                .append(e.start().getLine()).append(':').append(e.start().getColumn())
+                .append('-')
+                .append(e.end().getLine()).append(':').append(e.end().getColumn())
+                .append(" -> ").append(e.replacement().replace("\n", "\\n")).append(')'));
+        });
+        return f.rule().id() + " @ " + f.location().getLine() + ":" + f.location().getColumn()
+            + " | " + f.message() + edits;
     }
 
 

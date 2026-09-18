@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
+import no.sikt.graphitron.model.lint.LintFindings;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
@@ -28,7 +29,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -126,16 +126,21 @@ class LintStatementShadowTest {
             GraphQLAssemblyCapture.capture(store.dsl(), graph, documents, readAt);
 
             var walked = fromTheWalk(store.dsl());
-            var stored = fromTheRows(store.dsl());
+            var stored = fromTheStore(store.dsl());
 
             assertThat(rulesIn(walked))
                 .as("the corpus still exercises every rule, without which two empty sets would"
                     + " agree and the comparison would report a parity it never made")
                 .containsExactlyInAnyOrderElementsOf(EVERY_RULE);
             assertThat(stored)
-                .as("every finding the walk reports, at the position it reports it, and nothing"
-                    + " the walk does not")
+                .as("every finding the walk reports, worded and fixed the way the walk words and"
+                    + " fixes it, at the position it reports it, and nothing the walk does not")
                 .containsExactlyInAnyOrderElementsOf(walked);
+            // The comparison now covers fixes, and a corpus reaching none of them would compare
+            // the empty string against the empty string on every row.
+            assertThat(walked.stream().filter(f -> f.contains(" fix[")).count())
+                .as("the corpus has to reach the fix-bearing rules, or the edits go uncompared")
+                .isGreaterThanOrEqualTo(4L);
         }
     }
 
@@ -161,21 +166,44 @@ class LintStatementShadowTest {
         var findings = new TreeSet<String>();
         LintEngine.builtIn().run(registry, new StoreHandle(dsl, GRAPH)).stream()
             .map(BuildWarning.LintFinding.class::cast)
-            .forEach(f -> findings.add(f.rule().id() + " @ " + f.location().getLine()
-                + ":" + f.location().getColumn()));
+            .forEach(f -> findings.add(render(f)));
         return findings;
     }
 
-    /** What the statements wrote, in the same spelling. */
-    private static Set<String> fromTheRows(DSLContext dsl) {
-        var rows = new TreeSet<String>();
-        dsl.select(LINT_VIOLATION.LINT_RULE, LINT_VIOLATION.SOURCE_LINE,
-                LINT_VIOLATION.SOURCE_COLUMN)
-            .from(LINT_VIOLATION)
-            .where(LINT_VIOLATION.GRAPH_NAME.eq(GRAPH))
-            .fetch()
-            .forEach(row -> rows.add(row.value1() + " @ " + row.value2() + ":" + row.value3()));
-        return rows;
+    /**
+     * A finding in full, which is what this has to compare and for a while did not.
+     *
+     * <p>Reducing a finding to its rule and position compares what the rules decide and nothing
+     * about what an author is shown. That was the right reduction while the rows were the whole of
+     * the new side: a row has no wording. It stops being right the moment something turns rows into
+     * findings, because the wording and the edit are exactly what that something produces, and a
+     * comparison blind to them would pass while every message came out wrong.
+     *
+     * <p>The fix is rendered as its own description and its edits' spans and replacements, so an
+     * edit offered one character to the left of where the walk offers it fails here. Absence is
+     * rendered too: a fix withheld on one side and offered on the other is the difference between
+     * an editor showing an action and not, which is a difference a reader would notice before any
+     * of us would.
+     */
+    private static String render(BuildWarning.LintFinding f) {
+        var edits = new StringBuilder();
+        f.fix().ifPresent(fix -> {
+            edits.append(" fix[").append(fix.description()).append(']');
+            fix.edits().forEach(e -> edits.append(" (")
+                .append(e.start().getLine()).append(':').append(e.start().getColumn())
+                .append('-')
+                .append(e.end().getLine()).append(':').append(e.end().getColumn())
+                .append(" -> ").append(e.replacement().replace("\n", "\\n")).append(')'));
+        });
+        return f.rule().id() + " @ " + f.location().getLine() + ":" + f.location().getColumn()
+            + " | " + f.message() + edits;
+    }
+
+    /** What the rows become once something turns them into findings, in the same spelling. */
+    private static Set<String> fromTheStore(DSLContext dsl) {
+        var findings = new TreeSet<String>();
+        LintFindings.of(new StoreHandle(dsl, GRAPH)).forEach(f -> findings.add(render(f)));
+        return findings;
     }
 
     private static SubjectConfig config(Path directory) {
