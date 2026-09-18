@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import no.sikt.graphitron.model.lint.LintFindings;
+
 import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -52,6 +54,18 @@ class NameShapeParityTest {
     @DisplayName("the pascal-case shape decides the same names in SQL as in Java")
     void pascalCaseAgrees() {
         assertAgreement(PASCAL_CASE);
+    }
+
+    @Test
+    @DisplayName("the shape a rename is offered under decides the same names as the rule flags by")
+    void theFixSideShapeAgreesWithTheRule() {
+        // The third spelling. Two were already held together here, the view's and this file's; the
+        // reader that offers a rename carries its own, and it has to agree with the rule or a fix
+        // proposes a name the next run flags again. Nothing held it before this case.
+        var pattern = java.util.regex.Pattern.compile(CAMEL_CASE);
+        assertThat(NAMES.stream().filter(LintFindings::isCamelCase).toList())
+            .as("names the rename side accepts, against the shape the rule is stated by")
+            .isEqualTo(NAMES.stream().filter(n -> pattern.matcher(n).matches()).toList());
     }
 
     @Test

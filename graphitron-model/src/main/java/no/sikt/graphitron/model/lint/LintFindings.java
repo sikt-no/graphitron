@@ -46,6 +46,21 @@ public final class LintFindings {
     // run. Nothing holds them together. NameShapeParityTest holds the view's spelling against a Java
     // one it states itself, which is this shape and not this constant.
     private static final Pattern CAMEL_CASE = Pattern.compile("[a-z][A-Za-z0-9]*");
+
+    /**
+     * Whether a rename this reader is about to offer is a camel-case name.
+     *
+     * <p>Visible so the shape can be held against the one the rule flags by. The two are written
+     * separately and have to agree: the view decides whether a name draws a row, this decides
+     * whether the replacement offered for it is a name at all, and a disagreement is a fix that
+     * proposes a spelling the next run flags again. They agree today for a reason worth stating,
+     * since the pattern does not look anchored. {@code Pattern.matches} requires the whole input,
+     * so the unanchored spelling here decides what the view's anchored one decides, and a later
+     * edit reaching for {@code find} would part them silently.
+     */
+    public static boolean isCamelCase(String candidate) {
+        return CAMEL_CASE.matcher(candidate).matches();
+    }
     private static final String CAMEL_CASE_FIX = "Rename field to camelCase";
     private static final String PREFIX_FIX = "Drop the type-name prefix";
     private static final String DESCRIPTION_FIX = "Add a description placeholder";
