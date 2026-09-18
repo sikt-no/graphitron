@@ -6,7 +6,7 @@ import no.sikt.graphitron.model.capture.config.ConfigurationFactCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
-import no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture;
+import no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.sdl.SdlFactCapture;
 import no.sikt.graphitron.model.classpath.CompletionData;
@@ -439,7 +439,12 @@ public final class FactCapture {
             // After the anchors and before the stages, which is the only place it can go: it keys
             // into the graphql_ anchors above and the stages below read what it derives.
             GraphitronAstCapture.anchor(txDsl, graph, readAt);
-            GraphitronFactCapture.capture(sink, txDsl, graph.name(), readAt);
+            // The stages run here as well as at the tail of ModelCapture, which is the
+            // transitional overlap and not a duplicate: this pass has readers of its own
+            // below, and it is driven directly by callers that run no other pass. Every
+            // relation the stages write therefore has to survive a second reading, which is
+            // the discipline they were owed anyway. It goes when the walk does.
+            GraphitronAssemblyCapture.capture(txDsl, graph.name(), readAt);
             sink.flush();
             // The capture-cadence derivation stratum: materialized derivations re-derive from
             // the flushed rows inside the same transaction, so they are current exactly when

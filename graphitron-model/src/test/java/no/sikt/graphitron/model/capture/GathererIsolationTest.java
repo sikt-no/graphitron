@@ -74,7 +74,10 @@ class GathererIsolationTest {
         // two questions no single document can answer and writes the verdicts down.
         roll.put("capture/document", Set.of("GraphQLSourceCapture", "GraphQLAstCapture",
             "GraphitronAstCapture", "GraphQLAssemblyCapture"));
-        roll.put("capture/graphitron", Set.of("GraphitronFactCapture"));
+        // Two here while the walk lasts: the stages that resolve, which are the gatherer, and
+        // the decode the walk drives one application at a time, which goes with the walk.
+        roll.put("capture/graphitron", Set.of("GraphitronAssemblyCapture",
+            "GraphitronFactCapture"));
         roll.put("capture/macro", Set.of("MacroCapture"));
         roll.put("capture/java", Set.of("JavaSourceFacts"));
         roll.put("capture/compile", Set.of("CompileFacts"));

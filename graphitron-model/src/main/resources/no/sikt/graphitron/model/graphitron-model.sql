@@ -4838,6 +4838,7 @@ CREATE TABLE graphitron_minted_type (
   precedence        VARCHAR NOT NULL,
   kind              VARCHAR NOT NULL,
   description       VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_coordinate, type_name),
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
@@ -4856,6 +4857,7 @@ COMMENT ON COLUMN graphitron_minted_type.directive_name IS 'the directive whose 
 COMMENT ON COLUMN graphitron_minted_type.precedence IS 'what this row does at a coordinate the author also declared: REPLACE takes the author''s place, YIELD stands down and leaves the declaration alone. Not derivable from the collision, @asConnection replacing at its carrier and yielding at PageInfo, so it is stated by whichever expansion wrote the row';
 COMMENT ON COLUMN graphitron_minted_type.kind IS 'the type''s kind in graphql_type''s vocabulary, always OBJECT: the macros mint nothing else, and the CHECK holds them to it';
 COMMENT ON COLUMN graphitron_minted_type.description IS 'the docstring the macro wrote, matching what the assembled-schema synthesis emits; display material, never a dimension';
+COMMENT ON COLUMN graphitron_minted_type.touched_at IS 'when the reading that minted this row ran. The expansion finishes by deleting this graph''s rows carrying a different instant, which are the rows a rewriting stopped minting; an upsert cannot find those, there being no incoming row to match';
 
 CREATE TABLE graphitron_minted_field (
   graph_name        VARCHAR NOT NULL,
@@ -4871,6 +4873,7 @@ CREATE TABLE graphitron_minted_field (
   is_list           BOOLEAN NOT NULL,
   item_non_null     BOOLEAN,
   description       VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_coordinate, type_name, field_name),
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
@@ -4895,6 +4898,7 @@ COMMENT ON COLUMN graphitron_minted_field.non_null IS 'whether the outermost wra
 COMMENT ON COLUMN graphitron_minted_field.is_list IS 'whether the expression is a list';
 COMMENT ON COLUMN graphitron_minted_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_minted_field.description IS 'the docstring the macro wrote, or the authored one carried across on a rewritten carrier; display material, never a dimension';
+COMMENT ON COLUMN graphitron_minted_field.touched_at IS 'when the reading that minted this row ran. The expansion finishes by deleting this graph''s rows carrying a different instant, which are the rows a rewriting stopped minting; an upsert cannot find those, there being no incoming row to match';
 
 CREATE TABLE graphitron_minted_argument (
   graph_name        VARCHAR NOT NULL,
@@ -4912,6 +4916,7 @@ CREATE TABLE graphitron_minted_argument (
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_coordinate, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, source_coordinate)
     REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
@@ -4938,6 +4943,7 @@ COMMENT ON COLUMN graphitron_minted_argument.is_list IS 'whether the expression 
 COMMENT ON COLUMN graphitron_minted_argument.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_minted_argument.default_value_sdl IS 'the default literal the macro wrote, which for the connection page size is the value the author declared on the application or the generator''s own fallback; NULL where the minted argument has no default';
 COMMENT ON COLUMN graphitron_minted_argument.description IS 'the docstring the macro wrote; display material, never a dimension';
+COMMENT ON COLUMN graphitron_minted_argument.touched_at IS 'when the reading that minted this row ran. The expansion finishes by deleting this graph''s rows carrying a different instant, which are the rows a rewriting stopped minting; an upsert cannot find those, there being no incoming row to match';
 
 -- ---- supertypes over the directive families ----------------------------------------
 -- Where one fact is authored at several kinds of site, the relations here are that fact, written
@@ -4988,6 +4994,7 @@ CREATE TABLE graphitron_field_navigation (
   field_name          VARCHAR NOT NULL,
   basis               VARCHAR NOT NULL,
   navigated_type_name VARCHAR NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
@@ -5001,6 +5008,7 @@ COMMENT ON COLUMN graphitron_field_navigation.type_name IS 'the type owning the 
 COMMENT ON COLUMN graphitron_field_navigation.field_name IS 'the field whose navigation this row states; with the two columns above the whole key, one row per field of the graph';
 COMMENT ON COLUMN graphitron_field_navigation.basis IS 'which rung answered: CONNECTION_ELEMENT where the field''s named type is structurally a connection and this row names what it paginates, NAMED_TYPE where the field returns what it says it returns. A third rung took the expression the author wrote wherever a macro had rewritten it; it was retired once measurement showed every row it answered is the row these two answer, the expansion''s edges.node being the element the authored expression named.';
 COMMENT ON COLUMN graphitron_field_navigation.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know. Not null on any row, the lowest rung being the field''s own named type, so a reader joins this relation rather than left-joining it';
+COMMENT ON COLUMN graphitron_field_navigation.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
 CREATE TABLE graphitron_argmapping_entry (
   graph_name    VARCHAR NOT NULL,
@@ -13939,7 +13947,7 @@ COMMENT ON COLUMN meta_gatherer.gatherer_class IS 'the fully qualified Java clas
 INSERT INTO meta_gatherer VALUES
   ('configuration', 'no.sikt.graphitron.model.capture.config.ConfigurationFactCapture'),
   ('sdl', 'no.sikt.graphitron.model.capture.sdl.SdlFactCapture'),
-  ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture'),
+  ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture'),
   ('catalog', 'no.sikt.graphitron.model.capture.catalog.CatalogFactCapture'),
   ('code', 'no.sikt.graphitron.model.capture.code.CodeCapture'),
   ('graphql-source', 'no.sikt.graphitron.model.capture.document.GraphQLSourceCapture'),

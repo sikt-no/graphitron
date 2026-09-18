@@ -100,11 +100,13 @@ import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
- * The {@code graphitron_} family, written from two places, and this class holds both.
- * {@link SdlFactCapture} drives the decode below one application at a time while it walks, filling
- * every relation whose rows are a function of one document; {@link #capture} runs afterwards and is
- * the stages that resolve, which need the whole store and could not run inside a walk. The two are
- * one file because they share the vocabulary, not because they share a writer.
+ * The decode of the {@code graphitron_} family: {@link SdlFactCapture} drives it one application at
+ * a time while it walks, filling every relation whose rows are a function of one document.
+ *
+ * <p>The stages that resolve used to sit here too, and are {@link GraphitronAssemblyCapture}'s now.
+ * The two were one file because they share the vocabulary, not because they share a writer or a
+ * moment: a decode is a function of one document and runs where the document is, where a resolution
+ * needs the store whole and cannot run inside a walk at all.
  *
  * <p>A row here is still a transcription, not a conclusion. It restates what an application spelled,
  * in graphitron's vocabulary rather than the document's, so a reader gets typed columns instead of
@@ -145,102 +147,13 @@ public final class GraphitronFactCapture {
      * <p>What lets it run there is a property of the five methods below rather than a concession to
      * their caller: each reads the directive it is handed, buffers rows and queries nothing at all.
      * That is what "the rows are a function of one document" amounts to in code, and it is why the
-     * relations they write can be held to catalog-independence while {@link #capture}'s stages
-     * cannot.
+     * relations they write can be held to catalog-independence while the stages in
+     * {@link GraphitronAssemblyCapture} cannot.
      */
     public static GraphitronFactCapture decodingInto(FactSink sink) {
         return new GraphitronFactCapture(sink);
     }
 
-
-    // ---------------------------------------------------------------- the gatherer's own entry
-
-    /**
-     * The gatherer's stages: each joining, ranking or reaching the catalog, and each reading what
-     * the one before it wrote.
-     *
-     * <p>What is <em>not</em> here any more is the decode. Every relation whose rows are a function
-     * of one document is written by the walk, which holds the parse; what remains is the half that
-     * could not run inside a walk at all, because a resolution needs the whole store. That is the
-     * argument this class was created on, and it was always an argument about anchors: a decode
-     * driven by callbacks "cannot join the coordinate it is decoding against anything" is exactly
-     * right about a resolution and says nothing about a relation that joins nothing.
-     *
-     * <p>A flush inside the load's transaction is what lets one stage read the last one's rows,
-     * and it publishes nothing: macro expansion is driven by the
-     * {@code graphitron_connection_entry} rows the walk produced, and the navigation rule is stated
-     * over the population expansion completes.
-     */
-    public static void capture(FactSink sink, DSLContext dsl, String graphName,
-                               LocalDateTime readAt) {
-        // First of the gatherer's own stages: it reads the transcription alone, and the written
-        // order of a field's applications is what everything below that walks a chain wants.
-        FieldChainApplications.derive(dsl, graphName);
-        TableTypes.derive(dsl, graphName);
-        Nodes.derive(dsl, graphName);
-        NodeKeyColumns.derive(dsl, graphName);
-        MacroCapture.expand(sink, dsl, graphName);
-        sink.flush();
-        // The anchors before every stage that keys at a coordinate, because the expansion above is
-        // the second arm of their population and everything below reads them rather than the union.
-        ElementAnchors.derive(dsl, graphName);
-        navigation(dsl, graphName);
-        // The reference stratum's own resolutions, bottom rung first: what a written table name
-        // resolves to against the catalog census, then the hops a @reference path element could
-        // take, which read it. Every input either was captured before this gatherer ran or is a
-        // plain view over facts that were, so nothing here reads a table a later step writes.
-        SpelledTables.derive(dsl, graphName);
-        FieldReferenceStepHops.deriveKeyed(dsl, graphName);
-        FieldReferenceStepHops.deriveKeyless(dsl, graphName);
-        // Then the bindings, which the routine arm reaches through the hops just written, and then
-        // the walk, which seeds from those bindings and steps through those hops.
-        ResolvedTypeBindings.derive(dsl, graphName);
-        FieldReferenceStepTargets.derive(dsl, graphName);
-        // Then the endpoints, because their target rule reads the navigation two lines above and
-        // their departure reads the bindings above that.
-        FieldEndpoints.derive(dsl, graphName, readAt);
-        // After it, the applications being keyed by the chain the line above establishes.
-        FieldRoutines.derive(dsl, graphName, readAt);
-        // Last of all, resolving the links of each chain in order against the two stages above it:
-        // a link's departure is the previous link's arrival, and a routine link's arrival is what
-        // the line above resolved.
-        FieldTableLinks.derive(dsl, graphName, readAt);
-    }
-
-
-    /**
-     * Which type each field's own generated SQL navigates as, over the population the generator
-     * emits rather than over the document, which is {@code graphitron_field} and the reason the
-     * anchor above it is derived first: the connection's element where the field's named type is
-     * a connection, and the named type itself otherwise.
-     *
-     * <p>Two rungs and not the three this rule used to carry. The retired one took the expression
-     * the author wrote wherever a macro had rewritten it, which was the only rung needing something
-     * no relation held, and therefore the only reason this rule had to be computed where the parse
-     * was. It was also carrying nothing: measured over a consumer-size schema every row it answered
-     * is the row the two rungs below it answer, a synthesised connection's {@code edges.node} being
-     * the element the authored expression named. Stated as one statement rather than as a view
-     * because a reader joins on what it projects and wants an index on that column.
-     */
-    private static void navigation(DSLContext dsl, String graphName) {
-        dsl.insertInto(GRAPHITRON_FIELD_NAVIGATION)
-            .columns(GRAPHITRON_FIELD_NAVIGATION.GRAPH_NAME, GRAPHITRON_FIELD_NAVIGATION.TYPE_NAME,
-                GRAPHITRON_FIELD_NAVIGATION.FIELD_NAME, GRAPHITRON_FIELD_NAVIGATION.BASIS,
-                GRAPHITRON_FIELD_NAVIGATION.NAVIGATED_TYPE_NAME)
-            .select(dsl
-                .select(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
-                    GRAPHITRON_FIELD.FIELD_NAME,
-                    when(GRAPHITRON_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME.isNull(),
-                        val("NAMED_TYPE")).otherwise(val("CONNECTION_ELEMENT")),
-                    coalesce(GRAPHITRON_CONNECTION_ELEMENT_TYPE.ELEMENT_TYPE_NAME,
-                        GRAPHITRON_FIELD.NAMED_TYPE))
-                .from(GRAPHITRON_FIELD)
-                .leftJoin(GRAPHITRON_CONNECTION_ELEMENT_TYPE)
-                .on(GRAPHITRON_CONNECTION_ELEMENT_TYPE.GRAPH_NAME.eq(GRAPHITRON_FIELD.GRAPH_NAME))
-                .and(GRAPHITRON_CONNECTION_ELEMENT_TYPE.TYPE_NAME.eq(GRAPHITRON_FIELD.NAMED_TYPE))
-                .where(GRAPHITRON_FIELD.GRAPH_NAME.eq(graphName)))
-            .execute();
-    }
 
     // ---------------------------------------------------------------- schema-level
 

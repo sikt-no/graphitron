@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.macro;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.grammar.ConnectionNaming;
 import no.sikt.graphitron.model.sink.FactSink;
+import java.time.LocalDateTime;
 import org.jooq.DSLContext;
 
 import java.util.ArrayList;
@@ -277,6 +278,24 @@ public final class MacroCapture {
         fields.add("hasPreviousPage", DESC_HAS_PREVIOUS_PAGE, "Boolean!");
         fields.add("startCursor", DESC_START_CURSOR, "String");
         fields.add("endCursor", DESC_END_CURSOR, "String");
+    }
+
+    /**
+     * The rows this reading stopped minting, deleted once the expansion's own rows have reached the
+     * store.
+     *
+     * <p>Separate from {@link #expand} because it has to run after the flush rather than inside the
+     * pass that buffers: a sweep taken before the rows land would delete what the reading is about
+     * to write. Children before parents, an argument hanging off a field and a field off a type.
+     */
+    public static void sweep(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        for (var table : List.of(GRAPHITRON_MINTED_ARGUMENT, GRAPHITRON_MINTED_FIELD,
+                GRAPHITRON_MINTED_TYPE)) {
+            dsl.deleteFrom(table)
+                .where(table.field(GRAPHITRON_MINTED_TYPE.GRAPH_NAME).eq(graphName))
+                .and(table.field(GRAPHITRON_MINTED_TYPE.TOUCHED_AT).ne(touchedAt))
+                .execute();
+        }
     }
 
     /**

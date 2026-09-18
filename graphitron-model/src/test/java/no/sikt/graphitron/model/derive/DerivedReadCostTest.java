@@ -172,6 +172,10 @@ class DerivedReadCostTest {
      * two moves are offsetting and are stated separately on purpose: a single net figure would hide
      * that one relation arrived and another left.
      *
+     * <p>125 to 126 when the lint rules became a derivation view and the table a writer filled
+     * went with them. Two sessions' work met here: this number fell by three and rose by one in the
+     * same integration.
+     *
      * <p>128 to 125 when the view implementation of nodehood was retired: the resolved type id,
      * the resolved key columns and the inferred membership were each a second spelling of a
      * relation the graphitron gatherer already stores, and the stored ones are the authority.

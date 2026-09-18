@@ -309,10 +309,11 @@ public final class SeededStore {
         dsl.execute("DELETE FROM graphitron_field_navigation");
         dsl.execute("""
             INSERT INTO graphitron_field_navigation
-              (graph_name, type_name, field_name, basis, navigated_type_name)
+              (graph_name, type_name, field_name, basis, navigated_type_name, touched_at)
             SELECT f.graph_name, f.type_name, f.field_name,
                    CASE WHEN ce.type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
-                   COALESCE(ce.element_type_name, f.named_type)
+                   COALESCE(ce.element_type_name, f.named_type),
+                   CURRENT_TIMESTAMP
               FROM graphitron_field f
               LEFT JOIN graphitron_connection_element_type ce
                 ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
@@ -744,6 +745,7 @@ public final class SeededStore {
                 .replace("]", "").replace("!", ""))
             .set(GRAPHITRON_MINTED_FIELD.NON_NULL, typeSdl.endsWith("!"))
             .set(GRAPHITRON_MINTED_FIELD.IS_LIST, typeSdl.startsWith("["))
+            .set(GRAPHITRON_MINTED_FIELD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 
@@ -798,6 +800,7 @@ public final class SeededStore {
             .set(GRAPHITRON_MINTED_TYPE.DIRECTIVE_NAME, CONNECTION_DIRECTIVE)
             .set(GRAPHITRON_MINTED_TYPE.PRECEDENCE, "YIELD")
             .set(GRAPHITRON_MINTED_TYPE.KIND, "OBJECT")
+            .set(GRAPHITRON_MINTED_TYPE.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
     }
@@ -836,6 +839,7 @@ public final class SeededStore {
             .set(GRAPHITRON_MINTED_FIELD.NON_NULL, nonNull)
             .set(GRAPHITRON_MINTED_FIELD.IS_LIST, isList)
             .set(GRAPHITRON_MINTED_FIELD.ITEM_NON_NULL, itemNonNull)
+            .set(GRAPHITRON_MINTED_FIELD.TOUCHED_AT, SEEDED_READING)
             .execute();
     }
 

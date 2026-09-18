@@ -17,6 +17,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_EN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_STEP_ENTRY;
+import static org.jooq.impl.DSL.excluded;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
@@ -88,6 +92,9 @@ final class FactWrites {
         writers.put(GRAPHITRON_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronReferenceForStep);
         writers.put(GRAPHITRON_ARGUMENT_REFERENCE_FOR_STEP_ENTRY, FactWrites::graphitronArgumentReferenceForStep);
         writers.put(GRAPHITRON_MUTATION_ENTRY, FactWrites::graphitronMutation);
+        writers.put(GRAPHITRON_MINTED_TYPE, FactWrites::graphitronMintedType);
+        writers.put(GRAPHITRON_MINTED_FIELD, FactWrites::graphitronMintedField);
+        writers.put(GRAPHITRON_MINTED_ARGUMENT, FactWrites::graphitronMintedArgument);
         writers.put(GRAPHITRON_ROUTINE_ENTRY, FactWrites::graphitronRoutine);
         writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
         writers.put(GRAPHQL_ARGUMENT, FactWrites::graphqlArgument);
@@ -404,6 +411,144 @@ final class FactWrites {
                                row.get(t.TABLE_REF),
                                row.get(t.TABLE_REF_NAMESPACE_PART),
                                row.get(t.TABLE_REF_NAME_PART),
+                               row.get(t.TOUCHED_AT));
+        }
+        batch.execute();
+    }
+
+    /**
+     * The three relations macro expansion mints, which need a stated conflict rule because two
+     * passes of one reading run the expansion and the first-wins claim that guards them is one
+     * sink's memory rather than the store's. Identical rows, so the upsert restates them and moves
+     * the instant on; what the expansion stopped minting is swept where it is minted.
+     */
+    private static void graphitronMintedType(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_MINTED_TYPE;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.SOURCE_COORDINATE,
+                         t.TYPE_NAME,
+                         t.DIRECTIVE_NAME,
+                         t.PRECEDENCE,
+                         t.KIND,
+                         t.DESCRIPTION,
+                         t.TOUCHED_AT)
+                .values(markers(8))
+                .onDuplicateKeyUpdate()
+                .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
+                .set(t.PRECEDENCE, excluded(t.PRECEDENCE))
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.SOURCE_COORDINATE),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.DIRECTIVE_NAME),
+                               row.get(t.PRECEDENCE),
+                               row.get(t.KIND),
+                               row.get(t.DESCRIPTION),
+                               row.get(t.TOUCHED_AT));
+        }
+        batch.execute();
+    }
+
+    private static void graphitronMintedField(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_MINTED_FIELD;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.SOURCE_COORDINATE,
+                         t.TYPE_NAME,
+                         t.FIELD_NAME,
+                         t.DIRECTIVE_NAME,
+                         t.PRECEDENCE,
+                         t.ORDINAL,
+                         t.TYPE_SDL,
+                         t.NAMED_TYPE,
+                         t.NON_NULL,
+                         t.IS_LIST,
+                         t.ITEM_NON_NULL,
+                         t.DESCRIPTION,
+                         t.TOUCHED_AT)
+                .values(markers(14))
+                .onDuplicateKeyUpdate()
+                .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
+                .set(t.PRECEDENCE, excluded(t.PRECEDENCE))
+                .set(t.ORDINAL, excluded(t.ORDINAL))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.SOURCE_COORDINATE),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.FIELD_NAME),
+                               row.get(t.DIRECTIVE_NAME),
+                               row.get(t.PRECEDENCE),
+                               row.get(t.ORDINAL),
+                               row.get(t.TYPE_SDL),
+                               row.get(t.NAMED_TYPE),
+                               row.get(t.NON_NULL),
+                               row.get(t.IS_LIST),
+                               row.get(t.ITEM_NON_NULL),
+                               row.get(t.DESCRIPTION),
+                               row.get(t.TOUCHED_AT));
+        }
+        batch.execute();
+    }
+
+    private static void graphitronMintedArgument(DSLContext dsl, List<TableRecord<?>> rows) {
+        var t = GRAPHITRON_MINTED_ARGUMENT;
+        var batch = dsl.batch(dsl.insertInto(t)
+                .columns(t.GRAPH_NAME,
+                         t.SOURCE_COORDINATE,
+                         t.TYPE_NAME,
+                         t.FIELD_NAME,
+                         t.ARGUMENT_NAME,
+                         t.DIRECTIVE_NAME,
+                         t.PRECEDENCE,
+                         t.ORDINAL,
+                         t.TYPE_SDL,
+                         t.NAMED_TYPE,
+                         t.NON_NULL,
+                         t.IS_LIST,
+                         t.ITEM_NON_NULL,
+                         t.DEFAULT_VALUE_SDL,
+                         t.DESCRIPTION,
+                         t.TOUCHED_AT)
+                .values(markers(16))
+                .onDuplicateKeyUpdate()
+                .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
+                .set(t.PRECEDENCE, excluded(t.PRECEDENCE))
+                .set(t.ORDINAL, excluded(t.ORDINAL))
+                .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
+                .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
+                .set(t.NON_NULL, excluded(t.NON_NULL))
+                .set(t.IS_LIST, excluded(t.IS_LIST))
+                .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+                .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
+                .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+        for (TableRecord<?> row : rows) {
+            batch = batch.bind(row.get(t.GRAPH_NAME),
+                               row.get(t.SOURCE_COORDINATE),
+                               row.get(t.TYPE_NAME),
+                               row.get(t.FIELD_NAME),
+                               row.get(t.ARGUMENT_NAME),
+                               row.get(t.DIRECTIVE_NAME),
+                               row.get(t.PRECEDENCE),
+                               row.get(t.ORDINAL),
+                               row.get(t.TYPE_SDL),
+                               row.get(t.NAMED_TYPE),
+                               row.get(t.NON_NULL),
+                               row.get(t.IS_LIST),
+                               row.get(t.ITEM_NON_NULL),
+                               row.get(t.DEFAULT_VALUE_SDL),
+                               row.get(t.DESCRIPTION),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();

@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
+import no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
@@ -69,6 +70,10 @@ public final class ModelCapture {
         JooqFactCapture.capture(dsl, graph.name(), jooq, readAt);
         CodeCapture.capture(dsl, classpath, config.jooqPackage().orElse(null),
             jooq == null ? null : jooq.codegenLoader(), readAt);
+        // Last, and the ordering is a dependency rather than a preference: these stages resolve
+        // what the author wrote against the catalog and the classpath, so they read every family
+        // above them and would resolve against whichever of those a pass had reached so far.
+        GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
     }
 
     /**
