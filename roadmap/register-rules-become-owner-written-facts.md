@@ -258,9 +258,9 @@ ms against 22.6 ms on a three-graph store, belongs to recursive rules and is the
 
 **Statistics keep both cadences; only the roster changes.** `FactCapture.capture` has two today, and
 the fact-model page prices why: a warm store refreshes inside the capture transaction and runs
-`Materializations.analyse` after it commits, H2's `ANALYZE` committing; a store holding no graph runs
-`refreshAnalysing` outside the transaction, one committed step per registration, analysing each target
-before the next plans against it, and one cold refresh prefix measured 6293 s against 90.8 s with that
+`Materializations.analyse` after it commits, H2's `ANALYZE` committing; a capture into a store no
+registered target holds a row in runs `refreshAnalysing` outside the transaction, one committed step
+per registration, analysing each target before the next plans against it, and one cold refresh prefix measured 6293 s against 90.8 s with that
 cadence. Stages inside one transaction on a cold store would reproduce the 6293 s case rung by rung. So
 both cadences carry across, keyed to stages: warm, the stratum runs inside the transaction and one
 `ANALYZE TABLE` pass follows over every stage-written table; cold, each stage commits and analyses its
@@ -396,7 +396,7 @@ a line in the stage order's gate roster where the writer is jOOQ code rather tha
   empty its subject is gone and it is deleted with the mechanism. What replaces it is the rule bench
   R876 names under "No instrument for any of this lives in the repository", pricing a stage's statement
   against a captured store, and that is R899's instrument rather than this item's to build.
-- **`RefreshPrerequisiteStatisticsTest`'s successor**: on a store holding no graph, every stage's insert
+- **`RefreshPrerequisiteStatisticsTest`'s successor**: on a store no registered target holds a row in, every stage's insert
   plans against analysed tables for every table its rule reads, asserted the way the test asserts it
   today over registrations.
 - **`MetaDeclarationGateTest`** binds on every converted relation's declaration, including the

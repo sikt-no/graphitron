@@ -1,7 +1,7 @@
 ---
 id: R953
 title: "The first refresh on a store plans the recursive chain with no statistics, and one default selectivity costs the pass a hundredfold"
-status: Ready
+status: In Review
 bucket: bug
 priority: 1
 theme: dev-loop
@@ -14,7 +14,9 @@ last-updated: 2026-09-18
 
 ## Goal
 
-A consumer's first `graphitron:generate` or `graphitron:dev` round on a fresh fact store finishes its materialization refresh in the seconds the same statements take on a settled store, instead of the 2662 s a round on the `sis` consumer paid after R943 landed. The refresh pass (the `INSERT ... SELECT` per `meta_materialize` registration that fills each derived target table) is planned with the statistics it needs before it runs: the cadence that analyses each target as it fills it is taken on the store that needs it, rather than defeated by an anchor row some earlier writer in the build left behind, and the one column whose default selectivity costs the pass a hundredfold states its value in the model instead of waiting for a measurement that cannot run inside a transaction. A first round is then bounded by what the rules cost, not by which cadence the store happened to fall into.
+A consumer's first `graphitron:generate` or `graphitron:dev` round on a fresh fact store plans its materialization refresh against the statistics that refresh needs, rather than against none at all. The refresh pass (the `INSERT ... SELECT` per `meta_materialize` registration that fills each derived target table) now reaches the planner with two facts it had been reaching it without. The cadence that analyses each target as it fills it is taken on the store that needs it, decided on the register's own state rather than defeated by an anchor row some earlier writer in the build left behind; and the one column whose default selectivity costs the pass a hundredfold, the partition dimension, states its value in the model instead of waiting for a measurement that cannot run inside a transaction. A first round is then bounded by what the rules cost, not by which cadence the store happened to fall into.
+
+**What this does not claim, and why the claim was narrowed.** This item was filed against a number, the 2662 s a round on the `sis` consumer paid after R943 landed, and its goal promised that round would finish in the seconds the same statements take on a settled store. That number is not this item's to promise alone. R954 is open and holds the other half of the same pass, the *number* of evaluations where this item holds the cost of one, and the two multiply; a round on the shipped tree can be far better than 2662 s and still not be in seconds, with the residue belonging there. The goal above is what this item delivers and what the tree demonstrates. The wall clock of a consumer round is the two items' jointly, and R954's Done gate is where it is owed. The Tests section records why the re-measurement that would have settled it at this item's delivery was not obtainable.
 
 ## What was measured
 
@@ -40,54 +42,49 @@ Plain `EXPLAIN` does not print a recursive CTE's plan, which is why the round's 
 
 ## Implementation
 
-Two levers, and the item ships both. They close different halves and neither subsumes the other: lever 1 restores the cadence that gives every registration statistics on the relations it reads, and lever 2 states the one fact no cadence can supply to a pass that has to plan inside a transaction. The item's third lever, registering `intent_field_reference_step_target`, is not planned here; R954 phase 2 lands the same rows by a different route, and "Relation to other items" below records that split.
+Both levers shipped. What each one is and why it is the shape it is now lives in
+the code it landed as, which is where a reader meets it; what follows is where to
+look and what the gate should know.
 
-### Lever 1: decide the cadence on the fact it depends on
+**Lever 1, the cadence is decided on the register, shipped at `1da1f07`.** `FactCapture.capture` had computed the cadence from
+`!dsl.fetchExists(STORE_GRAPH)`, a proxy three unrelated writers of the anchor row
+defeat, the build's own run-configuration capture among them, so every consumer
+build took the in-transaction cadence on a store with no statistics anywhere.
+`Materializations.analysingCadenceApplies` is the predicate now, over the
+register's own state, and its javadoc carries the two conditions the cadence rests
+on, the single witness for both, and what the wider predicate newly admits.
+`RunStore`'s separate reading of the same row was named as the second instance and
+deliberately left alone.
 
-`FactCapture.capture` computes `firstGraph` as `!dsl.fetchExists(STORE_GRAPH)` before it opens its load transaction, and that condition is a proxy for the two facts the cadence actually turns on, defeated by writers it does not know about. Three writers reach the anchor row ahead of a capture. `ModelCapture.writeGraph` is the build path's: `AbstractRewriteMojo.captureModel` writes the run-configuration families through `CapturePort.captureModel` before it hands the same store to the generator, and that pass leads with the anchor. `OwnedGraphPartition.prepare` and `CompileFacts.writeRound` are the dev session's, minting the anchor so a diagnostics row has something to hang its foreign key on. The store under `target/graphitron-model` is fresh on every build and has an anchor row by the time the check runs, so every build takes the in-transaction cadence with no statistics anywhere. That is the path every slow log we hold was taken on.
+**Lever 2, the store declares its partition dimension's selectivity, shipped at
+`cf5f6ff`.** `no.sikt.graphitron.model.catalog.GraphPartition` is the one home for
+the partition column, the census of relations carrying it and the declared value;
+`GraphitronModelStore.create` sweeps one `ALTER ... SELECTIVITY` per graph-keyed
+base table where the DDL runs, and the DDL header states the rule where a reader of
+a `CREATE TABLE` meets it. Scope is every graph-keyed base table rather than the
+registered targets, for the reason "Other solutions" records. The lever falsified
+`StoreStatistics.analysed`, which landed repaired in the same commit.
 
-**The defect is a class, not an ordering accident, which is why the fix is the predicate.** `store_graph`'s presence is read as three different facts by three consumers. The ownership readers, `OwnedGraphPartition.prepare` and `CompileFacts.writeRound`, ask what the row states: this partition exists and which base directory owns it. `RunStore` reads `fetchExists(STORE_GRAPH, graph = ...)` as whether this graph has ever been captured. `FactCapture` reads it as whether the analysing cadence is safe and useful, which is a fact about the register rather than about the anchor, and it is the one that broke. Repairing the ordering so that no writer mints a row before the check would restore the proxy rather than remove it, and would make the cadence's correctness a standing invariant over three unrelated writers with nothing enforcing it. `RunStore`'s read is named here as the second instance and deliberately left alone; it is not this item's to re-site.
+**Lever 3 is not this item's.** Registering `intent_field_reference_step_target` was
+dropped from this plan at Spec; R954 phase 2 lands the same rows by a different
+route, and "Relation to other items" records the split.
 
-Replace the proxy with the fact. `Materializations` gains a predicate over its own register and `FactCapture` asks it exactly where it asks `fetchExists` today, before the transaction opens. It is the conjunction of the two conditions `refreshAnalysing`'s contract rests on, and both stay named in the code rather than fusing into one boolean, because one name for two conditions is what made `firstGraph` spellable as a proxy in the first place:
+**Measurements re-established after R956 at `bb76f73`,** which converted the
+relation lever 2 was measured on into two keyed arm tables under a union view;
+`75dd92a` repaired a conflict marker that commit left in the fact-model page. "What
+R956 changed under this item" below carries the reading.
 
-- **Safety.** The cadence commits per registration, which is admissible exactly when the pass's `DELETE`s remove no committed row. A graph-keyed target is emptied for one graph and a graph-free one whole, which is the split `Materializations.refreshPartition` and `refreshWhole` carry.
-- **Benefit.** The plans that move are the ones reading a registered target, and `ANALYZE` on an empty table records nothing, so a store whose targets are all empty carries no statistics worth planning against, whatever `store_graph` says.
+**Sequencing, as it happened.** Lever 2 landed first and lever 1 second, which is
+the order this plan proposed; the Spec gate considered splitting the two into
+separate items at `35a745d` and did not.
 
-The witness for both is that no registered target holds a row. **Unqualified by graph, deliberately:** `refreshWhole` does not scope its `DELETE` by `graph_name`, so a predicate narrowed to "no target holds a row for the capturing graph" would be unsafe for the first graph-free registration anybody adds. The local `firstGraph` is renamed with it; after this lever that name states the proxy rather than the fact.
-
-Nothing else about the two paths changes: the facts, the anchor row and the hand-written derivations are written the same way on both, as they are now. Cost is one `EXISTS` per registration against an empty or small table, issued once per capture, over the registrations `Materializations.refreshOrder` already reads.
-
-**What the wider predicate admits, stated here rather than found at review.** The new predicate is strictly wider: every store that takes the analysing cadence today still takes it, plus the fresh store whose anchor a non-capture writer minted, plus one case today's cannot reach. A workspace store can hold a live sibling graph whose registered targets are all legitimately empty (a thin schema leaves most of the roster empty, and `RefreshPlanStatisticsTest` records two registrations empty at every fixture size), and a second graph captured into it now takes the analysing cadence beside that live sibling. Today "`store_graph` is empty" essentially means "no sibling exists", so this is new. It is safe and the reasoning is worth keeping: the graph-keyed `DELETE`s are scoped to the capturing graph, so no row of the sibling's partition moves; `Materializations.anchor` takes the capturing graph's `store_graph` row `FOR UPDATE`, so it does not serialize against a concurrent capture of the sibling and does not need to; and what a reader of the sibling can newly observe is this graph's rows arriving between per-registration commits, which is the partial state `Materializations.refreshAll` already publishes on every reader open. The one residue is a graph-free registration, whose whole-table `DELETE` would be visible mid-pass to a sibling's reader. No registration is graph-free today, all 23 targets carrying `graph_name`, and the day one arrives it is the predicate's `refreshWhole` half that has to be revisited.
-
-**The selector has no enforcer today, and that is why this shipped.** `RefreshPrerequisiteStatisticsTest` holds the cadence's contract in both directions and pins nothing about which cadence a capture picks: it calls `Materializations.refresh` and `Materializations.refreshAnalysing` directly. The invariant that broke lives in three javadoc paragraphs and no test. The Tests section below closes that, and it is the lever's real deliverable rather than a check on it.
-
-**Prose that states the retired proxy as the rule**, all of which moves in the same commit: `Materializations`'s class javadoc, `refreshAnalysing`'s javadoc in two places, `analyse`'s javadoc, `FactCapture.capture`'s javadoc and the inline comments at both branches, `WarmStartRefreshTest`'s recovery-round javadoc, the cold-store framing in `RefreshPlanStatisticsTest` and `RefreshPrerequisiteStatisticsTest`, and two sentences of `docs/architecture/explanation/fact-model.adoc` under "Derived reads are views, not stored facts" (the pair contrasting a capture into a store that already holds a graph with one into a store that holds none). The phrase to retire everywhere is "a store that holds no graph"; what replaces it is a store no registered target holds a row in.
-
-### Lever 2: state the partition column's selectivity
-
-`graph_name` holds one value per partition and a store holds one or a few partitions, so its selectivity is a static fact about the model rather than a measurement of a population. H2 reports 50 for a column no `ANALYZE` has looked at, which `StoreStatistics.UNANALYSED` records as verified on 2.4.240, and 50 on a partition column is what prices the one-column foreign-key index below `ix_field_reference_step_hop_step` for the recursive chain's base arm. Declaring `SELECTIVITY 1` restores the fast plan with every other column left at the default, which is the copy reading in the table above and state (c) of R954's three-regime measurement.
-
-This is the only lever that reaches a pass planning inside a transaction, and that is why it survives lever 1 rather than being made redundant by it. `ANALYZE` commits, so an in-transaction refresh can never run one; lever 1 takes the first capture off that cadence and leaves every other capture on it, a second graph into a warm workspace store included. There the declared value is all the planner has.
-
-**Declared, not measured, and the DDL has to say so.** The value is a floor chosen so a partition column can never price as decisive, not an estimate of anything. On a small relation it is wrong in the conservative direction on purpose, which is exactly what makes it durable: a measured value is right for one population and this one is right for the shape. Without that sentence written down, the next reader corrects it to a measurement and the cliff returns. `meta_materialize.reason`'s own doctrine is the precedent, a registration that cannot say why it is a registration not being one.
-
-**Scope: every base table carrying a `graph_name` column**, 226 of the schema's 270, rather than the 23 registered targets alone. Register membership is a consumer's question and the wrong key for this fact: `graph_name` is low-cardinality because it is a partition dimension, not because the register happens to name the relation, and the same trap is live on the captured fact tables the refresh reads inside the same transaction. It is also the scope that survives its neighbours, since R954 and R955 are dismantling the register itself and R955 already assumes this lever lands per stage-written table. The narrower scope is the cheaper diff and is what the item filed; it is recorded under "Other solutions" as the arm not taken.
-
-**Site: a sweep at schema creation**, in `GraphitronModelStore.create`, after the DDL statements execute and before the commit that closes it, issuing one `ALTER TABLE ... ALTER COLUMN graph_name SELECTIVITY 1` per graph-keyed base table. `create` runs exactly where the DDL runs, once per store creation and never on reopen, so the sweep costs what a DDL line would and runs when it would; a per-open sweep is a write on the read path and is not what this is. The argument for the sweep over 226 hand-written `ALTER` lines is not convenience but construction: over the whole class of graph-keyed tables the sweep makes the invariant true by construction, where 226 explicit lines make it an invariant that then needs its own gate to stop the 227th relation from silently lacking it. The shipped precedents point the same way, `StoreRefresh` deriving its ownership scope from the column rather than from a list and `Materializations.graphKeyedRelations` asking `INFORMATION_SCHEMA` with a javadoc on why it cannot be one.
-
-**The rule still belongs in the DDL even though the mechanism does not.** `graphitron-model.sql` is where a reader learns what the store asserts, and a reader of `CREATE TABLE ... graph_name` would not meet a fact stated only in Java. One sentence in the DDL header, beside the partition conventions already there, saying that boot states `SELECTIVITY 1` on the partition dimension and why. The precedent is `meta_materialize_dependency`, derived at boot with its rule stated in the DDL's own comments.
-
-**Name the graph-keyed predicate once.** The sweep would be the fourth spelling of "does this relation carry `graph_name`": `Materializations.graphKeyedRelations` asks `INFORMATION_SCHEMA`, `StoreRefresh` and `FactSchemaGateTest` each ask the generated jOOQ table for the field. Two consumers evaluating one predicate over a model field is the branch belonging in the model, so this lever is where the predicate gets one home that the sweep, the materializer and the statistics reader below all read.
-
-**Lever 2 falsifies `StoreStatistics.analysed` and owes its repair in the same commit.** That helper decides "has this relation been analysed" as any column reporting something other than 50, and its javadoc claims a false positive is impossible because an unanalysed relation reports 50 on every column. After this lever every graph-keyed base table reports 1 on `graph_name` from the instant the DDL runs, so a never-analysed relation reads as analysed. Both current callers survive only by accident, `StoreStatistics.reset` putting every column back to 50 and erasing the declaration before they look. The predicate has to exclude the declared partition column, reading it from the one home above rather than from a second spelling, and the javadoc's impossibility claim has to be restated. It is a small edit and it is invisible from this lever's own description, which is why it is named here.
-
-`Materializations.analyse` overwrites the declared value with the measured one on its next run, which is correct and not a loss: on a store with one partition the measured value is 1, and on a workspace store with four graphs it is 4. The declaration is the floor that holds during the window before any `ANALYZE` has run, which is exactly the window the defect lives in.
-
-### Sequencing
-
-Lever 2 lands first, as this item's first commit. It carries the measurement, it is the whole of the priority-1 fix on the symptom R954 phase 3 priced, and two other Spec items name it as a floor they build on. That is a commit order rather than an item split: plans describe what to do and not how many commits land it, and nothing in lever 1 is upstream of lever 2. The Spec gate may still prefer the split, and the case for it is real (the two levers are independent axes, their acceptance evidence is two different tests, and a sibling item would let lever 2 clear its gate without waiting on lever 1's review); what it costs is a second number and a re-cut title, this item's own naming both defects. The gate decides.
-
-What must not follow from landing lever 2 first is lever 1 being read as optional once the clock looks better. Its case is the modelling one and does not rest on the residual cost: the cadence's benefit condition covers every registration whose plan moves, which `RefreshPlanStatisticsTest` pins at eight of twenty-three, where lever 2 removes one index choice. A predicate on the fact it depends on is right whether or not anything is measurably slow afterwards.
+**What the first Done gate sent back, and what the rework did.** Three findings,
+recorded in full below with their resolutions. The two prose ones are fixed. The
+one that matters is the first: the consumer re-measurement this section's Tests
+asked for at delivery could not be taken from this repository, so the Goal is
+narrowed to what the tree demonstrates and the wall-clock number is named as owed
+at R954's gate. That is a change to what this item claims, and judging it is the
+next gate's first job rather than a detail of this one.
 
 ## Tests
 
@@ -101,7 +98,9 @@ Four claims, each in the tier that can hold it, and none of them a wall clock: a
 
 **The declaration is worth what it is claimed to be worth.** The figure behind the goal, and the only claim here that measures rather than asserting state. On a captured store put back to `SELECTIVITY 50` on every column and then given the partition-column declaration alone, reading `intent_node_id_instruction_live` visits within a stated factor of what it visits on a fully analysed store. The instrument is `EXPLAIN ANALYZE`'s summed `scanCount`, which `DerivedReadCostTest` already carries and which is a row count rather than a clock, so it reads the same on every machine. It is worth a test of its own rather than being left to the plan comparison above because `EXPLAIN` without `ANALYZE` does not print a recursive CTE's plan at all, which is what hid the index choice from every cheaper instrument until a scan count made it visible. The figure is measured at implementation and stated in the test, not guessed here.
 
-A fifth thing is deliberately not tested. Nothing asserts the wall clock of a `sis` round, that store being a consumer's rather than the repository's, and the goal's "in the seconds the same statements take on a settled store" is demonstrated by the four claims above plus one recorded re-measurement on the consumer at delivery, reported at the Done gate rather than held by a test.
+A fifth thing is deliberately not tested, and a sixth turned out not to be obtainable. Nothing asserts the wall clock of a `sis` round, that store being a consumer's rather than the repository's. Beyond that, this section had asked for one recorded re-measurement on the consumer at delivery, reported at the Done gate rather than held by a test, and the first Done gate found it missing; the finding is below. It is not supplied, and the reason is that it cannot be from here. No `sis` store exists in this repository, the figures above were taken on a copy held by the session that took them, and that copy went with the session. Reaching one again means the consumer supplying a fresh copy, which is a thing to arrange rather than a step to run.
+
+So the second arm of that finding is the one taken: the Goal above is narrowed to what this item delivers and what the four claims demonstrate, and the wall-clock number is named as jointly R954's and owed at that item's gate, which has a consumer measurement in its own plan. What is lost by narrowing is worth stating plainly rather than burying: nobody has yet watched a consumer round on the shipped tree, so the size of what these two levers buy at consumer scale is inferred from the mechanism and from R867's measurement of the same cadence substitution (6293 s against 90.8 s on a captured consumer store), not observed. A reviewer who thinks the item should not close without that observation should say so; the alternative is holding this item open on a dependency neither it nor the repository controls.
 
 ## What R956 changed under this item
 
@@ -112,6 +111,8 @@ On the single hop table, the decode-hop rule's read visited 10939 rows with the 
 Two consequences for this item's acceptance evidence. `RefreshPlanStatisticsTest`'s pinned set is eight of twenty-four rather than the four this plan predicted: the declaration takes `intent_node_id_instruction_live` out, and three registrations join whose cold plans differ from their analysed ones on the declared regime as they did on the unstated one. And the consumer-scale figures in "What was measured" above were taken on the single-table shape, so the re-measurement this item's Tests section asks for at delivery is now the only evidence for what a `sis` round pays on the shape that ships.
 
 ## Reviewer findings
+
+Done-gate round 1, withheld, and addressed in the rework commit that follows it; the resolution of each finding is recorded under it. The findings are kept rather than deleted so the next gate can judge the answers against what was asked.
 
 Done-gate round 1, withheld. Both levers are implemented as this plan describes
 them, and the implementation is not what sends this back. What sends it back is
@@ -179,6 +180,9 @@ What would satisfy it, either arm:
   deliver, so it belongs in the body where the next gate reads it, not in a
   reviewer's note.
 
+
+**Resolved by narrowing the claim, not by measuring.** The measurement cannot be taken from this repository and the Tests section now says so and why. The Goal is rewritten to the outcome this item delivers and the four claims demonstrate, with the wall-clock number named as jointly R954's and owed at that item's gate. The next gate's question on this finding is whether that narrowing is honest or whether it is a goal trimmed to fit what shipped; the case for it is that R954 genuinely holds the other multiplicand and the tree cannot separate the two, and the case against it is that this item was filed against the number and no longer promises it.
+
 ### 2. The retirement sweep left three live uses of the retired phrase (question 1)
 
 This item declares `"a store that holds no graph"` retired everywhere as the
@@ -203,6 +207,9 @@ in the same register as the sanctioned survivor; the reviewer reads that as
 within the exemption rather than a fourth instance. Worth adding to the survivor
 sentence when the body is next touched, so the next sweep does not re-raise it.
 
+
+**Resolved.** `docs/architecture/explanation/fact-model.adoc` now reads "a capture into a store no registered target holds a row in" at the per-gatherer transaction-control rule, and R955's two premises are corrected the same way, minimally and without touching that item's plan. `FactCapture.capture`'s inline comment is added to the sanctioned survivors in Retired vocabulary, which is where the reviewer suggested it belonged.
+
 ### 3. The body still reads as an unexecuted plan
 
 The Done gate's precondition is that the body reflects what shipped: phases
@@ -213,11 +220,14 @@ a question answered at `35a745d` and settled by two commits landing in the order
 this section proposed. Collapse both to what landed and where, and name the
 re-measurement of finding 1 as the remaining work.
 
+
+**Resolved.** Implementation is four one-line landing notes with their SHAs, Sequencing is folded into it as what happened rather than what to do, and the remaining work is named as finding 1 above.
+
 ## Retired vocabulary
 
 Three names go, and the sweep at the Done gate is over prose as much as over code.
 
-- **"a store that holds no graph"**, and its variants ("a store holding no graph", "a store that holds no graph at all"), as the condition the analysing refresh cadence turns on. What replaces it is *a store no registered target holds a row in*. One deliberate survivor: `Materializations.analysingCadenceApplies`' javadoc quotes the phrase to say what the predicate used to be and why the proxy broke, which is history rather than a live claim.
+- **"a store that holds no graph"**, and its variants ("a store holding no graph", "a store that holds no graph at all"), as the condition the analysing refresh cadence turns on. What replaces it is *a store no registered target holds a row in*. Two deliberate survivors, both quoting the phrase to say what the predicate used to be and why the proxy broke, which is history rather than a live claim: `Materializations.analysingCadenceApplies`' javadoc, and the inline comment at `FactCapture.capture`'s selector. The first Done gate's sweep found three live uses that had been missed and are now fixed, in `docs/architecture/explanation/fact-model.adoc` under the per-gatherer transaction-control rule and twice in R955's body; a sweep that greps this file's own declaration will still hit this section, which declares the retirement rather than asserting the mechanism.
 - **"first graph" / "first-graph refresh cadence" / the local `firstGraph`**, as a name for that cadence or for the capture that takes it. What replaces it is *the analysing refresh cadence*, and the local is `analysingCadence`.
 - **`Materializations.graphKeyedRelations`**, the private census of relations carrying `graph_name`. It is `no.sikt.graphitron.model.catalog.GraphPartition.keyedRelations` now, beside `keyedBaseTables`, `COLUMN` and `DECLARED_SELECTIVITY`, which is the one home this item's lever 2 gives the predicate.
 
