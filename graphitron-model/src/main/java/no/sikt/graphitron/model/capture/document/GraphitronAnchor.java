@@ -661,6 +661,7 @@ public final class GraphitronAnchor {
     private static Table<?> routineApplications(DSLContext dsl, String graph) {
         var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
         var ix = GRAPHQL_AST_ENTRY;
+        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
         var ef = GRAPHQL_ELEMENT_FIELD;
         return dsl
             .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
@@ -672,8 +673,12 @@ public final class GraphitronAnchor {
             .from(fd)
             .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
                 ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME),
-                ef.COORDINATE.eq(ix.ELEMENT_COORDINATE))
+            // The coordinate comes off the enclosing element's own entry rather than off a
+            // column on the index, which the supertype split moved: the index states the position
+            // and the element entry beside it states what is written there.
+            .join(ee).on(ee.GRAPH_NAME.eq(ix.GRAPH_NAME), ee.SOURCE_NAME.eq(ix.SOURCE_NAME),
+                ee.SOURCE_LINE.eq(ix.PARENT_LINE), ee.SOURCE_COLUMN.eq(ix.PARENT_COLUMN))
+            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
             .where(fd.GRAPH_NAME.eq(graph))
             .and(fd.NAME.eq("routine"))
             .and(ef.ARGUMENT_NAME.isNull())

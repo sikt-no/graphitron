@@ -14,8 +14,8 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toUnmodifiableSet;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_TYPE_ID;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -34,8 +34,8 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * further in. Every component below is a captured fact and none is inferred: the table's own names
  * from {@code sql_table}, its columns from {@code sql_column}, its primary key through
  * {@code sql_primary_key}, the per-schema {@code Tables} constants class from
- * {@code sql_schema.tables_class_fqn}, the key list from {@code intent_resolved_node_key_column} and
- * the wire id from {@code intent_resolved_node_type_id}.
+ * {@code sql_schema.tables_class_fqn}, the key list from {@code graphitron_node_keycolumn} and
+ * the wire id from {@code graphitron_node}.
  *
  * <p>The constants class is the component worth naming, because its absence is what kept table
  * references walk-side. It is per schema and reachable only by loading it off the codegen classpath,
@@ -60,7 +60,7 @@ public final class StoreNodeTables {
      * caller, so repointing it edits one set.
      */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_NODE_KEYCOLUMN,
-        INTENT_RESOLVED_NODE_TYPE_ID, INTENT_RESOLVED_TYPE_BINDING, SQL_COLUMN,
+        GRAPHITRON_NODE, INTENT_RESOLVED_TYPE_BINDING, SQL_COLUMN,
         SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY, SQL_SCHEMA, SQL_TABLE);
 
     /**
@@ -136,7 +136,7 @@ public final class StoreNodeTables {
 
     private static List<Binding> bindings(DSLContext dsl, String graphName) {
         var b = INTENT_RESOLVED_TYPE_BINDING;
-        var i = INTENT_RESOLVED_NODE_TYPE_ID;
+        var i = GRAPHITRON_NODE;
         return dsl.select(i.TYPE_NAME, i.TYPE_ID, b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
             .from(i)
             .join(b).on(b.GRAPH_NAME.eq(i.GRAPH_NAME), b.TYPE_NAME.eq(i.TYPE_NAME),

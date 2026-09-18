@@ -6,7 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_INFERRED_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
@@ -24,7 +25,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_inferred_node_type} and {@code graphitron_node_type} return: which of a graph's
+ * What {@code graphitron_node} and {@code graphitron_node_type} return: which of a graph's
  * types are node types, from the authored population and the inferred one. The generator answers the
  * same question live in {@code NodeDeclaration.isNodeType}, so what these cases pin is that the
  * relations agree with that predicate arm for arm, over rows a real capture can produce and a few it
@@ -73,7 +74,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
-            assertThat(inferred(dsl)).containsExactly("Inventory");
+            assertThat(nodes(dsl)).containsExactly("Inventory");
             assertThat(nodeTypes(dsl)).containsExactly("Inventory");
         });
     }
@@ -90,7 +91,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
             assertThat(nodeTypes(dsl)).isEmpty();
         });
     }
@@ -107,7 +108,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -122,7 +123,7 @@ class NodeTypeTest {
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
             seedImplements(dsl, GRAPH, "Inventory", "Node");
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -140,7 +141,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "no_such_column");
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -153,7 +154,7 @@ class NodeTypeTest {
             seedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "STRING", "Inventory", null,
                 "ABSENT", null);
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -172,7 +173,7 @@ class NodeTypeTest {
                 seedNodeKeyColumn(dsl, PKG, schema, "inventory", 0, "inventory_id");
             }
 
-            assertThat(inferred(dsl))
+            assertThat(nodes(dsl))
                 .as("two candidates are two key tuples, so neither answers")
                 .isEmpty();
         });
@@ -188,10 +189,12 @@ class NodeTypeTest {
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
             derive(dsl);
-            assertThat(dsl.select(INTENT_INFERRED_NODE_TYPE.TABLE_SOURCE_NAME,
-                    INTENT_INFERRED_NODE_TYPE.TABLE_SCHEMA, INTENT_INFERRED_NODE_TYPE.TABLE_NAME)
-                .from(INTENT_INFERRED_NODE_TYPE)
-                .where(INTENT_INFERRED_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
+            var b = GRAPHITRON_TABLETYPE;
+            assertThat(dsl.select(b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
+                .from(GRAPHITRON_NODE)
+                .join(b).on(b.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME),
+                    b.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
+                .where(GRAPHITRON_NODE.GRAPH_NAME.eq(GRAPH))
                 .fetch()
                 .map(r -> r.value1() + "/" + r.value2() + "/" + r.value3()))
                 .containsExactly(PKG + "/" + PUBLIC + "/inventory");
@@ -207,7 +210,7 @@ class NodeTypeTest {
             seedNode(dsl, GRAPH, "Film");
 
             assertThat(nodeTypes(dsl)).containsExactly("Film");
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -240,7 +243,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
-            assertThat(inferred(dsl)).containsExactly("Inventory");
+            assertThat(nodes(dsl)).containsExactly("Inventory");
             assertThat(nodeTypes(dsl))
                 .as("the union dedupes, so precedence never arises")
                 .containsExactly("Inventory");
@@ -277,7 +280,7 @@ class NodeTypeTest {
             seedStatedNodeMetadata(dsl, PKG, PUBLIC, "inventory", "Inventory");
             seedNodeKeyColumn(dsl, PKG, PUBLIC, "inventory", 0, "inventory_id");
 
-            assertThat(inferred(dsl)).isEmpty();
+            assertThat(nodes(dsl)).isEmpty();
         });
     }
 
@@ -309,13 +312,24 @@ class NodeTypeTest {
 
     // ===== Reads =====
 
-    private static List<String> inferred(DSLContext dsl) {
+    /**
+     * The types nodehood admitted, off the relation that decides it.
+     *
+     * <p>This read used to go to a relation holding the inferred arm alone, which is what the
+     * cases below were written against. The arm is not separately stated any more: the authority
+     * is one relation carrying both, by a decision this migration already took, so a case that
+     * used to say "not inferred" says "not a node" here. Every case that turns on the difference
+     * says the same thing either way, because a type the inferred arm refused is a type nothing
+     * else admits unless it wrote the directive, and one that wrote it and is published too is one
+     * row in both readings.
+     */
+    private static List<String> nodes(DSLContext dsl) {
         derive(dsl);
-        return dsl.select(INTENT_INFERRED_NODE_TYPE.TYPE_NAME)
-            .from(INTENT_INFERRED_NODE_TYPE)
-            .where(INTENT_INFERRED_NODE_TYPE.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_INFERRED_NODE_TYPE.TYPE_NAME)
-            .fetch(INTENT_INFERRED_NODE_TYPE.TYPE_NAME);
+        return dsl.select(GRAPHITRON_NODE.TYPE_NAME)
+            .from(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(GRAPH))
+            .orderBy(GRAPHITRON_NODE.TYPE_NAME)
+            .fetch(GRAPHITRON_NODE.TYPE_NAME);
     }
 
     private static List<String> nodeTypes(DSLContext dsl) {

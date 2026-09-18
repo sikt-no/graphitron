@@ -289,17 +289,6 @@ class SupertypeSignatureGateTest {
         // where the entry carries that by being keyed at the position, so the two share no payload
         // and this tranche has one row for @node rather than two.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
-<<<<<<< HEAD
-        // One decode and one resolution of it, and the payload is one column because a deprecation
-        // carries one thing: the replacement hint. The three anchors this used to name were one
-        // relation each for a directive, an argument of one, and a field of an input object, and
-        // the argument against collapsing them was that no two share a coordinate and a collapsed
-        // relation would need a nullable one beside a column saying which of three things a row is
-        // about. That turned out to be wrong in its premise rather than its reasoning: all three
-        // spell a coordinate, and the grammar already tells them apart, so the collapsed relation
-        // keys on the coordinate with neither a nullable column nor a discriminator.
-        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"));
-=======
         // @routine's columnMapping pairs, which pair on both payload columns because a pair is its
         // two names and nothing else. The keys differ the way this whole tranche's do: the entry is
         // keyed at the position the application was written at plus the index the grammar gave the
@@ -309,18 +298,15 @@ class SupertypeSignatureGateTest {
         // second reading of the string.
         Set.of("graphitron_ast_routine_column_mapping_pair_entry",
                "graphitron_routine_column_mapping_pair_entry"),
-        // One decode and three resolutions of it, and the payload is one column because a
-        // deprecation carries one thing: the replacement hint. What differs is what was deprecated
-        // and how the author said it, which is the key and the relation, not the payload. So this
-        // set is not a supertype owed but the shape working: an entry keyed where the marker was
-        // written, and three anchors keyed by what it marked, because the one decode reaches a
-        // directive, one of its arguments, or a field of an input object, and no two of those share
-        // a coordinate. Collapsing them needs a relation with a nullable coordinate and a column
-        // saying which of three things a row is about, which is the shape every split in this
-        // family was made to avoid.
-        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated_directive",
-               "graphitron_deprecated_directive_argument", "graphitron_deprecated_input_field"));
->>>>>>> 2504a3b4e (The columnMapping pairs are decoded where they were written)
+        // One decode and one resolution of it, and the payload is one column because a deprecation
+        // carries one thing: the replacement hint. The three anchors this used to name were one
+        // relation each for a directive, an argument of one, and a field of an input object, and
+        // the argument against collapsing them was that no two share a coordinate and a collapsed
+        // relation would need a nullable one beside a column saying which of three things a row is
+        // about. That turned out to be wrong in its premise rather than its reasoning: all three
+        // spell a coordinate, and the grammar already tells them apart, so the collapsed relation
+        // keys on the coordinate with neither a nullable column nor a discriminator.
+        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as
@@ -364,8 +350,7 @@ class SupertypeSignatureGateTest {
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_node_id_instruction_live|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
-        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
-        "intent_resolved_node_key_column|sql_constraint_column,sql_node_key_column");
+        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

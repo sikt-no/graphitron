@@ -4690,3 +4690,73 @@ the losing side of a duplicate declaration, so two documents declaring one name 
 when the files are read and one when the registry is split. No caller on this path can reach that
 difference, the merge having happened before capture was called, and it is the same loss the walk's
 pass already carries.
+
+## R952 absorbed, and the nodehood merge had two implementations (2026-09-18)
+
+R952 was filed to move `intent_node_metadata_defect` to the family whose relations it reads, and to
+split it per grain because eight of its ten defect values sit at the metadata row's grain and two at
+the key-column entry's. Absorbed here because the capture stages read it and the move needed
+settling before they move. Looking at it properly turned up something the item had not seen, and the
+answer is neither the move nor the split.
+
+**The nodehood merge exists twice.** `graphitron_node` and `graphitron_node_keycolumn` are stored
+relations written by the graphitron gatherer, merging what the author wrote with what the generated
+class published, each carrying which tier answered. Beside them stood `intent_resolved_node_type_id`
+and `intent_resolved_node_key_column`, restating the same tiers, the same dense-rank pick and the
+same well-formedness gate as views, with `intent_inferred_node_type` as the published arm both
+leaned on. That is why the defect rule appeared to have four readers: it was two readers, counted
+once per implementation.
+
+The live side had already moved without the dead side being removed. `intent_resolved_node_key_shape`,
+the busiest consumer in the neighbourhood at seven readers, already stood on
+`graphitron_node_keycolumn`; `intent_resolved_node_key_column` had no production reader at all; and
+`intent_resolved_node_type_id` had one, `StoreNodeTables`, which took two columns
+`graphitron_node` carries.
+
+### What the retirement settled, which was not only duplication
+
+Three cases failed when their reads were swapped onto the stored relations, and each was the view
+admitting something the stored relation's foreign keys forbid. A pinned column the table lacks was
+forwarded as though resolved, where the stored relation keys into `sql_column` and cannot hold it. A
+`@node` with no `@table` resolved key columns, where a node without a binding is not a node. A
+metadata entry spelled the generated way came back in the author's spelling rather than the
+catalog's. Two of those cases carried javadoc saying they existed to record a difference rather than
+an outcome; the difference is settled and they state the outcome now.
+
+One behaviour changed rather than being confirmed, and it is worth naming: an ambiguous binding now
+silences the pinned tier as well as the two table-reaching ones. A key column is a column of a
+table, so a name pinned against two candidate tables resolves against neither, and the relation
+cannot express the row the view produced.
+
+### What it bought
+
+`DetectionReadReachGateTest` loses three relations from `ResolvedKeyProjections`' reach, and nothing
+replaces them: node identity is read off a table now, so the seek costs nothing there and the tiered
+union is no longer re-expanded per driving row. That is R952's stated goal reached without its
+split. The fact schema holds 125 views where it held 128.
+
+### The provenance rule the fact model page stated, corrected
+
+The page said the resolved value is "always a view over the populations, never a stored merge", and
+that authored and inferred belong in separate relations rather than one relation with a provenance
+tag. `graphitron_node` is a stored merge with exactly such a tag, by a decision this work had
+already taken, so the page described a design the store had left behind.
+
+It is rewritten to say what holds. Two sources of one value are at least three facts: what the
+author wrote, what the other corpus published, and the derived answer, each stated where it comes
+from. The derived fact owes an answer where its sources disagree, and that answer is the substance
+of the derivation rather than a detail of it. How the derivation is realised is the storage rule's
+question, not provenance's. And the origin is worth recording on the derived row, not as a label but
+as the way back: a reader holding `JOOQ_METADATA` knows to join `sql_node_metadata` for the rest of
+what that class published, where one holding `SDL_DECLARED` reaches the entry and the written
+position. That answers the clause the old rule leaned on, that a tag no consumer branches on is
+inventory: consumers do not branch on it, they follow it.
+
+### Owed, not done here
+
+- **The defect rule still has two readers**, `Nodes` and `NodeKeyColumns`, both inside the gatherer
+  that writes the authority. Its two-grain problem is no longer load-bearing, nothing reading
+  `defect` or `position`, so what remains is whether it stays a view those two read or becomes a
+  predicate inside them. R952's split is not the answer either way.
+- **`graphitron_node_type` admits a `@node` with no `@table`**, which is not a legal node. It is a
+  different relation from the two this chapter settled and it disagrees with them at that edge.

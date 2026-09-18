@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_RETURN_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -119,7 +119,7 @@ class RoutineReturnBindingTest {
                     + " able to falsify: a bare function result has no primary key and no node"
                     + " metadata, so it could never have yielded a key column either way")
                 .isEqualTo("film");
-            var k = INTENT_RESOLVED_NODE_KEY_COLUMN;
+            var k = GRAPHITRON_NODE_KEYCOLUMN;
             assertThat(dsl.selectFrom(k)
                     .where(k.GRAPH_NAME.eq(CapturedStore.GRAPH)).and(k.TYPE_NAME.eq("Row")).fetch())
                 .as("no @table, so no table boundness, so no key columns to resolve")

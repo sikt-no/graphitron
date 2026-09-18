@@ -48,7 +48,7 @@ public final class ResolvedKeyProjections {
     /**
      * Every relation this component's read names, its own and the ones {@link StoreNodeTables}
      * names on its behalf. The helper's reads are this component's reads: {@link #read} calls it
-     * unconditionally, so a pass that reaches here evaluates {@code intent_resolved_node_type_id}
+     * unconditionally, so a pass that reaches here evaluates {@code graphitron_node}
      * whatever the projection rows say.
      */
     public static final Set<Table<?>> READS = StoreNodeTables.readsWith(

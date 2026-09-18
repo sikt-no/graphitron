@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p>The cases that matter most are the ones where a tier declines. A pinned column the table does
  * not have yields nothing at all rather than falling through to the primary key, because falling
  * through would publish a wire format the author never asked for and would do it without saying so.
- * Two of those assert against {@code intent_resolved_node_key_column} as well, which does fall
+ * Two of those assert against {@code graphitron_node_keycolumn} as well, which does fall
  * through, so the difference is the assertion rather than an incidental property of the fixture.
  */
 class NodeKeyColumnTest {
@@ -136,9 +136,14 @@ class NodeKeyColumnTest {
     }
 
     /**
-     * The rule this relation exists for. A pinned column the table does not have resolves nothing
-     * and does not fall through, where the relation it replaces forwards the spelling untouched and
-     * calls it resolved. Both are asserted, so the case states a difference rather than an outcome.
+     * The rule this relation exists for: a pinned column the table does not have resolves nothing
+     * and does not fall through.
+     *
+     * <p>This used to assert the old view's answer beside it, the view forwarding the spelling
+     * untouched and calling it resolved, so that the case stated a difference rather than an
+     * outcome. The difference is settled and the view is gone, so what is left is the outcome. The
+     * pin is still worth its fixture: the primary key sits right there, and a rule that fell
+     * through would look like it was being helpful.
      */
     @Test
     void aPinnedColumnTheTableLacksResolvesNothingAndDoesNotFallThrough() {
@@ -146,10 +151,6 @@ class NodeKeyColumnTest {
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "inventory_id");
             seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "no_such_column");
 
-            assertThat(forwarded(dsl))
-                .as("the view hands back the spelling it was given, which is what makes this a"
-                    + " difference rather than a fixture that pinned nothing")
-                .containsExactly("no_such_column");
             assertThat(keys(dsl))
                 .as("no column, so no row, and the primary key does not step in for an author who"
                     + " asked for something else")
@@ -220,7 +221,11 @@ class NodeKeyColumnTest {
     /**
      * Key columns pinned on a type that is not a node. The entry holds the rows, since an author may
      * write them anywhere, and nothing resolves, since nodehood is what this relation keys into.
-     * The view it replaces resolves them, which is the defect that made this case worth writing.
+     *
+     * <p>A {@code @node} with no {@code @table} is not a node, which is the precondition the whole
+     * relation stands on. The view this replaced resolved key columns for one anyway, and this case
+     * used to assert both answers to state that defect; the view is gone and the defect with it, so
+     * only the outcome is left.
      */
     @Test
     void keyColumnsPinnedOnANonNodeResolveNothing() {
@@ -228,9 +233,6 @@ class NodeKeyColumnTest {
             seedNode(dsl, GRAPH, "Inventory");
             seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "film_id");
 
-            assertThat(forwarded(dsl))
-                .as("the view resolves key columns for a @node with no @table")
-                .containsExactly("film_id");
             assertThat(keys(dsl))
                 .as("no @table, so no nodehood, so no key columns")
                 .isEmpty();
@@ -271,15 +273,5 @@ class NodeKeyColumnTest {
             .where(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME.eq(GRAPH))
             .orderBy(GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME, GRAPHITRON_NODE_KEYCOLUMN.POSITION)
             .fetch(r -> tuple(r.value1(), r.value2()));
-    }
-
-    /** What the relation this replaces answers, for the cases that state a difference. */
-    private static List<String> forwarded(DSLContext dsl) {
-        derive(dsl);
-        return dsl.select(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME)
-            .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
-            .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPH))
-            .orderBy(INTENT_RESOLVED_NODE_KEY_COLUMN.POSITION)
-            .fetch(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME);
     }
 }

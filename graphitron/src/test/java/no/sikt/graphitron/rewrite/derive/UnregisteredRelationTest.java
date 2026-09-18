@@ -47,7 +47,7 @@ class UnregisteredRelationTest {
     private static final String TARGET = "intent_resolved_type_binding";
 
     /** A view naming the target, so the swap is exercised through a reader and not only directly. */
-    private static final String DEPENDENT = "intent_resolved_node_type_id";
+    private static final String DEPENDENT = "intent_field_reference_step_target";
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {

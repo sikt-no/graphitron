@@ -198,15 +198,13 @@ class DetectionReadReachGateTest {
             "intent_argmapping_bound_parameter_type",
             "intent_argmapping_key_column_candidate",
             "intent_field_routine_method",
-            // Reached through intent_resolved_node_type_id's own metadata tier, not through the
-            // membership view beside it, which no longer reads the inferred derivation at all.
-            "intent_node_metadata_defect",
-            "graphitron_node_type",
+            // Three relations left this set when the view implementation of nodehood went. The
+            // node identity a projection needs is read off graphitron_node now, which is a table,
+            // so the seek costs nothing here and the tiered union behind it is not re-expanded per
+            // driving row. The defect rule and the membership view were reached only through that
+            // union, and went with it.
             "intent_resolved_node_key_projection",
-            "intent_resolved_node_key_shape",
-            // Reached through StoreNodeTables, which read calls unconditionally rather than through
-            // this component's own statement.
-            "intent_resolved_node_type_id"));
+            "intent_resolved_node_key_shape"));
     }
 
     @Test

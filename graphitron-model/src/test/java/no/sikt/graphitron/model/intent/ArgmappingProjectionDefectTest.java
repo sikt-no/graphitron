@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.INTENT_ARGMAPPING_PROJECTION_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTION;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
@@ -824,11 +824,11 @@ class ArgmappingProjectionDefectTest {
      */
     private static List<String> keyColumnsOf(DSLContext dsl, String nodeTypeName) {
         derive(dsl);
-        return dsl.select(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME)
-            .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
-            .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPH),
-                INTENT_RESOLVED_NODE_KEY_COLUMN.TYPE_NAME.eq(nodeTypeName))
-            .orderBy(INTENT_RESOLVED_NODE_KEY_COLUMN.POSITION)
+        return dsl.select(GRAPHITRON_NODE_KEYCOLUMN.COLUMN_NAME)
+            .from(GRAPHITRON_NODE_KEYCOLUMN)
+            .where(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME.eq(GRAPH),
+                GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME.eq(nodeTypeName))
+            .orderBy(GRAPHITRON_NODE_KEYCOLUMN.POSITION)
             .fetch(r -> r.value1());
     }
 

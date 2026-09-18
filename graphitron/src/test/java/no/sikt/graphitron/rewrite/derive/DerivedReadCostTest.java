@@ -173,6 +173,10 @@ class DerivedReadCostTest {
      * two moves are offsetting and are stated separately on purpose: a single net figure would hide
      * that one relation arrived and another left.
      *
+     * <p>128 to 125 when the view implementation of nodehood was retired: the resolved type id,
+     * the resolved key columns and the inferred membership were each a second spelling of a
+     * relation the graphitron gatherer already stores, and the stored ones are the authority.
+     *
      * <p>Raised to 128 by the reference-step hop becoming two keyed tables under a union view, and
      * it is the shape no earlier entry here has: a registration split rather than added, retired or
      * captured. One {@code _live} view leaves and two arrive, which would be net one; the second is
@@ -185,8 +189,15 @@ class DerivedReadCostTest {
      * read cost has been measured. The rules it states were a Java walk before and would have been
      * a table filled by a writer, so this is the count gaining a row that never existed as one
      * rather than a relation crossing over from the table side.
+     *
+     * <p>Lowered to 126 by the nodehood merge losing its second implementation. Three views go:
+     * {@code intent_resolved_node_type_id}, {@code intent_resolved_node_key_column} and
+     * {@code intent_inferred_node_type} restated the tiers, the pick and the well-formedness gate
+     * that {@code graphitron_node} and {@code graphitron_node_keycolumn} already hold as captured
+     * rows. None of them is a rule that stopped being needed; they were the same rule written
+     * twice, so this is the count losing a duplicate rather than a reader.
      */
-    private static final int READERS_IN_SCHEMA = 129;
+    private static final int READERS_IN_SCHEMA = 126;
 
     /**
      * Views whose derivation reaches at least one registration's target.

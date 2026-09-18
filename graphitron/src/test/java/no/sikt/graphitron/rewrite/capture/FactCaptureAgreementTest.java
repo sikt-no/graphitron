@@ -636,7 +636,6 @@ class FactCaptureAgreementTest {
         registrations.put("intent_condition_context_parameter", Arm.DERIVED);
         registrations.put("intent_table_key_candidate", Arm.DERIVED);
         registrations.put("intent_node_metadata_defect", Arm.DERIVED);
-        registrations.put("intent_inferred_node_type", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
@@ -654,9 +653,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("intent_resolved_type_binding", Arm.DERIVED);
-        registrations.put("intent_resolved_node_key_column", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
-        registrations.put("intent_resolved_node_type_id", Arm.DERIVED);
         registrations.put("intent_field_participant_scope_table", Arm.DERIVED);
         registrations.put("intent_field_scope_table", Arm.DERIVED);
         registrations.put("intent_argument_scope_table", Arm.DERIVED);

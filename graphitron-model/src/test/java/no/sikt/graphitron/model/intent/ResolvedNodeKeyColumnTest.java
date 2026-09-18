@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What {@code intent_resolved_node_key_column} returns: the ordered key columns a graph's type
+ * What {@code graphitron_node_keycolumn} returns: the ordered key columns a graph's type
  * encodes a node id from, resolved across the three populations that can answer. The generator makes
  * the same resolution with a live catalog in hand, so what these cases pin is that the relation
  * agrees with it tier for tier, and which tier answered rather than only that the names came out
@@ -220,7 +220,7 @@ class ResolvedNodeKeyColumnTest {
      * no table can tell them apart.
      */
     @Test
-    void anAmbiguousBindingSilencesBothTableReachingTiersAndNotThePinnedOne() {
+    void anAmbiguousBindingSilencesEveryTierIncludingThePinnedOne() {
         withCollidingInventory(dsl -> {
             seedNode(dsl, GRAPH, "Inventory");
             seedTableBinding(dsl, GRAPH, "Inventory", "inventory");
@@ -233,8 +233,10 @@ class ResolvedNodeKeyColumnTest {
                 .isEmpty();
 
             seedNodeKeyColumnRef(dsl, GRAPH, "Inventory", 0, "inventory_id");
-            assertThat(tierOf(dsl, "Inventory")).isEqualTo("SDL_PINNED");
-            assertThat(keyColumns(dsl, "Inventory")).containsExactly("inventory_id");
+            assertThat(keyColumns(dsl, "Inventory"))
+                .as("and neither does the pinned one: a key column is a column of a table, so a"
+                    + " name pinned against two candidate tables resolves against neither")
+                .isEmpty();
         });
     }
 
@@ -259,9 +261,10 @@ class ResolvedNodeKeyColumnTest {
     }
 
     /**
-     * A stated name matching under either spelling resolves, which is the predicate the defect view
+     * A stated name matching under either spelling resolves, which is the predicate the defect rule
      * decides well-formedness by. Sharing it is the point: a tier that resolved entries by the SQL
-     * name alone would disagree with the arm that already called the row well-formed.
+     * name alone would disagree with the arm that already called the row well-formed. What lands is
+     * the catalog's own name, the stated spelling having been resolved rather than forwarded.
      */
     @Test
     void aMetadataEntrySpelledTheGeneratedWayIsWellFormed() {
@@ -272,7 +275,10 @@ class ResolvedNodeKeyColumnTest {
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");
 
             assertThat(tierOf(dsl, "Inventory")).isEqualTo("JOOQ_METADATA");
-            assertThat(keyColumns(dsl, "Inventory")).containsExactly("inventoryId");
+            assertThat(keyColumns(dsl, "Inventory"))
+                .as("the stated spelling is the generated one and the row carries the SQL name it"
+                    + " resolved to, as the pinned tier's own case states for its side")
+                .containsExactly("inventory_id");
         });
     }
 
@@ -301,6 +307,12 @@ class ResolvedNodeKeyColumnTest {
         withNodeOverInventory(dsl -> {
             seedGraph(dsl, "other");
             seedNode(dsl, "other", "Inventory");
+            // The sibling reads the same catalog source and binds the table too. A @node with no
+            // @table is not a node, and a table in a source a graph did not read binds nothing, so
+            // without both of these the sibling answers nothing and the case passes for the wrong
+            // reason.
+            seedGraphSource(dsl, "other", PKG);
+            seedTableBinding(dsl, "other", "Inventory", "inventory");
             seedNodeKeyColumnRef(dsl, "other", "Inventory", 0, "inventory_id");
             seedPrimaryKey(dsl, PKG, PUBLIC, "inventory", "inventory_pkey", "store_id");
 
@@ -364,11 +376,11 @@ class ResolvedNodeKeyColumnTest {
     /** The tier that answered for a type, the pick being one tier for the whole list. */
     private static String tierOf(DSLContext dsl, String typeName) {
         derive(dsl);
-        var tiers = dsl.selectDistinct(INTENT_RESOLVED_NODE_KEY_COLUMN.TIER)
-            .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
-            .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(GRAPH))
-            .and(INTENT_RESOLVED_NODE_KEY_COLUMN.TYPE_NAME.eq(typeName))
-            .fetch(INTENT_RESOLVED_NODE_KEY_COLUMN.TIER);
+        var tiers = dsl.selectDistinct(GRAPHITRON_NODE_KEYCOLUMN.COLUMN_ORIGIN)
+            .from(GRAPHITRON_NODE_KEYCOLUMN)
+            .where(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME.eq(GRAPH))
+            .and(GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME.eq(typeName))
+            .fetch(GRAPHITRON_NODE_KEYCOLUMN.COLUMN_ORIGIN);
         assertThat(tiers)
             .as("one tier wins for a type and its whole list is taken")
             .hasSize(1);
@@ -383,11 +395,11 @@ class ResolvedNodeKeyColumnTest {
     /** A type's resolved key columns in position order, in a named graph. */
     private static List<String> keyColumns(DSLContext dsl, String graphName, String typeName) {
         derive(dsl);
-        return dsl.select(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME)
-            .from(INTENT_RESOLVED_NODE_KEY_COLUMN)
-            .where(INTENT_RESOLVED_NODE_KEY_COLUMN.GRAPH_NAME.eq(graphName))
-            .and(INTENT_RESOLVED_NODE_KEY_COLUMN.TYPE_NAME.eq(typeName))
-            .orderBy(INTENT_RESOLVED_NODE_KEY_COLUMN.POSITION)
-            .fetch(INTENT_RESOLVED_NODE_KEY_COLUMN.COLUMN_NAME);
+        return dsl.select(GRAPHITRON_NODE_KEYCOLUMN.COLUMN_NAME)
+            .from(GRAPHITRON_NODE_KEYCOLUMN)
+            .where(GRAPHITRON_NODE_KEYCOLUMN.GRAPH_NAME.eq(graphName))
+            .and(GRAPHITRON_NODE_KEYCOLUMN.TYPE_NAME.eq(typeName))
+            .orderBy(GRAPHITRON_NODE_KEYCOLUMN.POSITION)
+            .fetch(GRAPHITRON_NODE_KEYCOLUMN.COLUMN_NAME);
     }
 }

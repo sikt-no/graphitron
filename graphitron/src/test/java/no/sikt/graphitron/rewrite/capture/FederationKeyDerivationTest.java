@@ -15,7 +15,8 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.INTENT_FEDERATION_KEY;
-import static no.sikt.graphitron.model.Tables.INTENT_INFERRED_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_SYNTHESIZED_FEDERATION_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -141,19 +142,23 @@ class FederationKeyDerivationTest {
                 .isOne();
 
             assertThat(store.dsl()
-                .select(INTENT_INFERRED_NODE_TYPE.TABLE_SCHEMA, INTENT_INFERRED_NODE_TYPE.TABLE_NAME)
-                .from(INTENT_INFERRED_NODE_TYPE)
-                .where(INTENT_INFERRED_NODE_TYPE.TYPE_NAME.eq("Pairing"))
+                .select(GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME)
+                .from(GRAPHITRON_NODE)
+                .join(GRAPHITRON_TABLETYPE)
+                .on(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME),
+                    GRAPHITRON_TABLETYPE.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
+                .where(GRAPHITRON_NODE.TYPE_NAME.eq("Pairing"))
                 .fetch()
                 .map(r -> r.value1() + "." + r.value2()))
-                .as("the witness columns name the table whose metadata answered")
+                .as("the node names the table whose metadata answered, through the binding a node"
+                    + " cannot be one without")
                 .containsExactly("public.film_actor");
         }
         try (var store = CapturedStore.of(tmp.resolve("bare"), INFERRED)) {
             assertThat(store.dsl().fetchCount(INTENT_SYNTHESIZED_FEDERATION_KEY))
                 .as("no catalog facts to conjoin, so nothing infers nodehood")
                 .isZero();
-            assertThat(store.dsl().fetchCount(INTENT_INFERRED_NODE_TYPE)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_NODE)).isZero();
         }
     }
 
