@@ -281,10 +281,16 @@ class RefreshPlanStatisticsTest {
      * moves is reading a <em>registered target</em>, which no statement before the refresh can have
      * analysed because no statement before the refresh has written it. Stated as a superset rather
      * than as an equality because the fact tables' statistics move further registrations onto plans
-     * of their own ({@code intent_field_reference_step_hop_live}, {@code intent_spelled_table_live}
-     * and {@code intent_node_id_instruction_live}, the last of which the declaration took out of the
-     * pinned set), which is a second finding and not this claim: what this asserts is that the cheap
-     * half closes nothing, not that it changes nothing.
+     * of their own ({@code intent_field_reference_step_hop_keyless_live},
+     * {@code intent_spelled_table_live} and {@code intent_node_id_instruction_live}, the last of
+     * which the declaration took out of the pinned set), which is a second finding and not this
+     * claim: what this asserts is that the cheap half closes nothing, not that it changes nothing.
+     *
+     * <p>That first name was the undivided reference-step hop rule until the relation split into two
+     * keyed arms, and the split is why it is re-derived here rather than respelled: only the keyless
+     * arm's rule moves under the facts-analysed regime, the keyed arm's plan being what it is whether
+     * or not the fact tables carry statistics. A retired rule's behaviour does not transfer to the two
+     * rules that replace it by assumption, and this one did not.
      */
     @Test
     void analysingTheFactsAloneReachesNoneOfThem() {

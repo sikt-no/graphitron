@@ -287,15 +287,20 @@ class MaterializeRegistryGateTest {
      *   way, {@code intent_field_column_scope_live} 2750 either way,
      *   {@code intent_field_reference_step_fanout} 22183 either way, and the recursive step's plan
      *   differing only in which index name the keyed seek carries, the primary key's where the
-     *   declared one stood. On {@code RefreshPlanStatisticsTest} the indexes were a cost rather than
-     *   a wash: with them declared, {@code intent_resolved_type_binding_live} joins the set of
-     *   registrations whose refresh plans differently with the targets' statistics than without,
-     *   which is a ninth statement whose cold-capture plan stops matching its settled one. So the
-     *   indexes went and the keys serve the seek, which is the opposite verdict to
-     *   {@code intent_spelled_table}'s on the same question and is why that comment says a
-     *   measurement rather than a rule. Falsified by a new reader rather than by a new figure: a
-     *   reader seeking these targets on something that is not a prefix of their keys is what would
-     *   buy an index here.</li>
+     *   declared one stood. {@code RefreshPlanStatisticsTest} read the same way, declaring the two
+     *   indexes leaving its pinned set exactly as it stands here. So both instruments came back a
+     *   wash, and what dropped the indexes is that they bought nothing rather than that they cost
+     *   anything. {@code intent_resolved_type_binding_live} sits in that set either way and is not
+     *   evidence here in either direction: it joined when the relation gained a key, which is the
+     *   reading its own paragraph there carries, and no index declared beside that key moves it.
+     *   So the keys serve the seek, which is the opposite verdict to {@code intent_spelled_table}'s
+     *   on the same question and is why that comment says a measurement rather than a rule.
+     *   Falsified by a new reader rather than by a new figure: a reader seeking these targets on
+     *   something that is not a prefix of their keys is what would buy an index here. What the
+     *   figures above do not reach is a consumer-sized population, both instruments being this
+     *   repository's own fixtures, and a prefix of a key is not the same offer to the planner as
+     *   the key itself where H2 prices a wide ordering's unused columns; that exposure is a
+     *   question of its own rather than a qualification of this row.</li>
      * </ul>
      */
     private static final Set<String> NO_INDEX = Set.of(

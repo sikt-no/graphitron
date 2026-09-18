@@ -1,7 +1,7 @@
 ---
 id: R956
 title: "A reference-step hop is four arms with two natural keys, so it is two keyed relations under a view rather than one relation padded with nulls"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -607,6 +607,16 @@ relation gaining a key that `RefreshPlanStatisticsTest`'s own new paragraph alre
 correctly. No DDL, no pin and no test needs to move; the indexes stay gone and the key-prefix
 argument stands on the wash.
 
+> **Addressed at round 1's rework.** The entry's second instrument now reads as a wash, matching the
+> read-cost sentence above it, and the reason for dropping the indexes is stated as their buying
+> nothing rather than their costing anything. `intent_resolved_type_binding_live` is named as
+> evidence in neither direction, with its membership attributed to the relation gaining a key, which
+> is what `RefreshPlanStatisticsTest`'s own paragraph already said. No DDL, pin or test moved. The
+> entry also gained a closing sentence naming what the two instruments do not reach, a consumer-sized
+> population, and the residual that a prefix of a key is not the same offer to the planner as the key
+> itself where H2 prices a wide ordering's unused columns; that exposure is filed as its own Backlog
+> item rather than qualified away here.
+
 **Finding 2, retirement sweep: `intent_field_reference_step_hop_live` survives in javadoc.**
 `RefreshPlanStatisticsTest:284` still names it, in the paragraph listing the registrations the fact
 tables' statistics move onto plans of their own. The term is declared retired in this body's
@@ -619,6 +629,14 @@ The citation's substance needs a look too, not just its name. The claim is about
 move when only the fact tables are analysed, and the retired rule is now two rules; whether both arm
 rules behave the way the single one did is a fact the paragraph asserts and nobody has checked. So
 the fix is a re-derivation and not only a respelling.
+
+> **Addressed at round 1's rework, and the finding's caution was load-bearing.** Re-deriving the set
+> rather than respelling it changes the answer: measured on the same fixture, the registrations whose
+> plan moves under the facts-analysed regime are `intent_field_reference_step_hop_keyless_live`,
+> `intent_spelled_table_live` and `intent_node_id_instruction_live`. Only the *keyless* arm's rule
+> moves; the keyed arm's plan is unchanged by the fact tables' statistics. A respelling to "the two
+> arm rules", which is what the retired name invites, would have been wrong. The paragraph now carries
+> the measured set and a sentence saying why it was re-derived.
 
 The surviving citations in other roadmap bodies are not findings. `reference-step-walks-are-stored-rows.md`
 and `per-row-view-naming-fails-the-build.md` are `Spec` items whose bodies this item deliberately
