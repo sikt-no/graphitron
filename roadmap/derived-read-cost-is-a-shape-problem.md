@@ -4329,13 +4329,12 @@ of the 45 are composed rather than establishing a grain, so under the table abov
 not stored at all. Across the whole schema 125 of 266 tables carry no stamp, which is one cut of the
 census that section records as owed.
 
-## The lint rules become statements, and nothing refreshes them yet (2026-09-16, revised 2026-09-17)
+## The lint rules become statements, and the build reads them (2026-09-16, revised 2026-09-18)
 
-Harvested from session-b. Nine rules that were visitors over the parsed document are now nine
-statements over the captured rows, writing `lint_violation`: `input-object-name-suffix`, the three
-name shapes, `field-names-camel-case`, `no-typename-prefix`,
-`types-and-fields-have-descriptions`, `deprecations-have-a-reason` and
-`no-deprecated-directive-usage`.
+Harvested from session-b. Nine rules that were visitors over the parsed document are now nine arms
+of `lint_violation`, each a statement over the captured rows: `input-object-name-suffix`, the three
+name shapes, `field-names-camel-case`, `no-typename-prefix`, `types-and-fields-have-descriptions`,
+`deprecations-have-a-reason` and `no-deprecated-directive-usage`.
 
 The relation is keyed on the written position rather than on the coordinate, and the consequence is
 taken rather than tolerated: a name spelled wrongly at a base declaration and at two extensions is
@@ -4347,28 +4346,47 @@ extension carries no description slot, so an undescribed one draws no row: it is
 type, it is a place where documenting cannot be done, and a finding there would be a false fact
 rather than a noisy one.
 
-Two things are worth keeping from how it was verified. The statements are held against the visitors
-they replace, and separately against this repository's own five thousand line example schema, which
-nobody wrote for a lint test. And the anchors are the whole difference between a pattern in Java and
-the same pattern in SQL: `Pattern.matches` anchors both ends, `regexp_like` does not, so an
-unanchored camel-case pattern holds of nearly every name there is and the rule goes quiet rather
-than loud. A rule gone quiet reads exactly like a corpus with nothing wrong in it.
+Two things are worth keeping from how it was verified. The statements were held against the visitors
+they replace for as long as those existed, and separately against this repository's own five
+thousand line example schema, which nobody wrote for a lint test. Only the second of those survives
+the retirement, which is why the rules gained per-rule cases of their own before the walk went: a
+shadow says two implementations agree and says nothing about whether either is right, so a tree
+holding only shadows is one where nine rules could drift together and stay green. And the anchors
+are the whole difference between a pattern in Java and the same pattern in SQL: `Pattern.matches`
+anchors both ends, `regexp_like` does not, so an unanchored camel-case pattern holds of nearly every
+name there is and the rule goes quiet rather than loud. A rule gone quiet reads exactly like a
+corpus with nothing wrong in it.
 
-Nothing in production calls `LintViolations.write` yet. It is a shadow family with parity tests,
-which is the right order: the statements exist and agree before anything depends on them.
+The shadow family is gone and production reads the rows. `GraphQLRewriteGenerator` calls
+`LintFindings.of`, which turns `lint_violation` into what a build report prints and is the only
+reader of the rules there is. `LintEngine`, the five SPI types it dispatched through, the nine
+visitors and both shadows were deleted with it, so the walk is not a second opinion held in reserve;
+there is one producer of a lint finding and it is the view.
 
-### The ownership this leaves open
+### The ownership question, answered by the relation not being a table
 
-`lint_violation` is filed under the `derivation` gatherer, on the ground that every rule reads more
-than one family and none of them belongs to a single corpus's own gatherer. By the first gate above
-the question is narrower than that: the owner is whichever gatherer refreshes the relation, and
-today nothing does. `LintViolations.write` is called from parity tests and from no capture path, so
-the filing names the gatherer that would run last rather than one that runs at all.
+This chapter asked which gatherer owns `lint_violation`, said the `derivation` filing was a
+placeholder, and left the answer to whatever refreshed the relation once something did. The question
+was malformed, and the shape of the mistake is this item's own subject pointed at this item.
 
-What that costs is a run position, and only that. There is no edge to declare, dependencies being
-read off a rule rather than stated, and a gatherer reading no corpus is exempt from the corpus gate
-as `derivation` already is. So the `derivation` filing stands as a placeholder honest about what
-runs today, and the relation takes the name of whatever refreshes it once something does.
+Nothing refreshes `lint_violation`, and nothing ever will, because it is a view. The gate it was
+being held to reads the owner off whichever gatherer writes the rows, which presumes rows get
+written. A view has no such gatherer and is not missing one: it is evaluated by being read, so the
+placeholder was standing in for a writer that was never owed. The `derivation` filing is not a
+name held until a better one arrives. It is the answer.
+
+That is this item's thesis arriving at its own lint section. The claim it opens with is that cost
+is a modelling question rather than a storage one and that registration is unearned once the shape
+is right; `meta_materialize` is the record of choosing "stored" twenty-two times without asking the
+prior question. The lint rules were the twenty-third such choice in the making, and asking the prior
+question retired it: no corpus is read, no key is established that the relation's own references do
+not already cover, and no read cost has been measured. The schema says exactly this in the
+relation's own rationale, and has since the writer was deleted. This chapter is where the record
+lagged behind the store it describes.
+
+What the view buys beyond stating the rules once is that the integrity a stored version would have
+needed foreign keys to defend is structural instead: every row is constructed by joining the
+relations it cites, so there is no row that can outlive what it was derived from.
 
 ## QC of the field-chain slices (2026-09-17)
 
