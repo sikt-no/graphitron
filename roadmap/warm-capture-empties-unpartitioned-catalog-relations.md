@@ -329,7 +329,7 @@ which means the store holds a graph row written in that same transaction, which 
 stamps commit with the rows. A run that dies rolls back the stamp and the rows together. So the branch
 protects nothing the rollback does not, and under sharing it is actively wrong: one graph's capture
 blanking a currency record another graph reads. What survives is a write-ordering rule and not a null,
-write the stamp after the rows it vouches for, which the first-graph path needs because its
+write the stamp after the rows it vouches for, which the analysing refresh cadence needs because its
 materialization refresh runs outside the transaction and its stamps commit in a second one, and which
 needs no existing row to blank.
 
@@ -1780,7 +1780,7 @@ names is real: with the reading per graph, A editing a shared file and re-walkin
 stamp matching disk, so B concludes it has nothing to re-read and keeps rows built from content that
 is gone. I also traced the null-stamp removal and it holds. `ClasspathSources.upsert`'s quoted
 rationale is verbatim at its line 132, `FactCapture.capture` is one transaction with
-`commitStamps` inside it on the warm path, and on the `firstGraph` path the null comes from the insert
+`commitStamps` inside it on the warm path, and on the analysing cadence's path the null comes from the insert
 arm rather than from blanking, so the ordering rule is indeed all that path needs. That argument is
 sound and I am not asking for it back.
 
