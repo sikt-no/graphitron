@@ -1,7 +1,7 @@
 ---
 id: R954
 title: "A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -199,8 +199,8 @@ each rung is independently landable and independently verifiable.
 | 4 | `intent_argument_scope_table`, `intent_field_scope_table`, `intent_carrier_data_field`, `intent_input_field_resolving_table` | all registered | a wider subtree of the column-scope family |
 | 5 | `intent_input_field_reference_step_target`, `intent_argument_reference_step_target` | view, registered | rungs 1 and 4 |
 
-**Rungs 4 and 5 are the successor's**, on the phase-3 measurement and the call under "What this plan
-was conditioned on". They stay in this table and keep their phase text because the closure, the
+**Rungs 4 and 5 are R958's**, on the phase-3 measurement and the call under "What this plan was
+conditioned on"; that item is filed and inherits this phase text rather than re-deriving it. They stay in this table and keep their phase text because the closure, the
 placement argument and the convert-or-demote rule all transfer to the successor unchanged, and
 re-deriving them there would be work already done.
 
@@ -444,258 +444,68 @@ hand-off.
 
 ### Phase 0: the foreign-key count becomes a captured catalog fact
 
-Independent of everything below, the top rung of the lever order, and admitted whether or not a reader
-is currently slow.
+**Shipped at `2cf1948`.** `sql_table_reference` holds one row per ordered pair at least one foreign
+key connects, with how many connect it, written by a stage of `JooqFactCapture` after the
+referential constraints it aggregates and swept with the family. The decode-hop rule seeks into it
+on the six columns it already held.
 
-```sql
-CREATE TABLE sql_table_reference (
-  source_name            VARCHAR NOT NULL,
-  table_schema           VARCHAR NOT NULL,
-  table_name             VARCHAR NOT NULL,
-  referenced_source_name VARCHAR NOT NULL,
-  referenced_schema      VARCHAR NOT NULL,
-  referenced_table       VARCHAR NOT NULL,
-  constraints            INT     NOT NULL,
-  touched_at             TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, table_schema, table_name,
-               referenced_source_name, referenced_schema, referenced_table)
-);
-```
-
-Grain: one ordered pair of tables at least one foreign key connects, and how many connect it. It admits
-a real primary key, which nothing on the ladder does. `intent_node_id_decode_hop_live`'s
-`DISCOVERED_KEY` arm joins it on the six columns it already holds and tests `constraints = 1`.
-
-`sql_` and not `intent_` because the relation reads one family, which by the family rule makes it a
-relation of that family whatever shape it takes.
-
-**The gatherer is `jooq`, not `catalog`.** `CatalogFactCapture` writes no `sql_` row: its javadoc is
-"The `jvm_` family", it records that "It used to fill the `sql_` family too, and that half is gone",
-and its `capture` calls `captureExtensions` alone. `JooqFactCapture` is "the `sql_` family and nothing
-else", and its `referentialConstraints` stage writes the rows this relation counts. So the stage is
-`JooqFactCapture`'s, added after `referentialConstraints` and before the sweep.
-
-**The corpus-purity argument is made directly rather than by precedent.** `meta_gatherer_corpus`
-defines a crawler as a gatherer carrying a corpus row, "a transcription pass whose rows about its own
-corpus may not vary with any other corpus's contents", and `jooq` carries one. So the
-`FieldEndpoints` precedent does not transfer here: that is the graphitron gatherer, which carries no
-corpus row and is thereby free to cross corpora. The argument this relation needs is its own and is
-stronger: it reads `sql_referential_constraint` and nothing else, so its rows vary with the catalog
-corpus alone and the invariant holds by construction.
-
-**The declared owner is `jooq`, and this spec settles that rather than leaving it to the gate.** The
-relation needs a `meta_relation` row, that roster only shrinking. Fifteen `sql_` relations are
-declared today and every one of them names `catalog` as owner, while `JooqFactCapture` writes fourteen
-of them and the `jooq` gatherer owns no declared relation at all. So the tree's declared ownership and
-its actual writer disagree for fourteen of fifteen. Declaring `catalog` would entrench a mismatch no
-gate currently catches; declaring `jooq` makes this the first correct row for a jooq-written relation
-and leaves fourteen beside it that are not. Take `jooq`, and file the fourteen as a Backlog item
-rather than correcting them here: they are a pre-existing declaration defect this item happens to
-surface, and reconciling them is R877's kind of work.
-
-The fifteenth is worth naming rather than folding into the count, because it is a live counter-case
-and it postdates this section's first draft. `sql_name_matched_key_column` declares `catalog` and is
-written by `NameMatchedKeys.derive`, which `FactCapture.capture`'s own comment calls "A stage of the
-catalog gatherer rather than a derivation", so for that one relation the declaration is right. It
-establishes that a `sql_` relation may legitimately be `catalog`-owned, which is exactly why the
-argument here has to be about the writer rather than about the family: `sql_table_reference` is
-`JooqFactCapture`'s stage, so it is `jooq`'s, and no appeal to what the family usually declares
-settles it either way.
-
-**The lifecycle is the family's stamp-and-sweep, so the table carries `touched_at`.** Fourteen of the
-sixteen `sql_` tables carry one, `sql_referential_constraint.touched_at`'s comment states the rule the
-sweep implements, and `JooqFactCapture.capture` closes with `sweep(dsl, sourceNames(tables),
-touchedAt)`. The stage takes the same instant, and the sweep covers the new table once it is added to
-`TABLES_TO_SWEEP`, the fixed fourteen-entry list in `JooqFactCapture` that `sweep` iterates: one line,
-named here so the edit is not discovered at implementation. This is not tidiness: a pair row that
-outlives the foreign key it counted says `constraints = 1` about a pair with none, which is exactly
-the arm the decode rule's `LEFT JOIN` reads. The two tables without a stamp are
-`sql_table_record_supertype` and `sql_name_matched_key_column`, and neither is a precedent this
-relation can take, for different reasons. `NameMatchedKeys.derive` clears its relation whole before
-refilling it, which is available to a derivation over the store and not to a reading of a consumer's
-database. `JooqFactCapture.recordSupertypes` neither stamps nor clears: every column of that relation
-is a key column, so a row that is still true is the row already there and there is nothing to
-reconcile. `sql_table_reference` is on neither arm, carrying a `constraints` count that is exactly the
-non-key column a stale row would lie about.
-
-**The reach for the constraint name.** After the change the `DISCOVERED_KEY` arm still joins
-`sql_referential_constraint` on six columns, of which only the first three prefix its primary key
-`(source_name, table_schema, table_name, constraint_name)`, and that relation carries no other index.
-Measure whether the join wants one at the same time as the phase-0 timing; a three-column prefix seek
-on a relation of this size very likely does not, and the commit records the reading either way rather
-than the expectation.
-
-Deliberately not a `constraints` column on `sql_referential_constraint`, which would repeat one value
-down every constraint of a pair, the denormalisation the referenced-side discipline declines.
+Two things the plan did not anticipate, both worth carrying forward. The stage reads the rows the
+stage above it just wrote rather than walking the catalog a second time, which is what makes the
+count the census's own: a second walk would count a key the reference rows deduplicated twice, and
+the agreement case beside it compares the two readings and so would not have caught a stage that
+disagreed with the rule it replaced. And every seeded-store fixture needed the pair row maintained
+beside the referential constraint it seeds, which `SeededStore.seedReferentialConstraint` now does:
+a case seeds a catalog, and a catalog with a foreign key in it has a pair that key connects. The
+declared owner is `jooq`, as this body argued, and the fourteen `sql_` relations declaring `catalog`
+while this gatherer writes them are filed rather than corrected here.
 
 ### Phase 1: the departure, and the hop all three walks read
 
-Rung 0 then rung 1, in one phase because rung 0 buys nothing on its own.
+**Shipped at `b97b040`.** `graphitron_spelled_table`, `graphitron_field_reference_step_hop_keyed`
+and `graphitron_field_reference_step_hop_keyless` are stages of the graphitron gatherer running
+immediately before `FieldEndpoints.derive`, under the union view
+`graphitron_field_reference_step_hop`. Three registrations retired, the register falling from 24 to
+21 and the refresh from 16 stages to 14.
 
-`intent_spelled_table` becomes `graphitron_spelled_table`, written by a stage of the graphitron
-gatherer immediately before `FieldEndpoints.derive`, which is the eighth of that gatherer's ten
-stages and not the last. Its registration is retired. Its `_live` view is
-deleted, the rule moving into the stage's `DELETE` and `INSERT ... SELECT` unchanged. It keeps the
-primary key it already carries on all five identity columns, so it is the one rung the key gate costs
-nothing.
+Four findings the plan did not carry.
 
-**The hop arrives split, keyed and declared, so this phase converts two relations where it used to
-convert one.** `intent_field_reference_step_hop_keyed` and `intent_field_reference_step_hop_keyless`
-become `graphitron_field_reference_step_hop_keyed` and `graphitron_field_reference_step_hop_keyless`,
-each written by a stage of its own, and `intent_field_reference_step_hop` becomes
-`graphitron_field_reference_step_hop`, the same union view over the two under the new name. Each stage
-takes its arm's `_live` rule text unchanged into its `DELETE` and `INSERT ... SELECT`, which is what
-keeps the `EXCEPT` oracle comparing two evaluations of one text, and both `_live` views are deleted.
-**Two registrations are retired here, not one**, R956 having replaced the single hop registration with
-one per arm.
+The `EXCEPT` oracle has to be run **before** the rule text leaves the DDL, since afterwards there is
+no second evaluation to compare against; it was run as a throwaway case holding the retired texts,
+and both directions came back empty on the spelling and the keyed hop. The keyless arm took no rows
+on a catalog fixture, both its arms needing a function-result departure or a classpath-resolved
+condition method, and is pinned instead by the seeded-store cases that exercise both.
 
-The combined input list of the two rules, checked against the shipped text rather than assumed:
-`graphitron_field_reference_step_entry`, `store_graph_source`, `sql_table`, `sql_constraint`,
-`sql_referential_constraint`, `sql_name_matched_key_column`, `graphitron_spelled_table` (rung 0, just
-written) and `intent_condition_method_route` (rung 0, a plain view read inline). Every one is a
-captured fact or a plain view over captured facts by the time the stage runs, the `sql_` table among
-them because `NameMatchedKeys.derive` runs earlier in the same pass.
+The key-prefix argument the `NO_INDEX` roster carried could not move onto the arm tables'
+`COMMENT ON` as this body predicted: a declared relation's comment is its grain sentence and its
+example verbatim, so the argument went into the union view's `meta_relation.rationale`, which is
+where the seek was measured anyway.
 
-Neither arm carries an index and neither should gain one: each primary key leads with the eight columns
-the walk's recursive term seeks on, which is what retired `ix_field_reference_step_hop_step`, and both
-arms hold `MaterializeRegistryGateTest.NO_INDEX` rows stating that. A converted stage inherits the keys
-with the rows, so the seek survives the move by construction; what it does not inherit is the
-`NO_INDEX` row, that roster iterating live registrations, so each arm's key-prefix argument moves onto
-the relation's own `COMMENT ON` as the registration goes.
+The declaration each rename makes fall due costs prose rather than a row. A relation's comment
+shrinks to two sentences and its rationale is capped at 1500 characters, so a converted relation's
+long comment has to be condensed, which is real work and not a formality.
 
-**What each arm owes the declaration roster.** Both arm tables are declared today under their `intent_`
-names, so the conversion re-points two existing `meta_relation` rows rather than arguing two new ones.
-The union view is the one new obligation: it keeps the roster line its canonical name already holds
-while the name is `intent_`, and a `graphitron_` spelling is new to the roster, so the rename is what
-makes a declaration fall due. R956 worked out the grain it takes, and this phase uses it rather than
-re-deriving it: the view's rows are not at the keyed arm's grain, whose sentence says "in one
-orientation" of a foreign key and is false of a keyless row, so the view declares a third grain of its
-own, one candidate route a field-site `@reference` path element could take, foreign-key or not, in one
-graph, at the thirteen-column shape. One extra `meta_grain` row, and
-`aDeclaredTableKeyMatchesItsGrain` never asks about it, that gate binding on base tables only.
-
-Three registrations retired, none added, and the hop is the relation *all three* walks read, so this
-phase is the one that moves the most for the least.
-
-**Where this phase's stages run, and why that position is current for every input.** Inside
-`GraphitronFactCapture.capture`, immediately before `FieldEndpoints.derive`, which is where a
-`graphitron_` relation's writer belongs by the family rule and where the precedent this phase copies
-already sits. The position is admissible because rungs 0 and 1 reach no table a later step of the pass
-writes, on all three of the invariant's cases: no registered target, by the conversion order above; no
-`HAND_WRITTEN` table, the field walk's closure holding none of the six; and none of the two tables the
-gatherer's ninth and tenth stages write. That is the same invariant a sibling item states for its own
-fifteen relations and it is why those land in the derivation stratum and these do not; the criterion is
-identical, and it is what an input reaches that decides where a stage goes, not which item the stage
-belongs to.
-
-**The position is before `FieldEndpoints.derive` rather than at the end of the gatherer, and now that
-those are two different lines the choice is made rather than inherited.** Before, for three reasons.
-The invariant is forward-only, so what a position has to clear is what runs *after* it, and every
-input rungs 0 to 3 reach is written at or before `navigation`, the seventh step; the eighth position
-clears them all with two stages to spare. Putting the stages at the end instead would assert a
-dependency on `FieldRoutines.derive` and `FieldTableLinks.derive` that does not exist, and a later
-reader would have to re-derive that it does not. And it is the smaller edit against the tree as it
-stands, which matters because the position is stated in a comment as well as in an order and a wrong
-comment is what produced this correction. The end of the gatherer is equally admissible on the
-closures, and an implementer who finds the shipped order changed again takes whichever line satisfies
-the three cases and says which it took.
+`WarmStartRefreshTest`'s bound fixture was not capturing what it claimed: it was handed
+`SubjectConfig.none()`, so the document gatherer never ran and the anchor sweep took every `@table`
+binding with it, leaving the spelling resolution as the only registered target that fixture ever
+populated. Giving the pass its corpus is what makes the reconciliation case this phase owed
+non-vacuous.
 
 ### Phase 2: the field walk
 
-`intent_resolved_type_binding` converts or demotes per the rule above; eight view bodies and `StoreNodeTables` name it, so
-converting is the expectation and the commit says which way the count sent it. On conversion it gains
-the primary key the key-gate subsection above derives, `(graph_name, type_name, table_source_name,
-table_schema, table_name)`, which needs no column made non-nullable and no change to the rule.
+**Shipped at `a78bcf1`.** `graphitron_resolved_type_binding` converts with the primary key its rule
+always implied, and the walk becomes `graphitron_field_reference_step_target_keyed` and `_keyless`
+under a view carrying the canonical name, both written by stages after the hops. The register falls
+to 20 registrations and 13 refresh stages.
 
-`intent_field_reference_step_target` becomes two keyed tables under a view, and **this phase is what
-splits it**, which is the one thing R956 left to be done here rather than doing itself. The shape is
-fixed in that item's "The walk" section and this phase lands it:
-`graphitron_field_reference_step_target_keyed` and `graphitron_field_reference_step_target_keyless`,
-keyed as the two hop arms are with `targets` and `candidates` beside the key, a `CHECK` on the `via`
-values each admits, and `graphitron_field_reference_step_target` the union view over them under the
-name every reader already spells, presenting the three absent columns as `NULL` exactly as the hop's
-view does. Each table is written by a graph-scoped `DELETE` and then an insert, and the `DELETE` is
-what an earlier draft of this paragraph left out: see the subsection above for why it is per rung
-rather than per taste.
-
-The split is this phase's and not a separate item's because the two cannot usefully be separated. A
-walk split into views would carry the `WITH RECURSIVE` twice under the union view, evaluating the
-recursion once per arm per reader, which is the opposite of what this phase is for; and a walk stored
-as one relation would be the first declared keyless base table in the tree, which is what the key-gate
-subsection above refuses. The split and the storing are one edit, and R956 says so from its side.
-
-The earlier drafts of this phase proposed a Java fold instead, one insert per position with a
-termination bound and an assertion, on the reading that the fold would remove "two window functions
-inside a recursive term". That reading was wrong about the shipped rule and the correction is the
-reason this phase changed shape. In `intent_field_reference_step_target` as shipped, the recursive
-term is a plain `UNION` of the seed with one join to `intent_field_reference_step_hop` on the eight
-columns each arm table's primary key now leads with; `DENSE_RANK`, `MAX(target_rank) OVER` and
-`COUNT(*) OVER` are all in the outer `SELECT` over the finished `chain`. So the fold would have removed nothing
-that is there, and it would have restated in Java a rule this tree states in SQL, against this item's
-own "the rule stays stated once, in SQL". Three further reasons it goes: the walk standalone is
-milliseconds by this body's own table, so the cost was never the recursion but the per-driving-row
-re-evaluation, which any once-per-capture write removes; the termination assertion is unnecessary,
-`UNION` reaching a fixpoint and `position` strictly increasing; and the one precedent for a Java
-fixpoint loop in this tree, `ClassificationDomainCapture`, is a `HAND_WRITTEN` producer admitted on
-the argument that no view could state its rule, which is a licence a rule stated by a shipped view
-cannot borrow. H2 2.4.240, the pinned version, accepts the single-statement form; the round-2 review
-checked it on the jar in the local repository with a seed filtered to one graph, and the implementer
-re-checks rather than taking it from here.
-
-**Why the walk takes the hop's two key shapes.** Its `constraint_name` and `fk_on_from` are identity
-on the `KEY` and `TABLE` arms and absent on the other two, with `targets` and `candidates` as payload
-either way, which is the hop's shape inherited through a recursion that carries the hop's columns
-forward unchanged. Earlier drafts of this paragraph said "indexed and not keyed" and gave H2's refusal
-of a key over a nullable column as the reason; that is a statement about an engine and could never have
-been the reason for a modelling decision, which is the correction the round-6 review's finding forced.
-The arms are disjoint per element coordinate rather than merely by convention, which is what makes each
-key total: a hop entry carrying a key spelling produces only `KEY` rows, one carrying a table spelling
-only `TABLE` and `NAME_MATCH` rows, and one carrying neither only `CONDITION` rows, so no coordinate
-can produce a `NAME_MATCH` and a `CONDITION` row at once.
-
-This phase therefore writes two inserts per graph rather than one, each carrying the same `WITH
-RECURSIVE chain` and the same ranking over it and differing only in a closing arm filter, so the rule's
-text is still one text and the `EXCEPT` oracle still compares two evaluations of it. Taking the filter
-after the ranking rather than before it is load-bearing: `targets` and `candidates` are counted over the
-whole partition, both arms included, so an arm filter applied inside the window would change the answer
-rather than partition it. That evaluates the walk twice per graph, which phase 3 priced standalone at
-0.08 s, so the second evaluation is under a tenth of a second once per capture; an implementer who
-wants one may stage the ranked chain and split out of it, and says which they did. Each arm table takes
-a coordinate index shaped like `ix_argument_reference_step_target_coordinate` with the `COMMENT ON
-INDEX` `everyIndexOnATargetStatesItsReader` requires, which is what the three readers holding the
-element coordinate seek on.
-
-**What this phase reaches in `intent_node_id_instruction_live`, and what it does not.** That rule is
-the 592 s statement R953 measured and it does read the field walk, but not once per driving row
-directly: it reads it inside a CTE named `slot_table`, and `slot_table` is derived from the
-`instructed` CTE and then joined back to `instructed` in the union arm that produces the
-`TARGET_TABLE_NODE_TYPE` instruction. H2 inlines a non-recursive `WITH` exactly like a view and
-eliminates no common subexpression, so `slot_table` is recomputed once per `instructed` row with the
-walk inside it. Storing the walk removes the recursion from the inside of that loop. It does not
-remove the loop. The relation's own `meta_materialize.reason` already says which of the two the fix
-is: it records that "snapshotting the inner alias into a table put the arm at 0.7 s, which is the
-shape of the fix and the reason this is a registration rather than a rewrite", and that "The narrower
-registration that would cut this one is the inner alias, which is a local alias rather than a named
-relation today and wants promoting to one before it can be registered." So this phase is a term of
-that rule's cost and the honest claim is a term, not the whole. Promoting the alias is a separate
-change this item does not take, named under "What this item does not do".
-
-Phase 3's measurement quantifies both halves of that and does not flip it. In the regime the failing
-round ran in, storing the walk alone takes that rule from 436.1 s to 0.91 s and promoting the alias
-on top takes it to 0.06 s, both single executions. On an analysed store the same pair reads 2.582 s
-as shipped, 1.100 s with the walk stored and 0.080 s with the alias promoted. So the loop is real and
-the promotion is worth a further order of magnitude, and it is an order of magnitude of a second
-rather than of the failure.
-
-**What this phase also fixes, named as a beneficiary rather than taken into scope.**
-`intent_field_reference_step_fanout` is an unregistered plain view whose `pair` CTE self-joins this
-walk and is named four times downstream, so one evaluation expands the walk eight times. On the `sis`
-store it does not return: a lint's read of it in the live round ran for sixteen minutes without
-answering and a probe of it did not answer inside a 30-minute cap. With this walk stored it answers in
-0.37 s for 60 rows. Phase 3 carries the figures and the caveats. The view is not edited, its own
-`pair` alias is not promoted, and nothing about it is filed: with the walk stored there is a 0.28 s
-residue left and that is not worth an item. Stated here so the phase's value is not read off the
-decode rule alone.
+Three findings. The single-statement `INSERT ... WITH RECURSIVE ... SELECT` per arm is what jOOQ and
+H2 2.4.240 accept, as the round-2 review reported, and the arm filter has to be applied outside the
+ranking rather than inside it, which the plan said and is easy to get wrong in a DSL where the two
+read alike. Neither arm carries the coordinate index R956 sketched: the key leads with exactly the
+coordinate, so such an index is a prefix, which is the shape the hop arms one rung down measured as
+buying nothing. And the conversion made two things visible to the supertype gate that were always
+true and hidden by the register: the spelling resolution and the type binding carry one payload
+under two keys, and the field-scope rule reconstructs that pair. Both are recorded as observations
+rather than as supertypes owed.
 
 ### Phase 3: the acceptance measurement, taken on 2026-09-17
 
@@ -865,7 +675,7 @@ still `graphitron_` and still the graphitron gatherer's by the ownership rule; w
 statement's position in the pass, not whose family the rows are in, exactly as
 `ArgMappingCandidates.derive` writes `graphitron_argmapping_candidate` from that stratum today.
 
-**This phase and the next split into a successor item, on the phase-3 measurement.** That measurement
+**This phase and the next are R958's, split out on the phase-3 measurement.** That measurement
 put the field walk and the fanout view it feeds inside this item's own family and put the refresh
 pass's dominant term in R953's, so nothing it found names rungs 4 and 5 as the failure. They are a
 real residual, the input-field walk being 2.66 s of the decode-hop rule's 4.124 s, and they reach into
@@ -1005,7 +815,7 @@ nothing times it, is unaffected by statistics (hop was analysed six seconds befo
 read of it began), and is the one relation that did not return at all. Phase 2 fixes it, to 0.37 s,
 without either the view or this item changing a line for it.
 
-**The scope call: phases 0 to 2 are this item, and phases 4 and 5 split to a successor.** The argument
+**The scope call: phases 0 to 2 are this item, and phases 4 and 5 are R958's.** The argument
 in the order the evidence supports it.
 
 1. **Phase 2 is necessary for the `sis` round to finish and is reachable by nothing else, R953
