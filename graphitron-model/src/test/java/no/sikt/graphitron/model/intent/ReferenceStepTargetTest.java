@@ -17,12 +17,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TA
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
+import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceCall;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
+import static no.sikt.graphitron.model.test.SeededStore.seedPrimaryKey;
 import static no.sikt.graphitron.model.test.SeededStore.seedReferentialConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -124,6 +126,42 @@ class ReferenceStepTargetTest {
                 .containsExactly(1, 1);
             assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(2, 2);
+        });
+    }
+
+    /**
+     * Both arities are the element's and not the arm's. The relation is stored as two tables split
+     * on whether a foreign key identifies the row, and one element can be reached on both: a table
+     * element departing an ambiguously bound type finds its foreign key from the bound table and a
+     * name match from the bound function result, so the coordinate holds one keyed row and one
+     * keyless one. Two routes reach it, and each arm saying one is the reading
+     * {@code intent_field_reference_step_fanout} acts on when it declines an element the walk
+     * reached by several candidate routes.
+     *
+     * <p>The case exists because the split made this losable in a way the answer oracle cannot
+     * see: both counts are window functions, a {@code WHERE} is evaluated before the window
+     * functions of the {@code SELECT} it sits in, and a fixture with rows in one arm only agrees
+     * whichever level the arm filter sits at. {@code targets} is carried by the same level and so
+     * is held by the same pin.
+     */
+    @Test
+    void bothArmsOfOneElementCountTowardsItsArities() {
+        withCrossArmSeed(dsl -> {
+            var rows = chain(dsl, GRAPH);
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA)))
+                .as("one element, reached on both arms")
+                .containsExactlyInAnyOrder("TABLE", "NAME_MATCH");
+            assertThat(rows.map(ReferenceStepTargetTest::hop))
+                .containsExactlyInAnyOrder("films->film_translation", "films->film_translation");
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_SCHEMA)))
+                .as("the bound table and the bound function result, one per arm")
+                .containsExactlyInAnyOrder(PUBLIC, "legacy");
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
+                .as("two routes reach this element, and neither arm holds both")
+                .containsExactly(2, 2);
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
+                .as("both routes land on the one table, so the destination is certain")
+                .containsExactly(1, 1);
         });
     }
 
@@ -516,6 +554,48 @@ class ReferenceStepTargetTest {
                 tableRefs == null ? null : tableRefs[position],
                 keyRefs == null ? null : keyRefs[position]);
         }
+    }
+
+    /**
+     * A type whose binding is ambiguous across the two kinds of departure, which is the smallest
+     * catalog reaching one element on both arms of the stored walk. One source declares
+     * {@code public.films} as a table and {@code legacy.films} as a table-valued function's result,
+     * so the unqualified spelling {@code films} binds {@code Film} to both. The element spells
+     * {@code film_translation}, which the table reaches by its foreign key and the function result
+     * by its whole primary key matched on column name.
+     *
+     * <p>A separate fixture from the catalog above rather than rows added to it, because the name
+     * match needs a primary key with its columns stated where that catalog seeds the constraint
+     * alone, and re-seeding one there would collide on the constraint name.
+     */
+    private static void withCrossArmSeed(Consumer<DSLContext> body) {
+        withSeededStore(GRAPH, dsl -> {
+            seedSource(dsl, PKG, "JOOQ_SCHEMA");
+            seedGraphSource(dsl, GRAPH, PKG);
+
+            seedTable(dsl, PKG, PUBLIC, "films");
+            seedColumn(dsl, PKG, PUBLIC, "films", "film_id", 0, "FILM_ID");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "films", "films_pkey", "film_id");
+
+            seedTable(dsl, PKG, PUBLIC, "film_translation");
+            seedColumn(dsl, PKG, PUBLIC, "film_translation", "translation_id", 0, "TRANSLATION_ID");
+            seedColumn(dsl, PKG, PUBLIC, "film_translation", "film_id", 1, "FILM_ID");
+            seedPrimaryKey(dsl, PKG, PUBLIC, "film_translation", "film_translation_pkey",
+                "translation_id");
+            seedConstraint(dsl, PKG, PUBLIC, "film_translation", "film_translation_film_id_fkey",
+                "FOREIGN KEY", null);
+            seedReferentialConstraint(dsl, PKG, PUBLIC, "film_translation",
+                "film_translation_film_id_fkey", PKG, PUBLIC, "films", "films_pkey");
+
+            // The function result: no key of its own, and it exposes the arriving table's whole
+            // primary key by name, which is the only route out of one.
+            seedTable(dsl, PKG, "legacy", "films", "FUNCTION");
+            seedColumn(dsl, PKG, "legacy", "films", "translation_id", 0, "TRANSLATION_ID");
+
+            seedTableBinding(dsl, GRAPH, "Film", "films");
+            seedTablePath(dsl, "Film", "translations", "film_translation");
+            body.accept(dsl);
+        });
     }
 
     /**

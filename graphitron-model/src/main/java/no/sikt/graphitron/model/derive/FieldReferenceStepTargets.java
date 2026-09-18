@@ -42,12 +42,14 @@ import static org.jooq.impl.SQLDataType.VARCHAR;
  * other two there is no key to enumerate, so the coordinate with both table triples is already
  * total. The view over the two carries the canonical name every reader spells.
  *
- * <p>Two statements per graph, each carrying the same walk and the same ranking over it and
- * differing only in a closing arm filter. Taking the filter after the ranking rather than before
- * it is load-bearing: the two counts are over the whole partition, both arms included, so an arm
- * filter applied inside the window would change the answer rather than partition it. That
- * evaluates the walk twice per capture, which is measured in hundredths of a second, against a
- * staged intermediate that would have to be reconciled like a third relation.
+ * <p>Two statements per graph, each carrying the same walk, the same ranking over it and the same
+ * two arities, and differing only in a closing arm filter. The filter separates the rows and must
+ * not narrow what the arities are taken over: an element the walk reaches by one route on each arm
+ * is reached by two routes, and saying one on each is the reading every arity gate here would act
+ * on. That is why the arities sit a level below the filter rather than beside it, which
+ * {@link #counted} states where an implementer meets it. Two statements evaluate the walk twice
+ * per capture, which is measured in hundredths of a second, against a staged intermediate that
+ * would have to be reconciled like a third relation.
  */
 public final class FieldReferenceStepTargets {
 
@@ -92,33 +94,52 @@ public final class FieldReferenceStepTargets {
     }
 
     /**
-     * The walk, ranked, with one arm taken out of it. One text for both arms, so the two
-     * statements cannot drift apart about what the chain is or what the counts are over.
+     * The counted walk with one arm taken out of it. One text for both arms, so the two
+     * statements cannot drift apart about what the chain is or what the arities are over.
      */
     private static Select<? extends Record> walked(DSLContext dsl, String graphName,
                                                    boolean keyedArm) {
         Name chain = name("chain");
-        var ranked = ranked(dsl, chain).asTable("ranked");
+        var counted = counted(dsl, chain).asTable("counted");
         List<Field<?>> projected = new java.util.ArrayList<>();
         for (String column : CHAIN_COLUMNS) {
             if (!keyedArm && (column.equals("key_matched_by") || column.equals("constraint_name")
                 || column.equals("fk_on_from"))) {
                 continue;
             }
-            projected.add(ranked.field(column));
+            projected.add(counted.field(column));
         }
-        var coordinate = List.<Field<?>>of(ranked.field("graph_name"), ranked.field("type_name"),
-            ranked.field("field_name"), ranked.field("ordinal"), ranked.field("position"));
-        projected.add(max(ranked.field("target_rank", Integer.class)).over(partitionBy(coordinate))
-            .cast(INTEGER));
-        projected.add(count().over(partitionBy(coordinate)).cast(INTEGER));
+        projected.add(counted.field("targets"));
+        projected.add(counted.field("candidates"));
 
-        var arm = ranked.field("via", String.class).in(keyedArm
+        var arm = counted.field("via", String.class).in(keyedArm
             ? List.of("KEY", "TABLE") : List.of("NAME_MATCH", "CONDITION"));
         return dsl.withRecursive(chainOf(dsl, chain, graphName))
             .select(projected)
-            .from(ranked)
+            .from(counted)
             .where(arm);
+    }
+
+    /**
+     * The ranked chain with both arities beside every row, each over the element's whole
+     * partition and both arms.
+     *
+     * <p>A level of its own rather than columns of the level above it, and that is the whole point
+     * of the nesting: a {@code WHERE} is evaluated before the window functions of the
+     * {@code SELECT} it sits in, so an arm filter beside these two would count the arm where the
+     * relation means to count the element. Filtering outside the ranking is not enough on its own,
+     * because the ranking is not where the arities are computed.
+     */
+    private static Select<? extends Record> counted(DSLContext dsl, Name chain) {
+        var ranked = ranked(dsl, chain).asTable("ranked");
+        List<Field<?>> projected = new java.util.ArrayList<>(
+            CHAIN_COLUMNS.stream().map(column -> ranked.field(column)).toList());
+        var coordinate = List.<Field<?>>of(ranked.field("graph_name"), ranked.field("type_name"),
+            ranked.field("field_name"), ranked.field("ordinal"), ranked.field("position"));
+        projected.add(max(ranked.field("target_rank", Integer.class)).over(partitionBy(coordinate))
+            .cast(INTEGER).as("targets"));
+        projected.add(count().over(partitionBy(coordinate)).cast(INTEGER).as("candidates"));
+        return dsl.select(projected).from(ranked);
     }
 
     /** The finished chain with each element's arrivals ranked, which is what both counts read. */

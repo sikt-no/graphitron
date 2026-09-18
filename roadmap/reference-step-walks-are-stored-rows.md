@@ -1,7 +1,7 @@
 ---
 id: R954
 title: "A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -492,20 +492,30 @@ non-vacuous.
 
 ### Phase 2: the field walk
 
-**Shipped at `a78bcf1`.** `graphitron_resolved_type_binding` converts with the primary key its rule
-always implied, and the walk becomes `graphitron_field_reference_step_target_keyed` and `_keyless`
-under a view carrying the canonical name, both written by stages after the hops. The register falls
-to 20 registrations and 13 refresh stages.
+**Shipped at `a78bcf1`, with the arities corrected in the rework below.**
+`graphitron_resolved_type_binding` converts with the primary key its rule always implied, and the
+walk becomes `graphitron_field_reference_step_target_keyed` and `_keyless` under a view carrying the
+canonical name, both written by stages after the hops. The register falls to 20 registrations and 13
+refresh stages.
 
-Three findings. The single-statement `INSERT ... WITH RECURSIVE ... SELECT` per arm is what jOOQ and
-H2 2.4.240 accept, as the round-2 review reported, and the arm filter has to be applied outside the
-ranking rather than inside it, which the plan said and is easy to get wrong in a DSL where the two
-read alike. Neither arm carries the coordinate index R956 sketched: the key leads with exactly the
-coordinate, so such an index is a prefix, which is the shape the hop arms one rung down measured as
-buying nothing. And the conversion made two things visible to the supertype gate that were always
-true and hidden by the register: the spelling resolution and the type binding carry one payload
-under two keys, and the field-scope rule reconstructs that pair. Both are recorded as observations
-rather than as supertypes owed.
+Four findings. The single-statement `INSERT ... WITH RECURSIVE ... SELECT` per arm is what jOOQ and
+H2 2.4.240 accept, as the round-2 review reported. Neither arm carries the coordinate index R956
+sketched: the key leads with exactly the coordinate, so such an index is a prefix, which is the shape
+the hop arms one rung down measured as buying nothing. And the conversion made two things visible to
+the supertype gate that were always true and hidden by the register: the spelling resolution and the
+type binding carry one payload under two keys, and the field-scope rule reconstructs that pair. Both
+are recorded as observations rather than as supertypes owed.
+
+The fourth is the rework the Done gate's round 8 found, and it is worth keeping past the landing
+because it is the trap this shape sets. The plan said the arm filter goes after the ranking and the
+first landing put it there, outside the derived table the ranking sits in but in the same `SELECT` as
+the two arities. A `WHERE` is evaluated before the window functions of the `SELECT` it sits in, so
+both arities counted the arm where the relation means to count the element: a coordinate reached once
+on each arm read `candidates = 1` twice where the rule it replaced read 2, which is the reading
+`intent_field_reference_step_fanout` declines an ambiguous element on. "After the ranking" was the
+wrong test; the arities are not computed at the ranking. They are their own level now, between the
+ranking and the filter, and the class says why where an implementer meets it. The successor takes
+this walk's shape for two more walks, so the level is part of the shape it takes.
 
 ### Phase 3: the acceptance measurement, taken on 2026-09-17
 
@@ -946,6 +956,12 @@ phase cheap to review however large the ladder gets.
   after phase 0, where the foreign-key count's 1.44 s was measured on an unindexed snapshot and a real
   target carries its declared indexes; and the growth claim, which only the same configurations
   answering linearly across sizes demonstrate and which phase 3 did not take.
+  **None of the three has been taken on the shipped tree, and it cannot be taken from here.** Phase
+  3 ran against a private copy of a real consumer store, and no such copy is reachable from this
+  repository; a session that has one can take all three with the phase-3 method unchanged, and until
+  one does, the cost claim rests on snapshot proxies rather than on the relations the tree actually
+  landed. Stated where the reading is asked for rather than left to be discovered, this being the
+  item's priority-1 ground and the one thing a green build does not touch.
 
 ## What this item does not do
 
@@ -2578,3 +2594,32 @@ included. All four roster lines are gone and every new relation and union view c
 carrying the `@reference` path the body said it needed. No test asserts on generated method bodies.
 `docs/` carries no roadmap-internal markers, no retired `intent_` spelling survives anywhere outside
 this item's own history, and the body reflects what shipped.
+
+### Author's response to round 8 (2026-09-18)
+
+Not a review round: the round-8 reviewer answering its own findings, having been asked to implement
+the rework. That makes this session an implementer, so it is disqualified from the next Done gate and
+the hand-off says so.
+
+**Finding 10 (the arm filter is inside the window functions' block). Taken, and fixed at the level
+the finding named.** The two arities move into a derived table of their own between the ranking and
+the arm filter, so the filter is provably after both. Both configurations the finding reported now
+agree with the retired rule exactly: a coordinate reached once on each arm reads `candidates = 2` on
+both rows, and with the arms landing on different tables both read `targets = 2`. Phase 2's note
+carries the finding forward rather than deleting it, because "after the ranking" was a plausible and
+wrong test, and the successor takes this shape for two more walks.
+
+**Finding 11 (the oracle ran on a population that could not separate the two rules). Taken, as a
+pinned case rather than a re-run.** `ReferenceStepTargetTest.bothArmsOfOneElementCountTowardsItsArities`
+seeds the smallest catalog reaching one element on both arms, a type whose unqualified spelling binds
+it to both a table and a table-valued function's result, and pins both arities across the arms. It
+was confirmed to fail on the pre-rework statement and on that assertion alone, so it is a pin and not
+a restatement. A re-run of the `EXCEPT` oracle would have been the weaker answer: the rule text has
+left the DDL, so the oracle now needs the retired text carried in a throwaway, where a permanent case
+is what stops the next rewrite of this statement losing the arities again.
+
+**Finding 12 (the acceptance evidence is not recorded). Taken as a statement rather than as a
+reading.** No consumer store is reachable from this repository, so the three readings "Tests" names
+cannot be taken here. That section now says so where it asks for them, with what would close it.
+This is the one thing the item still owes, and the next gate should weigh it as such rather than
+treat it as closed.
