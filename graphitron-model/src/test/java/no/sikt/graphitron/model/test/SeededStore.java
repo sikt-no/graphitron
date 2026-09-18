@@ -94,6 +94,7 @@ import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -2619,6 +2620,20 @@ public final class SeededStore {
             .set(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA, referencedSchema)
             .set(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE, referencedTable)
             .set(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME, referencedConstraintName)
+            .execute();
+        // The pair count capture writes beside the keys, maintained here for the same reason the
+        // constraint row is: a case seeds a catalog, and a catalog with a foreign key in it has a
+        // pair this key connects. Counted up rather than set, so two keys between one pair of
+        // tables leave the row saying two exactly as a reading of that catalog would.
+        dsl.insertInto(SQL_TABLE_REFERENCE)
+            .columns(SQL_TABLE_REFERENCE.SOURCE_NAME, SQL_TABLE_REFERENCE.TABLE_SCHEMA,
+                SQL_TABLE_REFERENCE.TABLE_NAME, SQL_TABLE_REFERENCE.REFERENCED_SOURCE_NAME,
+                SQL_TABLE_REFERENCE.REFERENCED_SCHEMA, SQL_TABLE_REFERENCE.REFERENCED_TABLE,
+                SQL_TABLE_REFERENCE.CONSTRAINTS, SQL_TABLE_REFERENCE.TOUCHED_AT)
+            .values(sourceName, tableSchema, tableName, referencedSourceName, referencedSchema,
+                referencedTable, 1, SEEDED_READING)
+            .onDuplicateKeyUpdate()
+            .set(SQL_TABLE_REFERENCE.CONSTRAINTS, SQL_TABLE_REFERENCE.CONSTRAINTS.plus(1))
             .execute();
     }
 

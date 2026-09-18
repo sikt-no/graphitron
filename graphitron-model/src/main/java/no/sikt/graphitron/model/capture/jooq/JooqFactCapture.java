@@ -34,9 +34,12 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE_RECORD_SUPERTYPE;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
+import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
+import static org.jooq.impl.SQLDataType.INTEGER;
 
 /**
  * Writes the consumer's database as the generated jOOQ classes describe it.
@@ -79,6 +82,7 @@ public final class JooqFactCapture {
         constraintColumns(dsl, constraints, touchedAt);
         primaryKeys(dsl, tables, touchedAt);
         referentialConstraints(dsl, jooq, tables, touchedAt);
+        tableReferences(dsl, sourceNames(tables), touchedAt);
         indexes(dsl, jooq, tables, touchedAt);
         indexColumns(dsl, jooq, tables, touchedAt);
         nodeMetadata(dsl, jooq, tables, touchedAt);
@@ -342,6 +346,44 @@ public final class JooqFactCapture {
                 .set(t.REFERENCED_TABLE, excluded(t.REFERENCED_TABLE))
                 .set(t.REFERENCED_CONSTRAINT_NAME, excluded(t.REFERENCED_CONSTRAINT_NAME))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * How many foreign keys connect each ordered pair of tables, which is the fact a reader that
+     * discovers a route rather than naming one asks for: exactly one key is a route it may take,
+     * and two are an ambiguity it declines.
+     *
+     * <p>Counted here and not by each reader. Every asker was recounting the same aggregate over
+     * the whole census on the inner side of its own join, so the count was paid once per driving
+     * row for a value that varies with the catalog alone. Stated as its own relation rather than
+     * as a column beside each key, which would repeat one value down every constraint of a pair.
+     *
+     * <p>Read out of the rows the stage above it just wrote rather than out of the catalog a
+     * second time, which is what makes the count exactly the one the census holds: a key the
+     * reference rows deduplicated is one key here too, where a second walk of the catalog would
+     * have counted it twice.
+     *
+     * <p>Ordered, the declaring end and the referenced end not being interchangeable. A
+     * self-referential key is one row, both ends being the same table.
+     */
+    private static void tableReferences(DSLContext dsl, Set<String> sources,
+                                        LocalDateTime touchedAt) {
+        var t = SQL_TABLE_REFERENCE;
+        var rc = SQL_REFERENTIAL_CONSTRAINT;
+        dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.REFERENCED_SOURCE_NAME,
+                t.REFERENCED_SCHEMA, t.REFERENCED_TABLE, t.CONSTRAINTS, t.TOUCHED_AT)
+            .select(dsl
+                .select(rc.SOURCE_NAME, rc.TABLE_SCHEMA, rc.TABLE_NAME, rc.REFERENCED_SOURCE_NAME,
+                    rc.REFERENCED_SCHEMA, rc.REFERENCED_TABLE,
+                    count().cast(INTEGER), val(touchedAt, t.TOUCHED_AT))
+                .from(rc)
+                .where(rc.SOURCE_NAME.in(sources))
+                .groupBy(rc.SOURCE_NAME, rc.TABLE_SCHEMA, rc.TABLE_NAME, rc.REFERENCED_SOURCE_NAME,
+                    rc.REFERENCED_SCHEMA, rc.REFERENCED_TABLE))
+            .onDuplicateKeyUpdate()
+            .set(t.CONSTRAINTS, excluded(t.CONSTRAINTS))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
     }
 
     private static void indexes(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
@@ -693,7 +735,8 @@ public final class JooqFactCapture {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
-        SQL_REFERENTIAL_CONSTRAINT, SQL_INDEX, SQL_INDEX_COLUMN, SQL_NODE_METADATA,
+        SQL_REFERENTIAL_CONSTRAINT, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
+        SQL_NODE_METADATA,
         SQL_NODE_KEY_COLUMN, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
 
     /**

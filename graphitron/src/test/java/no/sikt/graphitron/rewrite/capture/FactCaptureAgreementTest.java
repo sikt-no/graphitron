@@ -77,6 +77,7 @@ import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -613,6 +614,7 @@ class FactCaptureAgreementTest {
         registrations.put("intent_field_reference_step_hop_keyed", Arm.DERIVED);
         registrations.put("intent_field_reference_step_hop_keyless", Arm.DERIVED);
         registrations.put("sql_name_matched_key_column", Arm.DERIVED);
+        registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("intent_condition_method_route", Arm.DERIVED);
         registrations.put("intent_condition_method_route_defect", Arm.DERIVED);
         registrations.put("intent_java_enum_class", Arm.DERIVED);
@@ -2060,6 +2062,56 @@ class FactCaptureAgreementTest {
                 .forEach(row -> captured.add(row.value1() + "." + row.value2() + "|" + row.value3()
                     + "|" + row.value4() + "|" + row.value5()));
             assertThat(captured).isEqualTo(expected);
+        }
+    }
+
+    /**
+     * The pair count a reader that discovers a route asks for, at the grain it asks at: one row per
+     * ordered pair of tables whatever the number of foreign keys connecting them, the number
+     * beside it, and no row at all where none connects the pair. The three readings the grain has
+     * to get right are named as well as derived, because the derivation would pass on a catalog
+     * carrying none of them.
+     */
+    @Test
+    @DisplayName("each ordered table pair a foreign key connects is one row counting the keys")
+    void tableReferencesCountTheKeysConnectingEachPair(@TempDir Path tmp) {
+        var ctx = testContext();
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        try (var store = GraphitronModelStore.open()) {
+            FactCapture.capture(store.dsl(), graph(tmp), SubjectConfig.none(),
+                emptyRegistry(tmp), CapturedStore.attributionOf(tmp), jooq, List.of());
+
+            var expected = new LinkedHashMap<String, Integer>();
+            for (var entry : jooq.allTableEntries()) {
+                var table = entry.table();
+                String from = table.getSchema().getName() + "." + table.getName();
+                for (var fk : jooq.foreignKeyFactsOf(table)) {
+                    expected.merge(from + "|" + fk.targetTable(), 1, Integer::sum);
+                }
+            }
+            assertThat(expected).as("the catalog declares foreign keys, so this pins something")
+                .isNotEmpty();
+
+            var captured = new LinkedHashMap<String, Integer>();
+            store.dsl()
+                .select(SQL_TABLE_REFERENCE.TABLE_SCHEMA, SQL_TABLE_REFERENCE.TABLE_NAME,
+                    SQL_TABLE_REFERENCE.REFERENCED_SCHEMA, SQL_TABLE_REFERENCE.REFERENCED_TABLE,
+                    SQL_TABLE_REFERENCE.CONSTRAINTS)
+                .from(SQL_TABLE_REFERENCE)
+                .fetch()
+                .forEach(row -> captured.put(row.value1() + "." + row.value2()
+                    + "|" + row.value3() + "." + row.value4(), row.value5()));
+            assertThat(captured).isEqualTo(expected);
+
+            assertThat(captured)
+                .as("a pair two foreign keys connect is one row saying two: film names language"
+                    + " twice, once for its language and once for its original one")
+                .containsEntry("public.film|public.language", 2)
+                .as("a self-referential key is one row, both ends being the same table")
+                .containsEntry("public.category|public.category", 1)
+                .as("a pair no foreign key connects has no row: actor reaches film only through"
+                    + " film_actor")
+                .doesNotContainKey("public.actor|public.film");
         }
     }
 
