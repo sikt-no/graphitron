@@ -11,50 +11,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.lint.LintRule;
 
 /**
- * Drift guard for the lint registry and its node-kind partition, mirroring the
- * {@code VariantCoverageTest} no-silent-default pattern: every engine rule
- * is registered to exactly one visitor, no classifier advisory leaks into the registry, and the
- * subscribed and not-linted kind sets partition {@link LintNodeKind} with no overlap and no gap.
+ * The rule catalogue, against the producers that are supposed to exist for it.
+ *
+ * <p>This was a registry's coverage while the engine rules were visitors and a registry wired them
+ * up. Nothing wires them now, the rules being arms of a view, so the claim that every engine rule is
+ * implemented moved to the cases beside them, where it is the stronger statement: a rule is covered
+ * when a corpus written to offend it draws a row, not when a class is on a list.
+ *
+ * <p>What is left here is about the other three sources, which are producers this enum names and
+ * something elsewhere emits, and about the ids themselves.
  */
 @UnitTier
-class LintRuleRegistryCoverageTest {
+class LintRuleCatalogueTest {
 
-    @Test
-    void everyEngineRuleIsRegisteredToExactlyOneVisitor() {
-        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
-        var engineRules = Arrays.stream(LintRule.values())
-            .filter(r -> r.source() == LintRule.Source.ENGINE)
-            .toList();
 
-        assertThat(registered)
-            .as("every ENGINE rule registered, none twice")
-            .doesNotHaveDuplicates()
-            .containsExactlyInAnyOrderElementsOf(engineRules);
-    }
 
-    @Test
-    void classifierAdvisoriesAreNotRegisteredAsVisitors() {
-        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
-        assertThat(registered)
-            .as("classifier advisories are tagged at their emit site, never registered to a visitor")
-            .noneMatch(r -> r.source() == LintRule.Source.CLASSIFIER);
-    }
-
-    @Test
-    void subscribedAndNotLintedKindsPartitionAllNodeKinds() {
-        var subscribed = LintRules.subscribedKinds();
-        var notLinted = LintRules.NOT_LINTED;
-
-        var overlap = EnumSet.copyOf(subscribed);
-        overlap.retainAll(notLinted);
-        assertThat(overlap).as("a kind cannot be both subscribed and not-linted").isEmpty();
-
-        var union = EnumSet.copyOf(subscribed);
-        union.addAll(notLinted);
-        assertThat(union)
-            .as("every node kind is subscribed or declared not-linted; no silent skip")
-            .containsExactlyInAnyOrder(LintNodeKind.values());
-    }
 
     @Test
     void everyClassifierAdvisoryRuleExists() {
@@ -100,22 +71,7 @@ class LintRuleRegistryCoverageTest {
         assertThat(derived).containsExactlyInAnyOrder("reference-path-fans-out");
     }
 
-    @Test
-    void derivedProducerRulesAreNotRegisteredAsVisitors() {
-        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
-        assertThat(registered)
-            .as("derived-relation producers drive one statement from a view at report assembly,"
-                + " never a per-node visitor")
-            .noneMatch(r -> r.source() == LintRule.Source.DERIVED);
-    }
 
-    @Test
-    void codegenAdvisoriesAreNotRegisteredAsVisitors() {
-        var registered = LintRules.builtIn().stream().map(LintVisitor::rule).toList();
-        assertThat(registered)
-            .as("codegen-config advisories are emitted at report assembly, never registered to a visitor")
-            .noneMatch(r -> r.source() == LintRule.Source.CODEGEN);
-    }
 
     @Test
     void ruleIdsAreUniqueAndKebabCase() {

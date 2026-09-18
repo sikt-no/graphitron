@@ -64,7 +64,7 @@ class FixtureWarningsGateTest {
         List<BuildWarning> allWarnings = buildAllWarnings();
 
         // SDL lint findings (the engine's syntactic visitors) ride this same warning channel
-        // and are exercised by LintEngineTest. This gate pins the classifier/generator advisory
+        // and are exercised by LintRuleCasesTest. This gate pins the classifier/generator advisory
         // set specifically, so it filters the engine lint findings out; a CLASSIFIER advisory (the
         // same-table @asConnection one below) is itself a LintFinding but stays in scope here.
         List<BuildWarning> warnings = allWarnings.stream()

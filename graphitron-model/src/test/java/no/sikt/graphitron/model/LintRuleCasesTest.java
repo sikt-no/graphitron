@@ -130,6 +130,25 @@ class LintRuleCasesTest {
         }
         """;
 
+    /**
+     * The catalogue against the cases, which is what the walk's registry coverage used to say and
+     * says better here. That case asserted every ENGINE rule was registered to exactly one visitor,
+     * which is a claim about wiring; this asserts every ENGINE rule is reached by a corpus written
+     * to offend it, which is a claim about the rule working. A tenth rule declared and never
+     * implemented fails, and so does one implemented and never exercised.
+     */
+    @Test
+    @DisplayName("every rule the catalogue declares is one this corpus reaches")
+    void theCasesCoverTheCatalogue() {
+        var declared = java.util.Arrays.stream(no.sikt.graphitron.model.lint.LintRule.values())
+            .filter(rule -> rule.source() == no.sikt.graphitron.model.lint.LintRule.Source.ENGINE)
+            .map(no.sikt.graphitron.model.lint.LintRule::id)
+            .toList();
+        assertThat(EXPECTED.keySet())
+            .as("engine rules with no case here, or cases for a rule the catalogue does not declare")
+            .containsExactlyInAnyOrderElementsOf(declared);
+    }
+
     @Test
     @DisplayName("each rule draws exactly the subjects its corpus offends it with")
     void eachRuleDrawsItsOwnSubjects() {

@@ -15,7 +15,7 @@ package no.sikt.graphitron.model.lint;
  * <em>which producer mints the finding</em>, never what the finding is derived from. Read the
  * registry coverage test rather than this prose and the axis is unambiguous: every assertion it
  * makes is about which completeness gate owns a rule. {@link Source#ENGINE} rules are the engine's
- * own visitors, each registered to exactly one visitor in {@code LintRules}; they are the rules a
+ * own statements, each an arm of the {@code lint_violation} view; they are the rules a
  * single shared traversal dispatches, and what one of them reads is its own business (a visitor
  * answering from store rows is an engine rule like any other). {@link Source#CLASSIFIER} rules are
  * advisories the classifier already computes and emits from inside the type/field builders; the
@@ -60,7 +60,7 @@ public enum LintRule {
 
     /** Where a rule's findings originate, and therefore whether the engine registry owns it. */
     public enum Source {
-        /** An engine visitor over the AST; registered in {@code LintRules}, asserted by the coverage test. */
+        /** A rule stated as an arm of the lint_violation view, and reached by a case beside it. */
         ENGINE,
         /** A classifier verdict tagged at its existing emit site; never registered to a visitor. */
         CLASSIFIER,
