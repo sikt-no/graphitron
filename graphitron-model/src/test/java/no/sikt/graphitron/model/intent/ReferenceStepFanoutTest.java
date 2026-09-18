@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The two undecidable arms are asserted as named rows rather than as absences, which is the
  * point of their existing: a test pinning a silence cannot tell a declined intermediate from an
  * unimplemented one, and the silence this relation owns is the one
- * {@code intent_field_reference_step_target} owns, that the walk did not resolve the element to a
+ * {@code graphitron_field_reference_step_target} owns, that the walk did not resolve the element to a
  * single hop. What a declined row must not do is name a covering constraint, since coverage is
  * computed from the columns the readable hops bind and one hop can cover on its own; that is
  * asserted where the readable hop does cover, not where the fixture happens not to.

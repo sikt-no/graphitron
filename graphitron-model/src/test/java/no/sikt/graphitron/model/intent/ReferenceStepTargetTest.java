@@ -13,7 +13,7 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedConditionMethod;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What the three resolution views a {@code @reference} path stands on return:
  * {@code graphitron_spelled_table}, which resolves a written table name against the catalog census
  * whatever site wrote it, and the pair {@code graphitron_field_reference_step_hop} /
- * {@code intent_field_reference_step_target}, which split a path into its per-element resolutions
+ * {@code graphitron_field_reference_step_target}, which split a path into its per-element resolutions
  * and the chain that walks them.
  *
  * <p>The hop view has no test of its own here on purpose. Every row it produces that matters is a
@@ -68,16 +68,16 @@ class ReferenceStepTargetTest {
             seedKeyPath(dsl, "Film", "actors", "film_actor_film_id_fkey", "film_actor_actor_id_fkey");
 
             var rows = chain(dsl, GRAPH);
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION)))
                 .containsExactly(0, 1);
             assertThat(rows.map(ReferenceStepTargetTest::hop))
                 .containsExactly("film->film_actor", "film_actor->actor");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM)))
                 .as("film declares neither key; film_actor declares both")
                 .containsExactly(false, true);
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.VIA)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA)))
                 .containsExactly("KEY", "KEY");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(1, 1);
         });
     }
@@ -93,10 +93,10 @@ class ReferenceStepTargetTest {
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
             assertThat(hop(row)).isEqualTo("film->film_translation");
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.VIA)).isEqualTo("TABLE");
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
+            assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA)).isEqualTo("TABLE");
+            assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
                 .isEqualToIgnoringCase("film_translation_film_id_fkey");
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+            assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
                 .as("a table element names no constraint, so no namespace answered")
                 .isNull();
         });
@@ -118,11 +118,11 @@ class ReferenceStepTargetTest {
             assertThat(rows).hasSize(2);
             assertThat(rows.map(ReferenceStepTargetTest::hop))
                 .containsOnly("film->language");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)))
                 .containsExactlyInAnyOrder("film_language_id_fkey", "film_original_language_id_fkey");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
                 .containsExactly(1, 1);
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(2, 2);
         });
     }
@@ -143,8 +143,8 @@ class ReferenceStepTargetTest {
             assertThat(rows).hasSize(1);
             var row = rows.getFirst();
             assertThat(hop(row)).isEqualTo("category->category");
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS)).isEqualTo(1);
-            assertThat(row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS)).isEqualTo(1);
+            assertThat(row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)).isEqualTo(1);
         });
     }
 
@@ -185,7 +185,7 @@ class ReferenceStepTargetTest {
         withKeyPath("film_language_id_fkey", dsl -> {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
                 .isEqualTo("SQL_NAME");
             assertThat(hop(rows.getFirst())).isEqualTo("film->language");
         });
@@ -201,7 +201,7 @@ class ReferenceStepTargetTest {
         withKeyPath("FILM__FILM_LANGUAGE_ID_FKEY", dsl -> {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
                 .isEqualTo("JOOQ_NAME");
             assertThat(hop(rows.getFirst())).isEqualTo("film->language");
         });
@@ -230,11 +230,11 @@ class ReferenceStepTargetTest {
         withCollidingKeySeed(dsl -> {
             seedStep(dsl, "dup_fk", null);
             var rows = chain(dsl, GRAPH);
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA)))
                 .containsExactly("legacy", "public");
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS)))
                 .containsExactly(2, 2);
-            assertThat(rows.map(r -> r.get(INTENT_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
+            assertThat(rows.map(r -> r.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)))
                 .containsExactly(2, 2);
         });
     }
@@ -249,9 +249,9 @@ class ReferenceStepTargetTest {
             seedStep(dsl, "public.dup_fk", null);
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA))
                 .isEqualTo("public");
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY))
                 .as("a qualified spelling is a SQL constraint name; no constant carries a qualifier")
                 .isEqualTo("SQL_NAME");
         });
@@ -274,11 +274,11 @@ class ReferenceStepTargetTest {
             var rows = chain(dsl, GRAPH);
             assertThat(rows).hasSize(1);
             assertThat(hop(rows.getFirst())).isEqualTo("film->actor");
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.VIA))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA))
                 .isEqualTo("CONDITION");
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME))
                 .isNull();
-            assertThat(rows.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM)).isNull();
+            assertThat(rows.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM)).isNull();
         });
     }
 
@@ -559,13 +559,13 @@ class ReferenceStepTargetTest {
 
     private static Result<Record> chain(DSLContext dsl, String graphName) {
         derive(dsl);
-        return dsl.select(INTENT_FIELD_REFERENCE_STEP_TARGET.fields())
-            .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
-            .where(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
-            .orderBy(INTENT_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)
+        return dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.fields())
+            .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
+            .where(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME)
             .fetch();
     }
 
@@ -582,7 +582,7 @@ class ReferenceStepTargetTest {
 
     /** One row's hop, lowercased, as {@code from->to}: what every chain case reads first. */
     private static String hop(Record row) {
-        return (row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE) + "->"
-            + row.get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)).toLowerCase(Locale.ROOT);
+        return (row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE) + "->"
+            + row.get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)).toLowerCase(Locale.ROOT);
     }
 }

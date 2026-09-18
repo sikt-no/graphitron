@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answer and not ours. It re-resolves for any session that did not already compile the view, which is
  * what makes a reader minted after the swap the contract {@link UnregisteredRelation} states.
  *
- * <p>The relation under test is {@code intent_resolved_type_binding}, chosen because it is named from
+ * <p>The relation under test is {@code graphitron_resolved_type_binding}, chosen because it is named from
  * thirteen view bodies, so the dependent-view half of the claim is exercised over a real reader rather
  * than a fixture written to have one.
  *
@@ -44,10 +44,10 @@ class UnregisteredRelationTest {
     @TempDir
     Path tmp;
 
-    private static final String TARGET = "intent_resolved_type_binding";
+    private static final String TARGET = "intent_field_column_scope";
 
     /** A view naming the target, so the swap is exercised through a reader and not only directly. */
-    private static final String DEPENDENT = "intent_field_reference_step_target";
+    private static final String DEPENDENT = "intent_field_column_table";
 
     @Test
     void reversingARegistrationKeepsBothTheRelationsAnswerAndItsReadersAnswer() {

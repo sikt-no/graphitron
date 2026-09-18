@@ -164,6 +164,15 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
+        // What a name resolves to in the catalog, under the two keys the question is asked by: a
+        // spelling an author wrote, and a type the graph declares. The payload is the same because
+        // the answer is the same fact, a table triple with the arity of the resolution beside it,
+        // and the keys differ because the askers do. No supertype is owed here and the set is
+        // deliberately left undeclared: one is keyed on a string and the other on a type, so a
+        // relation over both would have to carry a discriminator and neither reader could key into
+        // it. They became visible together when both stopped being registered targets and became
+        // tables this gate's scan reaches.
+        Set.of("graphitron_resolved_type_binding", "graphitron_spelled_table"),
         // The five application sites, which keep their own signature now that a supertype carries
         // the name they share: each still holds the parent hop as a foreign key into the relation
         // its own site declares, and that is the payload grouping them here. The row stays because
@@ -350,7 +359,14 @@ class SupertypeSignatureGateTest {
         "intent_field_producer_reference|graphitron_external_field_entry,graphitron_service_entry",
         "intent_input_occurrence_override|graphitron_argument_condition_entry,graphitron_field_condition_entry",
         "intent_node_id_instruction_live|graphitron_argument_node_id_entry,graphitron_field_node_id_entry",
-        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry");
+        "intent_reference_for_application|graphitron_argument_reference_for_entry,graphitron_reference_for_entry",
+        // The scope rule reaching a table by either keying of one resolution, which became visible
+        // here the day the type binding stopped being a registered target and became a capture
+        // table this gate scans. It is not a union of two answers: each arm asks a different
+        // question of the same resolution, one by the type a field's site navigates to and one by
+        // a spelling an author wrote at that site, and coalescing them is the precedence between
+        // the two questions rather than a supertype nobody wrote.
+        "intent_field_scope_table_live|graphitron_resolved_type_binding,graphitron_spelled_table");
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

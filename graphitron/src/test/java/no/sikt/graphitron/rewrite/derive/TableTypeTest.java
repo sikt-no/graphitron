@@ -14,7 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -83,7 +83,7 @@ class TableTypeTest {
     void theSettledBindingsAgreeWithTheDerivation() {
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq())) {
             var dsl = store.dsl();
-            var b = INTENT_RESOLVED_TYPE_BINDING;
+            var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
             List<String> derived = dsl
                 .select(b.TYPE_NAME, b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME).from(b)
                 .where(b.GRAPH_NAME.eq(GRAPH)).and(b.CANDIDATES.eq(1))

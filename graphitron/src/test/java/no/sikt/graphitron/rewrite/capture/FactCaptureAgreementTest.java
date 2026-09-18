@@ -186,7 +186,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} binds the spelling
  *       resolution the bindings themselves stand on ({@code graphitron_spelled_table}) and the
  *       {@code @reference} chain over it ({@code graphitron_field_reference_step_hop} and
- *       {@code intent_field_reference_step_target}, the hop view pinned through the chain that
+ *       {@code graphitron_field_reference_step_target}, the hop view pinned through the chain that
  *       reaches or refuses it rather than twice), to a catalog stated table by table in the module
  *       whose DDL declares them, the shapes each case turns on (two foreign keys between one pair
  *       of tables, a key pointing back at its own table, a constraint name two schemas both
@@ -247,7 +247,7 @@ import no.sikt.graphitron.rewrite.PipelineCapturedStore;
  *       relation claims;
  *       {@code no.sikt.graphitron.rewrite.derive.RoutineReturnBindingTest} binds
  *       {@code intent_routine_return_binding}, the table a type is bound to by being what a chain
- *       returns, and {@code intent_resolved_type_binding}, where that population meets the
+ *       returns, and {@code graphitron_resolved_type_binding}, where that population meets the
  *       {@code @table} one, including the seat the derivation excludes and the arity the
  *       coalescing recount produces;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
@@ -639,7 +639,9 @@ class FactCaptureAgreementTest {
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("intent_synthesized_federation_key", Arm.DERIVED);
         registrations.put("intent_federation_key", Arm.DERIVED);
-        registrations.put("intent_field_reference_step_target", Arm.DERIVED);
+        registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
+        registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);
+        registrations.put("graphitron_field_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("intent_field_reference_step_fanout", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_target", Arm.DERIVED);
@@ -652,7 +654,7 @@ class FactCaptureAgreementTest {
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
         registrations.put("intent_routine_return_binding", Arm.DERIVED);
-        registrations.put("intent_resolved_type_binding", Arm.DERIVED);
+        registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
         registrations.put("intent_field_participant_scope_table", Arm.DERIVED);
         registrations.put("intent_field_scope_table", Arm.DERIVED);
@@ -702,7 +704,6 @@ class FactCaptureAgreementTest {
         registrations.put("intent_node_id_decode_hop_column_live", Arm.DERIVED);
         registrations.put("intent_node_id_decode_column_live", Arm.DERIVED);
         registrations.put("intent_input_field_carrier_role_live", Arm.DERIVED);
-        registrations.put("intent_resolved_type_binding_live", Arm.DERIVED);
         registrations.put("intent_field_column_scope_live", Arm.DERIVED);
         registrations.put("intent_node_id_instruction_live", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);

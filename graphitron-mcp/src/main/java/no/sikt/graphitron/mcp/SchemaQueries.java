@@ -32,7 +32,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_CLASS_MEMBER_SLOT;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_DEMAND;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_DEMAND;
@@ -842,27 +842,27 @@ final class SchemaQueries {
      */
     private static Field<List<Hop>> joinPath() {
         return multiset(
-            select(INTENT_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.VIA,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY,
-                qualified(INTENT_FIELD_REFERENCE_STEP_TARGET.FROM_SCHEMA,
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE),
-                qualified(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE),
-                INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)
-                .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
-                .where(ofField(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME,
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.TYPE_NAME,
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME))
-                .orderBy(INTENT_FIELD_REFERENCE_STEP_TARGET.ORDINAL.asc(),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION.asc(),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA.asc(),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE.asc(),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME.asc()))
+            select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY,
+                qualified(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_SCHEMA,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE),
+                qualified(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE),
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)
+                .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
+                .where(ofField(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TYPE_NAME,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME))
+                .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL.asc(),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION.asc(),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA.asc(),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE.asc(),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME.asc()))
             .convertFrom(r -> r.map(row -> new Hop(row.value1(), row.value2(), row.value3(),
                 row.value4(), row.value5(), row.value6(), row.value7(),
                 Boolean.TRUE.equals(row.value8()), row.value9(), row.value10())));

@@ -17,9 +17,11 @@ import no.sikt.graphitron.model.derive.ElementAnchors;
 import no.sikt.graphitron.model.derive.FieldChainApplications;
 import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
+import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldRoutines;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Nodes;
+import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
@@ -190,6 +192,10 @@ public final class GraphitronFactCapture {
         SpelledTables.derive(dsl, graphName);
         FieldReferenceStepHops.deriveKeyed(dsl, graphName);
         FieldReferenceStepHops.deriveKeyless(dsl, graphName);
+        // Then the bindings, which the routine arm reaches through the hops just written, and then
+        // the walk, which seeds from those bindings and steps through those hops.
+        ResolvedTypeBindings.derive(dsl, graphName);
+        FieldReferenceStepTargets.derive(dsl, graphName);
         // Then the endpoints, because their target rule reads the navigation two lines above and
         // their departure reads the bindings above that.
         FieldEndpoints.derive(dsl, graphName, readAt);

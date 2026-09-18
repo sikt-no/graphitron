@@ -192,7 +192,7 @@ class RefreshPlanStatisticsTest {
      * filter role were taken on the older shape and are kept as what the mechanism did there.
      *
      * <p>A tenth registration is in the set and a ninth member of it,
-     * {@code intent_resolved_type_binding_live}, which joined when the reference-step hop became two
+     * {@code graphitron_resolved_type_binding_live}, which joined when the reference-step hop became two
      * keyed tables under a union view. It is the first paragraph's mechanism arriving on another
      * statement rather than a new one, and the plan diff is one node: with the targets analysed its
      * read of the hop seeks the keyed arm's primary key on those same eight columns, and cold it
@@ -214,12 +214,20 @@ class RefreshPlanStatisticsTest {
      * rung reads a base table this pass can have analysed instead of a target only the refresh
      * writes. That is this measurement's own conclusion arriving for one rung: the four that left
      * were not made cheaper, they stopped being on the wrong side of the transaction boundary.
+     *
+     * <p>One arrived as those left, and it is the same mechanism read the other way. The
+     * {@code @nodeId} instruction rule reached the reference walk through a chain of plain views
+     * while that walk was a rule, so no statistics on a registered target could reach it; with the
+     * walk stored its plan turns on what the targets it still reads are known to hold. A rule
+     * joining this set is not a rule that got dearer, it is a rule whose plan has something to
+     * depend on.
      */
     private static final Set<String> PLAN_DEPENDS_ON_STATISTICS = Set.of(
         "intent_field_scope_table_live",
         "intent_mutation_payload_column_live",
         "intent_mutation_payload_refusal_live",
-        "intent_node_id_decode_hop_live");
+        "intent_node_id_decode_hop_live",
+        "intent_node_id_instruction_live");
 
     @TempDir
     static Path tmp;

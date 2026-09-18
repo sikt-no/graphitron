@@ -89,8 +89,13 @@ class MaterializeRegistryGateTest {
      * targets per graph. This is the first fall in this figure's history: every earlier increment
      * bought a reader's cost with a refresh, and a conversion buys the same fall without the
      * refresh, the rule being evaluated once per capture by its owner either way.
+     *
+     * <p>Twenty since the type binding followed them. It is the rung the reference walk seeds from
+     * and the reduction thirteen view bodies point at, and it took the primary key its own rule
+     * always implied: the union under it dedupes, so the type and the table triple are unique by
+     * construction and the count beside them is a payload the partition determines.
      */
-    private static final int REGISTRATIONS = 21;
+    private static final int REGISTRATIONS = 20;
 
     /**
      * Stages the refresh takes, the register's depth.
@@ -142,9 +147,14 @@ class MaterializeRegistryGateTest {
      * and a reader of this fall should read it as the pass no longer waiting on rules an owner
      * evaluates before the refresh begins.
      *
+     * <p>Thirteen with the type binding, and by the mechanism the two paragraphs above describe
+     * from the other direction: it sat one rung above the hops on the same chain, so converting it
+     * takes another stage off the front rather than out of the middle. What the pass still waits on
+     * is the column-scope family and what reads it, which no rung of this conversion reaches.
+     *
      * @see #REGISTRATIONS
      */
-    private static final int REFRESH_STAGES = 14;
+    private static final int REFRESH_STAGES = 13;
 
     /**
      * The registered targets carrying no index, each with the argument that says why. A roster
@@ -166,7 +176,7 @@ class MaterializeRegistryGateTest {
      * and a count in this paragraph is stale the moment one lands.
      *
      * <p>A row can also be falsified by the readers changing under it, and one has been.
-     * {@code intent_resolved_type_binding} sat here on a measurement that every index shape made
+     * {@code graphitron_resolved_type_binding} sat here on a measurement that every index shape made
      * some reader dearer, taken while every reader spelled its type expression inline; H2 pushes
      * such an expression down into the probe, so the index had nothing to add and something to
      * cost. Once {@code intent_field_navigated_type} stated that expression as a relation, the

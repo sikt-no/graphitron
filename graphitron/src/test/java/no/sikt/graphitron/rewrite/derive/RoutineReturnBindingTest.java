@@ -17,15 +17,15 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_SCOPE;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_RETURN_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The anchor for {@code intent_routine_return_binding} and the reduction over it,
- * {@code intent_resolved_type_binding}: which catalog table stands for a type when the author never
+ * {@code graphitron_resolved_type_binding}: which catalog table stands for a type when the author never
  * wrote {@code @table} on it, and what happens where both populations answer.
  *
  * <p>Every case captures real SDL against the test catalog, on {@code ChainTerminusTest}'s reason:
@@ -224,9 +224,9 @@ class RoutineReturnBindingTest {
             assertThat(directiveArmFor(dsl, "Row")).as("the @table arm").hasSize(1);
             var resolved = resolvedFor(dsl, "Row");
             assertThat(resolved).hasSize(1);
-            assertThat(lower(resolved.getFirst().get(INTENT_RESOLVED_TYPE_BINDING.TABLE_NAME)))
+            assertThat(lower(resolved.getFirst().get(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME)))
                 .isEqualTo("films_for_actor");
-            assertThat(resolved.getFirst().get(INTENT_RESOLVED_TYPE_BINDING.CANDIDATES)).isEqualTo(1);
+            assertThat(resolved.getFirst().get(GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)).isEqualTo(1);
         });
     }
 
@@ -238,9 +238,9 @@ class RoutineReturnBindingTest {
     void theTwoArmsDisagreeingAreTwoRows() {
         withCaptured(routineReturning("Row @table(name: \"film\")", ""), dsl -> {
             var resolved = resolvedFor(dsl, "Row");
-            assertThat(resolved.map(r -> lower(r.get(INTENT_RESOLVED_TYPE_BINDING.TABLE_NAME))))
+            assertThat(resolved.map(r -> lower(r.get(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME))))
                 .containsExactlyInAnyOrder("film", "films_for_actor");
-            assertThat(resolved.map(r -> r.get(INTENT_RESOLVED_TYPE_BINDING.CANDIDATES)))
+            assertThat(resolved.map(r -> r.get(GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)))
                 .containsOnly(2);
         });
     }
@@ -283,16 +283,16 @@ class RoutineReturnBindingTest {
                          argMapping: "pActorId: actorId, pMinLength: minLength")
             }
             """, dsl -> {
-            var targets = dsl.select(INTENT_FIELD_REFERENCE_STEP_TARGET.fields())
-                .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
-                .where(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            var targets = dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.fields())
+                .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
+                .where(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(CapturedStore.GRAPH))
                 .fetch();
             assertThat(targets).hasSize(1);
-            assertThat(targets.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.VIA))
+            assertThat(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA))
                 .isEqualTo("NAME_MATCH");
-            assertThat(lower(targets.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE)))
+            assertThat(lower(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE)))
                 .isEqualTo("films_for_actor");
-            assertThat(lower(targets.getFirst().get(INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)))
+            assertThat(lower(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)))
                 .isEqualTo("film");
         });
     }
@@ -332,11 +332,11 @@ class RoutineReturnBindingTest {
      * cases are not about and the reduction holds every binding in the graph.
      */
     private static Result<Record> resolvedFor(DSLContext dsl, String typeName) {
-        return dsl.select(INTENT_RESOLVED_TYPE_BINDING.fields())
-            .from(INTENT_RESOLVED_TYPE_BINDING)
-            .where(INTENT_RESOLVED_TYPE_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(INTENT_RESOLVED_TYPE_BINDING.TYPE_NAME.eq(typeName))
-            .orderBy(INTENT_RESOLVED_TYPE_BINDING.TABLE_NAME)
+        return dsl.select(GRAPHITRON_RESOLVED_TYPE_BINDING.fields())
+            .from(GRAPHITRON_RESOLVED_TYPE_BINDING)
+            .where(GRAPHITRON_RESOLVED_TYPE_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(GRAPHITRON_RESOLVED_TYPE_BINDING.TYPE_NAME.eq(typeName))
+            .orderBy(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME)
             .fetch();
     }
 

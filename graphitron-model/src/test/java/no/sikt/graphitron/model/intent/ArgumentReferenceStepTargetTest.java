@@ -12,7 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_REFERENCE_STEP
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_ARGUMENT_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_CONDITION_METHOD_ROUTE_DEFECT;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.test.SeededStore.derive;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgument;
 import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReference;
@@ -125,8 +125,8 @@ class ArgumentReferenceStepTargetTest {
             // The same elements written on Query's own field reach nothing, Query binding no table.
             seedFieldKeyPath(dsl, "Query", "films", "film_actor_film_id_fkey");
             derive(dsl);
-            assertThat(dsl.fetchCount(INTENT_FIELD_REFERENCE_STEP_TARGET,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH)))
+            assertThat(dsl.fetchCount(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(GRAPH)))
                 .as("the enclosing type's binding is what the field-site rule needs")
                 .isZero();
         });
@@ -530,7 +530,7 @@ class ArgumentReferenceStepTargetTest {
     }
 
     private static List<String> fieldSiteShape(DSLContext dsl) {
-        var t = INTENT_FIELD_REFERENCE_STEP_TARGET;
+        var t = GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
         return dsl.select(t.fields())
             .from(t)
             .where(t.GRAPH_NAME.eq(GRAPH))

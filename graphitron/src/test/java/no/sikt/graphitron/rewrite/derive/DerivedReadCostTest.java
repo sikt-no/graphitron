@@ -161,7 +161,7 @@ class DerivedReadCostTest {
      * captured or derived without a registration between them, so it is another row and no cells.
      *
      * <p>Raised to 127 by {@code intent_field_reference_step_fanout}, the {@code @reference}
-     * pair-coverage rule. It drives from {@code intent_field_reference_step_target}, so it reaches
+     * pair-coverage rule. It drives from {@code graphitron_field_reference_step_target}, so it reaches
      * everything that walk reaches and enters the domain as well as the schema: the two figures
      * below moved with it, by one and by two, the two cells being the hop registration and the type
      * binding. The hop cell is a new pinned pair and the binding cell is monotonic; both carry
@@ -201,8 +201,12 @@ class DerivedReadCostTest {
      * {@code _live} rules went with the registrations that named them, which is the count falling
      * for the one reason it can fall without a reader losing anything: the rule is still stated
      * once, and the statement that evaluates it is a stage's rather than a view's.
+     *
+     * <p>122 with the type binding, the fourth of those rules. The reference walk converted beside
+     * it and moved this figure by nothing: it was a plain view and its canonical name is a view
+     * still, the two keyed arms under it being tables.
      */
-    private static final int READERS_IN_SCHEMA = 123;
+    private static final int READERS_IN_SCHEMA = 122;
 
     /**
      * Views whose derivation reaches at least one registration's target.
@@ -262,8 +266,14 @@ class DerivedReadCostTest {
      * read did not change, and neither did what they cost; what changed is that the rows they read
      * are a table nobody has to buy with a refresh, so there is no registered-against-unregistered
      * comparison left to make about them.
+     *
+     * <p>Fifty to forty-two with the type binding and the reference walk. Eight more views stop
+     * being readers in this domain for the same reason: the binding was the rung they reached the
+     * register through, and it is a gatherer-written table now. The walk itself contributes none of
+     * the eight, having been a plain view before and after; what it changes is that its own rows are
+     * on disk, which is why the count falls rather than merely moving.
      */
-    private static final int READERS_WITH_CELLS = 50;
+    private static final int READERS_WITH_CELLS = 42;
 
     /**
      * The cells the domain holds: one per (registration, reaching relation) pair. Stated so the matrix
@@ -389,8 +399,13 @@ class DerivedReadCostTest {
      * re-evaluating the rule behind it, and there is no rule behind it any more: the rows are on
      * disk before the refresh starts, so the only shape left is the cheap one and no registration is
      * paying for it.
+     *
+     * <p>102 to 84 with the type binding and the reference walk, on the same mechanism: the binding
+     * was a registration eighteen cells were charged to, and a rung its owner writes buys no cells
+     * at all. What is left is the column-scope and node-id families and the mutation payloads,
+     * which is where the register still is.
      */
-    private static final int CELLS = 102;
+    private static final int CELLS = 84;
 
     /**
      * The multiple of the registered side's own wall clock allowed to the unregistered side before the
@@ -684,7 +699,7 @@ class DerivedReadCostTest {
      * about the registration, and this file's older note about indexes says the weaker half of that.
      *
      * <p>One key was measured and deliberately not taken, because it would have emptied three more
-     * rows here for the wrong reason. A key on {@code intent_resolved_type_binding} leaves all three
+     * rows here for the wrong reason. A key on {@code graphitron_resolved_type_binding} leaves all three
      * of its readers' registered figures where they are or slightly below (3451 against 3451 on the
      * condition parameter decode, 735 from 795 on the field reference walk, 2512 from 2572 on the
      * field column scope rule) while the unregistered baselines collapse: 2923 to 4059, 607 to 32997,
@@ -793,7 +808,15 @@ class DerivedReadCostTest {
         // refresh from 24.4 s to 0.13 s, and these two cells are the instrument noticing that a
         // plan moved, which is what it is for.
         "intent_mutation_write_payload|intent_mutation_payload_column_live",
-        "intent_node_id_decode_column|intent_mutation_payload_column_live");
+        "intent_node_id_decode_column|intent_mutation_payload_column_live",
+        // A cell the reference walk's storing created, and the counter reading rows rather than
+        // work is the whole of it. The discovery rule reaches the column-scope registration and
+        // costs 172 scans with that target registered against 124 with it a rule, so it is
+        // non-monotonic by 48 rows; the clock says the opposite and more loudly, 2 milliseconds
+        // against 18. What the unregistered side loses is the rows the registered target makes it
+        // visit to answer at all, which is the reading the two pairs above carry and the same one
+        // the reference-step cells carried before their rung stopped being registered.
+        "intent_field_column_scope|intent_field_reference_discovery");
         // Three readers reached through the navigation relation stood here and have gone, and how
         // they went is the second kind of departure this set records: a lever landed, rather than
         // the fixture moving under them. They were the counter-against-clock case, stating the
@@ -976,14 +999,14 @@ class DerivedReadCostTest {
         var ctx = TestConfiguration.testContext();
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var registration = registrations.stream()
-            .filter(r -> r.targetTableName().equals("intent_resolved_type_binding"))
+            .filter(r -> r.targetTableName().equals("intent_field_column_scope"))
             .findFirst().orElseThrow();
 
         try (var store = CapturedStore.ownStoreOfCatalog(
                 tmp.resolve("runaway"), scaledSdl(1), jooq)) {
             UnregisteredRelation.install(store.dsl(), registration);
-            RunawayRelation.install(store.dsl(), "intent_bound_table");
-            var timed = scans(store, "intent_resolved_type_binding",
+            RunawayRelation.install(store.dsl(), "intent_field_navigated_type");
+            var timed = scans(store, "intent_field_column_scope",
                 new ReadBudget.Bounded(RUNAWAY_BUDGET_MILLIS));
             assertThat(timed.exhausted())
                 .as("a cell whose unregistered side cannot terminate is recorded, not compared")

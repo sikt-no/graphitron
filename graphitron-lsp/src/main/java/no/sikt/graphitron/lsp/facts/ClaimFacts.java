@@ -20,7 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING;
@@ -201,16 +201,16 @@ public final class ClaimFacts {
                 .as("claim_mutation");
             // Only elements whose destination is certain: a path the chain could not walk
             // contributes nothing rather than a partial route.
-            steps = multiset(select(INTENT_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
-                INTENT_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)
-                .from(INTENT_FIELD_REFERENCE_STEP_TARGET)
-                .where(coordinate(INTENT_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graph),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.TYPE_NAME.eq(typeName),
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME.eq(fieldName)))
-                .and(INTENT_FIELD_REFERENCE_STEP_TARGET.TARGETS.eq(1))
-                .orderBy(INTENT_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
-                    INTENT_FIELD_REFERENCE_STEP_TARGET.POSITION))
+            steps = multiset(select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
+                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)
+                .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
+                .where(coordinate(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(graph),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TYPE_NAME.eq(typeName),
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME.eq(fieldName)))
+                .and(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS.eq(1))
+                .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
+                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION))
                 .convertFrom(rows -> rows.map(Records.mapping(Step::new)))
                 .as("claim_steps");
             fetchRules = multiset(select(INTENT_FIELD_SEPARATE_FETCH.RULE)

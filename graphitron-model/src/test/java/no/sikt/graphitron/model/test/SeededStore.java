@@ -7,7 +7,9 @@ import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
+import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.Materializations;
+import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.grammar.ConstantReferenceGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
@@ -237,6 +239,8 @@ public final class SeededStore {
             SpelledTables.derive(dsl, graph);
             FieldReferenceStepHops.deriveKeyed(dsl, graph);
             FieldReferenceStepHops.deriveKeyless(dsl, graph);
+            ResolvedTypeBindings.derive(dsl, graph);
+            FieldReferenceStepTargets.derive(dsl, graph);
         }
         Materializations.refreshAll(dsl);
     }
