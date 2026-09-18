@@ -13353,7 +13353,8 @@ INSERT INTO lint_rule VALUES
   ('reference-path-fans-out', 'DERIVED', 'WARNING');
 
 CREATE VIEW lint_violation
-  (graph_name, lint_rule, source_name, source_line, source_column) AS
+  (graph_name, lint_rule, source_name, source_line, source_column,
+   subject, subject_parent, subject_kind) AS
 WITH
 -- Positions the author owns: the two source names the generator injects itself are the bundled
 -- directive vocabulary and the tag-link synthesiser's, and an author can neither rename nor
@@ -13398,36 +13399,40 @@ applied (graph_name, source_name, source_line, source_column, name, type_name) A
      AND d.source_line = e.parent_line AND d.source_column = e.parent_column
 ),
 -- One row per rule broken at one written position, before the two filters every rule shares.
-broken (graph_name, lint_rule, source_name, source_line, source_column, type_name) AS (
+broken (graph_name, lint_rule, source_name, source_line, source_column, type_name,
+        subject, subject_parent, subject_kind) AS (
   -- An input object's name ends in Input. Every declaration site of one, extensions included,
   -- because the name is spelled at each and renaming means editing every line that spells it.
-  SELECT graph_name, 'input-object-name-suffix', source_name, source_line, source_column, name
+  SELECT graph_name, 'input-object-name-suffix', source_name, source_line, source_column, name,
+         name, NULL, 'NAMED_TYPE'
     FROM graphql_ast_type_declaration_entry
    WHERE kind = 'INPUT_OBJECT' AND name NOT LIKE '%Input'
    UNION ALL
   -- The name shapes, anchored at both ends. Unanchored, the camel-case pattern would hold of any
   -- name containing a lowercase run, which is nearly every name there is, and the rule would go
   -- quiet rather than loud.
-  SELECT graph_name, 'type-names-pascal-case', source_name, source_line, source_column, name
+  SELECT graph_name, 'type-names-pascal-case', source_name, source_line, source_column, name,
+         name, NULL, 'NAMED_TYPE'
     FROM graphql_ast_type_declaration_entry
    WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Za-z0-9]*$')
    UNION ALL
   SELECT graph_name, 'enum-values-screaming-snake-case', source_name, source_line, source_column,
-         type_name
+         type_name, name, NULL, 'ENUM_VALUE'
     FROM graphql_ast_enum_value_definition_entry
    WHERE NOT REGEXP_LIKE(name, '^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$')
    UNION ALL
   SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
-         type_name
+         type_name, name, NULL, 'INPUT_FIELD'
     FROM graphql_ast_input_field_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
    UNION ALL
   SELECT graph_name, 'input-and-argument-names-camel-case', source_name, source_line, source_column,
-         type_name
+         type_name, name, NULL, 'FIELD_ARGUMENT'
     FROM graphql_ast_field_argument_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
    UNION ALL
-  SELECT graph_name, 'field-names-camel-case', source_name, source_line, source_column, type_name
+  SELECT graph_name, 'field-names-camel-case', source_name, source_line, source_column, type_name,
+         name, NULL, 'FIELD'
     FROM graphql_ast_field_definition_entry
    WHERE NOT REGEXP_LIKE(name, '^[a-z][A-Za-z0-9]*$')
    UNION ALL
@@ -13435,7 +13440,8 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
   -- reading as User plus a prefix: the character after the repeat has to start a new word, tested
   -- as one that changes under lower-casing and not under upper-casing, which is what the walk's
   -- Character.isUpperCase means and what a range of A to Z would narrow to the Latin alphabet.
-  SELECT graph_name, 'no-typename-prefix', source_name, source_line, source_column, type_name
+  SELECT graph_name, 'no-typename-prefix', source_name, source_line, source_column, type_name,
+         name, type_name, 'FIELD'
     FROM graphql_ast_field_definition_entry
    WHERE LENGTH(name) > LENGTH(type_name)
      AND UPPER(SUBSTRING(name, 1, LENGTH(type_name))) = UPPER(type_name)
@@ -13447,12 +13453,12 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
   -- description slot at all, so a row there would assert a defect nobody can fix, while a field
   -- declared inside that same extension is an ordinary field.
   SELECT graph_name, 'types-and-fields-have-descriptions', source_name, source_line, source_column,
-         name
+         name, name, NULL, 'NAMED_TYPE'
     FROM graphql_ast_type_declaration_entry
    WHERE is_extension = FALSE AND (description IS NULL OR TRIM(description) = '')
    UNION ALL
   SELECT f.graph_name, 'types-and-fields-have-descriptions', f.source_name, f.source_line,
-         f.source_column, f.type_name
+         f.source_column, f.type_name, f.name, f.type_name, 'FIELD'
     FROM graphql_ast_field_definition_entry f
    WHERE (f.description IS NULL OR TRIM(f.description) = '')
      AND EXISTS (SELECT 1 FROM graphql_root_operation r
@@ -13463,7 +13469,7 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
   -- of spaces, so both draw a row exactly as an omitted argument does. Read off the decomposed
   -- expression rather than the rendered literal beside it, which keeps the author's quotes.
   SELECT a.graph_name, 'deprecations-have-a-reason', a.source_name, a.source_line, a.source_column,
-         a.type_name
+         a.type_name, a.name, NULL, 'DIRECTIVE'
     FROM applied a
    WHERE a.name = 'deprecated'
      AND NOT EXISTS (
@@ -13485,14 +13491,14 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
   -- advisory with its own rule id, and two rules reporting one application would be two findings
   -- for one edit.
   SELECT a.graph_name, 'no-deprecated-directive-usage', a.source_name, a.source_line,
-         a.source_column, a.type_name
+         a.source_column, a.type_name, a.name, NULL, 'DIRECTIVE'
     FROM applied a
     JOIN graphitron_deprecated d
       ON d.graph_name = a.graph_name AND d.coordinate = '@' || a.name
    WHERE a.name <> 'record'
    UNION ALL
   SELECT g.graph_name, 'no-deprecated-directive-usage', g.source_name, g.source_line,
-         g.source_column, a.type_name
+         g.source_column, a.type_name, g.name, a.name, 'DIRECTIVE_ARGUMENT'
     FROM graphql_ast_applied_argument_entry g
     JOIN applied a
       ON a.graph_name = g.graph_name AND a.source_name = g.source_name
@@ -13502,7 +13508,7 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
    WHERE a.name <> 'record'
    UNION ALL
   SELECT v.graph_name, 'no-deprecated-directive-usage', v.source_name, v.source_line,
-         v.source_column, a.type_name
+         v.source_column, a.type_name, v.object_field_name, f.named_type, 'INPUT_FIELD'
     FROM graphql_ast_value_entry v
     JOIN graphql_ast_applied_argument_entry g
       ON g.graph_name = v.graph_name AND g.source_name = v.source_name
@@ -13517,7 +13523,8 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
      AND d.coordinate = f.named_type || '.' || v.object_field_name
    WHERE v.object_field_name IS NOT NULL AND a.name <> 'record'
 )
-SELECT b.graph_name, b.lint_rule, b.source_name, b.source_line, b.source_column
+SELECT b.graph_name, b.lint_rule, b.source_name, b.source_line, b.source_column,
+       b.subject, b.subject_parent, b.subject_kind
   FROM broken b
   JOIN authored s ON s.source_name = b.source_name
  WHERE NOT EXISTS (SELECT 1 FROM excluded x
@@ -13529,6 +13536,9 @@ COMMENT ON COLUMN lint_violation.lint_rule IS 'which rule this row is a violatio
 COMMENT ON COLUMN lint_violation.source_name IS 'the file the offending thing was written in, the first part of the position that is this row''s subject';
 COMMENT ON COLUMN lint_violation.source_line IS 'line of the offending entry, 1-based per the convention the entry stratum records';
 COMMENT ON COLUMN lint_violation.source_column IS 'column of the same. Keyed on the position rather than on the coordinate the position sits in, because a lint finding is something an author goes to and fixes, and a coordinate assembled from several declaration sites names no single place to go. One consequence is deliberate: a name spelled wrongly at a base declaration and again at two extensions is three rows, which is three places the author has to edit';
+COMMENT ON COLUMN lint_violation.subject IS 'the name of the offending thing itself, which is what a reader renders the finding''s text around. Not the text: a rule''s wording is a template held beside the reader, and a view carrying rendered prose would be stating a product of its own presentation rather than of the corpus. Distinct from type_name, which is the enclosing type the consumer''s excludedTypes is matched against; for a field those differ, and matching the exclusion against the subject would let a consumer silence every field named the same way anywhere in the graph';
+COMMENT ON COLUMN lint_violation.subject_parent IS 'the name the offending thing was written inside, where the rule''s wording names it too, and null where it does not. Four of the twelve templates interpolate two names: a field prefixed with its type''s name, a root operation''s field, an argument of a directive and a field of an input object. Nullable rather than a second relation because it is an attribute of this row, absent exactly when the rule has nothing to say about an enclosing thing';
+COMMENT ON COLUMN lint_violation.subject_kind IS 'what kind of thing the subject is, drawn from graphql_element''s vocabulary, which is the specification''s coordinate grammar. Here because the rule alone does not determine the wording: types-and-fields-have-descriptions reads one way for a type and another for a root operation''s field, and no-deprecated-directive-usage reads three ways for a directive, an argument of one and a field of an input object. Rule and kind together do determine it, which is what lets a reader hold one template per pair and no branching of its own';
 
 CREATE TABLE lint_finding (
   graph_name    VARCHAR NOT NULL,
