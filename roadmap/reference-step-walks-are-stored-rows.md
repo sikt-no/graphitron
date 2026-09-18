@@ -1,7 +1,7 @@
 ---
 id: R954
 title: "A resolved @reference path is rows on disk every reader seeks into, not a recursive view re-walked once per driving row"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -73,14 +73,14 @@ Computed from the shipped DDL, so it is checkable rather than argued, and recomp
 `911176d` on 2026-09-18 after R956 split the hop. The transitive closure of the three walks through
 `intent_` relations holds **28 relations, 9 of them registered**, where before that split it held 26
 and 8: the hop is now a view over two registered arm tables, so one registered relation in the closure
-became two plus the view above them. Every one of the 26 bottoms out entirely in captured facts:
+became two plus the view above them. Every one of the 28 bottoms out entirely in captured facts:
 not one reads anything that is not ultimately `graphitron_`, `graphql_`, `sql_`, `store_` or `code_`.
 There is no cross-family derivation anywhere in this subtree. It is all resolution, which is to say
 matching what an author wrote against what the catalog holds, and capture holds both sides of every
 one of them.
 
 The method, so the next reader can re-take it rather than trust it: parse the DDL statement by
-statement with line comments and string literals stripped, so all 396 relations are seen; resolve a
+statement with line comments and string literals stripped, so all 401 relations are seen; resolve a
 registered relation through its `_live` rule; follow only `intent_` names, collecting everything else
 as a leaf. `code_condition_method` and `code_condition_method_parameter` are in the leaf set because
 `intent_condition_method_route` moved onto them, and they are captured facts on the same terms as the
@@ -169,7 +169,7 @@ apply, exactly as it does not apply to `graphitron_field_table`. So renaming wit
 keeps the impossibility criterion meaningful instead of forcing this item to weaken it. R876 set the
 precedent when `intent_argmapping_binding_leaf` became `graphitron_argmapping_match`, on the finding
 that the `intent_` prefix there "recorded the default placement rather than a decision"; the
-`graphitron_` family now holds 130 tables and 2 views, so neither shape is new.
+`graphitron_` family now holds 128 tables and 3 views, so neither shape is new.
 
 **The target the conversions copy already exists.** `FieldEndpoints.derive` is the eighth of the ten
 stages of `GraphitronFactCapture.capture`, it reads `graphitron_`, `graphql_` and `sql_` relations
@@ -295,7 +295,7 @@ the registration's source view is the thing this item exists to retire, and `met
 for relations whose rows this DDL file itself supplies. So the declaration is owed by every rung, not
 by whichever rung happens to want one.
 
-That is a well-trodden path and not a new burden. Sixteen `graphitron_`-owned relations are declared
+That is a well-trodden path and not a new burden. Twenty-seven `graphitron_`-owned relations are declared
 today, `graphitron_field_table` and `graphitron_argmapping_candidate` among them. The corpus half of
 the obligation is vacuous here: `MetaDeclarationGateTest`'s corpus check skips an owner with no
 `meta_gatherer_corpus` row, and the graphitron gatherer carries none, which is the same fact the
@@ -318,9 +318,9 @@ primary-key shape to equal its grain's `key_shape`. `meta_grain.key_shape` is `N
 `CHECK (CHAR_LENGTH(key_shape) >= 1)` and the gate builds its comparison map from
 `INFORMATION_SCHEMA`, so a table with no primary key has no entry and offends any declared shape. Its
 message says so: "an unkeyed declared table owes a key before it owes anything else". Of the shipped
-tree's 272 base tables, 17 carry no primary key and every one of the 17 is an `intent_` registration
-target standing on the frozen roster; the count held across R956, which retired one keyless target and
-added two keyed ones. So there is no keyless declared table to lean on, and the
+tree's 272 base tables, 16 carry no primary key and every one of the 16 is an `intent_` registration
+target standing on the frozen roster; the count fell by one across R956, which retired one keyless
+target and added two keyed ones. So there is no keyless declared table to lean on, and the
 absence is not an oversight: a registration target is exempt from both gates for one reason, that it
 is on the roster, and the conversion is precisely what removes that standing.
 
@@ -1248,8 +1248,8 @@ So the pincer is that item's too and larger, and this body's answer is the one i
 grain admits no key, ask whether the relation is one relation before asking the gate to tolerate a
 keyless one. Both of this item's two unkeyable relations turned out not to be, which is R956. Whether
 each of that item's twelve is the same shape is that item's to determine, and R956's own body says so.
-The record is one-way for the same reason the R953 one is: that item is in Spec with an open review
-round of its own, so nothing here waits on it.
+The record is one-way for the same reason the R953 one is: that item is `Ready` and unstarted, so
+nothing here waits on it.
 
 **R900** is the naming sweep, and the renames here are taken with their moves rather than deferred to
 it, on R876's reasoning that correcting the family and the noun together is one edit rather than two.
