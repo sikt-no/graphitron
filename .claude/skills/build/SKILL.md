@@ -5,7 +5,7 @@ description: Choose the cheapest Maven invocation that still covers what changed
 
 # Build
 
-A full `mvn clean install` is **25 to 33 minutes**. Most of a session's builds do not need to be
+A full `mvn clean install` is **21 to 33 minutes**, the spread depending on caches and machine load. Most of a session's builds do not need to be
 one. This skill is about spending the reactor only where it is owed.
 
 ## The reactor, in build order, with its costs
@@ -13,24 +13,37 @@ one. This skill is about spending the reactor only where it is owed.
 Maven orders by dependency, not by the order `<modules>` declares. Module numbers are what `-rf`
 counts, so this is the list to read when resuming.
 
+Costs below are one measured `clean install` reactor summary, 21 minutes total. Read them off a
+recent build rather than trusting this table; an earlier revision of it had `graphitron` as the
+largest module at 7:24, which led to a recommendation to go optimise the wrong one.
+
 | # | module | cost |
 |---|---|---|
-| 1 | graphitron-rewrite-parent | 1 s |
-| 2 | graphitron-fixtures-codegen | 3 s |
-| 3 | graphitron-sakila-db | 27 s |
-| 4 | graphitron-sakila-service | 4 s |
-| 5 | **graphitron-model** | **5:21** |
-| 6 | graphitron-javapoet | 5 s |
-| 7 | **graphitron** | **7:24** |
-| 8 | graphitron-mcp | 1:44 |
+| 1 | graphitron-rewrite-parent | 1.5 s |
+| 2 | graphitron-fixtures-codegen | 7 s |
+| 3 | graphitron-sakila-db | 52 s |
+| 4 | graphitron-sakila-service | 9 s |
+| 5 | **graphitron-model** | **5:54** |
+| 6 | graphitron-javapoet | 3 s |
+| 7 | **graphitron** | **4:43** |
+| 8 | graphitron-mcp | 1:15 |
 | 9 | graphitron-jakarta-rest | 2 s |
-| 10 | graphitron-lsp | 1:47 |
-| 11 | graphitron-maven-plugin | 2:27 |
-| 12 | **graphitron-sakila-example** | **4:58** |
-| 13 | graphitron-roadmap-tool | 37 s |
-| 14 | graphitron-docs | 27 s |
+| 10 | graphitron-lsp | 1:23 |
+| 11 | graphitron-maven-plugin | 1:46 |
+| 12 | **graphitron-sakila-example** | **3:46** |
+| 13 | graphitron-roadmap-tool | 32 s |
+| 14 | graphitron-docs | 22 s |
 
-Four modules are 23 of the 33 minutes. Everything else is noise.
+Four modules are 18 of the 21 minutes. Everything else is noise.
+
+By goal rather than by module, across one measured 22:26 reactor: tests 696 s (51.5%), the javadoc
+reference gate 190 s (14.0%), `graphitron:generate` 113 s, compilation 98 s. The reactor is
+sequential, so a second saved on a goal is a second off the build.
+
+`-Dmaven.javadoc.skip=true` takes the 190 s off, and costs nothing on a non-clean build because the
+gate is stale-checked and does not re-run. Use it while iterating; keep the gate for the
+verification build, since it is the only check of `{@link}` and `{@see}` validity. Do not reach for
+`-Pquick` to get it, which skips the tests too. See the `build-profile` skill for the measurements.
 
 ## The three flags that matter
 

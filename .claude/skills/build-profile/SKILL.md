@@ -76,44 +76,50 @@ Sanity check any table against the reactor's own total. The sum of mojos should 
 module wall clock; if it exceeds it, the parse is wrong or goals genuinely ran concurrently, and
 `eventThread` tells you which.
 
-## graphitron-model, measured
+## The reactor, measured
 
-`clean test`, unforked, 8:13 total. Ranking holds even though the absolute numbers are inflated.
+One forked `clean install` with `settings=default`, 22:26 wall. Mojo time sums to 1353 s against
+1346 s of wall clock, so the reactor is sequential and a second removed from a goal is a second off
+the build.
 
-| mojo | sec | share |
+| goal, all modules | sec | share |
 |---|---:|---:|
-| `surefire:test` | 285.2 | 58.3% |
-| `compiler:compile` | 141.1 | 28.9% |
-| `exec:java` (generate-model-sources) | 31.1 | 6.4% |
-| `compiler:testCompile` | 20.0 | 4.1% |
-| everything else, nine goals | 3.3 | 0.7% |
+| `surefire:test` (12 modules) | 696.5 | 51.5% |
+| `javadoc:javadoc-no-fork` | 189.7 | 14.0% |
+| `graphitron:generate` | 113.5 | 8.4% |
+| `compiler:compile` | 97.5 | 7.2% |
+| `invoker:run` | 52.5 | 3.9% |
+| `jooq-codegen-maven:generate` | 41.2 | 3.0% |
 
-`compiler:compile` is jOOQ-generated model sources, a fixed cost not worth chasing. Everything
-below `testCompile` is noise.
+Largest single goals: `graphitron` tests 262.9 s, `sakila-example` tests 148.3 s, `graphitron-model`
+javadoc 144.0 s, `sakila-example` `graphitron:generate` 113.5 s, `graphitron-model` tests 99.1 s.
 
-Unprofiled and without `clean`, the same module runs 1312 tests in **135 s**. Use that figure, not
-the 285 s above, for anything to do with test cost.
+`MojoEvent.artifactId` is the *plugin's*, not the module's. Attribute a goal to a module by nesting
+its `startTime` inside the `ProjectEvent` windows, and check those windows are disjoint before
+trusting the result. They are here, bar an 8.4 s `capture-only` nested build.
 
-## The method, and why it matters
+## The javadoc reference gate is 14% of a clean build
 
-**Never attribute cost from reported test times.** `graphitron` and `graphitron-model` run four test
-classes concurrently, so a class's `Time elapsed` is the span it was alive including every moment it
-waited for a lane. Those spans overlap and do not add up: on one `graphitron` build they total 6262
-seconds against a 444-second module, which with four lanes is at most 1776 seconds of capacity.
+`javadoc-no-fork` with `doclint=reference` runs at `verify` in every module. It is not waste: the
+pom documents it as the only check of `{@link}` and `{@see}` reference validity, and its sourcepath
+includes `target/generated-sources/jooq`, so it reads the generated jOOQ sources too.
 
-That method produced a target of 1742 seconds across eight test classes. The same eight, run alone,
-take **80 seconds**; the one reporting 279 takes **42**. A plan was written on the wrong figure and
-thrown away.
+Measured on the worst module, `clean verify -pl graphitron-model -DskipTests`:
 
-What to do instead, in order:
+| | wall |
+|---|---:|
+| with the gate | 168 s |
+| `-Dmaven.javadoc.skip=true` | 47 s |
+| **gate** | **121 s** |
 
-1. **Module wall clock** from the reactor summary. Real and comparable across runs.
-2. **A `settings=default` recording** and `mojos.py`, to find the goal.
-3. **An isolated run** of the suspect class, `-pl <module> -Dtest='<Class>'`, timed. This is its own
-   cost. The ratio between its reported elapsed and this is contention, and contention is not fixed
-   by making the test cheaper.
-4. **`settings=profile` with `-DforkCount=0`** only once you know which goal and roughly which
-   tests, because the recording is large and reading it is work. The one above is 204 MB.
+**It only costs anything on a clean build.** The plugin is stale-checked, so on a warm `target/` it
+is a no-op; the first attempt to measure this ran without `clean` and showed 48 s against 47 s,
+which reads as "the gate is free" and is wrong. It is a tax on the verification build, not on
+iteration.
+
+So `-Dmaven.javadoc.skip=true` buys about 190 s on a full clean build and is right for iteration,
+but the verification build owed before publishing must keep the gate. `-Pquick` is the wrong lever:
+it drops the tests as well.
 
 ## A long span is not an exclusive cost
 
