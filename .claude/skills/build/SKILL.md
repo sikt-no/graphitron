@@ -123,6 +123,31 @@ Quarkus test losing port 8081 to an orphaned process, and an MCP test deserialis
 concurrent load. Both passed on a rerun with no change. Rerunning is right; recording it as a flake
 rather than as a fix is also right.
 
+## Do not sum per-class test times
+
+`graphitron` and `graphitron-model` both run **four test classes concurrently**
+(`junit-platform.properties`, `parallel.config.fixed.parallelism=4`). A class's reported
+`Time elapsed` is the wall-clock span it was alive, which includes every moment it sat waiting
+while other classes held the lanes.
+
+Those spans overlap, so they do not add up to anything. Measured on one build of `graphitron`: the
+per-class times sum to **6262 seconds** against a module wall clock of **444 seconds**, which with
+four lanes is at most 1776 seconds of capacity. The sum exceeds what physically existed by three and
+a half times.
+
+An attempt to find the expensive tests this way produced a target of 1742 seconds for eight classes.
+Run on their own the same eight take **80 seconds**. The one that reported 279 takes **42** alone.
+Nothing was optimised on the strength of that figure only because it was checked.
+
+The two numbers that mean something:
+
+- **Module wall clock**, from the reactor summary. This is real and comparable.
+- **An isolated run**: `-pl <module> -Dtest='<Class>'` and time the invocation. This is the class's
+  own cost, and it is the only way to attribute anything.
+
+Before proposing a performance fix, run the suspect alone. The ratio between its reported elapsed
+and its isolated cost is contention, and contention is not fixed by making the test cheaper.
+
 ## Reporting a build
 
 Give the module count, the test count and the wall clock, from the log rather than from memory:
