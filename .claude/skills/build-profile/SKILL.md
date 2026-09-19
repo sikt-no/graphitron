@@ -88,8 +88,11 @@ module wall clock; if it exceeds it, the parse is wrong or goals genuinely ran c
 | `compiler:testCompile` | 20.0 | 4.1% |
 | everything else, nine goals | 3.3 | 0.7% |
 
-`compiler:compile` at nearly a third of the module is the standing surprise and nobody has looked
-at it. Everything below `testCompile` is noise; do not spend time there.
+`compiler:compile` is jOOQ-generated model sources, a fixed cost not worth chasing. Everything
+below `testCompile` is noise.
+
+Unprofiled and without `clean`, the same module runs 1312 tests in **135 s**. Use that figure, not
+the 285 s above, for anything to do with test cost.
 
 ## The method, and why it matters
 
@@ -111,6 +114,30 @@ What to do instead, in order:
    by making the test cheaper.
 4. **`settings=profile` with `-DforkCount=0`** only once you know which goal and roughly which
    tests, because the recording is large and reading it is work. The one above is 204 MB.
+
+## A long span is not an exclusive cost
+
+The overlap error has a third form, and it survives knowing about the other two. Under a
+profiled unforked run `DerivedReadCostTest` held a span of 259 s inside a 280 s test phase and
+closed the phase, which reads exactly like a critical path. It is not. Deleting it from the run
+saved **13 seconds of 135**.
+
+Two things were wrong. The span was measured on a `settings=profile` run, where the phase was
+280 s against 135 s unprofiled, and the inflation was not spread evenly: that class drives many
+small H2 scans under a millisecond `ReadBudget`, so per-sample overhead compounds there far worse
+than elsewhere. And a span that ends when the phase ends means only that it was still running at
+the end, which under a saturated pool is true of whatever finishes last. Its 79 s of reported
+elapsed time unprofiled overlaps some 66 s with other lanes.
+
+**The only way to price a test class is to remove it and re-run.** Two runs, no `clean` so
+codegen and compile do not vary, and compare wall clock:
+
+```bash
+mvn test -pl <module>
+mvn test -pl <module> -Dtest='!<Class>' -DfailIfNoSpecifiedTests=false
+```
+
+Profile to find *where* time goes inside a layer. Never to decide what to delete.
 
 ## Traps
 
