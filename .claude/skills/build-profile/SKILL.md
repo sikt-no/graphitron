@@ -145,6 +145,47 @@ mvn test -pl <module> -Dtest='!<Class>' -DfailIfNoSpecifiedTests=false
 
 Profile to find *where* time goes inside a layer. Never to decide what to delete.
 
+## One run is not a measurement
+
+Test-phase wall clock on this box drifts as it warms. Pricing the 11-class duplicate-footprint
+group in `graphitron` over five interleaved pairs:
+
+| pair | baseline | group removed | saving |
+|---|---:|---:|---:|
+| 1 | 245 | 261 | -16 |
+| 2 | 244 | 176 | 68 |
+| 3 | 215 | 175 | 40 |
+| 4 | 208 | 185 | 23 |
+| 5 | 207 | 173 | 34 |
+
+The first pair says removing 98 tests makes the suite slower; the second says it saves 68 s. Both
+are artifacts. The baseline falls from 245 to 207 across the session and stays there, so only the
+settled pairs count, and they agree: **about 32 s, 15%**.
+
+Interleave the arms so drift cannot favour one, discard the warmup pairs, and quote the spread
+rather than a single figure. A one-shot A/B on this box can be out by 100% in either direction.
+
+## Duplicate tests, and what a shared footprint means
+
+`leaf-coverage.jsonl` is written by `ClassificationTrace` on every build, default-on, one JSONL
+record per classifier decision tagged with the running test class and tier. Two test classes with
+an identical set of `(op, leaf)` pairs have an identical classification footprint. In `graphitron`:
+51805 records, 194 traced classes, 14 identical-footprint groups covering 51 classes, and 184
+classes whose footprint is a strict subset of another's.
+
+**A shared footprint is not redundancy.** The largest group, 11 classes over 68 leaves, prices at
+32 s for all eleven, about 3 s each. They are cheap precisely *because* they share a fixture; the
+consolidation that looked available has already happened. Use the footprint to find tests that
+drive the same fixture, then price the set by removal before assuming there is anything to win.
+
+**A scoped `-Dtest=` run destroys the data.** `truncate-leaf-coverage-trace` deletes the file at
+`process-test-resources`, so it only ever holds the last run. Analyse a full-module run, and expect
+to regenerate after any isolation run. The trace is deterministic: two full runs gave 51805 records
+both times.
+
+`graphitron-model` produces no trace at all, being upstream of `ClassificationTrace`. Only
+`graphitron` and `sakila-example` carry usable data.
+
 ## Traps
 
 **`forkCount=0` changes isolation and the working directory.** Forked surefire runs with the
