@@ -148,6 +148,10 @@ The two numbers that mean something:
 Before proposing a performance fix, run the suspect alone. The ratio between its reported elapsed
 and its isolated cost is contention, and contention is not fixed by making the test cheaper.
 
+The `build-profile` skill carries the rest: the JFR extension this repo registers, how to get a
+per-goal table, and how to record JFR with the tests unforked so a recording can see inside
+surefire.
+
 ## Reporting a build
 
 Give the module count, the test count and the wall clock, from the log rather than from memory:

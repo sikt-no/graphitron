@@ -10,7 +10,9 @@ target/
 dist/
 .flattened-pom.xml
 /pom.xml.versionsBackup
-.mvn/
+.mvn/*
+# except the build-extension registration, which every build needs (see .claude/skills/build-profile)
+!.mvn/extensions.xml
 
 # quarkus-web-bundler stages mvnpm packages here at mvn install time
 node_modules/
