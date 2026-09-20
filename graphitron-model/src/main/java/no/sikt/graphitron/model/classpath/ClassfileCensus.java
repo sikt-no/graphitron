@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -65,12 +66,20 @@ public final class ClassfileCensus {
      * either question, being qualified names at stated positions.
      */
     public record MethodAt(String name, String descriptor, String returnType,
-                           String declaredReturnType, boolean isStatic, List<ParameterAt> parameters,
-                           List<TypeRefAt> returnTypeRefs, List<String> declaredExceptions) {}
+                           String declaredReturnType, String qualifiedReturnType, boolean isStatic,
+                           List<ParameterAt> parameters, List<TypeRefAt> returnTypeRefs,
+                           List<String> declaredExceptions) {}
 
-    /** One parameter, on {@link MethodAt}'s terms; {@code name} is null without {@code -parameters}. */
+    /**
+     * One parameter, on {@link MethodAt}'s terms; {@code name} is null without {@code -parameters}.
+     *
+     * <p>{@code declaredType} drops the package, being what a surface renders, and
+     * {@code qualifiedType} keeps it, being what a type is identified by. The difference is the
+     * difference between showing a type and keying one: {@code a.Foo<X>} and {@code b.Foo<X>}
+     * render alike and are two types.
+     */
     public record ParameterAt(int position, String name, String type, String declaredType,
-                              List<TypeRefAt> typeRefs) {}
+                              String qualifiedType, List<TypeRefAt> typeRefs) {}
 
     /** One record component, on {@link MethodAt}'s terms. */
     public record ComponentAt(String name, int position, String type, String declaredType,
@@ -330,6 +339,7 @@ public final class ClassfileCensus {
                 parameters.add(new ParameterAt(i, i < names.size() ? names.get(i) : null,
                     binaryName(erased),
                     declared.map(ClassfileCensus::declaredName).orElseGet(() -> displayName(erased)),
+                    declared.map(ClassfileCensus::qualifiedName).orElseGet(() -> binaryName(erased)),
                     typeRefs(declared, erased)));
             }
             var result = signature.map(MethodSignature::result);
@@ -337,6 +347,8 @@ public final class ClassfileCensus {
                 binaryName(type.returnType()),
                 result.map(ClassfileCensus::declaredName)
                     .orElseGet(() -> displayName(type.returnType())),
+                result.map(ClassfileCensus::qualifiedName)
+                    .orElseGet(() -> binaryName(type.returnType())),
                 flags.has(AccessFlag.STATIC), parameters,
                 typeRefs(result, type.returnType()), declaredExceptions(method)));
         }
@@ -506,32 +518,47 @@ public final class ClassfileCensus {
      * why both are kept.
      */
     private static String declaredName(Signature signature) {
+        return declaredName(signature, ClassfileCensus::displayName);
+    }
+
+    /**
+     * The same form with the packages kept, which is what a type is identified by. One walk and two
+     * namers rather than two walks: the grammar of a declared type is one thing, and a second
+     * spelling of it would have to be held to the first by a test that does not exist.
+     */
+    private static String qualifiedName(Signature signature) {
+        return declaredName(signature, ClassfileCensus::binaryName);
+    }
+
+    private static String declaredName(Signature signature, Function<ClassDesc, String> name) {
         return switch (signature) {
             case Signature.BaseTypeSig base ->
                 displayName(ClassDesc.ofDescriptor(String.valueOf(base.baseType())));
-            case Signature.ArrayTypeSig array -> declaredName(array.componentSignature()) + "[]";
+            case Signature.ArrayTypeSig array ->
+                declaredName(array.componentSignature(), name) + "[]";
             case Signature.TypeVarSig variable -> variable.identifier();
             case Signature.ClassTypeSig cls -> {
                 if (cls.typeArgs().isEmpty()) {
-                    yield displayName(cls.classDesc());
+                    yield name.apply(cls.classDesc());
                 }
                 var arguments = new ArrayList<String>(cls.typeArgs().size());
                 for (var argument : cls.typeArgs()) {
-                    arguments.add(declaredArgument(argument));
+                    arguments.add(declaredArgument(argument, name));
                 }
-                yield displayName(cls.classDesc()) + "<" + String.join(", ", arguments) + ">";
+                yield name.apply(cls.classDesc()) + "<" + String.join(", ", arguments) + ">";
             }
         };
     }
 
     /** One type argument in the form the author wrote it, wildcard bound included. */
-    private static String declaredArgument(Signature.TypeArg argument) {
+    private static String declaredArgument(Signature.TypeArg argument,
+                                           Function<ClassDesc, String> name) {
         return switch (argument) {
             case Signature.TypeArg.Unbounded ignored -> "?";
             case Signature.TypeArg.Bounded bounded -> switch (bounded.wildcardIndicator()) {
-                case NONE -> declaredName(bounded.boundType());
-                case EXTENDS -> "? extends " + declaredName(bounded.boundType());
-                case SUPER -> "? super " + declaredName(bounded.boundType());
+                case NONE -> declaredName(bounded.boundType(), name);
+                case EXTENDS -> "? extends " + declaredName(bounded.boundType(), name);
+                case SUPER -> "? super " + declaredName(bounded.boundType(), name);
             };
         };
     }

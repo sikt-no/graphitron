@@ -23,8 +23,8 @@ import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER_ELEMENT;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD_RESULT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
@@ -267,6 +267,11 @@ public final class CodeCapture {
         if (found.isEmpty()) {
             return;
         }
+        var containers = deliveryContainers(dsl);
+        types(dsl, found.stream()
+            .map(d -> new Member(d.source(), d.className(), d.at()))
+            .toList(), containers, touchedAt);
+
         var m = CODE_METHOD;
         var methodRows = found.stream().collect(Rows.toRowList(
             d -> val(d.source(), m.SOURCE_NAME),
@@ -274,19 +279,16 @@ public final class CodeCapture {
             d -> val(d.at().name(), m.METHOD_NAME),
             d -> val(d.at().descriptor(), m.DESCRIPTOR),
             d -> val(d.at().isStatic(), m.IS_STATIC),
+            d -> val(d.at().qualifiedReturnType(), m.RESULT_TYPE),
             d -> val(touchedAt, m.TOUCHED_AT)));
         BindBatch.execute(dsl, methodRows, markers ->
             dsl.insertInto(m, m.SOURCE_NAME, m.CLASS_NAME, m.METHOD_NAME, m.DESCRIPTOR, m.IS_STATIC,
-                    m.TOUCHED_AT)
+                    m.RESULT_TYPE, m.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(m.IS_STATIC, excluded(m.IS_STATIC))
+                .set(m.RESULT_TYPE, excluded(m.RESULT_TYPE))
                 .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
-
-        var containers = deliveryContainers(dsl);
-        results(dsl, found.stream()
-            .map(d -> new Member(d.source(), d.className(), d.at()))
-            .toList(), containers, touchedAt);
         exceptions(dsl, found.stream()
             .map(d -> new Member(d.source(), d.className(), d.at()))
             .toList(), touchedAt);
@@ -303,6 +305,62 @@ public final class CodeCapture {
         arm(dsl, CODE_SERVICE_METHOD, found.stream()
             .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
+    }
+
+    /**
+     * The types the entry's signatures mention, and what each resolves to.
+     *
+     * <p>Written before anything that names one, and written once however many positions carry it:
+     * a type is a fact about itself, so a parameter and a result that spell it alike are two
+     * references to one row rather than two statements of the same thing. Over this module's main
+     * sources that is thirteen hundred positions over two hundred types.
+     */
+    private static void types(DSLContext dsl, List<Member> members,
+                              Map<String, Container> containers, LocalDateTime touchedAt) {
+        record Written(String source, String typeName, Delivery delivery) {}
+        var byKey = new java.util.LinkedHashMap<String, Written>();
+        for (Member member : members) {
+            byKey.putIfAbsent(member.source() + '\u0000' + member.at().qualifiedReturnType(),
+                new Written(member.source(), member.at().qualifiedReturnType(),
+                    deliveryOf(member.at().returnTypeRefs(), containers)));
+            for (ClassfileCensus.ParameterAt parameter : member.at().parameters()) {
+                byKey.putIfAbsent(member.source() + '\u0000' + parameter.qualifiedType(),
+                    new Written(member.source(), parameter.qualifiedType(),
+                        deliveryOf(parameter.typeRefs(), containers)));
+            }
+        }
+        if (byKey.isEmpty()) {
+            return;
+        }
+        var t = CODE_TYPE;
+        var rows = byKey.values().stream().collect(Rows.toRowList(
+            row -> val(row.source(), t.SOURCE_NAME),
+            row -> val(row.typeName(), t.TYPE_NAME),
+            row -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TYPE_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+
+        var resolved = byKey.values().stream().filter(row -> row.delivery() != null).toList();
+        if (resolved.isEmpty()) {
+            return;
+        }
+        var e = CODE_TYPE_ELEMENT;
+        var elementRows = resolved.stream().collect(Rows.toRowList(
+            row -> val(row.source(), e.SOURCE_NAME),
+            row -> val(row.typeName(), e.TYPE_NAME),
+            row -> val(row.delivery().elementClass(), e.ELEMENT_CLASS),
+            row -> val(row.delivery().deliversMany(), e.IS_MANY),
+            row -> val(touchedAt, e.TOUCHED_AT)));
+        BindBatch.execute(dsl, elementRows, markers ->
+            dsl.insertInto(e, e.SOURCE_NAME, e.TYPE_NAME, e.ELEMENT_CLASS, e.IS_MANY, e.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(e.ELEMENT_CLASS, excluded(e.ELEMENT_CLASS))
+                .set(e.IS_MANY, excluded(e.IS_MANY))
+                .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
     }
 
     /** One method as this gatherer passes it around: where it was read, and what it declares. */
@@ -333,38 +391,6 @@ public final class CodeCapture {
                 .set(table.field(t.TOUCHED_AT), excluded(table.field(t.TOUCHED_AT))));
     }
 
-    /** What each method results in, where its return type names a class at all. */
-    private static void results(DSLContext dsl, List<Member> members,
-                                Map<String, Container> containers, LocalDateTime touchedAt) {
-        record Resulted(Member member, Delivery delivery) {}
-        var found = new ArrayList<Resulted>();
-        for (Member member : members) {
-            var delivery = deliveryOf(member.at().returnTypeRefs(), containers);
-            if (delivery != null) {
-                found.add(new Resulted(member, delivery));
-            }
-        }
-        if (found.isEmpty()) {
-            return;
-        }
-        var r = CODE_METHOD_RESULT;
-        var rows = found.stream().collect(Rows.toRowList(
-            row -> val(row.member().source(), r.SOURCE_NAME),
-            row -> val(row.member().className(), r.CLASS_NAME),
-            row -> val(row.member().at().name(), r.METHOD_NAME),
-            row -> val(row.member().at().descriptor(), r.DESCRIPTOR),
-            row -> val(row.delivery().elementClass(), r.RESULT_CLASS),
-            row -> val(row.delivery().deliversMany(), r.IS_MANY),
-            row -> val(touchedAt, r.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(r, r.SOURCE_NAME, r.CLASS_NAME, r.METHOD_NAME, r.DESCRIPTOR,
-                    r.RESULT_CLASS, r.IS_MANY, r.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(r.RESULT_CLASS, excluded(r.RESULT_CLASS))
-                .set(r.IS_MANY, excluded(r.IS_MANY))
-                .set(r.TOUCHED_AT, excluded(r.TOUCHED_AT)));
-    }
 
     /**
      * The {@code throws} clause, one row per class named. Read by the {@code @error} channel
@@ -467,47 +493,20 @@ public final class CodeCapture {
             row -> val(row.member().at().descriptor(), p.DESCRIPTOR),
             row -> val(row.at().position(), p.POSITION),
             row -> val(row.at().name(), p.PARAMETER_NAME),
+            row -> val(row.at().qualifiedType(), p.PARAMETER_TYPE),
             row -> val(row.role(), p.ROLE),
             row -> val(row.extraction(), p.EXTRACTION),
             row -> val(touchedAt, p.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
-                    p.PARAMETER_NAME, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
+                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
+                .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
-
-        record Contained(At at, Delivery delivery) {}
-        var elements = new ArrayList<Contained>();
-        for (At row : found) {
-            var delivery = deliveryOf(row.at().typeRefs(), containers);
-            if (delivery != null) {
-                elements.add(new Contained(row, delivery));
-            }
-        }
-        if (!elements.isEmpty()) {
-            var el = CODE_METHOD_PARAMETER_ELEMENT;
-            var elementRows = elements.stream().collect(Rows.toRowList(
-                row -> val(row.at().member().source(), el.SOURCE_NAME),
-                row -> val(row.at().member().className(), el.CLASS_NAME),
-                row -> val(row.at().member().at().name(), el.METHOD_NAME),
-                row -> val(row.at().member().at().descriptor(), el.DESCRIPTOR),
-                row -> val(row.at().at().position(), el.POSITION),
-                row -> val(row.delivery().elementClass(), el.ELEMENT_CLASS),
-                row -> val(row.delivery().deliversMany(), el.IS_MANY),
-                row -> val(touchedAt, el.TOUCHED_AT)));
-            BindBatch.execute(dsl, elementRows, markers ->
-                dsl.insertInto(el, el.SOURCE_NAME, el.CLASS_NAME, el.METHOD_NAME, el.DESCRIPTOR,
-                        el.POSITION, el.ELEMENT_CLASS, el.IS_MANY, el.TOUCHED_AT)
-                    .values(markers)
-                    .onDuplicateKeyUpdate()
-                    .set(el.ELEMENT_CLASS, excluded(el.ELEMENT_CLASS))
-                    .set(el.IS_MANY, excluded(el.IS_MANY))
-                    .set(el.TOUCHED_AT, excluded(el.TOUCHED_AT)));
-        }
 
         record Resolved(At at, TableAt table) {}
         var catalog = tablesByClass(dsl);
@@ -682,10 +681,11 @@ public final class CodeCapture {
      */
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
-                CODE_CONDITION_METHOD_PARAMETER_TABLE, CODE_METHOD_PARAMETER_ELEMENT,
-                CODE_METHOD_PARAMETER, CODE_METHOD_RESULT, CODE_METHOD_EXCEPTION,
+                CODE_CONDITION_METHOD_PARAMETER_TABLE,
+                CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
-                CODE_METHOD, CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {
+                CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
+                CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT)) {
             dsl.deleteFrom(table)
                 .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
                 .and(table.field(CODE_METHOD.TOUCHED_AT).ne(touchedAt))

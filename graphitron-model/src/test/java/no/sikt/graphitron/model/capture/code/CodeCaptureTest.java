@@ -20,8 +20,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TA
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD_RESULT;
-import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER_ELEMENT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -718,24 +717,28 @@ class CodeCaptureTest {
         }
     }
 
-    /** What one service method's return delivers, rendered for comparison, or null where none. */
+    /** What one method results in, rendered for comparison, or null where its type names none. */
     private static String deliveryOf(DSLContext dsl, String methodName) {
-        return dsl.select(CODE_METHOD_RESULT.RESULT_CLASS,
-                CODE_METHOD_RESULT.IS_MANY)
-            .from(CODE_METHOD_RESULT)
-            .where(CODE_METHOD_RESULT.CLASS_NAME.eq(SERVICES))
-            .and(CODE_METHOD_RESULT.METHOD_NAME.eq(methodName))
+        var e = CODE_TYPE_ELEMENT;
+        var m = CODE_METHOD;
+        return dsl.select(e.ELEMENT_CLASS, e.IS_MANY)
+            .from(m)
+            .join(e).on(e.SOURCE_NAME.eq(m.SOURCE_NAME), e.TYPE_NAME.eq(m.RESULT_TYPE))
+            .where(m.CLASS_NAME.eq(SERVICES))
+            .and(m.METHOD_NAME.eq(methodName))
             .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
     }
 
-    /** What one position delivers, on {@link #deliveryOf}'s terms. */
+    /** What one position's type resolves to, on {@link #deliveryOf}'s terms. */
     private static String parameterDeliveryOf(DSLContext dsl, String methodName, int position) {
-        var d = CODE_METHOD_PARAMETER_ELEMENT;
-        return dsl.select(d.ELEMENT_CLASS, d.IS_MANY)
-            .from(d)
-            .where(d.CLASS_NAME.eq(SERVICES))
-            .and(d.METHOD_NAME.eq(methodName))
-            .and(d.POSITION.eq(position))
+        var e = CODE_TYPE_ELEMENT;
+        var p = CODE_METHOD_PARAMETER;
+        return dsl.select(e.ELEMENT_CLASS, e.IS_MANY)
+            .from(p)
+            .join(e).on(e.SOURCE_NAME.eq(p.SOURCE_NAME), e.TYPE_NAME.eq(p.PARAMETER_TYPE))
+            .where(p.CLASS_NAME.eq(SERVICES))
+            .and(p.METHOD_NAME.eq(methodName))
+            .and(p.POSITION.eq(position))
             .fetchOne(row -> row.value1() + (row.value2() ? " many" : " one"));
     }
 

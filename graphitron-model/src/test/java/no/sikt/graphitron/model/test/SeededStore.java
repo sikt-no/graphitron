@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD_PARAMETER_TABLE;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
+import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_CONDITION_ENTRY;
@@ -968,12 +969,17 @@ public final class SeededStore {
     public static void seedExternalFieldMethod(DSLContext dsl, String sourceName, String className,
                                                String methodName, String descriptor,
                                                String tableParameterType) {
+        // Every type a signature mentions is a row the signature points at, so a fixture seeding a
+        // method seeds the types it names first. A condition's own return is fixed by the arm's
+        // admission and is the one type a case never has to state.
+        seedType(dsl, sourceName, JOOQ_CONDITION);
         dsl.insertInto(CODE_METHOD)
             .set(CODE_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_METHOD.CLASS_NAME, className)
             .set(CODE_METHOD.METHOD_NAME, methodName)
             .set(CODE_METHOD.DESCRIPTOR, descriptor)
             .set(CODE_METHOD.IS_STATIC, true)
+            .set(CODE_METHOD.RESULT_TYPE, JOOQ_CONDITION)
             .set(CODE_METHOD.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
@@ -2949,12 +2955,17 @@ public final class SeededStore {
     public static void seedConditionParameter(DSLContext dsl, String sourceName, String className,
                                               String methodName, String descriptor, int position,
                                               String parameterName, String parameterClass) {
+        // Every type a signature mentions is a row the signature points at, so a fixture seeding a
+        // method seeds the types it names first. A condition's own return is fixed by the arm's
+        // admission and is the one type a case never has to state.
+        seedType(dsl, sourceName, JOOQ_CONDITION);
         dsl.insertInto(CODE_METHOD)
             .set(CODE_METHOD.SOURCE_NAME, sourceName)
             .set(CODE_METHOD.CLASS_NAME, className)
             .set(CODE_METHOD.METHOD_NAME, methodName)
             .set(CODE_METHOD.DESCRIPTOR, descriptor)
             .set(CODE_METHOD.IS_STATIC, true)
+            .set(CODE_METHOD.RESULT_TYPE, JOOQ_CONDITION)
             .set(CODE_METHOD.TOUCHED_AT, SEEDED_READING)
             .onDuplicateKeyIgnore()
             .execute();
@@ -2969,6 +2980,7 @@ public final class SeededStore {
         // A primitive parameter names no class, and the arm records the type the classfile states
         // rather than an absence; int is what the descriptor's I is.
         String erased = parameterClass == null ? "int" : parameterClass;
+        seedType(dsl, sourceName, erased);
         var table = parameterClass == null ? null : seededTable(dsl, parameterClass);
         String role = table != null ? "TABLE_CONCRETE"
             : JOOQ_TABLE.equals(parameterClass) ? "TABLE_ANY" : "OTHER";
@@ -2979,6 +2991,7 @@ public final class SeededStore {
             .set(CODE_METHOD_PARAMETER.DESCRIPTOR, descriptor)
             .set(CODE_METHOD_PARAMETER.POSITION, position)
             .set(CODE_METHOD_PARAMETER.PARAMETER_NAME, parameterName)
+            .set(CODE_METHOD_PARAMETER.PARAMETER_TYPE, erased)
             .set(CODE_METHOD_PARAMETER.ROLE, role)
             // DIRECT throughout: a fixture names classes rather than compiling them, so it cannot
             // ask whether one is an enum. The case that turns on the answer is CodeCaptureTest's,
@@ -3005,6 +3018,19 @@ public final class SeededStore {
 
     /** The bare jOOQ table interface, which is how a wildcard table parameter is spelled here. */
     private static final String JOOQ_TABLE = "org.jooq.Table";
+
+    /** What a condition method returns, which is the whole of that arm's admission. */
+    private static final String JOOQ_CONDITION = "org.jooq.Condition";
+
+    /** One type a seeded signature mentions, idempotently; what the sites point at. */
+    private static void seedType(DSLContext dsl, String sourceName, String typeName) {
+        dsl.insertInto(CODE_TYPE)
+            .set(CODE_TYPE.SOURCE_NAME, sourceName)
+            .set(CODE_TYPE.TYPE_NAME, typeName)
+            .set(CODE_TYPE.TOUCHED_AT, SEEDED_READING)
+            .onDuplicateKeyIgnore()
+            .execute();
+    }
 
     /**
      * The catalog table a seeded parameter class names, or null where this store holds none.

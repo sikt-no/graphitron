@@ -249,9 +249,9 @@ class RelationRegistrationGateTest {
         // states the candidates whether or not anybody has. What pins it is CodeCaptureTest.
         registrations.put("code_scalar_constant", Arm.UNSHADOWED);
         registrations.put("code_method", Arm.UNSHADOWED);
-        registrations.put("code_method_result", Arm.UNSHADOWED);
+        registrations.put("code_type", Arm.UNSHADOWED);
+        registrations.put("code_type_element", Arm.UNSHADOWED);
         registrations.put("code_method_parameter", Arm.UNSHADOWED);
-        registrations.put("code_method_parameter_element", Arm.UNSHADOWED);
         registrations.put("code_method_exception", Arm.UNSHADOWED);
         registrations.put("code_condition_method", Arm.UNSHADOWED);
         registrations.put("code_condition_method_parameter_table", Arm.UNSHADOWED);

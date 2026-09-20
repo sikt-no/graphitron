@@ -5977,15 +5977,46 @@ COMMENT ON COLUMN jvm_record_component.declared_type IS 'the component type as t
 -- affordable and what keeps it from being a census: the classpath's other hundred thousand
 -- methods are nobody's to name.
 
+CREATE TABLE code_type (
+  source_name VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, type_name),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+);
+COMMENT ON TABLE code_type IS 'One type the signatures of an entry''s methods mention, as the source wrote it. For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.';
+COMMENT ON COLUMN code_type.source_name IS 'the classpath entry whose signatures mention the type; the key''s leading dimension, so a type is swept with the entry that mentioned it rather than outliving it. A type name is global and this relation is not, which is the same trade every relation in the family makes: what a reading read is what it can answer for';
+COMMENT ON COLUMN code_type.type_name IS 'the type as the source declared it, type arguments kept and packages kept, which is what makes it a key: two Foo<X> from different packages render alike and are two types. A primitive is its own spelling and an array is its component''s with brackets, so the three silences a resolution cannot tell apart, a primitive, an array and a type variable, are told apart here by the name itself. A type variable spells only its own identifier, so two methods writing T share this row; that costs nothing while the only thing stored about it is that it resolves to no class, and stops being adequate the moment anything method-specific is';
+COMMENT ON COLUMN code_type.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
+
+CREATE TABLE code_type_element (
+  source_name   VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  element_class VARCHAR NOT NULL,
+  is_many       BOOLEAN NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, type_name),
+  FOREIGN KEY (source_name, type_name)
+    REFERENCES code_type (source_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_type_element IS 'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all. For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.';
+COMMENT ON COLUMN code_type_element.source_name IS 'the entry whose signatures mention the type, as on code_type; the key''s leading dimension';
+COMMENT ON COLUMN code_type_element.type_name IS 'the type, as on code_type, completing the key; the row is deleted with it';
+COMMENT ON COLUMN code_type_element.element_class IS 'the binary name of the class the type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the type: a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer';
+COMMENT ON COLUMN code_type_element.is_many IS 'whether any container peeled on the way multiplies, which is what says a field backed by this type is a list rather than one value. A List or a Set or a jOOQ Result multiplies; an Optional or a CompletableFuture or a Map does not, those being one value in a wrapper';
+COMMENT ON COLUMN code_type_element.touched_at IS 'when the reading that produced this row ran; swept with the type it hangs on';
+
 CREATE TABLE code_method (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
   method_name VARCHAR NOT NULL,
   descriptor  VARCHAR NOT NULL,
   is_static   BOOLEAN NOT NULL,
+  result_type VARCHAR NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name) REFERENCES store_source (source_name)
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name),
+  FOREIGN KEY (source_name, result_type) REFERENCES code_type (source_name, type_name)
 );
 COMMENT ON TABLE code_method IS 'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from. For example filmsByRating(DSLContext, String) on a consumer''s FilmService.';
 COMMENT ON COLUMN code_method.source_name IS 'the classpath entry the declaring class was read from; the key''s leading dimension, so a method is a fact about one entry and is swept with it';
@@ -5993,28 +6024,8 @@ COMMENT ON COLUMN code_method.class_name IS 'the declaring class''s binary name,
 COMMENT ON COLUMN code_method.method_name IS 'the method''s own name, the right part of it. Not a key on its own: a name an author writes may denote several declarations, and the count of rows sharing one is what says so';
 COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
 COMMENT ON COLUMN code_method.is_static IS 'whether the method is static. A property of the declaration rather than of any directive, though it is what @service reads to decide whether a holder is needed and what @condition folds on before admitting a set of overloads as one target';
+COMMENT ON COLUMN code_method.result_type IS 'the type the method results in, by reference. Not a relation of its own beside the parameters, because a result is the one thing a method has exactly one of and it carries neither a name nor an ordinal to be bound at: a parameter binds a type to a named position, and a result is the type';
 COMMENT ON COLUMN code_method.touched_at IS 'when the reading that produced this row ran; swept by the reading that replaces it';
-
-CREATE TABLE code_method_result (
-  source_name  VARCHAR NOT NULL,
-  class_name   VARCHAR NOT NULL,
-  method_name  VARCHAR NOT NULL,
-  descriptor   VARCHAR NOT NULL,
-  result_class VARCHAR NOT NULL,
-  is_many      BOOLEAN NOT NULL,
-  touched_at   TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor)
-    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
-);
-COMMENT ON TABLE code_method_result IS 'What a method results in, containers peeled away. For example a method returning a List of Film resulting in Film, many of them.';
-COMMENT ON COLUMN code_method_result.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
-COMMENT ON COLUMN code_method_result.class_name IS 'the declaring class, as on code_method';
-COMMENT ON COLUMN code_method_result.method_name IS 'the method, as on code_method';
-COMMENT ON COLUMN code_method_result.descriptor IS 'the method''s descriptor, completing the key; with the three columns above, the method whose result this is, and the row is deleted with it';
-COMMENT ON COLUMN code_method_result.result_class IS 'the binary name of the class the return type arrives at once every container is peeled off it. Presence is the fact this relation states, which is why the columns are not on the method: a return type names no class at all when it is void, a primitive, an array or a type variable, and a placeholder would make four different silences look like one answer';
-COMMENT ON COLUMN code_method_result.is_many IS 'whether any container peeled on the way multiplies, which is what says a field backed by this method is a list rather than one value. A List or a Set or a jOOQ Result multiplies; an Optional or a CompletableFuture or a Map does not, those being one value in a wrapper';
-COMMENT ON COLUMN code_method_result.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
 CREATE TABLE code_method_parameter (
   source_name    VARCHAR NOT NULL,
@@ -6023,49 +6034,28 @@ CREATE TABLE code_method_parameter (
   descriptor     VARCHAR NOT NULL,
   position       INT NOT NULL,
   parameter_name VARCHAR,
+  parameter_type VARCHAR NOT NULL,
   role           VARCHAR NOT NULL,
   extraction     VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
   FOREIGN KEY (source_name, class_name, method_name, descriptor)
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, parameter_type) REFERENCES code_type (source_name, type_name),
   CHECK (role IN ('DSL_CONTEXT', 'TABLE_CONCRETE', 'TABLE_ANY', 'OTHER')),
   CHECK (extraction IN ('DIRECT', 'ENUM_VALUE_OF'))
 );
-COMMENT ON TABLE code_method_parameter IS 'One position in a method''s parameter list, and what its type alone says the position is for. For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.';
+COMMENT ON TABLE code_method_parameter IS 'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for. For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.';
 COMMENT ON COLUMN code_method_parameter.source_name IS 'the entry the declaring class was read from, as on code_method; the key''s leading dimension';
 COMMENT ON COLUMN code_method_parameter.class_name IS 'the declaring class, as on code_method';
 COMMENT ON COLUMN code_method_parameter.method_name IS 'the method, as on code_method';
 COMMENT ON COLUMN code_method_parameter.descriptor IS 'the method''s descriptor, as on code_method; with the three columns above, the method this position belongs to, and the row is deleted with it';
 COMMENT ON COLUMN code_method_parameter.position IS 'the position in the parameter list, 0-based, completing the key. Position is the key and not the name, because a name is what a classfile may omit and a position is what it always carries';
 COMMENT ON COLUMN code_method_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters and the classfile carries no MethodParameters attribute. What a GraphQL argument binds to and what an argMapping entry targets, so a run that finds it absent refuses the binding rather than guessing; a reader must not read NULL as an unnamed parameter';
+COMMENT ON COLUMN code_method_parameter.parameter_type IS 'the type bound at this position, by reference. A parameter is a binding rather than a description: what the type is and what it resolves to are the type''s own facts and are stated once however many positions carry it, which over this module''s main sources is thirteen hundred positions over two hundred types';
 COMMENT ON COLUMN code_method_parameter.role IS 'what the position is for as far as its type alone decides, in a closed vocabulary of four, and the four are exclusive because no type satisfies two of them. DSL_CONTEXT: the run''s own jOOQ context is passed here. TABLE_CONCRETE: the declaration names one generated table, and code_condition_method_parameter_table says which where the catalog holds it. TABLE_ANY: the declaration is org.jooq.Table itself, raw or wildcarded, or a type variable, so the position takes whatever table the site supplies. OTHER: everything else, whose role is the application''s to decide from the arguments and context keys in scope at the site. Decided here rather than by a reader because deciding it needs an assignability walk, which a reader either re-derives through a recursive closure or asks a loader for';
 COMMENT ON COLUMN code_method_parameter.extraction IS 'how a value bound to this position is coerced into it, decided by the declared type alone: ENUM_VALUE_OF where that type is an enum and DIRECT otherwise. The standing rule rather than the last word, a parameter bound to a slot carrying @nodeId receiving that slot''s decoded key instead, which intent_condition_param_decode states as the exception to this. Decided by loading the class, which is what makes it answerable for both populations at once: an author''s own enum and a generated one a column binds to, the second living in the package this reading excludes and so reachable no other way';
 COMMENT ON COLUMN code_method_parameter.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
-
-CREATE TABLE code_method_parameter_element (
-  source_name   VARCHAR NOT NULL,
-  class_name    VARCHAR NOT NULL,
-  method_name   VARCHAR NOT NULL,
-  descriptor    VARCHAR NOT NULL,
-  position      INT NOT NULL,
-  element_class VARCHAR NOT NULL,
-  is_many       BOOLEAN NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor, position),
-  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
-    REFERENCES code_method_parameter
-      (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE
-);
-COMMENT ON TABLE code_method_parameter_element IS 'What one parameter position''s type contains, containers peeled away. For example a position typed as a List of FilmInput containing FilmInput, many of them.';
-COMMENT ON COLUMN code_method_parameter_element.source_name IS 'the entry the declaring class was read from, as on code_method_parameter; the key''s leading dimension';
-COMMENT ON COLUMN code_method_parameter_element.class_name IS 'the declaring class, as on code_method_parameter';
-COMMENT ON COLUMN code_method_parameter_element.method_name IS 'the method, as on code_method_parameter';
-COMMENT ON COLUMN code_method_parameter_element.descriptor IS 'the method''s descriptor, as on code_method_parameter';
-COMMENT ON COLUMN code_method_parameter_element.position IS 'the position, completing the key; with the four columns above, the parameter whose type this describes, and the row is deleted with it';
-COMMENT ON COLUMN code_method_parameter_element.element_class IS 'the binary name of the class the position''s type arrives at once every container is peeled off it, on code_method_result.result_class''s terms. A separate relation for the same reason: a type that is a primitive, an array or a type variable contains no class to name';
-COMMENT ON COLUMN code_method_parameter_element.is_many IS 'whether any container peeled on the way multiplies, on code_method_result.is_many''s terms';
-COMMENT ON COLUMN code_method_parameter_element.touched_at IS 'when the reading that produced this row ran; swept with the parameter it hangs on';
 
 CREATE TABLE code_method_exception (
   source_name     VARCHAR NOT NULL,
@@ -14395,6 +14385,9 @@ INSERT INTO meta_grain VALUES
   ('class-method',
    'one method of one class, overloads told apart by descriptor',
    'source_name, class_name, method_name, descriptor', 'classpath'),
+  ('declared-type',
+   'one type as a source declared it, within one classpath entry',
+   'source_name, type_name', 'classpath'),
   ('declared-type-position',
    'one position within one declared type',
    'source_name, class_name, owner_kind, owner_name, owner_descriptor, owner_position, type_path', 'classpath'),
@@ -14986,18 +14979,18 @@ INSERT INTO meta_relation VALUES
    'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from.',
    'For example filmsByRating(DSLContext, String) on a consumer''s FilmService.',
    'The shared half of the family, and the correction that makes the arms mean one thing each. Whether a method may be named at @service and whether it may be named at @condition are two questions and two relations; what it returns, what it takes and what it throws are properties of the declaration and do not vary by the coordinate somebody reached it through, so holding them per arm held one fact twice and let two copies disagree. The population is the reactor''s public methods, which is what keeps this from being the census it would otherwise resemble: a census answers for the whole classpath and has to, because it does not know who is asking; this answers for the code a build compiles, because nothing else may be named.'),
-  ('code_method_result', 'class-method', 'code',
-   'What a method results in, containers peeled away.',
-   'For example a method returning a List of Film resulting in Film, many of them.',
-   'The question every reader of a producing method asks and none of them could answer cheaply: a field backed by a method is backed by what that method finally hands back, and a return type is a tree rather than a name. Stated at capture because the alternative is in the store and measurable: a view peeling containers by self-joining a type-reference relation once per level, unrolled to a fixed depth because SQL has no loop, which bounds what it can answer as well as costing what it costs. Its own relation and not two columns on the method, because a return type naming no class is four different things, a void, a primitive, an array and a type variable, and presence says that where a placeholder would make them one answer.'),
   ('code_method_parameter', 'method-parameter', 'code',
-   'One position in a method''s parameter list, and what its type alone says the position is for.',
+   'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',
    'A method''s parameters are the method''s own fact, so they are held once and the arms read them. Written rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and the role is an assignability question the descriptor cannot answer. The role vocabulary is four values and they are exclusive because no type satisfies two; it is one column rather than one per arm because a position typed as a jOOQ table is typed that way whether the method is reached at @condition or anywhere else, and the arm''s reading of what that means is the arm''s. Keyed on position and not on name, since the name is exactly the part a classfile may omit.'),
-  ('code_method_parameter_element', 'method-parameter', 'code',
-   'What one parameter position''s type contains, containers peeled away.',
-   'For example a position typed as a List of FilmInput containing FilmInput, many of them.',
-   'The same question code_method_result answers, asked at a position, and separate from the parameter for the same reason that one is separate from the method. Two relations rather than one keyed by which kind of member owns the type, because one would need a sentinel position for a return that has none, and a key per member needs no sentinel to mean not-applicable.'),
+  ('code_type', 'declared-type', 'code',
+   'One type the signatures of an entry''s methods mention, as the source wrote it.',
+   'For example java.util.List<no.sikt.example.Film>, beside the plain java.lang.String and the int that other positions carry.',
+   'The relation the sites point at, and the reason a parameter is a binding rather than a description. What a type is and what it resolves to do not change with the position carrying it, so stating them per position stated one fact as many times as the signature mentioned it: measured over this module''s main sources, thirteen hundred positions carry two hundred types. Keyed by the spelling because the spelling is the identity, type arguments and packages kept, which is also what tells apart the three silences a resolution cannot: a primitive, an array and a type variable all resolve to no class and are told apart here by their names. Source-keyed like everything else in the family, a type with no entry having no lifecycle to be swept on.'),
+  ('code_type_element', 'declared-type', 'code',
+   'What a type resolves to once its delivery containers are peeled off, for the types that resolve to a class at all.',
+   'For example java.util.List<no.sikt.example.Film> resolving to Film, many of them.',
+   'A field backed by a method is backed by what that method finally hands back, and a return type is a tree rather than a name. Stated at capture because the alternative is in the store and measurable: a view peeling containers by self-joining a type-reference relation once per level, unrolled to a fixed depth because SQL has no loop, which bounds what it can answer as well as costing what it costs. Its own relation and not two columns on the type, because a void, a primitive, an array and a type variable name no class, and a placeholder would make four different silences look like one answer.'),
   ('code_method_exception', 'method-exception', 'code',
    'One exception a method declares it throws.',
    'For example filmsByRating declaring java.io.IOException.',
