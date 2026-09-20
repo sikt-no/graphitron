@@ -1782,6 +1782,11 @@ Two polymorphic membership tables, `graphql_implements` and `graphql_union_membe
 hiding. `intent_declared_type_ref`. `graphitron_type_declaration_synthesis`, now
 `graphitron_minted_type` and `graphitron_minted_type_site`. And two retired registrations, which
 deletes a `_live` view and a table each: `intent_argmapping_pair_live` and `intent_errors_field_live`.
+Two condition views whose subject moved into the arm that answers it,
+`intent_condition_param_extraction` and `intent_condition_table_parameter`. And
+`code_condition_method_parameter`, now `code_method_parameter`, which is a rename in the schema and
+a change of subject in fact: a method's parameters stopped being the admitting arm's and became the
+method's, so the arms hold membership and nothing else.
 
 **Fifty-three relations renamed, not retired, and they are listed by rule rather than one by one.**
 Every relation of the as-written half of `graphitron_` gained the `_entry` suffix, which is the
@@ -1796,6 +1801,8 @@ and does not go stale.
 
 **Columns and values.** `graphitron_field_synthesis.authored_type_sdl`, the relation's payload having
 flipped to carry the macro's replacement rather than the expression it overwrote.
+`code_external_field_method.table_parameter_type`, which was the sole position's type and is that
+position's role. `code_condition_method.is_static`, which is the method's and is on `code_method`.
 `AUTHORED_EXPRESSION`, retired from the navigation basis vocabulary, which is two values now.
 
 **The argMapping coordinate remodelling retired more.** One relation,
@@ -4807,3 +4814,113 @@ capture, held once rather than copied.
 
 The five arms that stayed are the ones whose subject is the generator's model, and they retire with
 the consumers they shadow, which is what their own comment already said.
+
+## One reading of the classfiles, and a family that holds a declaration once (2026-09-20)
+
+The chapter above states the `code_` family's shape and leaves the migration open. This is what
+closing it costs, measured on the arms that exist.
+
+**Two readers of one classpath, and the duplication had already stopped paying.** `ClasspathScanner`
+read the compile classpath for the `jvm_` census and `ClassfileCensus` read it again for the
+`code_` arms, each with its own scope rules and its own spelling of the signature walk. The scope
+rules had drifted in two ways, both silent. The arms read `TRANSITIVE` entries, which
+`ClasspathEntry.Origin` says the census does not read and `ClasspathNameability` refuses a name
+from: on this module's own test classpath, graphql-java reclassified as transitive contributed five
+scalar constants and every throwable it declares, all of them completions the build would then
+reject. And the arms' package exclusion was a character prefix rather than a package, so excluding
+`graphql.Assert` took `graphql.AssertException` with it, which reads exactly like a classpath that
+does not carry the class.
+
+So the signature walk moved rather than being copied. `ClassfileCensus` is the reader and
+`ClasspathScanner` is a projection over it holding its four public signatures, so `ClasspathCensus`
+keeps its per-entry grain and no caller moved. `GathererIsolationTest` decided where the reader
+lives by failing: a helper read from outside its gatherer's package is either part of that gatherer
+or tier vocabulary, and a reader two families write from is the second. The projection is
+scaffolding with a stated end, which is the `jvm_` census's.
+
+**A declaration's facts are the declaration's, and an arm says which coordinate may name it.** The
+arms each held a copy of the method they admitted, which held one fact as many times as there were
+arms pointing at it and let the copies disagree. Whether a method may be named at `@service` and
+whether it may be named at `@condition` are two questions and earn two relations. What it returns,
+what it takes and what it throws are not: they do not vary by the coordinate somebody reached it
+through. So `code_method` holds the reactor's public methods, with `code_method_result`,
+`code_method_parameter`, `code_method_parameter_element` and `code_method_exception` beside it, and
+the three arms are membership: four key columns and an instant.
+
+The role a parameter plays is one column over four exclusive values rather than one vocabulary per
+arm, because a position typed as a jOOQ table is typed that way whoever is asking and a position
+typed as a `DSLContext` likewise. What either means at a coordinate is the arm's reading of it.
+
+**What a method results in, and why it is not a view.** A field backed by a method is backed by
+whatever that method finally hands back, and a return type is a tree: the rule peels `List`, `Set`,
+`Collection`, `Optional`, `CompletableFuture`, jOOQ `Result` and `Map` at its value position until
+it reaches something that is not one of them, and reports whether anything peeled multiplied.
+Stated in SQL that is 43 lines of five self-joins unrolled to a fixed depth of four, because SQL has
+no loop, which bounds what it can answer as well as costing what it costs. At capture it is a loop,
+and a case pins the difference at five containers, where the unrolled form reports the fifth
+container as though it were the payload. The container vocabulary is read from the relation that
+states it rather than spelled again; it carries no declared owner, so reading it crosses no
+ownership and waits on no gatherer.
+
+The shape rule this arc is worth stating for: an optional fact is a relation whose presence is the
+optionality, not a nullable column. A return type names no class when it is a void, a primitive, an
+array or a type variable, and a placeholder would make four silences look like one answer. The same
+rule gives the table a concrete position names its own relation, which turned an `ON DELETE SET
+NULL` into a cascade that deletes the resolution and not the parameter: a consumer dropping a table
+has not unwritten their method.
+
+**Measured, against the criterion that a consumer's query must get simpler and not merely change
+prefix.**
+
+| | before | after |
+|---|---|---|
+| `intent_condition_context_parameter` and what it read | 103 lines over three views | 37 over one |
+| `intent_condition_method_route` | 63 lines, three CTEs, three `class_fqn` joins | 59, two CTEs, one `sql_table` join |
+| `intent_condition_method_route_defect`, `jvm_` namings | 6 | 2 |
+| views in the fact schema | 122 | 120 |
+
+Both deleted views are the register's own case stated at capture instead. One asked whether a
+position receives the source table as a recursive ancestor climb ORed against a catalog lookup,
+once per driving row; the other re-derived `Class.isEnum` through a view. Three of the correlated
+per-row namings R942's table lists go with them, and every resolution now joins `sql_table`'s
+primary key rather than `class_fqn`, which is no key and can match more than one row.
+
+That is a third lever beside rewriting and materializing, and `fact-model.adoc` carries it now,
+because the anti-join it used as its worked example was this one: materialization is what an
+excluded relation gets when it states a rule over rows the store already holds, and where the rule
+is really a question about a source nobody has asked yet, the gatherer that reads that source
+answers it and the anti-join stops existing.
+
+The family costs, on this module's main sources with the generated package excluded as a run
+excludes it: 682 methods, 474 results, 759 parameters, 739 elements and 682 arm rows, 3,337 rows at
+798 milliseconds. A first reading that included the generated jOOQ package said 16,430 methods,
+which is what that package is rather than what this costs.
+
+**What it cost elsewhere.** Keying a concrete position to `sql_table` makes the code gatherer a
+reader of the jOOQ gatherer's rows. `ModelCapture` already ran the two in that order and
+`meta_gatherer_dependency` says so now; `CapturedStore` did not, which two pipeline cases caught and
+which nothing else would have, a condition hop resolved against an empty catalog being a missing
+route rather than an error. A parameter relation spanning every method no longer scopes to an arm
+by its key alone either, so the three readers that reach parameters by class and method name rather
+than by descriptor now name the arm they mean; a reader that forgot would have answered for methods
+no condition could name.
+
+**One live behaviour change.** A position written `<T extends Table<?>> T` drew no row in the
+deleted view, so it was not a table parameter and was eligible as a context parameter. The
+generator asks `Table.class.isAssignableFrom` of the erasure, which for that position is
+`org.jooq.Table`, so it is a table slot and not bindable. The arm follows the generator and the old
+view was wrong.
+
+**What is not done, and the two questions this shape does not answer.** Four arms remain unbuilt and
+the `jvm_` relations they would retire are still written. `intent_condition_method_route_defect`
+keeps two `jvm_` namings, `CLASS_NOT_IN_CENSUS` and `METHOD_NOT_ON_CLASS`, and they are the boundary
+of the idea: a relation of candidates cannot tell "not a candidate" from "not there", both being no
+row. Either those verdicts stop being store answers, or `code_` carries a relation of the classes
+the reactor built so absence stays distinguishable.
+
+And a parameter carries no rendering of its own type. That is deliberate as far as the arms go, the
+role being what the store is asked, but it is not free: an absent element is equally a primitive, an
+array and a type variable, and `ArgmappingProjectionDefects` distinguishes them today off the `jvm_`
+side to tell an author to declare `Integer` rather than `int`. A type a person can read is owed to
+that reader and to the editor surfaces, once, in the form they render; it is a different column from
+either of the two this arc removed, and nothing here supplies it.
